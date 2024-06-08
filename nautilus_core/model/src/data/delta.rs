@@ -31,7 +31,7 @@ use super::{
 };
 use crate::{
     enums::{BookAction, RecordFlag},
-    identifiers::instrument_id::InstrumentId,
+    identifiers::InstrumentId,
 };
 
 /// Represents a single change/delta in an order book.
@@ -168,7 +168,7 @@ mod tests {
     use crate::{
         data::{delta::OrderBookDelta, order::BookOrder, stubs::*},
         enums::{BookAction, OrderSide},
-        identifiers::instrument_id::InstrumentId,
+        identifiers::InstrumentId,
         types::{price::Price, quantity::Quantity},
     };
 

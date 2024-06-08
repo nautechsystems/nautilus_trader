@@ -71,20 +71,20 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::enums::TrailingOffsetType>()?;
     m.add_class::<crate::enums::TriggerType>()?;
     // Identifiers
-    m.add_class::<crate::identifiers::account_id::AccountId>()?;
-    m.add_class::<crate::identifiers::client_id::ClientId>()?;
-    m.add_class::<crate::identifiers::client_order_id::ClientOrderId>()?;
-    m.add_class::<crate::identifiers::component_id::ComponentId>()?;
-    m.add_class::<crate::identifiers::exec_algorithm_id::ExecAlgorithmId>()?;
-    m.add_class::<crate::identifiers::instrument_id::InstrumentId>()?;
-    m.add_class::<crate::identifiers::order_list_id::OrderListId>()?;
-    m.add_class::<crate::identifiers::position_id::PositionId>()?;
-    m.add_class::<crate::identifiers::strategy_id::StrategyId>()?;
-    m.add_class::<crate::identifiers::symbol::Symbol>()?;
-    m.add_class::<crate::identifiers::trade_id::TradeId>()?;
-    m.add_class::<crate::identifiers::trader_id::TraderId>()?;
-    m.add_class::<crate::identifiers::venue::Venue>()?;
-    m.add_class::<crate::identifiers::venue_order_id::VenueOrderId>()?;
+    m.add_class::<crate::identifiers::AccountId>()?;
+    m.add_class::<crate::identifiers::ClientId>()?;
+    m.add_class::<crate::identifiers::ClientOrderId>()?;
+    m.add_class::<crate::identifiers::ComponentId>()?;
+    m.add_class::<crate::identifiers::ExecAlgorithmId>()?;
+    m.add_class::<crate::identifiers::InstrumentId>()?;
+    m.add_class::<crate::identifiers::OrderListId>()?;
+    m.add_class::<crate::identifiers::PositionId>()?;
+    m.add_class::<crate::identifiers::StrategyId>()?;
+    m.add_class::<crate::identifiers::Symbol>()?;
+    m.add_class::<crate::identifiers::TradeId>()?;
+    m.add_class::<crate::identifiers::TraderId>()?;
+    m.add_class::<crate::identifiers::Venue>()?;
+    m.add_class::<crate::identifiers::VenueOrderId>()?;
     // Orders
     m.add_class::<crate::orders::limit::LimitOrder>()?;
     m.add_class::<crate::orders::limit_if_touched::LimitIfTouchedOrder>()?;

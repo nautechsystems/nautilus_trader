@@ -22,9 +22,8 @@ use crate::{
     enums::{LiquiditySide, OrderSide, TimeInForce, TriggerType},
     events::order::{OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted},
     identifiers::{
-        account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
-        position_id::PositionId, strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
-        venue_order_id::VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
+        VenueOrderId,
     },
     instruments::any::InstrumentAny,
     orders::market::MarketOrder,

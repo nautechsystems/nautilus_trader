@@ -98,7 +98,7 @@ impl From<&str> for Symbol {
 mod tests {
     use rstest::rstest;
 
-    use crate::identifiers::{stubs::*, symbol::Symbol};
+    use crate::identifiers::{stubs::*, Symbol};
 
     #[rstest]
     fn test_string_reprs(symbol_eth_perp: Symbol) {

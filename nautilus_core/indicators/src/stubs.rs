@@ -22,7 +22,7 @@ use nautilus_model::{
         trade::TradeTick,
     },
     enums::{AggregationSource, AggressorSide, BarAggregation, PriceType},
-    identifiers::{instrument_id::InstrumentId, symbol::Symbol, trade_id::TradeId, venue::Venue},
+    identifiers::{InstrumentId, Symbol, TradeId, Venue},
     types::{price::Price, quantity::Quantity},
 };
 use rstest::*;

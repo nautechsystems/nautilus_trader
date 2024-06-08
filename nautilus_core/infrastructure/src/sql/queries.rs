@@ -17,7 +17,7 @@ use std::collections::HashMap;
 
 use nautilus_model::{
     events::order::{OrderEvent, OrderEventAny},
-    identifiers::{client_order_id::ClientOrderId, instrument_id::InstrumentId},
+    identifiers::{ClientOrderId, InstrumentId},
     instruments::{any::InstrumentAny, Instrument},
     orders::{any::OrderAny, base::Order},
     types::currency::Currency,

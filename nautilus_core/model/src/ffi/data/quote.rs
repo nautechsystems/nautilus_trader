@@ -23,7 +23,7 @@ use nautilus_core::{ffi::string::str_to_cstr, nanos::UnixNanos};
 
 use crate::{
     data::quote::QuoteTick,
-    identifiers::instrument_id::InstrumentId,
+    identifiers::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };
 

@@ -28,7 +28,7 @@ use nautilus_core::{
 };
 
 use crate::{
-    identifiers::{instrument_id::InstrumentId, symbol::Symbol},
+    identifiers::{InstrumentId, Symbol},
     instruments::synthetic::SyntheticInstrument,
     types::price::{Price, ERROR_PRICE},
 };

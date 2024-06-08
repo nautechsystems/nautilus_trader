@@ -31,10 +31,7 @@ use nautilus_model::{
         delta::OrderBookDelta,
     },
     enums::{AccountType, BookType, MarketStatus, OmsType},
-    identifiers::{
-        account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
-        trader_id::TraderId, venue::Venue,
-    },
+    identifiers::{AccountId, ClientOrderId, InstrumentId, TraderId, Venue},
     instruments::Instrument,
     orderbook::book::OrderBook,
     orders::{

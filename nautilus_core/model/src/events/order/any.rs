@@ -20,12 +20,12 @@ use strum::Display;
 use super::OrderEventType;
 use crate::{
     events::order::{
-        filled::OrderFilled, initialized::OrderInitialized, OrderAccepted, OrderCancelRejected,
-        OrderCanceled, OrderDenied, OrderEmulated, OrderExpired, OrderModifyRejected,
-        OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted,
-        OrderTriggered, OrderUpdated,
+        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
+        OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
+        OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
+        OrderUpdated,
     },
-    identifiers::{client_order_id::ClientOrderId, strategy_id::StrategyId},
+    identifiers::{ClientOrderId, StrategyId},
 };
 
 /// Wraps an [`OrderEvent`] allowing polymorphism.

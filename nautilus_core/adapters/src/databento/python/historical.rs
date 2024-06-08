@@ -27,7 +27,7 @@ use nautilus_core::{
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick, Data},
     enums::BarAggregation,
-    identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
+    identifiers::{InstrumentId, Symbol, Venue},
     python::instruments::instrument_any_to_pyobject,
     types::currency::Currency,
 };

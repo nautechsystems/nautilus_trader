@@ -23,9 +23,7 @@ use crate::{
     enums::{ContingencyType, OrderSide, OrderType, TimeInForce, TriggerType},
     events::order::initialized::OrderInitialized,
     identifiers::{
-        client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
-        instrument_id::InstrumentId, order_list_id::OrderListId, strategy_id::StrategyId,
-        trader_id::TraderId,
+        ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
     orders::{
         base::{str_hashmap_to_ustr, Order},

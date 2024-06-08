@@ -27,9 +27,8 @@ use nautilus_common::{
 use nautilus_core::{correctness::check_slice_not_empty, nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     identifiers::{
-        account_id::AccountId, client_id::ClientId, client_order_id::ClientOrderId,
-        component_id::ComponentId, instrument_id::InstrumentId, position_id::PositionId,
-        strategy_id::StrategyId, trader_id::TraderId, venue_order_id::VenueOrderId,
+        AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
+        TraderId, VenueOrderId,
     },
     instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
     orders::any::OrderAny,

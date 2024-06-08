@@ -21,7 +21,7 @@ use rust_decimal::prelude::ToPrimitive;
 use crate::{
     data::order::BookOrder,
     enums::{LiquiditySide, OrderSide},
-    identifiers::instrument_id::InstrumentId,
+    identifiers::InstrumentId,
     instruments::{any::InstrumentAny, currency_pair::CurrencyPair, stubs::audusd_sim},
     orderbook::book::OrderBook,
     orders::stubs::{TestOrderEventStubs, TestOrderStubs},

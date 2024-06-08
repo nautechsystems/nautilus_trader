@@ -28,9 +28,8 @@ use crate::{
     enums::{OrderSide, PositionSide},
     events::order::filled::OrderFilled,
     identifiers::{
-        account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
-        position_id::PositionId, strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId,
-        trader_id::TraderId, venue::Venue, venue_order_id::VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, TraderId,
+        Venue, VenueOrderId,
     },
     instruments::any::InstrumentAny,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
@@ -525,10 +524,7 @@ mod tests {
     use crate::{
         enums::{LiquiditySide, OrderSide, OrderType, PositionSide},
         events::order::OrderFilled,
-        identifiers::{
-            account_id::AccountId, position_id::PositionId, strategy_id::StrategyId, stubs::uuid4,
-            trade_id::TradeId, venue_order_id::VenueOrderId,
-        },
+        identifiers::{stubs::uuid4, AccountId, PositionId, StrategyId, TradeId, VenueOrderId},
         instruments::{
             any::InstrumentAny, crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair,
             stubs::*,

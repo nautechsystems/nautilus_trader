@@ -65,8 +65,7 @@ mod tests {
     use nautilus_model::{
         enums::{CurrencyType, OrderSide},
         identifiers::{
-            account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
-            stubs::account_id, trade_id::TradeId, venue_order_id::VenueOrderId,
+            enueOrderId, stubs::account_id, AccountId, ClientOrderId, InstrumentId, TradeId,
         },
         instruments::{
             any::InstrumentAny,

@@ -22,7 +22,7 @@ use std::{
 
 use once_cell::sync::Lazy;
 
-use crate::identifiers::venue::Venue;
+use crate::identifiers::Venue;
 
 static CBCM_LOCK: OnceLock<Venue> = OnceLock::new();
 static GLBX_LOCK: OnceLock<Venue> = OnceLock::new();

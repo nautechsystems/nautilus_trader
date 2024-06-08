@@ -25,7 +25,7 @@ use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
 use nautilus_core::correctness::{check_equal_usize, check_map_not_empty};
-use nautilus_model::{enums::PriceType, identifiers::symbol::Symbol, types::currency::Currency};
+use nautilus_model::{enums::PriceType, identifiers::Symbol, types::currency::Currency};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use ustr::Ustr;

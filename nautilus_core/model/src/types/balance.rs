@@ -18,7 +18,7 @@ use std::fmt::{Debug, Display};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    identifiers::instrument_id::InstrumentId,
+    identifiers::InstrumentId,
     types::{currency::Currency, money::Money},
 };
 

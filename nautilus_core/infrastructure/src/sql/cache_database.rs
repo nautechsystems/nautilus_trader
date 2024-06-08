@@ -19,7 +19,7 @@ use std::{
 };
 
 use nautilus_model::{
-    identifiers::{client_order_id::ClientOrderId, instrument_id::InstrumentId},
+    identifiers::{ClientOrderId, InstrumentId},
     instruments::any::InstrumentAny,
     orders::any::OrderAny,
     types::currency::Currency,

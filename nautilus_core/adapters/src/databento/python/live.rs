@@ -19,7 +19,7 @@ use databento::{dbn, live::Subscription};
 use indexmap::IndexMap;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
-    identifiers::venue::Venue,
+    identifiers::Venue,
     python::{data::data_to_pycapsule, instruments::instrument_any_to_pyobject},
 };
 use pyo3::prelude::*;

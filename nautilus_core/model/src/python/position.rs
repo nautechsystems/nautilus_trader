@@ -26,9 +26,8 @@ use crate::{
     enums::{OrderSide, PositionSide},
     events::order::OrderFilled,
     identifiers::{
-        client_order_id::ClientOrderId, instrument_id::InstrumentId, position_id::PositionId,
-        strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId, trader_id::TraderId,
-        venue::Venue, venue_order_id::VenueOrderId,
+        ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, TraderId, Venue,
+        VenueOrderId,
     },
     instruments::any::InstrumentAny,
     position::Position,

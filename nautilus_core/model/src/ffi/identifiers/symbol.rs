@@ -17,7 +17,7 @@ use std::ffi::c_char;
 
 use nautilus_core::ffi::string::cstr_to_str;
 
-use crate::identifiers::symbol::Symbol;
+use crate::identifiers::Symbol;
 
 /// Returns a Nautilus identifier from a C string pointer.
 ///

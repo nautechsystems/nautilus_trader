@@ -34,7 +34,7 @@ use super::data_to_pycapsule;
 use crate::{
     data::{trade::TradeTick, Data},
     enums::{AggressorSide, FromU8},
-    identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+    identifiers::{InstrumentId, TradeId},
     python::common::PY_MODULE_MODEL,
     types::{price::Price, quantity::Quantity},
 };
