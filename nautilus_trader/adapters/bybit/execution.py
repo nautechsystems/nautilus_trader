@@ -24,8 +24,10 @@ from nautilus_trader.adapters.bybit.common.credentials import get_api_key
 from nautilus_trader.adapters.bybit.common.credentials import get_api_secret
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderStatus
+from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
+from nautilus_trader.adapters.bybit.common.enums import BybitTpSlMode
 from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.http.account import BybitAccountHttpAPI
@@ -62,6 +64,7 @@ from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import account_type_to_str
+from nautilus_trader.model.enums import order_type_to_str
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -71,9 +74,13 @@ from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders import LimitIfTouchedOrder
 from nautilus_trader.model.orders import LimitOrder
+from nautilus_trader.model.orders import MarketIfTouchedOrder
 from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.model.orders import Order
+from nautilus_trader.model.orders import StopLimitOrder
+from nautilus_trader.model.orders import StopMarketOrder
 from nautilus_trader.model.position import Position
 
 
@@ -181,6 +188,8 @@ class BybitExecutionClient(LiveExecutionClient):
         self._submit_order_methods = {
             OrderType.MARKET: self._submit_market_order,
             OrderType.LIMIT: self._submit_limit_order,
+            OrderType.STOP_MARKET: self._submit_stop_market_order,
+            OrderType.STOP_LIMIT: self._submit_stop_limit_order,
         }
 
         # Decoders
@@ -662,6 +671,110 @@ class BybitExecutionClient(LiveExecutionClient):
             time_in_force=time_in_force,
             client_order_id=str(order.client_order_id),
             reduce_only=order.is_reduce_only if order.is_reduce_only else None,
+        )
+
+    async def _submit_stop_market_order(self, order: StopMarketOrder) -> None:
+        self._log.warning(f"{order_type_to_str(order)} STILL EXPERIMENTAL")
+        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
+        product_type = bybit_symbol.product_type
+        time_in_force = self._determine_time_in_force(order)
+        order_side = self._enum_parser.parse_nautilus_order_side(order.side)
+        order_type = self._enum_parser.parse_nautilus_order_type(order.order_type)
+        trigger_direction = self._enum_parser.parse_trigger_direction(order.order_type, order.side)
+        trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
+        await self._http_account.place_order(
+            product_type=product_type,
+            symbol=bybit_symbol.raw_symbol,
+            side=order_side,
+            order_type=order_type,
+            quantity=str(order.quantity),
+            quote_quantity=order.is_quote_quantity,
+            time_in_force=time_in_force,
+            client_order_id=str(order.client_order_id),
+            reduce_only=order.is_reduce_only if order.is_reduce_only else None,
+            close_on_trigger=True,  # Conservative for stop-loss orders
+            tpsl_mode=BybitTpSlMode.FULL,
+            trigger_direction=trigger_direction,
+            trigger_type=trigger_type,
+            sl_trigger_price=str(order.trigger_price),
+            sl_order_type=BybitOrderType.MARKET,
+        )
+
+    async def _submit_stop_limit_order(self, order: StopLimitOrder) -> None:
+        self._log.warning(f"{order_type_to_str(order)} STILL EXPERIMENTAL")
+        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
+        product_type = bybit_symbol.product_type
+        time_in_force = self._determine_time_in_force(order)
+        order_side = self._enum_parser.parse_nautilus_order_side(order.side)
+        order_type = self._enum_parser.parse_nautilus_order_type(order.order_type)
+        trigger_direction = self._enum_parser.parse_trigger_direction(order.order_type, order.side)
+        trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
+        await self._http_account.place_order(
+            product_type=product_type,
+            symbol=bybit_symbol.raw_symbol,
+            side=order_side,
+            order_type=order_type,
+            quantity=str(order.quantity),
+            quote_quantity=order.is_quote_quantity,
+            time_in_force=time_in_force,
+            client_order_id=str(order.client_order_id),
+            reduce_only=order.is_reduce_only if order.is_reduce_only else None,
+            tpsl_mode=BybitTpSlMode.PARTIAL,
+            trigger_direction=trigger_direction,
+            trigger_type=trigger_type,
+            sl_trigger_price=str(order.trigger_price),
+            sl_order_type=BybitOrderType.LIMIT,
+        )
+
+    async def _submit_market_if_touched_order(self, order: MarketIfTouchedOrder) -> None:
+        self._log.warning(f"{order_type_to_str(order)} STILL EXPERIMENTAL")
+        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
+        product_type = bybit_symbol.product_type
+        time_in_force = self._determine_time_in_force(order)
+        order_side = self._enum_parser.parse_nautilus_order_side(order.side)
+        order_type = self._enum_parser.parse_nautilus_order_type(order.order_type)
+        trigger_direction = self._enum_parser.parse_trigger_direction(order.order_type, order.side)
+        trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
+        await self._http_account.place_order(
+            product_type=product_type,
+            symbol=bybit_symbol.raw_symbol,
+            side=order_side,
+            order_type=order_type,
+            quantity=str(order.quantity),
+            quote_quantity=order.is_quote_quantity,
+            time_in_force=time_in_force,
+            client_order_id=str(order.client_order_id),
+            reduce_only=order.is_reduce_only if order.is_reduce_only else None,
+            tpsl_mode=BybitTpSlMode.FULL,
+            trigger_direction=trigger_direction,
+            trigger_type=trigger_type,
+            trigger_price=str(order.trigger_price),
+        )
+
+    async def _submit_limit_if_touched_order(self, order: LimitIfTouchedOrder) -> None:
+        self._log.warning(f"{order_type_to_str(order)} STILL EXPERIMENTAL")
+        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
+        product_type = bybit_symbol.product_type
+        time_in_force = self._determine_time_in_force(order)
+        order_side = self._enum_parser.parse_nautilus_order_side(order.side)
+        order_type = self._enum_parser.parse_nautilus_order_type(order.order_type)
+        trigger_direction = self._enum_parser.parse_trigger_direction(order.order_type, order.side)
+        trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
+        await self._http_account.place_order(
+            product_type=product_type,
+            symbol=bybit_symbol.raw_symbol,
+            side=order_side,
+            order_type=order_type,
+            quantity=str(order.quantity),
+            quote_quantity=order.is_quote_quantity,
+            time_in_force=time_in_force,
+            client_order_id=str(order.client_order_id),
+            reduce_only=order.is_reduce_only if order.is_reduce_only else None,
+            tpsl_mode=BybitTpSlMode.PARTIAL,
+            trigger_direction=trigger_direction,
+            trigger_type=trigger_type,
+            tp_trigger_price=str(order.trigger_price),
+            tp_order_type=BybitOrderType.LIMIT,
         )
 
     def _handle_ws_message(self, raw: bytes) -> None:
