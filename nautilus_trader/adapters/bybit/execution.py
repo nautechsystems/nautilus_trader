@@ -190,6 +190,8 @@ class BybitExecutionClient(LiveExecutionClient):
             OrderType.LIMIT: self._submit_limit_order,
             OrderType.STOP_MARKET: self._submit_stop_market_order,
             OrderType.STOP_LIMIT: self._submit_stop_limit_order,
+            OrderType.MARKET_IF_TOUCHED: self._submit_market_if_touched_order,
+            OrderType.LIMIT_IF_TOUCHED: self._submit_limit_if_touched_order,
         }
 
         # Decoders
@@ -310,7 +312,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 enum_parser=self._enum_parser,
                 ts_init=self._clock.timestamp_ns(),
             )
-            self._log.debug(f"Received {order_report}")
+            self._log.debug(f"Received {order_report}", LogColor.MAGENTA)
             return order_report
         except BybitError as e:
             self._log.error(f"Failed to generate OrderStatusReport: {e}")
@@ -610,15 +612,17 @@ class BybitExecutionClient(LiveExecutionClient):
                 self._order_retries.pop(order.client_order_id, None)
                 break
             except KeyError:
-                self._log.error(f"Unsupported order type, was {order.order_type}")
+                raise RuntimeError(f"unsupported order type, was {order.order_type}")
             except BybitError as e:
                 self._log.error(repr(e))
+                break
 
     def _check_order_validity(self, order: Order, product_type: BybitProductType) -> bool:
         # Check order type valid
         if order.order_type not in self._enum_parser.valid_order_types:
             self._log.error(
-                f"Cannot submit {order} has invalid order type {order.order_type}, unsupported on Bybit",
+                f"Cannot submit {order} has invalid order type {order_type_to_str(order.order_type)}, "
+                "unsupported on Bybit",
             )
             return False
 
@@ -642,12 +646,11 @@ class BybitExecutionClient(LiveExecutionClient):
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         time_in_force = self._determine_time_in_force(order)
         order_side = self._enum_parser.parse_nautilus_order_side(order.side)
-        order_type = self._enum_parser.parse_nautilus_order_type(order.order_type)
         await self._http_account.place_order(
             product_type=bybit_symbol.product_type,
             symbol=bybit_symbol.raw_symbol,
             side=order_side,
-            order_type=order_type,
+            order_type=BybitOrderType.MARKET,
             quantity=str(order.quantity),
             quote_quantity=order.is_quote_quantity,
             time_in_force=time_in_force,
@@ -659,12 +662,11 @@ class BybitExecutionClient(LiveExecutionClient):
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         time_in_force = self._determine_time_in_force(order)
         order_side = self._enum_parser.parse_nautilus_order_side(order.side)
-        order_type = self._enum_parser.parse_nautilus_order_type(order.order_type)
         await self._http_account.place_order(
             product_type=bybit_symbol.product_type,
             symbol=bybit_symbol.raw_symbol,
             side=order_side,
-            order_type=order_type,
+            order_type=BybitOrderType.LIMIT,
             quantity=str(order.quantity),
             quote_quantity=order.is_quote_quantity,
             price=str(order.price),
@@ -674,19 +676,18 @@ class BybitExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_stop_market_order(self, order: StopMarketOrder) -> None:
-        self._log.warning(f"{order_type_to_str(order)} STILL EXPERIMENTAL")
+        self._log.warning(f"{order_type_to_str(order.order_type)} STILL EXPERIMENTAL")
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
         time_in_force = self._determine_time_in_force(order)
         order_side = self._enum_parser.parse_nautilus_order_side(order.side)
-        order_type = self._enum_parser.parse_nautilus_order_type(order.order_type)
         trigger_direction = self._enum_parser.parse_trigger_direction(order.order_type, order.side)
         trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
         await self._http_account.place_order(
             product_type=product_type,
             symbol=bybit_symbol.raw_symbol,
             side=order_side,
-            order_type=order_type,
+            order_type=BybitOrderType.MARKET,
             quantity=str(order.quantity),
             quote_quantity=order.is_quote_quantity,
             time_in_force=time_in_force,
@@ -701,19 +702,18 @@ class BybitExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_stop_limit_order(self, order: StopLimitOrder) -> None:
-        self._log.warning(f"{order_type_to_str(order)} STILL EXPERIMENTAL")
+        self._log.warning(f"{order_type_to_str(order.order_type)} STILL EXPERIMENTAL")
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
         time_in_force = self._determine_time_in_force(order)
         order_side = self._enum_parser.parse_nautilus_order_side(order.side)
-        order_type = self._enum_parser.parse_nautilus_order_type(order.order_type)
         trigger_direction = self._enum_parser.parse_trigger_direction(order.order_type, order.side)
         trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
         await self._http_account.place_order(
             product_type=product_type,
             symbol=bybit_symbol.raw_symbol,
             side=order_side,
-            order_type=order_type,
+            order_type=BybitOrderType.LIMIT,
             quantity=str(order.quantity),
             quote_quantity=order.is_quote_quantity,
             time_in_force=time_in_force,
@@ -727,12 +727,12 @@ class BybitExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_market_if_touched_order(self, order: MarketIfTouchedOrder) -> None:
-        self._log.warning(f"{order_type_to_str(order)} STILL EXPERIMENTAL")
+        self._log.warning(f"{order_type_to_str(order.order_type)} STILL EXPERIMENTAL")
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
         time_in_force = self._determine_time_in_force(order)
         order_side = self._enum_parser.parse_nautilus_order_side(order.side)
-        order_type = self._enum_parser.parse_nautilus_order_type(order.order_type)
+        order_type = BybitOrderType.MARKET
         trigger_direction = self._enum_parser.parse_trigger_direction(order.order_type, order.side)
         trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
         await self._http_account.place_order(
@@ -752,19 +752,18 @@ class BybitExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_limit_if_touched_order(self, order: LimitIfTouchedOrder) -> None:
-        self._log.warning(f"{order_type_to_str(order)} STILL EXPERIMENTAL")
+        self._log.warning(f"{order_type_to_str(order.order_type)} STILL EXPERIMENTAL")
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
         time_in_force = self._determine_time_in_force(order)
         order_side = self._enum_parser.parse_nautilus_order_side(order.side)
-        order_type = self._enum_parser.parse_nautilus_order_type(order.order_type)
         trigger_direction = self._enum_parser.parse_trigger_direction(order.order_type, order.side)
         trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
         await self._http_account.place_order(
             product_type=product_type,
             symbol=bybit_symbol.raw_symbol,
             side=order_side,
-            order_type=order_type,
+            order_type=BybitOrderType.MARKET,
             quantity=str(order.quantity),
             quote_quantity=order.is_quote_quantity,
             time_in_force=time_in_force,
@@ -817,7 +816,10 @@ class BybitExecutionClient(LiveExecutionClient):
         if instrument is None:
             raise ValueError(f"Cannot handle trade event: instrument {instrument_id} not found")
 
-        order_type = self._enum_parser.parse_bybit_order_type(execution.orderType)
+        order_type = self._enum_parser.parse_bybit_order_type(
+            execution.orderType,
+            execution.stopOrderType,
+        )
         self.generate_order_filled(
             strategy_id=strategy_id,
             instrument_id=instrument_id,

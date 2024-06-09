@@ -666,8 +666,8 @@ class BybitWsAccountOrder(msgspec.Struct):
     smpGroup: int
     smpOrderId: str
     feeCurrency: str
-    triggerBy: BybitTriggerType | None = None
-    stopOrderType: BybitStopOrderType | None = None
+    triggerBy: BybitTriggerType
+    stopOrderType: BybitStopOrderType
     tpslMode: str | None = None
     createType: str | None = None
 
@@ -684,7 +684,7 @@ class BybitWsAccountOrder(msgspec.Struct):
             client_order_id=ClientOrderId(str(self.orderLinkId)),
             venue_order_id=VenueOrderId(str(self.orderId)),
             order_side=enum_parser.parse_bybit_order_side(self.side),
-            order_type=enum_parser.parse_bybit_order_type(self.orderType),
+            order_type=enum_parser.parse_bybit_order_type(self.orderType, self.stopOrderType),
             time_in_force=enum_parser.parse_bybit_time_in_force(self.timeInForce),
             order_status=enum_parser.parse_bybit_order_status(self.orderStatus),
             price=Price.from_str(self.price) if self.price else None,
@@ -740,7 +740,7 @@ class BybitWsAccountExecution(msgspec.Struct):
     isLeverage: str
     closedSize: str
     seq: int
-    stopOrderType: BybitStopOrderType | None = None
+    stopOrderType: BybitStopOrderType
 
 
 class BybitWsAccountExecutionMsg(msgspec.Struct):
