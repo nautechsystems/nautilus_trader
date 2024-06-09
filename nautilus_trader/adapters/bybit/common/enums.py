@@ -240,14 +240,10 @@ class BybitEnumParser:
             b: a for a, b in self.bybit_to_nautilus_order_side.items()
         }
         self.bybit_to_nautilus_order_type = {
-            BybitOrderType.MARKET: OrderType.MARKET,
-            BybitOrderType.MARKET: OrderType.MARKET_IF_TOUCHED,
-            BybitOrderType.MARKET: OrderType.STOP_MARKET,
-            BybitOrderType.MARKET: OrderType.TRAILING_STOP_MARKET,
-            BybitOrderType.LIMIT: OrderType.LIMIT,
-            BybitOrderType.LIMIT: OrderType.LIMIT_IF_TOUCHED,
-            BybitOrderType.LIMIT: OrderType.STOP_LIMIT,
-            BybitOrderType.LIMIT: OrderType.TRAILING_STOP_LIMIT,
+            (BybitOrderType.MARKET, BybitStopOrderType.NONE): OrderType.MARKET,
+            (BybitOrderType.LIMIT, BybitStopOrderType.NONE): OrderType.LIMIT,
+            (BybitOrderType.MARKET, BybitStopOrderType.STOP): OrderType.STOP_MARKET,
+            (BybitOrderType.LIMIT, BybitStopOrderType.STOP): OrderType.STOP_LIMIT,
         }
         self.nautilus_to_bybit_order_type = {
             b: a for a, b in self.bybit_to_nautilus_order_type.items()
@@ -272,15 +268,19 @@ class BybitEnumParser:
             BybitOrderStatus.FILLED: OrderStatus.FILLED,
             BybitOrderStatus.CANCELED: OrderStatus.CANCELED,
             BybitOrderStatus.PARTIALLY_FILLED: OrderStatus.PARTIALLY_FILLED,
+            BybitOrderStatus.DEACTIVATED: OrderStatus.EXPIRED,
         }
         self.nautilus_to_bybit_order_status = {
             b: a for a, b in self.bybit_to_nautilus_order_status.items()
         }
+        self.bybit_to_nautilus_trigger_type = {
+            BybitTriggerType.NONE: TriggerType.NO_TRIGGER,
+            BybitTriggerType.LAST_PRICE: TriggerType.LAST_TRADE,
+            BybitTriggerType.MARK_PRICE: TriggerType.MARK_PRICE,
+            BybitTriggerType.INDEX_PRICE: TriggerType.INDEX_PRICE,
+        }
         self.nautilus_to_bybit_trigger_type = {
-            TriggerType.DEFAULT: BybitTriggerType.LAST_PRICE,
-            TriggerType.LAST_TRADE: BybitTriggerType.LAST_PRICE,
-            TriggerType.MARK_PRICE: BybitTriggerType.MARK_PRICE,
-            TriggerType.INDEX_PRICE: BybitTriggerType.INDEX_PRICE,
+            b: a for a, b in self.bybit_to_nautilus_trigger_type.items()
         }
 
         # klines
@@ -308,6 +308,10 @@ class BybitEnumParser:
         self.valid_order_types = {
             OrderType.MARKET,
             OrderType.LIMIT,
+            OrderType.MARKET_IF_TOUCHED,
+            OrderType.LIMIT_IF_TOUCHED,
+            OrderType.STOP_MARKET,
+            OrderType.STOP_LIMIT,
         }
         self.valid_time_in_force = {
             TimeInForce.GTC,
@@ -330,10 +334,17 @@ class BybitEnumParser:
     def parse_nautilus_order_side(self, order_side: OrderSide) -> BybitOrderSide:
         return check_dict_keys(order_side, self.nautilus_to_bybit_order_side)
 
-    def parse_bybit_order_type(self, order_type: BybitOrderType) -> OrderType:
-        return check_dict_keys(order_type, self.bybit_to_nautilus_order_type)
+    def parse_bybit_order_type(
+        self,
+        order_type: BybitOrderType,
+        stop_order_type: BybitStopOrderType,
+    ) -> OrderType:
+        return check_dict_keys((order_type, stop_order_type), self.bybit_to_nautilus_order_type)
 
-    def parse_nautilus_order_type(self, order_type: OrderType) -> BybitOrderType:
+    def parse_nautilus_order_type(
+        self,
+        order_type: OrderType,
+    ) -> tuple[BybitOrderType, BybitStopOrderType]:
         return check_dict_keys(order_type, self.nautilus_to_bybit_order_type)
 
     def parse_nautilus_time_in_force(self, time_in_force: TimeInForce) -> BybitTimeInForce:
@@ -346,6 +357,9 @@ class BybitEnumParser:
 
     def parse_nautilus_trigger_type(self, trigger_type: TriggerType) -> BybitTriggerType:
         return check_dict_keys(trigger_type, self.nautilus_to_bybit_trigger_type)
+
+    def parse_bybit_trigger_type(self, trigger_type: BybitTriggerType) -> TriggerType:
+        return check_dict_keys(trigger_type, self.bybit_to_nautilus_trigger_type)
 
     def parse_trigger_direction(
         self,
