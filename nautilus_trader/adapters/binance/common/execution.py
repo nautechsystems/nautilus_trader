@@ -18,6 +18,8 @@ from decimal import Decimal
 
 import pandas as pd
 
+from nautilus_trader.adapters.binance.common.constants import BINANCE_MAX_CALLBACK_RATE
+from nautilus_trader.adapters.binance.common.constants import BINANCE_MIN_CALLBACK_RATE
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
@@ -775,6 +777,18 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             )
             return
 
+        # Convert basis points to percentage rounded to 1 decimal place
+        callback_rate = Decimal(f"{order.trailing_offset / 100:.1f}")
+
+        if callback_rate < BINANCE_MIN_CALLBACK_RATE or callback_rate > BINANCE_MAX_CALLBACK_RATE:
+            self._log.error(
+                f"Cannot submit order: invalid `order.trailing_offset`, was "
+                f"{order.trailing_offset} {trailing_offset_type_to_str(order.trailing_offset_type)} "
+                f"rounded to {callback_rate}%, "
+                f"must in range [{BINANCE_MIN_CALLBACK_RATE}, {BINANCE_MAX_CALLBACK_RATE}]",
+            )
+            return
+
         # Ensure activation price
         activation_price: Price | None = order.trigger_price
         if not activation_price:
@@ -782,9 +796,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             trade = self._cache.trade_tick(order.instrument_id)
             if quote:
                 if order.side == OrderSide.BUY:
-                    activation_price = quote.ask_price
-                elif order.side == OrderSide.SELL:
                     activation_price = quote.bid_price
+                elif order.side == OrderSide.SELL:
+                    activation_price = quote.ask_price
             elif trade:
                 activation_price = trade.price
             else:
@@ -802,7 +816,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             good_till_date=self._determine_good_till_date(order, time_in_force),
             quantity=str(order.quantity),
             activation_price=str(activation_price),
-            callback_rate=str(order.trailing_offset / 100),
+            callback_rate=str(callback_rate),
             working_type=working_type,
             reduce_only=self._determine_reduce_only_str(order),
             new_client_order_id=order.client_order_id.value,
