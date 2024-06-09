@@ -25,6 +25,7 @@ from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.adapters.binance.http.error import BinanceServerError
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 from nautilus_trader.core.nautilus_pyo3 import HttpResponse
@@ -150,6 +151,8 @@ class BinanceHttpClient:
         if payload:
             url_path += "?" + urllib.parse.urlencode(payload)
             payload = None  # Don't send payload in the body
+
+        self._log.debug(f"{url_path} {payload}", LogColor.MAGENTA)
 
         response: HttpResponse = await self._client.request(
             http_method,

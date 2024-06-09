@@ -366,6 +366,8 @@ class EMACrossTrailingStop(Strategy):
             if self.trailing_stop and event.client_order_id == self.trailing_stop.client_order_id:
                 self.trailing_stop = None
         elif isinstance(event, PositionOpened | PositionChanged):
+            if self.trailing_stop:
+                return  # Already a trailing stop
             if self.entry and event.opening_order_id == self.entry.client_order_id:
                 if event.entry == OrderSide.BUY:
                     self.position_id = event.position_id

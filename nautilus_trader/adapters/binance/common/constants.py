@@ -13,9 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 from typing import Final
 
 from nautilus_trader.model.identifiers import Venue
 
 
 BINANCE_VENUE: Final[Venue] = Venue("BINANCE")
+
+BINANCE_MIN_CALLBACK_RATE: Final[Decimal] = Decimal("0.1")
+BINANCE_MAX_CALLBACK_RATE: Final[Decimal] = Decimal("10.0")

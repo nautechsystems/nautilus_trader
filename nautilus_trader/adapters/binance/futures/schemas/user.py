@@ -35,6 +35,7 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -279,6 +280,18 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
         venue_order_id = VenueOrderId(str(self.i))
         instrument_id = exec_client._get_cached_instrument_id(self.s)
         strategy_id = exec_client._cache.strategy_id_for_order(client_order_id)
+
+        instrument = exec_client._instrument_provider.find(instrument_id=instrument_id)
+        if instrument is None:
+            raise ValueError(f"Cannot handle trade: instrument {instrument_id} not found")
+
+        price_precision = instrument.price_precision
+        size_precision = instrument.size_precision
+
+        order = exec_client._cache.order(client_order_id)
+        if not order:
+            exec_client._log.error(f"Cannot find order {client_order_id!r}")
+
         if strategy_id is None:
             report = self.parse_to_order_status_report(
                 account_id=exec_client.account_id,
@@ -291,6 +304,9 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
             )
             exec_client._send_order_status_report(report)
         elif self.x == BinanceExecutionType.NEW:
+            if order.order_type == OrderType.TRAILING_STOP_MARKET and order.is_open:
+                return  # Already accepted: this is an update
+
             exec_client.generate_order_accepted(
                 strategy_id=strategy_id,
                 instrument_id=instrument_id,
@@ -299,10 +315,6 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
                 ts_event=ts_event,
             )
         elif self.x == BinanceExecutionType.TRADE:
-            instrument = exec_client._instrument_provider.find(instrument_id=instrument_id)
-            if instrument is None:
-                raise ValueError(f"Cannot handle trade: instrument {instrument_id} not found")
-
             # Determine commission
             commission_asset: str | None = self.N
             commission_amount: str | None = self.n
@@ -325,8 +337,8 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
                 trade_id=TradeId(str(self.t)),  # Trade ID
                 order_side=exec_client._enum_parser.parse_binance_order_side(self.S),
                 order_type=exec_client._enum_parser.parse_binance_order_type(self.o),
-                last_qty=Quantity(float(self.l), instrument.size_precision),
-                last_px=Price(float(self.L), instrument.price_precision),
+                last_qty=Quantity(float(self.l), size_precision),
+                last_px=Price(float(self.L), price_precision),
                 quote_currency=instrument.quote_currency,
                 commission=commission,
                 liquidity_side=LiquiditySide.MAKER if self.m else LiquiditySide.TAKER,
@@ -343,28 +355,43 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
                 ts_event=ts_event,
             )
         elif self.x == BinanceExecutionType.AMENDMENT:
-            instrument = exec_client._instrument_provider.find(instrument_id=instrument_id)
-            if instrument is None:
-                raise ValueError(f"Cannot handle amendment: instrument {instrument_id} not found")
-
             exec_client.generate_order_updated(
                 strategy_id=strategy_id,
                 instrument_id=instrument_id,
                 client_order_id=client_order_id,
                 venue_order_id=venue_order_id,
-                quantity=Quantity(float(self.q), instrument.size_precision),
-                price=Price(float(self.p), instrument.price_precision),
+                quantity=Quantity(float(self.q), size_precision),
+                price=Price(float(self.p), price_precision),
                 trigger_price=None,
                 ts_event=ts_event,
             )
         elif self.x == BinanceExecutionType.EXPIRED:
-            exec_client.generate_order_expired(
-                strategy_id=strategy_id,
-                instrument_id=instrument_id,
-                client_order_id=client_order_id,
-                venue_order_id=venue_order_id,
-                ts_event=ts_event,
-            )
+            instrument = exec_client._instrument_provider.find(instrument_id=instrument_id)
+            if instrument is None:
+                raise ValueError(f"Cannot handle amendment: instrument {instrument_id} not found")
+
+            price_precision = instrument.price_precision
+            size_precision = instrument.size_precision
+
+            if order.order_type == OrderType.TRAILING_STOP_MARKET:
+                exec_client.generate_order_updated(
+                    strategy_id=strategy_id,
+                    instrument_id=instrument_id,
+                    client_order_id=client_order_id,
+                    venue_order_id=venue_order_id,
+                    quantity=Quantity(float(self.q), size_precision),
+                    price=Price(float(self.p), price_precision),
+                    trigger_price=(Price(float(self.sp), price_precision) if self.sp else None),
+                    ts_event=ts_event,
+                )
+            else:
+                exec_client.generate_order_expired(
+                    strategy_id=strategy_id,
+                    instrument_id=instrument_id,
+                    client_order_id=client_order_id,
+                    venue_order_id=venue_order_id,
+                    ts_event=ts_event,
+                )
         else:
             # Event not handled
             exec_client._log.warning(f"Received unhandled {self}")
