@@ -8,21 +8,6 @@ features and functionality of the platform.
 You can choose different subjects on the left, which are generally ordered from
 highest to lowest level (although they are self-contained and can be read in any order).
 
-```{eval-rst}
-.. toctree::
-   :maxdepth: 2
-   :glob:
-   :titlesonly:
-   :hidden:
-   
-   actors.md
-   custom_data.md
-   advanced_orders.md
-   emulated_orders.md
-   synthetic_instruments.md
-   portfolio_statistics.md
-```
-
 ## Guides
 
 Explore more advanced concepts of NautilusTrader through these guides:

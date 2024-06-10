@@ -36,10 +36,10 @@ self.msgbus.publish("MyTopic", "MyMessage")
 The `MessageBus` can be 'backed' with any database or message broker technology which has an 
 integration written for it, this then allows external publishing of messages.
 
-```{note}
+:::note
 Currently Redis is supported for all serializable messages which are published.
 The minimum supported Redis version is 6.2.0.
-```
+:::
 
 Under the hood, when a backing database (or any other compatible technology) is configured,
 all outgoing messages are first serialized. These serialized messages are then transmitted via a 
@@ -102,10 +102,10 @@ Two encodings are currently supported by the built-in `Serializer` used by the `
 
 Use the `encoding` config option to control the message writing encoding.
 
-```{tip}
+:::tip
 The `msgpack` encoding is used by default as it offers the most optimal serialization and memory performance.
 It's recommended to use `json` encoding for human readability when performance is not a primary concern.
-```
+:::
 
 ### Timestamp formatting
 
@@ -167,9 +167,9 @@ message_bus = MessageBusConfig(
 The `autotrim_mins` configuration parameter allows you to specify the lookback window in minutes for automatic stream trimming in your message streams.
 Automatic stream trimming helps manage the size of your message streams by removing older messages, ensuring that the streams remain manageable in terms of storage and performance.
 
-```{note}
+:::note
 The current Redis implementation will maintain the `autotrim_mins` as a maximum width (plus roughly a minute, as streams are trimmed no more than once per minute).
 Rather than for instance a maximum lookback window based on the current wall clock time.
+:::
 
 The minimum supported Redis version is 6.2.0.
-```

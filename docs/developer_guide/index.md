@@ -1,19 +1,5 @@
 # Developer Guide
 
-```{eval-rst}
-.. toctree::
-   :maxdepth: 2
-   :hidden:
-   
-   environment_setup.md
-   coding_standards.md
-   cython.md
-   rust.md
-   testing.md
-   adapters.md
-   packaged_data.md
-```
-
 Welcome to the developer guide for NautilusTrader!
 
 Here you will find information related to developing and extending the NautilusTrader codebase. 

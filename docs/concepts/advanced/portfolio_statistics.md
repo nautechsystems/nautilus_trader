@@ -47,11 +47,11 @@ stat = WinRate()
 engine.portfolio.analyzer.register_statistic(stat)
 ```
 
-```{tip}
+:::tip
 Ensure your statistic is robust to degenerate inputs such as ``None``, empty series, or insufficient data.
 
 The expectation is that you would then return ``None``, NaN or a reasonable default.
-```
+:::
 
 ## Backtest Analysis
 Following a backtest run a performance analysis will be carried out by passing realized PnLs, returns, positions and orders data to each registered

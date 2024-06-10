@@ -116,21 +116,21 @@ engine.add_data(ticks)
 
 ```
 
-```{note}
+:::note
 The amount of and variety of data types is only limited by machine resources and your imagination (custom types are possible).
-```
+:::
 
-```{note}
+:::note
 Multiple venues can be used for backtesting, only limited by machine resources.
-```
+:::
 
 ## Adding strategies
 
-Now we can add the trading strategies we'd like to run as part of our system.
+Now we can add the trading strategies we’d like to run as part of our system.
 
-```{note}
+:::note
 Multiple strategies and instruments can be used for backtesting, only limited by machine resources.
-```
+:::
 
 Firstly, initialize a strategy configuration, then use this to initialize a strategy which we can add to the engine:
 ```python
@@ -161,9 +161,9 @@ and add the actual `ExecAlgorithm` component which will execute the algorithm - 
 NautilusTrader allows us to build up very complex systems of custom components. Here we show just one of the custom components
 available, in this case a built-in TWAP execution algorithm. It is configured and added to the engine in generally the same pattern as for strategies:
 
-```{note}
+:::note
 Multiple execution algorithms can be used for backtesting, only limited by machine resources.
-```
+:::
 
 ```python
 # Instantiate and add your execution algorithm

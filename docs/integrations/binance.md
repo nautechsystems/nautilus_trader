@@ -19,10 +19,10 @@ which can be used together or separately depending on the users needs.
 - `BinanceLiveDataClientFactory` - Factory for Binance data clients (used by the trading node builder)
 - `BinanceLiveExecClientFactory` - Factory for Binance execution clients (used by the trading node builder)
 
-```{note}
+:::note
 Most users will simply define a configuration for a live trading node (as below),
 and won't need to necessarily work with these lower level components directly.
-```
+:::
 
 ## Data types
 
@@ -230,9 +230,9 @@ instrument_provider=InstrumentProviderConfig(
 
 ## Order books
 
-```{note}
+:::note
 The Nautilus team is currently working on this section.
-```
+:::
 
 Order books can be maintained at full or partial depths depending on the
 subscription options. WebSocket stream throttling is different between
@@ -269,11 +269,11 @@ where the former does not provide an event timestamp, so the `ts_init` is used (
 It's possible to subscribe to Binance specific data streams as they become available to the
 adapter over time.
 
-```{note}
+:::note
 Bars are not considered 'Binance specific' and can be subscribed to in the normal way.
 However, as more adapters are built out which need for example mark price and funding rate updates, then these
 methods may eventually become first-class (not requiring custom/generic subscriptions as below).
-```
+:::
 
 ### BinanceFuturesMarkPriceUpdate
 

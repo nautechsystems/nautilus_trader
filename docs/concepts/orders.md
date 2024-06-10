@@ -27,12 +27,12 @@ The core order types available for the platform are (using the enum values):
 - `TRAILING_STOP_MARKET`
 - `TRAILING_STOP_LIMIT`
 
-```{note}
+:::note
 NautilusTrader has unified the API for a large set of order types and execution instructions, however
 not all of these are available for every exchange. If an order is submitted where an instruction or option
 is not available, then the system will not submit the order and an error will be logged with
 a clear explanatory message.
-```
+:::
 
 ### Terminology
 
@@ -140,9 +140,9 @@ examples will leverage an `OrderFactory` from within a `Strategy` context.
 
 [API Reference](https://docs.nautilustrader.io/api_reference/common.html#module-nautilus_trader.common.factories)
 
-```{note}
+:::note
 For clarity, any optional parameters will be clearly marked with a comment which includes the default value.
-```
+:::
 
 ## Order Types
 
