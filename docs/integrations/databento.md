@@ -12,13 +12,12 @@ The capabilities of this adapter include:
 - Loading historical data from DBN files and decoding into Nautilus objects for backtesting or writing to the data catalog
 - Requesting historical data which is decoded to Nautilus objects to support live trading and backtesting
 - Subscribing to real-time data feeds which are decoded to Nautilus objects to support live trading and sandbox environments
-
-```{tip}
+:::tip
 [Databento](https://databento.com/signup) currently offers 125 USD in free data credits (historical data only) for new account sign-ups.
 
 With careful requests, this is more than enough for testing and evaluation purposes.
 It's recommended you make use of the [/metadata.get_cost](https://databento.com/docs/api-reference-historical/metadata/metadata-get-cost) endpoint.
-```
+:::
 
 ## Overview
 
@@ -329,10 +328,10 @@ node startup, to then be able to replay data from the beginning of the session. 
 arrive after start, then an error will be logged (and the subscription ignored).
 
 There is no such limitation for any of the other Databento schemas.
+:::
 
 A single `DatabentoHistoricalClient` instance is reused between the `DatabentoInstrumentProvider` and `DatabentoDataClient`,
 which makes historical instrument definitions and data requests.
-:::
 
 ## Configuration
 
