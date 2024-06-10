@@ -158,7 +158,7 @@ class BacktestNode:
             except Exception as e:
                 # Broad catch all prevents a single backtest run from halting
                 # the execution of the other backtests (such as a zero balance exception).
-                Logger(type(self).__name__).error(f"Error running back: {e}")
+                Logger(type(self).__name__).error(f"Error running backtest: {e}")
                 Logger(type(self).__name__).info(f"Config: {config}")
 
         return results
