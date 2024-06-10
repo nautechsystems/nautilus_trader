@@ -66,7 +66,7 @@ docs: docs-python docs-rust
 
 .PHONY: docs-python
 docs-python: install-just-deps-all
-	poetry run sphinx-build -M markdown ./docs/api_reference ./docs/build/api_reference
+	poetry run sphinx-build -M markdown ./docs/api_reference ./api_reference
 
 .PHONY: docs-rust
 docs-rust:
