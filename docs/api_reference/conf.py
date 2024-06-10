@@ -13,6 +13,7 @@
 
 import nautilus_trader
 
+
 # -- Project information -----------------------------------------------------
 project = "NautilusTrader"
 author = "Nautech Systems Pty Ltd."
