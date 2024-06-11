@@ -433,7 +433,8 @@ cdef class Instrument(Data):
         Price
 
         """
-        return Price(round(float(value), self._min_price_increment_precision), precision=self.price_precision)
+        cdef double rounded_value = round(float(value), self._min_price_increment_precision)
+        return Price(rounded_value, precision=self.price_precision)
 
     cpdef Price next_bid_price(self, double value, int num_ticks=0):
         """
@@ -512,7 +513,17 @@ cdef class Instrument(Data):
         Quantity
 
         """
-        return Quantity(round(float(value), self._min_size_increment_precision), precision=self.size_precision)
+        # Check if original_value is greater than zero and rounded_value is "effectively" zero
+        cdef double original_value = float(value)
+        cdef double rounded_value = round(original_value, self._min_size_increment_precision)
+        cdef double epsilon = 10 ** -(self._min_size_increment_precision + 1)
+        if original_value > 0.0 and abs(rounded_value) < epsilon:
+            raise ValueError(
+                f"Invalid `value` for quantity: {value} was rounded to zero "
+                f"due to size increment {self.size_increment} "
+                f"and size precision {self.size_precision}",
+            )
+        return Quantity(rounded_value, precision=self.size_precision)
 
     cpdef Money notional_value(
         self,
