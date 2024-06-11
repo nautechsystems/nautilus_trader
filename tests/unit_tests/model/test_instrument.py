@@ -345,6 +345,14 @@ class TestInstrument:
         # Assert
         assert str(price) == expected_str
 
+    def test_make_qty_when_non_zero_value_rounded_to_zero_raises_exception(self):
+        # Arrange
+        onethousandrats = TestInstrumentProvider.onethousandrats_perp_binance()
+
+        # Act, Assert
+        with pytest.raises(ValueError):
+            onethousandrats.make_qty(0.004)
+
     @pytest.mark.parametrize(
         ("value", "expected_str"),
         [
