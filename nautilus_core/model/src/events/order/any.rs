@@ -28,7 +28,7 @@ use crate::{
     identifiers::{ClientOrderId, StrategyId},
 };
 
-/// Wraps an [`OrderEvent`] allowing polymorphism.
+/// Wraps an `OrderEvent` allowing polymorphism.
 #[derive(Clone, PartialEq, Eq, Display, Debug, Serialize, Deserialize)]
 pub enum OrderEventAny {
     Initialized(OrderInitialized),
