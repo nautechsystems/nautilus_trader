@@ -1,19 +1,5 @@
 # Integrations
 
-```{eval-rst}
-.. toctree::
-   :maxdepth: 2
-   :glob:
-   :titlesonly:
-   :hidden:
-   
-   betfair.md
-   binance.md
-   bybit.md
-   databento.md
-   ib.md
-```
-
 NautilusTrader is designed in a modular way to work with *adapters* which provide
 connectivity to trading venues and data providers - converting their raw API
 into a unified interface. The following integrations are currently supported:

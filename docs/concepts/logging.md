@@ -24,9 +24,9 @@ Log level (`LogLevel`) values include (and generally match Rusts `tracing` level
 - `WARNING` or `WARN`
 - `ERROR`
 
-```{note}
+:::note
 See the `LoggingConfig` [API Reference](../api_reference/config.md) for further details.
-```
+:::
 
 Logging can be configured in the following ways:
 - Minimum `LogLevel` for stdout/stderr
@@ -113,10 +113,10 @@ log_guard = init_logging()
 logger = Logger("MyLogger")
 ```
 
-```{note}
+:::note
 See the `init_logging` [API Reference](../api_reference/common) for further details.
-```
+:::
 
-```{warning}
+:::warning
 Only one logging system can be initialized per process with an `init_logging` call, and the `LogGuard` which is returned must be kept alive for the lifetime of the program.
-```
+:::

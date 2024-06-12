@@ -14,9 +14,9 @@ useful metrics based on its component instruments.
 In the future, we plan to support order management for synthetic instruments, which would involve 
 trading their component instruments based on the behavior of the synthetic instrument.
 
-```{note}
+:::note
 Note that the venue for a synthetic instrument is always designated as `'SYNTH'`.
-```
+:::
 
 ## Formula
 A synthetic instrument is composed of a combination of two or more component instruments (which
@@ -27,9 +27,9 @@ from the incoming component instrument prices.
 
 See the `evalexpr` documentation for a full description of available features, operators and precedence.
 
-```{tip}
+:::tip
 Before defining a new synthetic instrument, ensure that all component instruments are already defined and exist in the cache.
-```
+:::
 
 ## Subscribing
 The following example demonstrates the creation of a new synthetic instrument with an actor/strategy. 
@@ -66,9 +66,9 @@ self.add_synthetic(synthetic)
 self.subscribe_quote_ticks(self._synthetic_id)
 ```
 
-```{note}
+:::note
 The `instrument_id` for the synthetic instrument in the above example will be structured as `{symbol}.{SYNTH}`, resulting in `'BTC-ETH:BINANCE.SYNTH'`.
-```
+:::
 
 ## Updating formulas
 It's also possible to update a synthetic instrument formulas at any time. The following example

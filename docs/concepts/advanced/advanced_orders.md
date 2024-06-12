@@ -15,9 +15,9 @@ specific exchange they are being routed to.
 - `OCO` are linked orders with `linked_order_ids` which are contingent on the other(s) (one-cancels-other when triggered).
 - `OUO` are linked orders with `linked_order_ids` which are contingent on the other(s) (one-updates-other when triggered or modified).
 
-```{note}
+:::note
 These contingency types relate to ContingencyType FIX tag <1385> https://www.onixs.biz/fix-dictionary/5.0.sp2/tagnum_1385.html.
-```
+:::
 
 ### *'One Triggers the Other'* (OTO)
 An OTO orders involves two orders—a parent order and a child order. The parent order is a live 
@@ -49,7 +49,7 @@ If the market moves against the trade, the stop-loss order will be filled, closi
 Bracket orders can be created using the [OrderFactory](https://docs.nautilustrader.io/api_reference/common.html#module-nautilus_trader.common.factories) class in the Nautilus Trader API. 
 This allows for easy and efficient creation of bracket orders, with different order types, parameters and instructions.
 
-```{warning}
-You should be aware of the margin requirements of positions, as bracketing a position will consume 
+:::warning
+You should be aware of the margin requirements of positions, as bracketing a position will consume
 more order margin.
-```
+:::

@@ -17,10 +17,10 @@ For example, on the Binance Futures crypto exchange, the Ethereum Perpetual Futu
 All native symbols _should_ be unique for a venue (this is not always the case e.g. Binance share native symbols between spot and futures markets), 
 and the `{symbol.venue}` combination _must_ be unique for a Nautilus system.
 
-```{warning}
+:::warning
 The correct instrument must be matched to a market dataset such as ticks or order book data for logically sound operation.
 An incorrectly specified instrument may truncate data or otherwise produce surprising results.
-```
+:::
 
 ## Backtesting
 Generic test instruments can be instantiated through the `TestInstrumentProvider`:
@@ -97,10 +97,10 @@ The instrument objects are a convenient way to organize the specification of an
 instrument through _read-only_ properties. Correct price and quantity precisions, as well as 
 minimum price and size increments, multipliers and standard lot sizes, are available.
 
-```{note}
+:::note
 Most of these limits are checked by the Nautilus `RiskEngine`, otherwise invalid
 values for prices and quantities _can_ result in the exchange rejecting orders.
-```
+:::
 
 ## Limits
 Certain value limits are optional for instruments and can be `None`, these are exchange
@@ -112,12 +112,13 @@ dependent and can include:
 - `max_price` (maximum valid quote or order price)
 - `min_price` (minimum valid quote or order price)
 
-```{note}
+:::note
 Most of these limits are checked by the Nautilus `RiskEngine`, otherwise exceeding
 published limits _can_ result in the exchange rejecting orders.
-```
+:::
 
 ## Prices and Quantities
+
 Instrument objects also offer a convenient way to create correct prices
 and quantities based on given values.
 
@@ -128,10 +129,10 @@ price = instrument.make_price(0.90500)
 quantity = instrument.make_qty(150)
 ```
 
-```{tip}
+:::tip
 The above is the recommended method for creating valid prices and quantities, 
 such as when passing them to the order factory to create an order.
-```
+:::
 
 ## Margins and Fees
 The current initial and maintenance margin requirements, as well as any trading 

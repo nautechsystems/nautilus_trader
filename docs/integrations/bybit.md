@@ -1,8 +1,8 @@
 # Bybit
 
-```{note}
+:::note
 We are currently working on this integration guide.
-```
+:::
 
 Founded in 2018, Bybit is one of the largest cryptocurrency exchanges in terms
 of daily trading volume, and open interest of crypto assets and crypto
@@ -23,23 +23,23 @@ which can be used together or separately depending on the users needs.
 - `BybitLiveDataClientFactory` - Factory for Bybit data clients (used by the trading node builder)
 - `BybitLiveExecClientFactory` - Factory for Bybit execution clients (used by the trading node builder)
 
-```{note}
+:::note
 Most users will simply define a configuration for a live trading node (as below),
 and won't need to necessarily work with these lower level components directly.
-```
+:::
 
 ## Bybit documentation
 
 Bybit provides extensive documentation for users which can be found in the [Bybit help center](https://www.bybit.com/en/help-center).
-It's recommended you also refer to the Bybit documentation in conjunction with this NautilusTrader integration guide.
+It’s recommended you also refer to the Bybit documentation in conjunction with this NautilusTrader integration guide.
 
 ## Products
 
 A product is an umberalla term for a group of related instrument types.
 
-```{note}
+:::note
 Product is also referred to as `category` in the Bybit v5 API.
-```
+:::
 
 The following product types are supported on Bybit:
 
@@ -53,7 +53,7 @@ Options contracts are not currently supported (will be implemented in a future v
 
 ## Symbology
 
-To distinguish between different product types on Bybit, the following instrument ID suffix's are used:
+To distinguish between different product types on Bybit, the following instrument ID suffix’s are used:
 
 - `-SPOT`: spot cryptocurrencies
 - `-LINEAR`: perpeutal and futures contracts
@@ -75,10 +75,10 @@ The BTCUSD inverse perpetual futures contract is identified with:
 
 ## Order types
 
-```{warning}
+:::warning
 Only Market and Limit orders have been tested and are available.
 The remaining order types will be added on a best effort basis going forward.
-```
+:::
 
 |                        | Spot                 | Derivatives (Linear, Inverse, Options)  |
 |------------------------|----------------------|-----------------------------------------|

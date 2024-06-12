@@ -41,9 +41,9 @@ There are two reasons for this;
 
 Having said all of this there are still areas of the codebase which aren’t as performance-critical where it is safe to use Python truthiness to check for `None`. 
 
-```{note}
+:::note
 To be clear, it's still encouraged to use Python truthiness `is` and `not` to check if collections are `None` or empty.
-```
+:::
 
 We welcome all feedback on where the codebase departs from PEP-8 for no apparent reason.
 
