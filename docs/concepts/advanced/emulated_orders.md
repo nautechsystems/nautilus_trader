@@ -5,9 +5,9 @@ of whether the type is supported on a trading venue. The logic and code paths fo
 order emulation are exactly the same for all environment contexts (`backtest`, `sandbox`, `live`)
 and utilize a common `OrderEmulator` component.
 
-```{note}
+:::note
 There is no limitation on the number of emulated orders you can have per running instance.
-```
+:::
 
 ## Submitting for emulation
 The only requirement to emulate an order is to pass a `TriggerType` to the `emulation_trigger`
@@ -21,9 +21,9 @@ Emulated orders are subject to the same risk controls as 'regular' orders, and c
 modified and canceled by a trading strategy in the normal way. They will also be included
 when canceling all orders.
 
-```{note}
+:::note
 An emulated order will retain its original client order ID throughout its entire life cycle, making it easy to query through the cache.
-```
+:::
 
 ## Life cycle
 An emulated order will progress through the following stages:
@@ -78,11 +78,11 @@ You can also query order objects directly:
 If either of these return `False`, then the order has been _released_ from the
 `OrderEmulator`, and so is no longer considered an emulated order.
 
-```{warning}
+:::warning
 It's not advised to hold a local reference to an emulated order, as the order
 object will be transformed when/if the emulated order is _released_. You should rely
 on the `Cache` which is made for the job.
-```
+:::
 
 ## Persisted emulated orders
 If a running system either crashes or shuts down with active emulated orders, then

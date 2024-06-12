@@ -6,9 +6,9 @@ guide covers some possible use cases for this functionality.
 It's possible to create custom data types within the Nautilus system. First you
 will need to define your data by subclassing from `Data`.
 
-```{note}
+:::note
 As `Data` holds no state, it is not strictly necessary to call `super().__init__()`.
-```
+:::
 
 ```python
 from nautilus_trader.core.data import Data
@@ -71,10 +71,10 @@ The recommended approach to satisfy the contract is to assign `ts_event` and `ts
 to backing fields, and then implement the `@property` for each as shown above 
 (for completeness, the docstrings are copied from the `Data` base class).
 
-```{note}
-These timestamps are what allow Nautilus to correctly order data streams for backtests 
+:::note
+These timestamps are what allow Nautilus to correctly order data streams for backtests
 by monotonically increasing `ts_init` UNIX nanoseconds.
-```
+:::
 
 We can now work with this data type for backtesting and live trading. For instance,
 we could now create an adapter which is able to parse and create objects of this

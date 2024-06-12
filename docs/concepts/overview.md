@@ -63,11 +63,11 @@ The projects codebase provides a framework for implementing the software layer o
 the default `backtest` and `live` system implementations in their respectively named subpackages. A `sandbox` environment can
 be built using the sandbox adapter.
 
-```{note}
+:::note
 - All examples will utilize these default system implementations.
 - We consider trading strategies to be subcomponents of end-to-end trading systems, these systems
 include the application and infrastructure layers.
-```
+:::
 
 ## Distributed
 The platform is designed to be easily integrated into a larger distributed system. 
@@ -90,9 +90,9 @@ The platform supports both demo/paper trading accounts and real accounts. High p
 asynchronously on a single [event loop](https://docs.python.org/3/library/asyncio-eventloop.html), 
 with the potential to further boost performance by leveraging the [uvloop](https://github.com/MagicStack/uvloop) implementation (available for Linux and macOS).
 
-```{tip}
+:::tip
 Python 3.11 offers improved run-time performance, while Python 3.12 additionally offers improved asyncio performance.
-```
+:::
 
 ## Domain model
 

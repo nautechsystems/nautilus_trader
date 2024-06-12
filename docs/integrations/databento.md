@@ -1,8 +1,8 @@
 # Databento
 
-```{note}
+:::note
 We are currently working on this integration guide.
-```
+:::
 
 NautilusTrader provides an adapter for integrating with the Databento API and [Databento Binary Encoding (DBN)](https://databento.com/docs/knowledge-base/new-users/dbn-encoding) format data.
 As Databento is purely a market data provider, there is no execution client provided - although a sandbox environment with simulated execution could still be set up.
@@ -12,23 +12,22 @@ The capabilities of this adapter include:
 - Loading historical data from DBN files and decoding into Nautilus objects for backtesting or writing to the data catalog
 - Requesting historical data which is decoded to Nautilus objects to support live trading and backtesting
 - Subscribing to real-time data feeds which are decoded to Nautilus objects to support live trading and sandbox environments
-
-```{tip}
+:::tip
 [Databento](https://databento.com/signup) currently offers 125 USD in free data credits (historical data only) for new account sign-ups.
 
 With careful requests, this is more than enough for testing and evaluation purposes.
 It's recommended you make use of the [/metadata.get_cost](https://databento.com/docs/api-reference-historical/metadata/metadata-get-cost) endpoint.
-```
+:::
 
 ## Overview
 
 The adapter implementation takes the [databento-rs](https://crates.io/crates/databento) crate as a dependency,
 which is the official Rust client library provided by Databento. There are actually no Databento Python dependencies.
 
-```{note}
+:::note
 There is no optional extra installation for `databento`, at this stage the core components of the adapter are compiled
 as static libraries and linked during the build by default.
-```
+:::
 
 The following adapter classes are available:
 - `DatabentoDataLoader` - Loads Databento Binary Encoding (DBN) data from files
@@ -37,10 +36,10 @@ The following adapter classes are available:
 - `DatabentoLiveClient` - Integrates with the Databento API (raw TCP) for subscribing to real-time data feeds
 - `DatabentoDataClient` - Provides a `LiveMarketDataClient` implementation for running a trading node in real time
 
-```{note}
+:::note
 As with the other integration adapters, most users will simply define a configuration for a live trading node (covered below),
 and won't need to necessarily work with these lower level components directly.
-```
+:::
 
 ## Databento documentation
 
@@ -104,9 +103,9 @@ instruments `exchange` field:
 - `XFXS` - **CME FX Link spread**
 - `XNYM` - **New York Mercantile Exchange (NYMEX)**
 
-```{note}
+:::note
 Other venue MICs can be found in the `venue` field of responses from the [metadata.list_publishers](https://databento.com/docs/api-reference-historical/metadata/metadata-list-publishers?historical=http&live=python) endpoint.
-```
+:::
 
 ## Timestamps
 
@@ -127,20 +126,20 @@ When decoding and normalizing Databento to Nautilus we generally assign the Data
 The exception to this are the `DatabentoImbalance` and `DatabentoStatistics` data types, which have fields for all timestamps
 - as the types are defined specifically for the adapter.
 
-```{note}
+:::note
 See the following Databento docs for further information:
 - [Databento standards and conventions - timestamps](https://databento.com/docs/knowledge-base/new-users/standards-conventions/timestamps)
 - [Databento timestamping guide](https://databento.com/docs/knowledge-base/data-integrity/timestamping/timestamps-on-databento-and-how-to-use-them)
-```
+:::
 
 ## Data types
 
 The following section discusses Databento schema -> Nautilus data type equivalence
 and considerations.
 
-```{note}
+:::note
 See the Databento [list of fields by schema guide](https://databento.com/docs/knowledge-base/new-users/fields-by-schema).
-```
+:::
 
 ### Instrument definitions
 
@@ -249,9 +248,9 @@ objects to the data catalog, which performs the decoding step once.
 the Nautilus Parquet data from disk, which achieves extremely high through-put (at least an order of magnitude faster
 than converting DBN -> Nautilus on the fly for every backtest run).
 
-```{note}
+:::note
 Performance benchmarks are currently under development.
-```
+:::
 
 ## Loading DBN data
 
@@ -312,9 +311,9 @@ trades = loader.from_dbn_file(
 catalog.write_data(trades)
 ```
 
-```{note}
+:::note
 See also the [Data concepts guide](../concepts/data.md).
-```
+:::
 
 ## Real-time client architecture
 
@@ -323,13 +322,13 @@ There are two `DatabentoLiveClient`s per Databento dataset:
 - One for MBO (order book deltas) real-time feeds
 - One for all other real-time feeds
 
-```{note}
+:::note
 There is currently a limitation that all MBO (order book deltas) subscriptions for a dataset have to be made at
 node startup, to then be able to replay data from the beginning of the session. If subsequent subscriptions
 arrive after start, then an error will be logged (and the subscription ignored).
 
 There is no such limitation for any of the other Databento schemas.
-```
+:::
 
 A single `DatabentoHistoricalClient` instance is reused between the `DatabentoInstrumentProvider` and `DatabentoDataClient`,
 which makes historical instrument definitions and data requests.

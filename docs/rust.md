@@ -6,10 +6,10 @@ entirely programmed and compiled from Rust.
 The API reference provides detailed technical documentation for the core NautilusTrader crates,
 the docs are generated from source code using `cargo doc`.
 
-```{note}
+:::note
 Note the docs are generated using the _nightly_ toolchain (to be able to compile docs for the entire workspace).
 However, we target the _stable_ toolchain for all releases.
-```
+:::
 
 Use the following links to explore the Rust docs API references for two different versions of the codebase:
 

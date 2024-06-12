@@ -126,11 +126,11 @@ Alternatively, you can specify these parameters dynamically per order, determini
 actual market conditions. In this case, the strategy configuration parameters could be provided to 
 an execution model which determines the horizon and interval.
 
-```{note}
-There is no limit to the number of execution algorithm parameters you can create. The parameters 
-just need to be a dictionary with string keys and primitive values (values that can be serialized 
+:::note
+There is no limit to the number of execution algorithm parameters you can create. The parameters
+just need to be a dictionary with string keys and primitive values (values that can be serialized
 over the wire, such as ints, floats, and strings).
-```
+:::
 
 ### Writing execution algorithms
 
@@ -149,11 +149,11 @@ Once an execution algorithm is registered, and the system is running, it will re
 messages bus which are addressed to its `ExecAlgorithmId` via the `exec_algorithm_id` order parameter. 
 The order may also carry the `exec_algorithm_params` being a `dict[str, Any]`.
 
-```{warning}
+:::warning
 Because of the flexibility of the `exec_algorithm_params` dictionary. It's important to thoroughly 
 validate all of the key value pairs for correct operation of the algorithm (for starters that the
 dictionary is not ``None`` and all necessary parameters actually exist).
-```
+:::
 
 Received orders will arrive via the following `on_order(...)` method. These received orders are
 know as "primary" (original) orders when being handled by an execution algorithm.
@@ -184,16 +184,16 @@ When the algorithm is ready to spawn a secondary order, it can use one of the fo
 - `spawn_market_to_limit(...)` (spawns a `MARKET_TO_LIMIT` order)
 - `spawn_limit(...)` (spawns a `LIMIT` order)
 
-```{note}
+:::note
 Additional order types will be implemented in future versions, as the need arises.
-```
+:::
 
 Each of these methods takes the primary (original) `Order` as the first argument. The primary order
 quantity will be reduced by the `quantity` passed in (becoming the spawned orders quantity).
 
-```{warning}
+:::warning
 There must be enough primary order quantity remaining (this is validated).
-```
+:::
 
 Once the desired number of secondary orders have been spawned, and the execution routine is over,
 the intention is that the algorithm will then finally send the primary (original) order.
@@ -213,10 +213,10 @@ derives from this original identifier with the following convention:
 
 e.g. `O-20230404-001-000-E1` (for the first spawned order)
 
-```{note}
+:::note
 The "primary" and "secondary" / "spawn" terminology was specifically chosen to avoid conflict
 or confusion with the "parent" and "child" contingent orders terminology (an execution algorithm may also deal with contingent orders).
-```
+:::
 
 ### Managing execution algorithm orders
 

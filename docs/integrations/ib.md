@@ -6,9 +6,9 @@ The TWS API serves as an interface to IB's standalone trading applications: TWS 
 
 Alternatively, you can start with a [dockerized version](https://github.com/gnzsnz/ib-gateway-docker) of the IB Gateway, which is particularly useful when deploying trading strategies on a hosted cloud platform. This requires having [Docker](https://www.docker.com/) installed on your machine, along with the [docker](https://pypi.org/project/docker/) Python package, which NautilusTrader conveniently includes as an extra package.
 
-```{note}
+:::note
 The standalone TWS and IB Gateway applications require manually inputting username, password, and trading mode (live or paper) at startup. The dockerized version of the IB Gateway handles these steps programmatically.
-```
+:::
 
 ## Installation
 
@@ -24,10 +24,9 @@ For installation via poetry, use:
 poetry add "nautilus_trader[ib,docker]"
 ```
 
-```{note}
-Because IB does not provide wheels for `ibapi`, NautilusTrader [repackages]( https://pypi.org/project/nautilus-ibapi/) it for release on PyPI.
-```
-
+:::note
+Because IB does not provide wheels for `ibapi`, NautilusTrader [repackages](https://pypi.org/project/nautilus-ibapi/) it for release on PyPI.
+:::
 
 ## Getting Started
 
@@ -88,9 +87,9 @@ To ensure efficient management of these diverse responsibilities, the `Interacti
 - `InteractiveBrokersClientMarketDataMixin` - Handles market data requests, subscriptions and data processing
 - `InteractiveBrokersClientOrderMixin` - Oversees all aspects of order placement and management.
 
-```{tip}
+:::tip
 To troubleshoot TWS API incoming message issues, consider starting at the `InteractiveBrokersClient._process_message` method, which acts as the primary gateway for processing all messages received from the API.
-```
+:::
 
 ## Symbology
 The InteractiveBrokersInstrumentProvider supports two methods for constructing InstrumentId instances, which can be configured via the strict_symbology flag in InteractiveBrokersInstrumentProviderConfig.

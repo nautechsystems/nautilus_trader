@@ -20,7 +20,7 @@ deleted when the container is deleted.
 - Open your web browser to `localhost:{port}`
   - https://localhost:8888
 
-```{warning}
+:::warning
 NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output),
 this is why `log_level` in the examples is set to "ERROR". If you lower this level to see
 more logging then the notebook will hang during cell execution. A fix is currently
@@ -28,7 +28,7 @@ being investigated which involves either raising the configured rate limits for
 Jupyter, or throttling the log flushing from Nautilus.
 https://github.com/jupyterlab/jupyterlab/issues/12845
 https://github.com/deshaw/jupyterlab-limit-output
-```
+:::
 
 ## Getting the sample data
 
@@ -186,9 +186,9 @@ First, we create a venue configuration. For this example we will create a simula
 A venue needs a name which acts as an ID (in this case `SIM`), as well as some basic configuration, e.g. 
 the account type (`CASH` vs `MARGIN`), an optional base currency, and starting balance(s).
 
-```{note}
+:::note
 FX trading is typically done on margin with Non-Deliverable Forward, Swap or CFD type instruments.
-```
+:::
 
 ```python
 from nautilus_trader.config import BacktestVenueConfig
@@ -268,7 +268,6 @@ engine = BacktestEngineConfig(
 
 We can now pass our various config pieces to the `BacktestRunConfig`. This object now contains the 
 full configuration for our backtest.
-
 
 ```python
 from nautilus_trader.config import BacktestRunConfig
