@@ -1,3 +1,4 @@
+exclude: "tests/integration_tests/adapters/betfair/test_betfair_data.py"
 repos:
   ##############################################################################
   #  General checks
