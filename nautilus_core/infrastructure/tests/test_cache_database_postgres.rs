@@ -61,9 +61,10 @@ pub async fn get_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
 mod tests {
     use std::time::Duration;
 
+    use nautilus_common::testing::wait_until_async;
     use nautilus_core::equality::entirely_equal;
     use nautilus_model::{
-        enums::{CurrencyType, OrderSide},
+        enums::{CurrencyType, OrderSide, OrderStatus},
         identifiers::{
             stubs::account_id, AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId,
         },
@@ -91,7 +92,14 @@ mod tests {
             .add(String::from("test_id"), test_id_value.clone())
             .await
             .unwrap();
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        wait_until_async(
+            || async {
+                let result = pg_cache.load().await.unwrap();
+                result.keys().len() > 0
+            },
+            Duration::from_secs(2),
+        )
+        .await;
         let result = pg_cache.load().await.unwrap();
         assert_eq!(result.keys().len(), 1);
         assert_eq!(
@@ -149,7 +157,15 @@ mod tests {
             .add_instrument(InstrumentAny::OptionsContract(options_contract))
             .await
             .unwrap();
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        // Wait for the cache to update
+        wait_until_async(
+            || async {
+                let currencies = pg_cache.load_currencies().await.unwrap();
+                currencies.len() >= 4
+            },
+            Duration::from_secs(2),
+        )
+        .await;
         // Check that currency list is correct
         let currencies = pg_cache.load_currencies().await.unwrap();
         assert_eq!(currencies.len(), 4);
@@ -261,7 +277,22 @@ mod tests {
         );
         pg_cache.add_order(market_order.clone()).await.unwrap();
         pg_cache.add_order(limit_order.clone()).await.unwrap();
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        wait_until_async(
+            || async {
+                pg_cache
+                    .load_order(&market_order.client_order_id())
+                    .await
+                    .unwrap()
+                    .is_some()
+                    && pg_cache
+                        .load_order(&limit_order.client_order_id())
+                        .await
+                        .unwrap()
+                        .is_some()
+            },
+            Duration::from_secs(2),
+        )
+        .await;
         let market_order_result = pg_cache
             .load_order(&market_order.client_order_id())
             .await
@@ -320,7 +351,17 @@ mod tests {
         );
         market_order.apply(filled).unwrap();
         pg_cache.update_order(market_order.clone()).await.unwrap();
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        wait_until_async(
+            || async {
+                let result = pg_cache
+                    .load_order(&market_order.client_order_id())
+                    .await
+                    .unwrap();
+                result.is_some() && result.unwrap().status() == OrderStatus::Filled
+            },
+            Duration::from_secs(2),
+        )
+        .await;
         // Assert
         let market_order_result = pg_cache
             .load_order(&market_order.client_order_id())
