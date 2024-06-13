@@ -16,6 +16,7 @@
 //! Common test related helper functions.
 
 use std::{
+    future::Future,
     thread,
     time::{Duration, Instant},
 };
@@ -69,5 +70,26 @@ where
         );
 
         thread::sleep(Duration::from_millis(100));
+    }
+}
+
+pub async fn wait_until_async<F, Fut>(mut condition: F, timeout: Duration)
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = bool>,
+{
+    let start_time = Instant::now();
+
+    loop {
+        if condition().await {
+            break;
+        }
+
+        assert!(
+            start_time.elapsed() <= timeout,
+            "Timeout waiting for condition"
+        );
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
