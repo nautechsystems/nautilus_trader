@@ -35,8 +35,8 @@ itertools = "0.12.1"
 itoa = "1.0.11"
 once_cell = "1.19.0"
 log = { version = "0.4.21", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
-pyo3 = { version = "0.20.3", features = ["rust_decimal"] }
-pyo3-asyncio = { version = "0.20.0", features = ["tokio-runtime", "tokio", "attributes"] }
+pyo3 = { version = "0.21.2", features = ["rust_decimal"] }
+pyo3-asyncio-0-21 = { version = "0.21.0", features = ["tokio-runtime", "tokio", "attributes"] }
 rand = "0.8.5"
 rmp-serde = "1.3.0"
 rust_decimal = "1.35.0"

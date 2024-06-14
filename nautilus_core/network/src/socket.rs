@@ -431,8 +431,8 @@ impl SocketClient {
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
         py: Python<'_>,
-    ) -> PyResult<&PyAny> {
-        pyo3_asyncio::tokio::future_into_py(py, async move {
+    ) -> PyResult<Bound<PyAny>> {
+        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
             Self::connect(
                 config,
                 post_connection,
@@ -454,11 +454,11 @@ impl SocketClient {
     /// - The client should not be used after closing it
     /// - Any auto-reconnect job should be aborted before closing the client
     #[pyo3(name = "disconnect")]
-    fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<&'py PyAny> {
+    fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let disconnect_mode = slf.disconnect_mode.clone();
         debug!("Setting disconnect mode to true");
 
-        pyo3_asyncio::tokio::future_into_py(py, async move {
+        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
             *disconnect_mode.lock().await = true;
             Ok(())
         })
@@ -489,11 +489,11 @@ impl SocketClient {
         slf: PyRef<'_, Self>,
         mut data: Vec<u8>,
         py: Python<'py>,
-    ) -> PyResult<&'py PyAny> {
+    ) -> PyResult<Bound<'py, PyAny>> {
         let writer = slf.writer.clone();
         data.extend(&slf.suffix);
 
-        pyo3_asyncio::tokio::future_into_py(py, async move {
+        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
             let mut writer = writer.lock().await;
             writer.write_all(&data).await?;
             Ok(())
