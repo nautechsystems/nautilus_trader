@@ -421,7 +421,7 @@ fn exhaust_data_iter_to_pycapsule(
     }
 
     let cvec: CVec = data.into();
-    let capsule = PyCapsule::new::<CVec>(py, cvec, None)?;
+    let capsule = PyCapsule::new_bound::<CVec>(py, cvec, None)?;
 
     Ok(capsule.into_py(py))
 }

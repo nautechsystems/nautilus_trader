@@ -230,14 +230,14 @@ impl HttpClient {
         body: Option<&'py PyBytes>,
         keys: Option<Vec<String>>,
         py: Python<'py>,
-    ) -> PyResult<&'py PyAny> {
+    ) -> PyResult<Bound<'py, PyAny>> {
         let headers = headers.unwrap_or_default();
         let body_vec = body.map(|py_bytes| py_bytes.as_bytes().to_vec());
         let keys = keys.unwrap_or_default();
         let client = self.client.clone();
         let rate_limiter = self.rate_limiter.clone();
         let method = method.into();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
+        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
             // Check keys for rate limiting quota
             let tasks = keys.iter().map(|key| rate_limiter.until_key_ready(key));
             stream::iter(tasks)

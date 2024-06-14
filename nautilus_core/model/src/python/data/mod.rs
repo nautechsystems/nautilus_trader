@@ -49,7 +49,7 @@ use crate::data::Data;
 /// Rust data structure.
 #[must_use]
 pub fn data_to_pycapsule(py: Python, data: Data) -> PyObject {
-    let capsule = PyCapsule::new(py, data, None).expect("Error creating `PyCapsule`");
+    let capsule = PyCapsule::new_bound(py, data, None).expect("Error creating `PyCapsule`");
     capsule.into_py(py)
 }
 

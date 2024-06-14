@@ -16,7 +16,6 @@
 use std::{
     cmp,
     ffi::{c_char, CStr},
-    i64,
     str::FromStr,
 };
 

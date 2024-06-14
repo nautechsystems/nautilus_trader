@@ -458,7 +458,7 @@ impl LimitOrder {
         })?;
         let linked_order_ids = dict.get_item("linked_order_ids").map(|x| {
             x.and_then(|inner| {
-                let extracted_str = inner.extract::<Vec<&str>>();
+                let extracted_str = inner.extract::<Vec<String>>();
                 match extracted_str {
                     Ok(item) => Some(
                         item.iter()

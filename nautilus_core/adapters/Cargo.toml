@@ -23,7 +23,7 @@ chrono = { workspace = true }
 indexmap = { workspace = true }
 itoa = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-pyo3-asyncio = { workspace = true, optional = true }
+pyo3-asyncio-0-21 = { workspace = true, optional = true }
 rand = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
@@ -58,7 +58,7 @@ ffi = [
 ]
 python = [
   "pyo3",
-  "pyo3-asyncio",
+  "pyo3-asyncio-0-21",
   "nautilus-common/python",
   "nautilus-core/python",
   "nautilus-model/python",

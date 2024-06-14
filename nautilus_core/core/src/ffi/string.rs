@@ -18,7 +18,7 @@ use std::{
     str,
 };
 
-use pyo3::{ffi, types::PyString, FromPyPointer, Python};
+use pyo3::{ffi, Bound, Python};
 use ustr::Ustr;
 
 /// Returns an owned string from a valid Python object pointer.
@@ -33,7 +33,7 @@ use ustr::Ustr;
 #[must_use]
 pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    Python::with_gil(|py| PyString::from_borrowed_ptr(py, ptr).to_string())
+    Python::with_gil(|py| Bound::from_borrowed_ptr(py, ptr).to_string())
 }
 
 /// Convert a C string pointer into an owned `String`.
@@ -140,7 +140,7 @@ pub unsafe extern "C" fn cstr_drop(ptr: *const c_char) {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use pyo3::AsPyPointer;
+    use pyo3::types::PyString;
     use rstest::*;
 
     use super::*;
@@ -149,7 +149,7 @@ mod tests {
     fn test_pystr_to_string() {
         pyo3::prepare_freethreaded_python();
         // Create a valid Python object pointer
-        let ptr = Python::with_gil(|py| PyString::new(py, "test string1").as_ptr());
+        let ptr = Python::with_gil(|py| PyString::new_bound(py, "test string1").as_ptr());
         let result = unsafe { pystr_to_string(ptr) };
         assert_eq!(result, "test string1");
     }

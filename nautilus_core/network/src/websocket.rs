@@ -474,8 +474,8 @@ impl WebSocketClient {
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
         py: Python<'_>,
-    ) -> PyResult<&PyAny> {
-        pyo3_asyncio::tokio::future_into_py(py, async move {
+    ) -> PyResult<Bound<PyAny>> {
+        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
             Self::connect(
                 config,
                 post_connection,
@@ -497,9 +497,9 @@ impl WebSocketClient {
     /// - The client should not be used after closing it
     /// - Any auto-reconnect job should be aborted before closing the client
     #[pyo3(name = "disconnect")]
-    fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<&'py PyAny> {
+    fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let disconnect_mode = slf.disconnect_mode.clone();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
+        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
             *disconnect_mode.lock().await = true;
             Ok(())
         })
@@ -511,10 +511,14 @@ impl WebSocketClient {
     ///
     /// - Raises PyRuntimeError if not able to send data.
     #[pyo3(name = "send")]
-    fn py_send<'py>(slf: PyRef<'_, Self>, data: Vec<u8>, py: Python<'py>) -> PyResult<&'py PyAny> {
+    fn py_send<'py>(
+        slf: PyRef<'_, Self>,
+        data: Vec<u8>,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyAny>> {
         debug!("Sending bytes {:?}", data);
         let writer = slf.writer.clone();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
+        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
             let mut guard = writer.lock().await;
             guard
                 .send(Message::Binary(data))
@@ -533,10 +537,10 @@ impl WebSocketClient {
         slf: PyRef<'_, Self>,
         data: String,
         py: Python<'py>,
-    ) -> PyResult<&'py PyAny> {
+    ) -> PyResult<Bound<'py, PyAny>> {
         debug!("Sending text: {}", data);
         let writer = slf.writer.clone();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
+        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
             let mut guard = writer.lock().await;
             guard
                 .send(Message::Text(data))
@@ -555,11 +559,11 @@ impl WebSocketClient {
         slf: PyRef<'_, Self>,
         data: Vec<u8>,
         py: Python<'py>,
-    ) -> PyResult<&'py PyAny> {
+    ) -> PyResult<Bound<'py, PyAny>> {
         let data_str = String::from_utf8(data.clone()).map_err(to_pyvalue_err)?;
         debug!("Sending pong: {}", data_str);
         let writer = slf.writer.clone();
-        pyo3_asyncio::tokio::future_into_py(py, async move {
+        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
             let mut guard = writer.lock().await;
             guard
                 .send(Message::Pong(data))
