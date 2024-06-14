@@ -71,6 +71,7 @@ examples/backtest/notebooks/catalog
 
 # Nautilus specific
 bench_data/
+/api_reference
 /catalog/
 /examples/notebooks/catalog/
 nautilus_trader/**/.gitignore
