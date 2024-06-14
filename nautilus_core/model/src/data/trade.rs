@@ -181,7 +181,7 @@ mod tests {
 
         Python::with_gil(|py| {
             let tick_pyobject = trade.into_py(py);
-            let parsed_tick = TradeTick::from_pyobject(tick_pyobject.as_ref(py)).unwrap();
+            let parsed_tick = TradeTick::from_pyobject(tick_pyobject.bind(py)).unwrap();
             assert_eq!(parsed_tick, trade);
         });
     }

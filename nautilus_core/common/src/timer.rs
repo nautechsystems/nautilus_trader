@@ -474,7 +474,7 @@ mod tests {
         pyo3::prepare_freethreaded_python();
 
         let handler = Python::with_gil(|py| {
-            let callable = wrap_pyfunction!(receive_event, py).unwrap();
+            let callable = wrap_pyfunction_bound!(receive_event, py).unwrap();
             EventHandler::new(callable.into_py(py))
         });
 
@@ -500,7 +500,7 @@ mod tests {
         pyo3::prepare_freethreaded_python();
 
         let handler = Python::with_gil(|py| {
-            let callable = wrap_pyfunction!(receive_event, py).unwrap();
+            let callable = wrap_pyfunction_bound!(receive_event, py).unwrap();
             EventHandler::new(callable.into_py(py))
         });
 
@@ -532,7 +532,7 @@ mod tests {
         pyo3::prepare_freethreaded_python();
 
         let handler = Python::with_gil(|py| {
-            let callable = wrap_pyfunction!(receive_event, py).unwrap();
+            let callable = wrap_pyfunction_bound!(receive_event, py).unwrap();
             EventHandler::new(callable.into_py(py))
         });
 

@@ -41,17 +41,17 @@ use crate::{
 
 impl TradeTick {
     /// Create a new [`TradeTick`] extracted from the given [`PyAny`].
-    pub fn from_pyobject(obj: &PyAny) -> PyResult<Self> {
+    pub fn from_pyobject(obj: &Bound<PyAny>) -> PyResult<Self> {
         let instrument_id_obj: &PyAny = obj.getattr("instrument_id")?.extract()?;
         let instrument_id_str = instrument_id_obj.getattr("value")?.extract()?;
         let instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
 
-        let price_py: &PyAny = obj.getattr("price")?;
+        let price_py: &PyAny = obj.getattr("price")?.extract()?;
         let price_raw: i64 = price_py.getattr("raw")?.extract()?;
         let price_prec: u8 = price_py.getattr("precision")?.extract()?;
         let price = Price::from_raw(price_raw, price_prec).map_err(to_pyvalue_err)?;
 
-        let size_py: &PyAny = obj.getattr("size")?;
+        let size_py: &PyAny = obj.getattr("size")?.extract()?;
         let size_raw: u64 = size_py.getattr("raw")?.extract()?;
         let size_prec: u8 = size_py.getattr("precision")?.extract()?;
         let size = Quantity::from_raw(size_raw, size_prec).map_err(to_pyvalue_err)?;
@@ -372,7 +372,7 @@ mod tests {
 
         Python::with_gil(|py| {
             let tick_pyobject = tick.into_py(py);
-            let parsed_tick = TradeTick::from_pyobject(tick_pyobject.as_ref(py)).unwrap();
+            let parsed_tick = TradeTick::from_pyobject(tick_pyobject.bind(py)).unwrap();
             assert_eq!(parsed_tick, tick);
         });
     }
