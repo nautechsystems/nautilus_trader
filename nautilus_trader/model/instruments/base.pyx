@@ -512,6 +512,11 @@ cdef class Instrument(Data):
         -------
         Quantity
 
+        Raises
+        ------
+        ValueError
+            If a non zero `value` is rounded to zero due to the instruments size increment or size precision.
+
         """
         # Check if original_value is greater than zero and rounded_value is "effectively" zero
         cdef double original_value = float(value)
