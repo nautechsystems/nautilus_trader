@@ -41,27 +41,27 @@ use crate::{
 
 impl QuoteTick {
     /// Create a new [`QuoteTick`] extracted from the given [`PyAny`].
-    pub fn from_pyobject(obj: &PyAny) -> PyResult<Self> {
+    pub fn from_pyobject(obj: &Bound<PyAny>) -> PyResult<Self> {
         let instrument_id_obj: &PyAny = obj.getattr("instrument_id")?.extract()?;
         let instrument_id_str = instrument_id_obj.getattr("value")?.extract()?;
         let instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
 
-        let bid_price_py: &PyAny = obj.getattr("bid_price")?;
+        let bid_price_py: &PyAny = obj.getattr("bid_price")?.extract()?;
         let bid_price_raw: i64 = bid_price_py.getattr("raw")?.extract()?;
         let bid_price_prec: u8 = bid_price_py.getattr("precision")?.extract()?;
         let bid_price = Price::from_raw(bid_price_raw, bid_price_prec).map_err(to_pyvalue_err)?;
 
-        let ask_price_py: &PyAny = obj.getattr("ask_price")?;
+        let ask_price_py: &PyAny = obj.getattr("ask_price")?.extract()?;
         let ask_price_raw: i64 = ask_price_py.getattr("raw")?.extract()?;
         let ask_price_prec: u8 = ask_price_py.getattr("precision")?.extract()?;
         let ask_price = Price::from_raw(ask_price_raw, ask_price_prec).map_err(to_pyvalue_err)?;
 
-        let bid_size_py: &PyAny = obj.getattr("bid_size")?;
+        let bid_size_py: &PyAny = obj.getattr("bid_size")?.extract()?;
         let bid_size_raw: u64 = bid_size_py.getattr("raw")?.extract()?;
         let bid_size_prec: u8 = bid_size_py.getattr("precision")?.extract()?;
         let bid_size = Quantity::from_raw(bid_size_raw, bid_size_prec).map_err(to_pyvalue_err)?;
 
-        let ask_size_py: &PyAny = obj.getattr("ask_size")?;
+        let ask_size_py: &PyAny = obj.getattr("ask_size")?.extract()?;
         let ask_size_raw: u64 = ask_size_py.getattr("raw")?.extract()?;
         let ask_size_prec: u8 = ask_size_py.getattr("precision")?.extract()?;
         let ask_size = Quantity::from_raw(ask_size_raw, ask_size_prec).map_err(to_pyvalue_err)?;
@@ -423,7 +423,7 @@ mod tests {
 
         Python::with_gil(|py| {
             let tick_pyobject = tick.into_py(py);
-            let parsed_tick = QuoteTick::from_pyobject(tick_pyobject.as_ref(py)).unwrap();
+            let parsed_tick = QuoteTick::from_pyobject(tick_pyobject.bind(py)).unwrap();
             assert_eq!(parsed_tick, tick);
         });
     }

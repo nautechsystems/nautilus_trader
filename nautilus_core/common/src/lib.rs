@@ -28,8 +28,6 @@
 //! - `python`: Enables Python bindings from `pyo3`
 //! - `stubs`: Enables type stubs for use in testing scenarios
 
-#![allow(deprecated)] // TODO: Temporary for pyo3 upgrade
-
 pub mod cache;
 pub mod clock;
 pub mod enums;
