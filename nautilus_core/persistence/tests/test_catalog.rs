@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#![allow(deprecated)] // TODO: Temporary for pyo3 upgrade
+
 use nautilus_core::ffi::cvec::CVec;
 use nautilus_model::data::{
     bar::Bar, delta::OrderBookDelta, is_monotonically_increasing_by_init, quote::QuoteTick,
