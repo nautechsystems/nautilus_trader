@@ -12,6 +12,10 @@ install:
 install-debug:
 	BUILD_MODE=debug poetry install --with dev,test --all-extras --sync
 
+.PHONY: install-docs
+install-docs:
+	BUILD_MODE=debug poetry install --with docs
+
 .PHONY: install-just-deps
 install-just-deps:
 	poetry install --with dev,test --all-extras --no-root
@@ -65,7 +69,7 @@ update: cargo-update
 docs: docs-python docs-rust
 
 .PHONY: docs-python
-docs-python: install-just-deps-all
+docs-python: install-docs
 	poetry run sphinx-build -M markdown ./docs/api_reference ./api_reference
 
 .PHONY: docs-rust
