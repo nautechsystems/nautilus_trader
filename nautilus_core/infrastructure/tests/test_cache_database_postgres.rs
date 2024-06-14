@@ -161,7 +161,8 @@ mod tests {
         wait_until_async(
             || async {
                 let currencies = pg_cache.load_currencies().await.unwrap();
-                currencies.len() >= 4
+                let instruments = pg_cache.load_instruments().await.unwrap();
+                currencies.len() >= 4 && instruments.len() >= 6
             },
             Duration::from_secs(2),
         )
