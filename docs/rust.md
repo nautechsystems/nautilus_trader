@@ -13,10 +13,10 @@ However, we target the _stable_ toolchain for all releases.
 
 Use the following links to explore the Rust docs API references for two different versions of the codebase:
 
-## [Latest Rust docs](https://docs.nautilustrader.io/core)
+## [Latest Rust docs](https://nautilustrader.io/docs/core)
 This API reference is built from the HEAD of the `master` branch and represents the latest stable release.
 
-## [Nightly Rust docs](https://docs.nautilustrader.io/nightly/core)
+## [Nightly Rust docs](https://nautilustrader.io/docs/nightly/core)
 This API reference is built from the HEAD of the `nightly` branch and represents bleeding edge and experimental changes/features currently in development.
 
 ## What is Rust?

@@ -23,7 +23,7 @@ version = "0.25.0"
 edition = "2021"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 description = "A high-performance algorithmic trading platform and event-driven backtester"
-documentation = "https://docs.nautilustrader.io"
+documentation = "https://nautilustrader.io/docs"
 
 [workspace.dependencies]
 anyhow = "1.0.86"
