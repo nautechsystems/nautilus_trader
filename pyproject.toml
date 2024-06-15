@@ -83,9 +83,9 @@ docformatter = "^1.7.5"
 mypy = "^1.10.0"
 pandas-stubs = "^2.2.2"
 pre-commit = "^3.7.1"
-ruff = "^0.4.8"
-types-pytz = "^2023.3"
-types-requests = "^2.31"
+ruff = "^0.4.9"
+types-pytz = "^2024.1"
+types-requests = "^2.32"
 types-toml = "^0.10.2"
 
 [tool.poetry.group.test]
