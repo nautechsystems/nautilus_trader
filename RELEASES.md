@@ -22,6 +22,7 @@ None
 - Fixed `EMACrossTrailingStop` example strategy trailing stop logic (could submit multiple trailing stops on partial fills)
 - Fixed Binance `TRAILING_STOP_MARKET` orders (callback rounding was incorrect, was also not handling updates)
 - Fixed Interactive Brokers multiple gateway clients (incorrect port handling in factory) (#1702), thanks @dodofarm
+- Fixed time alerts Python example in docs (#1713), thanks @davidsblom
 
 ---
 
