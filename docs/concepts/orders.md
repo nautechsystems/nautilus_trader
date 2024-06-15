@@ -138,7 +138,7 @@ apply to the order type being created, or are only needed to specify more advanc
 This leaves the factory with simpler order creation methods to work with, all the
 examples will leverage an `OrderFactory` from within a `Strategy` context.
 
-[API Reference](https://docs.nautilustrader.io/api_reference/common.html#module-nautilus_trader.common.factories)
+[API Reference](https://nautilustrader.io/docs/api_reference/common.html#module-nautilus_trader.common.factories)
 
 :::note
 For clarity, any optional parameters will be clearly marked with a comment which includes the default value.
@@ -173,7 +173,7 @@ order: MarketOrder = self.order_factory.market(
     tags=["ENTRY"],  # <-- optional (default None)
 )
 ```
-[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.market)
+[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.market)
 
 ### Limit
 A _Limit_ order is placed on the limit order book at a specific price, and will only
@@ -203,7 +203,7 @@ order: LimitOrder = self.order_factory.limit(
     tags=None,  # <-- optional (default None)
 )
 ```
-[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.limit)
+[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.limit)
 
 ### Stop-Market
 A _Stop-Market_ order is a conditional order which once triggered, will immediately
@@ -234,7 +234,7 @@ order: StopMarketOrder = self.order_factory.stop_market(
     tags=None,  # <-- optional (default None)
 )
 ```
-[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.stop_market)
+[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.stop_market)
 
 ### Stop-Limit
 A _Stop-Limit_ order is a conditional order which once triggered will immediately place
@@ -267,7 +267,7 @@ order: StopLimitOrder = self.order_factory.stop_limit(
     tags=None,  # <-- optional (default None)
 )
 ```
-[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.stop_limit)
+[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.stop_limit)
 
 ### Market-To-Limit
 A _Market-To-Limit_ order is submitted as a market order to execute at the current best market price. 
@@ -295,7 +295,7 @@ order: MarketToLimitOrder = self.order_factory.market_to_limit(
 )
 ```
 
-[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.market_to_limit)
+[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.market_to_limit)
 
 ### Market-If-Touched
 A _Market-If-Touched_ order is a conditional order which once triggered will immediately
@@ -328,7 +328,7 @@ order: MarketIfTouchedOrder = self.order_factory.market_if_touched(
 )
 ```
 
-[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.market_if_touched)
+[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.market_if_touched)
 
 ### Limit-If-Touched
 A _Limit-If-Touched_ order is a conditional order which once triggered will immediately place
@@ -363,7 +363,7 @@ order: StopLimitOrder = self.order_factory.limit_if_touched(
 )
 ```
 
-[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.limit_if_touched)
+[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.limit_if_touched)
 
 ### Trailing-Stop-Market
 A _Trailing-Stop-Market_ order is a conditional order which trails a stop trigger price
@@ -400,7 +400,7 @@ order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
 )
 ```
 
-[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.trailing_stop_market)
+[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.trailing_stop_market)
 
 ### Trailing-Stop-Limit
 A _Trailing-Stop-Limit_ order is a conditional order which trails a stop trigger price
@@ -440,4 +440,4 @@ order: TrailingStopLimitOrder = self.order_factory.trailing_stop_limit(
 )
 ```
 
-[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.trailing_stop_limit)
+[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.trailing_stop_limit)

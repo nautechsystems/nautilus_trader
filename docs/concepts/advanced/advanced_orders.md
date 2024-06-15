@@ -46,7 +46,7 @@ When the parent order is executed, the two child orders are also placed in the m
 If the market moves in favor of the trade, the take-profit order will be filled, closing the position and locking in profits. 
 If the market moves against the trade, the stop-loss order will be filled, closing the position and limiting losses.
 
-Bracket orders can be created using the [OrderFactory](https://docs.nautilustrader.io/api_reference/common.html#module-nautilus_trader.common.factories) class in the Nautilus Trader API. 
+Bracket orders can be created using the [OrderFactory](https://nautilustrader.io/docs/api_reference/common.html#module-nautilus_trader.common.factories) class in the Nautilus Trader API. 
 This allows for easy and efficient creation of bracket orders, with different order types, parameters and instructions.
 
 :::warning
