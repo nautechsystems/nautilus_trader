@@ -19,7 +19,9 @@ from setuptools import Distribution
 from setuptools import Extension
 
 
-# The build mode (affects cargo)
+# The Rust toolchain to use for builds
+RUST_TOOLCHAIN = os.getenv("RUST_TOOLCHAIN", "stable")
+# The Cargo build mode
 BUILD_MODE = os.getenv("BUILD_MODE", "release")
 # If PROFILE_MODE mode is enabled, include traces necessary for coverage and profiling
 PROFILE_MODE = bool(os.getenv("PROFILE_MODE", ""))
@@ -81,6 +83,9 @@ RUST_LIBS: list[str] = [str(path) for path in RUST_LIB_PATHS]
 def _build_rust_libs() -> None:
     try:
         # Build the Rust libraries using Cargo
+        if RUST_TOOLCHAIN not in ("stable", "nightly"):
+            raise ValueError(f"Invalid `RUST_TOOLCHAIN` '{RUST_TOOLCHAIN}'")
+
         build_options = " --release" if BUILD_MODE == "release" else ""
         print("Compiling Rust libraries...")
 
@@ -90,6 +95,10 @@ def _build_rust_libs() -> None:
             *build_options.split(),
             "--all-features",
         ]
+
+        if RUST_TOOLCHAIN == "nightly":
+            cmd_args.insert(1, "+nightly")
+
         print(" ".join(cmd_args))
 
         subprocess.run(
@@ -341,6 +350,7 @@ if __name__ == "__main__":
     print(f"Cython: {cython_compiler_version}")
     print(f"NumPy:  {np.__version__}\n")
 
+    print(f"RUST_TOOLCHAIN={RUST_TOOLCHAIN}")
     print(f"BUILD_MODE={BUILD_MODE}")
     print(f"BUILD_DIR={BUILD_DIR}")
     print(f"PROFILE_MODE={PROFILE_MODE}")
