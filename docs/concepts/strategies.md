@@ -249,7 +249,7 @@ specified alert time. In a live context, this might be slightly delayed by a few
 
 This example sets a time alert to trigger one minute from the current time:
 ```python
-self.clock.set_alert_time(
+self.clock.set_time_alert(
     name="MyTimeAlert1",
     alert_time=self.clock.utc_now() + pd.Timedelta(minutes=1),
 )
