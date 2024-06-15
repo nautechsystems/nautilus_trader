@@ -7,7 +7,7 @@ The API reference provides detailed technical documentation for the core Nautilu
 the docs are generated from source code using `cargo doc`.
 
 :::note
-Note the docs are generated using the _nightly_ toolchain (to be able to compile docs for the entire workspace).
+The docs are generated using the _nightly_ toolchain (to be able to compile docs for the entire workspace).
 However, we target the _stable_ toolchain for all releases.
 :::
 

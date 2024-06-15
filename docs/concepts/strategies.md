@@ -353,9 +353,9 @@ tailored for algorithmic trading. These commands are essential for executing str
 and ensuring seamless interaction with various trading venues. In the following sections, we will 
 delve into the specifics of each command and its use cases.
 
-```{tip}
+:::note
 The [Execution](../concepts/execution.md) guide explains the flow through the system, and can be helpful to read in conjunction with the below.
-```
+:::
 
 #### Submitting orders
 
