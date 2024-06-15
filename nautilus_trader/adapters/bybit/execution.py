@@ -26,8 +26,10 @@ from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderStatus
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
+from nautilus_trader.adapters.bybit.common.enums import BybitStopOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
 from nautilus_trader.adapters.bybit.common.enums import BybitTpSlMode
+from nautilus_trader.adapters.bybit.common.enums import BybitTriggerDirection
 from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.http.account import BybitAccountHttpAPI
@@ -60,6 +62,7 @@ from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OmsType
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
@@ -257,7 +260,7 @@ class BybitExecutionClient(LiveExecutionClient):
                         ts_init=self._clock.timestamp_ns(),
                     )
                     reports.append(report)
-                    self._log.debug(f"Received {report}")
+                    self._log.debug(f"Received {report}", LogColor.MAGENTA)
         except BybitError as e:
             self._log.error(f"Failed to generate OrderStatusReports: {e}")
         len_reports = len(reports)
@@ -618,14 +621,6 @@ class BybitExecutionClient(LiveExecutionClient):
                 break
 
     def _check_order_validity(self, order: Order, product_type: BybitProductType) -> bool:
-        # Check order type valid
-        if order.order_type not in self._enum_parser.valid_order_types:
-            self._log.error(
-                f"Cannot submit {order} has invalid order type {order_type_to_str(order.order_type)}, "
-                "unsupported on Bybit",
-            )
-            return False
-
         # Check post only
         if order.is_post_only and order.order_type != OrderType.LIMIT:
             self._log.error(
@@ -809,17 +804,34 @@ class BybitExecutionClient(LiveExecutionClient):
     def _process_execution(self, execution: BybitWsAccountExecution) -> None:
         client_order_id = ClientOrderId(execution.orderLinkId) if execution.orderLinkId else None
         venue_order_id = VenueOrderId(execution.orderId)
-        strategy_id = self._cache.strategy_id_for_order(client_order_id)
+        order_side = self._enum_parser.parse_bybit_order_side(execution.side)
+
+        order = self._cache.order(client_order_id)
+        if order is None:
+            strategy_id = self._cache.strategy_id_for_order(client_order_id)
+            trigger_direction = BybitTriggerDirection.NONE
+            if execution.stopOrderType != BybitStopOrderType.NONE:
+                trigger_direction = (
+                    BybitTriggerDirection.RISES_TO
+                    if order_side == OrderSide.SELL
+                    else BybitTriggerDirection.FALLS_TO
+                )
+
+            order_type = self._enum_parser.parse_bybit_order_type(
+                execution.orderType,
+                execution.stopOrderType,
+                order_side,
+                trigger_direction,
+            )
+        else:
+            strategy_id = order.strategy_id
+            order_type = order.order_type
 
         instrument_id = self._get_cached_instrument_id(execution.symbol, execution.category)
         instrument = self._cache.instrument(instrument_id)
         if instrument is None:
             raise ValueError(f"Cannot handle trade event: instrument {instrument_id} not found")
 
-        order_type = self._enum_parser.parse_bybit_order_type(
-            execution.orderType,
-            execution.stopOrderType,
-        )
         self.generate_order_filled(
             strategy_id=strategy_id,
             instrument_id=instrument_id,
@@ -827,7 +839,7 @@ class BybitExecutionClient(LiveExecutionClient):
             venue_order_id=venue_order_id,
             venue_position_id=None,
             trade_id=TradeId(execution.execId),
-            order_side=self._enum_parser.parse_bybit_order_side(execution.side),
+            order_side=order_side,
             order_type=order_type,
             last_qty=Quantity(float(execution.execQty), instrument.size_precision),
             last_px=Price(float(execution.execPrice), instrument.price_precision),

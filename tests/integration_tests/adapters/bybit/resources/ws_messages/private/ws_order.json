@@ -37,7 +37,7 @@
             "slTriggerBy": "",
             "tpLimitPrice": "",
             "slLimitPrice": "",
-            "triggerDirection": 0,
+            "triggerDirection": 1,
             "triggerBy": "",
             "closeOnTrigger": false,
             "category": "option",

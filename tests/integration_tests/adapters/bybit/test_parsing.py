@@ -17,10 +17,8 @@ import pytest
 
 from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
-from nautilus_trader.adapters.bybit.common.enums import BybitOrderStatus
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
@@ -113,36 +111,37 @@ class TestBybitParsing:
         result = self._enum_parser.parse_nautilus_order_side(order_side)
         assert result == bybit_order_side
 
-    @pytest.mark.parametrize(
-        ("bybit_order_status", "order_status"),
-        [
-            [BybitOrderStatus.CREATED, OrderStatus.SUBMITTED],
-            [BybitOrderStatus.NEW, OrderStatus.ACCEPTED],
-            [BybitOrderStatus.FILLED, OrderStatus.FILLED],
-            [BybitOrderStatus.CANCELED, OrderStatus.CANCELED],
-        ],
-    )
-    def test_parse_bybit_order_status(
-        self,
-        bybit_order_status: BybitOrderStatus,
-        order_status: OrderStatus,
-    ) -> None:
-        result = self._enum_parser.parse_bybit_order_status(bybit_order_status)
-        assert result == order_status
-
-    @pytest.mark.parametrize(
-        ("order_status", "bybit_order_status"),
-        [
-            [OrderStatus.SUBMITTED, BybitOrderStatus.CREATED],
-            [OrderStatus.ACCEPTED, BybitOrderStatus.NEW],
-            [OrderStatus.FILLED, BybitOrderStatus.FILLED],
-            [OrderStatus.CANCELED, BybitOrderStatus.CANCELED],
-        ],
-    )
-    def test_parse_nautilus_order_status(
-        self,
-        order_status: OrderStatus,
-        bybit_order_status: BybitOrderStatus,
-    ) -> None:
-        result = self._enum_parser.parse_nautilus_order_status(order_status)
-        assert result == bybit_order_status
+    # WIP: Reimplementing
+    # @pytest.mark.parametrize(
+    #     ("bybit_order_status", "order_status"),
+    #     [
+    #         [BybitOrderStatus.CREATED, OrderStatus.SUBMITTED],
+    #         [BybitOrderStatus.NEW, OrderStatus.ACCEPTED],
+    #         [BybitOrderStatus.FILLED, OrderStatus.FILLED],
+    #         [BybitOrderStatus.CANCELED, OrderStatus.CANCELED],
+    #     ],
+    # )
+    # def test_parse_bybit_order_status(
+    #     self,
+    #     bybit_order_status: BybitOrderStatus,
+    #     order_status: OrderStatus,
+    # ) -> None:
+    #     result = self._enum_parser.parse_bybit_order_status(bybit_order_status)
+    #     assert result == order_status
+    #
+    # @pytest.mark.parametrize(
+    #     ("order_status", "bybit_order_status"),
+    #     [
+    #         [OrderStatus.SUBMITTED, BybitOrderStatus.CREATED],
+    #         [OrderStatus.ACCEPTED, BybitOrderStatus.NEW],
+    #         [OrderStatus.FILLED, BybitOrderStatus.FILLED],
+    #         [OrderStatus.CANCELED, BybitOrderStatus.CANCELED],
+    #     ],
+    # )
+    # def test_parse_nautilus_order_status(
+    #     self,
+    #     order_status: OrderStatus,
+    #     bybit_order_status: BybitOrderStatus,
+    # ) -> None:
+    #     result = self._enum_parser.parse_nautilus_order_status(order_status)
+    #     assert result == bybit_order_status

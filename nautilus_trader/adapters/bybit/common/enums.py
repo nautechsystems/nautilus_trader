@@ -168,6 +168,7 @@ class BybitTriggerType(Enum):
 
 @unique
 class BybitTriggerDirection(Enum):
+    NONE = 0
     RISES_TO = 1  # Triggered when market price rises to triggerPrice
     FALLS_TO = 2  # Triggered when market price falls to triggerPrice
 
@@ -240,13 +241,78 @@ class BybitEnumParser:
             b: a for a, b in self.bybit_to_nautilus_order_side.items()
         }
         self.bybit_to_nautilus_order_type = {
-            (BybitOrderType.MARKET, BybitStopOrderType.NONE): OrderType.MARKET,
-            (BybitOrderType.LIMIT, BybitStopOrderType.NONE): OrderType.LIMIT,
-            (BybitOrderType.MARKET, BybitStopOrderType.STOP): OrderType.STOP_MARKET,
-            (BybitOrderType.LIMIT, BybitStopOrderType.STOP): OrderType.STOP_LIMIT,
-        }
-        self.nautilus_to_bybit_order_type = {
-            b: a for a, b in self.bybit_to_nautilus_order_type.items()
+            (
+                BybitOrderType.MARKET,
+                BybitStopOrderType.NONE,
+                BybitOrderSide.BUY,
+                BybitTriggerDirection.NONE,
+            ): OrderType.MARKET,
+            (
+                BybitOrderType.MARKET,
+                BybitStopOrderType.NONE,
+                BybitOrderSide.SELL,
+                BybitTriggerDirection.NONE,
+            ): OrderType.MARKET,
+            (
+                BybitOrderType.LIMIT,
+                BybitStopOrderType.NONE,
+                BybitOrderSide.BUY,
+                BybitTriggerDirection.NONE,
+            ): OrderType.LIMIT,
+            (
+                BybitOrderType.LIMIT,
+                BybitStopOrderType.NONE,
+                BybitOrderSide.SELL,
+                BybitTriggerDirection.NONE,
+            ): OrderType.LIMIT,
+            (
+                BybitOrderType.MARKET,
+                BybitStopOrderType.STOP,
+                BybitOrderSide.BUY,
+                BybitTriggerDirection.RISES_TO,
+            ): OrderType.MARKET_IF_TOUCHED,
+            (
+                BybitOrderType.MARKET,
+                BybitStopOrderType.STOP,
+                BybitOrderSide.SELL,
+                BybitTriggerDirection.FALLS_TO,
+            ): OrderType.MARKET_IF_TOUCHED,
+            (
+                BybitOrderType.MARKET,
+                BybitStopOrderType.STOP,
+                BybitOrderSide.BUY,
+                BybitTriggerDirection.FALLS_TO,
+            ): OrderType.STOP_MARKET,
+            (
+                BybitOrderType.MARKET,
+                BybitStopOrderType.STOP,
+                BybitOrderSide.SELL,
+                BybitTriggerDirection.RISES_TO,
+            ): OrderType.STOP_MARKET,
+            (
+                BybitOrderType.LIMIT,
+                BybitStopOrderType.STOP,
+                BybitOrderSide.BUY,
+                BybitTriggerDirection.RISES_TO,
+            ): OrderType.LIMIT_IF_TOUCHED,
+            (
+                BybitOrderType.LIMIT,
+                BybitStopOrderType.STOP,
+                BybitOrderSide.SELL,
+                BybitTriggerDirection.FALLS_TO,
+            ): OrderType.LIMIT_IF_TOUCHED,
+            (
+                BybitOrderType.LIMIT,
+                BybitStopOrderType.STOP,
+                BybitOrderSide.BUY,
+                BybitTriggerDirection.FALLS_TO,
+            ): OrderType.STOP_LIMIT,
+            (
+                BybitOrderType.LIMIT,
+                BybitStopOrderType.STOP,
+                BybitOrderSide.SELL,
+                BybitTriggerDirection.RISES_TO,
+            ): OrderType.STOP_LIMIT,
         }
 
         # TODO check time in force mapping
@@ -262,17 +328,81 @@ class BybitEnumParser:
             TimeInForce.FOK: BybitTimeInForce.FOK,
         }
 
+        # fmt: off
         self.bybit_to_nautilus_order_status = {
-            BybitOrderStatus.CREATED: OrderStatus.SUBMITTED,
-            BybitOrderStatus.NEW: OrderStatus.ACCEPTED,
-            BybitOrderStatus.FILLED: OrderStatus.FILLED,
-            BybitOrderStatus.CANCELED: OrderStatus.CANCELED,
-            BybitOrderStatus.PARTIALLY_FILLED: OrderStatus.PARTIALLY_FILLED,
-            BybitOrderStatus.DEACTIVATED: OrderStatus.EXPIRED,
+            (OrderType.MARKET, BybitOrderStatus.CREATED): OrderStatus.SUBMITTED,
+            (OrderType.MARKET, BybitOrderStatus.NEW): OrderStatus.ACCEPTED,
+            (OrderType.MARKET, BybitOrderStatus.REJECTED): OrderStatus.REJECTED,
+            (OrderType.MARKET, BybitOrderStatus.CANCELED): OrderStatus.CANCELED,
+            (OrderType.MARKET, BybitOrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
+            (OrderType.MARKET, BybitOrderStatus.FILLED): OrderStatus.FILLED,
+
+            (OrderType.LIMIT, BybitOrderStatus.CREATED): OrderStatus.SUBMITTED,
+            (OrderType.LIMIT, BybitOrderStatus.NEW): OrderStatus.ACCEPTED,
+            (OrderType.LIMIT, BybitOrderStatus.REJECTED): OrderStatus.REJECTED,
+            (OrderType.LIMIT, BybitOrderStatus.CANCELED): OrderStatus.CANCELED,
+            (OrderType.LIMIT, BybitOrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
+            (OrderType.LIMIT, BybitOrderStatus.FILLED): OrderStatus.FILLED,
+
+            (OrderType.MARKET_IF_TOUCHED, BybitOrderStatus.CREATED): OrderStatus.SUBMITTED,
+            (OrderType.MARKET_IF_TOUCHED, BybitOrderStatus.NEW): OrderStatus.ACCEPTED,
+            (OrderType.MARKET_IF_TOUCHED, BybitOrderStatus.REJECTED): OrderStatus.REJECTED,
+            (OrderType.MARKET_IF_TOUCHED, BybitOrderStatus.CANCELED): OrderStatus.CANCELED,
+            (OrderType.MARKET_IF_TOUCHED, BybitOrderStatus.UNTRIGGERED): OrderStatus.ACCEPTED,
+            (OrderType.MARKET_IF_TOUCHED, BybitOrderStatus.DEACTIVATED): OrderStatus.CANCELED,
+            (OrderType.MARKET_IF_TOUCHED, BybitOrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
+            (OrderType.MARKET_IF_TOUCHED, BybitOrderStatus.FILLED): OrderStatus.FILLED,
+
+            (OrderType.LIMIT_IF_TOUCHED, BybitOrderStatus.CREATED): OrderStatus.SUBMITTED,
+            (OrderType.LIMIT_IF_TOUCHED, BybitOrderStatus.NEW): OrderStatus.ACCEPTED,
+            (OrderType.LIMIT_IF_TOUCHED, BybitOrderStatus.REJECTED): OrderStatus.REJECTED,
+            (OrderType.LIMIT_IF_TOUCHED, BybitOrderStatus.CANCELED): OrderStatus.CANCELED,
+            (OrderType.LIMIT_IF_TOUCHED, BybitOrderStatus.UNTRIGGERED): OrderStatus.ACCEPTED,
+            (OrderType.LIMIT_IF_TOUCHED, BybitOrderStatus.DEACTIVATED): OrderStatus.CANCELED,
+            (OrderType.LIMIT_IF_TOUCHED, BybitOrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
+            (OrderType.LIMIT_IF_TOUCHED, BybitOrderStatus.FILLED): OrderStatus.FILLED,
+
+            (OrderType.STOP_MARKET, BybitOrderStatus.CREATED): OrderStatus.SUBMITTED,
+            (OrderType.STOP_MARKET, BybitOrderStatus.NEW): OrderStatus.ACCEPTED,
+            (OrderType.STOP_MARKET, BybitOrderStatus.REJECTED): OrderStatus.REJECTED,
+            (OrderType.STOP_MARKET, BybitOrderStatus.CANCELED): OrderStatus.CANCELED,
+            (OrderType.STOP_MARKET, BybitOrderStatus.UNTRIGGERED): OrderStatus.ACCEPTED,
+            (OrderType.STOP_MARKET, BybitOrderStatus.TRIGGERED): OrderStatus.TRIGGERED,
+            (OrderType.STOP_MARKET, BybitOrderStatus.DEACTIVATED): OrderStatus.CANCELED,
+            (OrderType.STOP_MARKET, BybitOrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
+            (OrderType.STOP_MARKET, BybitOrderStatus.FILLED): OrderStatus.FILLED,
+
+            (OrderType.STOP_LIMIT, BybitOrderStatus.CREATED): OrderStatus.SUBMITTED,
+            (OrderType.STOP_LIMIT, BybitOrderStatus.NEW): OrderStatus.ACCEPTED,
+            (OrderType.STOP_LIMIT, BybitOrderStatus.REJECTED): OrderStatus.REJECTED,
+            (OrderType.STOP_LIMIT, BybitOrderStatus.CANCELED): OrderStatus.CANCELED,
+            (OrderType.STOP_LIMIT, BybitOrderStatus.UNTRIGGERED): OrderStatus.ACCEPTED,
+            (OrderType.STOP_LIMIT, BybitOrderStatus.TRIGGERED): OrderStatus.TRIGGERED,
+            (OrderType.STOP_LIMIT, BybitOrderStatus.DEACTIVATED): OrderStatus.CANCELED,
+            (OrderType.STOP_LIMIT, BybitOrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
+            (OrderType.STOP_LIMIT, BybitOrderStatus.FILLED): OrderStatus.FILLED,
+
+            (OrderType.TRAILING_STOP_MARKET, BybitOrderStatus.CREATED): OrderStatus.SUBMITTED,
+            (OrderType.TRAILING_STOP_MARKET, BybitOrderStatus.NEW): OrderStatus.ACCEPTED,
+            (OrderType.TRAILING_STOP_MARKET, BybitOrderStatus.REJECTED): OrderStatus.REJECTED,
+            (OrderType.TRAILING_STOP_MARKET, BybitOrderStatus.CANCELED): OrderStatus.CANCELED,
+            (OrderType.TRAILING_STOP_MARKET, BybitOrderStatus.UNTRIGGERED): OrderStatus.ACCEPTED,
+            (OrderType.TRAILING_STOP_MARKET, BybitOrderStatus.TRIGGERED): OrderStatus.TRIGGERED,
+            (OrderType.TRAILING_STOP_MARKET, BybitOrderStatus.DEACTIVATED): OrderStatus.CANCELED,
+            (OrderType.TRAILING_STOP_MARKET, BybitOrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
+            (OrderType.TRAILING_STOP_MARKET, BybitOrderStatus.FILLED): OrderStatus.FILLED,
+
+            (OrderType.TRAILING_STOP_LIMIT, BybitOrderStatus.CREATED): OrderStatus.SUBMITTED,
+            (OrderType.TRAILING_STOP_LIMIT, BybitOrderStatus.NEW): OrderStatus.ACCEPTED,
+            (OrderType.TRAILING_STOP_LIMIT, BybitOrderStatus.REJECTED): OrderStatus.REJECTED,
+            (OrderType.TRAILING_STOP_LIMIT, BybitOrderStatus.CANCELED): OrderStatus.CANCELED,
+            (OrderType.TRAILING_STOP_LIMIT, BybitOrderStatus.UNTRIGGERED): OrderStatus.ACCEPTED,
+            (OrderType.TRAILING_STOP_LIMIT, BybitOrderStatus.TRIGGERED): OrderStatus.TRIGGERED,
+            (OrderType.TRAILING_STOP_LIMIT, BybitOrderStatus.DEACTIVATED): OrderStatus.CANCELED,
+            (OrderType.TRAILING_STOP_LIMIT, BybitOrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
+            (OrderType.TRAILING_STOP_LIMIT, BybitOrderStatus.FILLED): OrderStatus.FILLED,
         }
-        self.nautilus_to_bybit_order_status = {
-            b: a for a, b in self.bybit_to_nautilus_order_status.items()
-        }
+        # fmt: on
         self.bybit_to_nautilus_trigger_type = {
             BybitTriggerType.NONE: TriggerType.NO_TRIGGER,
             BybitTriggerType.LAST_PRICE: TriggerType.LAST_TRADE,
@@ -282,6 +412,7 @@ class BybitEnumParser:
         self.nautilus_to_bybit_trigger_type = {
             b: a for a, b in self.bybit_to_nautilus_trigger_type.items()
         }
+        self.nautilus_to_bybit_trigger_type[TriggerType.DEFAULT] = BybitTriggerType.LAST_PRICE
 
         # klines
         self.minute_klines_interval = [1, 3, 5, 15, 30]
@@ -305,25 +436,18 @@ class BybitEnumParser:
                 else raise_error(ValueError(f"Bybit incorrect month kline interval {x}"))
             ),
         }
-        self.valid_order_types = {
-            OrderType.MARKET,
-            OrderType.LIMIT,
-            OrderType.MARKET_IF_TOUCHED,
-            OrderType.LIMIT_IF_TOUCHED,
-            OrderType.STOP_MARKET,
-            OrderType.STOP_LIMIT,
-        }
         self.valid_time_in_force = {
             TimeInForce.GTC,
             TimeInForce.IOC,
             TimeInForce.FOK,
         }
 
-    def parse_bybit_order_status(self, order_status: BybitOrderStatus) -> OrderStatus:
-        return check_dict_keys(order_status, self.bybit_to_nautilus_order_status)
-
-    def parse_nautilus_order_status(self, order_status: OrderStatus) -> BybitOrderStatus:
-        return check_dict_keys(order_status, self.nautilus_to_bybit_order_status)
+    def parse_bybit_order_status(
+        self,
+        order_type: OrderType,
+        order_status: BybitOrderStatus,
+    ) -> OrderStatus:
+        return check_dict_keys((order_type, order_status), self.bybit_to_nautilus_order_status)
 
     def parse_bybit_time_in_force(self, time_in_force: BybitTimeInForce) -> TimeInForce:
         return check_dict_keys(time_in_force, self.bybit_to_nautilus_time_in_force)
@@ -338,14 +462,13 @@ class BybitEnumParser:
         self,
         order_type: BybitOrderType,
         stop_order_type: BybitStopOrderType,
+        order_side: BybitOrderSide,
+        trigger_direction: BybitTriggerDirection,
     ) -> OrderType:
-        return check_dict_keys((order_type, stop_order_type), self.bybit_to_nautilus_order_type)
-
-    def parse_nautilus_order_type(
-        self,
-        order_type: OrderType,
-    ) -> tuple[BybitOrderType, BybitStopOrderType]:
-        return check_dict_keys(order_type, self.nautilus_to_bybit_order_type)
+        return check_dict_keys(
+            (order_type, stop_order_type, order_side, trigger_direction),
+            self.bybit_to_nautilus_order_type,
+        )
 
     def parse_nautilus_time_in_force(self, time_in_force: TimeInForce) -> BybitTimeInForce:
         try:

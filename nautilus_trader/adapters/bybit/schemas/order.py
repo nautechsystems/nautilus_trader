@@ -25,12 +25,14 @@ from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.enums import BybitStopOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
+from nautilus_trader.adapters.bybit.common.enums import BybitTriggerDirection
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
 from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.model.enums import ContingencyType
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -53,7 +55,7 @@ class BybitOrder(msgspec.Struct, omit_defaults=True, kw_only=True):
     orderStatus: BybitOrderStatus
     cancelType: str
     rejectReason: str
-    avgPrice: str
+    avgPrice: str | None = None
     leavesQty: str
     leavesValue: str
     cumExecQty: str
@@ -68,7 +70,7 @@ class BybitOrder(msgspec.Struct, omit_defaults=True, kw_only=True):
     stopLoss: str
     tpTriggerBy: str
     slTriggerBy: str
-    triggerDirection: int
+    triggerDirection: BybitTriggerDirection = BybitTriggerDirection.NONE
     triggerBy: BybitTriggerType
     lastPriceOnCreated: str
     reduceOnly: bool
@@ -98,11 +100,21 @@ class BybitOrder(msgspec.Struct, omit_defaults=True, kw_only=True):
         trailing_offset = None
         trailing_offset_type = TrailingOffsetType.NO_TRAILING_OFFSET
         trigger_type = enum_parser.parse_bybit_trigger_type(self.triggerBy)
-        order_status = enum_parser.parse_bybit_order_status(self.orderStatus)
         order_type = enum_parser.parse_bybit_order_type(
             self.orderType,
             self.stopOrderType,
+            self.side,
+            self.triggerDirection,
         )
+        order_status = enum_parser.parse_bybit_order_status(order_type, self.orderStatus)
+
+        # TODO: Temporary and shouldn't be necessary
+        avg_px = Decimal(self.avgPrice) if self.avgPrice else None
+        if (
+            order_status in (OrderStatus.FILLED, OrderStatus.PARTIALLY_FILLED)
+            and self.avgPrice is None
+        ):
+            avg_px = Decimal()
 
         return OrderStatusReport(
             account_id=account_id,
@@ -122,7 +134,7 @@ class BybitOrder(msgspec.Struct, omit_defaults=True, kw_only=True):
             trailing_offset_type=trailing_offset_type,
             quantity=Quantity.from_str(self.qty),
             filled_qty=Quantity.from_str(self.cumExecQty),
-            avg_px=Decimal(self.avgPrice) if self.avgPrice else None,
+            avg_px=avg_px,
             post_only=self.timeInForce == BybitTimeInForce.POST_ONLY,
             reduce_only=self.reduceOnly,
             ts_accepted=millis_to_nanos(Decimal(self.createdTime)),
