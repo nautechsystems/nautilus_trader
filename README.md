@@ -6,8 +6,6 @@
 ![pypi-format](https://img.shields.io/pypi/format/nautilus_trader?color=blue)
 [![Downloads](https://pepy.tech/badge/nautilus-trader)](https://pepy.tech/project/nautilus-trader)
 
-![](https://dcbadge.limes.pink/api/server/AUWVs3XaCS)
-
 | Branch    | Version                                                                                                                                             | Status                                                                                                                                                                                            |
 | :-------- | :-------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `master`  | ![version](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fnautechsystems%2Fnautilus_trader%2Fmaster%2Fversion.json)  | [![build](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/nautechsystems/nautilus_trader/actions/workflows/build.yml)  |
@@ -19,6 +17,8 @@
 | `Linux (x86_64)`   | 1.79.0+ | 3.10+  |
 | `macOS (arm64)`    | 1.79.0+ | 3.10+  |
 | `Windows (x86_64)` | 1.79.0+ | 3.10+  |
+
+![](https://dcbadge.limes.pink/api/server/AUWVs3XaCS)
 
 - **Website:** https://nautilustrader.io
 - **Docs:** https://docs.nautilustrader.io
