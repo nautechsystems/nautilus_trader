@@ -8,9 +8,9 @@ NautilusTrader is tested and supported for Python 3.10-3.12 on the following 64-
 | macOS                  | 12 or later           | x86_64, ARM64     |
 | Windows Server         | 2022 or later         | x86_64            |
 
-```{tip}
+:::tip
 We recommend running the platform with the latest supported stable version of Python, and in a virtual environment to isolate the dependencies.
-```
+:::
 
 ## From PyPI
 To install the latest binary wheel (or sdist package) from PyPI using Pythons _pip_ package manager:
