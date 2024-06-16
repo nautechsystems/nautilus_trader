@@ -9,7 +9,7 @@ NautilusTrader is tested and supported for Python 3.10-3.12 on the following 64-
 | Windows Server         | 2022 or later         | x86_64            |
 
 :::tip
-We recommend running the platform with the latest supported stable version of Python, and in a virtual environment to isolate the dependencies.
+We recommend running the platform with the latest stable version of Python, and in a virtual environment to isolate the dependencies.
 :::
 
 ## From PyPI
