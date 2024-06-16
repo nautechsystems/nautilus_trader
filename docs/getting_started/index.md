@@ -10,12 +10,16 @@ The **Installation** guide will help to ensure that NautilusTrader is properly i
 ## [Quickstart](quickstart.md)
 The **Quickstart** provides a step-by-step walk through for setting up your first backtest.
 
-## Backtesting
-Backtesting involves running simulated trading systems on historical data. The backtesting tutorials will
-begin with the general basics, then become more specific.
+## Backtesting API levels
 
-### Which API level?
+Backtesting involves running simulated trading systems on historical data.
+
+To get started backtesting with NautilusTrader you need to first understand the two different API
+levels which are provided, and which one may be more suitable for your intended use case.
+
+:::info
 For more information on which API level to choose, refer to the [Backtesting](../concepts/backtesting.md) guide.
+:::
 
 ### [Backtest (low-level API)](backtest_low_level.md)
 This tutorial runs through how to load raw data (external to Nautilus) using data loaders and wranglers,
