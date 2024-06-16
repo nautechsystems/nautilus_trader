@@ -41,7 +41,11 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import RecordFlag
+from nautilus_trader.model.enums import TrailingOffsetType
+from nautilus_trader.model.enums import order_side_to_str
+from nautilus_trader.model.enums import order_type_to_str
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -679,22 +683,46 @@ class BybitWsAccountOrder(msgspec.Struct):
         enum_parser: BybitEnumParser,
         ts_init: int,
     ) -> OrderStatusReport:
+        order_side = enum_parser.parse_bybit_order_side(self.side)
         order_type = enum_parser.parse_bybit_order_type(
             self.orderType,
             self.stopOrderType,
             self.side,
             self.triggerDirection,
         )
+        if self.orderLinkId:
+            client_order_id = self.orderLinkId
+        else:
+            order_side_str = order_side_to_str(order_side)
+            order_type_str = order_type_to_str(order_type)
+            client_order_id = f"{instrument_id}-{order_side_str}-{order_type_str}"
+
+        trigger_price = Price.from_str(self.triggerPrice) if self.triggerPrice else None
+        trigger_type = enum_parser.parse_bybit_trigger_type(self.triggerBy)
+
+        if order_type in (OrderType.TRAILING_STOP_MARKET, OrderType.TRAILING_STOP_LIMIT):
+            trigger_price = Decimal(self.triggerPrice)
+            last_price = Decimal(self.lastPriceOnCreated)
+            trailing_offset = abs(trigger_price - last_price)
+            trailing_offset_type = TrailingOffsetType.PRICE
+        else:
+            trailing_offset = None
+            trailing_offset_type = TrailingOffsetType.NO_TRAILING_OFFSET
+
         return OrderStatusReport(
             account_id=account_id,
             instrument_id=instrument_id,
-            client_order_id=ClientOrderId(str(self.orderLinkId)),
-            venue_order_id=VenueOrderId(str(self.orderId)),
+            client_order_id=ClientOrderId(client_order_id),
+            venue_order_id=VenueOrderId(self.orderId),
             order_side=enum_parser.parse_bybit_order_side(self.side),
             order_type=order_type,
             time_in_force=enum_parser.parse_bybit_time_in_force(self.timeInForce),
             order_status=enum_parser.parse_bybit_order_status(order_type, self.orderStatus),
             price=Price.from_str(self.price) if self.price else None,
+            trigger_price=trigger_price,
+            trigger_type=trigger_type,
+            trailing_offset=trailing_offset,
+            trailing_offset_type=trailing_offset_type,
             quantity=Quantity.from_str(self.qty),
             filled_qty=Quantity.from_str(self.cumExecQty),
             report_id=UUID4(),

@@ -33,6 +33,7 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -97,8 +98,7 @@ class BybitOrder(msgspec.Struct, omit_defaults=True, kw_only=True):
         order_list_id = None
         contingency_type = ContingencyType.NO_CONTINGENCY
         trigger_price = Price.from_str(self.triggerPrice) if self.triggerPrice else None
-        trailing_offset = None
-        trailing_offset_type = TrailingOffsetType.NO_TRAILING_OFFSET
+
         trigger_type = enum_parser.parse_bybit_trigger_type(self.triggerBy)
         order_type = enum_parser.parse_bybit_order_type(
             self.orderType,
@@ -107,6 +107,15 @@ class BybitOrder(msgspec.Struct, omit_defaults=True, kw_only=True):
             self.triggerDirection,
         )
         order_status = enum_parser.parse_bybit_order_status(order_type, self.orderStatus)
+
+        if order_type in (OrderType.TRAILING_STOP_MARKET, OrderType.TRAILING_STOP_LIMIT):
+            trigger_price = Decimal(self.triggerPrice)
+            last_price = Decimal(self.lastPriceOnCreated)
+            trailing_offset = abs(trigger_price - last_price)
+            trailing_offset_type = TrailingOffsetType.PRICE
+        else:
+            trailing_offset = None
+            trailing_offset_type = TrailingOffsetType.NO_TRAILING_OFFSET
 
         # TODO: Temporary and shouldn't be necessary
         avg_px = Decimal(self.avgPrice) if self.avgPrice else None
@@ -217,6 +226,17 @@ class BybitAmendOrderResponse(msgspec.Struct):
     retCode: int
     retMsg: str
     result: BybitAmendOrder
+    retExtInfo: dict[str, Any]
+    time: int
+
+
+################################################################################
+# Set trading stop
+################################################################################
+class BybitSetTradingStopResponse(msgspec.Struct):
+    retCode: int
+    retMsg: str
+    result: dict[str, Any]
     retExtInfo: dict[str, Any]
     time: int
 
