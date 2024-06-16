@@ -1,7 +1,7 @@
 # Backtest (high-level API)
 
-**This tutorial walks through how to use a `BacktestNode` to backtest a simple EMA cross strategy
-on a simulated FX ECN venue using historical quote tick data.**
+This tutorial walks through how to use a `BacktestNode` to backtest a simple EMA cross strategy
+on a simulated FX ECN venue using historical quote tick data.
 
 The following points will be covered:
 - How to load raw data (external to Nautilus) into the data catalog
