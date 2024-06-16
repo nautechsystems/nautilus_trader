@@ -18,17 +18,25 @@ use std::{
     time::{Duration, Instant},
 };
 
+use log::error;
+use nautilus_common::{cache::database::CacheDatabaseAdapter, interface::account::Account};
+use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
-    identifiers::{ClientOrderId, InstrumentId},
-    instruments::any::InstrumentAny,
+    identifiers::{
+        AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
+        VenueOrderId,
+    },
+    instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
     orders::any::OrderAny,
+    position::Position,
     types::currency::Currency,
 };
 use sqlx::{postgres::PgConnectOptions, PgPool};
 use tokio::{
-    sync::mpsc::{channel, error::TryRecvError, Receiver, Sender},
+    sync::mpsc::{error::TryRecvError, unbounded_channel, UnboundedReceiver, UnboundedSender},
     time::sleep,
 };
+use ustr::Ustr;
 
 use crate::sql::{
     models::general::GeneralRow,
@@ -43,7 +51,7 @@ use crate::sql::{
 )]
 pub struct PostgresCacheDatabase {
     pub pool: PgPool,
-    tx: Sender<DatabaseQuery>,
+    tx: UnboundedSender<DatabaseQuery>,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -178,7 +186,7 @@ impl PostgresCacheDatabase {
         let pg_connect_options =
             get_postgres_connect_options(host, port, username, password, database).unwrap();
         let pool = connect_pg(pg_connect_options.clone().into()).await.unwrap();
-        let (tx, rx) = channel::<DatabaseQuery>(1000);
+        let (tx, rx) = unbounded_channel::<DatabaseQuery>();
         // spawn a thread to handle messages
         let _join_handle = tokio::spawn(async move {
             PostgresCacheDatabase::handle_message(rx, pg_connect_options.clone().into()).await;
@@ -186,7 +194,10 @@ impl PostgresCacheDatabase {
         Ok(PostgresCacheDatabase { pool, tx })
     }
 
-    async fn handle_message(mut rx: Receiver<DatabaseQuery>, pg_connect_options: PgConnectOptions) {
+    async fn handle_message(
+        mut rx: UnboundedReceiver<DatabaseQuery>,
+        pg_connect_options: PgConnectOptions,
+    ) {
         let pool = connect_pg(pg_connect_options).await.unwrap();
         // Buffering
         let mut buffer: VecDeque<DatabaseQuery> = VecDeque::new();
@@ -230,67 +241,279 @@ impl PostgresCacheDatabase {
             }
         }
     }
+}
 
-    pub async fn add(&self, key: String, value: Vec<u8>) -> anyhow::Result<()> {
+#[allow(dead_code)]
+#[allow(unused)]
+impl CacheDatabaseAdapter for PostgresCacheDatabase {
+    fn close(&mut self) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn flush(&mut self) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn load(&mut self) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+        todo!()
+    }
+
+    fn load_currencies(&mut self) -> anyhow::Result<HashMap<Ustr, Currency>> {
+        let pool = self.pool.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_currencies(&pool).await;
+            match result {
+                Ok(currencies) => {
+                    let mapping = currencies
+                        .into_iter()
+                        .map(|currency| (currency.code, currency))
+                        .collect();
+                    let _ = tx.send(mapping);
+                }
+                Err(e) => {
+                    error!("Failed to load currencies: {:?}", e);
+                    let _ = tx.send(HashMap::new());
+                }
+            }
+        });
+        Ok(rx.recv().unwrap())
+    }
+
+    fn load_instruments(&mut self) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>> {
+        let pool = self.pool.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_instruments(&pool).await;
+            match result {
+                Ok(instruments) => {
+                    let mapping = instruments
+                        .into_iter()
+                        .map(|instrument| (instrument.id(), instrument))
+                        .collect();
+                    let _ = tx.send(mapping);
+                }
+                Err(e) => {
+                    error!("Failed to load instruments: {:?}", e);
+                    let _ = tx.send(HashMap::new());
+                }
+            }
+        });
+        Ok(rx.recv().unwrap())
+    }
+
+    fn load_synthetics(&mut self) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>> {
+        todo!()
+    }
+
+    fn load_accounts(&mut self) -> anyhow::Result<HashMap<AccountId, Box<dyn Account>>> {
+        todo!()
+    }
+
+    fn load_orders(&mut self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
+        todo!()
+    }
+
+    fn load_positions(&mut self) -> anyhow::Result<HashMap<PositionId, Position>> {
+        todo!()
+    }
+
+    fn load_index_order_position(&mut self) -> anyhow::Result<HashMap<ClientOrderId, Position>> {
+        todo!()
+    }
+
+    fn load_index_order_client(&mut self) -> anyhow::Result<HashMap<ClientOrderId, ClientId>> {
+        todo!()
+    }
+
+    fn load_currency(&mut self, code: &Ustr) -> anyhow::Result<Option<Currency>> {
+        let pool = self.pool.clone();
+        let code = code.to_owned(); // Clone the code
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_currency(&pool, &code).await;
+            match result {
+                Ok(currency) => {
+                    let _ = tx.send(currency);
+                }
+                Err(e) => {
+                    error!("Failed to load currency {}: {:?}", code, e);
+                    let _ = tx.send(None);
+                }
+            }
+        });
+        let res = rx.recv().unwrap();
+        Ok(res)
+    }
+
+    fn load_instrument(
+        &mut self,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Option<InstrumentAny>> {
+        let pool = self.pool.clone();
+        let instrument_id = instrument_id.to_owned(); // Clone the instrument_id
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_instrument(&pool, &instrument_id).await;
+            match result {
+                Ok(instrument) => {
+                    let _ = tx.send(instrument);
+                }
+                Err(e) => {
+                    error!("Failed to load instrument {}: {:?}", instrument_id, e);
+                    let _ = tx.send(None);
+                }
+            }
+        });
+        Ok(rx.recv().unwrap())
+    }
+
+    fn load_synthetic(
+        &mut self,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<SyntheticInstrument> {
+        todo!()
+    }
+
+    fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<Box<dyn Account>> {
+        todo!()
+    }
+
+    fn load_order(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<Option<OrderAny>> {
+        let pool = self.pool.clone();
+        let client_order_id = client_order_id.to_owned();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_order(&pool, &client_order_id).await;
+            match result {
+                Ok(order) => {
+                    let _ = tx.send(order);
+                }
+                Err(e) => {
+                    error!("Failed to load order {}: {:?}", client_order_id, e);
+                    let _ = tx.send(None);
+                }
+            }
+        });
+        Ok(rx.recv().unwrap())
+    }
+
+    fn load_position(&mut self, position_id: &PositionId) -> anyhow::Result<Position> {
+        todo!()
+    }
+
+    fn load_actor(
+        &mut self,
+        component_id: &ComponentId,
+    ) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+        todo!()
+    }
+
+    fn delete_actor(&mut self, component_id: &ComponentId) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn load_strategy(
+        &mut self,
+        strategy_id: &StrategyId,
+    ) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+        todo!()
+    }
+
+    fn delete_strategy(&mut self, component_id: &StrategyId) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add(&mut self, key: String, value: Vec<u8>) -> anyhow::Result<()> {
         let query = DatabaseQuery::Add(key, value);
-        self.tx.send(query).await.map_err(|err| {
+        self.tx.send(query).map_err(|err| {
             anyhow::anyhow!("Failed to send query to database message handler: {err}")
         })
     }
 
-    pub async fn add_currency(&self, currency: Currency) -> anyhow::Result<()> {
-        let query = DatabaseQuery::AddCurrency(currency);
-        self.tx.send(query).await.map_err(|err| {
+    fn add_currency(&mut self, currency: &Currency) -> anyhow::Result<()> {
+        let query = DatabaseQuery::AddCurrency(*currency);
+        self.tx.send(query).map_err(|err| {
             anyhow::anyhow!("Failed to query add_currency to database message handler: {err}")
         })
     }
 
-    pub async fn load_currencies(&self) -> anyhow::Result<Vec<Currency>> {
-        DatabaseQueries::load_currencies(&self.pool).await
-    }
-
-    pub async fn load_currency(&self, code: &str) -> anyhow::Result<Option<Currency>> {
-        DatabaseQueries::load_currency(&self.pool, code).await
-    }
-
-    pub async fn add_instrument(&self, instrument: InstrumentAny) -> anyhow::Result<()> {
-        let query = DatabaseQuery::AddInstrument(instrument);
-        self.tx.send(query).await.map_err(|err| {
+    fn add_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
+        let query = DatabaseQuery::AddInstrument(instrument.clone());
+        self.tx.send(query).map_err(|err| {
             anyhow::anyhow!(
                 "Failed to send query add_instrument to database message handler: {err}"
             )
         })
     }
 
-    pub async fn load_instrument(
-        &self,
-        instrument_id: InstrumentId,
-    ) -> anyhow::Result<Option<InstrumentAny>> {
-        DatabaseQueries::load_instrument(&self.pool, instrument_id).await
+    fn add_synthetic(&mut self, synthetic: &SyntheticInstrument) -> anyhow::Result<()> {
+        todo!()
     }
 
-    pub async fn load_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
-        DatabaseQueries::load_instruments(&self.pool).await
+    fn add_account(&mut self, account: &dyn Account) -> anyhow::Result<Box<dyn Account>> {
+        todo!()
     }
 
-    pub async fn add_order(&self, order: OrderAny) -> anyhow::Result<()> {
-        let query = DatabaseQuery::AddOrder(order, false);
-        self.tx.send(query).await.map_err(|err| {
+    fn add_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
+        let query = DatabaseQuery::AddOrder(order.clone(), false);
+        self.tx.send(query).map_err(|err| {
             anyhow::anyhow!("Failed to send query add_order to database message handler: {err}")
         })
     }
 
-    pub async fn update_order(&self, order: OrderAny) -> anyhow::Result<()> {
-        let query = DatabaseQuery::AddOrder(order, true);
-        self.tx.send(query).await.map_err(|err| {
+    fn add_position(&mut self, position: &Position) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn index_venue_order_id(
+        &mut self,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+    ) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn index_order_position(
+        &mut self,
+        client_order_id: ClientOrderId,
+        position_id: PositionId,
+    ) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn update_actor(&mut self) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn update_strategy(&mut self) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn update_account(&mut self, account: &dyn Account) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn update_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
+        let query = DatabaseQuery::AddOrder(order.clone(), true);
+        self.tx.send(query).map_err(|err| {
             anyhow::anyhow!("Failed to send query add_order to database message handler: {err}")
         })
     }
 
-    pub async fn load_order(
-        &self,
-        client_order_id: &ClientOrderId,
-    ) -> anyhow::Result<Option<OrderAny>> {
-        DatabaseQueries::load_order(&self.pool, client_order_id).await
+    fn update_position(&mut self, position: &Position) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn snapshot_order_state(&mut self, order: &OrderAny) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn snapshot_position_state(&mut self, position: &Position) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn heartbeat(&mut self, timestamp: UnixNanos) -> anyhow::Result<()> {
+        todo!()
     }
 }

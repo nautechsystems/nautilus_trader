@@ -703,10 +703,16 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         for key in self.database.keys(&format!("{CURRENCIES}*"))? {
             let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
             let currency_code = Ustr::from(parts.first().unwrap());
-            let currency = self.load_currency(&currency_code)?;
-            currencies.insert(currency_code, currency);
+            let result = self.load_currency(&currency_code)?;
+            match result {
+                Some(currency) => {
+                    currencies.insert(currency_code, currency);
+                }
+                None => {
+                    error!("Currency not found: {currency_code}");
+                }
+            }
         }
-
         Ok(currencies)
     }
 
@@ -716,8 +722,15 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         for key in self.database.keys(&format!("{INSTRUMENTS}*"))? {
             let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
             let instrument_id = InstrumentId::from_str(parts.first().unwrap())?;
-            let instrument = self.load_instrument(&instrument_id)?;
-            instruments.insert(instrument_id, instrument);
+            let result = self.load_instrument(&instrument_id)?;
+            match result {
+                Some(instrument) => {
+                    instruments.insert(instrument_id, instrument);
+                }
+                None => {
+                    error!("Instrument not found: {instrument_id}");
+                }
+            }
         }
 
         Ok(instruments)
@@ -755,10 +768,16 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         for key in self.database.keys(&format!("{ORDERS}*"))? {
             let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
             let client_order_id = ClientOrderId::from(*parts.first().unwrap());
-            let order = self.load_order(&client_order_id)?;
-            orders.insert(client_order_id, order);
+            let result = self.load_order(&client_order_id)?;
+            match result {
+                Some(order) => {
+                    orders.insert(client_order_id, order);
+                }
+                None => {
+                    error!("Order not found: {client_order_id}");
+                }
+            }
         }
-
         Ok(orders)
     }
 
@@ -783,11 +802,14 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         todo!()
     }
 
-    fn load_currency(&mut self, code: &Ustr) -> anyhow::Result<Currency> {
+    fn load_currency(&mut self, code: &Ustr) -> anyhow::Result<Option<Currency>> {
         todo!()
     }
 
-    fn load_instrument(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<InstrumentAny> {
+    fn load_instrument(
+        &mut self,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Option<InstrumentAny>> {
         todo!()
     }
 
@@ -802,7 +824,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         todo!()
     }
 
-    fn load_order(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<OrderAny> {
+    fn load_order(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<Option<OrderAny>> {
         todo!()
     }
 
