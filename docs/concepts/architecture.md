@@ -156,7 +156,7 @@ and so is _correct by construction_ (unless explicitly marked `unsafe`, see the 
 
 Cython provides type safety at the C level at both compile time, and runtime:
 
-:::note
+:::info
 If you pass an argument with an invalid type to a Cython implemented module with typed parameters,
 then you will receive a `TypeError` at runtime.
 :::

@@ -36,7 +36,7 @@ self.msgbus.publish("MyTopic", "MyMessage")
 The `MessageBus` can be *backed* with any database or message broker technology which has an
 integration written for it, this then allows external publishing of messages.
 
-:::note
+:::info
 Redis is currently supported for all serializable messages which are published externally.
 The minimum supported Redis version is 6.2.0.
 :::
@@ -167,7 +167,7 @@ message_bus = MessageBusConfig(
 The `autotrim_mins` configuration parameter allows you to specify the lookback window in minutes for automatic stream trimming in your message streams.
 Automatic stream trimming helps manage the size of your message streams by removing older messages, ensuring that the streams remain manageable in terms of storage and performance.
 
-:::note
+:::info
 The current Redis implementation will maintain the `autotrim_mins` as a maximum width (plus roughly a minute, as streams are trimmed no more than once per minute).
 Rather than a maximum lookback window based on the current wall clock time.
 :::

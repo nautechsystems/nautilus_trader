@@ -24,7 +24,7 @@ Log level (`LogLevel`) values include (and generally match Rusts `tracing` level
 - `WARNING` or `WARN`
 - `ERROR`
 
-:::note
+:::info
 See the `LoggingConfig` [API Reference](../api_reference/config.md) for further details.
 :::
 
@@ -113,7 +113,7 @@ log_guard = init_logging()
 logger = Logger("MyLogger")
 ```
 
-:::note
+:::info
 See the `init_logging` [API Reference](../api_reference/common) for further details.
 :::
 

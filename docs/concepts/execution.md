@@ -126,7 +126,7 @@ Alternatively, you can specify these parameters dynamically per order, determini
 actual market conditions. In this case, the strategy configuration parameters could be provided to 
 an execution model which determines the horizon and interval.
 
-:::note
+:::info
 There is no limit to the number of execution algorithm parameters you can create. The parameters
 just need to be a dictionary with string keys and primitive values (values that can be serialized
 over the wire, such as ints, floats, and strings).
