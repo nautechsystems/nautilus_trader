@@ -20,8 +20,8 @@
 
 ![](https://dcbadge.limes.pink/api/server/AUWVs3XaCS)
 
-- **Website:** https://nautilustrader.io
 - **Docs:** https://nautilustrader.io/docs/
+- **Website:** https://nautilustrader.io
 - **Support:** [support@nautilustrader.io](mailto:support@nautilustrader.io)
 
 ## Introduction
