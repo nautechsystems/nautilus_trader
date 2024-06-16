@@ -199,7 +199,7 @@ config = TradingNodeConfig(
 )
 ```
 
-### Aggregated Trades
+### Aggregated trades
 
 Binance provide aggregated trade data endpoints as an alternative source of trade ticks.
 In comparison to the default trade endpoints, aggregated trade data endpoints can return all

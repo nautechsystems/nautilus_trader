@@ -28,6 +28,7 @@ long_method_with_many_params(
 ```
 
 ### PEP-8
+
 The codebase generally follows the PEP-8 style guide. Even though C typing is taken advantage of in the Cython parts of the codebase, we still aim to be idiomatic of Python where possible.
 One notable departure is that Python truthiness is not always taken advantage of to check if an argument is `None` for everything other than collections.
 
@@ -48,15 +49,18 @@ To be clear, it's still encouraged to use Python truthiness `is` and `not` to ch
 We welcome all feedback on where the codebase departs from PEP-8 for no apparent reason.
 
 ### Docstrings
+
 The [NumPy docstring spec](https://numpydoc.readthedocs.io/en/latest/format.html) is used throughout the codebase. This needs to be adhered to consistently to ensure the docs build correctly.
 
 ### Flake8
+
 [Flake8](https://github.com/pycqa/flake8) is utilized to lint the codebase. Current ignores can be found in the top-level `pre-commit-config.yaml`, with the justifications also commented.
 
 ### Commit messages
+
 Here are some guidelines for the style of your commit messages:
 
-1. Limit subject titles to 50 characters or fewer. Capitalize subject line; use imperative voice; and do not end with period.
+1. Limit subject titles to 50 characters or fewer. Capitalize subject line and do not end with period.
 
 2. Use 'imperative voice', i.e. the message should describe what the commit will do if applied.
 

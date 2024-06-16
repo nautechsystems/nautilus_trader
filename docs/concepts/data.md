@@ -123,6 +123,7 @@ from the `/serialization/arrow/schema.py` module.
 :::
 
 ### Initializing
+
 The data catalog can be initialized from a `NAUTILUS_PATH` environment variable, or by explicitly passing in a path like object.
 
 The following example shows how to initialize a data catalog where there is pre-existing data already written to disk at the given path.
@@ -139,6 +140,7 @@ catalog = ParquetDataCatalog(CATALOG_PATH)
 ```
 
 ### Writing data
+
 New data can be stored in the catalog, which is effectively writing the given data to disk in the Nautilus-specific Parquet format.
 All Nautilus built-in `Data` objects are supported, and any data which inherits from `Data` can be written.
 
@@ -148,6 +150,7 @@ catalog.write_data(deltas)
 ```
 
 ### Basename template
+
 Nautilus makes no assumptions about how data may be partitioned between files for a particular
 data type and instrument ID.
 
@@ -188,6 +191,7 @@ deltas = catalog.order_book_deltas(instrument_ids=[instrument.id.value], start=s
 ```
 
 ### Streaming data
+
 When running backtests in streaming mode with a `BacktestNode`, the data catalog can be used to stream the data in batches.
 
 The following example shows how to achieve this by initializing a `BacktestDataConfig` configuration object:
@@ -206,4 +210,4 @@ data_config = BacktestDataConfig(
 ```
 
 This configuration object can then be passed into a `BacktestRunConfig` and then in turn passed into a `BacktestNode` as part of a run.
-See the [Backtest (high-level API)](../tutorials/backtest_high_level.md) tutorial for more details.
+See the [Backtest (high-level API)](../getting_started/backtest_high_level.md) tutorial for more details.

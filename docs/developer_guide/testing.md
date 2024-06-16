@@ -15,11 +15,13 @@ If you’re using PyCharm then tests should run directly by right clicking on th
 Alternatively you can use the `pytest .` command from the root level tests directory, or the other subdirectories.
 
 ## Mocks
+
 Unit tests will often include other components acting as mocks. The intent of this is to simplify 
 the test suite to avoid extensive use of a mocking framework, although `MagicMock` objects are 
 currently used in particular cases.
 
 ## Code Coverage
+
 Code coverage output is generated using `coverage` and reported using [codecov](https://about.codecov.io/).
 
 High test coverage is a goal for the project however not at the expense of appropriate error 
@@ -33,6 +35,7 @@ Other design-time exceptions may also be impossible to test for, and so 100% tes
 the ultimate goal.
 
 ## Excluded code coverage
+
 The `pragma: no cover` comments found throughout the codebase [exclude code from test coverage](https://coverage.readthedocs.io/en/coverage-4.3.3/excluding.html). 
 The reason for their use is to reduce redundant/needless tests just to keep coverage high, such as:
 

@@ -37,6 +37,7 @@ The general execution flow looks like the following (each arrow indicates moveme
 The `OrderEmulator` and `ExecAlgorithm`(s) components are optional in the flow, depending on
 individual order parameters (as explained below).
 
+This diagram illustrates message flow (commands and events) across the Nautilus execution components.
 ```
                   ┌───────────────────┐
                   │                   │
@@ -65,7 +66,6 @@ individual order parameters (as explained below).
                   │                   │
                   └───────────────────┘
 
-- This diagram illustrates message flow (commands and events) across the Nautilus execution components.
 ```
 
 ## Execution algorithms
@@ -74,6 +74,7 @@ The platform supports customized execution algorithm components and provides som
 algorithms, such as the Time-Weighted Average Price (TWAP) algorithm.
 
 ### TWAP (Time-Weighted Average Price)
+
 The TWAP execution algorithm aims to execute orders by evenly spreading them over a specified
 time horizon. The algorithm receives a primary order representing the total size and direction
 then splits this by spawning smaller child orders, which are then executed at regular intervals

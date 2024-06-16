@@ -11,6 +11,7 @@ currently a number of subclasses representing a range of _asset classes_ and _in
 - `BettingInstrument` (Sports, gaming, or other betting)
 
 ## Symbology
+
 All instruments should have a unique `InstrumentId`, which is made up of both the native symbol, and venue ID, separated by a period.
 For example, on the Binance Futures crypto exchange, the Ethereum Perpetual Futures Contract has the instrument ID `ETHUSDT-PERP.BINANCE`.
 
@@ -23,6 +24,7 @@ An incorrectly specified instrument may truncate data or otherwise produce surpr
 :::
 
 ## Backtesting
+
 Generic test instruments can be instantiated through the `TestInstrumentProvider`:
 
 ```python
@@ -54,11 +56,13 @@ instrument = Instrument(...)  # <-- provide all necessary parameters
 See the full instrument [API Reference](../api_reference/model/instruments.md).
 
 ## Live trading
+
 Live integration adapters have defined `InstrumentProvider` classes which work in an automated way to cache the 
 latest instrument definitions for the exchange. Refer to a particular `Instrument` 
 object by pass the matching `InstrumentId` to data and execution related methods, and classes which require one.
 
 ## Finding instruments
+
 Since the same actor/strategy classes can be used for both backtest and live trading, you can
 get instruments in exactly the same way through the central cache:
 
@@ -92,7 +96,8 @@ def on_instrument(instrument: Instrument) -> None:
     pass
 ```
 
-## Precisions and Increments
+## Precisions and increments
+
 The instrument objects are a convenient way to organize the specification of an
 instrument through _read-only_ properties. Correct price and quantity precisions, as well as 
 minimum price and size increments, multipliers and standard lot sizes, are available.
@@ -103,6 +108,7 @@ values for prices and quantities _can_ result in the exchange rejecting orders.
 :::
 
 ## Limits
+
 Certain value limits are optional for instruments and can be `None`, these are exchange
 dependent and can include:
 - `max_quantity` (maximum quantity for a single order)
@@ -117,7 +123,7 @@ Most of these limits are checked by the Nautilus `RiskEngine`, otherwise exceedi
 published limits _can_ result in the exchange rejecting orders.
 :::
 
-## Prices and Quantities
+## Prices and quantities
 
 Instrument objects also offer a convenient way to create correct prices
 and quantities based on given values.
@@ -134,7 +140,7 @@ The above is the recommended method for creating valid prices and quantities,
 such as when passing them to the order factory to create an order.
 :::
 
-## Margins and Fees
+## Margins and fees
 The current initial and maintenance margin requirements, as well as any trading 
 fees are also available from an instrument:
 - `margin_init` (initial/order margin rate)
@@ -142,7 +148,7 @@ fees are also available from an instrument:
 - `maker_fee` (the fee percentage applied to notional order values when providing liquidity)
 - `taker_fee` (the fee percentage applied to notional order values when demanding liquidity)
 
-## Additional Info
+## Additional info
 The raw instrument definition as provided by the exchange (typically from JSON serialized data) is also
 included as a generic Python dictionary. This is to retain all information
 which is not necessarily part of the unified Nautilus API, and is available to the user
