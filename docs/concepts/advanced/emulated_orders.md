@@ -5,7 +5,7 @@ of whether the type is supported on a trading venue. The logic and code paths fo
 order emulation are exactly the same for all environment contexts (`backtest`, `sandbox`, `live`)
 and utilize a common `OrderEmulator` component.
 
-:::note
+:::info
 There is no limitation on the number of emulated orders you can have per running instance.
 :::
 
@@ -21,7 +21,7 @@ Emulated orders are subject to the same risk controls as 'regular' orders, and c
 modified and canceled by a trading strategy in the normal way. They will also be included
 when canceling all orders.
 
-:::note
+:::info
 An emulated order will retain its original client order ID throughout its entire life cycle, making it easy to query through the cache.
 :::
 

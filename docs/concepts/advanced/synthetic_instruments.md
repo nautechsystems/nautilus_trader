@@ -14,8 +14,8 @@ useful metrics based on its component instruments.
 In the future, we plan to support order management for synthetic instruments, which would involve 
 trading their component instruments based on the behavior of the synthetic instrument.
 
-:::note
-Note that the venue for a synthetic instrument is always designated as `'SYNTH'`.
+:::info
+The venue for a synthetic instrument is always designated as `'SYNTH'`.
 :::
 
 ## Formula

@@ -20,7 +20,7 @@ It's recommended you make use of the [/metadata.get_cost](https://databento.com/
 The adapter implementation takes the [databento-rs](https://crates.io/crates/databento) crate as a dependency,
 which is the official Rust client library provided by Databento. There are actually no Databento Python dependencies.
 
-:::note
+:::info
 There is no optional extra installation for `databento`, at this stage the core components of the adapter are compiled
 as static libraries and linked during the build by default.
 :::
@@ -32,7 +32,7 @@ The following adapter classes are available:
 - `DatabentoLiveClient` - Integrates with the Databento API (raw TCP) for subscribing to real-time data feeds
 - `DatabentoDataClient` - Provides a `LiveMarketDataClient` implementation for running a trading node in real time
 
-:::note
+:::info
 As with the other integration adapters, most users will simply define a configuration for a live trading node (covered below),
 and won't need to necessarily work with these lower level components directly.
 :::
@@ -99,7 +99,7 @@ instruments `exchange` field:
 - `XFXS` - **CME FX Link spread**
 - `XNYM` - **New York Mercantile Exchange (NYMEX)**
 
-:::note
+:::info
 Other venue MICs can be found in the `venue` field of responses from the [metadata.list_publishers](https://databento.com/docs/api-reference-historical/metadata/metadata-list-publishers?historical=http&live=python) endpoint.
 :::
 
@@ -122,7 +122,7 @@ When decoding and normalizing Databento to Nautilus we generally assign the Data
 The exception to this are the `DatabentoImbalance` and `DatabentoStatistics` data types, which have fields for all timestamps
 - as the types are defined specifically for the adapter.
 
-:::note
+:::info
 See the following Databento docs for further information:
 - [Databento standards and conventions - timestamps](https://databento.com/docs/knowledge-base/new-users/standards-conventions/timestamps)
 - [Databento timestamping guide](https://databento.com/docs/knowledge-base/data-integrity/timestamping/timestamps-on-databento-and-how-to-use-them)

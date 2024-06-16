@@ -221,7 +221,7 @@ def on_start(self) -> None:
 Strategies have access to a comprehensive `Clock` which provides a number of methods for creating
 different timestamps, as well as setting time alerts or timers.
 
-:::note
+:::info
 See the `Clock` [API reference](../api_reference/common.md) for a complete list of available methods.
 :::
 
@@ -342,8 +342,8 @@ metrics and statistics.
 Refer to the `PortfolioAnalyzer` in the [API Reference](../api_reference/analysis.md) for a complete description
 of all available methods.
 
-:::note
-Also see the [Porfolio statistics](../concepts/advanced/portfolio_statistics.md) guide.
+:::info
+See the [Porfolio statistics](../concepts/advanced/portfolio_statistics.md) guide.
 :::
 
 ### Trading commands
@@ -353,7 +353,7 @@ tailored for algorithmic trading. These commands are essential for executing str
 and ensuring seamless interaction with various trading venues. In the following sections, we will 
 delve into the specifics of each command and its use cases.
 
-:::note
+:::info
 The [Execution](../concepts/execution.md) guide explains the flow through the system, and can be helpful to read in conjunction with the below.
 :::
 
@@ -391,7 +391,7 @@ def buy(self) -> None:
     self.submit_order(order)
 ```
 
-:::note
+:::info
 It's possible to specify both order emulation, and an execution algorithm.
 :::
 
@@ -432,7 +432,7 @@ The component a `CancelOrder`, `CancelAllOrders` or `BatchCancelOrders` command 
 - If an `exec_algorithm_id` is specified (with no `emulation_trigger`), and the order is still active within the local system, the command will _firstly_ be sent to the relevant `ExecAlgorithm`
 - Otherwise, the order will _firstly_ be sent to the `ExecutionEngine`
 
-:::note
+:::info
 Any managed GTD timer will also be canceled after the command has left the strategy.
 :::
 
@@ -477,7 +477,7 @@ The component a `ModifyOrder` command will flow to for execution depends on the 
 - If the order is currently emulated, the command will _firstly_ be sent to the `OrderEmulator`
 - Otherwise, the order will _firstly_ be sent to the `RiskEngine`
 
-:::note
+:::info
 Once an order is under the control of an execution algorithm, it cannot be directly modified by a strategy (only canceled).
 :::
 
@@ -491,7 +491,7 @@ self.modify_order(order, new_quantity)
 
 ```
 
-:::note
+:::info
 The price and trigger price can also be modified (when emulated or supported by a venue).
 :::
 

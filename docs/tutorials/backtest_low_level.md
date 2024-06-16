@@ -118,10 +118,7 @@ engine.add_data(ticks)
 
 :::note
 The amount of and variety of data types is only limited by machine resources and your imagination (custom types are possible).
-:::
-
-:::note
-Multiple venues can be used for backtesting, only limited by machine resources.
+Also, multiple venues can be used for backtesting, again only limited by machine resources.
 :::
 
 ## Adding strategies
