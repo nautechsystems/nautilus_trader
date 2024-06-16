@@ -1,7 +1,7 @@
 # Backtest (low-level API)
 
-**This tutorial walks through how to use a `BacktestEngine` to backtest a simple EMA cross strategy
-with a TWAP execution algorithm on a simulated Binance Spot exchange using historical trade tick data.**
+This tutorial walks through how to use a `BacktestEngine` to backtest a simple EMA cross strategy
+with a TWAP execution algorithm on a simulated Binance Spot exchange using historical trade tick data.
 
 The following points will be covered:
 - How to load raw data (external to Nautilus) using data loaders and wranglers
