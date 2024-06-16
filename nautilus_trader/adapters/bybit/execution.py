@@ -84,6 +84,8 @@ from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.model.orders import Order
 from nautilus_trader.model.orders import StopLimitOrder
 from nautilus_trader.model.orders import StopMarketOrder
+from nautilus_trader.model.orders import TrailingStopLimitOrder
+from nautilus_trader.model.orders import TrailingStopMarketOrder
 from nautilus_trader.model.position import Position
 
 
@@ -195,6 +197,8 @@ class BybitExecutionClient(LiveExecutionClient):
             OrderType.STOP_LIMIT: self._submit_stop_limit_order,
             OrderType.MARKET_IF_TOUCHED: self._submit_market_if_touched_order,
             OrderType.LIMIT_IF_TOUCHED: self._submit_limit_if_touched_order,
+            OrderType.TRAILING_STOP_MARKET: self._submit_trailing_stop_market,
+            OrderType.TRAILING_STOP_LIMIT: self._submit_trailing_stop_limit,
         }
 
         # Decoders
@@ -671,7 +675,6 @@ class BybitExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_stop_market_order(self, order: StopMarketOrder) -> None:
-        self._log.warning(f"{order_type_to_str(order.order_type)} STILL EXPERIMENTAL")
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
         time_in_force = self._determine_time_in_force(order)
@@ -697,7 +700,6 @@ class BybitExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_stop_limit_order(self, order: StopLimitOrder) -> None:
-        self._log.warning(f"{order_type_to_str(order.order_type)} STILL EXPERIMENTAL")
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
         time_in_force = self._determine_time_in_force(order)
@@ -722,7 +724,6 @@ class BybitExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_market_if_touched_order(self, order: MarketIfTouchedOrder) -> None:
-        self._log.warning(f"{order_type_to_str(order.order_type)} STILL EXPERIMENTAL")
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
         time_in_force = self._determine_time_in_force(order)
@@ -747,7 +748,6 @@ class BybitExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_limit_if_touched_order(self, order: LimitIfTouchedOrder) -> None:
-        self._log.warning(f"{order_type_to_str(order.order_type)} STILL EXPERIMENTAL")
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
         time_in_force = self._determine_time_in_force(order)
@@ -768,7 +768,36 @@ class BybitExecutionClient(LiveExecutionClient):
             trigger_direction=trigger_direction,
             trigger_type=trigger_type,
             tp_trigger_price=str(order.trigger_price),
+            tp_limit_price=str(order.price),
             tp_order_type=BybitOrderType.LIMIT,
+        )
+
+    async def _submit_trailing_stop_market(self, order: TrailingStopMarketOrder) -> None:
+        self._log.warning(f"{order_type_to_str(order.order_type)} STILL EXPERIMENTAL")
+        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
+        product_type = bybit_symbol.product_type
+        trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
+        await self._http_account.set_trading_stop(
+            product_type=product_type,
+            symbol=bybit_symbol.raw_symbol,
+            sl_order_type=BybitOrderType.MARKET,
+            sl_quantity=str(order.quantity),
+            trigger_type=trigger_type,
+            trailing_offset=str(order.trailing_offset),
+        )
+
+    async def _submit_trailing_stop_limit(self, order: TrailingStopLimitOrder) -> None:
+        self._log.warning(f"{order_type_to_str(order.order_type)} STILL EXPERIMENTAL")
+        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
+        product_type = bybit_symbol.product_type
+        trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
+        await self._http_account.set_trading_stop(
+            product_type=product_type,
+            symbol=bybit_symbol.raw_symbol,
+            sl_order_type=BybitOrderType.LIMIT,
+            sl_quantity=str(order.quantity),
+            trigger_type=trigger_type,
+            trailing_offset=str(order.trailing_offset),
         )
 
     def _handle_ws_message(self, raw: bytes) -> None:

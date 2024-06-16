@@ -220,6 +220,7 @@ class BybitEndpointType(Enum):
     MARKET = "MARKET"
     ACCOUNT = "ACCOUNT"
     TRADE = "TRADE"
+    POSITION = "POSITION"
 
 
 def check_dict_keys(key, data):
@@ -313,6 +314,30 @@ class BybitEnumParser:
                 BybitOrderSide.SELL,
                 BybitTriggerDirection.RISES_TO,
             ): OrderType.STOP_LIMIT,
+            (
+                BybitOrderType.MARKET,
+                BybitStopOrderType.TRAILING_STOP,
+                BybitOrderSide.BUY,
+                BybitTriggerDirection.RISES_TO,
+            ): OrderType.TRAILING_STOP_MARKET,
+            (
+                BybitOrderType.MARKET,
+                BybitStopOrderType.TRAILING_STOP,
+                BybitOrderSide.SELL,
+                BybitTriggerDirection.FALLS_TO,
+            ): OrderType.TRAILING_STOP_MARKET,
+            (
+                BybitOrderType.LIMIT,
+                BybitStopOrderType.TRAILING_STOP,
+                BybitOrderSide.BUY,
+                BybitTriggerDirection.RISES_TO,
+            ): OrderType.TRAILING_STOP_LIMIT,
+            (
+                BybitOrderType.LIMIT,
+                BybitStopOrderType.TRAILING_STOP,
+                BybitOrderSide.SELL,
+                BybitTriggerDirection.FALLS_TO,
+            ): OrderType.TRAILING_STOP_LIMIT,
         }
 
         # TODO check time in force mapping
@@ -484,7 +509,7 @@ class BybitEnumParser:
     def parse_bybit_trigger_type(self, trigger_type: BybitTriggerType) -> TriggerType:
         return check_dict_keys(trigger_type, self.bybit_to_nautilus_trigger_type)
 
-    def parse_trigger_direction(
+    def parse_trigger_direction(  # noqa: C901 (too complex)
         self,
         order_type: OrderType,
         order_side: OrderSide,
@@ -497,6 +522,8 @@ class BybitEnumParser:
                     return BybitTriggerDirection.RISES_TO
                 case OrderType.MARKET_IF_TOUCHED:
                     return BybitTriggerDirection.RISES_TO
+                case OrderType.TRAILING_STOP_MARKET:
+                    return BybitTriggerDirection.RISES_TO
                 case OrderType.LIMIT_IF_TOUCHED:
                     return BybitTriggerDirection.FALLS_TO
                 case _:
@@ -508,6 +535,8 @@ class BybitEnumParser:
                 case OrderType.STOP_LIMIT:
                     return BybitTriggerDirection.FALLS_TO
                 case OrderType.MARKET_IF_TOUCHED:
+                    return BybitTriggerDirection.FALLS_TO
+                case OrderType.TRAILING_STOP_MARKET:
                     return BybitTriggerDirection.FALLS_TO
                 case OrderType.LIMIT_IF_TOUCHED:
                     return BybitTriggerDirection.RISES_TO
