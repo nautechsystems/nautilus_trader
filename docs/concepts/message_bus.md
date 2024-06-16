@@ -1,6 +1,6 @@
 # Message Bus
 
-The `MessageBus` is a fundamental component of the platform, facilitating communicate between 
+The `MessageBus` is a fundamental part of the platform, facilitating communicate between 
 various system components through message passing. This approach enables a loosely coupled architecture,
 where components can interact without strong dependencies. Messages exchanged via the message bus 
 can be categorized into three distinct types:
@@ -33,11 +33,11 @@ self.msgbus.publish("MyTopic", "MyMessage")
 
 ## External publishing
 
-The `MessageBus` can be 'backed' with any database or message broker technology which has an 
+The `MessageBus` can be *backed* with any database or message broker technology which has an
 integration written for it, this then allows external publishing of messages.
 
 :::note
-Currently Redis is supported for all serializable messages which are published.
+Redis is currently supported for all serializable messages which are published externally.
 The minimum supported Redis version is 6.2.0.
 :::
 
@@ -169,7 +169,7 @@ Automatic stream trimming helps manage the size of your message streams by remov
 
 :::note
 The current Redis implementation will maintain the `autotrim_mins` as a maximum width (plus roughly a minute, as streams are trimmed no more than once per minute).
-Rather than for instance a maximum lookback window based on the current wall clock time.
+Rather than a maximum lookback window based on the current wall clock time.
 :::
 
 The minimum supported Redis version is 6.2.0.

@@ -1,9 +1,5 @@
 # Databento
 
-:::note
-We are currently working on this integration guide.
-:::
-
 NautilusTrader provides an adapter for integrating with the Databento API and [Databento Binary Encoding (DBN)](https://databento.com/docs/knowledge-base/new-users/dbn-encoding) format data.
 As Databento is purely a market data provider, there is no execution client provided - although a sandbox environment with simulated execution could still be set up.
 It's also possible to match Databento data with Interactive Brokers execution, or to calculate traditional asset class signals for crypto trading.
