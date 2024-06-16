@@ -1,6 +1,6 @@
 # NautilusTrader 1.195.0 Beta
 
-Released on TBD (UTC).
+Released on 17th June 2024 (UTC).
 
 ### Enhancements
 - Added Bybit base coin for fee rate parsing (#1696), thanks @filipmacek
