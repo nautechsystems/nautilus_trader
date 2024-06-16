@@ -87,7 +87,7 @@ In this particular case, the `Actor` implements a separate method `request_instr
 
 On the actor/strategy:
 
-```cython
+```python
 # nautilus_trader/common/actor.pyx
 
 cpdef void request_instrument(self, InstrumentId instrument_id, ClientId client_id=None):

@@ -223,16 +223,15 @@ or confusion with the "parent" and "child" contingent orders terminology (an exe
 The `Cache` provides several methods to aid in managing (keeping track of) the activity of
 an execution algorithm:
 
-```cython
-
-cpdef list orders_for_exec_algorithm(
+```python
+def orders_for_exec_algorithm(
     self,
-    ExecAlgorithmId exec_algorithm_id,
-    Venue venue = None,
-    InstrumentId instrument_id = None,
-    StrategyId strategy_id = None,
-    OrderSide side = OrderSide.NO_ORDER_SIDE,
-):
+    exec_algorithm_id: ExecAlgorithmId,
+    venue: Venue | None = None,
+    instrument_id: InstrumentId | None = None,
+    strategy_id: StrategyId | None = None,
+    side: OrderSide = OrderSide.NO_ORDER_SIDE,
+) -> list[Order]:
     """
     Return all execution algorithm orders for the given query filters.
 
@@ -259,7 +258,7 @@ cpdef list orders_for_exec_algorithm(
 As well as more specifically querying the orders for a certain execution series/spawn:
 
 ```python
-cpdef list orders_for_exec_spawn(self, ClientOrderId exec_spawn_id):
+def orders_for_exec_spawn(self, exec_spawn_id: ClientOrderId) -> list[Order]:
     """
     Return all orders for the given execution spawn ID (if found).
 
