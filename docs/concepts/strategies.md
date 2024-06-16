@@ -28,6 +28,7 @@ The main capabilities of a strategy include:
 - Creating and managing orders and positions
 
 ## Implementation
+
 Since a trading strategy is a class which inherits from `Strategy`, you must define
 a constructor where you can handle initialization. Minimally the base/super class needs to be initialized:
 

@@ -18,6 +18,7 @@ into a unified interface. The following integrations are currently supported:
 - `Type:` The type of integration (often the venue type)
 
 ### Status
+
 - `building` - Under construction and likely not in a usable state
 - `beta` - Completed to a minimally working state and in a 'beta' testing phase
 - `stable` - Stabilized feature set and API, the integration has been tested by both developers and users to a reasonable level (some bugs may still remain)
@@ -45,6 +46,7 @@ The implementation of each integration aims to meet the following criteria:
 a warning or error when a user attempts to perform said action
 
 ## API unification
+
 All integrations must be compatible with the NautilusTrader API at the system boundary,
 this means there is some normalization and standardization needed.
 

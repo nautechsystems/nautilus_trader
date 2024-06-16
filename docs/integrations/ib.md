@@ -33,9 +33,11 @@ Because IB does not provide wheels for `ibapi`, NautilusTrader [repackages](http
 Before implementing your trading strategies, please ensure that either TWS (Trader Workstation) or IB Gateway is currently running. You have the option to log in to one of these standalone applications using your personal credentials or alternatively, via `DockerizedIBGateway`.
 
 ### Establish Connection to an Existing Gateway or TWS:
+
 Should you choose to connect to a pre-existing Gateway or TWS, it is crucial that you specify the `host` and `port` parameters in both the `InteractiveBrokersDataClientConfig` and `InteractiveBrokersExecClientConfig` to guarantee a successful connection.
 
 ### Establish Connection to DockerizedIBGateway:
+
 In this case, it's essential to supply `dockerized_gateway` with an instance of `DockerizedIBGatewayConfig` in both the `InteractiveBrokersDataClientConfig` and `InteractiveBrokersExecClientConfig`. It's important to stress, however, that `host` and `port` parameters aren't necessary in this context.
 The following example provides a clear illustration of how to establish a connection to a Dockerized Gateway, which is judiciously managed internally by the Factories.
 
@@ -92,9 +94,11 @@ To troubleshoot TWS API incoming message issues, consider starting at the `Inter
 :::
 
 ## Symbology
+
 The InteractiveBrokersInstrumentProvider supports two methods for constructing InstrumentId instances, which can be configured via the strict_symbology flag in InteractiveBrokersInstrumentProviderConfig.
 
 ### Simplified Symbology
+
 When strict_symbology is set to False (the default setting), the system utilizes the following parsing rules for symbology:
 
 - Forex: The format is `{symbol}/{currency}.{exchange}`, where the currency pair is constructed as `EUR/USD.IDEALPRO`.
@@ -104,6 +108,7 @@ When strict_symbology is set to False (the default setting), the system utilizes
 - Index: The format is `^{localSymbol}.{exchange}`, e.g., `^SPX.CBOE`.
 
 ### Strict Symbology
+
 Setting strict_symbology to True enforces stricter parsing rules that align directly with the fields defined in the ibapi. The format for each security type is as follows:
 
 - CFDs: `{localSymbol}={secType}.IBCFD`

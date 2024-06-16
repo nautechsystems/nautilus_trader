@@ -46,6 +46,7 @@ or
     make build
 
 ## Services
+
 You can use `docker-compose.yml` file located in `.docker` directory 
 to bootstrap the Nautilus working environment. This will start the following services:
 
@@ -105,9 +106,11 @@ make install-cli
 ```
 
 ## Commands
+
 You can run `nautilus --help` to inspect structure of CLI and groups of commands:
 
 ### Database
+
 These are commands related to the bootstrapping the Postgres database.
 For that you work, you need to supply right connection configuration. You can do that through 
 command line arguments or `.env` file in the root directory or where the commands is being run.

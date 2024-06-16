@@ -13,6 +13,7 @@ We recommend running the platform with the latest stable version of Python, and 
 :::
 
 ## From PyPI
+
 To install the latest binary wheel (or sdist package) from PyPI using Pythons _pip_ package manager:
     
     pip install -U nautilus_trader

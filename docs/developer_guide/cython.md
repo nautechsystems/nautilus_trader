@@ -14,6 +14,7 @@ for Python through [C extension modules](https://docs.python.org/3/extending/ext
 written in Cython, however the libraries can be accessed from both Python and Cython.
 
 ## Function and method signatures
+
 Ensure that all functions and methods returning `void` or a primitive C type (such as `bint`, `int`, `double`) include the `except *` keyword in the signature.
 
 This will ensure Python exceptions are not ignored, and instead are “bubbled up” to the caller as expected.
@@ -21,12 +22,14 @@ This will ensure Python exceptions are not ignored, and instead are “bubbled u
 ## Debugging
 
 ### PyCharm
+
 Improved debugging support for Cython has remained a highly up-voted PyCharm 
 feature for many years. Unfortunately, it's safe to assume that PyCharm will not 
 be receiving first class support for Cython debugging
 https://youtrack.jetbrains.com/issue/PY-9476.
 
 ### Cython Docs
+
 The following recommendations are contained in the Cython docs:
 https://cython.readthedocs.io/en/latest/src/userguide/debugging.html
 
@@ -34,6 +37,7 @@ The summary is it involves manually running a specialized version of `gdb` from 
 We don't recommend this workflow.
 
 ### Tips
+
 When debugging and seeking to understand a complex system such as NautilusTrader, it can be
 quite helpful to step through the code with a debugger. However, with this not being available
 for the Cython part of the codebase, there are a few things which can help:

@@ -59,6 +59,7 @@ node.build()
 ```
 
 ### API credentials
+
 There are two options for supplying your credentials to the Betfair clients.
 Either pass the corresponding `api_key` and `api_secret` values to the config dictionaries, or
 set the following environment variables: 

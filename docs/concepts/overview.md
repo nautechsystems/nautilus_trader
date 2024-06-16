@@ -70,18 +70,22 @@ include the application and infrastructure layers.
 :::
 
 ## Distributed
+
 The platform is designed to be easily integrated into a larger distributed system. 
 To facilitate this, nearly all configuration and domain objects can be serialized using JSON, MessagePack or Apache Arrow (Feather) for communication over the network.
 
 ## Common core
+
 The common system core is utilized by all node environment contexts (`backtest`, `sandbox`, and `live`).
 User-defined Actor, Strategy and ExecAlgorithm components are managed consistently across these environment contexts.
 
 ## Backtesting
+
 Backtesting can be achieved by first making data available to a `BacktestEngine` either directly or via
 a higher level `BacktestNode` and `ParquetDataCatalog`, and then running the data through the system with nanosecond resolution.
 
 ## Live trading
+
 A `TradingNode` can ingest data and events from multiple data and execution clients. 
 Live deployments can use both demo/paper trading accounts, or real accounts.
 
