@@ -66,7 +66,6 @@ PERF.JSON
 output.json
 
 # Docs and notebooks
-docs/**/*.ipynb
 examples/backtest/notebooks/catalog
 
 # Nautilus specific
