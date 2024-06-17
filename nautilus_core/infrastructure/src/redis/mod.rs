@@ -21,7 +21,7 @@ pub mod msgbus;
 use std::{collections::HashMap, time::Duration};
 
 use nautilus_core::uuid::UUID4;
-use nautilus_model::identifiers::trader_id::TraderId;
+use nautilus_model::identifiers::TraderId;
 use redis::*;
 use semver::Version;
 use serde_json::{json, Value};

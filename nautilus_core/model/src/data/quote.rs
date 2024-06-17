@@ -27,10 +27,10 @@ use indexmap::IndexMap;
 use nautilus_core::{correctness::check_equal_u8, nanos::UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Serialize};
 
+use super::GetTsInit;
 use crate::{
     enums::PriceType,
-    identifiers::instrument_id::InstrumentId,
-    polymorphism::GetTsInit,
+    identifiers::InstrumentId,
     types::{fixed::FIXED_PRECISION, price::Price, quantity::Quantity},
 };
 
@@ -217,7 +217,7 @@ mod tests {
 
         Python::with_gil(|py| {
             let tick_pyobject = tick.into_py(py);
-            let parsed_tick = QuoteTick::from_pyobject(tick_pyobject.as_ref(py)).unwrap();
+            let parsed_tick = QuoteTick::from_pyobject(tick_pyobject.bind(py)).unwrap();
             assert_eq!(parsed_tick, tick);
         });
     }

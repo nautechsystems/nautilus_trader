@@ -15,6 +15,7 @@
 
 use std::{
     collections::{HashMap, VecDeque},
+    str::FromStr,
     sync::mpsc::{channel, Receiver, Sender, TryRecvError},
     thread::{self, JoinHandle},
     time::{Duration, Instant},
@@ -27,9 +28,8 @@ use nautilus_common::{
 use nautilus_core::{correctness::check_slice_not_empty, nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     identifiers::{
-        account_id::AccountId, client_id::ClientId, client_order_id::ClientOrderId,
-        component_id::ComponentId, instrument_id::InstrumentId, position_id::PositionId,
-        strategy_id::StrategyId, trader_id::TraderId, venue_order_id::VenueOrderId,
+        AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
+        TraderId, VenueOrderId,
     },
     instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
     orders::any::OrderAny,
@@ -703,31 +703,95 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         for key in self.database.keys(&format!("{CURRENCIES}*"))? {
             let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
             let currency_code = Ustr::from(parts.first().unwrap());
-            let currency = self.load_currency(&currency_code)?;
-            currencies.insert(currency_code, currency);
+            let result = self.load_currency(&currency_code)?;
+            match result {
+                Some(currency) => {
+                    currencies.insert(currency_code, currency);
+                }
+                None => {
+                    error!("Currency not found: {currency_code}");
+                }
+            }
         }
-
         Ok(currencies)
     }
 
     fn load_instruments(&mut self) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>> {
-        todo!()
+        let mut instruments = HashMap::new();
+
+        for key in self.database.keys(&format!("{INSTRUMENTS}*"))? {
+            let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
+            let instrument_id = InstrumentId::from_str(parts.first().unwrap())?;
+            let result = self.load_instrument(&instrument_id)?;
+            match result {
+                Some(instrument) => {
+                    instruments.insert(instrument_id, instrument);
+                }
+                None => {
+                    error!("Instrument not found: {instrument_id}");
+                }
+            }
+        }
+
+        Ok(instruments)
     }
 
     fn load_synthetics(&mut self) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>> {
-        todo!()
+        let mut synthetics = HashMap::new();
+
+        for key in self.database.keys(&format!("{SYNTHETICS}*"))? {
+            let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
+            let instrument_id = InstrumentId::from_str(parts.first().unwrap())?;
+            let synthetic = self.load_synthetic(&instrument_id)?;
+            synthetics.insert(instrument_id, synthetic);
+        }
+
+        Ok(synthetics)
     }
 
     fn load_accounts(&mut self) -> anyhow::Result<HashMap<AccountId, Box<dyn Account>>> {
-        todo!()
+        let mut accounts = HashMap::new();
+
+        for key in self.database.keys(&format!("{ACCOUNTS}*"))? {
+            let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
+            let account_id = AccountId::from(*parts.first().unwrap());
+            let account = self.load_account(&account_id)?;
+            accounts.insert(account_id, account);
+        }
+
+        Ok(accounts)
     }
 
     fn load_orders(&mut self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
-        todo!()
+        let mut orders = HashMap::new();
+
+        for key in self.database.keys(&format!("{ORDERS}*"))? {
+            let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
+            let client_order_id = ClientOrderId::from(*parts.first().unwrap());
+            let result = self.load_order(&client_order_id)?;
+            match result {
+                Some(order) => {
+                    orders.insert(client_order_id, order);
+                }
+                None => {
+                    error!("Order not found: {client_order_id}");
+                }
+            }
+        }
+        Ok(orders)
     }
 
     fn load_positions(&mut self) -> anyhow::Result<HashMap<PositionId, Position>> {
-        todo!()
+        let mut positions = HashMap::new();
+
+        for key in self.database.keys(&format!("{POSITIONS}*"))? {
+            let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
+            let position_id = PositionId::from(*parts.first().unwrap());
+            let position = self.load_position(&position_id)?;
+            positions.insert(position_id, position);
+        }
+
+        Ok(positions)
     }
 
     fn load_index_order_position(&mut self) -> anyhow::Result<HashMap<ClientOrderId, Position>> {
@@ -738,11 +802,14 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         todo!()
     }
 
-    fn load_currency(&mut self, code: &Ustr) -> anyhow::Result<Currency> {
+    fn load_currency(&mut self, code: &Ustr) -> anyhow::Result<Option<Currency>> {
         todo!()
     }
 
-    fn load_instrument(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<InstrumentAny> {
+    fn load_instrument(
+        &mut self,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Option<InstrumentAny>> {
         todo!()
     }
 
@@ -753,11 +820,11 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         todo!()
     }
 
-    fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<()> {
+    fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<Box<dyn Account>> {
         todo!()
     }
 
-    fn load_order(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<OrderAny> {
+    fn load_order(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<Option<OrderAny>> {
         todo!()
     }
 

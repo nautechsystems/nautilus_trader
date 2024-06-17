@@ -59,15 +59,17 @@ pub async fn get_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
 #[cfg(test)]
 #[cfg(target_os = "linux")] // Databases only supported on Linux
 mod tests {
-    use std::time::Duration;
+    use std::{collections::HashSet, time::Duration};
 
+    use nautilus_common::{
+        cache::database::CacheDatabaseAdapter,
+        testing::{wait_until, wait_until_async},
+    };
     use nautilus_core::equality::entirely_equal;
     use nautilus_model::{
-        enums::{CurrencyType, OrderSide},
-        events::order::event::OrderEventAny,
+        enums::{CurrencyType, OrderSide, OrderStatus},
         identifiers::{
-            account_id::AccountId, client_order_id::ClientOrderId, instrument_id::InstrumentId,
-            stubs::account_id, trade_id::TradeId, venue_order_id::VenueOrderId,
+            stubs::account_id, AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId,
         },
         instruments::{
             any::InstrumentAny,
@@ -77,26 +79,30 @@ mod tests {
             },
             Instrument,
         },
-        orders::{
-            any::OrderAny,
-            stubs::{TestOrderEventStubs, TestOrderStubs},
-        },
+        orders::stubs::{TestOrderEventStubs, TestOrderStubs},
         types::{currency::Currency, price::Price, quantity::Quantity},
     };
     use serial_test::serial;
+    use ustr::Ustr;
 
     use crate::get_pg_cache_database;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     #[serial]
     async fn test_add_general_object_adds_to_cache() {
-        let pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
         let test_id_value = String::from("test_value").into_bytes();
         pg_cache
             .add(String::from("test_id"), test_id_value.clone())
-            .await
             .unwrap();
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        wait_until_async(
+            || async {
+                let result = pg_cache.load().await.unwrap();
+                result.keys().len() > 0
+            },
+            Duration::from_secs(2),
+        )
+        .await;
         let result = pg_cache.load().await.unwrap();
         assert_eq!(result.keys().len(), 1);
         assert_eq!(
@@ -106,21 +112,21 @@ mod tests {
         assert_eq!(result.get("test_id").unwrap().to_owned(), test_id_value);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     #[serial]
     async fn test_add_currency_and_instruments() {
         // 1. first define and add currencies as they are contain foreign keys for instruments
-        let pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
         // Define currencies
         let btc = Currency::new("BTC", 8, 0, "BTC", CurrencyType::Crypto).unwrap();
         let eth = Currency::new("ETH", 2, 0, "ETH", CurrencyType::Crypto).unwrap();
         let usd = Currency::new("USD", 2, 0, "USD", CurrencyType::Fiat).unwrap();
         let usdt = Currency::new("USDT", 2, 0, "USDT", CurrencyType::Crypto).unwrap();
         // Insert all the currencies
-        pg_cache.add_currency(btc).await.unwrap();
-        pg_cache.add_currency(eth).await.unwrap();
-        pg_cache.add_currency(usd).await.unwrap();
-        pg_cache.add_currency(usdt).await.unwrap();
+        pg_cache.add_currency(&btc).unwrap();
+        pg_cache.add_currency(&eth).unwrap();
+        pg_cache.add_currency(&usd).unwrap();
+        pg_cache.add_currency(&usdt).unwrap();
         // Define all the instruments
         let crypto_future =
             crypto_future_btcusdt(2, 6, Price::from("0.01"), Quantity::from("0.000001"));
@@ -131,106 +137,113 @@ mod tests {
         let options_contract = options_contract_appl();
         // Insert all the instruments
         pg_cache
-            .add_instrument(InstrumentAny::CryptoFuture(crypto_future))
-            .await
+            .add_instrument(&InstrumentAny::CryptoFuture(crypto_future))
             .unwrap();
         pg_cache
-            .add_instrument(InstrumentAny::CryptoPerpetual(crypto_perpetual))
-            .await
+            .add_instrument(&InstrumentAny::CryptoPerpetual(crypto_perpetual))
             .unwrap();
         pg_cache
-            .add_instrument(InstrumentAny::CurrencyPair(currency_pair))
-            .await
+            .add_instrument(&InstrumentAny::CurrencyPair(currency_pair))
             .unwrap();
         pg_cache
-            .add_instrument(InstrumentAny::Equity(equity))
-            .await
+            .add_instrument(&InstrumentAny::Equity(equity))
             .unwrap();
         pg_cache
-            .add_instrument(InstrumentAny::FuturesContract(futures_contract))
-            .await
+            .add_instrument(&InstrumentAny::FuturesContract(futures_contract))
             .unwrap();
         pg_cache
-            .add_instrument(InstrumentAny::OptionsContract(options_contract))
-            .await
+            .add_instrument(&InstrumentAny::OptionsContract(options_contract))
             .unwrap();
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        // Wait for the cache to update
+        wait_until(
+            || {
+                let currencies = pg_cache.load_currencies().unwrap();
+                let instruments = pg_cache.load_instruments().unwrap();
+                currencies.len() >= 4 && instruments.len() >= 6
+            },
+            Duration::from_secs(2),
+        );
         // Check that currency list is correct
-        let currencies = pg_cache.load_currencies().await.unwrap();
+        let currencies = pg_cache.load_currencies().unwrap();
         assert_eq!(currencies.len(), 4);
         assert_eq!(
             currencies
                 .into_iter()
-                .map(|c| c.code.to_string())
-                .collect::<Vec<String>>(),
+                .map(|(_, c)| c.code.to_string())
+                .collect::<HashSet<String>>(),
             vec![
                 String::from("BTC"),
                 String::from("ETH"),
                 String::from("USD"),
                 String::from("USDT")
             ]
+            .into_iter()
+            .collect::<HashSet<String>>()
         );
         // Check individual currencies
-        assert_eq!(pg_cache.load_currency("BTC").await.unwrap().unwrap(), btc);
-        assert_eq!(pg_cache.load_currency("ETH").await.unwrap().unwrap(), eth);
-        assert_eq!(pg_cache.load_currency("USDT").await.unwrap().unwrap(), usdt);
+        assert_eq!(
+            pg_cache.load_currency(&Ustr::from("BTC")).unwrap().unwrap(),
+            btc
+        );
+        assert_eq!(
+            pg_cache.load_currency(&Ustr::from("ETH")).unwrap().unwrap(),
+            eth
+        );
+        assert_eq!(
+            pg_cache
+                .load_currency(&Ustr::from("USDT"))
+                .unwrap()
+                .unwrap(),
+            usdt
+        );
         // Check individual instruments
         assert_eq!(
             pg_cache
-                .load_instrument(crypto_future.id())
-                .await
+                .load_instrument(&crypto_future.id())
                 .unwrap()
                 .unwrap(),
             InstrumentAny::CryptoFuture(crypto_future)
         );
         assert_eq!(
             pg_cache
-                .load_instrument(crypto_perpetual.id())
-                .await
+                .load_instrument(&crypto_perpetual.id())
                 .unwrap()
                 .unwrap(),
             InstrumentAny::CryptoPerpetual(crypto_perpetual)
         );
         assert_eq!(
             pg_cache
-                .load_instrument(currency_pair.id())
-                .await
+                .load_instrument(&currency_pair.id())
                 .unwrap()
                 .unwrap(),
             InstrumentAny::CurrencyPair(currency_pair)
         );
         assert_eq!(
-            pg_cache
-                .load_instrument(equity.id())
-                .await
-                .unwrap()
-                .unwrap(),
+            pg_cache.load_instrument(&equity.id()).unwrap().unwrap(),
             InstrumentAny::Equity(equity)
         );
         assert_eq!(
             pg_cache
-                .load_instrument(futures_contract.id())
-                .await
+                .load_instrument(&futures_contract.id())
                 .unwrap()
                 .unwrap(),
             InstrumentAny::FuturesContract(futures_contract)
         );
         assert_eq!(
             pg_cache
-                .load_instrument(options_contract.id())
-                .await
+                .load_instrument(&options_contract.id())
                 .unwrap()
                 .unwrap(),
             InstrumentAny::OptionsContract(options_contract)
         );
         // Check that instrument list is correct
-        let instruments = pg_cache.load_instruments().await.unwrap();
+        let instruments = pg_cache.load_instruments().unwrap();
         assert_eq!(instruments.len(), 6);
         assert_eq!(
             instruments
                 .into_iter()
-                .map(|i| i.id())
-                .collect::<Vec<InstrumentId>>(),
+                .map(|(id, _)| id)
+                .collect::<HashSet<InstrumentId>>(),
             vec![
                 crypto_future.id(),
                 crypto_perpetual.id(),
@@ -239,16 +252,18 @@ mod tests {
                 futures_contract.id(),
                 options_contract.id()
             ]
+            .into_iter()
+            .collect::<HashSet<InstrumentId>>()
         );
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     #[serial]
     async fn test_add_order() {
-        let client_order_id_1 = ClientOrderId::new("O-19700101-0000-000-001-1").unwrap();
-        let client_order_id_2 = ClientOrderId::new("O-19700101-0000-000-001-2").unwrap();
+        let client_order_id_1 = ClientOrderId::new("O-19700101-0000-001-001-1").unwrap();
+        let client_order_id_2 = ClientOrderId::new("O-19700101-0000-001-001-2").unwrap();
         let instrument = currency_pair_ethusdt();
-        let pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
         let market_order = TestOrderStubs::market_order(
             instrument.id(),
             OrderSide::Buy,
@@ -264,40 +279,39 @@ mod tests {
             Some(client_order_id_2),
             None,
         );
-        pg_cache
-            .add_order(OrderAny::Market(market_order.clone()))
-            .await
-            .unwrap();
-        pg_cache
-            .add_order(OrderAny::Limit(limit_order.clone()))
-            .await
-            .unwrap();
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        pg_cache.add_order(&market_order).unwrap();
+        pg_cache.add_order(&limit_order).unwrap();
+        wait_until(
+            || {
+                pg_cache
+                    .load_order(&market_order.client_order_id())
+                    .unwrap()
+                    .is_some()
+                    && pg_cache
+                        .load_order(&limit_order.client_order_id())
+                        .unwrap()
+                        .is_some()
+            },
+            Duration::from_secs(2),
+        );
         let market_order_result = pg_cache
-            .load_order(&market_order.client_order_id)
-            .await
+            .load_order(&market_order.client_order_id())
             .unwrap();
-        let limit_order_result = pg_cache
-            .load_order(&limit_order.client_order_id)
-            .await
-            .unwrap();
-        entirely_equal(market_order_result.unwrap(), OrderAny::Market(market_order));
-        entirely_equal(limit_order_result.unwrap(), OrderAny::Limit(limit_order));
+        let limit_order_result = pg_cache.load_order(&limit_order.client_order_id()).unwrap();
+        entirely_equal(market_order_result.unwrap(), market_order);
+        entirely_equal(limit_order_result.unwrap(), limit_order);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     #[serial]
     async fn test_update_order_for_open_order() {
-        let client_order_id_1 = ClientOrderId::new("O-19700101-0000-000-002-1").unwrap();
-        let instrument = currency_pair_ethusdt();
+        let client_order_id_1 = ClientOrderId::new("O-19700101-0000-001-002-1").unwrap();
+        let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
         let account = account_id();
-        let pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
         // Add the target currency of order
-        pg_cache
-            .add_currency(instrument.quote_currency)
-            .await
-            .unwrap();
-        // 1. create the order
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        // 1. Create the order
         let mut market_order = TestOrderStubs::market_order(
             instrument.id(),
             OrderSide::Buy,
@@ -305,57 +319,45 @@ mod tests {
             Some(client_order_id_1),
             None,
         );
-        pg_cache
-            .add_order(OrderAny::Market(market_order.clone()))
-            .await
-            .unwrap();
-        let submitted_event = TestOrderEventStubs::order_submitted(&market_order, account).unwrap();
-        market_order
-            .apply(OrderEventAny::Submitted(submitted_event))
-            .unwrap();
-        pg_cache
-            .update_order(OrderAny::Market(market_order.clone()))
-            .await
-            .unwrap();
-        let accepted_event = TestOrderEventStubs::order_accepted(
+        pg_cache.add_order(&market_order).unwrap();
+        let submitted = TestOrderEventStubs::order_submitted(&market_order, account);
+        market_order.apply(submitted).unwrap();
+        pg_cache.update_order(&market_order).unwrap();
+
+        let accepted = TestOrderEventStubs::order_accepted(
             &market_order,
             account,
             VenueOrderId::new("001").unwrap(),
-        )
-        .unwrap();
-        market_order
-            .apply(OrderEventAny::Accepted(accepted_event))
-            .unwrap();
-        pg_cache
-            .update_order(OrderAny::Market(market_order.clone()))
-            .await
-            .unwrap();
-        let order_filled = TestOrderEventStubs::order_filled(
+        );
+        market_order.apply(accepted).unwrap();
+        pg_cache.update_order(&market_order).unwrap();
+
+        let filled = TestOrderEventStubs::order_filled(
             &market_order,
             &instrument,
-            None,
-            Some(TradeId::new("T-19700101-0000-000-001-1").unwrap()),
+            Some(TradeId::new("T-19700101-0000-001-001-1").unwrap()),
             None,
             Some(Price::from("100.0")),
             Some(Quantity::from("1.0")),
             None,
             None,
             Some(AccountId::new("SIM-001").unwrap()),
-        )
-        .unwrap();
-        market_order
-            .apply(OrderEventAny::Filled(order_filled))
-            .unwrap();
-        pg_cache
-            .update_order(OrderAny::Market(market_order.clone()))
-            .await
-            .unwrap();
-        tokio::time::sleep(Duration::from_secs(2)).await;
-        // assert
+        );
+        market_order.apply(filled).unwrap();
+        pg_cache.update_order(&market_order).unwrap();
+        wait_until(
+            || {
+                let result = pg_cache
+                    .load_order(&market_order.client_order_id())
+                    .unwrap();
+                result.is_some() && result.unwrap().status() == OrderStatus::Filled
+            },
+            Duration::from_secs(2),
+        );
+        // Assert
         let market_order_result = pg_cache
-            .load_order(&market_order.client_order_id)
-            .await
+            .load_order(&market_order.client_order_id())
             .unwrap();
-        entirely_equal(market_order_result.unwrap(), OrderAny::Market(market_order));
+        entirely_equal(market_order_result.unwrap(), market_order);
     }
 }

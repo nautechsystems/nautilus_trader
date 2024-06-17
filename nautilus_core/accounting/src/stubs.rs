@@ -16,9 +16,9 @@
 use nautilus_common::{factories::OrderFactory, stubs::*};
 use nautilus_model::{
     enums::OrderSide,
-    identifiers::instrument_id::InstrumentId,
-    instruments::{currency_pair::CurrencyPair, stubs::audusd_sim},
-    orders::{market::MarketOrder, stubs::TestOrderEventStubs},
+    identifiers::InstrumentId,
+    instruments::{any::InstrumentAny, currency_pair::CurrencyPair, stubs::audusd_sim},
+    orders::stubs::TestOrderEventStubs,
     position::Position,
     types::{price::Price, quantity::Quantity},
 };
@@ -26,6 +26,7 @@ use rstest::fixture;
 
 #[fixture]
 pub fn test_position_long(mut order_factory: OrderFactory, audusd_sim: CurrencyPair) -> Position {
+    let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
     let order = order_factory.market(
         InstrumentId::from("AUD/USD.SIM"),
         OrderSide::Buy,
@@ -37,10 +38,9 @@ pub fn test_position_long(mut order_factory: OrderFactory, audusd_sim: CurrencyP
         None,
         None,
     );
-    let order_filled = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
+    let filled = TestOrderEventStubs::order_filled(
         &order,
         &audusd_sim,
-        None,
         None,
         None,
         Some(Price::from("1.0002")),
@@ -48,13 +48,13 @@ pub fn test_position_long(mut order_factory: OrderFactory, audusd_sim: CurrencyP
         None,
         None,
         None,
-    )
-    .unwrap();
-    Position::new(audusd_sim, order_filled).unwrap()
+    );
+    Position::new(&audusd_sim, filled.into()).unwrap()
 }
 
 #[fixture]
 pub fn test_position_short(mut order_factory: OrderFactory, audusd_sim: CurrencyPair) -> Position {
+    let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
     let order = order_factory.market(
         InstrumentId::from("AUD/USD.SIM"),
         OrderSide::Sell,
@@ -66,10 +66,9 @@ pub fn test_position_short(mut order_factory: OrderFactory, audusd_sim: Currency
         None,
         None,
     );
-    let order_filled = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
+    let filled = TestOrderEventStubs::order_filled(
         &order,
         &audusd_sim,
-        None,
         None,
         None,
         Some(Price::from("22000.0")),
@@ -77,7 +76,6 @@ pub fn test_position_short(mut order_factory: OrderFactory, audusd_sim: Currency
         None,
         None,
         None,
-    )
-    .unwrap();
-    Position::new(audusd_sim, order_filled).unwrap()
+    );
+    Position::new(&audusd_sim, filled.into()).unwrap()
 }

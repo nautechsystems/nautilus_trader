@@ -20,7 +20,7 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
-    identifiers::account_id::AccountId,
+    identifiers::AccountId,
     position::Position,
     python::instruments::pyobject_to_instrument_any,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},

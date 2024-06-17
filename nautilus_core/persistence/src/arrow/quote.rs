@@ -23,7 +23,7 @@ use datafusion::arrow::{
 };
 use nautilus_model::{
     data::quote::QuoteTick,
-    identifiers::instrument_id::InstrumentId,
+    identifiers::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };
 

@@ -17,7 +17,7 @@ use std::ffi::c_char;
 
 use nautilus_core::ffi::string::cstr_to_str;
 
-use crate::identifiers::strategy_id::StrategyId;
+use crate::identifiers::StrategyId;
 
 /// Returns a Nautilus identifier from a C string pointer.
 ///

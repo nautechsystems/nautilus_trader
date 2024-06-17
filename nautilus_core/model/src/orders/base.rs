@@ -27,18 +27,14 @@ use crate::{
         TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::order::{
-        accepted::OrderAccepted, cancel_rejected::OrderCancelRejected, canceled::OrderCanceled,
-        denied::OrderDenied, emulated::OrderEmulated, event::OrderEventAny, expired::OrderExpired,
-        filled::OrderFilled, initialized::OrderInitialized, modify_rejected::OrderModifyRejected,
-        pending_cancel::OrderPendingCancel, pending_update::OrderPendingUpdate,
-        rejected::OrderRejected, released::OrderReleased, submitted::OrderSubmitted,
-        triggered::OrderTriggered, updated::OrderUpdated,
+        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
+        OrderEventAny, OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected,
+        OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted,
+        OrderTriggered, OrderUpdated,
     },
     identifiers::{
-        account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
-        instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
-        strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId, trader_id::TraderId,
-        venue::Venue, venue_order_id::VenueOrderId,
+        AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
+        StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
@@ -339,6 +335,22 @@ pub trait Order: 'static + Send {
         self.exec_spawn_id().map_or(false, |exec_spawn_id| {
             exec_spawn_id != self.client_order_id()
         })
+    }
+}
+
+impl From<OrderAny> for Box<dyn Order> {
+    fn from(order: OrderAny) -> Box<dyn Order> {
+        match order {
+            OrderAny::Limit(order) => Box::new(order),
+            OrderAny::LimitIfTouched(order) => Box::new(order),
+            OrderAny::Market(order) => Box::new(order),
+            OrderAny::MarketIfTouched(order) => Box::new(order),
+            OrderAny::MarketToLimit(order) => Box::new(order),
+            OrderAny::StopLimit(order) => Box::new(order),
+            OrderAny::StopMarket(order) => Box::new(order),
+            OrderAny::TrailingStopLimit(order) => Box::new(order),
+            OrderAny::TrailingStopMarket(order) => Box::new(order),
+        }
     }
 }
 

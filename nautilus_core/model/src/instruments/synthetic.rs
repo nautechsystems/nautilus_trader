@@ -23,7 +23,7 @@ use evalexpr::{ContextWithMutableVariables, HashMapContext, Node, Value};
 use nautilus_core::nanos::UnixNanos;
 
 use crate::{
-    identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
+    identifiers::{InstrumentId, Symbol, Venue},
     types::price::Price,
 };
 

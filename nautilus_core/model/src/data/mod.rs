@@ -31,7 +31,6 @@ use self::{
     bar::Bar, delta::OrderBookDelta, deltas::OrderBookDeltas_API, depth::OrderBookDepth10,
     quote::QuoteTick, trade::TradeTick,
 };
-use crate::polymorphism::GetTsInit;
 
 /// A built-in Nautilus data type.
 ///
@@ -47,6 +46,10 @@ pub enum Data {
     Quote(QuoteTick),
     Trade(TradeTick),
     Bar(Bar),
+}
+
+pub trait GetTsInit {
+    fn ts_init(&self) -> UnixNanos;
 }
 
 impl GetTsInit for Data {

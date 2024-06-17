@@ -21,13 +21,12 @@
 
 use nautilus_model::{
     enums::OrderSideSpecified,
-    identifiers::{client_order_id::ClientOrderId, instrument_id::InstrumentId},
+    identifiers::{ClientOrderId, InstrumentId},
     orders::{
         any::{LimitOrderAny, PassiveOrderAny, StopOrderAny},
         base::OrderError,
         market::MarketOrder,
     },
-    polymorphism::{GetClientOrderId, GetLimitPrice, GetOrderSideSpecified, GetStopPrice},
     types::price::Price,
 };
 
@@ -45,9 +44,9 @@ pub struct OrderMatchingCore {
     pub last: Option<Price>,
     orders_bid: Vec<PassiveOrderAny>,
     orders_ask: Vec<PassiveOrderAny>,
-    trigger_stop_order: Option<fn(StopOrderAny)>,
-    fill_market_order: Option<fn(MarketOrder)>,
-    fill_limit_order: Option<fn(LimitOrderAny)>,
+    trigger_stop_order: Option<fn(&StopOrderAny)>,
+    fill_market_order: Option<fn(&MarketOrder)>,
+    fill_limit_order: Option<fn(&LimitOrderAny)>,
 }
 
 impl OrderMatchingCore {
@@ -56,9 +55,9 @@ impl OrderMatchingCore {
     pub fn new(
         instrument_id: InstrumentId,
         price_increment: Price,
-        trigger_stop_order: Option<fn(StopOrderAny)>,
-        fill_market_order: Option<fn(MarketOrder)>,
-        fill_limit_order: Option<fn(LimitOrderAny)>,
+        trigger_stop_order: Option<fn(&StopOrderAny)>,
+        fill_market_order: Option<fn(&MarketOrder)>,
+        fill_limit_order: Option<fn(&LimitOrderAny)>,
     ) -> Self {
         Self {
             instrument_id,
@@ -179,7 +178,7 @@ impl OrderMatchingCore {
     pub fn match_limit_order(&self, order: &LimitOrderAny) {
         if self.is_limit_matched(order) {
             if let Some(func) = self.fill_limit_order {
-                func(order.clone()); // TODO: Remove this clone (will need a lifetime)
+                func(order);
             }
         }
     }
@@ -187,7 +186,7 @@ impl OrderMatchingCore {
     pub fn match_stop_order(&self, order: &StopOrderAny) {
         if self.is_stop_matched(order) {
             if let Some(func) = self.trigger_stop_order {
-                func(order.clone()); // TODO: Remove this clone (will need a lifetime)
+                func(order);
             }
         }
     }
@@ -246,16 +245,15 @@ mod tests {
             None,
             None,
         );
-        let client_order_id = order.client_order_id;
 
-        let passive_order = PassiveOrderAny::Limit(LimitOrderAny::Limit(order));
-        matching_core.add_order(passive_order.clone()).unwrap();
+        matching_core.add_order(order.clone().into()).unwrap();
 
+        let passive_order: PassiveOrderAny = order.into();
         assert!(matching_core.get_orders_bid().contains(&passive_order));
         assert!(!matching_core.get_orders_ask().contains(&passive_order));
         assert_eq!(matching_core.get_orders_bid().len(), 1);
         assert!(matching_core.get_orders_ask().is_empty());
-        assert!(matching_core.order_exists(client_order_id));
+        assert!(matching_core.order_exists(passive_order.client_order_id()));
     }
 
     #[rstest]
@@ -271,16 +269,15 @@ mod tests {
             None,
             None,
         );
-        let client_order_id = order.client_order_id;
 
-        let passive_order = PassiveOrderAny::Limit(LimitOrderAny::Limit(order));
-        matching_core.add_order(passive_order.clone()).unwrap();
+        matching_core.add_order(order.clone().into()).unwrap();
 
+        let passive_order: PassiveOrderAny = order.into();
         assert!(matching_core.get_orders_ask().contains(&passive_order));
         assert!(!matching_core.get_orders_bid().contains(&passive_order));
         assert_eq!(matching_core.get_orders_ask().len(), 1);
         assert!(matching_core.get_orders_bid().is_empty());
-        assert!(matching_core.order_exists(client_order_id));
+        assert!(matching_core.order_exists(passive_order.client_order_id()));
     }
 
     #[rstest]
@@ -296,10 +293,9 @@ mod tests {
             None,
             None,
         );
-        let client_order_id = order.client_order_id;
+        let client_order_id = order.client_order_id();
 
-        let passive_order = PassiveOrderAny::Limit(LimitOrderAny::Limit(order));
-        matching_core.add_order(passive_order).unwrap();
+        matching_core.add_order(order.into()).unwrap();
         matching_core.bid = Some(Price::from("100.00"));
         matching_core.ask = Some(Price::from("100.00"));
         matching_core.last = Some(Price::from("100.00"));
@@ -328,9 +324,7 @@ mod tests {
             None,
         );
 
-        let passive_order = PassiveOrderAny::Limit(LimitOrderAny::Limit(order));
-        let result = matching_core.delete_order(&passive_order);
-
+        let result = matching_core.delete_order(&order.into());
         assert!(result.is_err());
     }
 
@@ -350,9 +344,8 @@ mod tests {
             None,
         );
 
-        let passive_order = PassiveOrderAny::Limit(LimitOrderAny::Limit(order));
-        matching_core.add_order(passive_order.clone()).unwrap();
-        matching_core.delete_order(&passive_order).unwrap();
+        matching_core.add_order(order.clone().into()).unwrap();
+        matching_core.delete_order(&order.into()).unwrap();
 
         assert!(matching_core.get_orders_ask().is_empty());
         assert!(matching_core.get_orders_bid().is_empty());
@@ -424,8 +417,7 @@ mod tests {
             None,
         );
 
-        let result = matching_core.is_limit_matched(&LimitOrderAny::Limit(order));
-
+        let result = matching_core.is_limit_matched(&order.into());
         assert_eq!(result, expected);
     }
 
@@ -496,8 +488,7 @@ mod tests {
             None,
         );
 
-        let result = matching_core.is_stop_matched(&StopOrderAny::StopMarket(order));
-
+        let result = matching_core.is_stop_matched(&order.into());
         assert_eq!(result, expected);
     }
 
@@ -508,9 +499,9 @@ mod tests {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let trigger_price = Price::from("100.00");
 
-        fn trigger_stop_order_handler(order: StopOrderAny) {
+        fn trigger_stop_order_handler(order: &StopOrderAny) {
             let order = order;
-            TRIGGERED_STOPS.lock().unwrap().push(order);
+            TRIGGERED_STOPS.lock().unwrap().push(order.clone());
         }
 
         let mut matching_core = OrderMatchingCore::new(
@@ -534,11 +525,11 @@ mod tests {
             None,
         );
 
-        matching_core.match_stop_order(&StopOrderAny::StopMarket(order.clone()));
+        matching_core.match_stop_order(&order.clone().into());
 
         let triggered_stops = TRIGGERED_STOPS.lock().unwrap();
         assert_eq!(triggered_stops.len(), 1);
-        assert_eq!(triggered_stops[0], StopOrderAny::StopMarket(order));
+        assert_eq!(triggered_stops[0], order.into());
     }
 
     #[rstest]
@@ -548,8 +539,8 @@ mod tests {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let price = Price::from("100.00");
 
-        fn fill_limit_order_handler(order: LimitOrderAny) {
-            FILLED_LIMITS.lock().unwrap().push(order);
+        fn fill_limit_order_handler(order: &LimitOrderAny) {
+            FILLED_LIMITS.lock().unwrap().push(order.clone());
         }
 
         let mut matching_core = OrderMatchingCore::new(
@@ -572,10 +563,10 @@ mod tests {
             None,
         );
 
-        matching_core.match_limit_order(&LimitOrderAny::Limit(order.clone()));
+        matching_core.match_limit_order(&order.clone().into());
 
         let filled_limits = FILLED_LIMITS.lock().unwrap();
         assert_eq!(filled_limits.len(), 1);
-        assert_eq!(filled_limits[0], LimitOrderAny::Limit(order));
+        assert_eq!(filled_limits[0], order.into());
     }
 }

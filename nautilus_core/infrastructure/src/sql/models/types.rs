@@ -22,7 +22,7 @@ pub struct CurrencyModel(pub Currency);
 
 impl<'r> FromRow<'r, PgRow> for CurrencyModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
-        let code = row.try_get::<String, _>("code")?;
+        let id = row.try_get::<String, _>("id")?;
         let precision = row.try_get::<i32, _>("precision")?;
         let iso4217 = row.try_get::<i32, _>("iso4217")?;
         let name = row.try_get::<String, _>("name")?;
@@ -31,7 +31,7 @@ impl<'r> FromRow<'r, PgRow> for CurrencyModel {
             .map(|res| CurrencyType::from_str(res.as_str()).unwrap())?;
 
         let currency = Currency::new(
-            code.as_str(),
+            id.as_str(),
             precision as u8,
             iso4217 as u16,
             name.as_str(),

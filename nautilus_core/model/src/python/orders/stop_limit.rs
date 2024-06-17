@@ -27,9 +27,7 @@ use crate::{
     enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
     events::order::initialized::OrderInitialized,
     identifiers::{
-        client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
-        instrument_id::InstrumentId, order_list_id::OrderListId, strategy_id::StrategyId,
-        trader_id::TraderId,
+        ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
     orders::{
         base::{str_hashmap_to_ustr, Order},
@@ -571,7 +569,7 @@ impl StopLimitOrder {
             .unwrap();
         let linked_order_ids = dict.get_item("linked_order_ids").map(|x| {
             x.and_then(|inner| {
-                let extracted_str = inner.extract::<Vec<&str>>();
+                let extracted_str = inner.extract::<Vec<String>>();
                 match extracted_str {
                     Ok(item) => Some(
                         item.iter()

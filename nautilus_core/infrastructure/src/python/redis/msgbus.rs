@@ -20,7 +20,7 @@ use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
     uuid::UUID4,
 };
-use nautilus_model::identifiers::trader_id::TraderId;
+use nautilus_model::identifiers::TraderId;
 use pyo3::prelude::*;
 
 use crate::redis::msgbus::RedisMessageBusDatabase;

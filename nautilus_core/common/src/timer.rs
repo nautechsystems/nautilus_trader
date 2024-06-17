@@ -360,7 +360,7 @@ fn call_python_with_time_event(
     Python::with_gil(|py| {
         // Create new time event
         let event = TimeEvent::new(name, UUID4::new(), ts_event, ts_init);
-        let capsule: PyObject = PyCapsule::new(py, event, None)
+        let capsule: PyObject = PyCapsule::new_bound(py, event, None)
             .expect("Error creating `PyCapsule`")
             .into_py(py);
 
@@ -474,7 +474,7 @@ mod tests {
         pyo3::prepare_freethreaded_python();
 
         let handler = Python::with_gil(|py| {
-            let callable = wrap_pyfunction!(receive_event, py).unwrap();
+            let callable = wrap_pyfunction_bound!(receive_event, py).unwrap();
             EventHandler::new(callable.into_py(py))
         });
 
@@ -500,7 +500,7 @@ mod tests {
         pyo3::prepare_freethreaded_python();
 
         let handler = Python::with_gil(|py| {
-            let callable = wrap_pyfunction!(receive_event, py).unwrap();
+            let callable = wrap_pyfunction_bound!(receive_event, py).unwrap();
             EventHandler::new(callable.into_py(py))
         });
 
@@ -532,7 +532,7 @@ mod tests {
         pyo3::prepare_freethreaded_python();
 
         let handler = Python::with_gil(|py| {
-            let callable = wrap_pyfunction!(receive_event, py).unwrap();
+            let callable = wrap_pyfunction_bound!(receive_event, py).unwrap();
             EventHandler::new(callable.into_py(py))
         });
 

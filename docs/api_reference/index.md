@@ -1,31 +1,5 @@
 # Python API
 
-```{eval-rst}
-.. toctree::
-   :maxdepth: 1
-   :glob:
-   
-   accounting.md
-   adapters/index.md
-   analysis.md
-   backtest.md
-   cache.md
-   common.md
-   config.md
-   core.md
-   data.md
-   execution.md
-   indicators.md
-   live.md
-   model/index.md
-   persistence.md
-   portfolio.md
-   risk.md
-   serialization.md
-   system.md
-   trading.md
-```
-
 Welcome to the Python API reference for NautilusTrader!
 
 The API reference provides detailed technical documentation for the NautilusTrader framework,
@@ -37,11 +11,7 @@ Please note that there are separate references for different versions of Nautilu
 - **Latest:** This API reference is built from the head of the `master` branch and represents the latest stable release.
 - **Nightly:** This API reference is built from the head of the `nightly` branch and represents bleeding edge and experimental changes/features currently in development.
 
-You can select the desired API reference from the **Versions** top right drop down menu.
-
-```{note}
-If you select an item from the top level navigation, this will take you to the **Latest** API reference.
-```
+You can select the desired API reference from the **Versions** top left drop down menu.
 
 Use the right navigation sidebar to explore the available modules and their contents.
 You can click on any item to view its detailed documentation, including parameter descriptions, and return value explanations.

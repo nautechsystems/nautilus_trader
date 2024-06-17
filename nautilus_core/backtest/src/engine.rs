@@ -115,7 +115,7 @@ mod tests {
 
     use nautilus_common::timer::TimeEvent;
     use nautilus_core::uuid::UUID4;
-    use pyo3::{types::PyList, Py, Python};
+    use pyo3::{prelude::*, types::PyList, Py, Python};
     use rstest::*;
     use ustr::Ustr;
 
@@ -126,7 +126,7 @@ mod tests {
         pyo3::prepare_freethreaded_python();
 
         Python::with_gil(|py| {
-            let py_list = PyList::empty(py);
+            let py_list = PyList::empty_bound(py);
             let py_append = Py::from(py_list.getattr("append").unwrap());
 
             let mut accumulator = TimeEventAccumulator::new();

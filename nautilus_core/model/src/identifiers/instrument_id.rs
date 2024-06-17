@@ -23,7 +23,7 @@ use std::{
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::identifiers::{symbol::Symbol, venue::Venue};
+use crate::identifiers::{Symbol, Venue};
 
 /// Represents a valid instrument ID.
 ///

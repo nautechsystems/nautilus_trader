@@ -21,11 +21,9 @@ use nautilus_core::{time::AtomicTime, uuid::UUID4};
 use nautilus_model::{
     enums::{ContingencyType, OrderSide, TimeInForce},
     identifiers::{
-        client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
-        instrument_id::InstrumentId, order_list_id::OrderListId, strategy_id::StrategyId,
-        trader_id::TraderId,
+        ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, StrategyId, TraderId,
     },
-    orders::market::MarketOrder,
+    orders::{any::OrderAny, market::MarketOrder},
     types::quantity::Quantity,
 };
 use ustr::Ustr;
@@ -106,14 +104,14 @@ impl OrderFactory {
         exec_algorithm_id: Option<ExecAlgorithmId>,
         exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
         tags: Option<Vec<Ustr>>,
-    ) -> MarketOrder {
+    ) -> OrderAny {
         let client_order_id = self.generate_client_order_id();
         let exec_spawn_id: Option<ClientOrderId> = if exec_algorithm_id.is_none() {
             None
         } else {
             Some(client_order_id)
         };
-        MarketOrder::new(
+        let order = MarketOrder::new(
             self.trader_id,
             self.strategy_id,
             instrument_id,
@@ -134,7 +132,8 @@ impl OrderFactory {
             exec_spawn_id,
             tags,
         )
-        .unwrap()
+        .unwrap();
+        OrderAny::Market(order)
     }
 }
 
@@ -145,9 +144,7 @@ impl OrderFactory {
 pub mod tests {
     use nautilus_model::{
         enums::{OrderSide, TimeInForce},
-        identifiers::{
-            client_order_id::ClientOrderId, instrument_id::InstrumentId, order_list_id::OrderListId,
-        },
+        identifiers::{ClientOrderId, InstrumentId, OrderListId},
     };
     use rstest::rstest;
 
@@ -221,20 +218,21 @@ pub mod tests {
             None,
             None,
         );
-        assert_eq!(market_order.instrument_id, "BTCUSDT.BINANCE".into());
-        assert_eq!(market_order.side, OrderSide::Buy);
-        assert_eq!(market_order.quantity, 100.into());
-        assert_eq!(market_order.time_in_force, TimeInForce::Gtc);
-        assert!(!market_order.is_reduce_only);
-        assert!(!market_order.is_quote_quantity);
-        assert_eq!(market_order.exec_algorithm_id, None);
-        assert_eq!(market_order.exec_algorithm_params, None);
-        assert_eq!(market_order.exec_spawn_id, None);
-        assert_eq!(market_order.tags, None);
+        // TODO: Add additional polymorphic getters
+        assert_eq!(market_order.instrument_id(), "BTCUSDT.BINANCE".into());
+        assert_eq!(market_order.order_side(), OrderSide::Buy);
+        assert_eq!(market_order.quantity(), 100.into());
+        // assert_eq!(market_order.time_in_force(), TimeInForce::Gtc);
+        // assert!(!market_order.is_reduce_only);
+        // assert!(!market_order.is_quote_quantity);
+        assert_eq!(market_order.exec_algorithm_id(), None);
+        // assert_eq!(market_order.exec_algorithm_params(), None);
+        // assert_eq!(market_order.exec_spawn_id, None);
+        // assert_eq!(market_order.tags, None);
         assert_eq!(
-            market_order.client_order_id,
+            market_order.client_order_id(),
             ClientOrderId::new("O-19700101-0000-001-001-1").unwrap()
         );
-        assert_eq!(market_order.order_list_id, None);
+        // assert_eq!(market_order.order_list_id(), None);
     }
 }

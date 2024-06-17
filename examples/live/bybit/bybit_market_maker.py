@@ -22,7 +22,6 @@ from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.factories import BybitLiveDataClientFactory
 from nautilus_trader.adapters.bybit.factories import BybitLiveExecClientFactory
 from nautilus_trader.cache.config import CacheConfig
-from nautilus_trader.common.config import DatabaseConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
@@ -60,7 +59,7 @@ config_node = TradingNodeConfig(
         reconciliation_lookback_mins=1440,
     ),
     cache=CacheConfig(
-        database=DatabaseConfig(),
+        # database=DatabaseConfig(),
         timestamps_as_iso8601=True,
         buffer_interval_ms=100,
     ),
@@ -83,7 +82,7 @@ config_node = TradingNodeConfig(
             api_secret=None,  # 'BYBIT_API_SECRET' env var
             base_url_http=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            # product_types=[product_type],  # Will load all instruments
+            product_types=[product_type],  # Will load all instruments
             testnet=False,  # If client uses the testnet
         ),
     },

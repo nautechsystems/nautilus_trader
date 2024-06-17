@@ -23,6 +23,18 @@ The following steps are for UNIX-like systems, and only need to be completed onc
 
        pre-commit install
 
+3. In case of large recompiles for small changes, configure the `PYO3_PYTHON` variable in `nautilus_core/.cargo/config.toml` with the path to the Python interpreter in the poetry managed environment. This is primarily useful for Rust developers working on core and experience frequent recompiles from IDE/rust analyzer based `cargo check`.
+
+    ```
+    poetry shell
+    PYTHON_PATH=$(which python)
+    echo -e "\n[env]\nPYO3_PYTHON = \"$PYTHON_PATH\"" >> nautilus_core/.cargo/config.toml
+    ```
+
+    Since `.cargo/config.toml` is a tracked file, configure git to skip local modifications to it with `git update-index --skip-worktree nautilus_core/.cargo/config.toml`. Git will still pull remote modifications. To push modifications track local modifications using `git update-index --no-skip-worktree nautilus_core/.cargo/config.toml`.
+    
+    The git hack is needed till [local cargo config](https://github.com/rust-lang/cargo/issues/7723) feature is merged.
+
 ## Builds
 
 Following any changes to `.pyx` or `.pxd` files, you can re-compile by running:
@@ -34,6 +46,7 @@ or
     make build
 
 ## Services
+
 You can use `docker-compose.yml` file located in `.docker` directory 
 to bootstrap the Nautilus working environment. This will start the following services:
 
@@ -93,9 +106,11 @@ make install-cli
 ```
 
 ## Commands
+
 You can run `nautilus --help` to inspect structure of CLI and groups of commands:
 
 ### Database
+
 These are commands related to the bootstrapping the Postgres database.
 For that you work, you need to supply right connection configuration. You can do that through 
 command line arguments or `.env` file in the root directory or where the commands is being run.

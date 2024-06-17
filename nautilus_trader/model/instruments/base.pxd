@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint8_t
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.data cimport Data
@@ -32,6 +33,8 @@ cdef set[InstrumentClass] EXPIRING_INSTRUMENT_TYPES
 
 cdef class Instrument(Data):
     cdef TickScheme _tick_scheme
+    cdef uint8_t _min_price_increment_precision
+    cdef uint8_t _min_size_increment_precision
 
     cdef readonly InstrumentId id
     """The instrument ID.\n\n:returns: `InstrumentId`"""

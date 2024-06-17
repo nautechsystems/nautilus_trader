@@ -27,6 +27,8 @@
 //! - `ffi`: Enables the C foreign function interface (FFI) from `cbindgen`
 //! - `python`: Enables Python bindings from `pyo3`
 
+#![allow(deprecated)] // TODO: Temporary for pyo3 upgrade
+
 pub mod arrow;
 pub mod backend;
 

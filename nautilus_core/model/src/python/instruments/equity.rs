@@ -24,7 +24,7 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
-    identifiers::{instrument_id::InstrumentId, symbol::Symbol},
+    identifiers::{InstrumentId, Symbol},
     instruments::equity::Equity,
     types::{currency::Currency, price::Price, quantity::Quantity},
 };

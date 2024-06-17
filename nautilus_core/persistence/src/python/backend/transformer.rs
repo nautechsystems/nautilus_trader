@@ -60,7 +60,7 @@ impl DataTransformer {
     fn pyobjects_to_quote_ticks(py: Python<'_>, data: Vec<PyObject>) -> PyResult<Vec<QuoteTick>> {
         let ticks: Vec<QuoteTick> = data
             .into_iter()
-            .map(|obj| QuoteTick::from_pyobject(obj.as_ref(py)))
+            .map(|obj| QuoteTick::from_pyobject(obj.bind(py)))
             .collect::<PyResult<Vec<QuoteTick>>>()?;
 
         // Validate monotonically increasing
@@ -75,7 +75,7 @@ impl DataTransformer {
     fn pyobjects_to_trade_ticks(py: Python<'_>, data: Vec<PyObject>) -> PyResult<Vec<TradeTick>> {
         let ticks: Vec<TradeTick> = data
             .into_iter()
-            .map(|obj| TradeTick::from_pyobject(obj.as_ref(py)))
+            .map(|obj| TradeTick::from_pyobject(obj.bind(py)))
             .collect::<PyResult<Vec<TradeTick>>>()?;
 
         // Validate monotonically increasing

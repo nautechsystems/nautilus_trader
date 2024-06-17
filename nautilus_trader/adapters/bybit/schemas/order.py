@@ -25,14 +25,16 @@ from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.enums import BybitStopOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
+from nautilus_trader.adapters.bybit.common.enums import BybitTriggerDirection
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
 from nautilus_trader.adapters.bybit.schemas.common import BybitListResult
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.model.enums import ContingencyType
+from nautilus_trader.model.enums import OrderStatus
+from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TrailingOffsetType
-from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -54,7 +56,7 @@ class BybitOrder(msgspec.Struct, omit_defaults=True, kw_only=True):
     orderStatus: BybitOrderStatus
     cancelType: str
     rejectReason: str
-    avgPrice: str
+    avgPrice: str | None = None
     leavesQty: str
     leavesValue: str
     cumExecQty: str
@@ -62,15 +64,15 @@ class BybitOrder(msgspec.Struct, omit_defaults=True, kw_only=True):
     cumExecFee: str
     timeInForce: BybitTimeInForce
     orderType: BybitOrderType
-    stopOrderType: BybitStopOrderType | None = None
+    stopOrderType: BybitStopOrderType
     orderIv: str
     triggerPrice: str
     takeProfit: str
     stopLoss: str
     tpTriggerBy: str
     slTriggerBy: str
-    triggerDirection: int
-    triggerBy: BybitTriggerType | None = None
+    triggerDirection: BybitTriggerDirection = BybitTriggerDirection.NONE
+    triggerBy: BybitTriggerType
     lastPriceOnCreated: str
     reduceOnly: bool
     closeOnTrigger: bool
@@ -95,17 +97,34 @@ class BybitOrder(msgspec.Struct, omit_defaults=True, kw_only=True):
         client_order_id = ClientOrderId(self.orderLinkId) if self.orderLinkId else None
         order_list_id = None
         contingency_type = ContingencyType.NO_CONTINGENCY
-        trigger_price = (
-            Price.from_str(str(Decimal(self.triggerPrice))) if self.triggerPrice else None
+        trigger_price = Price.from_str(self.triggerPrice) if self.triggerPrice else None
+
+        trigger_type = enum_parser.parse_bybit_trigger_type(self.triggerBy)
+        order_type = enum_parser.parse_bybit_order_type(
+            self.orderType,
+            self.stopOrderType,
+            self.side,
+            self.triggerDirection,
         )
-        trigger_type = TriggerType.NO_TRIGGER
-        # TODO check for trigger type
-        trailing_offset = None
-        trailing_offset_type = TrailingOffsetType.NO_TRAILING_OFFSET
-        order_status = enum_parser.parse_bybit_order_status(self.orderStatus)
-        # check for post only and reduce only
-        post_only = False
-        reduce_only = False
+        order_status = enum_parser.parse_bybit_order_status(order_type, self.orderStatus)
+
+        if order_type in (OrderType.TRAILING_STOP_MARKET, OrderType.TRAILING_STOP_LIMIT):
+            trigger_price = Decimal(self.triggerPrice)
+            last_price = Decimal(self.lastPriceOnCreated)
+            trailing_offset = abs(trigger_price - last_price)
+            trailing_offset_type = TrailingOffsetType.PRICE
+        else:
+            trailing_offset = None
+            trailing_offset_type = TrailingOffsetType.NO_TRAILING_OFFSET
+
+        # TODO: Temporary and shouldn't be necessary
+        avg_px = Decimal(self.avgPrice) if self.avgPrice else None
+        if (
+            order_status in (OrderStatus.FILLED, OrderStatus.PARTIALLY_FILLED)
+            and self.avgPrice is None
+        ):
+            avg_px = Decimal()
+
         return OrderStatusReport(
             account_id=account_id,
             instrument_id=instrument_id,
@@ -113,7 +132,7 @@ class BybitOrder(msgspec.Struct, omit_defaults=True, kw_only=True):
             order_list_id=order_list_id,
             venue_order_id=VenueOrderId(str(self.orderId)),
             order_side=enum_parser.parse_bybit_order_side(self.side),
-            order_type=enum_parser.parse_bybit_order_type(self.orderType),
+            order_type=order_type,
             contingency_type=contingency_type,
             time_in_force=enum_parser.parse_bybit_time_in_force(self.timeInForce),
             order_status=order_status,
@@ -124,9 +143,9 @@ class BybitOrder(msgspec.Struct, omit_defaults=True, kw_only=True):
             trailing_offset_type=trailing_offset_type,
             quantity=Quantity.from_str(self.qty),
             filled_qty=Quantity.from_str(self.cumExecQty),
-            avg_px=Decimal(self.avgPrice) if self.avgPrice else None,
-            post_only=post_only,
-            reduce_only=reduce_only,
+            avg_px=avg_px,
+            post_only=self.timeInForce == BybitTimeInForce.POST_ONLY,
+            reduce_only=self.reduceOnly,
             ts_accepted=millis_to_nanos(Decimal(self.createdTime)),
             ts_last=millis_to_nanos(Decimal(self.updatedTime)),
             report_id=report_id,
@@ -207,6 +226,17 @@ class BybitAmendOrderResponse(msgspec.Struct):
     retCode: int
     retMsg: str
     result: BybitAmendOrder
+    retExtInfo: dict[str, Any]
+    time: int
+
+
+################################################################################
+# Set trading stop
+################################################################################
+class BybitSetTradingStopResponse(msgspec.Struct):
+    retCode: int
+    retMsg: str
+    result: dict[str, Any]
     retExtInfo: dict[str, Any]
     time: int
 

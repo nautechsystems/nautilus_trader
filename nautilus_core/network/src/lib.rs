@@ -26,7 +26,7 @@
 //!
 //! - `python`: Enables Python bindings from `pyo3`
 
-#![allow(warnings)] // non-local `impl` definition, temporary allow until pyo3 upgrade
+#![allow(warnings)] // TODO: non-local `impl` definition, temporary allow until pyo3 upgrade
 
 pub mod http;
 #[allow(dead_code)]

@@ -22,7 +22,7 @@ use std::str::FromStr;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     enums::{AssetClass, OptionKind},
-    identifiers::{instrument_id::InstrumentId, symbol::Symbol},
+    identifiers::{InstrumentId, Symbol},
     instruments::{
         any::InstrumentAny, crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual,
         currency_pair::CurrencyPair, equity::Equity, futures_contract::FuturesContract,

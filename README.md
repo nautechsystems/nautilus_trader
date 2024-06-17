@@ -5,7 +5,6 @@
 ![pypi-version](https://img.shields.io/pypi/v/nautilus_trader)
 ![pypi-format](https://img.shields.io/pypi/format/nautilus_trader?color=blue)
 [![Downloads](https://pepy.tech/badge/nautilus-trader)](https://pepy.tech/project/nautilus-trader)
-[![discord](https://img.shields.io/discord/924497682343550976?color=768AD4&label=discord)](https://discord.gg/AUWVs3XaCS)
 
 | Branch    | Version                                                                                                                                             | Status                                                                                                                                                                                            |
 | :-------- | :-------------------------------------------------------------------------------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -15,12 +14,14 @@
 
 | Platform           | Rust    | Python |
 | :----------------- | :------ | :----- |
-| `Linux (x86_64)`   | 1.78.0+ | 3.10+  |
-| `macOS (arm64)`    | 1.78.0+ | 3.10+  |
-| `Windows (x86_64)` | 1.78.0+ | 3.10+  |
+| `Linux (x86_64)`   | 1.79.0+ | 3.10+  |
+| `macOS (arm64)`    | 1.79.0+ | 3.10+  |
+| `Windows (x86_64)` | 1.79.0+ | 3.10+  |
 
+![](https://dcbadge.limes.pink/api/server/AUWVs3XaCS)
+
+- **Docs:** https://nautilustrader.io/docs/
 - **Website:** https://nautilustrader.io
-- **Docs:** https://docs.nautilustrader.io
 - **Support:** [support@nautilustrader.io](mailto:support@nautilustrader.io)
 
 ## Introduction
@@ -121,13 +122,13 @@ into a unified interface. The following integrations are currently supported:
 
 | Name                                                      | ID                    | Type                    | Status                                                  | Docs                                                                |
 | :-------------------------------------------------------- | :-------------------- | :---------------------- | :------------------------------------------------------ | :------------------------------------------------------------------ |
-| [Betfair](https://betfair.com)                            | `BETFAIR`             | Sports Betting Exchange | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/betfair.html)   |
-| [Binance](https://binance.com)                            | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/binance.html)   |
-| [Binance US](https://binance.us)                          | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/binance.html)   |
-| [Binance Futures](https://www.binance.com/en/futures)     | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/binance.html)   |
-| [Bybit](https://www.bybit.com)                            | `BYBIT`               | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/bybit.html)     |
-| [Databento](https://databento.com)                        | `DATABENTO`           | Data Provider           | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://docs.nautilustrader.io/integrations/databento.html) |
-| [Interactive Brokers](https://www.interactivebrokers.com) | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://docs.nautilustrader.io/integrations/ib.html)        |
+| [Betfair](https://betfair.com)                            | `BETFAIR`             | Sports Betting Exchange | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/integrations/betfair.html)   |
+| [Binance](https://binance.com)                            | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/integrations/binance.html)   |
+| [Binance US](https://binance.us)                          | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/integrations/binance.html)   |
+| [Binance Futures](https://www.binance.com/en/futures)     | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/integrations/binance.html)   |
+| [Bybit](https://www.bybit.com)                            | `BYBIT`               | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://nautilustrader.io/docs/integrations/bybit.html)     |
+| [Databento](https://databento.com)                        | `DATABENTO`           | Data Provider           | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://nautilustrader.io/docs/integrations/databento.html) |
+| [Interactive Brokers](https://www.interactivebrokers.com) | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/integrations/ib.html)        |
 
 - **ID:** The default client ID for the integrations adapter clients
 - **Type:** The type of integration (often the venue type)
@@ -137,7 +138,7 @@ into a unified interface. The following integrations are currently supported:
 - `beta` - Completed to a minimally working state and in a 'beta' testing phase
 - `stable` - Stabilized feature set and API, the integration has been tested by both developers and users to a reasonable level (some bugs may still remain)
 
-Refer to the [Integrations](https://docs.nautilustrader.io/integrations/index.html) documentation for further details.
+Refer to the [Integrations](https://nautilustrader.io/docs/integrations/index.html) documentation for further details.
 
 ## Installation
 
@@ -164,35 +165,50 @@ It's possible to install from source using `pip` if you first install the build 
 as specified in the `pyproject.toml`. However, we highly recommend installing using [poetry](https://python-poetry.org/) as below.
 
 1. Install [rustup](https://rustup.rs/) (the Rust toolchain installer):
-
    - Linux and macOS:
-     ```
-     curl https://sh.rustup.rs -sSf | sh
-     ```
+       ```bash
+       curl https://sh.rustup.rs -sSf | sh
+       ```
    - Windows:
-     - Download and install [`rustup-init.exe`](https://win.rustup.rs/x86_64)
-     - Install "Desktop development with C++" with [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16)
+       - Download and install [`rustup-init.exe`](https://win.rustup.rs/x86_64)
+       - Install "Desktop development with C++" with [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16)
+   - Verify (any system):
+       from a terminal session run: `rustc --version`
 
 2. Enable `cargo` in the current shell:
-
    - Linux and macOS:
-     ```
-     source $HOME/.cargo/env
-     ```
+       ```bash
+       source $HOME/.cargo/env
+       ```
    - Windows:
      - Start a new PowerShell
 
-3. Install poetry (or follow the installation guide on their site):
+3. Install [clang](https://clang.llvm.org/) (a C language frontend for LLVM):
+   - Linux:
+       ```bash
+       sudo apt-get install clang
+       ```
+   - Windows:
+       1. Add Clang to your [Build Tools for Visual Studio 2019](https://visualstudio.microsoft.com/thank-you-downloading-visual-studio/?sku=BuildTools&rel=16):
+          - Start | Visual Studio Installer | Modify | C++ Clang tools for Windows (12.0.0 - x64…) = checked | Modify
+       2. Enable `clang` in the current shell:
+          ```powershell
+          [System.Environment]::SetEnvironmentVariable('path', "C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\VC\Tools\Llvm\x64\bin\;" + $env:Path,"User")
+          ```
+   - Verify (any system):
+       from a terminal session run: `clang --version`
 
-   curl -sSL https://install.python-poetry.org | python3 -
+4. Install poetry (or follow the installation guide on their site):
 
-4. Clone the source with `git`, and install from the projects root directory:
+       curl -sSL https://install.python-poetry.org | python3 -
 
-   git clone https://github.com/nautechsystems/nautilus_trader
-   cd nautilus_trader
-   poetry install --only main --all-extras
+5. Clone the source with `git`, and install from the projects root directory:
 
-Refer to the [Installation Guide](https://docs.nautilustrader.io/getting_started/installation.html) for other options and further details.
+       git clone https://github.com/nautechsystems/nautilus_trader
+       cd nautilus_trader
+       poetry install --only main --all-extras
+
+Refer to the [Installation Guide](https://nautilustrader.io/docs/getting_started/installation.html) for other options and further details.
 
 ## Versioning and releases
 
@@ -239,7 +255,7 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 Indicators and strategies can be developed in both Python and Cython (although if performance and latency sensitivity are import we recommend Cython).
 The below are some examples of this:
 
-- [indicator](/examples/indicators/ema_python.py) example written in Python
+- [indicator](/nautilus_trader/examples/indicators/ema_python.py) example written in Python
 - [indicator](/nautilus_trader/indicators/) examples written in Cython
 - [strategy](/nautilus_trader/examples/strategies/) examples written in both Python and Cython
 - [backtest](/examples/backtest/) examples using a `BacktestEngine` directly
@@ -395,7 +411,7 @@ class EMACross(Strategy):
 ## Development
 
 We aim to provide the most pleasant developer experience possible for this hybrid codebase of Python, Cython and Rust.
-Refer to the [Developer Guide](https://docs.nautilustrader.io/developer_guide/index.html) for helpful information.
+Refer to the [Developer Guide](https://nautilustrader.io/docs/developer_guide/index.html) for helpful information.
 
 [cargo-nextest](https://nexte.st) is the standard Rust test runner for NautilusTrader. You can install it by running:
 

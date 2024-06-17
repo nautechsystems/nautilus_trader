@@ -24,7 +24,7 @@ use std::{
 
 use log::LevelFilter;
 use nautilus_core::{time::get_atomic_clock_static, uuid::UUID4};
-use nautilus_model::identifiers::trader_id::TraderId;
+use nautilus_model::identifiers::TraderId;
 use tracing::error;
 use tracing_subscriber::EnvFilter;
 use ustr::Ustr;

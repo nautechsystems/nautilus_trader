@@ -849,6 +849,7 @@ class LiveExecutionEngine(ExecutionEngine):
             options["price"] = str(report.price)
         if report.trigger_price is not None:
             options["trigger_price"] = str(report.trigger_price)
+        if report.trigger_type is not None:
             options["trigger_type"] = trigger_type_to_str(report.trigger_type)
         if report.limit_offset is not None:
             options["limit_offset"] = str(report.limit_offset)

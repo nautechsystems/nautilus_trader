@@ -30,10 +30,8 @@ use crate::{
     },
     events::order::OrderEvent,
     identifiers::{
-        account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
-        instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
-        strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
-        venue_order_id::VenueOrderId,
+        AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
+        StrategyId, TradeId, TraderId, VenueOrderId,
     },
     orders::any::OrderAny,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
@@ -575,7 +573,7 @@ mod test {
         let display = format!("{order_initialized_buy_limit}");
         assert_eq!(
             display,
-            "OrderInitialized(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-000-001-1, \
+            "OrderInitialized(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-001-001-1, \
             side=BUY, type=LIMIT, quantity=0.561, time_in_force=DAY, post_only=true, reduce_only=true, \
             quote_quantity=false, price=22000, emulation_trigger=BID_ASK, trigger_instrument_id=BTCUSDT.COINBASE, \
             contingency_type=OTO, order_list_id=1, linked_order_ids=[O-2020872378424], parent_order_id=None, \

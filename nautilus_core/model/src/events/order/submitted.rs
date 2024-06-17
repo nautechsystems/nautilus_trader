@@ -27,10 +27,8 @@ use crate::{
     },
     events::order::OrderEvent,
     identifiers::{
-        account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
-        instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
-        strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
-        venue_order_id::VenueOrderId,
+        AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
+        StrategyId, TradeId, TraderId, VenueOrderId,
     },
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
@@ -297,7 +295,7 @@ mod tests {
         let display = format!("{order_submitted}");
         assert_eq!(
             display,
-            "OrderSubmitted(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-000-001-1, account_id=SIM-001, ts_event=0)"
+            "OrderSubmitted(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-001-001-1, account_id=SIM-001, ts_event=0)"
         );
     }
 }

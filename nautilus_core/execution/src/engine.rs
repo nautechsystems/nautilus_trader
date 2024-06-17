@@ -25,10 +25,8 @@ use log::debug;
 use nautilus_common::{cache::Cache, generators::position_id::PositionIdGenerator};
 use nautilus_model::{
     enums::{OmsType, OrderSide},
-    events::order::{event::OrderEventAny, filled::OrderFilled},
-    identifiers::{
-        client_id::ClientId, instrument_id::InstrumentId, strategy_id::StrategyId, venue::Venue,
-    },
+    events::order::{filled::OrderFilled, OrderEventAny},
+    identifiers::{ClientId, InstrumentId, StrategyId, Venue},
     instruments::any::InstrumentAny,
     orders::any::OrderAny,
     position::Position,

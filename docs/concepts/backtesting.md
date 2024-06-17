@@ -10,7 +10,7 @@ detailed results and performance metrics for in-depth analysis.
 It's paramount to recognize that NautilusTrader offers two distinct API levels for setting up and 
 conducting backtests: **high-level** and **low-level**.
 
-## Choosing an API level:
+## Choosing an API level
 
 Consider the **low-level** API when:
 
@@ -25,7 +25,7 @@ Consider the **high-level** API when:
 - You want to harness the performance capabilities and convenience of the `ParquetDataCatalog` and persist your data in the Nautilus-specific Parquet format
 - You value the flexibility and advanced functionalities offered by passing configuration objects, which can define diverse backtest runs across many engines at once
 
-## Low-level API:
+## Low-level API
 
 The low-level API revolves around a single `BacktestEngine`, with inputs initialized and added 'manually' via a Python script.
 An instantiated `BacktestEngine` can accept:
@@ -34,7 +34,7 @@ An instantiated `BacktestEngine` can accept:
 - Multiple actors (manually initialized and added)
 - Multiple execution algorithms (manually initialized and added)
 
-## High-level API:
+## High-level API
 
 The high-level API revolves around a single `BacktestNode`, which will orchestrate the management 
 of individual `BacktestEngine`s, each defined by a `BacktestRunConfig`.

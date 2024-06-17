@@ -26,7 +26,7 @@ use pyo3::{
     types::{PyString, PyTuple},
 };
 
-use crate::identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue};
+use crate::identifiers::{InstrumentId, Symbol, Venue};
 
 #[pymethods]
 impl InstrumentId {

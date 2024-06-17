@@ -32,12 +32,10 @@ use crate::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
         TrailingOffsetType, TriggerType,
     },
-    events::order::{event::OrderEventAny, initialized::OrderInitialized, updated::OrderUpdated},
+    events::order::{OrderEventAny, OrderInitialized, OrderUpdated},
     identifiers::{
-        account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
-        instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
-        strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId, trader_id::TraderId,
-        venue::Venue, venue_order_id::VenueOrderId,
+        AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
+        StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
     orders::base::OrderError,
     types::{
@@ -432,6 +430,19 @@ impl Display for LimitOrder {
     }
 }
 
+impl From<OrderAny> for LimitOrder {
+    fn from(order: OrderAny) -> LimitOrder {
+        match order {
+            OrderAny::Limit(order) => order,
+            _ => panic!(
+                "Invalid `OrderAny` not `{}`, was {:?}",
+                stringify!(LimitOrder),
+                order
+            ),
+        }
+    }
+}
+
 impl From<OrderInitialized> for LimitOrder {
     fn from(event: OrderInitialized) -> Self {
         Self::new(
@@ -494,9 +505,9 @@ mod tests {
         assert_eq!(
             order.to_string(),
             "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, \
-            status=INITIALIZED, client_order_id=O-19700101-0000-000-001-1, \
+            status=INITIALIZED, client_order_id=O-19700101-0000-001-001-1, \
             venue_order_id=None, position_id=None, exec_algorithm_id=None, \
-            exec_spawn_id=O-19700101-0000-000-001-1, tags=None)"
+            exec_spawn_id=O-19700101-0000-001-001-1, tags=None)"
         );
     }
 

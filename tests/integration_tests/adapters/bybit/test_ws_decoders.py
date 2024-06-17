@@ -25,6 +25,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitPositionIdx
 from nautilus_trader.adapters.bybit.common.enums import BybitStopOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
+from nautilus_trader.adapters.bybit.common.enums import BybitTriggerDirection
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecution
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecutionMsg
@@ -491,7 +492,7 @@ class TestBybitWsDecoders:
             slTriggerBy="",
             tpLimitPrice="",
             slLimitPrice="",
-            triggerDirection=0,
+            triggerDirection=BybitTriggerDirection.RISES_TO,
             triggerBy=BybitTriggerType.NONE,
             closeOnTrigger=False,
             category="option",

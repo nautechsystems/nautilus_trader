@@ -15,9 +15,9 @@ There are two main parts of a Nautilus trading strategy:
 - The strategy implementation itself, defined by inheriting the `Strategy` class
 - The _optional_ strategy configuration, defined by inheriting the `StrategyConfig` class
 
-```{note}
+:::note
 Once a strategy is defined, the same source can be used for backtesting and live trading.
-```
+:::
 
 The main capabilities of a strategy include:
 - Historical data requests
@@ -28,6 +28,7 @@ The main capabilities of a strategy include:
 - Creating and managing orders and positions
 
 ## Implementation
+
 Since a trading strategy is a class which inherits from `Strategy`, you must define
 a constructor where you can handle initialization. Minimally the base/super class needs to be initialized:
 
@@ -39,10 +40,10 @@ class MyStrategy(Strategy):
         super().__init__()  # <-- the super class must be called to initialize the strategy
 ```
 
-```{warning}
+:::warning
 Do not call components such as `clock` and `logger` in the `__init__` constructor (which is prior to registration).
 This is because the systems clock and MPSC channel thread for logging have not yet been setup on initialization.
-```
+:::
 
 From here, you can implement handlers as necessary to perform actions based on state transitions
 and events.
@@ -221,9 +222,9 @@ def on_start(self) -> None:
 Strategies have access to a comprehensive `Clock` which provides a number of methods for creating
 different timestamps, as well as setting time alerts or timers.
 
-```{note}
+:::info
 See the `Clock` [API reference](../api_reference/common.md) for a complete list of available methods.
-```
+:::
 
 #### Current timestamps
 
@@ -249,7 +250,7 @@ specified alert time. In a live context, this might be slightly delayed by a few
 
 This example sets a time alert to trigger one minute from the current time:
 ```python
-self.clock.set_alert_time(
+self.clock.set_time_alert(
     name="MyTimeAlert1",
     alert_time=self.clock.utc_now() + pd.Timedelta(minutes=1),
 )
@@ -342,9 +343,9 @@ metrics and statistics.
 Refer to the `PortfolioAnalyzer` in the [API Reference](../api_reference/analysis.md) for a complete description
 of all available methods.
 
-```{note}
-Also see the [Porfolio statistics](../concepts/advanced/portfolio_statistics.md) guide.
-```
+:::info
+See the [Porfolio statistics](../concepts/advanced/portfolio_statistics.md) guide.
+:::
 
 ### Trading commands
 
@@ -353,9 +354,9 @@ tailored for algorithmic trading. These commands are essential for executing str
 and ensuring seamless interaction with various trading venues. In the following sections, we will 
 delve into the specifics of each command and its use cases.
 
-```{tip}
+:::info
 The [Execution](../concepts/execution.md) guide explains the flow through the system, and can be helpful to read in conjunction with the below.
-```
+:::
 
 #### Submitting orders
 
@@ -391,9 +392,9 @@ def buy(self) -> None:
     self.submit_order(order)
 ```
 
-```{note}
+:::info
 It's possible to specify both order emulation, and an execution algorithm.
-```
+:::
 
 This example submits a `MARKET` BUY order to a TWAP execution algorithm:
 ```python
@@ -432,9 +433,9 @@ The component a `CancelOrder`, `CancelAllOrders` or `BatchCancelOrders` command 
 - If an `exec_algorithm_id` is specified (with no `emulation_trigger`), and the order is still active within the local system, the command will _firstly_ be sent to the relevant `ExecAlgorithm`
 - Otherwise, the order will _firstly_ be sent to the `ExecutionEngine`
 
-```{note}
+:::info
 Any managed GTD timer will also be canceled after the command has left the strategy.
-```
+:::
 
 The following shows how to cancel an individual order:
 ```python
@@ -468,18 +469,18 @@ Orders can be modified individually when emulated, or *open* on a venue (if supp
 If the order is already *closed* or already pending cancel, then a warning will be logged.
 If the order is currently *open* then the status will become `PENDING_UPDATE`.
 
-```{warning}
+:::warning
 At least one value must differ from the original order for the command to be valid.
-```
+:::
 
 The component a `ModifyOrder` command will flow to for execution depends on the following:
 
 - If the order is currently emulated, the command will _firstly_ be sent to the `OrderEmulator`
 - Otherwise, the order will _firstly_ be sent to the `RiskEngine`
 
-```{note}
+:::info
 Once an order is under the control of an execution algorithm, it cannot be directly modified by a strategy (only canceled).
-```
+:::
 
 The following shows how to modify the size of `LIMIT` BUY order currently *open* on a venue:
 ```python
@@ -491,10 +492,9 @@ self.modify_order(order, new_quantity)
 
 ```
 
-```{note}
+:::info
 The price and trigger price can also be modified (when emulated or supported by a venue).
-
-```
+:::
 
 ## Configuration
 
@@ -551,10 +551,10 @@ strategy = MyStrategy(config=config)
 
 ```
 
-```{note}
+:::note
 Even though it often makes sense to define a strategy which will trade a single
 instrument. The number of instruments a single strategy can work with is only limited by machine resources.
-```
+:::
 
 ### Managed GTD expiry
 
@@ -575,16 +575,16 @@ If you intend running multiple instances of the same strategy, with different
 configurations (such as trading different instruments), then you will need to define
 a unique `order_id_tag` for each of these strategies (as shown above).
 
-```{note}
+:::note
 The platform has built-in safety measures in the event that two strategies share a
 duplicated strategy ID, then an exception will be raised that the strategy ID has already been registered.
-```
+:::
 
 The reason for this is that the system must be able to identify which strategy
 various commands and events belong to. A strategy ID is made up of the
 strategy class name, and the strategies `order_id_tag` separated by a hyphen. For
 example the above config would result in a strategy ID of `MyStrategy-001`.
 
-```{tip}
+:::tip
 See the `StrategyId` [documentation](../api_reference/model/identifiers.md) for further details.
-```
+:::

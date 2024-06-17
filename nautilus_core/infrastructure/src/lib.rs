@@ -28,6 +28,8 @@
 //! - `redis`: Enables the Redis cache database and message bus backing implementations
 //! - `sql`: Enables the SQL models and cache database
 
+#![allow(deprecated)] // TODO: Temporary for pyo3 upgrade
+
 #[cfg(feature = "python")]
 pub mod python;
 

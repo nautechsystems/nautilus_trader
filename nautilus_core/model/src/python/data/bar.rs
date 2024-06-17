@@ -32,7 +32,7 @@ use crate::{
         Data,
     },
     enums::{AggregationSource, BarAggregation, PriceType},
-    identifiers::instrument_id::InstrumentId,
+    identifiers::InstrumentId,
     python::common::PY_MODULE_MODEL,
     types::{price::Price, quantity::Quantity},
 };

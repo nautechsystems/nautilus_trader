@@ -20,6 +20,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
+from nautilus_trader.adapters.bybit.common.enums import BybitTriggerDirection
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
 from nautilus_trader.adapters.bybit.endpoints.endpoint import BybitHttpEndpoint
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
@@ -36,7 +37,7 @@ class BybitBatchPlaceOrder(msgspec.Struct, omit_defaults=True, frozen=True):
     marketUnit: str | None = None
     price: str | None = None
     orderFilter: str | None = None
-    triggerDirection: int | None = None  # TODO type this
+    triggerDirection: BybitTriggerDirection | None = None
     triggerPrice: str | None = None
     triggerBy: BybitTriggerType | None = None
     orderIv: str | None = None

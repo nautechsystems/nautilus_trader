@@ -22,20 +22,18 @@ use crate::{
         TriggerType,
     },
     identifiers::{
-        account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
-        instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
-        strategy_id::StrategyId, trade_id::TradeId, trader_id::TraderId,
-        venue_order_id::VenueOrderId,
+        AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
+        StrategyId, TradeId, TraderId, VenueOrderId,
     },
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
 pub mod accepted;
+pub mod any;
 pub mod cancel_rejected;
 pub mod canceled;
 pub mod denied;
 pub mod emulated;
-pub mod event;
 pub mod expired;
 pub mod filled;
 pub mod initialized;
@@ -50,6 +48,38 @@ pub mod updated;
 
 #[cfg(feature = "stubs")]
 pub mod stubs;
+
+// Re-exports
+pub use crate::events::order::{
+    accepted::OrderAccepted, any::OrderEventAny, cancel_rejected::OrderCancelRejected,
+    canceled::OrderCanceled, denied::OrderDenied, emulated::OrderEmulated, expired::OrderExpired,
+    filled::OrderFilled, initialized::OrderInitialized, modify_rejected::OrderModifyRejected,
+    pending_cancel::OrderPendingCancel, pending_update::OrderPendingUpdate,
+    rejected::OrderRejected, released::OrderReleased, submitted::OrderSubmitted,
+    triggered::OrderTriggered, updated::OrderUpdated,
+};
+
+/// Represents a type of [`OrderEvent`].
+#[derive(Debug, PartialEq, Eq)]
+pub enum OrderEventType {
+    Initialized,
+    Denied,
+    Emulated,
+    Released,
+    Submitted,
+    Accepted,
+    Rejected,
+    Canceled,
+    Expired,
+    Triggered,
+    PendingUpdate,
+    PendingCancel,
+    ModifyRejected,
+    CancelRejected,
+    Updated,
+    PartiallyFilled,
+    Filled,
+}
 
 pub trait OrderEvent: 'static + Send {
     fn id(&self) -> UUID4;

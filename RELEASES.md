@@ -1,3 +1,31 @@
+# NautilusTrader 1.195.0 Beta
+
+Released on 17th June 2024 (UTC).
+
+### Enhancements
+- Added Bybit base coin for fee rate parsing (#1696), thanks @filipmacek
+- Added `IndexInstrument` with support for Interactive Brokers (#1703), thanks @rsmb7z
+- Refactored Interactive Brokers client and gateway configuration (#1692), thanks @rsmb7z
+- Improved `InteractiveBrokersInstrumentProvider` contract loading (#1699), thanks @rsmb7z
+- Improved `InteractiveBrokersInstrumentProvider` option chain loading (#1704), thanks @rsmb7z
+- Improved `Instrument.make_qty` error clarity when a positive value is rounded to zero
+- Updated installation from source docs for Clang dependency (#1690), thanks @Troubladore
+- Updated `DockerizedIBGatewayConfig` docs (#1691), thanks @Troubladore
+
+### Breaking Changes
+None
+
+### Fixes
+- Fixed DataFusion streaming backend mem usage (now constant mem usage) (#1693), thanks @twitu
+- Fixed `OrderBookDeltaDataWrangler` snapshot parsing (was not prepending a `CLEAR` action), thanks for reporting @VeraLyu
+- Fixed `Instrument.make_price` and `make_qty` when increments have a lower precision (was not rounding to the minimum increment)
+- Fixed `EMACrossTrailingStop` example strategy trailing stop logic (could submit multiple trailing stops on partial fills)
+- Fixed Binance `TRAILING_STOP_MARKET` orders (callback rounding was incorrect, was also not handling updates)
+- Fixed Interactive Brokers multiple gateway clients (incorrect port handling in factory) (#1702), thanks @dodofarm
+- Fixed time alerts Python example in docs (#1713), thanks @davidsblom
+
+---
+
 # NautilusTrader 1.194.0 Beta
 
 Released on 31st May 2024 (UTC).
@@ -49,7 +77,7 @@ Released on 24th May 2024 (UTC).
 Released on 18th May 2024 (UTC).
 
 ### Enhancements
-- Added Nautilus CLI (see [docs](https://docs.nautilustrader.io/nightly/developer_guide/index.html)) (#1602), many thanks @filipmacek
+- Added Nautilus CLI (see [docs](https://nautilustrader.io/docs/nightly/developer_guide/index.html)) (#1602), many thanks @filipmacek
 - Added `Cfd` and `Commodity` instruments with Interactive Brokers support (#1604), thanks @DracheShiki
 - Added `OrderMatchingEngine` futures and options contract activation and expiration simulation
 - Added Sandbox example with Interactive Brokers (#1618), thanks @rsmb7z
@@ -681,7 +709,7 @@ We recommend you do not upgrade to this version if you're using the Betfair adap
 - Renamed `Actor.handle_order_book_delta` to `handle_order_book_deltas` (to more clearly reflect the `OrderBookDeltas` data type)
 - Renamed `Actor.on_order_book_delta` to `on_order_book_deltas` (to more clearly reflect the `OrderBookDeltas` data type)
 - Renamed `inverse_as_quote` to `use_quote_for_inverse` (ambiguous name, only applicable for notional calcs on inverse instruments)
-- Changed `Data` contract (custom data), [see docs](https://docs.nautilustrader.io/develop/concepts/advanced/data.html)
+- Changed `Data` contract (custom data), [see docs](https://nautilustrader.io/docs/develop/concepts/advanced/data.html)
 - Renamed core `LogMessage` to `LogEvent` to more clearly distinguish between the `message` field and the event struct itself (aligns with [vector](https://vector.dev/docs/about/under-the-hood/architecture/data-model/log/) language)
 - Renamed core `LogEvent.timestamp_ns` to `LogEvent.timestamp` (affects field name for JSON format)
 - Renamed core `LogEvent.msg` to `LogEvent.message` (affects field name for JSON format)

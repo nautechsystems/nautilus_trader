@@ -1,3 +1,4 @@
+exclude: "tests/integration_tests/adapters/betfair/test_betfair_data.py"
 repos:
   ##############################################################################
   #  General checks
@@ -82,7 +83,7 @@ repos:
         exclude: "docs/_pygments/monokai.py"
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.4.6
+    rev: v0.4.9
     hooks:
       - id: ruff
         args: ["--fix"]

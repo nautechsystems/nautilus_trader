@@ -16,7 +16,6 @@
 use std::{
     cmp,
     ffi::{c_char, CStr},
-    i64,
     str::FromStr,
 };
 
@@ -36,7 +35,7 @@ use nautilus_model::{
         AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction, FromU8,
         InstrumentClass, OptionKind, OrderSide, PriceType,
     },
-    identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+    identifiers::{InstrumentId, TradeId},
     instruments::{
         any::InstrumentAny, equity::Equity, futures_contract::FuturesContract,
         futures_spread::FuturesSpread, options_contract::OptionsContract,

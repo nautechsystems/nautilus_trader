@@ -32,12 +32,10 @@ use crate::{
         ContingencyType, LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce,
         TrailingOffsetType, TriggerType,
     },
-    events::order::{event::OrderEventAny, initialized::OrderInitialized, updated::OrderUpdated},
+    events::order::{OrderEventAny, OrderInitialized, OrderUpdated},
     identifiers::{
-        account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
-        instrument_id::InstrumentId, order_list_id::OrderListId, position_id::PositionId,
-        strategy_id::StrategyId, symbol::Symbol, trade_id::TradeId, trader_id::TraderId,
-        venue::Venue, venue_order_id::VenueOrderId,
+        AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
+        StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
     },
     orders::base::OrderError,
     types::{
@@ -397,6 +395,21 @@ impl Display for MarketOrder {
                 .map_or_else(|| "None".to_string(), |id| format!("{id}")),
             self.tags
         )
+    }
+}
+
+impl From<OrderAny> for MarketOrder {
+    fn from(order: OrderAny) -> MarketOrder {
+        match order {
+            OrderAny::Market(order) => order,
+            _ => {
+                panic!(
+                    "Invalid `OrderAny` not `{}`, was {:?}",
+                    stringify!(MarketOrder),
+                    order
+                )
+            }
+        }
     }
 }
 

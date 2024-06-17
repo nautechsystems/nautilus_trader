@@ -17,9 +17,10 @@ import logging
 import os
 from enum import IntEnum
 from time import sleep
-from typing import ClassVar, Literal
+from typing import ClassVar
 
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersGatewayConfig
+from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
+from nautilus_trader.common.component import Logger as NautilusLogger
 
 
 class ContainerStatus(IntEnum):
@@ -32,7 +33,7 @@ class ContainerStatus(IntEnum):
     UNKNOWN = 7
 
 
-class InteractiveBrokersGateway:
+class DockerizedIBGateway:
     """
     A class to manage starting an Interactive Brokers Gateway docker container.
     """
@@ -41,41 +42,22 @@ class InteractiveBrokersGateway:
     CONTAINER_NAME: ClassVar[str] = "nautilus-ib-gateway"
     PORTS: ClassVar[dict[str, int]] = {"paper": 4002, "live": 4001}
 
-    def __init__(
-        self,
-        username: str | None = None,
-        password: str | None = None,
-        host: str | None = "127.0.0.1",
-        port: int | None = None,
-        trading_mode: Literal["paper", "live"] | None = "paper",
-        start: bool = False,
-        read_only_api: bool = True,
-        timeout: int = 90,
-        logger: logging.Logger | None = None,
-        config: InteractiveBrokersGatewayConfig | None = None,
-    ):
-        if config:
-            username = config.username
-            password = config.password
-            host = config.host
-            port = config.port
-            trading_mode = config.trading_mode
-            start = config.start
-            read_only_api = config.read_only_api
-            timeout = config.timeout
-
-        self.username = username or os.getenv("TWS_USERNAME")
-        self.password = password or os.getenv("TWS_PASSWORD")
+    def __init__(self, config: DockerizedIBGatewayConfig):
+        self.log = NautilusLogger(repr(self))
+        self.username = config.username or os.getenv("TWS_USERNAME")
+        self.password = config.password or os.getenv("TWS_PASSWORD")
         if self.username is None:
+            self.log.error("`username` not set nor available in env `TWS_USERNAME`")
             raise ValueError("`username` not set nor available in env `TWS_USERNAME`")
         if self.password is None:
+            self.log.error("`password` not set nor available in env `TWS_PASSWORD`")
             raise ValueError("`password` not set nor available in env `TWS_PASSWORD`")
 
-        self.trading_mode = trading_mode
-        self.read_only_api = read_only_api
-        self.host = host
-        self.port = port or self.PORTS[trading_mode]
-        self.log = logger or logging.getLogger("nautilus_trader")
+        self.trading_mode = config.trading_mode
+        self.read_only_api = config.read_only_api
+        self.host = "127.0.0.1"
+        self.port = self.PORTS[config.trading_mode]
+        self.timeout = config.timeout
 
         try:
             import docker
@@ -88,15 +70,9 @@ class InteractiveBrokersGateway:
 
         self._docker = docker.from_env()
         self._container = None
-        if start:
-            self.start(timeout)
 
-    @classmethod
-    def from_container(cls, **kwargs) -> "InteractiveBrokersGateway":
-        """Connect to an already running container - don't stop/start"""
-        self = cls(username="", password="", **kwargs)
-        assert self.container, "Container does not exist"
-        return self
+    def __repr__(self):
+        return f"{type(self).__name__}"
 
     @property
     def container_status(self) -> ContainerStatus:
@@ -128,13 +104,13 @@ class InteractiveBrokersGateway:
             return False
         return any(b"Forking :::" in line for line in logs.split(b"\n"))
 
-    def start(self, wait: int | None = 90) -> None:
+    def start(self, wait: int | None = None) -> None:
         """
         Start the gateway.
 
         Parameters
         ----------
-        wait : int, default 90
+        wait : int, optional
             The seconds to wait until container is ready.
 
         """
@@ -177,20 +153,19 @@ class InteractiveBrokersGateway:
         )
         self.log.info(f"Container `{self.CONTAINER_NAME}-{self.port}` starting, waiting for ready")
 
-        if wait is not None:
-            for _ in range(wait):
-                if self.is_logged_in(container=self._container):
-                    break
-                self.log.debug("Waiting for IB Gateway to start")
-                sleep(1)
-            else:
-                raise RuntimeError(f"Gateway `{self.CONTAINER_NAME}-{self.port}` not ready")
+        for _ in range(wait or self.timeout):
+            if self.is_logged_in(container=self._container):
+                break
+            self.log.debug("Waiting for IB Gateway to start")
+            sleep(1)
+        else:
+            raise RuntimeError(f"Gateway `{self.CONTAINER_NAME}-{self.port}` not ready")
 
         self.log.info(
             f"Gateway `{self.CONTAINER_NAME}-{self.port}` ready. VNC port is {self.port + 100}",
         )
 
-    def safe_start(self, wait: int = 90) -> None:
+    def safe_start(self, wait: int | None = None) -> None:
         try:
             self.start(wait=wait)
         except self._docker_module.errors.APIError as e:
@@ -230,4 +205,4 @@ class GatewayLoginFailure(Exception):
     pass
 
 
-__all__ = ["InteractiveBrokersGateway"]
+__all__ = ["DockerizedIBGateway"]

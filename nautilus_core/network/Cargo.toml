@@ -15,7 +15,7 @@ nautilus-core = { path = "../core" }
 anyhow = { workspace = true }
 futures = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-pyo3-asyncio = { workspace = true, optional = true }
+pyo3-asyncio-0-21 = { workspace = true, optional = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
 dashmap = "5.5.3"
@@ -39,4 +39,4 @@ extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",
 ]
-python = ["pyo3", "pyo3-asyncio"]
+python = ["pyo3", "pyo3-asyncio-0-21"]

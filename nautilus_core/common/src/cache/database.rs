@@ -24,9 +24,8 @@ use std::collections::HashMap;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     identifiers::{
-        account_id::AccountId, client_id::ClientId, client_order_id::ClientOrderId,
-        component_id::ComponentId, instrument_id::InstrumentId, position_id::PositionId,
-        strategy_id::StrategyId, venue_order_id::VenueOrderId,
+        AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
+        VenueOrderId,
     },
     instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
     orders::any::OrderAny,
@@ -60,18 +59,21 @@ pub trait CacheDatabaseAdapter {
 
     fn load_index_order_client(&mut self) -> anyhow::Result<HashMap<ClientOrderId, ClientId>>;
 
-    fn load_currency(&mut self, code: &Ustr) -> anyhow::Result<Currency>;
+    fn load_currency(&mut self, code: &Ustr) -> anyhow::Result<Option<Currency>>;
 
-    fn load_instrument(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<InstrumentAny>;
+    fn load_instrument(
+        &mut self,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Option<InstrumentAny>>;
 
     fn load_synthetic(
         &mut self,
         instrument_id: &InstrumentId,
     ) -> anyhow::Result<SyntheticInstrument>;
 
-    fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<()>;
+    fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<Box<dyn Account>>;
 
-    fn load_order(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<OrderAny>;
+    fn load_order(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<Option<OrderAny>>;
 
     fn load_position(&mut self, position_id: &PositionId) -> anyhow::Result<Position>;
 

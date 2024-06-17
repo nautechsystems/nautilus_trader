@@ -17,8 +17,12 @@ from typing import Any
 
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
+from nautilus_trader.adapters.bybit.common.enums import BybitPositionIdx
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
+from nautilus_trader.adapters.bybit.common.enums import BybitTpSlMode
+from nautilus_trader.adapters.bybit.common.enums import BybitTriggerDirection
+from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
 from nautilus_trader.adapters.bybit.endpoints.account.fee_rate import BybitFeeRateEndpoint
 from nautilus_trader.adapters.bybit.endpoints.account.fee_rate import BybitFeeRateGetParams
 from nautilus_trader.adapters.bybit.endpoints.account.position_info import BybitPositionInfoEndpoint
@@ -44,6 +48,8 @@ from nautilus_trader.adapters.bybit.endpoints.trade.order_history import BybitOr
 from nautilus_trader.adapters.bybit.endpoints.trade.order_history import BybitOrderHistoryGetParams
 from nautilus_trader.adapters.bybit.endpoints.trade.place_order import BybitPlaceOrderEndpoint
 from nautilus_trader.adapters.bybit.endpoints.trade.place_order import BybitPlaceOrderPostParams
+from nautilus_trader.adapters.bybit.endpoints.trade.set_trading_stop import BybitSetTradingStopEndpoint
+from nautilus_trader.adapters.bybit.endpoints.trade.set_trading_stop import BybitSetTradingStopPostParams
 from nautilus_trader.adapters.bybit.endpoints.trade.trade_history import BybitTradeHistoryEndpoint
 from nautilus_trader.adapters.bybit.endpoints.trade.trade_history import BybitTradeHistoryGetParams
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
@@ -82,6 +88,7 @@ class BybitAccountHttpAPI:
         self._endpoint_order_history = BybitOrderHistoryEndpoint(client, self.base_endpoint)
         self._endpoint_trade_history = BybitTradeHistoryEndpoint(client, self.base_endpoint)
         self._endpoint_place_order = BybitPlaceOrderEndpoint(client, self.base_endpoint)
+        self._endpoint_set_trading_stop = BybitSetTradingStopEndpoint(client, self.base_endpoint)
         self._endpoint_amend_order = BybitAmendOrderEndpoint(client, self.base_endpoint)
         self._endpoint_cancel_order = BybitCancelOrderEndpoint(client, self.base_endpoint)
         self._endpoint_cancel_all_orders = BybitCancelAllOrdersEndpoint(client, self.base_endpoint)
@@ -220,8 +227,18 @@ class BybitAccountHttpAPI:
         time_in_force: BybitTimeInForce | None = None,
         client_order_id: str | None = None,
         reduce_only: bool | None = None,
+        tpsl_mode: BybitTpSlMode | None = None,
+        close_on_trigger: bool | None = None,
+        tp_order_type: BybitOrderType | None = None,
+        sl_order_type: BybitOrderType | None = None,
+        trigger_direction: BybitTriggerDirection | None = None,
+        trigger_type: BybitTriggerType | None = None,
+        trigger_price: str | None = None,
+        sl_trigger_price: str | None = None,
+        tp_trigger_price: str | None = None,
+        tp_limit_price: str | None = None,
+        sl_limit_price: str | None = None,
     ) -> BybitPlaceOrderResponse:
-        market_unit = "baseCoin" if not quote_quantity else "quoteCoin"
         result = await self._endpoint_place_order.post(
             params=BybitPlaceOrderPostParams(
                 category=product_type,
@@ -229,14 +246,61 @@ class BybitAccountHttpAPI:
                 side=side,
                 orderType=order_type,
                 qty=quantity,
-                marketUnit=market_unit,
+                marketUnit="baseCoin" if not quote_quantity else "quoteCoin",
                 price=price,
                 timeInForce=time_in_force,
                 orderLinkId=client_order_id,
                 reduceOnly=reduce_only,
+                closeOnTrigger=close_on_trigger,
+                tpslMode=tpsl_mode if product_type != BybitProductType.SPOT else None,
+                triggerPrice=trigger_price,
+                triggerDirection=trigger_direction,
+                triggerBy=trigger_type,
+                takeProfit=tp_trigger_price if product_type == BybitProductType.SPOT else None,
+                stopLoss=sl_trigger_price if product_type == BybitProductType.SPOT else None,
+                slTriggerBy=trigger_type if product_type != BybitProductType.SPOT else None,
+                tpTriggerBy=trigger_type if product_type != BybitProductType.SPOT else None,
+                tpLimitPrice=tp_limit_price if product_type != BybitProductType.SPOT else None,
+                slLimitPrice=sl_limit_price if product_type != BybitProductType.SPOT else None,
+                tpOrderType=tp_order_type,
+                slOrderType=sl_order_type,
             ),
         )
         return result
+
+    async def set_trading_stop(
+        self,
+        product_type: BybitProductType,
+        symbol: str,
+        take_profit: str | None = None,
+        stop_loss: str | None = None,
+        tp_order_type: BybitOrderType | None = None,
+        sl_order_type: BybitOrderType | None = None,
+        trigger_type: BybitTriggerType | None = None,
+        trailing_offset: str | None = None,  # By price
+        tp_quantity: str | None = None,
+        sl_quantity: str | None = None,
+        tp_limit_price: str | None = None,
+        sl_limit_price: str | None = None,
+    ) -> None:
+        position_idx = BybitPositionIdx.ONE_WAY  # TODO
+        await self._endpoint_set_trading_stop.post(
+            BybitSetTradingStopPostParams(
+                category=product_type,
+                symbol=symbol,
+                positionIdx=position_idx,
+                takeProfit=take_profit,
+                stopLoss=stop_loss,
+                trailingStop=trailing_offset,
+                slTriggerBy=trigger_type if product_type != BybitProductType.SPOT else None,
+                tpTriggerBy=trigger_type if product_type != BybitProductType.SPOT else None,
+                activePrice=None,  # Immediately active
+                tpSize=tp_quantity,
+                slSize=sl_quantity,
+                tpLimitPrice=tp_limit_price,
+                slLimitPrice=sl_limit_price,
+            ),
+        )
 
     async def amend_order(
         self,

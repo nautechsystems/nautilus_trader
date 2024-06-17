@@ -37,7 +37,7 @@ use ustr::Ustr;
 use self::any::InstrumentAny;
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
-    identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
+    identifiers::{InstrumentId, Symbol, Venue},
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 

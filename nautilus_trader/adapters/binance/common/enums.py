@@ -207,7 +207,7 @@ class BinanceTimeInForce(Enum):
     GTC = "GTC"
     IOC = "IOC"
     FOK = "FOK"
-    GTX = "GTX"  # FUTURES only, Good Till Crossing (Post Only)
+    GTX = "GTX"  # FUTURES only, Good-Till-Crossing (Post Only)
     GTD = "GTD"  # FUTURES only
     GTE_GTC = "GTE_GTC"  # Undocumented
 
@@ -312,6 +312,7 @@ class BinanceErrorCode(Enum):
     INVALID_PARAMETER = -1130
     INVALID_NEW_ORDER_RESP_TYPE = -1136
 
+    INVALID_CALLBACK_RATE = -2007
     NEW_ORDER_REJECTED = -2010
     CANCEL_REJECTED = -2011
     CANCEL_ALL_FAIL = -2012

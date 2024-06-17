@@ -19,10 +19,8 @@ use nautilus_core::uuid::UUID4;
 use rstest::fixture;
 
 use crate::identifiers::{
-    account_id::AccountId, client_id::ClientId, client_order_id::ClientOrderId,
-    component_id::ComponentId, exec_algorithm_id::ExecAlgorithmId, instrument_id::InstrumentId,
-    order_list_id::OrderListId, position_id::PositionId, strategy_id::StrategyId, symbol::Symbol,
-    trade_id::TradeId, trader_id::TraderId, venue::Venue, venue_order_id::VenueOrderId,
+    AccountId, ClientId, ClientOrderId, ComponentId, ExecAlgorithmId, InstrumentId, OrderListId,
+    PositionId, StrategyId, Symbol, TradeId, TraderId, Venue, VenueOrderId,
 };
 
 impl Default for AccountId {
@@ -42,7 +40,7 @@ impl Default for ClientId {
 impl Default for ClientOrderId {
     /// Creates a new default [`ClientOrderId`] instance for testing.
     fn default() -> Self {
-        Self::from("O-19700101-0000-000-001-1")
+        Self::from("O-19700101-0000-001-001-1")
     }
 }
 
@@ -77,7 +75,7 @@ impl Default for TradeId {
 impl Default for TraderId {
     /// Creates a new default [`TraderId`] instance for testing.
     fn default() -> Self {
-        Self::from("TRADER-000")
+        Self::from("TRADER-001")
     }
 }
 
@@ -123,7 +121,7 @@ pub fn client_id_dydx() -> ClientId {
 
 #[fixture]
 pub fn client_order_id() -> ClientOrderId {
-    ClientOrderId::from("O-19700101-0000-000-001-1")
+    ClientOrderId::from("O-19700101-0000-001-001-1")
 }
 
 // ---- ComponentId ----

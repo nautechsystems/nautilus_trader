@@ -18,6 +18,8 @@ from typing import Any
 
 import pandas as pd
 
+from nautilus_trader.model.enums import RecordFlag
+
 
 class CSVTickDataLoader:
     """
@@ -241,6 +243,6 @@ class BinanceOrderBookDeltaDataLoader:
     @classmethod
     def map_flags(cls, row: pd.Series) -> int:
         if row.update_type == "snap":
-            return 42
+            return RecordFlag.F_SNAPSHOT
         else:
             return 0

@@ -6,9 +6,9 @@ The TWS API serves as an interface to IB's standalone trading applications: TWS 
 
 Alternatively, you can start with a [dockerized version](https://github.com/gnzsnz/ib-gateway-docker) of the IB Gateway, which is particularly useful when deploying trading strategies on a hosted cloud platform. This requires having [Docker](https://www.docker.com/) installed on your machine, along with the [docker](https://pypi.org/project/docker/) Python package, which NautilusTrader conveniently includes as an extra package.
 
-```{note}
+:::note
 The standalone TWS and IB Gateway applications require manually inputting username, password, and trading mode (live or paper) at startup. The dockerized version of the IB Gateway handles these steps programmatically.
-```
+:::
 
 ## Installation
 
@@ -24,30 +24,38 @@ For installation via poetry, use:
 poetry add "nautilus_trader[ib,docker]"
 ```
 
-```{note}
-Because IB does not provide wheels for `ibapi`, NautilusTrader [repackages]( https://pypi.org/project/nautilus-ibapi/) it for release on PyPI.
-```
-
+:::note
+Because IB does not provide wheels for `ibapi`, NautilusTrader [repackages](https://pypi.org/project/nautilus-ibapi/) it for release on PyPI.
+:::
 
 ## Getting Started
 
-Before deploying strategies, ensure that TWS / IB Gateway is running. Launch one of the standalone applications and log in with your credentials, or start the dockerized IB Gateway using `InteractiveBrokersGateway`:
+Before implementing your trading strategies, please ensure that either TWS (Trader Workstation) or IB Gateway is currently running. You have the option to log in to one of these standalone applications using your personal credentials or alternatively, via `DockerizedIBGateway`.
+
+### Establish Connection to an Existing Gateway or TWS:
+
+Should you choose to connect to a pre-existing Gateway or TWS, it is crucial that you specify the `host` and `port` parameters in both the `InteractiveBrokersDataClientConfig` and `InteractiveBrokersExecClientConfig` to guarantee a successful connection.
+
+### Establish Connection to DockerizedIBGateway:
+
+In this case, it's essential to supply `dockerized_gateway` with an instance of `DockerizedIBGatewayConfig` in both the `InteractiveBrokersDataClientConfig` and `InteractiveBrokersExecClientConfig`. It's important to stress, however, that `host` and `port` parameters aren't necessary in this context.
+The following example provides a clear illustration of how to establish a connection to a Dockerized Gateway, which is judiciously managed internally by the Factories.
 
 ```python
-from nautilus_trader.adapters.interactive_brokers.gateway import InteractiveBrokersGateway
+from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
+from nautilus_trader.adapters.interactive_brokers.gateway import DockerizedIBGateway
 
-
-gateway_config = InteractiveBrokersGatewayConfig(
+gateway_config = DockerizedIBGatewayConfig(
     username="test",
     password="test",
     trading_mode="paper",
-    start=True
 )
 
 # This may take a short while to start up, especially the first time
-gateway = InteractiveBrokersGateway(
+gateway = DockerizedIBGateway(
     config=gateway_config
 )
+gateway.start()
 
 # Confirm you are logged in
 print(gateway.is_logged_in(gateway.container))
@@ -56,7 +64,7 @@ print(gateway.is_logged_in(gateway.container))
 print(gateway.container.logs())
 ```
 
-**Note:** To supply credentials to the Interactive Brokers Gateway, either pass the `username` and `password` to the config dictionaries, or set the following environment variables:
+**Note:** To supply credentials to the Interactive Brokers Gateway, either pass the `username` and `password` to the `DockerizedIBGatewayConfig`, or set the following environment variables:
 - `TWS_USERNAME`
 - `TWS_PASSWORD`
 
@@ -81,9 +89,33 @@ To ensure efficient management of these diverse responsibilities, the `Interacti
 - `InteractiveBrokersClientMarketDataMixin` - Handles market data requests, subscriptions and data processing
 - `InteractiveBrokersClientOrderMixin` - Oversees all aspects of order placement and management.
 
-```{tip}
+:::tip
 To troubleshoot TWS API incoming message issues, consider starting at the `InteractiveBrokersClient._process_message` method, which acts as the primary gateway for processing all messages received from the API.
-```
+:::
+
+## Symbology
+
+The InteractiveBrokersInstrumentProvider supports two methods for constructing InstrumentId instances, which can be configured via the strict_symbology flag in InteractiveBrokersInstrumentProviderConfig.
+
+### Simplified Symbology
+
+When strict_symbology is set to False (the default setting), the system utilizes the following parsing rules for symbology:
+
+- Forex: The format is `{symbol}/{currency}.{exchange}`, where the currency pair is constructed as `EUR/USD.IDEALPRO`.
+- Stocks: The format is `{localSymbol}.{primaryExchange}`. Any spaces in localSymbol are replaced with -, e.g., `BF-B.NYSE`.
+- Futures: The format is `{localSymbol}.{exchange}`. Single digit years are expanded to two digits, e.g., `ESM24.CME`.
+- Options: The format is `{localSymbol}.{exchange}`, with all spaces removed from localSymbol, e.g., `AAPL230217P00155000.SMART`.
+- Index: The format is `^{localSymbol}.{exchange}`, e.g., `^SPX.CBOE`.
+
+### Strict Symbology
+
+Setting strict_symbology to True enforces stricter parsing rules that align directly with the fields defined in the ibapi. The format for each security type is as follows:
+
+- CFDs: `{localSymbol}={secType}.IBCFD`
+- Commodities: `{localSymbol}={secType}.IBCMDTY`
+- Default for Other Types: `{localSymbol}={secType}.{exchange}`
+
+This configuration ensures that the symbology is explicitly defined and matched with the Interactive Brokers API requirements, providing clear and consistent instrument identification.
 
 ## Instruments & Contracts
 
@@ -91,7 +123,31 @@ In IB, a NautilusTrader `Instrument` is equivalent to a [Contract](https://ibkrc
 
 To search for contract information, use the [IB Contract Information Center](https://pennies.interactivebrokers.com/cstools/contract_info/).
 
-Examples of `IBContracts`:
+It's typically suggested to utilize `strict_symbology=False` (which is the default setting). This allows for a cleaner and more intuitive use of InstrumentId by employing `load_ids` in the `InteractiveBrokersInstrumentProviderConfig`, following the guidelines established in the Simplified Symbology section. 
+Nonetheless, in order to load multiple Instruments, such as Options Instrument without having to specify each strike explicitly, you would need to utilize `load_contracts` with provided instances of `IBContract`.
+
+```python
+for_loading_instrument_expiry = IBContract(
+    secType="IND",
+    symbol="SPX",
+    exchange="CBOE",
+    build_options_chain=True,
+    lastTradeDateOrContractMonth='20240718',
+)
+
+for_loading_instrument_range = IBContract(
+    secType="IND",
+    symbol="SPX",
+    exchange="CBOE",
+    build_options_chain=True,
+    min_expiry_days=0,
+    max_expiry_days=30,
+)
+```
+
+> **Note:** The `secType` and `symbol` should be specified for the Underlying Contract.
+
+Some more examples of building IBContracts:
 ```python
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 
@@ -210,7 +266,7 @@ data_client_config = InteractiveBrokersDataClientConfig(
     use_regular_trading_hours=True,
     market_data_type=IBMarketDataTypeEnum.DELAYED_FROZEN,  # Default is REALTIME if not set
     instrument_provider=instrument_provider_config,
-    gateway=gateway_config,
+    dockerized_gateway=dockerized_gateway_config,
 )
 ```
 
@@ -226,7 +282,7 @@ from nautilus_trader.config import RoutingConfig
 exec_client_config = InteractiveBrokersExecClientConfig(
     ibg_port=4002,
     account_id="DU123456",  # Must match the connected IB Gateway/TWS
-    gateway=gateway_config,
+    dockerized_gateway=dockerized_gateway_config,
     instrument_provider=instrument_provider_config,
     routing=RoutingConfig(
         default=True,

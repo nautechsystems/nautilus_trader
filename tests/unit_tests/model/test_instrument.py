@@ -345,6 +345,14 @@ class TestInstrument:
         # Assert
         assert str(price) == expected_str
 
+    def test_make_qty_when_non_zero_value_rounded_to_zero_raises_exception(self):
+        # Arrange
+        onethousandrats = TestInstrumentProvider.onethousandrats_perp_binance()
+
+        # Act, Assert
+        with pytest.raises(ValueError):
+            onethousandrats.make_qty(0.004)
+
     @pytest.mark.parametrize(
         ("value", "expected_str"),
         [
@@ -369,6 +377,28 @@ class TestInstrument:
 
         # Assert
         assert str(qty) == expected_str
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            [0.0000501, Decimal("0.0000500")],
+            [0.0000540, Decimal("0.0000500")],
+            [0.0000550, Decimal("0.0000600")],
+        ],
+    )
+    def test_make_price_with_lower_precision_minimum_increment(
+        self,
+        value: float,
+        expected: Decimal,
+    ) -> None:
+        # Arrange
+        onethousandrats = TestInstrumentProvider.onethousandrats_perp_binance()
+
+        # Act
+        price = onethousandrats.make_price(value)
+
+        # Assert
+        assert price == expected
 
     @pytest.mark.parametrize(
         ("instrument", "expected"),

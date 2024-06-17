@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Display;
+
 use nautilus_core::nanos::UnixNanos;
 use serde::{Deserialize, Serialize};
 
@@ -29,19 +31,11 @@ use super::{
     trailing_stop_market::TrailingStopMarketOrder,
 };
 use crate::{
-    enums::{OrderSide, OrderSideSpecified, OrderStatus, TriggerType},
-    events::order::event::OrderEventAny,
+    enums::{LiquiditySide, OrderSide, OrderSideSpecified, OrderStatus, OrderType, TriggerType},
+    events::order::OrderEventAny,
     identifiers::{
-        account_id::AccountId, client_order_id::ClientOrderId, exec_algorithm_id::ExecAlgorithmId,
-        instrument_id::InstrumentId, position_id::PositionId, strategy_id::StrategyId,
-        trader_id::TraderId, venue_order_id::VenueOrderId,
-    },
-    polymorphism::{
-        ApplyOrderEventAny, GetAccountId, GetClientOrderId, GetEmulationTrigger,
-        GetExecAlgorithmId, GetExecSpawnId, GetInstrumentId, GetLimitPrice, GetOrderFilledQty,
-        GetOrderLeavesQty, GetOrderQuantity, GetOrderSide, GetOrderSideSpecified, GetOrderStatus,
-        GetPositionId, GetStopPrice, GetStrategyId, GetTraderId, GetVenueOrderId, IsClosed,
-        IsInflight, IsOpen,
+        AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId, TraderId,
+        VenueOrderId,
     },
     types::{price::Price, quantity::Quantity},
 };
@@ -60,6 +54,22 @@ pub enum OrderAny {
 }
 
 impl OrderAny {
+    /// Consumes the `OrderAny` enum and returns the underlying order as a boxed trait.
+
+    pub fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
+        match self {
+            OrderAny::Limit(order) => order.apply(event),
+            OrderAny::LimitIfTouched(order) => order.apply(event),
+            OrderAny::Market(order) => order.apply(event),
+            OrderAny::MarketIfTouched(order) => order.apply(event),
+            OrderAny::MarketToLimit(order) => order.apply(event),
+            OrderAny::StopLimit(order) => order.apply(event),
+            OrderAny::StopMarket(order) => order.apply(event),
+            OrderAny::TrailingStopLimit(order) => order.apply(event),
+            OrderAny::TrailingStopMarket(order) => order.apply(event),
+        }
+    }
+
     #[must_use]
     pub fn from_limit(order: LimitOrder) -> Self {
         Self::Limit(order)
@@ -106,39 +116,31 @@ impl OrderAny {
     }
 
     pub fn from_events(events: Vec<OrderEventAny>) -> anyhow::Result<Self> {
-        println!("from events");
-        println!("events: {:?}", events);
         if events.is_empty() {
             anyhow::bail!("No events provided");
         }
-        // pop the first event
+
+        // Pop the first event
         let init_event = events.first().unwrap();
         match init_event {
             OrderEventAny::Initialized(init) => {
                 let mut order = Self::from(init.clone());
-                // apply the rest of the events
+                // Apply the rest of the events
                 for event in events.into_iter().skip(1) {
-                    // apply event to order
-                    println!("applying event: {:?}", event);
+                    // Apply event to order
+                    println!("Applying event: {:?}", event);
                     order.apply(event).unwrap();
                 }
                 Ok(order)
             }
             _ => {
-                anyhow::bail!("First event must be OrderInitialized");
+                anyhow::bail!("First event must be `OrderInitialized`");
             }
         }
     }
-}
 
-impl PartialEq for OrderAny {
-    fn eq(&self, other: &Self) -> bool {
-        self.client_order_id() == other.client_order_id()
-    }
-}
-
-impl GetTraderId for OrderAny {
-    fn trader_id(&self) -> TraderId {
+    #[must_use]
+    pub fn trader_id(&self) -> TraderId {
         match self {
             Self::Limit(order) => order.trader_id,
             Self::LimitIfTouched(order) => order.trader_id,
@@ -151,10 +153,9 @@ impl GetTraderId for OrderAny {
             Self::TrailingStopMarket(order) => order.trader_id,
         }
     }
-}
 
-impl GetStrategyId for OrderAny {
-    fn strategy_id(&self) -> StrategyId {
+    #[must_use]
+    pub fn strategy_id(&self) -> StrategyId {
         match self {
             Self::Limit(order) => order.strategy_id,
             Self::LimitIfTouched(order) => order.strategy_id,
@@ -167,10 +168,9 @@ impl GetStrategyId for OrderAny {
             Self::TrailingStopMarket(order) => order.strategy_id,
         }
     }
-}
 
-impl GetInstrumentId for OrderAny {
-    fn instrument_id(&self) -> InstrumentId {
+    #[must_use]
+    pub fn instrument_id(&self) -> InstrumentId {
         match self {
             Self::Limit(order) => order.instrument_id,
             Self::LimitIfTouched(order) => order.instrument_id,
@@ -183,26 +183,9 @@ impl GetInstrumentId for OrderAny {
             Self::TrailingStopMarket(order) => order.instrument_id,
         }
     }
-}
 
-impl GetAccountId for OrderAny {
-    fn account_id(&self) -> Option<AccountId> {
-        match self {
-            Self::Limit(order) => order.account_id,
-            Self::LimitIfTouched(order) => order.account_id,
-            Self::Market(order) => order.account_id,
-            Self::MarketIfTouched(order) => order.account_id,
-            Self::MarketToLimit(order) => order.account_id,
-            Self::StopLimit(order) => order.account_id,
-            Self::StopMarket(order) => order.account_id,
-            Self::TrailingStopLimit(order) => order.account_id,
-            Self::TrailingStopMarket(order) => order.account_id,
-        }
-    }
-}
-
-impl GetClientOrderId for OrderAny {
-    fn client_order_id(&self) -> ClientOrderId {
+    #[must_use]
+    pub fn client_order_id(&self) -> ClientOrderId {
         match self {
             Self::Limit(order) => order.client_order_id,
             Self::LimitIfTouched(order) => order.client_order_id,
@@ -215,10 +198,24 @@ impl GetClientOrderId for OrderAny {
             Self::TrailingStopMarket(order) => order.client_order_id,
         }
     }
-}
 
-impl GetVenueOrderId for OrderAny {
-    fn venue_order_id(&self) -> Option<VenueOrderId> {
+    #[must_use]
+    pub fn account_id(&self) -> Option<AccountId> {
+        match self {
+            Self::Limit(order) => order.account_id,
+            Self::LimitIfTouched(order) => order.account_id,
+            Self::Market(order) => order.account_id,
+            Self::MarketIfTouched(order) => order.account_id,
+            Self::MarketToLimit(order) => order.account_id,
+            Self::StopLimit(order) => order.account_id,
+            Self::StopMarket(order) => order.account_id,
+            Self::TrailingStopLimit(order) => order.account_id,
+            Self::TrailingStopMarket(order) => order.account_id,
+        }
+    }
+
+    #[must_use]
+    pub fn venue_order_id(&self) -> Option<VenueOrderId> {
         match self {
             Self::Limit(order) => order.venue_order_id,
             Self::LimitIfTouched(order) => order.venue_order_id,
@@ -231,10 +228,9 @@ impl GetVenueOrderId for OrderAny {
             Self::TrailingStopMarket(order) => order.venue_order_id,
         }
     }
-}
 
-impl GetPositionId for OrderAny {
-    fn position_id(&self) -> Option<PositionId> {
+    #[must_use]
+    pub fn position_id(&self) -> Option<PositionId> {
         match self {
             Self::Limit(order) => order.position_id,
             Self::LimitIfTouched(order) => order.position_id,
@@ -247,10 +243,9 @@ impl GetPositionId for OrderAny {
             Self::TrailingStopMarket(order) => order.position_id,
         }
     }
-}
 
-impl GetExecAlgorithmId for OrderAny {
-    fn exec_algorithm_id(&self) -> Option<ExecAlgorithmId> {
+    #[must_use]
+    pub fn exec_algorithm_id(&self) -> Option<ExecAlgorithmId> {
         match self {
             Self::Limit(order) => order.exec_algorithm_id,
             Self::LimitIfTouched(order) => order.exec_algorithm_id,
@@ -263,10 +258,9 @@ impl GetExecAlgorithmId for OrderAny {
             Self::TrailingStopMarket(order) => order.exec_algorithm_id,
         }
     }
-}
 
-impl GetExecSpawnId for OrderAny {
-    fn exec_spawn_id(&self) -> Option<ClientOrderId> {
+    #[must_use]
+    pub fn exec_spawn_id(&self) -> Option<ClientOrderId> {
         match self {
             Self::Limit(order) => order.exec_spawn_id,
             Self::LimitIfTouched(order) => order.exec_spawn_id,
@@ -279,10 +273,9 @@ impl GetExecSpawnId for OrderAny {
             Self::TrailingStopMarket(order) => order.exec_spawn_id,
         }
     }
-}
 
-impl GetOrderSide for OrderAny {
-    fn order_side(&self) -> OrderSide {
+    #[must_use]
+    pub fn order_side(&self) -> OrderSide {
         match self {
             Self::Limit(order) => order.side,
             Self::LimitIfTouched(order) => order.side,
@@ -295,10 +288,24 @@ impl GetOrderSide for OrderAny {
             Self::TrailingStopMarket(order) => order.side,
         }
     }
-}
 
-impl GetOrderQuantity for OrderAny {
-    fn quantity(&self) -> Quantity {
+    #[must_use]
+    pub fn order_type(&self) -> OrderType {
+        match self {
+            Self::Limit(order) => order.order_type,
+            Self::LimitIfTouched(order) => order.order_type,
+            Self::Market(order) => order.order_type,
+            Self::MarketIfTouched(order) => order.order_type,
+            Self::MarketToLimit(order) => order.order_type,
+            Self::StopLimit(order) => order.order_type,
+            Self::StopMarket(order) => order.order_type,
+            Self::TrailingStopLimit(order) => order.order_type,
+            Self::TrailingStopMarket(order) => order.order_type,
+        }
+    }
+
+    #[must_use]
+    pub fn quantity(&self) -> Quantity {
         match self {
             Self::Limit(order) => order.quantity,
             Self::LimitIfTouched(order) => order.quantity,
@@ -311,10 +318,9 @@ impl GetOrderQuantity for OrderAny {
             Self::TrailingStopMarket(order) => order.quantity,
         }
     }
-}
 
-impl GetOrderStatus for OrderAny {
-    fn status(&self) -> OrderStatus {
+    #[must_use]
+    pub fn status(&self) -> OrderStatus {
         match self {
             Self::Limit(order) => order.status,
             Self::LimitIfTouched(order) => order.status,
@@ -327,10 +333,9 @@ impl GetOrderStatus for OrderAny {
             Self::TrailingStopMarket(order) => order.status,
         }
     }
-}
 
-impl GetOrderFilledQty for OrderAny {
-    fn filled_qty(&self) -> Quantity {
+    #[must_use]
+    pub fn filled_qty(&self) -> Quantity {
         match self {
             Self::Limit(order) => order.filled_qty(),
             Self::LimitIfTouched(order) => order.filled_qty(),
@@ -343,10 +348,9 @@ impl GetOrderFilledQty for OrderAny {
             Self::TrailingStopMarket(order) => order.filled_qty(),
         }
     }
-}
 
-impl GetOrderLeavesQty for OrderAny {
-    fn leaves_qty(&self) -> Quantity {
+    #[must_use]
+    pub fn leaves_qty(&self) -> Quantity {
         match self {
             Self::Limit(order) => order.leaves_qty(),
             Self::LimitIfTouched(order) => order.leaves_qty(),
@@ -359,10 +363,9 @@ impl GetOrderLeavesQty for OrderAny {
             Self::TrailingStopMarket(order) => order.leaves_qty(),
         }
     }
-}
 
-impl GetOrderSideSpecified for OrderAny {
-    fn order_side_specified(&self) -> OrderSideSpecified {
+    #[must_use]
+    pub fn order_side_specified(&self) -> OrderSideSpecified {
         match self {
             Self::Limit(order) => order.side.as_specified(),
             Self::LimitIfTouched(order) => order.side.as_specified(),
@@ -375,10 +378,24 @@ impl GetOrderSideSpecified for OrderAny {
             Self::TrailingStopMarket(order) => order.side.as_specified(),
         }
     }
-}
 
-impl GetEmulationTrigger for OrderAny {
-    fn emulation_trigger(&self) -> Option<TriggerType> {
+    #[must_use]
+    pub fn liquidity_side(&self) -> Option<LiquiditySide> {
+        match self {
+            Self::Limit(order) => order.liquidity_side,
+            Self::LimitIfTouched(order) => order.liquidity_side,
+            Self::Market(order) => order.liquidity_side,
+            Self::MarketIfTouched(order) => order.liquidity_side,
+            Self::MarketToLimit(order) => order.liquidity_side,
+            Self::StopLimit(order) => order.liquidity_side,
+            Self::StopMarket(order) => order.liquidity_side,
+            Self::TrailingStopLimit(order) => order.liquidity_side,
+            Self::TrailingStopMarket(order) => order.liquidity_side,
+        }
+    }
+
+    #[must_use]
+    pub fn emulation_trigger(&self) -> Option<TriggerType> {
         match self {
             Self::Limit(order) => order.emulation_trigger,
             Self::LimitIfTouched(order) => order.emulation_trigger,
@@ -391,10 +408,9 @@ impl GetEmulationTrigger for OrderAny {
             Self::TrailingStopMarket(order) => order.emulation_trigger,
         }
     }
-}
 
-impl IsOpen for OrderAny {
-    fn is_open(&self) -> bool {
+    #[must_use]
+    pub fn is_open(&self) -> bool {
         match self {
             Self::Limit(order) => order.is_open(),
             Self::LimitIfTouched(order) => order.is_open(),
@@ -407,10 +423,9 @@ impl IsOpen for OrderAny {
             Self::TrailingStopMarket(order) => order.is_open(),
         }
     }
-}
 
-impl IsClosed for OrderAny {
-    fn is_closed(&self) -> bool {
+    #[must_use]
+    pub fn is_closed(&self) -> bool {
         match self {
             Self::Limit(order) => order.is_closed(),
             Self::LimitIfTouched(order) => order.is_closed(),
@@ -423,10 +438,9 @@ impl IsClosed for OrderAny {
             Self::TrailingStopMarket(order) => order.is_closed(),
         }
     }
-}
 
-impl IsInflight for OrderAny {
-    fn is_inflight(&self) -> bool {
+    #[must_use]
+    pub fn is_inflight(&self) -> bool {
         match self {
             Self::Limit(order) => order.is_inflight(),
             Self::LimitIfTouched(order) => order.is_inflight(),
@@ -441,18 +455,104 @@ impl IsInflight for OrderAny {
     }
 }
 
-impl ApplyOrderEventAny for OrderAny {
-    fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
+impl PartialEq for OrderAny {
+    fn eq(&self, other: &Self) -> bool {
+        self.client_order_id() == other.client_order_id()
+    }
+}
+
+impl Display for OrderAny {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Self::Limit(order) => order.to_string(),
+                Self::LimitIfTouched(order) => format!("{:?}", order), // TODO: Implement
+                Self::Market(order) => order.to_string(),
+                Self::MarketIfTouched(order) => format!("{:?}", order), // TODO: Implement
+                Self::MarketToLimit(order) => format!("{:?}", order),   // TODO: Implement
+                Self::StopLimit(order) => order.to_string(),
+                Self::StopMarket(order) => format!("{:?}", order), // TODO: Implement
+                Self::TrailingStopLimit(order) => format!("{:?}", order), // TODO: Implement
+                Self::TrailingStopMarket(order) => format!("{:?}", order), // TODO: Implement
+            }
+        )
+    }
+}
+
+impl From<OrderAny> for PassiveOrderAny {
+    fn from(order: OrderAny) -> PassiveOrderAny {
+        match order {
+            OrderAny::Limit(_) => PassiveOrderAny::Limit(order.into()),
+            OrderAny::LimitIfTouched(_) => PassiveOrderAny::Stop(order.into()),
+            OrderAny::MarketIfTouched(_) => PassiveOrderAny::Stop(order.into()),
+            OrderAny::StopLimit(_) => PassiveOrderAny::Stop(order.into()),
+            OrderAny::StopMarket(_) => PassiveOrderAny::Stop(order.into()),
+            OrderAny::TrailingStopLimit(_) => PassiveOrderAny::Stop(order.into()),
+            OrderAny::TrailingStopMarket(_) => PassiveOrderAny::Stop(order.into()),
+            _ => panic!("WIP: Implement trait bound to require `HasPrice`"),
+        }
+    }
+}
+
+impl From<StopOrderAny> for PassiveOrderAny {
+    fn from(order: StopOrderAny) -> PassiveOrderAny {
+        match order {
+            StopOrderAny::LimitIfTouched(_) => PassiveOrderAny::Stop(order),
+            StopOrderAny::MarketIfTouched(_) => PassiveOrderAny::Stop(order),
+            StopOrderAny::StopLimit(_) => PassiveOrderAny::Stop(order),
+            StopOrderAny::StopMarket(_) => PassiveOrderAny::Stop(order),
+            StopOrderAny::TrailingStopLimit(_) => PassiveOrderAny::Stop(order),
+            StopOrderAny::TrailingStopMarket(_) => PassiveOrderAny::Stop(order),
+        }
+    }
+}
+
+impl From<LimitOrderAny> for PassiveOrderAny {
+    fn from(order: LimitOrderAny) -> PassiveOrderAny {
+        match order {
+            LimitOrderAny::Limit(_) => PassiveOrderAny::Limit(order),
+            LimitOrderAny::MarketToLimit(_) => PassiveOrderAny::Limit(order),
+            LimitOrderAny::StopLimit(_) => PassiveOrderAny::Limit(order),
+            LimitOrderAny::TrailingStopLimit(_) => PassiveOrderAny::Limit(order),
+        }
+    }
+}
+
+impl From<OrderAny> for StopOrderAny {
+    fn from(order: OrderAny) -> StopOrderAny {
+        match order {
+            OrderAny::LimitIfTouched(order) => StopOrderAny::LimitIfTouched(order),
+            OrderAny::MarketIfTouched(order) => StopOrderAny::MarketIfTouched(order),
+            OrderAny::StopLimit(order) => StopOrderAny::StopLimit(order),
+            OrderAny::StopMarket(order) => StopOrderAny::StopMarket(order),
+            OrderAny::TrailingStopLimit(order) => StopOrderAny::TrailingStopLimit(order),
+            OrderAny::TrailingStopMarket(order) => StopOrderAny::TrailingStopMarket(order),
+            _ => panic!("WIP: Implement trait bound to require `HasStopPrice`"),
+        }
+    }
+}
+
+impl From<OrderAny> for LimitOrderAny {
+    fn from(order: OrderAny) -> LimitOrderAny {
+        match order {
+            OrderAny::Limit(order) => LimitOrderAny::Limit(order),
+            OrderAny::MarketToLimit(order) => LimitOrderAny::MarketToLimit(order),
+            _ => panic!("WIP: Implement trait bound to require `HasLimitPrice`"),
+        }
+    }
+}
+
+impl AsRef<StopMarketOrder> for OrderAny {
+    fn as_ref(&self) -> &StopMarketOrder {
         match self {
-            Self::Limit(order) => order.apply(event),
-            Self::LimitIfTouched(order) => order.apply(event),
-            Self::Market(order) => order.apply(event),
-            Self::MarketIfTouched(order) => order.apply(event),
-            Self::MarketToLimit(order) => order.apply(event),
-            Self::StopLimit(order) => order.apply(event),
-            Self::StopMarket(order) => order.apply(event),
-            Self::TrailingStopLimit(order) => order.apply(event),
-            Self::TrailingStopMarket(order) => order.apply(event),
+            OrderAny::StopMarket(ref order) => order,
+            _ => panic!(
+                "Invalid `OrderAny` not `{}`, was {:?}",
+                stringify!(StopMarketOrder),
+                self
+            ),
         }
     }
 }
@@ -464,6 +564,22 @@ pub enum PassiveOrderAny {
 }
 
 impl PassiveOrderAny {
+    #[must_use]
+    pub fn client_order_id(&self) -> ClientOrderId {
+        match self {
+            Self::Limit(order) => order.client_order_id(),
+            Self::Stop(order) => order.client_order_id(),
+        }
+    }
+
+    #[must_use]
+    pub fn order_side_specified(&self) -> OrderSideSpecified {
+        match self {
+            Self::Limit(order) => order.order_side_specified(),
+            Self::Stop(order) => order.order_side_specified(),
+        }
+    }
+
     #[must_use]
     pub fn is_closed(&self) -> bool {
         match self {
@@ -499,6 +615,36 @@ pub enum LimitOrderAny {
 }
 
 impl LimitOrderAny {
+    #[must_use]
+    pub fn client_order_id(&self) -> ClientOrderId {
+        match self {
+            Self::Limit(order) => order.client_order_id,
+            Self::MarketToLimit(order) => order.client_order_id,
+            Self::StopLimit(order) => order.client_order_id,
+            Self::TrailingStopLimit(order) => order.client_order_id,
+        }
+    }
+
+    #[must_use]
+    pub fn order_side_specified(&self) -> OrderSideSpecified {
+        match self {
+            Self::Limit(order) => order.side.as_specified(),
+            Self::MarketToLimit(order) => order.side.as_specified(),
+            Self::StopLimit(order) => order.side.as_specified(),
+            Self::TrailingStopLimit(order) => order.side.as_specified(),
+        }
+    }
+
+    #[must_use]
+    pub fn limit_px(&self) -> Price {
+        match self {
+            Self::Limit(order) => order.price,
+            Self::MarketToLimit(order) => order.price.expect("No price for order"), // TBD
+            Self::StopLimit(order) => order.price,
+            Self::TrailingStopLimit(order) => order.price,
+        }
+    }
+
     #[must_use]
     pub fn is_closed(&self) -> bool {
         match self {
@@ -543,6 +689,42 @@ pub enum StopOrderAny {
 
 impl StopOrderAny {
     #[must_use]
+    pub fn client_order_id(&self) -> ClientOrderId {
+        match self {
+            Self::LimitIfTouched(order) => order.client_order_id,
+            Self::MarketIfTouched(order) => order.client_order_id,
+            Self::StopLimit(order) => order.client_order_id,
+            Self::StopMarket(order) => order.client_order_id,
+            Self::TrailingStopLimit(order) => order.client_order_id,
+            Self::TrailingStopMarket(order) => order.client_order_id,
+        }
+    }
+
+    #[must_use]
+    pub fn order_side_specified(&self) -> OrderSideSpecified {
+        match self {
+            Self::LimitIfTouched(order) => order.side.as_specified(),
+            Self::MarketIfTouched(order) => order.side.as_specified(),
+            Self::StopLimit(order) => order.side.as_specified(),
+            Self::StopMarket(order) => order.side.as_specified(),
+            Self::TrailingStopLimit(order) => order.side.as_specified(),
+            Self::TrailingStopMarket(order) => order.side.as_specified(),
+        }
+    }
+
+    #[must_use]
+    pub fn stop_px(&self) -> Price {
+        match self {
+            Self::LimitIfTouched(order) => order.trigger_price,
+            Self::MarketIfTouched(order) => order.trigger_price,
+            Self::StopLimit(order) => order.trigger_price,
+            Self::StopMarket(order) => order.trigger_price,
+            Self::TrailingStopLimit(order) => order.trigger_price,
+            Self::TrailingStopMarket(order) => order.trigger_price,
+        }
+    }
+
+    #[must_use]
     pub fn is_closed(&self) -> bool {
         match self {
             Self::LimitIfTouched(order) => order.is_closed(),
@@ -576,96 +758,6 @@ impl PartialEq for StopOrderAny {
             Self::MarketIfTouched(order) => order.client_order_id == rhs.client_order_id(),
             Self::TrailingStopLimit(order) => order.client_order_id == rhs.client_order_id(),
             Self::TrailingStopMarket(order) => order.client_order_id == rhs.client_order_id(),
-        }
-    }
-}
-
-impl GetClientOrderId for PassiveOrderAny {
-    fn client_order_id(&self) -> ClientOrderId {
-        match self {
-            Self::Limit(order) => order.client_order_id(),
-            Self::Stop(order) => order.client_order_id(),
-        }
-    }
-}
-
-impl GetOrderSideSpecified for PassiveOrderAny {
-    fn order_side_specified(&self) -> OrderSideSpecified {
-        match self {
-            Self::Limit(order) => order.order_side_specified(),
-            Self::Stop(order) => order.order_side_specified(),
-        }
-    }
-}
-
-impl GetClientOrderId for LimitOrderAny {
-    fn client_order_id(&self) -> ClientOrderId {
-        match self {
-            Self::Limit(order) => order.client_order_id,
-            Self::MarketToLimit(order) => order.client_order_id,
-            Self::StopLimit(order) => order.client_order_id,
-            Self::TrailingStopLimit(order) => order.client_order_id,
-        }
-    }
-}
-
-impl GetOrderSideSpecified for LimitOrderAny {
-    fn order_side_specified(&self) -> OrderSideSpecified {
-        match self {
-            Self::Limit(order) => order.side.as_specified(),
-            Self::MarketToLimit(order) => order.side.as_specified(),
-            Self::StopLimit(order) => order.side.as_specified(),
-            Self::TrailingStopLimit(order) => order.side.as_specified(),
-        }
-    }
-}
-
-impl GetLimitPrice for LimitOrderAny {
-    fn limit_px(&self) -> Price {
-        match self {
-            Self::Limit(order) => order.price,
-            Self::MarketToLimit(order) => order.price.expect("No price for order"), // TBD
-            Self::StopLimit(order) => order.price,
-            Self::TrailingStopLimit(order) => order.price,
-        }
-    }
-}
-
-impl GetClientOrderId for StopOrderAny {
-    fn client_order_id(&self) -> ClientOrderId {
-        match self {
-            Self::LimitIfTouched(order) => order.client_order_id,
-            Self::MarketIfTouched(order) => order.client_order_id,
-            Self::StopLimit(order) => order.client_order_id,
-            Self::StopMarket(order) => order.client_order_id,
-            Self::TrailingStopLimit(order) => order.client_order_id,
-            Self::TrailingStopMarket(order) => order.client_order_id,
-        }
-    }
-}
-
-impl GetOrderSideSpecified for StopOrderAny {
-    fn order_side_specified(&self) -> OrderSideSpecified {
-        match self {
-            Self::LimitIfTouched(order) => order.side.as_specified(),
-            Self::MarketIfTouched(order) => order.side.as_specified(),
-            Self::StopLimit(order) => order.side.as_specified(),
-            Self::StopMarket(order) => order.side.as_specified(),
-            Self::TrailingStopLimit(order) => order.side.as_specified(),
-            Self::TrailingStopMarket(order) => order.side.as_specified(),
-        }
-    }
-}
-
-impl GetStopPrice for StopOrderAny {
-    fn stop_px(&self) -> Price {
-        match self {
-            Self::LimitIfTouched(order) => order.trigger_price,
-            Self::MarketIfTouched(order) => order.trigger_price,
-            Self::StopLimit(order) => order.trigger_price,
-            Self::StopMarket(order) => order.trigger_price,
-            Self::TrailingStopLimit(order) => order.trigger_price,
-            Self::TrailingStopMarket(order) => order.trigger_price,
         }
     }
 }

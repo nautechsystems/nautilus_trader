@@ -13,6 +13,7 @@ crate-type = ["rlib", "staticlib"]
 [dependencies]
 nautilus-core = { path = "../core" }
 anyhow = { workspace = true }
+chrono = { workspace = true }
 derive_builder = { workspace = true }
 indexmap = { workspace = true }
 once_cell = { workspace = true }
@@ -26,7 +27,6 @@ strum = { workspace = true }
 thiserror = { workspace = true }
 thousands = { workspace = true }
 ustr = { workspace = true }
-chrono = { workspace = true }
 evalexpr = "11.3.0"
 tabled = "0.15.0"
 

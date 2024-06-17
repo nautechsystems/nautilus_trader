@@ -16,9 +16,10 @@
 
 from decimal import Decimal
 
+from nautilus_trader.adapters.interactive_brokers.config import DockerizedIBGatewayConfig
+
 # fmt: off
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
-from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersGatewayConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
 from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveDataClientFactory
 from nautilus_trader.adapters.sandbox.config import SandboxExecutionClientConfig
@@ -41,8 +42,7 @@ catalog = ParquetDataCatalog(CATALOG_PATH)
 SANDBOX_INSTRUMENTS = catalog.instruments(instrument_ids=["EUR/USD.IDEALPRO"])
 
 # Set up the Interactive Brokers gateway configuration, this is applicable only when using Docker.
-gateway = InteractiveBrokersGatewayConfig(
-    start=False,
+dockerized_gateway = DockerizedIBGatewayConfig(
     username=None,
     password=None,
     trading_mode="paper",
@@ -80,7 +80,7 @@ config_node = TradingNodeConfig(
             ibg_client_id=1,
             use_regular_trading_hours=True,
             instrument_provider=instrument_provider,
-            gateway=gateway,
+            dockerized_gateway=dockerized_gateway,
         ),
     },
     exec_clients=exec_clients,  # type: ignore

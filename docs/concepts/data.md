@@ -52,13 +52,13 @@ Currently there exists:
 - `TradeTickDataWrangler`
 - `BarDataWrangler`
 
-```{warning}
+:::warning
 At the risk of causing confusion, there are also a growing number of DataWrangler v2 components, which will take a `pd.DataFrame` typically
 with a different fixed width Nautilus arrow v2 schema, and output pyo3 Nautilus objects which are only compatible with the new version
 of the Nautilus core, currently in development.
 
 **These pyo3 provided data objects are not compatible where the legacy Cython objects are currently used (adding directly to a `BacktestEngine` etc).**
-```
+:::
 
 ### Transformation pipeline
 
@@ -118,11 +118,12 @@ We have chosen Parquet as the storage format for the following reasons:
 The Arrow schemas used for the Parquet format are either single sourced in the core `persistence` Rust crate, or available
 from the `/serialization/arrow/schema.py` module.
 
-```{note}
+:::note
 2023-10-14: The current plan is to eventually phase out the Python schemas module, so that all schemas are single sourced in the Rust core.
-```
+:::
 
 ### Initializing
+
 The data catalog can be initialized from a `NAUTILUS_PATH` environment variable, or by explicitly passing in a path like object.
 
 The following example shows how to initialize a data catalog where there is pre-existing data already written to disk at the given path.
@@ -139,6 +140,7 @@ catalog = ParquetDataCatalog(CATALOG_PATH)
 ```
 
 ### Writing data
+
 New data can be stored in the catalog, which is effectively writing the given data to disk in the Nautilus-specific Parquet format.
 All Nautilus built-in `Data` objects are supported, and any data which inherits from `Data` can be written.
 
@@ -148,6 +150,7 @@ catalog.write_data(deltas)
 ```
 
 ### Basename template
+
 Nautilus makes no assumptions about how data may be partitioned between files for a particular
 data type and instrument ID.
 
@@ -161,12 +164,12 @@ and assuming `"date"` is a provided or derivable field, could result in a filena
 If not provided, a default naming scheme will be applied. This parameter should be specified as a
 keyword argument, like `write_data(data, basename_template="{date}")`.
 
-```{warning}
+:::warning
 Any existing data which already exists under a filename will be overwritten.
 If a `basename_template` is not provided, then its very likely existing data for the data type and instrument ID will
 be overwritten. To prevent data loss, ensure that the `basename_template` (or the default naming scheme)
 generates unique filenames for different data sets.
-```
+:::
 
 Rust Arrow schema implementations are available for the follow data types (enhanced performance):
 - `OrderBookDelta`
@@ -188,6 +191,7 @@ deltas = catalog.order_book_deltas(instrument_ids=[instrument.id.value], start=s
 ```
 
 ### Streaming data
+
 When running backtests in streaming mode with a `BacktestNode`, the data catalog can be used to stream the data in batches.
 
 The following example shows how to achieve this by initializing a `BacktestDataConfig` configuration object:
@@ -206,4 +210,4 @@ data_config = BacktestDataConfig(
 ```
 
 This configuration object can then be passed into a `BacktestRunConfig` and then in turn passed into a `BacktestNode` as part of a run.
-See the [Backtest (high-level API)](../tutorials/backtest_high_level.md) tutorial for more details.
+See the [Backtest (high-level API)](../getting_started/backtest_high_level.md) tutorial for more details.

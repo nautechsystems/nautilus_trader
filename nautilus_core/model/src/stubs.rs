@@ -14,26 +14,24 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Type stubs to facilitate testing.
+
 use rstest::fixture;
 use rust_decimal::prelude::ToPrimitive;
 
 use crate::{
     data::order::BookOrder,
     enums::{LiquiditySide, OrderSide},
-    identifiers::instrument_id::InstrumentId,
-    instruments::{currency_pair::CurrencyPair, stubs::audusd_sim, Instrument},
+    identifiers::InstrumentId,
+    instruments::{any::InstrumentAny, currency_pair::CurrencyPair, stubs::audusd_sim},
     orderbook::book::OrderBook,
-    orders::{
-        market::MarketOrder,
-        stubs::{TestOrderEventStubs, TestOrderStubs},
-    },
+    orders::stubs::{TestOrderEventStubs, TestOrderStubs},
     position::Position,
     types::{money::Money, price::Price, quantity::Quantity},
 };
 
 /// Calculate commission for testing
-pub fn calculate_commission<T: Instrument>(
-    instrument: T,
+pub fn calculate_commission(
+    instrument: &InstrumentAny,
     last_qty: Quantity,
     last_px: Price,
     use_quote_for_inverse: Option<bool>,
@@ -63,12 +61,17 @@ pub fn calculate_commission<T: Instrument>(
 
 #[fixture]
 pub fn test_position_long(audusd_sim: CurrencyPair) -> Position {
-    let order =
-        TestOrderStubs::market_order(audusd_sim.id, OrderSide::Buy, Quantity::from(1), None, None);
-    let order_filled = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
+    let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+    let order = TestOrderStubs::market_order(
+        audusd_sim.id(),
+        OrderSide::Buy,
+        Quantity::from(1),
+        None,
+        None,
+    );
+    let filled = TestOrderEventStubs::order_filled(
         &order,
         &audusd_sim,
-        None,
         None,
         None,
         Some(Price::from("1.0002")),
@@ -76,24 +79,23 @@ pub fn test_position_long(audusd_sim: CurrencyPair) -> Position {
         None,
         None,
         None,
-    )
-    .unwrap();
-    Position::new(audusd_sim, order_filled).unwrap()
+    );
+    Position::new(&audusd_sim, filled.into()).unwrap()
 }
 
 #[fixture]
 pub fn test_position_short(audusd_sim: CurrencyPair) -> Position {
+    let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
     let order = TestOrderStubs::market_order(
-        audusd_sim.id,
+        audusd_sim.id(),
         OrderSide::Sell,
         Quantity::from(1),
         None,
         None,
     );
-    let order_filled = TestOrderEventStubs::order_filled::<MarketOrder, CurrencyPair>(
+    let filled = TestOrderEventStubs::order_filled(
         &order,
         &audusd_sim,
-        None,
         None,
         None,
         Some(Price::from("22000.0")),
@@ -101,9 +103,8 @@ pub fn test_position_short(audusd_sim: CurrencyPair) -> Position {
         None,
         None,
         None,
-    )
-    .unwrap();
-    Position::new(audusd_sim, order_filled).unwrap()
+    );
+    Position::new(&audusd_sim, filled.into()).unwrap()
 }
 
 #[must_use]

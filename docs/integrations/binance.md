@@ -19,10 +19,10 @@ which can be used together or separately depending on the users needs.
 - `BinanceLiveDataClientFactory` - Factory for Binance data clients (used by the trading node builder)
 - `BinanceLiveExecClientFactory` - Factory for Binance execution clients (used by the trading node builder)
 
-```{note}
+:::info
 Most users will simply define a configuration for a live trading node (as below),
 and won't need to necessarily work with these lower level components directly.
-```
+:::
 
 ## Data types
 
@@ -56,18 +56,22 @@ E.g. for Binance Futures, the said instruments symbol is `BTCUSDT-PERP` within t
 
 ### Trailing stops
 
-Binance use the concept of an *activation price* for trailing stops ([see docs](https://www.binance.com/en-AU/support/faq/what-is-a-trailing-stop-order-360042299292)).
-To get trailing stop orders working for Binance we need to use the `trigger_price` value to set the *activation price*.
+Binance uses the concept of an activation price for trailing stops, as detailed in their [documentation](https://www.binance.com/en-AU/support/faq/what-is-a-trailing-stop-order-360042299292).
+This approach is somewhat unconventional. For trailing stop orders to function on Binance, the activation price can optionally be set using the `trigger_price` value.
 
-For `TRAILING_STOP_MARKET` orders to be submitted successfully, you must define the following:
-- Specify a `trailing_offet_type` of either `DEFAULT` or `BASIS_POINTS`
-- Specify the `trailing_offset` in basis points (% * 100) e.g. for a callback rate of 1% use 100
+Note that the activation price is **not** the same as the trigger/STOP price. Binance will always calculate the trigger price for the order based on the current market price and the callback rate provided by `trailing_offset`.
+The activated price is simply the price at which the order will begin trailing based on the callback rate.
+
+When submitting trailing stop orders from your strategy, you have two options:
+
+1. Use the `trigger_price` to manually set the activation price.
+2. Leave the `trigger_price` as `None`, making the trailing action immediately "active".
 
 You must also have at least *one* of the following:
 
 - The `trigger_price` for the order is set (this will act as the Binance *activation_price*)
-- You have subscribed to quote ticks for the instrument you're submitting the order for (used to infer activation price)
-- You have subscribed to trade ticks for the instrument you're submitting the order for (used to infer activation price)
+- (or) you have subscribed to quote ticks for the instrument you're submitting the order for (used to infer activation price)
+- (or) you have subscribed to trade ticks for the instrument you're submitting the order for (used to infer activation price)
 
 ## Configuration
 
@@ -195,7 +199,7 @@ config = TradingNodeConfig(
 )
 ```
 
-### Aggregated Trades
+### Aggregated trades
 
 Binance provide aggregated trade data endpoints as an alternative source of trade ticks.
 In comparison to the default trade endpoints, aggregated trade data endpoints can return all
@@ -226,9 +230,9 @@ instrument_provider=InstrumentProviderConfig(
 
 ## Order books
 
-```{note}
+:::note
 The Nautilus team is currently working on this section.
-```
+:::
 
 Order books can be maintained at full or partial depths depending on the
 subscription options. WebSocket stream throttling is different between
@@ -265,11 +269,11 @@ where the former does not provide an event timestamp, so the `ts_init` is used (
 It's possible to subscribe to Binance specific data streams as they become available to the
 adapter over time.
 
-```{note}
+:::note
 Bars are not considered 'Binance specific' and can be subscribed to in the normal way.
 However, as more adapters are built out which need for example mark price and funding rate updates, then these
 methods may eventually become first-class (not requiring custom/generic subscriptions as below).
-```
+:::
 
 ### BinanceFuturesMarkPriceUpdate
 

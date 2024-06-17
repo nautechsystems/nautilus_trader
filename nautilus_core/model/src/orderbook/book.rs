@@ -23,7 +23,7 @@ use crate::{
         delta::OrderBookDelta, deltas::OrderBookDeltas, depth::OrderBookDepth10, order::BookOrder,
     },
     enums::{BookAction, BookType, OrderSide, OrderSideSpecified},
-    identifiers::instrument_id::InstrumentId,
+    identifiers::InstrumentId,
     orderbook::{error::BookIntegrityError, ladder::Ladder},
     types::{price::Price, quantity::Quantity},
 };
@@ -269,7 +269,7 @@ mod tests {
             depth::OrderBookDepth10, order::BookOrder, quote::QuoteTick, stubs::*, trade::TradeTick,
         },
         enums::{AggressorSide, BookType, OrderSide},
-        identifiers::{instrument_id::InstrumentId, trade_id::TradeId},
+        identifiers::{InstrumentId, TradeId},
         orderbook::{
             aggregation::{update_book_with_quote_tick, update_book_with_trade_tick},
             analysis::book_check_integrity,

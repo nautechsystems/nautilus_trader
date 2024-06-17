@@ -17,7 +17,7 @@
 
 #![allow(warnings)] // non-local `impl` definition, temporary allow until pyo3 upgrade
 
-use std::fmt;
+use std::{borrow::Cow, fmt};
 
 use pyo3::{
     exceptions::{PyRuntimeError, PyTypeError, PyValueError},
@@ -33,7 +33,10 @@ pub mod uuid;
 
 /// Gets the type name for the given Python `obj`.
 pub fn get_pytype_name<'p>(obj: &'p PyObject, py: Python<'p>) -> PyResult<&'p str> {
-    obj.as_ref(py).get_type().name()
+    match obj.as_ref(py).get_type().name()? {
+        Cow::Borrowed(s) => Ok(s),
+        Cow::Owned(s) => Ok(py.allow_threads(|| Box::leak(s.into_boxed_str()))),
+    }
 }
 
 /// Converts any type that implements `Display` to a Python `ValueError`.

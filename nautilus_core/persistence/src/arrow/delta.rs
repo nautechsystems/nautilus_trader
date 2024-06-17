@@ -24,7 +24,7 @@ use datafusion::arrow::{
 use nautilus_model::{
     data::{delta::OrderBookDelta, order::BookOrder},
     enums::{BookAction, FromU8, OrderSide},
-    identifiers::instrument_id::InstrumentId,
+    identifiers::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };
 

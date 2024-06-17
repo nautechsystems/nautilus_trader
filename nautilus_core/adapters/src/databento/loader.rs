@@ -24,7 +24,7 @@ use fallible_streaming_iterator::FallibleStreamingIterator;
 use indexmap::IndexMap;
 use nautilus_model::{
     data::Data,
-    identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue},
+    identifiers::{InstrumentId, Symbol, Venue},
     instruments::any::InstrumentAny,
     types::currency::Currency,
 };

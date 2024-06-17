@@ -19,7 +19,7 @@ use databento::{dbn, live::Subscription};
 use indexmap::IndexMap;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
-    identifiers::venue::Venue,
+    identifiers::Venue,
     python::{data::data_to_pycapsule, instruments::instrument_any_to_pyobject},
 };
 use pyo3::prelude::*;
@@ -150,10 +150,11 @@ impl DatabentoLiveClient {
     fn py_subscribe(
         &mut self,
         schema: String,
-        symbols: Vec<&str>,
+        symbols: Vec<String>,
         start: Option<u64>,
     ) -> PyResult<()> {
         let stype_in = infer_symbology_type(symbols.first().unwrap());
+        let symbols: Vec<&str> = symbols.iter().map(|s| s.as_str()).collect();
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let mut sub = Subscription::builder()
             .symbols(symbols)
@@ -176,7 +177,7 @@ impl DatabentoLiveClient {
         py: Python<'py>,
         callback: PyObject,
         callback_pyo3: PyObject,
-    ) -> PyResult<&'py PyAny> {
+    ) -> PyResult<Bound<'py, PyAny>> {
         if self.is_closed {
             return Err(to_pyruntime_err("Client already closed"));
         };
@@ -205,7 +206,7 @@ impl DatabentoLiveClient {
 
         self.send_command(LiveCommand::Start)?;
 
-        pyo3_asyncio::tokio::future_into_py(py, async move {
+        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
             let (proc_handle, feed_handle) = tokio::join!(
                 Self::process_messages(msg_rx, callback, callback_pyo3),
                 feed_handler.run(),

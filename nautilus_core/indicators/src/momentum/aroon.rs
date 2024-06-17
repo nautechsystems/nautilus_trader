@@ -129,7 +129,7 @@ impl AroonOscillator {
             .high_inputs
             .iter()
             .enumerate()
-            .fold((0, std::f64::MIN), |(max_idx, max_val), (idx, &val)| {
+            .fold((0, f64::MIN), |(max_idx, max_val), (idx, &val)| {
                 if val > max_val {
                     (idx, val)
                 } else {
@@ -142,7 +142,7 @@ impl AroonOscillator {
             .low_inputs
             .iter()
             .enumerate()
-            .fold((0, std::f64::MAX), |(min_idx, min_val), (idx, &val)| {
+            .fold((0, f64::MAX), |(min_idx, min_val), (idx, &val)| {
                 if val < min_val {
                     (idx, val)
                 } else {

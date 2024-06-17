@@ -22,7 +22,7 @@ use std::{
 
 use nautilus_core::ffi::string::{cstr_to_str, str_to_cstr};
 
-use crate::identifiers::{instrument_id::InstrumentId, symbol::Symbol, venue::Venue};
+use crate::identifiers::{InstrumentId, Symbol, Venue};
 
 #[no_mangle]
 pub extern "C" fn instrument_id_new(symbol: Symbol, venue: Venue) -> InstrumentId {
@@ -76,7 +76,7 @@ pub mod stubs {
 
     use rstest::fixture;
 
-    use crate::identifiers::{instrument_id::InstrumentId, stubs::*, symbol::Symbol, venue::Venue};
+    use crate::identifiers::{stubs::*, InstrumentId, Symbol, Venue};
 
     #[fixture]
     pub fn btc_usdt_perp_binance() -> InstrumentId {
@@ -102,7 +102,7 @@ mod tests {
     use rstest::rstest;
 
     use super::{InstrumentId, *};
-    use crate::identifiers::{symbol::Symbol, venue::Venue};
+    use crate::identifiers::{Symbol, Venue};
 
     #[rstest]
     fn test_to_cstr() {

@@ -21,8 +21,10 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.core import nautilus_pyo3
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.core cimport min_increment_precision_from_cstr
 from nautilus_trader.core.rust.model cimport AssetClass
 from nautilus_trader.core.rust.model cimport InstrumentClass
+from nautilus_trader.core.string cimport pystr_to_cstr
 from nautilus_trader.model.functions cimport asset_class_from_str
 from nautilus_trader.model.functions cimport asset_class_to_str
 from nautilus_trader.model.functions cimport instrument_class_from_str
@@ -231,6 +233,9 @@ cdef class Instrument(Data):
         self.ts_event = ts_event
         self.ts_init = ts_init
 
+        self._min_price_increment_precision = min_increment_precision_from_cstr(pystr_to_cstr(str(self.price_increment)))
+        self._min_size_increment_precision = min_increment_precision_from_cstr(pystr_to_cstr(str(self.size_increment)))
+
         # Assign tick scheme if named
         if self.tick_scheme_name is not None:
             self._tick_scheme = get_tick_scheme(self.tick_scheme_name)
@@ -428,7 +433,8 @@ cdef class Instrument(Data):
         Price
 
         """
-        return Price(float(value), precision=self.price_precision)
+        cdef double rounded_value = round(float(value), self._min_price_increment_precision)
+        return Price(rounded_value, precision=self.price_precision)
 
     cpdef Price next_bid_price(self, double value, int num_ticks=0):
         """
@@ -506,8 +512,23 @@ cdef class Instrument(Data):
         -------
         Quantity
 
+        Raises
+        ------
+        ValueError
+            If a non zero `value` is rounded to zero due to the instruments size increment or size precision.
+
         """
-        return Quantity(float(value), precision=self.size_precision)
+        # Check if original_value is greater than zero and rounded_value is "effectively" zero
+        cdef double original_value = float(value)
+        cdef double rounded_value = round(original_value, self._min_size_increment_precision)
+        cdef double epsilon = 10 ** -(self._min_size_increment_precision + 1)
+        if original_value > 0.0 and abs(rounded_value) < epsilon:
+            raise ValueError(
+                f"Invalid `value` for quantity: {value} was rounded to zero "
+                f"due to size increment {self.size_increment} "
+                f"and size precision {self.size_precision}",
+            )
+        return Quantity(rounded_value, precision=self.size_precision)
 
     cpdef Money notional_value(
         self,

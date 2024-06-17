@@ -22,26 +22,17 @@ use ustr::Ustr;
 use crate::{
     enums::{ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType},
     events::order::{
-        accepted::OrderAccepted, cancel_rejected::OrderCancelRejected, denied::OrderDenied,
-        emulated::OrderEmulated, expired::OrderExpired, filled::OrderFilled,
-        initialized::OrderInitialized, modify_rejected::OrderModifyRejected,
-        pending_cancel::OrderPendingCancel, pending_update::OrderPendingUpdate,
-        rejected::OrderRejected, released::OrderReleased, submitted::OrderSubmitted,
-        triggered::OrderTriggered, updated::OrderUpdated,
+        OrderAccepted, OrderCancelRejected, OrderDenied, OrderEmulated, OrderExpired, OrderFilled,
+        OrderInitialized, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate,
+        OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered, OrderUpdated,
     },
     identifiers::{
-        account_id::AccountId,
-        client_order_id::ClientOrderId,
-        instrument_id::InstrumentId,
-        order_list_id::OrderListId,
-        strategy_id::StrategyId,
         stubs::{
             account_id, client_order_id, instrument_id_btc_usdt, strategy_id_ema_cross, trader_id,
             uuid4, venue_order_id,
         },
-        trade_id::TradeId,
-        trader_id::TraderId,
-        venue_order_id::VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId, TraderId,
+        VenueOrderId,
     },
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };

@@ -10,6 +10,7 @@ as possible. This allows traders to define certain conditions and instructions f
 order execution and management, which allows essentially any type of trading strategy to be created.
 
 ## Overview
+
 The two main types of orders are _Market_ orders and _Limit_ orders. All the other order
 types are built from these two fundamental types, in terms of liquidity provision they
 are exact opposites. _Market_ orders demand liquidity and require immediate trading at the best
@@ -27,12 +28,12 @@ The core order types available for the platform are (using the enum values):
 - `TRAILING_STOP_MARKET`
 - `TRAILING_STOP_LIMIT`
 
-```{note}
+:::info
 NautilusTrader has unified the API for a large set of order types and execution instructions, however
 not all of these are available for every exchange. If an order is submitted where an instruction or option
-is not available, then the system will not submit the order and an error will be logged with
+is not available, then the system will **NOT** submit the order and an error will be logged with
 a clear explanatory message.
-```
+:::
 
 ### Terminology
 
@@ -59,13 +60,14 @@ a clear explanatory message.
     - `EXPIRED`
     - `FILLED`
 
-## Execution Instructions
+## Execution instructions
 
 Certain exchanges allow a trader to specify conditions and restrictions on
 how an order will be processed and executed. The following is a brief
 summary of the different execution instructions available.
 
-### Time In Force
+### Time in force
+
 The orders time in force is an instruction to specify how long the order will remain open
 or active, before any remaining quantity is canceled.
 
@@ -77,16 +79,19 @@ or active, before any remaining quantity is canceled.
 - `AT_THE_OPEN` (OPG) - The order is only in force at the trading session open
 - `AT_THE_CLOSE` - The order is only in force at the trading session close
 
-### Expire Time
+### Expire time
+
 This instruction is to be used in conjunction with the `GTD` time in force to specify the time
 at which the order will expire and be removed from the exchanges order book (or order management system).
 
-### Post Only
+### Post-only
+
 An order which is marked as `post_only` will only ever participate in providing liquidity to the 
 limit order book, and never initiating a trade which takes liquidity as an aggressor. This option is
 important for market makers, or traders seeking to restrict the order to a liquidity _maker_ fee tier.
 
-### Reduce Only
+### Reduce-only
+
 An order which is set as `reduce_only` will only ever reduce an existing position on an instrument, and
 never open a new position (if already flat). The exact behavior of this instruction can vary between
 exchanges, however the behavior as per the Nautilus `SimulatedExchange` is typical of a live exchange.
@@ -94,12 +99,14 @@ exchanges, however the behavior as per the Nautilus `SimulatedExchange` is typic
 - Order will be canceled if the associated position is closed (becomes flat)
 - Order quantity will be reduced as the associated positions size reduces
 
-### Display Quantity
+### Display quantity
+
 The `display_qty` specifies the portion of a _Limit_ order which is displayed on the limit order book.
 These are also known as iceberg orders as there is a visible portion to be displayed, with more quantity which is hidden. 
 Specifying a display quantity of zero is also equivalent to setting an order as `hidden`.
 
-### Trigger Type
+### Trigger type
+
 Also known as [trigger method](https://guides.interactivebrokers.com/tws/usersguidebook/configuretws/modify_the_stop_trigger_method.htm) 
 which is applicable to conditional trigger orders, specifying the method of triggering the stop price.
 
@@ -113,7 +120,8 @@ which is applicable to conditional trigger orders, specifying the method of trig
 - `MARK` - The trigger price will be based on the exchanges mark price for the instrument
 - `INDEX` - The trigger price will be based on the exchanges index price for the instrument
 
-### Trigger Offset Type
+### Trigger offset type
+
 Applicable to conditional trailing-stop trigger orders, specifies the method of triggering modification
 of the stop price based on the offset from the 'market' (bid, ask or last price as applicable).
 
@@ -123,12 +131,14 @@ of the stop price based on the offset from the 'market' (bid, ask or last price 
 - `TICKS` - The offset is based on a number of ticks
 - `PRICE_TIER` - The offset is based on an exchange specific price tier
 
-### Contingent Orders
+### Contingent orders
+
 More advanced relationships can be specified between orders such as assigning child order(s) which will only
 trigger when the parent order is activated or filled, or linking orders together which will cancel or reduce in quantity
 contingent on each other. More documentation for these options can be found in the [advanced order guide](advanced/advanced_orders.md).
 
-## Order Factory
+## Order factory
+
 The easiest way to create new orders is by using the built-in `OrderFactory`, which is
 automatically attached to every `Strategy` class. This factory will take care
 of lower level details - such as ensuring the correct trader ID and strategy ID are assigned, generation
@@ -138,17 +148,18 @@ apply to the order type being created, or are only needed to specify more advanc
 This leaves the factory with simpler order creation methods to work with, all the
 examples will leverage an `OrderFactory` from within a `Strategy` context.
 
-[API Reference](https://docs.nautilustrader.io/api_reference/common.html#module-nautilus_trader.common.factories)
+[API Reference](https://nautilustrader.io/docs/api_reference/common.html#module-nautilus_trader.common.factories)
 
-```{note}
-For clarity, any optional parameters will be clearly marked with a comment which includes the default value.
-```
+:::info
+Any optional parameters will be clearly marked with a comment which includes the default value.
+:::
 
 ## Order Types
 
-The following order types are available for the platform.
+The following describes the order types which are available for the platform with a code example.
 
 ### Market
+
 A _Market_ order is an instruction by the trader to immediately trade
 the given quantity at the best price available. You can also specify several
 time in force options, and indicate whether this order is only intended to reduce
@@ -173,9 +184,10 @@ order: MarketOrder = self.order_factory.market(
     tags=["ENTRY"],  # <-- optional (default None)
 )
 ```
-[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.market)
+[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.market)
 
 ### Limit
+
 A _Limit_ order is placed on the limit order book at a specific price, and will only
 execute at that price (or better).
 
@@ -203,9 +215,10 @@ order: LimitOrder = self.order_factory.limit(
     tags=None,  # <-- optional (default None)
 )
 ```
-[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.limit)
+[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.limit)
 
 ### Stop-Market
+
 A _Stop-Market_ order is a conditional order which once triggered, will immediately
 place a _Market_ order. This order type is often used as a stop-loss to limit losses, either
 as a SELL order against LONG positions, or as a BUY order against SHORT positions.
@@ -234,9 +247,10 @@ order: StopMarketOrder = self.order_factory.stop_market(
     tags=None,  # <-- optional (default None)
 )
 ```
-[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.stop_market)
+[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.stop_market)
 
 ### Stop-Limit
+
 A _Stop-Limit_ order is a conditional order which once triggered will immediately place
 a _Limit_ order at the specified price. 
 
@@ -267,9 +281,10 @@ order: StopLimitOrder = self.order_factory.stop_limit(
     tags=None,  # <-- optional (default None)
 )
 ```
-[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.stop_limit)
+[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.stop_limit)
 
 ### Market-To-Limit
+
 A _Market-To-Limit_ order is submitted as a market order to execute at the current best market price. 
 If the order is only partially filled, the remainder of the order is canceled and re-submitted as a _Limit_ order with 
 the limit price equal to the price at which the filled portion of the order executed.
@@ -295,9 +310,10 @@ order: MarketToLimitOrder = self.order_factory.market_to_limit(
 )
 ```
 
-[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.market_to_limit)
+[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.market_to_limit)
 
 ### Market-If-Touched
+
 A _Market-If-Touched_ order is a conditional order which once triggered will immediately
 place a _Market_ order. This order type is often used to enter a new position on a stop price in the market orders direction,
 or to take profits for an existing position, either as a SELL order against LONG positions, 
@@ -328,9 +344,10 @@ order: MarketIfTouchedOrder = self.order_factory.market_if_touched(
 )
 ```
 
-[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.market_if_touched)
+[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.market_if_touched)
 
 ### Limit-If-Touched
+
 A _Limit-If-Touched_ order is a conditional order which once triggered will immediately place
 a _Limit_ order at the specified price. 
 
@@ -363,9 +380,10 @@ order: StopLimitOrder = self.order_factory.limit_if_touched(
 )
 ```
 
-[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.limit_if_touched)
+[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.limit_if_touched)
 
 ### Trailing-Stop-Market
+
 A _Trailing-Stop-Market_ order is a conditional order which trails a stop trigger price
 a fixed offset away from the defined market price. Once triggered a _Market_ order will
 immediately be placed.
@@ -400,9 +418,10 @@ order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
 )
 ```
 
-[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.trailing_stop_market)
+[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.trailing_stop_market)
 
 ### Trailing-Stop-Limit
+
 A _Trailing-Stop-Limit_ order is a conditional order which trails a stop trigger price
 a fixed offset away from the defined market price. Once triggered a _Limit_ order will
 immediately be placed at the defined price (which is also updated as the market moves until triggered).
@@ -440,4 +459,4 @@ order: TrailingStopLimitOrder = self.order_factory.trailing_stop_limit(
 )
 ```
 
-[API Reference](https://docs.nautilustrader.io/api_reference/model/orders.html#module-nautilus_trader.model.orders.trailing_stop_limit)
+[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.trailing_stop_limit)

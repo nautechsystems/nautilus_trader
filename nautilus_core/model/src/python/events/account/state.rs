@@ -25,7 +25,7 @@ use pyo3::{
 use crate::{
     enums::AccountType,
     events::account::state::AccountState,
-    identifiers::account_id::AccountId,
+    identifiers::AccountId,
     types::{
         balance::{AccountBalance, MarginBalance},
         currency::Currency,

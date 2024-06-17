@@ -19,10 +19,7 @@ use derive_builder::Builder;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     enums::OrderSide,
-    identifiers::{
-        client_id::ClientId, instrument_id::InstrumentId, strategy_id::StrategyId,
-        trader_id::TraderId,
-    },
+    identifiers::{ClientId, InstrumentId, StrategyId, TraderId},
 };
 use serde::{Deserialize, Serialize};
 

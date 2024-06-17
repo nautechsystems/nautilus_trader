@@ -26,6 +26,8 @@
 //!
 //! - `ffi`: Enables the C foreign function interface (FFI) from `cbindgen`
 
+#![allow(deprecated)] // TODO: Temporary for pyo3 upgrade
+
 use pyo3::{
     prelude::*,
     types::{PyDict, PyString},

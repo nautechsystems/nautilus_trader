@@ -21,7 +21,7 @@ use crate::{
         deltas::{OrderBookDeltas, OrderBookDeltas_API},
     },
     enums::BookAction,
-    identifiers::instrument_id::InstrumentId,
+    identifiers::InstrumentId,
 };
 
 /// Creates a new `OrderBookDeltas` instance from a `CVec` of `OrderBookDelta`.

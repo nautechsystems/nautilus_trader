@@ -23,11 +23,8 @@ use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 use ustr::Ustr;
 
 use crate::{
-    events::order::denied::OrderDenied,
-    identifiers::{
-        client_order_id::ClientOrderId, instrument_id::InstrumentId, strategy_id::StrategyId,
-        trader_id::TraderId,
-    },
+    events::order::OrderDenied,
+    identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId},
 };
 
 #[pymethods]

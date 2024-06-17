@@ -19,12 +19,7 @@ use nautilus_core::{correctness::check_slice_not_empty, nanos::UnixNanos};
 use serde::{Deserialize, Serialize};
 
 use super::any::OrderAny;
-use crate::{
-    identifiers::{
-        instrument_id::InstrumentId, order_list_id::OrderListId, strategy_id::StrategyId,
-    },
-    polymorphism::{GetInstrumentId, GetStrategyId},
-};
+use crate::identifiers::{InstrumentId, OrderListId, StrategyId};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
@@ -96,9 +91,9 @@ mod tests {
     use super::*;
     use crate::{
         enums::OrderSide,
-        identifiers::{order_list_id::OrderListId, strategy_id::StrategyId},
+        identifiers::{OrderListId, StrategyId},
         instruments::{currency_pair::CurrencyPair, stubs::*},
-        orders::{any::OrderAny, stubs::TestOrderStubs},
+        orders::stubs::TestOrderStubs,
         types::{price::Price, quantity::Quantity},
     };
 
@@ -129,23 +124,19 @@ mod tests {
             None,
         );
 
-        let orders = vec![
-            OrderAny::Limit(order1),
-            OrderAny::Limit(order2),
-            OrderAny::Limit(order3),
-        ];
+        let orders = vec![order1, order2, order3];
 
         let order_list = OrderList::new(
             OrderListId::from("OL-001"),
             audusd_sim.id,
-            StrategyId::from("EMACross-001"),
+            StrategyId::default(),
             orders,
             UnixNanos::default(),
         )
         .unwrap();
 
         assert!(order_list.to_string().starts_with(
-            "OrderList(id=OL-001, instrument_id=AUD/USD.SIM, strategy_id=EMACross-001, orders="
+            "OrderList(id=OL-001, instrument_id=AUD/USD.SIM, strategy_id=S-001, orders="
         ));
     }
 }
