@@ -163,7 +163,6 @@ test-examples:
 
 .PHONY: install-talib
 install-talib:
-	pip install numpy==1.26.4
 	bash scripts/install-talib.sh
 
 .PHONY: install-cli
