@@ -2404,10 +2404,10 @@ impl Cache {
 
     /// Returns references to all instrument IDs for the given `venue`.
     #[must_use]
-    pub fn instrument_ids(&self, venue: &Venue) -> Vec<&InstrumentId> {
+    pub fn instrument_ids(&self, venue: Option<&Venue>) -> Vec<&InstrumentId> {
         self.instruments
             .keys()
-            .filter(|i| &i.venue == venue)
+            .filter(|i| venue.is_none() || &i.venue == venue.unwrap())
             .collect()
     }
 

@@ -157,7 +157,7 @@ impl DatabaseQueries {
 
     pub async fn load_instrument(
         pool: &PgPool,
-        instrument_id: InstrumentId,
+        instrument_id: &InstrumentId,
     ) -> anyhow::Result<Option<InstrumentAny>> {
         sqlx::query_as::<_, InstrumentAnyModel>("SELECT * FROM instrument WHERE id = $1")
             .bind(instrument_id.to_string())
