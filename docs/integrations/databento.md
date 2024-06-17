@@ -91,13 +91,13 @@ as a venue identifier. You can read more about Databento dataset naming conventi
 Of particular note is for CME Globex MDP 3.0 data (`GLBX.MDP3` dataset code), the following
 exchanges are all grouped under the `GLBX` venue. These mappings can be determined from the
 instruments `exchange` field:
-- `CBCM` - **XCME-XCBT inter-exchange spread**
-- `NYUM` - **XNYM-DUMX inter-exchange spread**
-- `XCBT` - **Chicago Board of Trade (CBOT)**
-- `XCEC` - **Commodities Exchange Center (COMEX)**
-- `XCME` - **Chicago Mercantile Exchange (CME)**
-- `XFXS` - **CME FX Link spread**
-- `XNYM` - **New York Mercantile Exchange (NYMEX)**
+- `CBCM` - XCME-XCBT inter-exchange spread
+- `NYUM` - XNYM-DUMX inter-exchange spread
+- `XCBT` - Chicago Board of Trade (CBOT)
+- `XCEC` - Commodities Exchange Center (COMEX)
+- `XCME` - Chicago Mercantile Exchange (CME)
+- `XFXS` - CME FX Link spread**
+- `XNYM` - New York Mercantile Exchange (NYMEX)
 
 :::info
 Other venue MICs can be found in the `venue` field of responses from the [metadata.list_publishers](https://databento.com/docs/api-reference-historical/metadata/metadata-list-publishers?historical=http&live=python) endpoint.
@@ -133,7 +133,7 @@ See the following Databento docs for further information:
 The following section discusses Databento schema -> Nautilus data type equivalence
 and considerations.
 
-:::note
+:::info
 See the Databento [list of fields by schema guide](https://databento.com/docs/knowledge-base/new-users/fields-by-schema).
 :::
 
@@ -307,7 +307,7 @@ trades = loader.from_dbn_file(
 catalog.write_data(trades)
 ```
 
-:::note
+:::info
 See also the [Data concepts guide](../concepts/data.md).
 :::
 
@@ -318,7 +318,7 @@ There are two `DatabentoLiveClient`s per Databento dataset:
 - One for MBO (order book deltas) real-time feeds
 - One for all other real-time feeds
 
-:::note
+:::warning
 There is currently a limitation that all MBO (order book deltas) subscriptions for a dataset have to be made at
 node startup, to then be able to replay data from the beginning of the session. If subsequent subscriptions
 arrive after start, then an error will be logged (and the subscription ignored).
