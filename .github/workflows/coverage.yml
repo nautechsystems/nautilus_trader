@@ -84,10 +84,12 @@ jobs:
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools wheel pre-commit msgspec
 
-      - name: Install TA-Lib (Linux)
-        run: |
-          make install-talib
-          poetry run pip install numpy==1.26.4 ta-lib
+      # ta-lib Python install currently broken
+      # https://github.com/TA-Lib/ta-lib-python/issues/655
+      # - name: Install TA-Lib (Linux)
+      #   run: |
+      #     make install-talib
+      #     poetry run pip install setuptools numpy==1.26.4 ta-lib
 
       - name: Setup cached pre-commit
         id: cached-pre-commit
