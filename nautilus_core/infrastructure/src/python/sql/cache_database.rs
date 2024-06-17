@@ -15,7 +15,7 @@
 
 use std::collections::HashMap;
 
-use nautilus_common::runtime::get_runtime;
+use nautilus_common::{cache::database::CacheDatabaseAdapter, runtime::get_runtime};
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
     identifiers::{ClientOrderId, InstrumentId},
@@ -70,15 +70,13 @@ impl PostgresCacheDatabase {
     }
 
     #[pyo3(name = "add")]
-    fn py_add(slf: PyRef<'_, Self>, key: String, value: Vec<u8>) -> PyResult<()> {
-        let result = get_runtime().block_on(async { slf.add(key, value).await });
-        result.map_err(to_pyruntime_err)
+    fn py_add(mut slf: PyRefMut<'_, Self>, key: String, value: Vec<u8>) -> PyResult<()> {
+        slf.add(key, value).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "add_currency")]
-    fn py_add_currency(slf: PyRef<'_, Self>, currency: Currency) -> PyResult<()> {
-        let result = get_runtime().block_on(async { slf.add_currency(currency).await });
-        result.map_err(to_pyruntime_err)
+    fn py_add_currency(mut slf: PyRefMut<'_, Self>, currency: Currency) -> PyResult<()> {
+        slf.add_currency(&currency).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "load_instrument")]
@@ -88,7 +86,7 @@ impl PostgresCacheDatabase {
         py: Python<'_>,
     ) -> PyResult<Option<PyObject>> {
         get_runtime().block_on(async {
-            let result = DatabaseQueries::load_instrument(&slf.pool, instrument_id)
+            let result = DatabaseQueries::load_instrument(&slf.pool, &instrument_id)
                 .await
                 .unwrap();
             match result {
@@ -116,27 +114,29 @@ impl PostgresCacheDatabase {
 
     #[pyo3(name = "add_instrument")]
     fn py_add_instrument(
-        slf: PyRef<'_, Self>,
+        mut slf: PyRefMut<'_, Self>,
         instrument: PyObject,
         py: Python<'_>,
     ) -> PyResult<()> {
         let instrument_any = pyobject_to_instrument_any(py, instrument)?;
-        let result = get_runtime().block_on(async { slf.add_instrument(instrument_any).await });
-        result.map_err(to_pyruntime_err)
+        slf.add_instrument(&instrument_any)
+            .map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "add_order")]
-    fn py_add_order(slf: PyRef<'_, Self>, order: PyObject, py: Python<'_>) -> PyResult<()> {
+    fn py_add_order(mut slf: PyRefMut<'_, Self>, order: PyObject, py: Python<'_>) -> PyResult<()> {
         let order_any = convert_pyobject_to_order_any(py, order)?;
-        let result = get_runtime().block_on(async { slf.add_order(order_any).await });
-        result.map_err(to_pyruntime_err)
+        slf.add_order(&order_any).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "update_order")]
-    fn py_update_order(slf: PyRef<'_, Self>, order: PyObject, py: Python<'_>) -> PyResult<()> {
+    fn py_update_order(
+        mut slf: PyRefMut<'_, Self>,
+        order: PyObject,
+        py: Python<'_>,
+    ) -> PyResult<()> {
         let order_any = convert_pyobject_to_order_any(py, order)?;
-        let result = get_runtime().block_on(async { slf.update_order(order_any).await });
-        result.map_err(to_pyruntime_err)
+        slf.update_order(&order_any).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "load_order")]

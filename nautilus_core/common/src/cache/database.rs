@@ -59,9 +59,12 @@ pub trait CacheDatabaseAdapter {
 
     fn load_index_order_client(&mut self) -> anyhow::Result<HashMap<ClientOrderId, ClientId>>;
 
-    fn load_currency(&mut self, code: &Ustr) -> anyhow::Result<Currency>;
+    fn load_currency(&mut self, code: &Ustr) -> anyhow::Result<Option<Currency>>;
 
-    fn load_instrument(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<InstrumentAny>;
+    fn load_instrument(
+        &mut self,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Option<InstrumentAny>>;
 
     fn load_synthetic(
         &mut self,
@@ -70,7 +73,7 @@ pub trait CacheDatabaseAdapter {
 
     fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<Box<dyn Account>>;
 
-    fn load_order(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<OrderAny>;
+    fn load_order(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<Option<OrderAny>>;
 
     fn load_position(&mut self, position_id: &PositionId) -> anyhow::Result<Position>;
 
