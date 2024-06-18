@@ -2034,9 +2034,9 @@ dependencies = [
 
 [[package]]
 name = "httparse"
-version = "1.9.3"
+version = "1.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0e7a4dd27b9476dc40cb050d3632d3bba3a70ddbff012285f7f8559a1e7e545"
+checksum = "0fcc0b4a115bf80b728eb8ea024ad5bd707b615bfed49e0665b6e0f86fd082d9"
 
 [[package]]
 name = "httpdate"
@@ -2069,6 +2069,23 @@ dependencies = [
  "smallvec",
  "tokio",
  "want",
+]
+
+[[package]]
+name = "hyper-rustls"
+version = "0.27.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5ee4be2c948921a1a5320b629c4193916ed787a7f7f293fd3f7f5a6c9de74155"
+dependencies = [
+ "futures-util",
+ "http",
+ "hyper",
+ "hyper-util",
+ "rustls 0.23.10",
+ "rustls-pki-types",
+ "tokio",
+ "tokio-rustls 0.26.0",
+ "tower-service",
 ]
 
 [[package]]
@@ -2594,9 +2611,9 @@ checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
 
 [[package]]
 name = "miniz_oxide"
-version = "0.7.3"
+version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87dfd01fe195c66b572b37921ad8803d010623c0aca821bea2302239d155cdae"
+checksum = "b8a240ddb74feaf34a79a7add65a741f3167852fba007066dcac1ca548d89c08"
 dependencies = [
  "adler",
 ]
@@ -2631,7 +2648,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-accounting"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2648,7 +2665,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-adapters"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2678,7 +2695,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2695,7 +2712,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cli"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "anyhow",
  "clap 4.5.7",
@@ -2712,7 +2729,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2740,7 +2757,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2760,7 +2777,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-execution"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -2784,7 +2801,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "anyhow",
  "log",
@@ -2797,7 +2814,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-infrastructure"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "anyhow",
  "log",
@@ -2820,7 +2837,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2848,7 +2865,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2873,7 +2890,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "anyhow",
  "binary-heap-plus",
@@ -2897,7 +2914,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.25.0"
+version = "0.26.0"
 dependencies = [
  "nautilus-accounting",
  "nautilus-adapters",
@@ -3751,7 +3768,7 @@ dependencies = [
  "socket2",
  "tokio",
  "tokio-retry",
- "tokio-rustls",
+ "tokio-rustls 0.25.0",
  "tokio-util",
  "url",
  "webpki-roots",
@@ -3836,9 +3853,9 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.12.4"
+version = "0.12.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "566cafdd92868e0939d3fb961bd0dc25fcfaaed179291093b3d43e6b3150ea10"
+checksum = "c7d6d2a27d57148378eb5e111173f4276ad26340ecc5c49a4a2152167a2d6a37"
 dependencies = [
  "base64 0.22.1",
  "bytes",
@@ -3850,6 +3867,7 @@ dependencies = [
  "http-body",
  "http-body-util",
  "hyper",
+ "hyper-rustls",
  "hyper-tls",
  "hyper-util",
  "ipnet",
@@ -3864,7 +3882,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_urlencoded",
- "sync_wrapper 0.1.2",
+ "sync_wrapper 1.0.1",
  "system-configuration",
  "tokio",
  "tokio-native-tls",
@@ -5074,6 +5092,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tokio-rustls"
+version = "0.26.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0c7bc40d0e5a97695bb96e27995cd3a08538541b0a846f65bba7a359f36700d4"
+dependencies = [
+ "rustls 0.23.10",
+ "rustls-pki-types",
+ "tokio",
+]
+
+[[package]]
 name = "tokio-stream"
 version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5096,7 +5125,7 @@ dependencies = [
  "rustls-pki-types",
  "tokio",
  "tokio-native-tls",
- "tokio-rustls",
+ "tokio-rustls 0.25.0",
  "tungstenite",
  "webpki-roots",
 ]
@@ -5580,9 +5609,9 @@ dependencies = [
 
 [[package]]
 name = "webpki-roots"
-version = "0.26.2"
+version = "0.26.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c452ad30530b54a4d8e71952716a212b08efd0f3562baa66c29a618b07da7c3"
+checksum = "bd7c23921eeb1713a4e851530e9b9756e4fb0e89978582942612524cf09f01cd"
 dependencies = [
  "rustls-pki-types",
 ]
