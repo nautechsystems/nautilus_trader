@@ -18,7 +18,7 @@
 | `macOS (arm64)`    | 1.79.0+ | 3.10+  |
 | `Windows (x86_64)` | 1.79.0+ | 3.10+  |
 
-![](https://dcbadge.limes.pink/api/server/AUWVs3XaCS)
+[![](https://dcbadge.limes.pink/api/server/AUWVs3XaCS)](https://discord.gg/AUWVs3XaCS)
 
 - **Docs:** https://nautilustrader.io/docs/
 - **Website:** https://nautilustrader.io
