@@ -67,7 +67,6 @@ from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import account_type_to_str
-from nautilus_trader.model.enums import order_type_to_str
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -216,6 +215,7 @@ class BybitExecutionClient(LiveExecutionClient):
         self._instrument_ids: dict[str, InstrumentId] = {}
         self._generate_order_status_retries: dict[ClientOrderId, int] = {}
         self._order_retries: dict[ClientOrderId, int] = {}
+        self._pending_trailing_stops: dict[ClientOrderId, Order] = {}
 
     async def _connect(self) -> None:
         # Update account state
@@ -256,7 +256,16 @@ class BybitExecutionClient(LiveExecutionClient):
                     bybit_symbol = BybitSymbol(
                         bybit_order.symbol + f"-{product_type.value.upper()}",
                     )
+
+                    client_order_id = (
+                        ClientOrderId(bybit_order.orderLinkId) if bybit_order.orderLinkId else None
+                    )
+                    if client_order_id is None:
+                        client_order_id = self._cache.client_order_id(
+                            VenueOrderId(bybit_order.orderId),
+                        )
                     report = bybit_order.parse_to_order_status_report(
+                        client_order_id=client_order_id,
                         account_id=self.account_id,
                         instrument_id=bybit_symbol.parse_as_nautilus(),
                         report_id=UUID4(),
@@ -282,6 +291,16 @@ class BybitExecutionClient(LiveExecutionClient):
             client_order_id is None and venue_order_id is None,
             "both `client_order_id` and `venue_order_id` were `None`",
         )
+
+        if client_order_id:
+            order = self._cache.order(client_order_id)
+            if order and order.order_type in (
+                OrderType.TRAILING_STOP_MARKET,
+                OrderType.TRAILING_STOP_LIMIT,
+            ):
+                # Cannot query with client order ID for trailing stops
+                client_order_id = None
+
         retries = self._generate_order_status_retries.get(client_order_id, 0)
         if retries > 3:
             self._log.error(
@@ -312,7 +331,14 @@ class BybitExecutionClient(LiveExecutionClient):
                 self._log.warning(f"Received more than one order for {venue_order_id}")
                 targetOrder = bybit_orders[0]
 
+            order_link_id = bybit_orders[0].orderLinkId
+            client_order_id = ClientOrderId(order_link_id) if order_link_id else None
+            venue_order_id = VenueOrderId(bybit_orders[0].orderId)
+            if client_order_id is None:
+                client_order_id = self._cache.client_order_id(venue_order_id)
+
             order_report = targetOrder.parse_to_order_status_report(
+                client_order_id=client_order_id,
                 account_id=self.account_id,
                 instrument_id=instrument_id,
                 report_id=UUID4(),
@@ -773,10 +799,10 @@ class BybitExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_trailing_stop_market(self, order: TrailingStopMarketOrder) -> None:
-        self._log.warning(f"{order_type_to_str(order.order_type)} STILL EXPERIMENTAL")
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
         trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
+        self._pending_trailing_stops[order.client_order_id] = order
         await self._http_account.set_trading_stop(
             product_type=product_type,
             symbol=bybit_symbol.raw_symbol,
@@ -787,10 +813,10 @@ class BybitExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_trailing_stop_limit(self, order: TrailingStopLimitOrder) -> None:
-        self._log.warning(f"{order_type_to_str(order.order_type)} STILL EXPERIMENTAL")
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         product_type = bybit_symbol.product_type
         trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
+        self._pending_trailing_stops[order.client_order_id] = order
         await self._http_account.set_trading_stop(
             product_type=product_type,
             symbol=bybit_symbol.raw_symbol,
@@ -831,9 +857,20 @@ class BybitExecutionClient(LiveExecutionClient):
             self._log.exception(f"Failed to handle account execution update: {e}", e)
 
     def _process_execution(self, execution: BybitWsAccountExecution) -> None:
+        instrument_id = self._get_cached_instrument_id(execution.symbol, execution.category)
         client_order_id = ClientOrderId(execution.orderLinkId) if execution.orderLinkId else None
         venue_order_id = VenueOrderId(execution.orderId)
         order_side = self._enum_parser.parse_bybit_order_side(execution.side)
+
+        if client_order_id is None:
+            client_order_id = self._cache.client_order_id(venue_order_id)
+
+        if client_order_id is None:
+            # TODO: We can generate an external order fill here instead
+            self._log.error(
+                f"Cannot process order execution for {venue_order_id!r}: no `ClientOrderId` found",
+            )
+            return
 
         order = self._cache.order(client_order_id)
         if order is None:
@@ -856,7 +893,6 @@ class BybitExecutionClient(LiveExecutionClient):
             strategy_id = order.strategy_id
             order_type = order.order_type
 
-        instrument_id = self._get_cached_instrument_id(execution.symbol, execution.category)
         instrument = self._cache.instrument(instrument_id)
         if instrument is None:
             raise ValueError(f"Cannot handle trade event: instrument {instrument_id} not found")
@@ -880,11 +916,56 @@ class BybitExecutionClient(LiveExecutionClient):
             ts_event=millis_to_nanos(float(execution.execTime)),
         )
 
-    def _handle_account_order_update(self, raw: bytes) -> None:
+    def _handle_account_order_update(self, raw: bytes) -> None:  # noqa: C901 (too complex)
         try:
             msg = self._decoder_ws_account_order_update.decode(raw)
             for bybit_order in msg.data:
+                instrument_id = self._get_cached_instrument_id(
+                    bybit_order.symbol,
+                    bybit_order.category,
+                )
+                client_order_id = (
+                    ClientOrderId(bybit_order.orderLinkId) if bybit_order.orderLinkId else None
+                )
+                venue_order_id = VenueOrderId(bybit_order.orderId)
+                if client_order_id is None:
+                    client_order_id = self._cache.client_order_id(venue_order_id)
+
+                order_side = self._enum_parser.parse_bybit_order_side(bybit_order.side)
+
+                if (
+                    client_order_id is None
+                    and bybit_order.stopOrderType == BybitStopOrderType.TRAILING_STOP
+                ):
+                    for order in self._pending_trailing_stops.values():
+                        if order.instrument_id != instrument_id or order.side != order_side:
+                            continue
+                        if order.quantity != Quantity.from_str(bybit_order.qty):
+                            continue
+                        if bybit_order.orderType == BybitOrderType.MARKET and not isinstance(
+                            order,
+                            TrailingStopMarketOrder,
+                        ):
+                            continue
+                        elif bybit_order.orderType == BybitOrderType.LIMIT and not isinstance(
+                            order,
+                            TrailingStopLimitOrder,
+                        ):
+                            continue
+
+                        if bybit_order.orderStatus == BybitOrderStatus.UNTRIGGERED:
+                            self.generate_order_accepted(
+                                strategy_id=order.strategy_id,
+                                instrument_id=order.instrument_id,
+                                client_order_id=order.client_order_id,
+                                venue_order_id=venue_order_id,
+                                ts_event=millis_to_nanos(int(bybit_order.updatedTime)),
+                            )
+                        self._pending_trailing_stops.pop(order.client_order_id)
+                        return
+
                 report = bybit_order.parse_to_order_status_report(
+                    client_order_id=client_order_id,
                     account_id=self.account_id,
                     instrument_id=self._get_cached_instrument_id(
                         bybit_order.symbol,
@@ -932,7 +1013,10 @@ class BybitExecutionClient(LiveExecutionClient):
                             venue_order_id=report.venue_order_id,
                             ts_event=report.ts_last,
                         )
-                elif bybit_order.orderStatus == BybitOrderStatus.CANCELED:
+                elif (
+                    bybit_order.orderStatus == BybitOrderStatus.CANCELED
+                    or bybit_order.orderStatus == BybitOrderStatus.DEACTIVATED
+                ):
                     self.generate_order_canceled(
                         strategy_id=strategy_id,
                         instrument_id=report.instrument_id,
@@ -946,6 +1030,17 @@ class BybitExecutionClient(LiveExecutionClient):
                         instrument_id=report.instrument_id,
                         client_order_id=report.client_order_id,
                         venue_order_id=report.venue_order_id,
+                        ts_event=report.ts_last,
+                    )
+                elif bybit_order.orderStatus == BybitOrderStatus.UNTRIGGERED:
+                    self.generate_order_updated(
+                        strategy_id=strategy_id,
+                        instrument_id=report.instrument_id,
+                        client_order_id=report.client_order_id,
+                        venue_order_id=report.venue_order_id,
+                        quantity=report.quantity,
+                        price=report.price,
+                        trigger_price=report.trigger_price,
                         ts_event=report.ts_last,
                     )
         except Exception as e:
