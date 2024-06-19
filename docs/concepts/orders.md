@@ -217,7 +217,7 @@ order: LimitOrder = self.order_factory.limit(
 )
 ```
 
-[API Reference](../api_reference/model/orders.md##class-limitordertraderid-trader_id-strategyid-strategy_id-instrumentid-instrument_id-clientorderid-client_order_id-orderside-order_side-quantity-quantity-price-price-uuid4-init_id-uint64_t-ts_init-timeinforce-time_in_forcetimeinforcegtc-uint64_t-expire_time_ns0-bool-post_onlyfalse-bool-reduce_onlyfalse-bool-quote_quantityfalse-quantity-display_qtynone-triggertype-emulation_triggertriggertypeno_trigger-instrumentid-trigger_instrument_idnone-contingencytype-contingency_typecontingencytypeno_contingency-orderlistid-order_list_idnone-list-linked_order_idsnone-clientorderid-parent_order_idnone-execalgorithmid-exec_algorithm_idnone-dict-exec_algorithm_paramsnone-clientorderid-exec_spawn_idnone-list-tagsnone)
+[API Reference](../api_reference/model/orders.md#class-limitordertraderid-trader_id-strategyid-strategy_id-instrumentid-instrument_id-clientorderid-client_order_id-orderside-order_side-quantity-quantity-price-price-uuid4-init_id-uint64_t-ts_init-timeinforce-time_in_forcetimeinforcegtc-uint64_t-expire_time_ns0-bool-post_onlyfalse-bool-reduce_onlyfalse-bool-quote_quantityfalse-quantity-display_qtynone-triggertype-emulation_triggertriggertypeno_trigger-instrumentid-trigger_instrument_idnone-contingencytype-contingency_typecontingencytypeno_contingency-orderlistid-order_list_idnone-list-linked_order_idsnone-clientorderid-parent_order_idnone-execalgorithmid-exec_algorithm_idnone-dict-exec_algorithm_paramsnone-clientorderid-exec_spawn_idnone-list-tagsnone)
 
 ### Stop-Market
 
