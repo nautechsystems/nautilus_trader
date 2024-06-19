@@ -164,10 +164,13 @@ For Bybit live clients, you can set:
 - `BYBIT_API_KEY`
 - `BYBIT_API_SECRET`
 
+For Bybit demo clients, you can set:
+- `BYBIT_DEMO_API_KEY`
+- `BYBIT_DEMO_API_SECRET`
+
 For Bybit testnet clients, you can set:
 - `BYBIT_TESTNET_API_KEY`
 - `BYBIT_TESTNET_API_SECRET`
 
 When starting the trading node, you'll receive immediate confirmation of whether your
 credentials are valid and have trading permissions.
-

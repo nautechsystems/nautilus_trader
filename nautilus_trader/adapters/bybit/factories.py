@@ -45,6 +45,7 @@ def get_bybit_http_client(
     key: str | None = None,
     secret: str | None = None,
     base_url: str | None = None,
+    is_demo: bool = False,
     is_testnet: bool = False,
 ) -> BybitHttpClient:
     """
@@ -63,6 +64,8 @@ def get_bybit_http_client(
         The API secret for the client.
     base_url : str, optional
         The base URL for the API endpoints.
+    is_demo : bool, default False
+        If the client is connecting to the demo API.
     is_testnet : bool, default False
         If the client is connecting to the testnet API.
 
@@ -72,9 +75,9 @@ def get_bybit_http_client(
 
     """
     global HTTP_CLIENTS
-    key = key or get_api_key(is_testnet)
-    secret = secret or get_api_secret(is_testnet)
-    http_base_url = base_url or get_http_base_url(is_testnet)
+    key = key or get_api_key(is_demo, is_testnet)
+    secret = secret or get_api_secret(is_demo, is_testnet)
+    http_base_url = base_url or get_http_base_url(is_demo, is_testnet)
     client_key: str = "|".join((key, secret))
 
     # Setup rate limit quotas
@@ -178,6 +181,7 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
             key=config.api_key,
             secret=config.api_secret,
             base_url=config.base_url_http,
+            is_demo=config.demo,
             is_testnet=config.testnet,
         )
         provider = get_bybit_instrument_provider(
@@ -190,6 +194,7 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
         for product_type in product_types:
             ws_base_urls[product_type] = get_ws_base_url_public(
                 product_type=product_type,
+                is_demo=config.demo,
                 is_testnet=config.testnet,
             )
         return BybitDataClient(
@@ -248,6 +253,7 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
             key=config.api_key,
             secret=config.api_secret,
             base_url=config.base_url_http,
+            is_demo=config.demo,
             is_testnet=config.testnet,
         )
         provider = get_bybit_instrument_provider(

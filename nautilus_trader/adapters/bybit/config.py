@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
@@ -36,6 +35,10 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
     product_types : list[BybitProductType], optional
         The Bybit product type for the client.
         If not specified then will use all products.
+    demo : bool, default False
+        If the client is connecting to the Bybit demo API.
+    testnet : bool, default False
+        If the client is connecting to the Bybit testnet API.
 
     """
 
@@ -43,6 +46,7 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
     api_secret: str | None = None
     product_types: list[BybitProductType] | None = None
     base_url_http: str | None = None
+    demo: bool = False
     testnet: bool = False
 
 
@@ -63,6 +67,10 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
         If None then will default to 'SPOT', you also cannot mix 'SPOT' with
         any other product type for execution, and it will use a `CASH` account
         type, vs `MARGIN` for the other derivative products.
+    demo : bool, default False
+        If the client is connecting to the Bybit demo API.
+    testnet : bool, default False
+        If the client is connecting to the Bybit testnet API.
     use_gtd : bool, default False
         If False then GTD time in force will be remapped to GTC
         (this is useful if managing GTD orders locally).
@@ -74,6 +82,7 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     product_types: list[BybitProductType] | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
+    demo: bool = False
     testnet: bool = False
     use_gtd: bool = False  # Not supported on Bybit
     use_reduce_only: bool = True
