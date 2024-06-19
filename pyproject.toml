@@ -105,14 +105,10 @@ pytest-xdist = { version = "^3.6.1", extras = ["psutil"] }
 optional = true
 
 [tool.poetry.group.docs.dependencies]
-numpydoc = "^1.6.0"
-linkify-it-py = "^2.0.0"
-myst-parser = "^0.18.1"
+numpydoc = "^1.7.0"
+linkify-it-py = "^2.0.3"
+myst-parser = "^3.0.1"
 sphinx_comments = "^0.0.3"
-sphinx_copybutton = "^0.5.0"
-sphinx-external-toc = "^0.3.1"
-sphinx-material = "^0.0.35"
-sphinx_togglebutton = "^0.3.0"
 sphinx_markdown_builder = "^0.6.6"
 
 [tool.isort]  # Used by legacy isort for Cython modules
