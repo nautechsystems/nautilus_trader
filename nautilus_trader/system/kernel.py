@@ -131,7 +131,12 @@ class NautilusKernel:
         PyCondition.type(config, NautilusKernelConfig, "config")
 
         self._config: NautilusKernelConfig = config
-        self._environment: Environment = config.environment
+
+        environment = config.environment
+        if isinstance(config.environment, str):
+            environment = Environment(config.environment)
+
+        self._environment: Environment = environment
         self._load_state: bool = config.load_state
         self._save_state: bool = config.save_state
 

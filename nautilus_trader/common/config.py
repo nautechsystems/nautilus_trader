@@ -25,6 +25,7 @@ import msgspec
 import pandas as pd
 from msgspec import Meta
 
+from nautilus_trader.common import Environment
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.data import BarType
@@ -90,6 +91,8 @@ def msgspec_encoding_hook(obj: Any) -> Any:
         return str(obj)
     if isinstance(obj, (pd.Timestamp | pd.Timedelta)):
         return obj.isoformat()
+    if isinstance(obj, Environment):
+        return obj.value
     if isinstance(obj, type) and hasattr(obj, "fully_qualified_name"):
         return obj.fully_qualified_name()
     if type(obj) in CUSTOM_ENCODINGS:
@@ -112,6 +115,8 @@ def msgspec_decoding_hook(obj_type: type, obj: Any) -> Any:
         return Price.from_str(obj)
     if obj_type == Quantity:
         return Quantity.from_str(obj)
+    if obj_type == Environment:
+        return obj_type(obj)
     if obj_type in CUSTOM_DECODINGS:
         func = CUSTOM_DECODINGS[obj_type]
         return func(obj)

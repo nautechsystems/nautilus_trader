@@ -19,6 +19,7 @@ import msgspec
 import pandas as pd
 import pytest
 
+from nautilus_trader.common import Environment
 from nautilus_trader.common.config import CUSTOM_DECODINGS
 from nautilus_trader.common.config import CUSTOM_ENCODINGS
 from nautilus_trader.config import DatabaseConfig
@@ -182,6 +183,31 @@ def test_register_custom_decodings() -> None:
 
     # Assert
     assert CUSTOM_DECODINGS[Price] == test_decoder
+
+
+def test_encoding_unsupported_type() -> None:
+    # Arrange
+    unsupported_obj: list[int] = [1, 2, 3]
+
+    # Act, Assert
+    with pytest.raises(TypeError) as exinfo:
+        msgspec_encoding_hook(unsupported_obj)
+
+        # Verifying the exception message
+        assert str(exinfo) == "Encoding objects of type <class 'list'> is unsupported"
+
+
+def test_decoding_unsupported_type() -> None:
+    # Arrange
+    unsupported_type = list
+    unsupported_obj = "[1, 2, 3]"
+
+    # Act, Assert
+    with pytest.raises(TypeError) as exinfo:
+        msgspec_decoding_hook(unsupported_type, unsupported_obj)
+
+        # Verifying the exception message
+        assert str(exinfo) == "Decoding objects of type <class 'list'> is unsupported"
 
 
 def test_encoding_uuid4() -> None:
@@ -368,26 +394,24 @@ def test_decoding_timedelta() -> None:
     assert result == pd.Timedelta(obj)
 
 
-def test_encoding_unsupported_type() -> None:
+def test_encoding_environment() -> None:
     # Arrange
-    unsupported_obj: list[int] = [1, 2, 3]
+    obj = Environment.LIVE
 
-    # Act, Assert
-    with pytest.raises(TypeError) as exinfo:
-        msgspec_encoding_hook(unsupported_obj)
+    # Act
+    result = msgspec_encoding_hook(obj)
 
-        # Verifying the exception message
-        assert str(exinfo) == "Encoding objects of type <class 'list'> is unsupported"
+    # Assert
+    assert result == "live"
 
 
-def test_decoding_unsupported_type() -> None:
+def test_decoding_environment() -> None:
     # Arrange
-    unsupported_type = list
-    unsupported_obj = "[1, 2, 3]"
+    obj_type = Environment
+    obj = "live"
 
-    # Act, Assert
-    with pytest.raises(TypeError) as exinfo:
-        msgspec_decoding_hook(unsupported_type, unsupported_obj)
+    # Act
+    result = msgspec_decoding_hook(obj_type, obj)
 
-        # Verifying the exception message
-        assert str(exinfo) == "Decoding objects of type <class 'list'> is unsupported"
+    # Assert
+    assert result == Environment(obj)
