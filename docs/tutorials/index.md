@@ -1,6 +1,6 @@
 # Tutorials
 
-:::warning
+:::info
 We are currently working on the tutorials.
 :::
 
