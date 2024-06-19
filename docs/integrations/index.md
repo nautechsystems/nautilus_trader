@@ -14,8 +14,8 @@ into a unified interface. The following integrations are currently supported:
 | [Databento](https://databento.com)                        | `DATABENTO`           | Data Provider           | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](databento.md) |
 | [Interactive Brokers](https://www.interactivebrokers.com) | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](ib.md)        |
 
-- `ID:` The default client ID for the integrations adapter clients
-- `Type:` The type of integration (often the venue type)
+- **ID:** The default client ID for the integrations adapter clients
+- **Type:** The type of integration (often the venue type)
 
 ### Status
 

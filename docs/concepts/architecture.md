@@ -6,12 +6,12 @@ This guide dives deep into the foundational principles, structures, and designs 
 the platform. Whether you're a developer, system architect, or just curious about the inner workings 
 of NautilusTrader, this exposition covers:
 
-- The **Design Philosophy** that drives decisions and shapes the system's evolution
-- The overarching **System Architecture** providing a bird's-eye view of the entire system framework
-- How the **Framework** is organized to facilitate modularity and maintainability
-- The **Code Structure** that ensures readability and scalability
-- A breakdown of **Component Organization and Interaction** to understand how different parts communicate and collaborate
-- And finally, the **Implementation Techniques** that are crucial for performance, reliability, and robustness
+- The design philosophy that drives decisions and shapes the system's evolution
+- The overarching system architecture providing a bird's-eye view of the entire system framework
+- How the framework is organized to facilitate modularity and maintainability
+- The code structure that ensures readability and scalability
+- A breakdown of component organization and interaction to understand how different parts communicate and collaborate
+- And finally, the implementation techniques that are crucial for performance, reliability, and robustness
 
 ## Design philosophy
 
@@ -176,7 +176,6 @@ then you will receive a `TypeError` at runtime.
 If a function or methods parameter is not explicitly typed as allowing
 ``None``, then you can assume you will receive a `ValueError` when passing ``None``
 as an argument at runtime.
-```
 
 :::warning
 The above exceptions are not explicitly documented, as this would bloat the docstrings significantly.
