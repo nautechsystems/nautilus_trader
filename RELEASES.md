@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added Bybit demo account support (set `is_demo` to True in configs)
+- Added Bybit stop order types (`STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`, `LIMIT_IF_TOUCHED`, `TRAILING_STOP_MARKET`, `TRAILING_STOP_LIMIT`)
 
 ### Breaking Changes
 None

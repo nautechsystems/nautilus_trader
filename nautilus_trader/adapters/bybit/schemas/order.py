@@ -90,11 +90,11 @@ class BybitOrder(msgspec.Struct, omit_defaults=True, kw_only=True):
         self,
         account_id: AccountId,
         instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
         report_id: UUID4,
         enum_parser: BybitEnumParser,
         ts_init: int,
     ) -> OrderStatusReport:
-        client_order_id = ClientOrderId(self.orderLinkId) if self.orderLinkId else None
         order_list_id = None
         contingency_type = ContingencyType.NO_CONTINGENCY
         trigger_price = Price.from_str(self.triggerPrice) if self.triggerPrice else None
