@@ -32,11 +32,12 @@ extensions = [
 
 comments_config = {"hypothesis": False, "utterances": False}
 exclude_patterns = ["**.ipynb_checkpoints", ".DS_Store", "Thumbs.db", "_build"]
-source_suffix = [".md"]
+source_suffix = [".rst", ".md"]
 
 myst_enable_extensions = [
     "colon_fence",
     "dollarmath",
+    "fieldlist",
     "linkify",
     "substitution",
     "tasklist",
@@ -68,7 +69,7 @@ napoleon_numpy_docstring = True
 napoleon_include_init_with_doc = False
 napoleon_include_private_with_doc = False
 napoleon_include_special_with_doc = False
-napoleon_use_admonition_for_examples = False
+napoleon_use_admonition_for_examples = True
 napoleon_use_admonition_for_notes = True
 napoleon_use_admonition_for_references = True
 napoleon_use_ivar = False
