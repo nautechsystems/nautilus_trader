@@ -83,7 +83,8 @@ config_node = TradingNodeConfig(
             base_url_http=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
             product_types=[product_type],  # Will load all instruments
-            testnet=False,  # If client uses the testnet
+            demo=False,  # If client uses the demo API
+            testnet=False,  # If client uses the testnet API
         ),
     },
     exec_clients={
@@ -94,7 +95,8 @@ config_node = TradingNodeConfig(
             base_url_ws=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
             product_types=[product_type],
-            testnet=False,  # If client uses the testnet
+            demo=False,  # If client uses the demo API
+            testnet=False,  # If client uses the testnet API
         ),
     },
     timeout_connection=20.0,

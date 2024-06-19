@@ -3,13 +3,13 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added Bybit demo account support (set `is_demo` to True in configs)
 
 ### Breaking Changes
 None
 
 ### Fixes
-None
+- Fixed msgspec encoding and decoding of `Environment` enum for `NautilusKernelConfig`
 
 ---
 

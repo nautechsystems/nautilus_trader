@@ -44,7 +44,7 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
     us : bool, default False
         If client is connecting to Binance US.
     testnet : bool, default False
-        If the client is connecting to a Binance testnet.
+        If the client is connecting to the Binance testnet API.
     use_agg_trade_ticks : bool, default False
         Whether to use aggregated trade tick endpoints instead of raw trade ticks.
         TradeId of ticks will be the Aggregate tradeId returned by Binance.
@@ -84,7 +84,7 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     us : bool, default False
         If client is connecting to Binance US.
     testnet : bool, default False
-        If the client is connecting to a Binance testnet.
+        If the client is connecting to the Binance testnet API.
     use_gtd : bool, default True
         If GTD orders will use the Binance GTD TIF option.
         If False then GTD time in force will be remapped to GTC (this is useful if managing GTD
