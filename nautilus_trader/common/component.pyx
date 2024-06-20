@@ -242,6 +242,8 @@ cdef class Clock:
         """
         Register the given handler as the clocks default handler.
 
+        Parameters
+        ----------
         handler : Callable[[TimeEvent], None]
             The handler to register.
 
