@@ -171,33 +171,36 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::stubs::kvo_10;
+    use crate::stubs::kvo_345;
 
     #[rstest]
-    fn test_name_returns_expected_string(kvo_10: KlingerVolumeOscillator) {
-        assert_eq!(kvo_10.name(), "KlingerVolumeOscillator");
+    fn test_name_returns_expected_string(kvo_345: KlingerVolumeOscillator) {
+        assert_eq!(kvo_345.name(), "KlingerVolumeOscillator");
     }
 
     #[rstest]
-    fn test_str_repr_returns_expected_string(kvo_10: KlingerVolumeOscillator) {
-        assert_eq!(format!("{kvo_10}"), "KlingerVolumeOscillator(3,4,5,SIMPLE)");
+    fn test_str_repr_returns_expected_string(kvo_345: KlingerVolumeOscillator) {
+        assert_eq!(
+            format!("{kvo_345}"),
+            "KlingerVolumeOscillator(3,4,5,SIMPLE)"
+        );
     }
 
     #[rstest]
-    fn test_period_returns_expected_value(kvo_10: KlingerVolumeOscillator) {
-        assert_eq!(kvo_10.fast_period, 3);
-        assert_eq!(kvo_10.slow_period, 4);
-        assert_eq!(kvo_10.signal_period, 5);
+    fn test_period_returns_expected_value(kvo_345: KlingerVolumeOscillator) {
+        assert_eq!(kvo_345.fast_period, 3);
+        assert_eq!(kvo_345.slow_period, 4);
+        assert_eq!(kvo_345.signal_period, 5);
     }
 
     #[rstest]
-    fn test_initialized_without_inputs_returns_false(kvo_10: KlingerVolumeOscillator) {
-        assert!(!kvo_10.initialized());
+    fn test_initialized_without_inputs_returns_false(kvo_345: KlingerVolumeOscillator) {
+        assert!(!kvo_345.initialized());
     }
 
     #[rstest]
     fn test_value_with_all_higher_inputs_returns_expected_value(
-        mut kvo_10: KlingerVolumeOscillator,
+        mut kvo_345: KlingerVolumeOscillator,
     ) {
         let high_values = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
         let low_values = [0.9, 1.9, 2.9, 3.9, 4.9, 5.9, 6.9, 7.9, 8.9, 9.9];
@@ -207,7 +210,7 @@ mod tests {
         ];
 
         for i in 0..10 {
-            kvo_10.update_raw(
+            kvo_345.update_raw(
                 high_values[i],
                 low_values[i],
                 close_values[i],
@@ -215,23 +218,23 @@ mod tests {
             );
         }
 
-        assert!(kvo_10.initialized());
-        assert_eq!(kvo_10.value, 50.0);
+        assert!(kvo_345.initialized());
+        assert_eq!(kvo_345.value, 50.0);
     }
 
     #[rstest]
     fn test_reset_successfully_returns_indicator_to_fresh_state(
-        mut kvo_10: KlingerVolumeOscillator,
+        mut kvo_345: KlingerVolumeOscillator,
     ) {
-        kvo_10.update_raw(1.00020, 1.00030, 1.00040, 1.00050);
-        kvo_10.update_raw(1.00030, 1.00040, 1.00050, 1.00060);
-        kvo_10.update_raw(1.00050, 1.00060, 1.00070, 1.00080);
+        kvo_345.update_raw(1.00020, 1.00030, 1.00040, 1.00050);
+        kvo_345.update_raw(1.00030, 1.00040, 1.00050, 1.00060);
+        kvo_345.update_raw(1.00050, 1.00060, 1.00070, 1.00080);
 
-        kvo_10.reset();
+        kvo_345.reset();
 
-        assert!(!kvo_10.initialized());
-        assert_eq!(kvo_10.value, 0.0);
-        assert_eq!(kvo_10.hlc3, 0.0);
-        assert_eq!(kvo_10.previous_hlc3, 0.0);
+        assert!(!kvo_345.initialized());
+        assert_eq!(kvo_345.value, 0.0);
+        assert_eq!(kvo_345.hlc3, 0.0);
+        assert_eq!(kvo_345.previous_hlc3, 0.0);
     }
 }
