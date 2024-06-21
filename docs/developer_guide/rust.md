@@ -5,9 +5,10 @@ platform and systems. This is because Rust will ensure that it is free of memory
 data race conditions, being 'correct by construction' through its formal specification of types, ownership
 and lifetimes at compile time. 
 
-Also, because of the lack of a built-in runtime and garbage collector, and because
-the language itself can access the lowest level primitives, we can expect the eventual implementations
-to be highly performant. This combination of correctness and performance is highly valued for a HFT platform.
+Furthermore, due to the absence of a built-in runtime and garbage collector, along with the
+language's ability to access the lowest-level primitives, we can anticipate that future implementations
+will be highly performant. This combination of accuracy and performance is highly prized for a high-frequency
+trading (HFT) platform.
 
 ## Python Binding
 

@@ -5,6 +5,7 @@ The test suite is divided into broad categories of tests including:
 - Integration tests
 - Acceptance tests
 - Performance tests
+- Memory leak tests
 
 The performance tests exist to aid development of performance-critical components.
 
@@ -12,7 +13,7 @@ Tests can be run using [Pytest](https://docs.pytest.org).
 
 If you’re using PyCharm then tests should run directly by right clicking on the respective folder (or top-level tests folder) and clicking ‘Run pytest’.
 
-Alternatively you can use the `pytest .` command from the root level tests directory, or the other subdirectories.
+Alternatively you can use the `pytest` command from the root level tests directory, or the other subdirectories.
 
 ## Mocks
 
