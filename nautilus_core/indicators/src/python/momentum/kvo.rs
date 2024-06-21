@@ -17,17 +17,27 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
 use pyo3::prelude::*;
 
-use crate::{average::MovingAverageType, indicator::Indicator, momentum::bias::Bias};
+use crate::{
+    average::MovingAverageType, indicator::Indicator, momentum::kvo::KlingerVolumeOscillator,
+};
 
 #[pymethods]
-impl Bias {
+impl KlingerVolumeOscillator {
     #[new]
-    pub fn py_new(period: usize, ma_type: Option<MovingAverageType>) -> PyResult<Self> {
-        Self::new(period, ma_type).map_err(to_pyvalue_err)
+    pub fn py_new(
+        fast_period: usize,
+        slow_period: usize,
+        signal_period: usize,
+        ma_type: Option<MovingAverageType>,
+    ) -> PyResult<Self> {
+        Self::new(fast_period, slow_period, signal_period, ma_type).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
-        format!("Bias({})", self.period)
+        format!(
+            "KlingerVolumeOscillator({},{},{},{})",
+            self.fast_period, self.slow_period, self.signal_period, self.ma_type
+        )
     }
 
     #[getter]
@@ -37,21 +47,27 @@ impl Bias {
     }
 
     #[getter]
-    #[pyo3(name = "period")]
-    fn py_period(&self) -> usize {
-        self.period
+    #[pyo3(name = "fast_period")]
+    fn py_fast_period(&self) -> usize {
+        self.fast_period
+    }
+
+    #[getter]
+    #[pyo3(name = "slow_period")]
+    fn py_slow_period(&self) -> usize {
+        self.slow_period
+    }
+
+    #[getter]
+    #[pyo3(name = "signal_period")]
+    fn py_signal_period(&self) -> usize {
+        self.signal_period
     }
 
     #[getter]
     #[pyo3(name = "has_inputs")]
     fn py_has_inputs(&self) -> bool {
         self.has_inputs()
-    }
-
-    #[getter]
-    #[pyo3(name = "count")]
-    fn py_count(&self) -> usize {
-        self.count
     }
 
     #[getter]
@@ -67,18 +83,8 @@ impl Bias {
     }
 
     #[pyo3(name = "update_raw")]
-    fn py_update_raw(&mut self, close: f64) {
-        self.update_raw(close);
-    }
-
-    #[pyo3(name = "handle_quote_tick")]
-    fn py_handle_quote_tick(&mut self, _tick: &QuoteTick) {
-        // Function body intentionally left blank.
-    }
-
-    #[pyo3(name = "handle_trade_tick")]
-    fn py_handle_trade_tick(&mut self, _tick: &TradeTick) {
-        // Function body intentionally left blank.
+    fn py_update_raw(&mut self, high: f64, low: f64, close: f64, volume: f64) {
+        self.update_raw(high, low, close, volume);
     }
 
     #[pyo3(name = "handle_bar")]

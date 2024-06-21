@@ -35,8 +35,8 @@ use crate::{
         vwap::VolumeWeightedAveragePrice, wma::WeightedMovingAverage, MovingAverageType,
     },
     momentum::{
-        bias::Bias, cmo::ChandeMomentumOscillator, rsi::RelativeStrengthIndex,
-        vhf::VerticalHorizontalFilter,
+        bias::Bias, cmo::ChandeMomentumOscillator, kvo::KlingerVolumeOscillator,
+        rsi::RelativeStrengthIndex, vhf::VerticalHorizontalFilter,
     },
     ratio::efficiency_ratio::EfficiencyRatio,
 };
@@ -180,4 +180,9 @@ pub fn bias_10() -> Bias {
 #[fixture]
 pub fn vhf_10() -> VerticalHorizontalFilter {
     VerticalHorizontalFilter::new(10, Some(MovingAverageType::Simple)).unwrap()
+}
+
+#[fixture]
+pub fn kvo_10() -> KlingerVolumeOscillator {
+    KlingerVolumeOscillator::new(3, 4, 5, Some(MovingAverageType::Simple)).unwrap()
 }

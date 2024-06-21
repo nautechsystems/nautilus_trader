@@ -16,5 +16,6 @@
 pub mod aroon;
 pub mod bias;
 pub mod cmo;
+pub mod kvo;
 pub mod rsi;
 pub mod vhf;
