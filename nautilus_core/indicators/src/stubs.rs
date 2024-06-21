@@ -184,5 +184,5 @@ pub fn vhf_10() -> VerticalHorizontalFilter {
 
 #[fixture]
 pub fn kvo_10() -> KlingerVolumeOscillator {
-    KlingerVolumeOscillator::new(2, 3, 4, Some(MovingAverageType::Simple)).unwrap()
+    KlingerVolumeOscillator::new(3, 4, 5, Some(MovingAverageType::Simple)).unwrap()
 }
