@@ -6,6 +6,7 @@ Released on TBD (UTC).
 - Added Bybit demo account support (set `is_demo` to True in configs)
 - Added Bybit stop order types (`STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`, `LIMIT_IF_TOUCHED`, `TRAILING_STOP_MARKET`, `TRAILING_STOP_LIMIT`)
 - Ported `KlingerVolumeOscillator` indicator to Rust (#1724), thanks @Pushkarm029
+- Ported `DirectionalMovement` indicator to Rust (#1725), thanks @Pushkarm029
 
 ### Breaking Changes
 None
