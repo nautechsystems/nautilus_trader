@@ -1,7 +1,5 @@
 # Concepts
 
-Welcome to NautilusTrader!
-
 Explore the foundational concepts of NautilusTrader through the following guides.
 
 ## [Overview](overview.md)
