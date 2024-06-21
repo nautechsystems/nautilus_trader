@@ -19,7 +19,7 @@ which can be used together or separately depending on the users needs.
 - `BinanceLiveDataClientFactory` - Factory for Binance data clients (used by the trading node builder)
 - `BinanceLiveExecClientFactory` - Factory for Binance execution clients (used by the trading node builder)
 
-:::info
+:::note
 Most users will simply define a configuration for a live trading node (as below),
 and won't need to necessarily work with these lower level components directly.
 :::
@@ -229,10 +229,6 @@ instrument_provider=InstrumentProviderConfig(
 ```
 
 ## Order books
-
-:::note
-The Nautilus team is currently working on this section.
-:::
 
 Order books can be maintained at full or partial depths depending on the
 subscription options. WebSocket stream throttling is different between
