@@ -71,6 +71,8 @@ bench_data/
 /api_reference/
 /catalog/
 /docs/getting_started/catalog/
+/docs/tutorials/catalog/
+/docs/tutorials/databento/
 /examples/backtest/notebooks/catalog/
 /examples/notebooks/catalog/
 nautilus_trader/**/.gitignore
