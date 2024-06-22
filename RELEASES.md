@@ -14,6 +14,7 @@ None
 
 ### Fixes
 - Fixed msgspec encoding and decoding of `Environment` enum for `NautilusKernelConfig`
+- Fixed `DatabentoDataLoader.from_dbn_file` for `OrderBookDelta`s when `as_legacy_cython=False`
 
 ---
 
