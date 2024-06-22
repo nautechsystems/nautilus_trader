@@ -9,6 +9,7 @@ ENV PYTHONUNBUFFERED=1 \
     POETRY_VIRTUALENVS_CREATE=false \
     POETRY_NO_INTERACTION=1 \
     PYSETUP_PATH="/opt/pysetup" \
+    RUST_TOOLCHAIN="stable" \
     BUILD_MODE="release"
 ENV PATH="/root/.cargo/bin:$POETRY_HOME/bin:$PATH"
 WORKDIR $PYSETUP_PATH
@@ -21,9 +22,11 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Install Rust stable and poetry
-RUN curl https://sh.rustup.rs -sSf | bash -s -- -y && \
-    curl -sSL https://install.python-poetry.org | python3 -
+# Install Rust
+RUN curl https://sh.rustup.rs -sSf | bash -s -- -y
+
+# Install Poetry
+RUN curl -sSL https://install.python-poetry.org | python3 -
 
 # Install package requirements (split step and with --no-root to enable caching)
 COPY poetry.lock pyproject.toml build.py ./
@@ -31,7 +34,7 @@ RUN poetry install --no-root --only main
 
 # Build nautilus_trader
 COPY nautilus_core ./nautilus_core
-RUN (cd nautilus_core && cargo build --release)
+RUN (cd nautilus_core && cargo build --release --all-features)
 
 COPY nautilus_trader ./nautilus_trader
 COPY README.md ./
