@@ -61,19 +61,23 @@ To distinguish between different product types on Bybit, the following instrumen
 - `-OPTION`: options contracts (not currently supported)
 
 These must be appended to the Bybit raw symbol string to be able to identify the specific
-product type for the instrument ID, e.g. the Ether/Tether spot currency pair is identified with:
+product type for the instrument ID, e.g. the Ether/Tether spot currency pair is identified with `-SPOT, for example:
 
 `ETHUSDT-SPOT`
 
-The BTCUSDT perpetual futures contract is identified with:
+The BTCUSDT perpetual futures contract is identified with `-LINEAR`, for example:
 
 `BTCUSDT-LINEAR`
 
-The BTCUSD inverse perpetual futures contract is identified with:
+The BTCUSD inverse perpetual futures contract is identified with `-INVERSE`, for example:
 
 `BTCUSD-INVERSE`
 
 ## Order types
+
+Bybit offers a flexible combination of trigger types, enabling a broader range of Nautilus orders.
+All the order types listed below can be used as *either* entries or exits, except for trailing stops
+(which utilize a position-related API).
 
 |                        | Spot                 | Derivatives (Linear, Inverse, Options)  |
 |------------------------|----------------------|-----------------------------------------|
@@ -83,7 +87,25 @@ The BTCUSD inverse perpetual futures contract is identified with:
 | `STOP_LIMIT`           | ✓                    | ✓                                       |
 | `MARKET_IF_TOUCHED`    | ✓                    | ✓                                       |
 | `LIMIT_IF_TOUCHED`     | ✓                    | ✓                                       |
-| `TRAILING_STOP_MARKET` | ✓                    | ✓                                       |
+| `TRAILING_STOP_MARKET` |                      | ✓                                       |
+
+### Trailing stops
+
+Trailing stops on Bybit do not have a client order ID on the venue side (though there is a `venue_order_id`).
+This is because trailing stops are associated with a netted position for an instrument.
+Consider the following points when using trailing stops on Bybit:
+
+- It's not currently possible to query trailing stop orders that are not already open (the venue_order_id is unknown until then)
+- You can manually adjust the trigger price in the GUI, which will update the Nautilus order
+- The `reduce_only` option is available
+- When the position associated with a trailing stop is closed, the trailing stop is automatically "deactivated" (closed) on the venue side
+
+### Limitations for SPOT
+
+The following limitations apply to SPOT products, as positions are not tracked on the venue side:
+
+- `reduce_only` orders are not supported
+- Trailing stop orders are not supported
 
 ## Configuration
 
@@ -91,15 +113,14 @@ The product types for each client must be specified in the configurations.
 
 ### Data clients
 
-For data clients, if no product types are specified then all product types will
-be loaded and available.
+If no product types are specified then all product types will be loaded and available.
 
 ### Execution clients
 
-For execution clients, there is a limitation that
-you cannot specify `SPOT` with any of the other derivative product types.
+Because Nautilus does not support a "unified" account, the account type must be either cash **or** margin.
+This means there is a limitation that you cannot specify SPOT with any of the other derivative product types.
 
-- `CASH` account type will be used for `SPOT` products
+- `CASH` account type will be used for SPOT products
 - `MARGIN` account type will be used for all other derivative products
 
 The most common use case is to configure a live `TradingNode` to include Bybit
