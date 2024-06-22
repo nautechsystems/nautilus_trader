@@ -203,6 +203,31 @@ def test_loader_mbo() -> None:
     assert delta.ts_init == 1609160400000704060
 
 
+def test_loader_mbo_pyo3() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "mbo.dbn.zst"
+
+    # Act
+    data = loader.from_dbn_file(path, as_legacy_cython=False)
+
+    # Assert
+    assert len(data) == 2
+    assert isinstance(data[0], nautilus_pyo3.OrderBookDelta)
+    assert isinstance(data[1], nautilus_pyo3.OrderBookDelta)
+    delta = data[0]
+    assert delta.instrument_id == nautilus_pyo3.InstrumentId.from_str("ESH1.GLBX")
+    assert delta.action == nautilus_pyo3.BookAction.DELETE
+    assert delta.order.side == nautilus_pyo3.OrderSide.SELL
+    assert delta.order.price == nautilus_pyo3.Price.from_str("3722.75")
+    assert delta.order.size == nautilus_pyo3.Quantity.from_int(1)
+    assert delta.order.order_id == 647784973705
+    assert delta.flags == 128
+    assert delta.sequence == 1170352
+    assert delta.ts_event == 1609160400000704060
+    assert delta.ts_init == 1609160400000704060
+
+
 def test_loader_mbp_1() -> None:
     # Arrange
     loader = DatabentoDataLoader()
@@ -221,6 +246,28 @@ def test_loader_mbp_1() -> None:
     assert quote.ask_price == Price.from_str("3720.50")
     assert quote.bid_size == Quantity.from_int(24)
     assert quote.ask_size == Quantity.from_int(11)
+    assert quote.ts_event == 1609160400006136329
+    assert quote.ts_init == 1609160400006136329
+
+
+def test_loader_mbp_1_pyo3() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "mbp-1.dbn.zst"
+
+    # Act
+    data = loader.from_dbn_file(path, as_legacy_cython=False)
+
+    # Assert
+    assert len(data) == 2
+    assert isinstance(data[0], nautilus_pyo3.QuoteTick)
+    assert isinstance(data[1], nautilus_pyo3.QuoteTick)
+    quote = data[0]
+    assert quote.instrument_id == nautilus_pyo3.InstrumentId.from_str("ESH1.GLBX")
+    assert quote.bid_price == nautilus_pyo3.Price.from_str("3720.25")
+    assert quote.ask_price == nautilus_pyo3.Price.from_str("3720.50")
+    assert quote.bid_size == nautilus_pyo3.Quantity.from_int(24)
+    assert quote.ask_size == nautilus_pyo3.Quantity.from_int(11)
     assert quote.ts_event == 1609160400006136329
     assert quote.ts_init == 1609160400006136329
 
@@ -259,6 +306,40 @@ def test_loader_mbp_10() -> None:
     assert depth.ask_counts == [8, 24, 25, 17, 19, 33, 40, 38, 35, 26]
 
 
+def test_loader_mbp_10_pyo3() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "mbp-10.dbn.zst"
+
+    # Act
+    data = loader.from_dbn_file(path, as_legacy_cython=False)
+
+    # Assert
+    assert len(data) == 2
+    assert isinstance(data[0], nautilus_pyo3.OrderBookDepth10)
+    assert isinstance(data[1], nautilus_pyo3.OrderBookDepth10)
+    depth = data[0]
+    assert depth.instrument_id == nautilus_pyo3.InstrumentId.from_str("ESH1.GLBX")
+    assert len(depth.bids) == 10
+    assert len(depth.asks) == 10
+    assert depth.bids[0].price == nautilus_pyo3.Price.from_str("3720.25")
+    assert depth.bids[0].size == nautilus_pyo3.Quantity.from_int(24)
+    assert depth.asks[0].price == nautilus_pyo3.Price.from_str("3720.50")
+    assert depth.asks[0].size == nautilus_pyo3.Quantity.from_int(10)
+    assert depth.bid_counts == [15, 18, 23, 26, 35, 28, 35, 39, 32, 39]
+    assert depth.ask_counts == [8, 24, 25, 17, 19, 33, 40, 38, 35, 26]
+    depth = data[1]
+    assert depth.instrument_id == nautilus_pyo3.InstrumentId.from_str("ESH1.GLBX")
+    assert len(depth.bids) == 10
+    assert len(depth.asks) == 10
+    assert depth.bids[0].price == nautilus_pyo3.Price.from_str("3720.25")
+    assert depth.bids[0].size == nautilus_pyo3.Quantity.from_int(24)
+    assert depth.asks[0].price == nautilus_pyo3.Price.from_str("3720.50")
+    assert depth.asks[0].size == nautilus_pyo3.Quantity.from_int(10)
+    assert depth.bid_counts == [15, 17, 23, 26, 35, 28, 35, 39, 32, 39]
+    assert depth.ask_counts == [8, 24, 25, 17, 19, 33, 40, 38, 35, 26]
+
+
 def test_loader_tbbo_quotes() -> None:
     # Arrange
     loader = DatabentoDataLoader()
@@ -276,6 +357,27 @@ def test_loader_tbbo_quotes() -> None:
     assert quote.ask_price == Price.from_str("3720.50")
     assert quote.bid_size == Quantity.from_int(26)
     assert quote.ask_size == Quantity.from_int(7)
+    assert quote.ts_event == 1609160400099150057
+    assert quote.ts_init == 1609160400099150057
+
+
+def test_loader_tbbo_quotes_pyo3() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "tbbo.dbn.zst"
+
+    # Act
+    data = loader.from_dbn_file(path, as_legacy_cython=False)
+
+    # Assert
+    assert len(data) == 2
+    assert isinstance(data[0], nautilus_pyo3.QuoteTick)
+    quote = data[0]
+    assert quote.instrument_id == nautilus_pyo3.InstrumentId.from_str("ESH1.GLBX")
+    assert quote.bid_price == nautilus_pyo3.Price.from_str("3720.25")
+    assert quote.ask_price == nautilus_pyo3.Price.from_str("3720.50")
+    assert quote.bid_size == nautilus_pyo3.Quantity.from_int(26)
+    assert quote.ask_size == nautilus_pyo3.Quantity.from_int(7)
     assert quote.ts_event == 1609160400099150057
     assert quote.ts_init == 1609160400099150057
 
@@ -338,6 +440,28 @@ def test_loader_trades() -> None:
     assert trade.ts_init == 1609160400099150057
 
 
+def test_loader_trades_pyo3() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "trades.dbn.zst"
+
+    # Act
+    data = loader.from_dbn_file(path, as_legacy_cython=False)
+
+    # Assert
+    assert len(data) == 2
+    assert isinstance(data[0], nautilus_pyo3.TradeTick)
+    assert isinstance(data[1], nautilus_pyo3.TradeTick)
+    trade = data[0]
+    assert trade.instrument_id == nautilus_pyo3.InstrumentId.from_str("ESH1.GLBX")
+    assert trade.price == nautilus_pyo3.Price.from_str("3720.25")
+    assert trade.size == nautilus_pyo3.Quantity.from_int(5)
+    assert trade.aggressor_side == nautilus_pyo3.AggressorSide.SELLER
+    assert trade.trade_id == nautilus_pyo3.TradeId("1170380")
+    assert trade.ts_event == 1609160400099150057
+    assert trade.ts_init == 1609160400099150057
+
+
 @pytest.mark.skip("development_only")
 def test_loader_with_trades_large() -> None:
     # Arrange
@@ -390,6 +514,25 @@ def test_loader_with_ohlcv_1m() -> None:
     bar = data[0]
     assert bar.bar_type == BarType.from_str("ESH1.GLBX-1-MINUTE-LAST-EXTERNAL")
     assert bar.open == Price.from_str("3720.25")
+    assert bar.ts_event == 1609160400000000000
+    assert bar.ts_init == 1609160460000000000
+
+
+def test_loader_with_ohlcv_1m_pyo3() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "ohlcv-1m.dbn.zst"
+
+    # Act
+    data = loader.from_dbn_file(path, as_legacy_cython=False)
+
+    # Assert
+    assert len(data) == 2
+    assert isinstance(data[0], nautilus_pyo3.Bar)
+    assert isinstance(data[1], nautilus_pyo3.Bar)
+    bar = data[0]
+    assert bar.bar_type == nautilus_pyo3.BarType.from_str("ESH1.GLBX-1-MINUTE-LAST-EXTERNAL")
+    assert bar.open == nautilus_pyo3.Price.from_str("3720.25")
     assert bar.ts_event == 1609160400000000000
     assert bar.ts_init == 1609160460000000000
 

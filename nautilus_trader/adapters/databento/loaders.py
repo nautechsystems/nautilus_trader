@@ -178,10 +178,14 @@ class DatabentoDataLoader:
                     drop_cvec_pycapsule(capsule)
                     return data
                 else:
+                    if include_trades:
+                        raise RuntimeError(
+                            "Cannot load `OrderBookDelta` and `Trade` objects together, "
+                            "set `include_trades` to False",
+                        )
                     return self._pyo3_loader.load_order_book_deltas(
                         path=str(path),
                         instrument_id=pyo3_instrument_id,
-                        include_trades=include_trades,
                     )
             case DatabentoSchema.MBP_1.value | DatabentoSchema.TBBO.value:
                 if as_legacy_cython:
@@ -195,10 +199,14 @@ class DatabentoDataLoader:
                     drop_cvec_pycapsule(capsule)
                     return data
                 else:
+                    if include_trades:
+                        raise RuntimeError(
+                            "Cannot load `QuoteTick` and `TradeTick` objects together, "
+                            "set `include_trades` to False",
+                        )
                     return self._pyo3_loader.load_quotes(
                         path=str(path),
                         instrument_id=pyo3_instrument_id,
-                        include_trades=include_trades,
                     )
             case DatabentoSchema.MBP_10.value:
                 if as_legacy_cython:
