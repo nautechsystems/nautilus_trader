@@ -11,7 +11,7 @@ An integrations adapter is _typically_ comprised of the following main component
 - `DataClient`
 - `ExecutionClient`
 
-## Instrument Providers
+## Instrument providers
 
 Instrument providers do as their name suggests - instantiating Nautilus 
 `Instrument` objects by parsing the publisher or venues raw API.
@@ -20,7 +20,7 @@ The use cases for the instruments available from an `InstrumentProvider` are eit
 - Used standalone to discover the instruments available for an integration, using these for research or backtesting purposes
 - Used in a sandbox or live trading environment context for consumption by actors/strategies
 
-### Research/Backtesting
+### Research and backtesting
 
 Here is an example of discovering the current instruments for the Binance Futures testnet:
 ```python
@@ -51,7 +51,7 @@ provider = BinanceFuturesInstrumentProvider(
 await provider.load_all_async()
 ```
 
-### Live Trading
+### Live trading
 
 Each integration is implementation specific, and there are generally two options for the behavior of an `InstrumentProvider` within a `TradingNode` for live trading,
 as configured:
@@ -70,7 +70,7 @@ InstrumentProviderConfig(load_all=True)
 InstrumentProviderConfig(load_ids=["BTCUSDT-PERP.BINANCE", "ETHUSDT-PERP.BINANCE"])
 ```
 
-## Data Clients
+## Data clients
 
 ### Requests
 

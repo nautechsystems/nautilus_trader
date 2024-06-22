@@ -33,7 +33,7 @@ The main capabilities of a strategy include:
 - Portfolio access
 - Creating and managing orders and positions
 
-## Implementation
+## Strategy implementation
 
 Since a trading strategy is a class which inherits from `Strategy`, you must define
 a constructor where you can handle initialization. Minimally the base/super class needs to be initialized:
@@ -509,7 +509,7 @@ self.modify_order(order, new_quantity)
 The price and trigger price can also be modified (when emulated or supported by a venue).
 :::
 
-## Configuration
+## Strategy configuration
 
 The main purpose of a separate configuration class is to provide total flexibility
 over where and how a trading strategy can be instantiated. This includes being able
@@ -598,6 +598,6 @@ various commands and events belong to. A strategy ID is made up of the
 strategy class name, and the strategies `order_id_tag` separated by a hyphen. For
 example the above config would result in a strategy ID of `MyStrategy-001`.
 
-:::tip
-See the `StrategyId` [documentation](../api_reference/model/identifiers.md) for further details.
+:::note
+See the `StrategyId` [API Reference](../api_reference/model/identifiers.md) for further details.
 :::

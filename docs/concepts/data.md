@@ -8,7 +8,7 @@ a trading domain:
 - `OrderBookDepth10` - Aggregated order book snapshot (10 levels per side)
 - `QuoteTick` - Top-of-book best bid and ask prices and sizes
 - `TradeTick` - A single trade/match event between counterparties
-- `Bar` - OHLCV 'bar' data, aggregated using a specific *method*
+- `Bar` - OHLCV bar data, aggregated using a specific *method*
 - `Instrument` - General base class for a tradable instrument
 - `VenueStatus` - A venue level status event
 - `InstrumentStatus` - An instrument level status event
@@ -68,6 +68,7 @@ of the Nautilus core, currently in development.
 3. DataWrangler further processes the `pd.DataFrame` to generate a list of Nautilus objects
 4. The Nautilus `list[Data]` is the output of the data loading process
 
+This diagram illustrates how raw data is transformed into Nautilus data structures.
 ```
   ┌──────────┐    ┌──────────────────────┐                  ┌──────────────────────┐
   │          │    │                      │                  │                      │
@@ -79,7 +80,6 @@ of the Nautilus core, currently in development.
   │          │    │                      │                  │                      │
   └──────────┘    └──────────────────────┘                  └──────────────────────┘
 
-- This diagram illustrates how raw data is transformed into Nautilus data structures.
 ```
 
 Conceretely, this would involve:
@@ -165,7 +165,7 @@ If not provided, a default naming scheme will be applied. This parameter should 
 keyword argument, like `write_data(data, basename_template="{date}")`.
 
 :::warning
-Any existing data which already exists under a filename will be overwritten.
+Any data which already exists under a filename will be overwritten.
 If a `basename_template` is not provided, then its very likely existing data for the data type and instrument ID will
 be overwritten. To prevent data loss, ensure that the `basename_template` (or the default naming scheme)
 generates unique filenames for different data sets.
