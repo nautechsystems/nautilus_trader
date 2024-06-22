@@ -197,7 +197,6 @@ class BybitExecutionClient(LiveExecutionClient):
             OrderType.MARKET_IF_TOUCHED: self._submit_market_if_touched_order,
             OrderType.LIMIT_IF_TOUCHED: self._submit_limit_if_touched_order,
             OrderType.TRAILING_STOP_MARKET: self._submit_trailing_stop_market,
-            OrderType.TRAILING_STOP_LIMIT: self._submit_trailing_stop_limit,
         }
 
         # Decoders
@@ -298,7 +297,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 OrderType.TRAILING_STOP_MARKET,
                 OrderType.TRAILING_STOP_LIMIT,
             ):
-                # Cannot query with client order ID for trailing stops
+                self._log.warning("Cannot query with client order ID for trailing stops")
                 client_order_id = None
 
         retries = self._generate_order_status_retries.get(client_order_id, 0)
@@ -311,7 +310,7 @@ class BybitExecutionClient(LiveExecutionClient):
             return None
         self._log.info(
             f"Generating OrderStatusReport for "
-            f"{repr(client_order_id) if client_order_id else ''}, "
+            f"{repr(client_order_id) if client_order_id else ''} "
             f"{repr(venue_order_id) if venue_order_id else ''}",
         )
         try:
@@ -808,20 +807,7 @@ class BybitExecutionClient(LiveExecutionClient):
             symbol=bybit_symbol.raw_symbol,
             sl_order_type=BybitOrderType.MARKET,
             sl_quantity=str(order.quantity),
-            trigger_type=trigger_type,
-            trailing_offset=str(order.trailing_offset),
-        )
-
-    async def _submit_trailing_stop_limit(self, order: TrailingStopLimitOrder) -> None:
-        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
-        product_type = bybit_symbol.product_type
-        trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
-        self._pending_trailing_stops[order.client_order_id] = order
-        await self._http_account.set_trading_stop(
-            product_type=product_type,
-            symbol=bybit_symbol.raw_symbol,
-            sl_order_type=BybitOrderType.LIMIT,
-            sl_quantity=str(order.quantity),
+            tpsl_mode=BybitTpSlMode.FULL,
             trigger_type=trigger_type,
             trailing_offset=str(order.trailing_offset),
         )
@@ -1024,7 +1010,15 @@ class BybitExecutionClient(LiveExecutionClient):
                         venue_order_id=report.venue_order_id,
                         ts_event=report.ts_last,
                     )
-                elif bybit_order.orderStatus == BybitOrderStatus.TRIGGERED:
+                elif (
+                    bybit_order.orderStatus == BybitOrderStatus.TRIGGERED
+                    and order.order_type
+                    not in (
+                        OrderType.MARKET_IF_TOUCHED,
+                        OrderType.STOP_MARKET,
+                        OrderType.TRAILING_STOP_MARKET,
+                    )
+                ):
                     self.generate_order_triggered(
                         strategy_id=strategy_id,
                         instrument_id=report.instrument_id,

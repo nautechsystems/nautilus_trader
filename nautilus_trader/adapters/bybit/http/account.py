@@ -278,6 +278,7 @@ class BybitAccountHttpAPI:
         sl_order_type: BybitOrderType | None = None,
         trigger_type: BybitTriggerType | None = None,
         trailing_offset: str | None = None,  # By price
+        tpsl_mode: BybitTpSlMode | None = None,
         tp_quantity: str | None = None,
         sl_quantity: str | None = None,
         tp_limit_price: str | None = None,
@@ -295,10 +296,13 @@ class BybitAccountHttpAPI:
                 slTriggerBy=trigger_type if product_type != BybitProductType.SPOT else None,
                 tpTriggerBy=trigger_type if product_type != BybitProductType.SPOT else None,
                 activePrice=None,  # Immediately active
+                tpslMode=tpsl_mode,
                 tpSize=tp_quantity,
                 slSize=sl_quantity,
                 tpLimitPrice=tp_limit_price,
                 slLimitPrice=sl_limit_price,
+                tpOrderType=tp_order_type,
+                slOrderType=sl_order_type,
             ),
         )
 
