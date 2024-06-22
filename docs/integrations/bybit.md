@@ -75,18 +75,15 @@ The BTCUSD inverse perpetual futures contract is identified with:
 
 ## Order types
 
-:::warning
-Only Market and Limit orders have been tested and are available.
-The remaining order types will be added on a best effort basis going forward.
-:::
-
 |                        | Spot                 | Derivatives (Linear, Inverse, Options)  |
 |------------------------|----------------------|-----------------------------------------|
 | `MARKET`               | ✓                    | ✓                                       |
 | `LIMIT`                | ✓                    | ✓                                       |
-| `STOP_MARKET`          |                      |                                         |
-| `STOP_LIMIT`           |                      |                                         |
-| `TRAILING_STOP_MARKET` |                      |                                         |
+| `STOP_MARKET`          | ✓                    | ✓                                       |
+| `STOP_LIMIT`           | ✓                    | ✓                                       |
+| `MARKET_IF_TOUCHED`    | ✓                    | ✓                                       |
+| `LIMIT_IF_TOUCHED`     | ✓                    | ✓                                       |
+| `TRAILING_STOP_MARKET` | ✓                    | ✓                                       |
 
 ## Configuration
 
