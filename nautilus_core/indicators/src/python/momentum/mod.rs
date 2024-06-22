@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod amat;
 pub mod aroon;
 pub mod bias;
 pub mod cmo;
