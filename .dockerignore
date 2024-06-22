@@ -204,3 +204,4 @@ cython_debug/
 # Nautilus
 docs/
 tests/
+!docs/tutorials
