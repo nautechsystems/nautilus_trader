@@ -13,49 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_infrastructure::sql::{
-    cache_database::PostgresCacheDatabase,
-    pg::{connect_pg, delete_nautilus_postgres_tables, PostgresConnectOptions},
-};
-use sqlx::PgPool;
-
-#[must_use]
-pub fn get_test_pg_connect_options(username: &str) -> PostgresConnectOptions {
-    PostgresConnectOptions::new(
-        "localhost".to_string(),
-        5432,
-        username.to_string(),
-        "pass".to_string(),
-        "nautilus".to_string(),
-    )
-}
-pub async fn get_pg(username: &str) -> PgPool {
-    let pg_connect_options = get_test_pg_connect_options(username);
-    connect_pg(pg_connect_options.into()).await.unwrap()
-}
-
-pub async fn initialize() -> anyhow::Result<()> {
-    // get pg pool with root postgres user to drop & create schema
-    let pg_pool = get_pg("postgres").await;
-    delete_nautilus_postgres_tables(&pg_pool).await.unwrap();
-    Ok(())
-}
-
-pub async fn get_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
-    initialize().await.unwrap();
-    // run tests as nautilus user
-    let connect_options = get_test_pg_connect_options("nautilus");
-    Ok(PostgresCacheDatabase::connect(
-        Some(connect_options.host),
-        Some(connect_options.port),
-        Some(connect_options.username),
-        Some(connect_options.password),
-        Some(connect_options.database),
-    )
-    .await
-    .unwrap())
-}
-
 #[cfg(test)]
 #[cfg(target_os = "linux")] // Databases only supported on Linux
 mod tests {
@@ -66,6 +23,7 @@ mod tests {
         testing::{wait_until, wait_until_async},
     };
     use nautilus_core::equality::entirely_equal;
+    use nautilus_infrastructure::sql::cache_database::get_pg_cache_database;
     use nautilus_model::{
         enums::{CurrencyType, OrderSide, OrderStatus},
         identifiers::{
@@ -84,8 +42,6 @@ mod tests {
     };
     use serial_test::serial;
     use ustr::Ustr;
-
-    use crate::get_pg_cache_database;
 
     #[tokio::test(flavor = "multi_thread")]
     #[serial]

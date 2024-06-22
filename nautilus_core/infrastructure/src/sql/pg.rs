@@ -13,12 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use derive_builder::Builder;
 use sqlx::{postgres::PgConnectOptions, query, ConnectOptions, PgPool};
 use tracing::log::{error, info};
 
 use crate::sql::NAUTILUS_TABLES;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Builder)]
+#[builder(default)]
 pub struct PostgresConnectOptions {
     pub host: String,
     pub port: u16,
@@ -43,6 +45,18 @@ impl PostgresConnectOptions {
             password,
             database,
         }
+    }
+}
+
+impl Default for PostgresConnectOptions {
+    fn default() -> Self {
+        PostgresConnectOptions::new(
+            String::from("localhost"),
+            5432,
+            String::from("nautilus"),
+            String::from("pass"),
+            String::from("nautilus"),
+        )
     }
 }
 

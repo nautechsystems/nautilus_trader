@@ -2680,6 +2680,7 @@ name = "nautilus-infrastructure"
 version = "0.26.0"
 dependencies = [
  "anyhow",
+ "derive_builder",
  "log",
  "nautilus-common",
  "nautilus-core",
