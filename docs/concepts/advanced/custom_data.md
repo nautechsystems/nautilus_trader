@@ -1,6 +1,6 @@
 # Custom Data
 Due to the modular nature of the Nautilus design, it is possible to set up systems 
-with very flexible data streams, including custom user defined data types. This
+with very flexible data streams, including custom user-defined data types. This
 guide covers some possible use cases for this functionality.
 
 It's possible to create custom data types within the Nautilus system. First you

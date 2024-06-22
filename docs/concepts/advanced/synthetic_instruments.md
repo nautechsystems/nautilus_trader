@@ -110,5 +110,7 @@ Considerable effort has been made to validate inputs, including the derivation f
 synthetic instruments. Despite this, caution is advised as invalid or erroneous inputs may lead to 
 undefined behavior. 
 
-Refer to the `SyntheticInstrument` [API reference](../../api_reference/model/instruments.md#class-syntheticinstrumentsymbol-symbol-uint8_t-price_precision-list-components-unicode-formula-uint64_t-ts_event-uint64_t-ts_init)
+:::info
+See the `SyntheticInstrument` [API reference](../../api_reference/model/instruments.md#class-syntheticinstrument-1)
 for a detailed understanding of input requirements and potential exceptions.
+:::

@@ -56,7 +56,7 @@ autodoc_class_signature = "separated"
 # -- Extension configuration -------------------------------------------------
 autodoc_default_options = {
     "members": True,
-    "undoc-members": True,
+    "undoc-members": False,
     "private-members": False,
     "exclude-members": "__init__,__new__",
     "show-inheritance": True,

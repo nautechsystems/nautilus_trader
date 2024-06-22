@@ -4,22 +4,28 @@ The heart of the NautilusTrader user experience is in writing and working with
 trading strategies. Defining a trading strategy is achieved by inheriting the `Strategy` class, 
 and implementing the methods required by the users trading strategy logic.
 
+Strategies can be added to Nautilus systems with any [environment context](/docs/concepts/architecture.md#environment-contexts) and will start sending commands and receiving
+events based on their logic as soon as the system starts.
+
 Using the basic building blocks of data ingest, event handling, and order management (which we will discuss
 below), it's possible to implement any type of trading strategy including directional, momentum, re-balancing,
 pairs, market making etc.
 
-Refer to the `Strategy` in the [API Reference](../api_reference/trading.md) for a complete description
+:::info
+See the `Strategy` [API Reference](../api_reference/trading.md) for a complete description
 of all available methods.
+:::
 
 There are two main parts of a Nautilus trading strategy:
 - The strategy implementation itself, defined by inheriting the `Strategy` class
 - The _optional_ strategy configuration, defined by inheriting the `StrategyConfig` class
 
-:::note
+:::tip
 Once a strategy is defined, the same source can be used for backtesting and live trading.
 :::
 
 The main capabilities of a strategy include:
+
 - Historical data requests
 - Live data feed subscriptions
 - Setting time alerts or timers
@@ -40,23 +46,24 @@ class MyStrategy(Strategy):
         super().__init__()  # <-- the super class must be called to initialize the strategy
 ```
 
-:::warning
-Do not call components such as `clock` and `logger` in the `__init__` constructor (which is prior to registration).
-This is because the systems clock and MPSC channel thread for logging have not yet been setup on initialization.
-:::
-
 From here, you can implement handlers as necessary to perform actions based on state transitions
 and events.
 
+:::warning
+Do not call components such as `clock` and `logger` in the `__init__` constructor (which is prior to registration).
+This is because the systems clock and logging system have not yet been initialized.
+:::
+
 ### Handlers
 
-Handlers are methods within the `Strategy` class which may perform actions based on different types of events or state changes.
+Handlers are methods within the `Strategy` class which may perform actions based on different types of events or on state changes.
 These methods are named with the prefix `on_*`. You can choose to implement any or all of these handler 
-methods depending on the specific needs of your strategy.
+methods depending on the specific goals and needs of your strategy.
 
 The purpose of having multiple handlers for similar types of events is to provide flexibility in handling granularity. 
 This means that you can choose to respond to specific events with a dedicated handler, or use a more generic
-handler to react to a range of related events (using switch type logic). The call sequence is generally most specific to most general.
+handler to react to a range of related events (using typical switch statement logic).
+The handlers are called in sequence from the most specific to the most general.
 
 #### Stateful actions
 
@@ -73,14 +80,14 @@ def on_reset(self) -> None:
 def on_dispose(self) -> None:
 def on_degrade(self) -> None:
 def on_fault(self) -> None:
-def on_save(self) -> dict[str, bytes]:  # Returns user defined dictionary of state to be saved
+def on_save(self) -> dict[str, bytes]:  # Returns user-defined dictionary of state to be saved
 def on_load(self, state: dict[str, bytes]) -> None:
 ```
 
 #### Data handling
 
-These handlers deal with market data updates.
-You can use these handlers to define actions upon receiving new market data.
+These handlers receive data updates, including built-in market data and custom user-defined data.
+You can use these handlers to define actions upon receiving data object instances.
 
 ```python
 from nautilus_trader.core.data import Data
@@ -109,7 +116,7 @@ def on_data(self, data: Data) -> None:  # Custom data passed to this handler
 
 #### Order management
 
-Handlers in this category are triggered by events related to orders.
+These handlers receive events related to orders.
 `OrderEvent` type messages are passed to handlers in the following sequence:
 
 1. Specific handler (e.g., `on_order_accepted`, `on_order_rejected`, etc.)
@@ -156,7 +163,7 @@ def on_order_event(self, event: OrderEvent) -> None:  # All order event messages
 
 #### Position management
 
-Handlers in this category are triggered by events related to positions.
+These handlers receive events related to positions.
 `PositionEvent` type messages are passed to handlers in the following sequence:
 
 1. Specific handler (e.g., `on_position_opened`, `on_position_changed`, etc.)
@@ -219,8 +226,8 @@ def on_start(self) -> None:
 
 ### Clock and timers
 
-Strategies have access to a comprehensive `Clock` which provides a number of methods for creating
-different timestamps, as well as setting time alerts or timers.
+Strategies have access to a `Clock` which provides a number of methods for creating
+different timestamps, as well as setting time alerts or timers to trigger `TimeEvent`s.
 
 :::info
 See the `Clock` [API reference](../api_reference/common.md) for a complete list of available methods.
@@ -271,7 +278,7 @@ self.clock.set_timer(
 
 ### Cache access
 
-The traders central `Cache` can be accessed to fetch data and execution objects (orders, positions etc).
+The trader instances central `Cache` can be accessed to fetch data and execution objects (orders, positions etc).
 There are many methods available often with filtering functionality, here we go through some basic use cases.
 
 #### Fetching data
@@ -281,7 +288,7 @@ The following example shows how data can be fetched from the cache (assuming som
 ```python
 last_quote = self.cache.quote_tick(self.instrument_id)
 last_trade = self.cache.trade_tick(self.instrument_id)
-last_bar = self.cache.bar(<SOME_BAR_TYPE>)
+last_bar = self.cache.bar(bar_type)
 ```
 
 #### Fetching execution objects
@@ -289,13 +296,15 @@ last_bar = self.cache.bar(<SOME_BAR_TYPE>)
 The following example shows how individual order and position objects can be fetched from the cache:
 
 ```python
-order = self.cache.order(<SOME_CLIENT_ORDER_ID>)
-position = self.cache.position(<SOME_POSITION_ID>)
+order = self.cache.order(client_order_id)
+position = self.cache.position(position_id)
 
 ```
 
-Refer to the `Cache` in the [API Reference](../api_reference/cache.md) for a complete description
+:::info
+See the `Cache` [API Reference](../api_reference/cache.md) for a complete description
 of all available methods.
+:::
 
 ### Portfolio access
 
@@ -331,8 +340,10 @@ def is_flat(self, instrument_id: InstrumentId) -> bool
 def is_completely_flat(self) -> bool
 ```
 
-Refer to the `Portfolio` in the [API Reference](../api_reference/portfolio.md) for a complete description
+:::info
+See the `Portfolio` [API Reference](../api_reference/portfolio.md) for a complete description
 of all available methods.
+:::
 
 #### Reports and analysis
 
@@ -340,8 +351,10 @@ The `Portfolio` also makes a `PortfolioAnalyzer` available, which can be fed wit
 (to accommodate different lookback windows). The analyzer can provide tracking for and generating of performance
 metrics and statistics.
 
-Refer to the `PortfolioAnalyzer` in the [API Reference](../api_reference/analysis.md) for a complete description
+:::info
+See the `PortfolioAnalyzer` [API Reference](../api_reference/analysis.md) for a complete description
 of all available methods.
+:::
 
 :::info
 See the [Porfolio statistics](../concepts/advanced/portfolio_statistics.md) guide.

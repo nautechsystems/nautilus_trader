@@ -7,7 +7,7 @@ and lifetimes at compile time.
 
 Furthermore, due to the absence of a built-in runtime and garbage collector, along with the
 language's ability to access the lowest-level primitives, we can anticipate that future implementations
-will be highly performant. This combination of accuracy and performance is highly prized for a high-frequency
+will be highly performant. This combination of accuracy and performance is highly valued for a high-frequency
 trading (HFT) platform.
 
 ## Python Binding

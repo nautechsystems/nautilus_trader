@@ -49,7 +49,7 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 - **Portable:** OS independent, runs on Linux, macOS, Windows. Deploy using Docker
 - **Flexible:** Modular adapters mean any REST, WebSocket, or FIX API can be integrated
 - **Advanced:** Time in force `IOC`, `FOK`, `GTD`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO`
-- **Customizable:** Add user defined custom components, or assemble entire systems from scratch leveraging the cache and message bus
+- **Customizable:** Add user-defined custom components, or assemble entire systems from scratch leveraging the cache and message bus
 - **Backtesting:** Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution
 - **Live:** Use identical strategy implementations between backtesting and live deployments
 - **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies
@@ -138,7 +138,7 @@ into a unified interface. The following integrations are currently supported:
 - `beta` - Completed to a minimally working state and in a 'beta' testing phase
 - `stable` - Stabilized feature set and API, the integration has been tested by both developers and users to a reasonable level (some bugs may still remain)
 
-Refer to the [Integrations](https://nautilustrader.io/docs/integrations/index.html) documentation for further details.
+See the [Integrations](https://nautilustrader.io/docs/integrations/index.html) documentation for further details.
 
 ## Installation
 
@@ -208,7 +208,7 @@ as specified in the `pyproject.toml`. However, we highly recommend installing us
        cd nautilus_trader
        poetry install --only main --all-extras
 
-Refer to the [Installation Guide](https://nautilustrader.io/docs/getting_started/installation.html) for other options and further details.
+See the [Installation Guide](https://nautilustrader.io/docs/getting_started/installation.html) for other options and further details.
 
 ## Versioning and releases
 
@@ -411,7 +411,7 @@ class EMACross(Strategy):
 ## Development
 
 We aim to provide the most pleasant developer experience possible for this hybrid codebase of Python, Cython and Rust.
-Refer to the [Developer Guide](https://nautilustrader.io/docs/developer_guide/index.html) for helpful information.
+See the [Developer Guide](https://nautilustrader.io/docs/developer_guide/index.html) for helpful information.
 
 [cargo-nextest](https://nexte.st) is the standard Rust test runner for NautilusTrader. You can install it by running:
 

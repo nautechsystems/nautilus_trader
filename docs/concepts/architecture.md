@@ -4,7 +4,7 @@ Welcome to the architectural overview of NautilusTrader.
 
 This guide dives deep into the foundational principles, structures, and designs that underpin
 the platform. Whether you're a developer, system architect, or just curious about the inner workings 
-of NautilusTrader, this exposition covers:
+of NautilusTrader, this section covers:
 
 - The design philosophy that drives decisions and shapes the system's evolution
 - The overarching system architecture providing a bird's-eye view of the entire system framework
@@ -52,6 +52,11 @@ the runtime of a single Nautilus node (also known as a "trader instance").
 
 ### Environment contexts
 
+An environment context in NautilusTrader defines the type of data and trading venue you are working 
+with. Understanding these contexts is crucial for effective backtesting, development, and live trading.
+
+Here are the available environments you can work with:
+
 - `Backtest` - Historical data with simulated venues
 - `Sandbox` - Real-time data with simulated venues
 - `Live` - Real-time data with live venues (paper trading or real accounts)
@@ -63,7 +68,7 @@ This is formalized in the `system` subpackage, where you will find the `Nautilus
 providing a common core system 'kernel'.
 
 A _ports and adapters_ architectural style allows modular components to be 'plugged into' the
-core system, providing many hooks for user defined / custom component implementations.
+core system, providing many hooks for user-defined / custom component implementations.
 
 ### Messaging
 
