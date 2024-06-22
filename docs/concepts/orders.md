@@ -148,15 +148,14 @@ apply to the order type being created, or are only needed to specify more advanc
 This leaves the factory with simpler order creation methods to work with, all the
 examples will leverage an `OrderFactory` from within a `Strategy` context.
 
-[API Reference](../api_reference/common.md#class-orderfactorytraderid-trader_id-strategyid-strategy_id-clock-clock-cachefacade-cache-cachefacade--none--none-int-initial_order_id_count0-int-initial_order_list_id_count0)
-
 :::info
-Any optional parameters will be clearly marked with a comment which includes the default value.
+See the `OrderFactory` [API Reference](../api_reference/common.md#class-orderfactory) for more details.
 :::
 
 ## Order Types
 
 The following describes the order types which are available for the platform with a code example.
+Any optional parameters will be clearly marked with a comment which includes the default value.
 
 ### Market
 
@@ -185,7 +184,9 @@ order: MarketOrder = self.order_factory.market(
 )
 ```
 
-[API Reference](../api_reference/model/orders.md)
+:::info
+See the `MarketOrder` [API Reference](../api_reference/model/orders.md#class-marketorder) for more details.
+:::
 
 ### Limit
 
@@ -217,7 +218,9 @@ order: LimitOrder = self.order_factory.limit(
 )
 ```
 
-[API Reference](../api_reference/model/orders.md#class-limitordertraderid-trader_id-strategyid-strategy_id-instrumentid-instrument_id-clientorderid-client_order_id-orderside-order_side-quantity-quantity-price-price-uuid4-init_id-uint64_t-ts_init-timeinforce-time_in_forcetimeinforcegtc-uint64_t-expire_time_ns0-bool-post_onlyfalse-bool-reduce_onlyfalse-bool-quote_quantityfalse-quantity-display_qtynone-triggertype-emulation_triggertriggertypeno_trigger-instrumentid-trigger_instrument_idnone-contingencytype-contingency_typecontingencytypeno_contingency-orderlistid-order_list_idnone-list-linked_order_idsnone-clientorderid-parent_order_idnone-execalgorithmid-exec_algorithm_idnone-dict-exec_algorithm_paramsnone-clientorderid-exec_spawn_idnone-list-tagsnone)
+:::info
+See the `LimitOrder` [API Reference](../api_reference/model/orders.md#class-limitorder) for more details.
+:::
 
 ### Stop-Market
 
@@ -249,7 +252,10 @@ order: StopMarketOrder = self.order_factory.stop_market(
     tags=None,  # <-- optional (default None)
 )
 ```
-[API Reference](../api_reference/model/orders.md#class-stopmarketordertraderid-trader_id-strategyid-strategy_id-instrumentid-instrument_id-clientorderid-client_order_id-orderside-order_side-quantity-quantity-price-trigger_price-triggertype-trigger_type-uuid4-init_id-uint64_t-ts_init-timeinforce-time_in_forcetimeinforcegtc-uint64_t-expire_time_ns0-bool-reduce_onlyfalse-bool-quote_quantityfalse-triggertype-emulation_triggertriggertypeno_trigger-instrumentid-trigger_instrument_idnone-contingencytype-contingency_typecontingencytypeno_contingency-orderlistid-order_list_idnone-list-linked_order_idsnone-clientorderid-parent_order_idnone-execalgorithmid-exec_algorithm_idnone-dict-exec_algorithm_paramsnone-clientorderid-exec_spawn_idnone-list-tagsnone)
+
+:::info
+See the `StopMarketOrder` [API Reference](../api_reference/model/orders.md#class-stopmarketorder) for more details.
+:::
 
 ### Stop-Limit
 
@@ -283,7 +289,10 @@ order: StopLimitOrder = self.order_factory.stop_limit(
     tags=None,  # <-- optional (default None)
 )
 ```
-[API Reference](../api_reference/model/orders.md#class-stoplimitordertraderid-trader_id-strategyid-strategy_id-instrumentid-instrument_id-clientorderid-client_order_id-orderside-order_side-quantity-quantity-price-price-price-trigger_price-triggertype-trigger_type-uuid4-init_id-uint64_t-ts_init-timeinforce-time_in_forcetimeinforcegtc-uint64_t-expire_time_ns0-bool-post_onlyfalse-bool-reduce_onlyfalse-bool-quote_quantityfalse-quantity-display_qtynone-triggertype-emulation_triggertriggertypeno_trigger-instrumentid-trigger_instrument_idnone-contingencytype-contingency_typecontingencytypeno_contingency-orderlistid-order_list_idnone-list-linked_order_idsnone-clientorderid-parent_order_idnone-execalgorithmid-exec_algorithm_idnone-dict-exec_algorithm_paramsnone-clientorderid-exec_spawn_idnone-list-tagsnone)
+
+:::info
+See the `StopLimitOrder` [API Reference](../api_reference/model/orders.md#class-stoplimitorder) for more details.
+:::
 
 ### Market-To-Limit
 
@@ -312,7 +321,9 @@ order: MarketToLimitOrder = self.order_factory.market_to_limit(
 )
 ```
 
-[API Reference](../api_reference/model/orders.md#class-markettolimitordertraderid-trader_id-strategyid-strategy_id-instrumentid-instrument_id-clientorderid-client_order_id-orderside-order_side-quantity-quantity-uuid4-init_id-uint64_t-ts_init-timeinforce-time_in_forcetimeinforcegtc-uint64_t-expire_time_ns0-bool-reduce_onlyfalse-bool-quote_quantityfalse-quantity-display_qtynone-contingencytype-contingency_typecontingencytypeno_contingency-orderlistid-order_list_idnone-list-linked_order_idsnone-clientorderid-parent_order_idnone-execalgorithmid-exec_algorithm_idnone-dict-exec_algorithm_paramsnone-clientorderid-exec_spawn_idnone-list-tagsnone)
+:::info
+See the `MarketToLimitOrder` [API Reference](../api_reference/model/orders.md#class-markettolimitorder) for more details.
+:::
 
 ### Market-If-Touched
 
@@ -346,7 +357,9 @@ order: MarketIfTouchedOrder = self.order_factory.market_if_touched(
 )
 ```
 
-[API Reference](../api_reference/model/orders.md#class-marketiftouchedordertraderid-trader_id-strategyid-strategy_id-instrumentid-instrument_id-clientorderid-client_order_id-orderside-order_side-quantity-quantity-price-trigger_price-triggertype-trigger_type-uuid4-init_id-uint64_t-ts_init-timeinforce-time_in_forcetimeinforcegtc-uint64_t-expire_time_ns0-bool-reduce_onlyfalse-bool-quote_quantityfalse-triggertype-emulation_triggertriggertypeno_trigger-instrumentid-trigger_instrument_idnone-contingencytype-contingency_typecontingencytypeno_contingency-orderlistid-order_list_idnone-list-linked_order_idsnone-clientorderid-parent_order_idnone-execalgorithmid-exec_algorithm_idnone-dict-exec_algorithm_paramsnone-clientorderid-exec_spawn_idnone-list-tagsnone)
+:::info
+See the `MarketIfTouchedOrder` [API Reference](../api_reference/model/orders.md#class-marketiftouchedorder) for more details.
+:::
 
 ### Limit-If-Touched
 
@@ -382,7 +395,9 @@ order: StopLimitOrder = self.order_factory.limit_if_touched(
 )
 ```
 
-[API Reference](../api_reference/model/orders.md#class-limitiftouchedordertraderid-trader_id-strategyid-strategy_id-instrumentid-instrument_id-clientorderid-client_order_id-orderside-order_side-quantity-quantity-price-price-price-trigger_price-triggertype-trigger_type-uuid4-init_id-uint64_t-ts_init-timeinforce-time_in_forcetimeinforcegtc-uint64_t-expire_time_ns0-bool-post_onlyfalse-bool-reduce_onlyfalse-bool-quote_quantityfalse-quantity-display_qtynone-triggertype-emulation_triggertriggertypeno_trigger-instrumentid-trigger_instrument_idnone-contingencytype-contingency_typecontingencytypeno_contingency-orderlistid-order_list_idnone-list-linked_order_idsnone-clientorderid-parent_order_idnone-execalgorithmid-exec_algorithm_idnone-dict-exec_algorithm_paramsnone-clientorderid-exec_spawn_idnone-list-tagsnone)
+:::info
+See the `StopLimitOrder` [API Reference](../api_reference/model/orders.md#class-stoplimitorder-1) for more details.
+:::
 
 ### Trailing-Stop-Market
 
@@ -420,7 +435,9 @@ order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
 )
 ```
 
-[API Reference](../api_reference/model/orders.md#class-trailingstopmarketordertraderid-trader_id-strategyid-strategy_id-instrumentid-instrument_id-clientorderid-client_order_id-orderside-order_side-quantity-quantity-price-trigger_price-price--none-triggertype-trigger_type-trailing_offset-decimal-trailingoffsettype-trailing_offset_type-uuid4-init_id-uint64_t-ts_init-timeinforce-time_in_forcetimeinforcegtc-uint64_t-expire_time_ns0-bool-reduce_onlyfalse-bool-quote_quantityfalse-triggertype-emulation_triggertriggertypeno_trigger-instrumentid-trigger_instrument_idnone-contingencytype-contingency_typecontingencytypeno_contingency-orderlistid-order_list_idnone-list-linked_order_idsnone-clientorderid-parent_order_idnone-execalgorithmid-exec_algorithm_idnone-dict-exec_algorithm_paramsnone-clientorderid-exec_spawn_idnone-list-tagsnone)
+:::info
+See the `TrailingStopMarketOrder` [API Reference](../api_reference/model/orders.md#class-trailingstopmarketorder-1) for more details.
+:::
 
 ### Trailing-Stop-Limit
 
@@ -461,4 +478,6 @@ order: TrailingStopLimitOrder = self.order_factory.trailing_stop_limit(
 )
 ```
 
-[API Reference](../api_reference/model/orders.md#class-trailingstoplimitordertraderid-trader_id-strategyid-strategy_id-instrumentid-instrument_id-clientorderid-client_order_id-orderside-order_side-quantity-quantity-price-price-price--none-price-trigger_price-price--none-triggertype-trigger_type-limit_offset-decimal-trailing_offset-decimal-trailingoffsettype-trailing_offset_type-uuid4-init_id-uint64_t-ts_init-timeinforce-time_in_forcetimeinforcegtc-uint64_t-expire_time_ns0-bool-post_onlyfalse-bool-reduce_onlyfalse-bool-quote_quantityfalse-quantity-display_qtynone-triggertype-emulation_triggertriggertypeno_trigger-instrumentid-trigger_instrument_idnone-contingencytype-contingency_typecontingencytypeno_contingency-orderlistid-order_list_idnone-list-linked_order_idsnone-clientorderid-parent_order_idnone-execalgorithmid-exec_algorithm_idnone-dict-exec_algorithm_paramsnone-clientorderid-exec_spawn_idnone-list-tagsnone)
+:::info
+See the `TrailingStopLimitOrder` [API Reference](../api_reference/model/orders.md#class-trailingstoplimitorder-1) for more details.
+:::

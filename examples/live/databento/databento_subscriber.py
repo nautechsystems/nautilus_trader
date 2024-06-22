@@ -246,7 +246,7 @@ strategy = DataSubscriber(config=strat_config)
 # Add your strategies and modules
 node.trader.add_strategy(strategy)
 
-# Register your client factories with the node (can take user defined factories)
+# Register your client factories with the node (can take user-defined factories)
 node.add_data_client_factory(DATABENTO, DatabentoLiveDataClientFactory)
 node.build()
 

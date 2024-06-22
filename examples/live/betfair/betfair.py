@@ -108,7 +108,7 @@ async def main(
     node = TradingNode(config=config)
     node.trader.add_strategies(strategies)
 
-    # Register your client factories with the node (can take user defined factories)
+    # Register your client factories with the node (can take user-defined factories)
     node.add_data_client_factory("BETFAIR", BetfairLiveDataClientFactory)
     node.add_exec_client_factory("BETFAIR", BetfairLiveExecClientFactory)
     node.build()
