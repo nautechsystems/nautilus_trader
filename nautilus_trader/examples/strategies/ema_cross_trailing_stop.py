@@ -303,11 +303,18 @@ class EMACrossTrailingStop(Strategy):
             self.log.error("No instrument loaded")
             return
 
+        last_quote = self.cache.quote_tick(self.instrument_id)
+        if not last_quote:
+            self.log.warning("Cannot submit order: no quotes yet")
+            return
+
         offset = self.atr.value * self.trailing_atr_multiple
         order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
             quantity=self.instrument.make_qty(self.trade_size),
+            # limit_offset=Decimal(f"{offset / 2:.{self.instrument.price_precision}f}"),
+            # price=self.instrument.make_price(last_quote.ask_price.as_double() + offset),
             trailing_offset=Decimal(f"{offset:.{self.instrument.price_precision}f}"),
             trailing_offset_type=self.trailing_offset_type,
             trigger_type=self.trigger_type,
@@ -326,11 +333,18 @@ class EMACrossTrailingStop(Strategy):
             self.log.error("No instrument loaded")
             return
 
+        last_quote = self.cache.quote_tick(self.instrument_id)
+        if not last_quote:
+            self.log.warning("Cannot submit order: no quotes yet")
+            return
+
         offset = self.atr.value * self.trailing_atr_multiple
         order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
             quantity=self.instrument.make_qty(self.trade_size),
+            # limit_offset=Decimal(f"{offset / 2:.{self.instrument.price_precision}f}"),
+            # price=self.instrument.make_price(last_quote.bid_price.as_double() - offset),
             trailing_offset=Decimal(f"{offset:.{self.instrument.price_precision}f}"),
             trailing_offset_type=self.trailing_offset_type,
             trigger_type=self.trigger_type,

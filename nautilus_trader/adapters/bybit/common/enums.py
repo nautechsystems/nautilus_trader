@@ -315,6 +315,18 @@ class BybitEnumParser:
                 BybitTriggerDirection.RISES_TO,
             ): OrderType.STOP_LIMIT,
             (
+                BybitOrderType.LIMIT,
+                BybitStopOrderType.PARTIAL_STOP_LOSS,
+                BybitOrderSide.BUY,
+                BybitTriggerDirection.RISES_TO,
+            ): OrderType.STOP_LIMIT,
+            (
+                BybitOrderType.LIMIT,
+                BybitStopOrderType.PARTIAL_STOP_LOSS,
+                BybitOrderSide.SELL,
+                BybitTriggerDirection.FALLS_TO,
+            ): OrderType.STOP_LIMIT,
+            (
                 BybitOrderType.MARKET,
                 BybitStopOrderType.TRAILING_STOP,
                 BybitOrderSide.BUY,
