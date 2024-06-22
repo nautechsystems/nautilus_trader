@@ -40,11 +40,14 @@ use ustr::Ustr;
 
 use crate::sql::{
     models::general::GeneralRow,
-    pg::{connect_pg, get_postgres_connect_options},
+    pg::{
+        connect_pg, delete_nautilus_postgres_tables, get_postgres_connect_options,
+        PostgresConnectOptions, PostgresConnectOptionsBuilder,
+    },
     queries::DatabaseQueries,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.infrastructure")
@@ -241,6 +244,34 @@ impl PostgresCacheDatabase {
             }
         }
     }
+}
+
+pub async fn reset_pg_database(pg_options: Option<PostgresConnectOptions>) -> anyhow::Result<()> {
+    let pg_connect_options = pg_options.unwrap_or(
+        PostgresConnectOptionsBuilder::default()
+            .username(String::from("postgres"))
+            .build()?,
+    );
+    let pg_pool = connect_pg(pg_connect_options.into()).await.unwrap();
+    delete_nautilus_postgres_tables(&pg_pool).await.unwrap();
+    Ok(())
+}
+
+pub async fn get_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
+    reset_pg_database(None).await.unwrap();
+    // run tests as nautilus user
+    let connect_options = PostgresConnectOptionsBuilder::default()
+        .username(String::from("nautilus"))
+        .build()?;
+    Ok(PostgresCacheDatabase::connect(
+        Some(connect_options.host),
+        Some(connect_options.port),
+        Some(connect_options.username),
+        Some(connect_options.password),
+        Some(connect_options.database),
+    )
+    .await
+    .unwrap())
 }
 
 #[allow(dead_code)]
