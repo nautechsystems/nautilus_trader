@@ -31,10 +31,11 @@ deleted when the container is deleted.
  
 :::info
 NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output),
-this is why `log_level` in the examples is set to "ERROR". If you lower this level to see
+this is why `log_level` in the examples is set to `ERROR`. If you lower this level to see
 more logging then the notebook will hang during cell execution. A fix is currently
 being investigated which involves either raising the configured rate limits for
 Jupyter, or throttling the log flushing from Nautilus.
-https://github.com/jupyterlab/jupyterlab/issues/12845
-https://github.com/deshaw/jupyterlab-limit-output
+
+- https://github.com/jupyterlab/jupyterlab/issues/12845
+- https://github.com/deshaw/jupyterlab-limit-output
 :::
