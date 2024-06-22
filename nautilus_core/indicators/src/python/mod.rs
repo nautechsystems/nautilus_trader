@@ -48,6 +48,7 @@ pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::momentum::vhf::VerticalHorizontalFilter>()?;
     m.add_class::<crate::momentum::kvo::KlingerVolumeOscillator>()?;
     m.add_class::<crate::momentum::dm::DirectionalMovement>()?;
+    m.add_class::<crate::momentum::amat::ArcherMovingAveragesTrends>()?;
     // volatility
     m.add_class::<crate::volatility::atr::AverageTrueRange>()?;
     Ok(())
