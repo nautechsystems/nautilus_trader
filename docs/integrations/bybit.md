@@ -89,23 +89,23 @@ All the order types listed below can be used as *either* entries or exits, excep
 | `LIMIT_IF_TOUCHED`     | ✓                    | ✓                                       |
 | `TRAILING_STOP_MARKET` |                      | ✓                                       |
 
-### Trailing stops
-
-Trailing stops on Bybit do not have a client order ID on the venue side (though there is a `venue_order_id`).
-This is because trailing stops are associated with a netted position for an instrument.
-Consider the following points when using trailing stops on Bybit:
-
-- It's not currently possible to query trailing stop orders that are not already open (the venue_order_id is unknown until then)
-- You can manually adjust the trigger price in the GUI, which will update the Nautilus order
-- The `reduce_only` option is available
-- When the position associated with a trailing stop is closed, the trailing stop is automatically "deactivated" (closed) on the venue side
-
 ### Limitations for SPOT
 
 The following limitations apply to SPOT products, as positions are not tracked on the venue side:
 
 - `reduce_only` orders are not supported
 - Trailing stop orders are not supported
+
+### Trailing stops
+
+Trailing stops on Bybit do not have a client order ID on the venue side (though there is a `venue_order_id`).
+This is because trailing stops are associated with a netted position for an instrument.
+Consider the following points when using trailing stops on Bybit:
+
+- `reduce_only` instruction is available
+- When the position associated with a trailing stop is closed, the trailing stop is automatically "deactivated" (closed) on the venue side
+- You cannot query trailing stop orders that are not already open (the `venue_order_id` is unknown until then)
+- You can manually adjust the trigger price in the GUI, which will update the Nautilus order
 
 ## Configuration
 
