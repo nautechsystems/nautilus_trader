@@ -1087,7 +1087,7 @@ class TestSimulatedExchangeMarginAccount:
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            _USDJPY_SIM.make_price(90.000),  # <-- Limit price above the ask
+            _USDJPY_SIM.make_price(90.000),  # <-- Limit price below the ask
             post_only=False,  # <-- Can be liquidity TAKER
         )
 
@@ -1106,7 +1106,7 @@ class TestSimulatedExchangeMarginAccount:
 
         # Assert
         assert order.status == OrderStatus.FILLED
-        assert order.avg_px == 90.000
+        assert order.avg_px == 90.000  # <-- Fills at limit price
 
     def test_submit_limit_order_fills_at_most_book_volume(self) -> None:
         # Arrange: Prepare market
@@ -2504,11 +2504,13 @@ class TestSimulatedExchangeMarginAccount:
         self.data_engine.process(tick1)
         self.exchange.process_quote_tick(tick1)
 
+        limit_price = Price.from_str("90.001")
         order = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
-            Price.from_str("90.001"),
+            limit_price,
+            post_only=True,
         )
 
         self.strategy.submit_order(order)
@@ -2528,6 +2530,7 @@ class TestSimulatedExchangeMarginAccount:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert len(self.exchange.get_open_orders()) == 0
+        assert order.last_event.last_px == limit_price
         assert order.avg_px == 90.001
         assert self.exchange.get_account().balance_total(USD) == Money(999998.00, USD)
 
@@ -2611,11 +2614,13 @@ class TestSimulatedExchangeMarginAccount:
         self.data_engine.process(tick)
         self.exchange.process_quote_tick(tick)
 
+        limit_price = Price.from_str("90.100")
         order = self.strategy.order_factory.limit(
             _USDJPY_SIM.id,
             OrderSide.SELL,
             Quantity.from_int(100_000),
-            Price.from_str("90.100"),
+            limit_price,
+            post_only=True,
         )
 
         self.strategy.submit_order(order)
@@ -2632,6 +2637,7 @@ class TestSimulatedExchangeMarginAccount:
         # Assert
         assert order.status == OrderStatus.FILLED
         assert len(self.exchange.get_open_orders()) == 0
+        assert order.last_event.last_px == limit_price
         assert order.avg_px == 90.100
         assert self.exchange.get_account().balance_total(USD) == Money(999998.00, USD)
 
