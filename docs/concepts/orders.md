@@ -1,6 +1,6 @@
 # Orders
 
-This guide provides more details about the available order types for the platform, along with
+This guide provides further details about the available order types for the platform, along with
 the execution instructions supported for each.
 
 Orders are one of the fundamental building blocks of any algorithmic trading strategy.
@@ -149,7 +149,7 @@ This leaves the factory with simpler order creation methods to work with, all th
 examples will leverage an `OrderFactory` from within a `Strategy` context.
 
 :::info
-See the `OrderFactory` [API Reference](../api_reference/common.md#class-orderfactory) for more details.
+See the `OrderFactory` [API Reference](../api_reference/common.md#class-orderfactory) for further details.
 :::
 
 ## Order Types
@@ -185,7 +185,7 @@ order: MarketOrder = self.order_factory.market(
 ```
 
 :::info
-See the `MarketOrder` [API Reference](../api_reference/model/orders.md#class-marketorder) for more details.
+See the `MarketOrder` [API Reference](../api_reference/model/orders.md#class-marketorder) for further details.
 :::
 
 ### Limit
@@ -219,7 +219,7 @@ order: LimitOrder = self.order_factory.limit(
 ```
 
 :::info
-See the `LimitOrder` [API Reference](../api_reference/model/orders.md#class-limitorder) for more details.
+See the `LimitOrder` [API Reference](../api_reference/model/orders.md#class-limitorder) for further details.
 :::
 
 ### Stop-Market
@@ -254,7 +254,7 @@ order: StopMarketOrder = self.order_factory.stop_market(
 ```
 
 :::info
-See the `StopMarketOrder` [API Reference](../api_reference/model/orders.md#class-stopmarketorder) for more details.
+See the `StopMarketOrder` [API Reference](../api_reference/model/orders.md#class-stopmarketorder) for further details.
 :::
 
 ### Stop-Limit
@@ -291,7 +291,7 @@ order: StopLimitOrder = self.order_factory.stop_limit(
 ```
 
 :::info
-See the `StopLimitOrder` [API Reference](../api_reference/model/orders.md#class-stoplimitorder) for more details.
+See the `StopLimitOrder` [API Reference](../api_reference/model/orders.md#class-stoplimitorder) for further details.
 :::
 
 ### Market-To-Limit
@@ -322,7 +322,7 @@ order: MarketToLimitOrder = self.order_factory.market_to_limit(
 ```
 
 :::info
-See the `MarketToLimitOrder` [API Reference](../api_reference/model/orders.md#class-markettolimitorder) for more details.
+See the `MarketToLimitOrder` [API Reference](../api_reference/model/orders.md#class-markettolimitorder) for further details.
 :::
 
 ### Market-If-Touched
@@ -358,7 +358,7 @@ order: MarketIfTouchedOrder = self.order_factory.market_if_touched(
 ```
 
 :::info
-See the `MarketIfTouchedOrder` [API Reference](../api_reference/model/orders.md#class-marketiftouchedorder) for more details.
+See the `MarketIfTouchedOrder` [API Reference](../api_reference/model/orders.md#class-marketiftouchedorder) for further details.
 :::
 
 ### Limit-If-Touched
@@ -396,7 +396,7 @@ order: StopLimitOrder = self.order_factory.limit_if_touched(
 ```
 
 :::info
-See the `StopLimitOrder` [API Reference](../api_reference/model/orders.md#class-stoplimitorder-1) for more details.
+See the `StopLimitOrder` [API Reference](../api_reference/model/orders.md#class-stoplimitorder-1) for further details.
 :::
 
 ### Trailing-Stop-Market
@@ -436,7 +436,7 @@ order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
 ```
 
 :::info
-See the `TrailingStopMarketOrder` [API Reference](../api_reference/model/orders.md#class-trailingstopmarketorder-1) for more details.
+See the `TrailingStopMarketOrder` [API Reference](../api_reference/model/orders.md#class-trailingstopmarketorder-1) for further details.
 :::
 
 ### Trailing-Stop-Limit
@@ -479,5 +479,5 @@ order: TrailingStopLimitOrder = self.order_factory.trailing_stop_limit(
 ```
 
 :::info
-See the `TrailingStopLimitOrder` [API Reference](../api_reference/model/orders.md#class-trailingstoplimitorder-1) for more details.
+See the `TrailingStopLimitOrder` [API Reference](../api_reference/model/orders.md#class-trailingstoplimitorder-1) for further details.
 :::
