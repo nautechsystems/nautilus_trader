@@ -70,21 +70,16 @@ This diagram illustrates message flow (commands and events) across the Nautilus 
 
 ## Order management system (OmsType)
 
-An order management system (OMS) type refers to the method used for tracking positions for an instrument.
-This applies to both strategies and venues (simulated and real). Even if a venue doesn't explicitly 
+An order management system (OMS) type refers to the method used for assigning orders to positions and tracking those positions for an instrument.
+OMS types apply to both strategies and venues (simulated and real). Even if a venue doesn't explicitly
 state the method in use, an OMS type is always in effect. The OMS type for a component can be specified 
 using the `OmsType` enum.
 
-There are three OMS types:
+There are three variants for the `OmsType` enum:
 
 - `UNSPECIFIED`: The OMS type defaults based on where it is applied (details below)
 - `NETTING`: Positions are combined into a single position per instrument ID 
 - `HEDGING`: Multiple positions per instrument ID are supported (both long and short)
-
-:::note
-Configuring OMS types separately for strategies and venues increases platform complexity but allows
-for a wide range of trading styles and preferences (see the table below).
-:::
 
 The table below describes different configuration combinations and their applicable scenarios.
 When the strategy and venue OMS types differ, the `ExecutionEngine` handles this by overriding or assigning `position_id` values upon received order fill events.
@@ -98,6 +93,11 @@ reality.
 | `NETTING`                    | `HEDGING`              | The strategy **overrides** the venues native OMS type. The venue tracks multiple positions per instrument ID, but Nautilus maintains a single position ID. |
 | `HEDGING`                    | `NETTING`              | The strategy **overrides** the venues native OMS type. The venue tracks a single position per instrument ID, but Nautilus maintains multiple position IDs. |
 
+:::note
+Configuring OMS types separately for strategies and venues increases platform complexity but allows
+for a wide range of trading styles and preferences (see the table below).
+:::
+
 Examples:
 
 - Most cryptocurrency exchanges use a `NETTING` OMS type, representing a single position per market. However, it may be desirable for a trader to track multiple "virtual" positions for a strategy.
@@ -110,12 +110,14 @@ It is advised to keep Binance account configurations as `BOTH` so that a single 
 
 ### OMS configuration
 
-When configuring a backtest, it's possible to specify the oms_type for the venue.
-It is advised to match this with the actual OMS type used by the venue in reality.
-
-If a strategy OMS type is not explicitly set through the oms_type configuration option,
+If a strategy OMS type is not explicitly set through the `oms_type` configuration option,
 it will default to `UNSPECIFIED`. This means the `ExecutionEngine` will not override any venue `position_id`s, 
 and the OMS type will follow the venue's OMS type.
+
+:::tip
+When configuring a backtest, it's possible to specify the `oms_type` for the venue.
+To improve backtest accuracy, it is recommended to match this with the actual OMS type used by the venue in reality.
+:::
 
 ## Execution algorithms
 
