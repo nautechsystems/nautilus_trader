@@ -505,9 +505,9 @@ mod tests {
         assert_eq!(
             order.to_string(),
             "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, \
-            status=INITIALIZED, client_order_id=O-19700101-0000-001-001-1, \
+            status=INITIALIZED, client_order_id=O-19700101-000000-001-001-1, \
             venue_order_id=None, position_id=None, exec_algorithm_id=None, \
-            exec_spawn_id=O-19700101-0000-001-001-1, tags=None)"
+            exec_spawn_id=O-19700101-000000-001-001-1, tags=None)"
         );
     }
 

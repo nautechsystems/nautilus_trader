@@ -363,7 +363,7 @@ def test_position_filled_with_sell_order_then_buy_order():
     fill1 = TestEventsProviderPyo3.order_filled(
         instrument=instrument,
         order=order1,
-        position_id=PositionId("P-19700101-0000-000-001-1"),
+        position_id=PositionId("P-19700101-000000-000-001-1"),
         trade_id=TradeId("1"),
     )
     position = Position(instrument=AUDUSD_SIM, fill=fill1)
@@ -404,7 +404,7 @@ def test_position_filled_with_sell_order_then_buy_order():
     assert position.unrealized_pnl(last) == Money(0, USD)
     assert position.total_pnl(last) == Money(-8.000, USD)
     assert position.commissions() == [Money(6.00, USD)]
-    assert repr(position) == "Position(FLAT AUD/USD.SIM, id=P-19700101-0000-000-001-1)"
+    assert repr(position) == "Position(FLAT AUD/USD.SIM, id=P-19700101-000000-000-001-1)"
 
 
 def test_position_filled_with_no_change():
@@ -424,10 +424,10 @@ def test_position_filled_with_no_change():
     fill1 = TestEventsProviderPyo3.order_filled(
         instrument=instrument,
         order=order1,
-        position_id=PositionId("P-19700101-0000-000-001-1"),
+        position_id=PositionId("P-19700101-000000-000-001-1"),
         last_px=Price.from_str("1.0"),
         last_qty=Quantity.from_int(50_000),
-        trade_id=TradeId("E-19700101-0000-000-001-1"),
+        trade_id=TradeId("E-19700101-000000-000-001-1"),
     )
     position = Position(instrument=AUDUSD_SIM, fill=fill1)
     fill2 = TestEventsProviderPyo3.order_filled(
@@ -436,7 +436,7 @@ def test_position_filled_with_no_change():
         position_id=TestIdProviderPyo3.position_id(),
         last_px=Price.from_str("1.0"),
         last_qty=Quantity.from_int(50_000),
-        trade_id=TradeId("E-19700101-0000-000-001-2"),
+        trade_id=TradeId("E-19700101-000000-000-001-2"),
     )
     position.apply(fill2)
     last = Price.from_str("1.00050")
@@ -448,8 +448,8 @@ def test_position_filled_with_no_change():
     assert position.event_count == 2
     assert position.client_order_ids == [order1.client_order_id, order2.client_order_id]
     assert position.trade_ids == [
-        TradeId("E-19700101-0000-000-001-1"),
-        TradeId("E-19700101-0000-000-001-2"),
+        TradeId("E-19700101-000000-000-001-1"),
+        TradeId("E-19700101-000000-000-001-2"),
     ]
     assert position.ts_closed == 0
     assert position.avg_px_close == 1.0
@@ -462,7 +462,7 @@ def test_position_filled_with_no_change():
     assert position.unrealized_pnl(last) == Money(0, USD)
     assert position.total_pnl(last) == Money(-4.00, USD)
     assert position.commissions() == [Money(4.00, USD)]
-    assert repr(position) == "Position(FLAT AUD/USD.SIM, id=P-19700101-0000-000-001-1)"
+    assert repr(position) == "Position(FLAT AUD/USD.SIM, id=P-19700101-000000-000-001-1)"
 
 
 def test_position_long_with_multiple_filled_orders():

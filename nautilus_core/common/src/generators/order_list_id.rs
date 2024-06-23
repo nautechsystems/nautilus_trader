@@ -110,15 +110,15 @@ mod tests {
 
         assert_eq!(
             result1,
-            OrderListId::new("OL-19700101-0000-001-001-1").unwrap()
+            OrderListId::new("OL-19700101-000000-001-001-1").unwrap()
         );
         assert_eq!(
             result2,
-            OrderListId::new("OL-19700101-0000-001-001-2").unwrap()
+            OrderListId::new("OL-19700101-000000-001-001-2").unwrap()
         );
         assert_eq!(
             result3,
-            OrderListId::new("OL-19700101-0000-001-001-3").unwrap()
+            OrderListId::new("OL-19700101-000000-001-001-3").unwrap()
         );
     }
 
@@ -131,15 +131,15 @@ mod tests {
 
         assert_eq!(
             result1,
-            OrderListId::new("OL-19700101-0000-001-001-6").unwrap()
+            OrderListId::new("OL-19700101-000000-001-001-6").unwrap()
         );
         assert_eq!(
             result2,
-            OrderListId::new("OL-19700101-0000-001-001-7").unwrap()
+            OrderListId::new("OL-19700101-000000-001-001-7").unwrap()
         );
         assert_eq!(
             result3,
-            OrderListId::new("OL-19700101-0000-001-001-8").unwrap()
+            OrderListId::new("OL-19700101-000000-001-001-8").unwrap()
         );
     }
 
@@ -153,7 +153,7 @@ mod tests {
 
         assert_eq!(
             result,
-            OrderListId::new("OL-19700101-0000-001-001-1").unwrap()
+            OrderListId::new("OL-19700101-000000-001-001-1").unwrap()
         );
     }
 }

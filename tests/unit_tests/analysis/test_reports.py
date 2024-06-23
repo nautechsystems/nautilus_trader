@@ -251,7 +251,7 @@ class TestReportProvider:
 
         partially_filled1 = TestEventStubs.order_filled(
             order1,
-            trade_id=TradeId("E-19700101-0000-000-001-1"),
+            trade_id=TradeId("E-19700101-000000-000-001-1"),
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S-1"),
@@ -261,7 +261,7 @@ class TestReportProvider:
 
         partially_filled2 = TestEventStubs.order_filled(
             order1,
-            trade_id=TradeId("E-19700101-0000-000-001-2"),
+            trade_id=TradeId("E-19700101-000000-000-001-2"),
             instrument=AUDUSD_SIM,
             position_id=PositionId("P-1"),
             strategy_id=StrategyId("S-1"),

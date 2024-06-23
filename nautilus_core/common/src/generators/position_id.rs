@@ -85,8 +85,8 @@ mod tests {
         let result1 = generator.generate(StrategyId::from("S-001"), false);
         let result2 = generator.generate(StrategyId::from("S-001"), false);
 
-        assert_eq!(result1, PositionId::from("P-19700101-0000-001-001-1"));
-        assert_eq!(result2, PositionId::from("P-19700101-0000-001-001-2"));
+        assert_eq!(result1, PositionId::from("P-19700101-000000-001-001-1"));
+        assert_eq!(result2, PositionId::from("P-19700101-000000-001-001-2"));
     }
 
     #[rstest]
@@ -96,9 +96,9 @@ mod tests {
         let result2 = generator.generate(StrategyId::from("S-002"), false);
         let result3 = generator.generate(StrategyId::from("S-002"), false);
 
-        assert_eq!(result1, PositionId::from("P-19700101-0000-001-001-1"));
-        assert_eq!(result2, PositionId::from("P-19700101-0000-001-002-1"));
-        assert_eq!(result3, PositionId::from("P-19700101-0000-001-002-2"));
+        assert_eq!(result1, PositionId::from("P-19700101-000000-001-001-1"));
+        assert_eq!(result2, PositionId::from("P-19700101-000000-001-002-1"));
+        assert_eq!(result3, PositionId::from("P-19700101-000000-001-002-2"));
     }
 
     #[rstest]
@@ -108,9 +108,9 @@ mod tests {
         let result2 = generator.generate(StrategyId::from("S-002"), true);
         let result3 = generator.generate(StrategyId::from("S-001"), true);
 
-        assert_eq!(result1, PositionId::from("P-19700101-0000-001-001-1"));
-        assert_eq!(result2, PositionId::from("P-19700101-0000-001-002-1F"));
-        assert_eq!(result3, PositionId::from("P-19700101-0000-001-001-2F"));
+        assert_eq!(result1, PositionId::from("P-19700101-000000-001-001-1"));
+        assert_eq!(result2, PositionId::from("P-19700101-000000-001-002-1F"));
+        assert_eq!(result3, PositionId::from("P-19700101-000000-001-001-2F"));
     }
 
     #[rstest]
@@ -138,6 +138,6 @@ mod tests {
         generator.reset();
         let result = generator.generate(StrategyId::from("S-001"), false);
 
-        assert_eq!(result, PositionId::from("P-19700101-0000-001-001-1"));
+        assert_eq!(result, PositionId::from("P-19700101-000000-001-001-1"));
     }
 }
