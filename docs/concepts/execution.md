@@ -147,7 +147,7 @@ The `TradingState` enum has three variants:
 - `REDUCING`: The system will only process cancels or commands that reduce open positions
 
 :::info
-See the `RiskEngineConfig` [API Reference](https://nautilustrader.io/docs/latest/api_reference/config#risk) for further details.
+See the `RiskEngineConfig` [API Reference](../api_reference/config#risk) for further details.
 :::
 
 ## Execution algorithms
@@ -382,7 +382,7 @@ This is useful in situations where, at system start, there is no cached state or
 a strategy to resume its operations and continue managing existing open orders at the venue for an instrument.
 
 :::info
-See the `LiveExecEngineConfig` [API Reference](/api_reference/config#class-liveexecengineconfig) for further details.
+See the `LiveExecEngineConfig` [API Reference](../api_reference/config#class-liveexecengineconfig) for further details.
 :::
 
 ### Reconciliation procedure
