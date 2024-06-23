@@ -406,9 +406,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         open_positions: list[Position] = self._cache.positions_open(venue=self.venue)
         active_symbols: set[str] = set()
         for o in open_orders:
-            active_symbols.add(BinanceSymbol(o.instrument_id.symbol.value))
+            active_symbols.add(o.instrument_id.symbol.value)
         for p in open_positions:
-            active_symbols.add(BinanceSymbol(p.instrument_id.symbol.value))
+            active_symbols.add(p.instrument_id.symbol.value)
         return active_symbols
 
     async def _get_binance_position_status_reports(
