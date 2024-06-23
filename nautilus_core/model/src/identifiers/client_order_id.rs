@@ -121,8 +121,8 @@ mod tests {
 
     #[rstest]
     fn test_string_reprs(client_order_id: ClientOrderId) {
-        assert_eq!(client_order_id.as_str(), "O-19700101-0000-001-001-1");
-        assert_eq!(format!("{client_order_id}"), "O-19700101-0000-001-001-1");
+        assert_eq!(client_order_id.as_str(), "O-19700101-000000-001-001-1");
+        assert_eq!(format!("{client_order_id}"), "O-19700101-000000-001-001-1");
     }
 
     #[rstest]

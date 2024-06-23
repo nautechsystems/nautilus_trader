@@ -287,7 +287,7 @@ mod tests {
         let display = format!("{order_emulated}");
         assert_eq!(
             display,
-            "OrderEmulated(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-001-001-1)"
+            "OrderEmulated(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1)"
         );
     }
 }

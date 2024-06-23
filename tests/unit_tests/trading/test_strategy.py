@@ -820,8 +820,8 @@ class TestStrategy:
         # Assert
         assert strategy.clock.timer_count == 2
         assert strategy.clock.timer_names == [
-            "GTD-EXPIRY:O-19700101-0000-000-None-1",
-            "GTD-EXPIRY:O-19700101-0000-000-None-2",
+            "GTD-EXPIRY:O-19700101-000000-000-None-1",
+            "GTD-EXPIRY:O-19700101-000000-000-None-2",
         ]
 
     def test_start_when_manage_gtd_and_order_past_expiration_then_cancels(self) -> None:
@@ -948,7 +948,7 @@ class TestStrategy:
 
         # Assert
         assert strategy.clock.timer_count == 1
-        assert strategy.clock.timer_names == ["GTD-EXPIRY:O-19700101-0000-000-None-1"]
+        assert strategy.clock.timer_names == ["GTD-EXPIRY:O-19700101-000000-000-None-1"]
 
     def test_submit_order_with_managed_gtd_when_immediately_filled_cancels_timer(self) -> None:
         # Arrange
@@ -1161,7 +1161,7 @@ class TestStrategy:
 
         # Assert
         assert strategy.clock.timer_count == 1
-        assert strategy.clock.timer_names == ["GTD-EXPIRY:O-19700101-0000-000-None-1"]
+        assert strategy.clock.timer_names == ["GTD-EXPIRY:O-19700101-000000-000-None-1"]
 
     def test_submit_order_list_with_managed_gtd_when_immediately_filled_cancels_timer(self) -> None:
         # Arrange

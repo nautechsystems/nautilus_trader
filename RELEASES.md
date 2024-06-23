@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Ported `KlingerVolumeOscillator` indicator to Rust (#1724), thanks @Pushkarm029
 - Ported `DirectionalMovement` indicator to Rust (#1725), thanks @Pushkarm029
 - Ported `ArcherMovingAveragesTrends` indicator to Rust (#1726), thanks @Pushkarm029
+- Changed identifier generator time tag component to include seconds (affects new `ClientOrderId`, `OrderId` and `PositionId` generation)
 
 ### Breaking Changes
 None
