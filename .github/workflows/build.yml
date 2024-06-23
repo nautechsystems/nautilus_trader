@@ -236,7 +236,7 @@ jobs:
           PARALLEL_BUILD: false
 
   build-macos:
-    # if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/nightly'
+    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/nightly'
     strategy:
       fail-fast: false
       matrix:
@@ -251,7 +251,7 @@ jobs:
     env:
       BUILD_MODE: debug
       RUST_BACKTRACE: 1
-      CARGO_BUILD_TARGET: aarch64-apple-darwin
+      # CARGO_BUILD_TARGET: aarch64-apple-darwin
 
     steps:
       - name: Checkout repository
@@ -272,7 +272,7 @@ jobs:
           toolchain: ${{ env.RUST_VERSION }}
           override: true
           components: rustfmt, clippy
-          target: aarch64-apple-darwin
+          # target: aarch64-apple-darwin
 
       - name: Set up Python environment
         uses: actions/setup-python@v5
