@@ -17,6 +17,7 @@ None
 - Fixed `LIMIT` order fill behavior for `L2_MBP` and `L3_MBO` book types (was not honoring limit price as maker), thanks for reporting @dpmabo
 - Fixed msgspec encoding and decoding of `Environment` enum for `NautilusKernelConfig`
 - Fixed `DatabentoDataLoader.from_dbn_file` for `OrderBookDelta`s when `as_legacy_cython=False`
+- Fixed Binance order report generation `active_symbols` type miss matching (#1729), thanks @DevRoss
 
 ---
 
