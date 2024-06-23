@@ -251,8 +251,6 @@ jobs:
     env:
       BUILD_MODE: debug
       RUST_BACKTRACE: 1
-      CFLAGS: -arch arm64
-      LDFLAGS: -arch arm64
       CARGO_BUILD_TARGET: aarch64-apple-darwin
 
     steps:
