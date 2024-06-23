@@ -1383,7 +1383,6 @@ cdef class OrderMatchingEngine:
         if (
             fills
             and triggered_price is not None
-            and self._book.book_type == BookType.L1_MBP
             and order.liquidity_side == LiquiditySide.TAKER
         ):
             ########################################################################
@@ -1410,7 +1409,6 @@ cdef class OrderMatchingEngine:
         cdef Price initial_fill_price
         if (
             fills
-            and self._book.book_type == BookType.L1_MBP
             and order.liquidity_side == LiquiditySide.MAKER
         ):
             ########################################################################
