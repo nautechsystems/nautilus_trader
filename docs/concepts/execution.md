@@ -75,7 +75,7 @@ OMS types apply to both strategies and venues (simulated and real). Even if a ve
 state the method in use, an OMS type is always in effect. The OMS type for a component can be specified 
 using the `OmsType` enum.
 
-There are three variants for the `OmsType` enum:
+The `OmsType` enum has three variants:
 
 - `UNSPECIFIED`: The OMS type defaults based on where it is applied (details below)
 - `NETTING`: Positions are combined into a single position per instrument ID 
@@ -117,6 +117,37 @@ and the OMS type will follow the venue's OMS type.
 :::tip
 When configuring a backtest, it's possible to specify the `oms_type` for the venue.
 To improve backtest accuracy, it is recommended to match this with the actual OMS type used by the venue in reality.
+:::
+
+## Risk engine
+
+The `RiskEngine` is a core component of every Nautilus system, including backtest, sandbox, and live environments.
+Every order command and event passes through the `RiskEngine` unless specifically bypassed in the `RiskEngineConfig`.
+
+The `RiskEngine` includes several built-in pre-trade risk checks, including:
+
+- Price precisions correct for the instrument
+- Prices are positive (unless an option type instrument)
+- Quantity precisions correct for the instrument
+- Below maximum notional for the instrument
+- Within maximum or minimum quantity for the instrument
+- Only reducing position when a `reduce_only` execution instruction is specified for the order
+
+If any risk check fails, an `OrderDenied` event is generated, preventing the order
+from progressing further (the order is effectively closed).
+
+### Trading state
+
+Additionally, the current trading state of a Nautilus system affects order flow.
+
+The `TradingState` enum has three variants:
+
+- `ACTIVE`: The system operates normally
+- `HALTED`: The system will not process further order commands until the state changes
+- `REDUCING`: The system will only process cancels or commands that reduce open positions
+
+:::info
+See the `RiskEngineConfig` [API Reference](https://nautilustrader.io/docs/latest/api_reference/config#risk) for further details.
 :::
 
 ## Execution algorithms
