@@ -358,3 +358,60 @@ def orders_for_exec_spawn(self, exec_spawn_id: ClientOrderId) -> list[Order]:
 
     """
 ```
+
+## Execution reconciliation
+
+Execution reconciliation is the process of aligning the external state of reality for orders and positions
+(both closed and open) with the current system state built from events.
+This process is primarily applicable to live trading, which is why only the `LiveExecutionEngine` includes reconciliation capabilities.
+
+There are two main scenarios for reconciliation:
+
+- **Previous Cached Execution State:** If cached execution state exists, information from reports is used to generate events to align the state
+- **No Previous Cached Execution State:** If there is no cached state, all orders and positions that exist externally are generated from scratch
+
+### Reconciliation configuration
+
+Unless reconciliation is disabled by setting the `reconciliation` configuration parameter to false,
+the execution engine will perform the execution reconciliation procedure for each venue.
+Additionally, you can specify the lookback window for reconciliation by setting the `reconciliation_lookback_mins` configuration parameter.
+
+Each strategy can also be configured to claim any external orders for an instrument ID generated during 
+reconciliation using the `external_order_claims` configuration parameter.
+This is useful in situations where, at system start, there is no cached state or it is desirable for
+a strategy to resume its operations and continue managing existing open orders at the venue for an instrument.
+
+:::info
+See the `LiveExecEngineConfig` [API Reference](/api_reference/config#class-liveexecengineconfig) for further details.
+:::
+
+### Reconciliation procedure
+
+The reconciliation procedure is standardized for all adapter execution clients and uses the following 
+methods to produce an execution mass status:
+
+- `generate_order_status_reports`
+- `generate_fill_reports`
+- `generate_position_status_reports`
+
+The system state is then reconciled with the reports, which represent the external reality:
+
+- **Duplicate Check:**
+    - Check for duplicate order IDs and trade IDs
+- **Order Reconciliation:**
+    - Generate and apply events necessary to update orders from any currently cached state to the current state
+    - If any trade reports are missing, inferred `OrderFilled` events are generated
+    - If any client order ID is not recognized or an order report lacks a client order ID, an external order is generated
+- **Position Reconciliation:**
+    - Ensure the net position per instrument matches the position reports returned from the venue
+
+If reconciliation fails, the system will not continue to start, and an error will be logged.
+
+:::tip
+The current reconciliation procedure can experience state mismatches if the lookback window is 
+configured in a way that misses necessary events, or if the venue does not include certain order or 
+trade reports due to known filter conditions.
+
+If you encounter issues with reconciliation, you can either drop any cached state and/or ensure the 
+account is always flat at system shutdown and startup.
+:::
