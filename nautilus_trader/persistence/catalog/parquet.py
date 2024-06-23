@@ -111,7 +111,7 @@ class ParquetDataCatalog(BaseDataCatalog):
 
     Notes
     -----
-    For more details about `fsspec` and its filesystem protocols, see
+    For further details about `fsspec` and its filesystem protocols, see
     https://filesystem-spec.readthedocs.io/en/latest/.
 
     """
