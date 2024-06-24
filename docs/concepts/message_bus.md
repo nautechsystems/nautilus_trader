@@ -34,7 +34,7 @@ self.msgbus.publish("MyTopic", "MyMessage")
 ## External publishing
 
 The `MessageBus` can be *backed* with any database or message broker technology which has an
-integration written for it, this then allows external publishing of messages.
+integration written for it, this then enables external publishing of messages.
 
 :::info
 Redis is currently supported for all serializable messages which are published externally.
@@ -139,14 +139,15 @@ This is particularly useful when you need to track and identify traders across v
 
 #### Streams prefix
 
-The `streams_prefix` string allows you to group all streams for a single trader instance, or organize messages related to a group of trader instances.
-By configuring this grouping behavior, pass a string to the `streams_prefix` configuration option (with other prefixes false).
+The `streams_prefix` string enables you to group all streams for a single trader instance or organize
+messages for multiple instances. Configure this by passing a string to the `streams_prefix` configuration 
+option, ensuring other prefixes are set to false.
 
 ### Types filtering
 
-When messages are published on the message bus, they are serialized and written to a stream, provided that a backing for the message bus has been configured and enabled.
-In some cases, you may want to filter out certain types of messages from being externally published to prevent the stream from being 'flooded' with data, 
-such as quotes or other high-frequency information.
+When messages are published on the message bus, they are serialized and written to a stream if a backing
+for the message bus is configured and enabled. To prevent flooding the stream with data like high-frequency 
+quotes, you may filter out certain types of messages from external publication.
 
 To enable this filtering mechanism, pass a list of `type` objects to the `types_filter` parameter in the message bus configuration, specifying which types of messages should be excluded from external publication.
 

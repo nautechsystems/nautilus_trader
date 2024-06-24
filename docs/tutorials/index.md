@@ -1,12 +1,12 @@
 # Tutorials
 
-This section offers a guided learning experience with a series of comprehensive step-by-step walkthroughs. 
-Each tutorial targets specific features or workflows, allowing you to learn by doing. 
+The tutorials provide a guided learning experience with a series of comprehensive step-by-step walkthroughs.
+Each tutorial targets specific features or workflows, enabling hands-on learning.
 From basic tasks to more advanced operations, these tutorials cater to a wide range of skill levels.
 
 :::info
 Each tutorial is generated from a Jupyter notebook located in the docs [tutorials directory](https://github.com/nautechsystems/nautilus_trader/tree/develop/docs/tutorials).
-These notebooks not only serve as valuable learning aids but also allow you to execute the code.
+These notebooks not only serve as valuable learning aids but also lets you to execute the code.
 :::
 
 :::tip

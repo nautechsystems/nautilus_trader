@@ -6,8 +6,8 @@ the execution instructions supported for each.
 Orders are one of the fundamental building blocks of any algorithmic trading strategy.
 NautilusTrader has unified a large set of order types and execution instructions
 from standard to more advanced, to offer as much of an exchanges available functionality
-as possible. This allows traders to define certain conditions and instructions for
-order execution and management, which allows essentially any type of trading strategy to be created.
+as possible. This enables traders to define certain conditions and instructions for
+order execution and management, facilitating the creation of virtually any type of trading strategy.
 
 ## Overview
 
