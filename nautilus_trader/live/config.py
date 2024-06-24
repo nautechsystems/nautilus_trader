@@ -68,7 +68,7 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     Configuration for ``LiveExecEngine`` instances.
 
     The purpose of the in-flight order check is for live reconciliation, events
-    emitted from the exchange may have been lost at some point - leaving an order
+    emitted from the venue may have been lost at some point - leaving an order
     in an intermediate state, the check can recover these events via status reports.
 
     Parameters
