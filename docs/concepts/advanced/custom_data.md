@@ -72,8 +72,8 @@ to backing fields, and then implement the `@property` for each as shown above
 (for completeness, the docstrings are copied from the `Data` base class).
 
 :::info
-These timestamps are what allow Nautilus to correctly order data streams for backtests
-by monotonically increasing `ts_init` UNIX nanoseconds.
+These timestamps enable Nautilus to correctly order data streams for backtests
+using monotonically increasing `ts_init` UNIX nanoseconds.
 :::
 
 We can now work with this data type for backtesting and live trading. For instance,

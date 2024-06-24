@@ -228,7 +228,7 @@ We aim to maintain a stable passing build on all branches.
 
 The current roadmap has a goal of achieving a stable API for a `2.x` version (likely post Rust port).
 From this point we will follow a formal process for releases, with deprecation periods for any API changes.
-This allows us to maintain a maximum pace of development for now.
+This enables us to maintain a maximum pace of development for now.
 
 ## Makefile
 

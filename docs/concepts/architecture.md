@@ -67,8 +67,8 @@ The platform has been designed to share as much common code between backtest, sa
 This is formalized in the `system` subpackage, where you will find the `NautilusKernel` class, 
 providing a common core system 'kernel'.
 
-A _ports and adapters_ architectural style allows modular components to be 'plugged into' the
-core system, providing many hooks for user-defined / custom component implementations.
+The _ports and adapters_ architectural style enables modular components to be integrated into the 
+core system, providing various hooks for user-defined or custom component implementations.
 
 ### Messaging
 
@@ -178,12 +178,11 @@ If you pass an argument with an invalid type to a Cython implemented module with
 then you will receive a `TypeError` at runtime.
 :::
 
-If a function or methods parameter is not explicitly typed as allowing
-``None``, then you can assume you will receive a `ValueError` when passing ``None``
-as an argument at runtime.
+If a function or method's parameter is not explicitly typed to accept `None`, passing `None` as an 
+argument will result in a `ValueError` at runtime.
 
 :::warning
-The above exceptions are not explicitly documented, as this would bloat the docstrings significantly.
+The above exceptions are not explicitly documented to prevent excessive bloating of the docstrings.
 :::
 
 ### Errors and exceptions

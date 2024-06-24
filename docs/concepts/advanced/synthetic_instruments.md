@@ -1,18 +1,18 @@
 # Synthetic Instruments
 
-The platform supports the definition of customized synthetic instruments. 
-These instruments can generate synthetic quote and trade ticks, which are beneficial for:
+The platform supports creating customized synthetic instruments, which can generate synthetic quote 
+and trade ticks. These are useful for:
 
-- Allowing `Actor` (and `Strategy`) components to subscribe to quote or trade feeds (for any purpose)
-- Facilitating the triggering of emulated orders
+- Enabling `Actor` and `Strategy` components to subscribe to quote or trade feeds
+- Triggering emulated orders
 - Constructing bars from synthetic quotes or trades
 
 Synthetic instruments cannot be traded directly, as they are constructs that only exist locally 
-within the platform. The synthetic instrument serves as an analytical tool providing 
-useful metrics based on its component instruments.
+within the platform. They serve as analytical tools, providing useful metrics based on their component
+instruments.
 
-In the future, we plan to support order management for synthetic instruments, which would involve 
-trading their component instruments based on the behavior of the synthetic instrument.
+In the future, we plan to support order management for synthetic instruments, enabling trading of 
+their component instruments based on the synthetic instrument's behavior.
 
 :::info
 The venue for a synthetic instrument is always designated as `'SYNTH'`.
