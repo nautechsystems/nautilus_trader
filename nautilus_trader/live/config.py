@@ -81,7 +81,7 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     filter_unclaimed_external_orders : bool, default False
         If unclaimed order events with an EXTERNAL strategy ID should be filtered/dropped.
     filter_position_reports : bool, default False
-        If `PositionStatusReport`s are filtered from reconciliation.
+        If position status reports are filtered from reconciliation.
         This may be applicable when other nodes are trading the same instrument(s), on the same
         account - which could cause conflicts in position status.
     inflight_check_interval_ms : NonNegativeInt, default 2_000
