@@ -39,7 +39,7 @@ We don't recommend this workflow.
 ### Tips
 
 When debugging and seeking to understand a complex system such as NautilusTrader, it can be
-quite helpful to step through the code with a debugger. However, with this not being available
+quite helpful to step through the code with a debugger. With this not being available
 for the Cython part of the codebase, there are a few things which can help:
 
 - Ensure `LogLevel.DEBUG` is configured for the backtesting or live system you are debugging.

@@ -518,7 +518,7 @@ and firing up remote live trading possible.
 
 This configuration flexibility is actually opt-in, in that you can actually choose not to have
 any strategy configuration beyond the parameters you choose to pass into your
-strategies' constructor. However, if you would like to run distributed backtests or launch
+strategies' constructor. If you would like to run distributed backtests or launch
 live trading servers remotely, then you will need to define a configuration.
 
 Here is an example configuration:

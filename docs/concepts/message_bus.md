@@ -145,7 +145,7 @@ By configuring this grouping behavior, pass a string to the `streams_prefix` con
 ### Types filtering
 
 When messages are published on the message bus, they are serialized and written to a stream, provided that a backing for the message bus has been configured and enabled.
-However, in some cases, you may want to filter out certain types of messages from being externally published to prevent the stream from being 'flooded' with data, 
+In some cases, you may want to filter out certain types of messages from being externally published to prevent the stream from being 'flooded' with data, 
 such as quotes or other high-frequency information.
 
 To enable this filtering mechanism, pass a list of `type` objects to the `types_filter` parameter in the message bus configuration, specifying which types of messages should be excluded from external publication.

@@ -162,7 +162,7 @@ For MacBook Pro M1/M2, make sure your Python installed using pyenv is configured
 See https://pyo3.rs/latest/getting_started#virtualenvs.
 
 It's possible to install from source using `pip` if you first install the build dependencies
-as specified in the `pyproject.toml`. However, we highly recommend installing using [poetry](https://python-poetry.org/) as below.
+as specified in the `pyproject.toml`. We highly recommend installing using [poetry](https://python-poetry.org/) as below.
 
 1. Install [rustup](https://rustup.rs/) (the Rust toolchain installer):
    - Linux and macOS:

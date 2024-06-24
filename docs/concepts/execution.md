@@ -100,8 +100,8 @@ for a wide range of trading styles and preferences (see the table below).
 
 Examples:
 
-- Most cryptocurrency exchanges use a `NETTING` OMS type, representing a single position per market. However, it may be desirable for a trader to track multiple "virtual" positions for a strategy.
-- Some FX ECNs or brokers use a `HEDGING` OMS type, tracking multiple positions both `LONG` and `SHORT`. However, the trader may only care about the NET position per currency pair.
+- Most cryptocurrency exchanges use a `NETTING` OMS type, representing a single position per market. It may be desirable for a trader to track multiple "virtual" positions for a strategy.
+- Some FX ECNs or brokers use a `HEDGING` OMS type, tracking multiple positions both `LONG` and `SHORT`. The trader may only care about the NET position per currency pair.
 
 :::info
 Nautilus does not yet support venue-side hedging modes such as Binance `BOTH` vs. `LONG/SHORT` where the venue nets per direction.
