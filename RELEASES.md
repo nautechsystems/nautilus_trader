@@ -5,11 +5,12 @@ Released on TBD (UTC).
 ### Enhancements
 - Added Bybit demo account support (set `is_demo` to True in configs)
 - Added Bybit stop order types (`STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`, `LIMIT_IF_TOUCHED`, `TRAILING_STOP_MARKET`)
+- Changed identifier generator time tag component to include seconds (affects new `ClientOrderId`, `OrderId` and `PositionId` generation)
 - Ported `KlingerVolumeOscillator` indicator to Rust (#1724), thanks @Pushkarm029
 - Ported `DirectionalMovement` indicator to Rust (#1725), thanks @Pushkarm029
 - Ported `ArcherMovingAveragesTrends` indicator to Rust (#1726), thanks @Pushkarm029
 - Ported `Swings` indicator to Rust (#1731), thanks @Pushkarm029
-- Changed identifier generator time tag component to include seconds (affects new `ClientOrderId`, `OrderId` and `PositionId` generation)
+- Ported `BollingerBands` indicator to Rust (#1734), thanks @Pushkarm029
 
 ### Breaking Changes
 None
