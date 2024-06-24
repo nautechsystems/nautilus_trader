@@ -68,7 +68,7 @@ This diagram illustrates message flow (commands and events) across the Nautilus 
 
 ```
 
-## Order management system (OmsType)
+## Order Management System (OMS)
 
 An order management system (OMS) type refers to the method used for assigning orders to positions and tracking those positions for an instrument.
 OMS types apply to both strategies and venues (simulated and real). Even if a venue doesn't explicitly
@@ -110,13 +110,13 @@ It is advised to keep Binance account configurations as `BOTH` so that a single 
 
 ### OMS configuration
 
-If a strategy OMS type is not explicitly set through the `oms_type` configuration option,
+If a strategy OMS type is not explicitly set using the `oms_type` configuration option,
 it will default to `UNSPECIFIED`. This means the `ExecutionEngine` will not override any venue `position_id`s, 
 and the OMS type will follow the venue's OMS type.
 
 :::tip
-When configuring a backtest, it's possible to specify the `oms_type` for the venue.
-To improve backtest accuracy, it is recommended to match this with the actual OMS type used by the venue in reality.
+When configuring a backtest, you can specify the `oms_type` for the venue. To enhance backtest
+accuracy, it is recommended to match this with the actual OMS type used by the venue in practice.
 :::
 
 ## Risk engine
@@ -133,8 +133,8 @@ The `RiskEngine` includes several built-in pre-trade risk checks, including:
 - Within maximum or minimum quantity for the instrument
 - Only reducing position when a `reduce_only` execution instruction is specified for the order
 
-If any risk check fails, an `OrderDenied` event is generated, preventing the order
-from progressing further (the order is effectively closed).
+If any risk check fails, an `OrderDenied` event is generated, effectively closing the order and 
+preventing it from progressing further. This event includes a human-readable reason for the denial.
 
 ### Trading state
 
@@ -245,19 +245,6 @@ know as "primary" (original) orders when being handled by an execution algorithm
 from nautilus_trader.model.orders.base import Order
 
 def on_order(self, order: Order) -> None:  # noqa (too complex)
-    """
-    Actions to be performed when running and receives an order.
-
-    Parameters
-    ----------
-    order : Order
-        The order to be handled.
-
-    Warnings
-    --------
-    System method (not intended to be called by user code).
-
-    """
     # Handle the order here
 ```
 
@@ -304,7 +291,8 @@ or confusion with the "parent" and "child" contingent orders terminology (an exe
 ### Managing execution algorithm orders
 
 The `Cache` provides several methods to aid in managing (keeping track of) the activity of
-an execution algorithm:
+an execution algorithm. Calling the below method will return all execution algorithm orders
+for the given query filters.
 
 ```python
 def orders_for_exec_algorithm(
@@ -315,48 +303,17 @@ def orders_for_exec_algorithm(
     strategy_id: StrategyId | None = None,
     side: OrderSide = OrderSide.NO_ORDER_SIDE,
 ) -> list[Order]:
-    """
-    Return all execution algorithm orders for the given query filters.
-
-    Parameters
-    ----------
-    exec_algorithm_id : ExecAlgorithmId
-        The execution algorithm ID.
-    venue : Venue, optional
-        The venue ID query filter.
-    instrument_id : InstrumentId, optional
-        The instrument ID query filter.
-    strategy_id : StrategyId, optional
-        The strategy ID query filter.
-    side : OrderSide, default ``NO_ORDER_SIDE`` (no filter)
-        The order side query filter.
-
-    Returns
-    -------
-    list[Order]
-
-    """
 ```
 
-As well as more specifically querying the orders for a certain execution series/spawn:
+As well as more specifically querying the orders for a certain execution series/spawn.
+Calling the below method will return all orders for the given `exec_spawn_id` (if found).
+
+:::note
+This will also include the primary (original) order.
+:::
 
 ```python
 def orders_for_exec_spawn(self, exec_spawn_id: ClientOrderId) -> list[Order]:
-    """
-    Return all orders for the given execution spawn ID (if found).
-
-    Will also include the primary (original) order.
-
-    Parameters
-    ----------
-    exec_spawn_id : ClientOrderId
-        The execution algorithm spawning primary (original) client order ID.
-
-    Returns
-    -------
-    list[Order]
-
-    """
 ```
 
 ## Execution reconciliation

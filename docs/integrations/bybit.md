@@ -55,23 +55,17 @@ Options contracts are not currently supported (will be implemented in a future v
 
 To distinguish between different product types on Bybit, the following instrument ID suffix’s are used:
 
-- `-SPOT`: spot cryptocurrencies
-- `-LINEAR`: perpeutal and futures contracts
-- `-INVERSE`: inverse perpetual and inverse futures contracts
-- `-OPTION`: options contracts (not currently supported)
+- `-SPOT`: Spot cryptocurrencies
+- `-LINEAR`: Perpeutal and futures contracts
+- `-INVERSE`: Inverse perpetual and inverse futures contracts
+- `-OPTION`: Options contracts (not currently supported)
 
-These must be appended to the Bybit raw symbol string to be able to identify the specific
-product type for the instrument ID, e.g. the Ether/Tether spot currency pair is identified with `-SPOT, for example:
+These suffixes must be appended to the Bybit raw symbol string to identify the specific product type 
+for the instrument ID. For example:
 
-`ETHUSDT-SPOT`
-
-The BTCUSDT perpetual futures contract is identified with `-LINEAR`, for example:
-
-`BTCUSDT-LINEAR`
-
-The BTCUSD inverse perpetual futures contract is identified with `-INVERSE`, for example:
-
-`BTCUSD-INVERSE`
+- The Ether/Tether spot currency pair is identified with `-SPOT`, such as `ETHUSDT-SPOT`
+- The BTCUSDT perpetual futures contract is identified with `-LINEAR`, such as `BTCUSDT-LINEAR`
+- The BTCUSD inverse perpetual futures contract is identified with `-INVERSE`, such as `BTCUSD-INVERSE`
 
 ## Order types
 
