@@ -73,8 +73,8 @@ impl Indicator for Swings {
     fn reset(&mut self) {
         self.high_inputs.clear();
         self.low_inputs.clear();
-
         self.has_inputs = false;
+        self.initialized = false;
         self.direction = 0;
         self.changed = false;
         self.high_datetime = 0.0;

@@ -83,6 +83,10 @@ impl Indicator for ArcherMovingAveragesTrends {
         self.slow_ma.reset();
         self.long_run = false;
         self.short_run = false;
+        self.fast_ma_price.clear();
+        self.slow_ma_price.clear();
+        self.has_inputs = false;
+        self.initialized = false;
     }
 }
 

@@ -50,6 +50,7 @@ pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::momentum::dm::DirectionalMovement>()?;
     m.add_class::<crate::momentum::amat::ArcherMovingAveragesTrends>()?;
     m.add_class::<crate::momentum::swings::Swings>()?;
+    m.add_class::<crate::momentum::bb::BollingerBands>()?;
     // volatility
     m.add_class::<crate::volatility::atr::AverageTrueRange>()?;
     Ok(())
