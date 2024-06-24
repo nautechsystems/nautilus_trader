@@ -35,9 +35,9 @@ use crate::{
         vwap::VolumeWeightedAveragePrice, wma::WeightedMovingAverage, MovingAverageType,
     },
     momentum::{
-        amat::ArcherMovingAveragesTrends, bias::Bias, cmo::ChandeMomentumOscillator,
-        dm::DirectionalMovement, kvo::KlingerVolumeOscillator, rsi::RelativeStrengthIndex,
-        swings::Swings, vhf::VerticalHorizontalFilter,
+        amat::ArcherMovingAveragesTrends, bb::BollingerBands, bias::Bias,
+        cmo::ChandeMomentumOscillator, dm::DirectionalMovement, kvo::KlingerVolumeOscillator,
+        rsi::RelativeStrengthIndex, swings::Swings, vhf::VerticalHorizontalFilter,
     },
     ratio::efficiency_ratio::EfficiencyRatio,
 };
@@ -201,4 +201,9 @@ pub fn amat_345() -> ArcherMovingAveragesTrends {
 #[fixture]
 pub fn swings_10() -> Swings {
     Swings::new(10).unwrap()
+}
+
+#[fixture]
+pub fn bb_10() -> BollingerBands {
+    BollingerBands::new(10, 0.1, Some(MovingAverageType::Simple)).unwrap()
 }

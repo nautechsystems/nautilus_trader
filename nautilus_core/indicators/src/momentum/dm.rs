@@ -72,6 +72,8 @@ impl Indicator for DirectionalMovement {
         self.previous_low = 0.0;
         self.pos = 0.0;
         self.neg = 0.0;
+        self.has_inputs = false;
+        self.initialized = false;
     }
 }
 
