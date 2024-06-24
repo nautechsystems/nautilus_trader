@@ -18,6 +18,6 @@ version, it is possible that vulnerabilities may have been fixed in a later
 release.
 
 ## Bug Bounty Program
-At this time, we do not have a formal bug bounty program. However, we 
+At this time, we do not have a formal bug bounty program. We 
 appreciate any efforts to help us improve the security of our platform and will 
 do our best to properly recognize and credit your contributions.

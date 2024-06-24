@@ -8,7 +8,7 @@ These instruments can generate synthetic quote and trade ticks, which are benefi
 - Constructing bars from synthetic quotes or trades
 
 Synthetic instruments cannot be traded directly, as they are constructs that only exist locally 
-within the platform. However, the synthetic instrument serves as an analytical tool providing 
+within the platform. The synthetic instrument serves as an analytical tool providing 
 useful metrics based on its component instruments.
 
 In the future, we plan to support order management for synthetic instruments, which would involve 

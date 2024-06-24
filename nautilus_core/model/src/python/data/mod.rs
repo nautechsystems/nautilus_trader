@@ -43,7 +43,7 @@ use crate::data::Data;
 /// # Safety
 ///
 /// This function is safe as long as the `Data` instance does not violate Rust's
-/// safety guarantees (e.g., no invalid memory access). However, users of the
+/// safety guarantees (e.g., no invalid memory access). Users of the
 /// `PyCapsule` in Python must ensure they understand how to extract and use the
 /// encapsulated `Data` safely, especially when converting the capsule back to a
 /// Rust data structure.

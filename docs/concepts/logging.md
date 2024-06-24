@@ -92,7 +92,7 @@ For backtesting, the `BacktestEngineConfig` class can be used instead of `Tradin
 
 ANSI color codes are utilized to enhance the readability of logs when viewed in a terminal.
 These color codes can make it easier to distinguish different parts of log messages.
-However, in environments that do not support ANSI color rendering (such as some cloud environments or text editors),
+In environments that do not support ANSI color rendering (such as some cloud environments or text editors),
 these color codes may not be appropriate as they can appear as raw text.
 
 To accommodate for such scenarios, the `LoggingConfig.log_colors` option can be set to `false`.

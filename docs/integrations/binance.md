@@ -37,7 +37,7 @@ See the Binance [API Reference](../api_reference/adapters/binance.md) for full d
 ## Symbology
 
 As per the Nautilus unification policy for symbols, the native Binance symbols are used where possible including for
-spot assets and futures contracts. However, because NautilusTrader is capable of multi-venue + multi-account
+spot assets and futures contracts. Because NautilusTrader is capable of multi-venue + multi-account
 trading, it's necessary to explicitly clarify the difference between `BTCUSDT` as the spot and margin traded
 pair, and the `BTCUSDT` perpetual futures contract (this symbol is used for _both_ natively by Binance). Therefore, NautilusTrader appends `-PERP` to all native perpetual symbols.
 E.g. for Binance Futures, the said instruments symbol is `BTCUSDT-PERP` within the Nautilus system boundary.
@@ -267,7 +267,7 @@ adapter over time.
 
 :::note
 Bars are not considered 'Binance specific' and can be subscribed to in the normal way.
-However, as more adapters are built out which need for example mark price and funding rate updates, then these
+As more adapters are built out which need for example mark price and funding rate updates, then these
 methods may eventually become first-class (not requiring custom/generic subscriptions as below).
 :::
 
