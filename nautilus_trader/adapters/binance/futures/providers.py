@@ -40,6 +40,7 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments.crypto_future import CryptoFuture
 from nautilus_trader.model.instruments.crypto_perpetual import CryptoPerpetual
 from nautilus_trader.model.objects import PRICE_MAX
@@ -70,12 +71,14 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         clock: LiveClock,
         account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURE,
         config: InstrumentProviderConfig | None = None,
+        venue: Venue = BINANCE_VENUE,
     ):
         super().__init__(config=config)
 
         self._clock = clock
         self._client = client
         self._account_type = account_type
+        self._venue = venue
 
         self._http_account = BinanceFuturesAccountHttpAPI(
             self._client,
@@ -146,7 +149,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
 
         # Check all instrument IDs
         for instrument_id in instrument_ids:
-            PyCondition.equal(instrument_id.venue, BINANCE_VENUE, "instrument_id.venue", "BINANCE")
+            PyCondition.equal(instrument_id.venue, self._venue, "instrument_id.venue", "BINANCE")
 
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading instruments {instrument_ids}{filters_str}.")
@@ -185,7 +188,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
 
     async def load_async(self, instrument_id: InstrumentId, filters: dict | None = None) -> None:
         PyCondition.not_none(instrument_id, "instrument_id")
-        PyCondition.equal(instrument_id.venue, BINANCE_VENUE, "instrument_id.venue", "BINANCE")
+        PyCondition.equal(instrument_id.venue, self._venue, "instrument_id.venue", "BINANCE")
 
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.debug(f"Loading instrument {instrument_id}{filters_str}.")
@@ -239,7 +242,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
                 self._account_type,
             )
             nautilus_symbol = Symbol(parsed_symbol)
-            instrument_id = InstrumentId(symbol=nautilus_symbol, venue=BINANCE_VENUE)
+            instrument_id = InstrumentId(symbol=nautilus_symbol, venue=self._venue)
 
             # Parse instrument filters
             filters: dict[BinanceSymbolFilterType, BinanceSymbolFilter] = {

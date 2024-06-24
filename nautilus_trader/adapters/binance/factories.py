@@ -16,6 +16,7 @@
 import asyncio
 from functools import lru_cache
 
+from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.credentials import get_api_key
 from nautilus_trader.adapters.binance.common.credentials import get_api_secret
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
@@ -37,6 +38,7 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.core.nautilus_pyo3 import Quota
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
+from nautilus_trader.model.identifiers import Venue
 
 
 BINANCE_HTTP_CLIENTS: dict[str, BinanceHttpClient] = {}
@@ -123,6 +125,7 @@ def get_cached_binance_spot_instrument_provider(
     account_type: BinanceAccountType,
     is_testnet: bool,
     config: InstrumentProviderConfig,
+    venue: Venue
 ) -> BinanceSpotInstrumentProvider:
     """
     Cache and return an instrument provider for the `Binance Spot/Margin` exchange.
@@ -141,6 +144,8 @@ def get_cached_binance_spot_instrument_provider(
         If the provider is for the Spot testnet.
     config : InstrumentProviderConfig
         The configuration for the instrument provider.
+    venue : Venue
+        The venue for the instrument provider.
 
     Returns
     -------
@@ -162,6 +167,7 @@ def get_cached_binance_futures_instrument_provider(
     clock: LiveClock,
     account_type: BinanceAccountType,
     config: InstrumentProviderConfig,
+    venue: Venue
 ) -> BinanceFuturesInstrumentProvider:
     """
     Cache and return an instrument provider for the `Binance Futures` exchange.
@@ -178,6 +184,8 @@ def get_cached_binance_futures_instrument_provider(
         The Binance account type for the instrument provider.
     config : InstrumentProviderConfig
         The configuration for the instrument provider.
+    venue : Venue
+        The venue for the instrument provider.
 
     Returns
     -------
@@ -189,6 +197,7 @@ def get_cached_binance_futures_instrument_provider(
         clock=clock,
         account_type=account_type,
         config=config,
+        venue=venue,
     )
 
 
@@ -260,6 +269,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
                 account_type=config.account_type,
                 is_testnet=config.testnet,
                 config=config.instrument_provider,
+                venue=config.venue,
             )
 
             return BinanceSpotDataClient(
@@ -281,6 +291,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
                 clock=clock,
                 account_type=config.account_type,
                 config=config.instrument_provider,
+                venue=config.venue,
             )
 
             return BinanceFuturesDataClient(
@@ -365,6 +376,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 account_type=config.account_type,
                 is_testnet=config.testnet,
                 config=config.instrument_provider,
+                venue=config.venue,
             )
 
             return BinanceSpotExecutionClient(
@@ -386,6 +398,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 clock=clock,
                 account_type=config.account_type,
                 config=config.instrument_provider,
+                venue=config.venue
             )
 
             return BinanceFuturesExecutionClient(
