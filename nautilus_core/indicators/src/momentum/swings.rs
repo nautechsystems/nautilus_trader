@@ -254,10 +254,8 @@ mod tests {
             swings_10.update_raw(high[i], low[i], time[i]);
         }
 
-        // Reset the indicator
         swings_10.reset();
 
-        // Assert that the indicator has been reset to its fresh state
         assert!(!swings_10.initialized());
         assert_eq!(swings_10.direction, 0);
         assert_eq!(swings_10.high_price, 0.0);
