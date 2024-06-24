@@ -37,7 +37,7 @@ use crate::{
     momentum::{
         amat::ArcherMovingAveragesTrends, bias::Bias, cmo::ChandeMomentumOscillator,
         dm::DirectionalMovement, kvo::KlingerVolumeOscillator, rsi::RelativeStrengthIndex,
-        vhf::VerticalHorizontalFilter,
+        swings::Swings, vhf::VerticalHorizontalFilter,
     },
     ratio::efficiency_ratio::EfficiencyRatio,
 };
@@ -196,4 +196,9 @@ pub fn dm_10() -> DirectionalMovement {
 #[fixture]
 pub fn amat_345() -> ArcherMovingAveragesTrends {
     ArcherMovingAveragesTrends::new(3, 4, 5, Some(MovingAverageType::Simple)).unwrap()
+}
+
+#[fixture]
+pub fn swings_10() -> Swings {
+    Swings::new(10).unwrap()
 }
