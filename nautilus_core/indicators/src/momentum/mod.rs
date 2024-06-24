@@ -17,6 +17,7 @@
 
 pub mod amat;
 pub mod aroon;
+pub mod bb;
 pub mod bias;
 pub mod cmo;
 pub mod dm;

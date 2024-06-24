@@ -87,6 +87,8 @@ impl Indicator for KlingerVolumeOscillator {
         self.slow_ma.reset();
         self.signal_ma.reset();
         self.value = 0.0;
+        self.has_inputs = false;
+        self.initialized = false;
     }
 }
 
