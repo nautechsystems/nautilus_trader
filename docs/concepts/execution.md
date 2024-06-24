@@ -308,13 +308,14 @@ def orders_for_exec_algorithm(
 As well as more specifically querying the orders for a certain execution series/spawn.
 Calling the below method will return all orders for the given `exec_spawn_id` (if found).
 
-:::note
-This will also include the primary (original) order.
-:::
-
 ```python
 def orders_for_exec_spawn(self, exec_spawn_id: ClientOrderId) -> list[Order]:
 ```
+
+:::note
+This also includes the primary (original) order.
+:::
+
 
 ## Execution reconciliation
 
@@ -366,9 +367,7 @@ If reconciliation fails, the system will not continue to start, and an error wil
 
 :::tip
 The current reconciliation procedure can experience state mismatches if the lookback window is 
-configured in a way that misses necessary events, or if the venue does not include certain order or 
-trade reports due to known filter conditions.
-
-If you encounter issues with reconciliation, you can either drop any cached state and/or ensure the 
-account is always flat at system shutdown and startup.
+misconfigured or if the venue omits certain order or trade reports due to filter conditions.
+If you encounter reconciliation issues, drop any cached state or ensure the account is flat at
+system shutdown and startup.
 :::
