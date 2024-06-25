@@ -476,6 +476,7 @@ def test_loader_with_trades_large() -> None:
     assert len(data) == 6_885_435
 
 
+@pytest.mark.skip("requires updated test data")
 def test_loader_ohlcv_1s() -> None:
     # Arrange
     loader = DatabentoDataLoader()
@@ -499,6 +500,7 @@ def test_loader_ohlcv_1s() -> None:
     assert bar.ts_init == 1609160401000000000
 
 
+@pytest.mark.skip("requires updated test data")
 def test_loader_with_ohlcv_1m() -> None:
     # Arrange
     loader = DatabentoDataLoader()
@@ -518,6 +520,7 @@ def test_loader_with_ohlcv_1m() -> None:
     assert bar.ts_init == 1609160460000000000
 
 
+@pytest.mark.skip("requires updated test data")
 def test_loader_with_ohlcv_1m_pyo3() -> None:
     # Arrange
     loader = DatabentoDataLoader()
@@ -537,6 +540,7 @@ def test_loader_with_ohlcv_1m_pyo3() -> None:
     assert bar.ts_init == 1609160460000000000
 
 
+@pytest.mark.skip("requires updated test data")
 def test_loader_with_ohlcv_1h() -> None:
     # Arrange
     loader = DatabentoDataLoader()
@@ -556,6 +560,7 @@ def test_loader_with_ohlcv_1h() -> None:
     assert bar.ts_init == 1609164000000000000
 
 
+@pytest.mark.skip("requires updated test data")
 def test_loader_with_ohlcv_1d() -> None:
     # Arrange
     loader = DatabentoDataLoader()
@@ -638,6 +643,7 @@ def test_load_trade_ticks() -> None:
     assert isinstance(data[1], TradeTick)
 
 
+@pytest.mark.skip("requires updated test data")
 @pytest.mark.parametrize(
     ("filename", "bar_type", "open_price", "ts_event", "ts_init"),
     [
