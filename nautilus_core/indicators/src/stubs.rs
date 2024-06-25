@@ -40,6 +40,7 @@ use crate::{
         rsi::RelativeStrengthIndex, swings::Swings, vhf::VerticalHorizontalFilter,
     },
     ratio::efficiency_ratio::EfficiencyRatio,
+    volatility::vr::VolatilityRatio,
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -206,4 +207,16 @@ pub fn swings_10() -> Swings {
 #[fixture]
 pub fn bb_10() -> BollingerBands {
     BollingerBands::new(10, 0.1, Some(MovingAverageType::Simple)).unwrap()
+}
+
+#[fixture]
+pub fn vr_10() -> VolatilityRatio {
+    VolatilityRatio::new(
+        10,
+        10,
+        Some(MovingAverageType::Simple),
+        Some(false),
+        Some(10.0),
+    )
+    .unwrap()
 }
