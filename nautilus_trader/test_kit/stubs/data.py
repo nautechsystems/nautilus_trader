@@ -237,13 +237,16 @@ class TestDataStubs:
 
     @staticmethod
     def order(
+        instrument: Instrument | None = None,
         side: OrderSide = OrderSide.BUY,
         price: float = 100.0,
-        size: float = 10.0,
+        size: float = 100.0,
     ) -> BookOrder:
+        instrument = instrument or TestInstrumentProvider.equity()
+        assert instrument
         return BookOrder(
-            price=Price(price, 2),
-            size=Quantity(size, 0),
+            price=instrument.make_price(price),
+            size=instrument.make_qty(size),
             side=side,
             order_id=0,
         )
@@ -252,16 +255,16 @@ class TestDataStubs:
     def order_book(
         instrument: Instrument | None = None,
         book_type: BookType = BookType.L2_MBP,
-        bid_price: float = 10.0,
-        ask_price: float = 15.0,
-        bid_size: float = 10.0,
-        ask_size: float = 10.0,
+        bid_price: float = 100.0,
+        ask_price: float = 101.0,
+        bid_size: float = 1_000.0,
+        ask_size: float = 1_000.0,
         bid_levels: int = 3,
         ask_levels: int = 3,
         ts_event: int = 0,
         ts_init: int = 0,
     ) -> OrderBook:
-        instrument = instrument or TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        instrument = instrument or TestInstrumentProvider.equity()
         assert instrument
         order_book = OrderBook(
             instrument_id=instrument.id,
@@ -284,10 +287,10 @@ class TestDataStubs:
     @staticmethod
     def order_book_snapshot(
         instrument: Instrument | None = None,
-        bid_price: float = 10.0,
-        ask_price: float = 15.0,
-        bid_size: float = 10.0,
-        ask_size: float = 10.0,
+        bid_price: float = 100.0,
+        ask_price: float = 101.0,
+        bid_size: float = 1_000.0,
+        ask_size: float = 1_000.0,
         bid_levels: int = 3,
         ask_levels: int = 3,
         ts_event: int = 0,
@@ -295,7 +298,7 @@ class TestDataStubs:
     ) -> OrderBookDeltas:
         err = "Too many levels generated; orders will be in cross. Increase bid/ask spread or reduce number of levels"
         assert bid_price < ask_price, err
-        instrument = instrument or TestInstrumentProvider.default_fx_ccy("AUD/USD")
+        instrument = instrument or TestInstrumentProvider.equity()
         assert instrument
         bids = [
             BookOrder(
@@ -329,6 +332,7 @@ class TestDataStubs:
     @staticmethod
     def order_book_delta(
         instrument_id: InstrumentId | None = None,
+        action: BookAction | None = None,
         order: BookOrder | None = None,
         flags: int = 0,
         sequence: int = 0,
@@ -337,7 +341,7 @@ class TestDataStubs:
     ) -> OrderBookDeltas:
         return OrderBookDelta(
             instrument_id=instrument_id or TestIdStubs.audusd_id(),
-            action=BookAction.UPDATE,
+            action=action or BookAction.UPDATE,
             order=order or TestDataStubs.order(),
             flags=flags,
             sequence=sequence,

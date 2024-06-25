@@ -15,8 +15,6 @@
 
 from decimal import Decimal
 
-import pytest
-
 from nautilus_trader.backtest.exchange import SimulatedExchange
 from nautilus_trader.backtest.execution_client import BacktestExecClient
 from nautilus_trader.backtest.models import FillModel
@@ -29,17 +27,14 @@ from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import QuoteTick
-from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import AggressorSide
+from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
-from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
-from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
@@ -172,7 +167,7 @@ class TestL2OrderBookExchange:
             instrument_id=_USDJPY_SIM.id,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(20_000),
-            price=_USDJPY_SIM.make_price(20.000),
+            price=_USDJPY_SIM.make_price(102.000),
             post_only=False,
         )
 
@@ -182,30 +177,19 @@ class TestL2OrderBookExchange:
 
         # Assert
         assert order.status == OrderStatus.FILLED
-        assert order.filled_qty == Decimal("20000.0")  # No slippage
-        assert order.avg_px == 15.333333333333334
-        assert self.exchange.get_account().balance_total(USD) == Money(999999.94, USD)
+        assert order.filled_qty == Decimal("20000.0")
+        assert order.avg_px == 101.33333333333333
+        assert self.exchange.get_account().balance_total(USD) == Money(999999.64, USD)
 
     def test_aggressive_partial_fill(self):
         # Arrange: Prepare market
         self.cache.add_instrument(_USDJPY_SIM)
 
-        quote = QuoteTick(
-            instrument_id=_USDJPY_SIM.id,
-            bid_price=Price.from_str("110.000"),
-            ask_price=Price.from_str("110.010"),
-            bid_size=Quantity.from_int(1_500_000),
-            ask_size=Quantity.from_int(1_500_000),
-            ts_event=0,
-            ts_init=0,
-        )
-        self.data_engine.process(quote)
         snapshot = TestDataStubs.order_book_snapshot(
             instrument=_USDJPY_SIM,
             bid_size=10_000,
             ask_size=10_000,
         )
-        print(str(snapshot))
         self.data_engine.process(snapshot)
         self.exchange.process_order_book_deltas(snapshot)
 
@@ -214,7 +198,7 @@ class TestL2OrderBookExchange:
             instrument_id=_USDJPY_SIM.id,
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(70_000),
-            price=_USDJPY_SIM.make_price(20.000),
+            price=_USDJPY_SIM.make_price(112.000),
             post_only=False,
         )
         self.strategy.submit_order(order)
@@ -222,18 +206,16 @@ class TestL2OrderBookExchange:
 
         # Assert
         assert order.status == OrderStatus.PARTIALLY_FILLED
-        assert order.filled_qty == Quantity.from_str("60000.0")  # No slippage
-        assert order.avg_px == 15.933333333333334
-        assert self.exchange.get_account().balance_total(USD) == Money(999999.83, USD)
+        assert order.filled_qty == Quantity.from_str("60000.0")
+        assert order.avg_px == 101.93333333333334
 
     def test_post_only_insert(self):
         # Arrange: Prepare market
         self.cache.add_instrument(_USDJPY_SIM)
-        # Market is 10 @ 15
         snapshot = TestDataStubs.order_book_snapshot(
             instrument=_USDJPY_SIM,
-            bid_size=1000,
-            ask_size=1000,
+            bid_size=100_000,
+            ask_size=100_000,
         )
         self.data_engine.process(snapshot)
         self.exchange.process_order_book_deltas(snapshot)
@@ -243,7 +225,7 @@ class TestL2OrderBookExchange:
             instrument_id=_USDJPY_SIM.id,
             order_side=OrderSide.SELL,
             quantity=Quantity.from_int(2_000),
-            price=_USDJPY_SIM.make_price(14.000),
+            price=_USDJPY_SIM.make_price(102.000),
             post_only=True,
         )
         self.strategy.submit_order(order)
@@ -252,16 +234,14 @@ class TestL2OrderBookExchange:
         # Assert
         assert order.status == OrderStatus.ACCEPTED
 
-    # TODO - Need to discuss how we are going to support passive quotes trading now
-    @pytest.mark.skip()
-    def test_passive_partial_fill(self):
+    def test_passive_partial_fill_sell(self):
         # Arrange: Prepare market
         self.cache.add_instrument(_USDJPY_SIM)
         # Market is 10 @ 15
         snapshot = TestDataStubs.order_book_snapshot(
             instrument=_USDJPY_SIM,
-            bid_size=1000,
-            ask_size=1000,
+            bid_size=100_000,
+            ask_size=100_000,
         )
         self.data_engine.process(snapshot)
         self.exchange.process_order_book_deltas(snapshot)
@@ -269,37 +249,77 @@ class TestL2OrderBookExchange:
         order = self.strategy.order_factory.limit(
             instrument_id=_USDJPY_SIM.id,
             order_side=OrderSide.SELL,
-            quantity=Quantity.from_int(1_000),
-            price=Price.from_str("14"),
+            quantity=_USDJPY_SIM.make_qty(100_000),
+            price=_USDJPY_SIM.make_price(101.0),
             post_only=False,
         )
         self.strategy.submit_order(order)
+        self.exchange.process(0)
 
         # Act
-        tick = TestDataStubs.quote_tick(
-            instrument=_USDJPY_SIM,
-            bid_price=15.0,
-            ask_price=16.0,
-            bid_size=1_000,
-            ask_size=1_000,
+        delta = TestDataStubs.order_book_delta(
+            instrument_id=_USDJPY_SIM.id,
+            action=BookAction.ADD,
+            order=TestDataStubs.order(
+                instrument=_USDJPY_SIM,
+                side=OrderSide.BUY,
+                price=102.0,
+                size=50_000,
+            ),
         )
-        # New tick will be in cross with our order
-        self.exchange.process_quote_tick(tick)
+        self.exchange.process_order_book_delta(delta)
 
         # Assert
         assert order.status == OrderStatus.PARTIALLY_FILLED
-        assert order.filled_qty == Quantity.from_str("1000.0")
-        assert order.avg_px == Decimal("15.0")
+        assert order.filled_qty == _USDJPY_SIM.make_qty(50_000)
+        assert order.avg_px == Decimal("101.000")  # <-- Fills at limit price
 
-    # TODO - Need to discuss how we are going to support passive quotes trading now
-    @pytest.mark.skip()
-    def test_passive_fill_on_trade_tick(self):
+    def test_passive_partial_fill_buy(self):
         # Arrange: Prepare market
-        # Market is 10 @ 15
+        self.cache.add_instrument(_USDJPY_SIM)
         snapshot = TestDataStubs.order_book_snapshot(
             instrument=_USDJPY_SIM,
-            bid_size=1000,
-            ask_size=1000,
+            bid_size=100_000,
+            ask_size=100_000,
+        )
+        self.data_engine.process(snapshot)
+        self.exchange.process_order_book_deltas(snapshot)
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=_USDJPY_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=_USDJPY_SIM.make_qty(100_000),
+            price=_USDJPY_SIM.make_price(100.0),
+            post_only=False,
+        )
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Act
+        delta = TestDataStubs.order_book_delta(
+            instrument_id=_USDJPY_SIM.id,
+            action=BookAction.ADD,
+            order=TestDataStubs.order(
+                instrument=_USDJPY_SIM,
+                side=OrderSide.SELL,
+                price=98.0,
+                size=50_000,
+            ),
+        )
+        self.exchange.process_order_book_delta(delta)
+
+        # Assert
+        assert order.status == OrderStatus.PARTIALLY_FILLED
+        assert order.filled_qty == _USDJPY_SIM.make_qty(50_000)
+        assert order.avg_px == Decimal("100.000")  # <-- Fills at limit price
+
+    def test_passive_multiple_fills_sell(self):
+        # Arrange: Prepare market
+        self.cache.add_instrument(_USDJPY_SIM)
+        snapshot = TestDataStubs.order_book_snapshot(
+            instrument=_USDJPY_SIM,
+            bid_size=100_000,
+            ask_size=100_000,
         )
         self.data_engine.process(snapshot)
         self.exchange.process_order_book_deltas(snapshot)
@@ -307,25 +327,66 @@ class TestL2OrderBookExchange:
         order = self.strategy.order_factory.limit(
             instrument_id=_USDJPY_SIM.id,
             order_side=OrderSide.SELL,
-            quantity=Quantity.from_int(2_000),
-            price=Price.from_str("14"),
+            quantity=_USDJPY_SIM.make_qty(100_000),
+            price=_USDJPY_SIM.make_price(101.0),
             post_only=False,
         )
         self.strategy.submit_order(order)
+        self.exchange.process(0)
 
         # Act
-        tick1 = TradeTick(
-            instrument_id=_USDJPY_SIM.id,
-            price=Price.from_str("14.0"),
-            size=Quantity.from_int(1_000),
-            aggressor_side=AggressorSide.SELLER,
-            trade_id=TradeId("123456789"),
-            ts_event=0,
-            ts_init=0,
+        deltas = TestDataStubs.order_book_snapshot(
+            instrument=_USDJPY_SIM,
+            ask_price=104.0,
+            bid_price=103.0,
+            bid_size=50_000,
+            ask_size=50_000,
         )
-        self.exchange.process_quote_tick(tick1)
+        self.exchange.process_order_book_deltas(deltas)
 
         # Assert
-        assert order.status == OrderStatus.PARTIALLY_FILLED
-        assert order.filled_qty == Quantity.from_int(1000.0)  # No slippage
-        assert order.avg_px == Decimal("14.0")
+        assert order.status == OrderStatus.FILLED
+        assert order.events[3].last_px == _USDJPY_SIM.make_price(101.0)
+        assert order.events[3].last_qty == _USDJPY_SIM.make_qty(50_000)
+        assert order.events[4].last_px == _USDJPY_SIM.make_price(101.0)
+        assert order.events[4].last_qty == _USDJPY_SIM.make_qty(50_000)
+        assert order.avg_px == Decimal("101.000")  # <-- Fills at limit price
+
+    def test_passive_multiple_fills_buy(self):
+        # Arrange: Prepare market
+        self.cache.add_instrument(_USDJPY_SIM)
+        snapshot = TestDataStubs.order_book_snapshot(
+            instrument=_USDJPY_SIM,
+            bid_size=100_000,
+            ask_size=100_000,
+        )
+        self.data_engine.process(snapshot)
+        self.exchange.process_order_book_deltas(snapshot)
+
+        order = self.strategy.order_factory.limit(
+            instrument_id=_USDJPY_SIM.id,
+            order_side=OrderSide.BUY,
+            quantity=_USDJPY_SIM.make_qty(100_000),
+            price=_USDJPY_SIM.make_price(100.0),
+            post_only=False,
+        )
+        self.strategy.submit_order(order)
+        self.exchange.process(0)
+
+        # Act
+        deltas = TestDataStubs.order_book_snapshot(
+            instrument=_USDJPY_SIM,
+            ask_price=98.0,
+            bid_price=96.0,
+            bid_size=50_000,
+            ask_size=50_000,
+        )
+        self.exchange.process_order_book_deltas(deltas)
+
+        # Assert
+        assert order.status == OrderStatus.FILLED
+        assert order.events[3].last_px == _USDJPY_SIM.make_price(100.0)
+        assert order.events[3].last_qty == _USDJPY_SIM.make_qty(50_000)
+        assert order.events[4].last_px == _USDJPY_SIM.make_price(100.0)
+        assert order.events[4].last_qty == _USDJPY_SIM.make_qty(50_000)
+        assert order.avg_px == Decimal("100.000")  # <-- Fills at limit price
