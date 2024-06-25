@@ -52,7 +52,7 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
         TradeId of ticks will be the Aggregate tradeId returned by Binance.
     venue : Venue, default BINANCE_VENUE
         The venue for the client.
-        
+
     """
 
     api_key: str | None = None

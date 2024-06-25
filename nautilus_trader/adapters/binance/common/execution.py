@@ -69,8 +69,8 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orders import LimitOrder
 from nautilus_trader.model.orders import MarketOrder
@@ -168,7 +168,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay=}", LogColor.BLUE)
 
-        self._set_account_id(AccountId(f"{name or BINANCE_VENUE.value}-{self._binance_account_type.value}-master"))
+        self._set_account_id(
+            AccountId(f"{name or BINANCE_VENUE.value}-{self._binance_account_type.value}-master"),
+        )
 
         # Enum parser
         self._enum_parser = enum_parser

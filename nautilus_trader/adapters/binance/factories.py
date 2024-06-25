@@ -16,7 +16,6 @@
 import asyncio
 from functools import lru_cache
 
-from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.credentials import get_api_key
 from nautilus_trader.adapters.binance.common.credentials import get_api_secret
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
@@ -125,7 +124,7 @@ def get_cached_binance_spot_instrument_provider(
     account_type: BinanceAccountType,
     is_testnet: bool,
     config: InstrumentProviderConfig,
-    venue: Venue
+    venue: Venue,
 ) -> BinanceSpotInstrumentProvider:
     """
     Cache and return an instrument provider for the `Binance Spot/Margin` exchange.
@@ -167,7 +166,7 @@ def get_cached_binance_futures_instrument_provider(
     clock: LiveClock,
     account_type: BinanceAccountType,
     config: InstrumentProviderConfig,
-    venue: Venue
+    venue: Venue,
 ) -> BinanceFuturesInstrumentProvider:
     """
     Cache and return an instrument provider for the `Binance Futures` exchange.
@@ -398,7 +397,7 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
                 clock=clock,
                 account_type=config.account_type,
                 config=config.instrument_provider,
-                venue=config.venue
+                venue=config.venue,
             )
 
             return BinanceFuturesExecutionClient(
