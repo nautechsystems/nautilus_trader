@@ -17,17 +17,17 @@ use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
 use pyo3::{exceptions::PyPermissionError, prelude::*};
 
-use crate::{average::MovingAverageType, indicator::Indicator, momentum::dm::DirectionalMovement};
+use crate::{average::MovingAverageType, indicator::Indicator, momentum::stochastics::Stochastics};
 
 #[pymethods]
-impl DirectionalMovement {
+impl Stochastics {
     #[new]
-    pub fn py_new(period: usize, ma_type: Option<MovingAverageType>) -> PyResult<Self> {
-        Self::new(period, ma_type).map_err(to_pyvalue_err)
+    pub fn py_new(period_k: usize, period_d: usize) -> PyResult<Self> {
+        Self::new(period_k, period_d).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
-        format!("DirectionalMovement({},{})", self.period, self.ma_type)
+        format!("Stochastics({},{})", self.period_k, self.period_d)
     }
 
     #[getter]
@@ -37,9 +37,15 @@ impl DirectionalMovement {
     }
 
     #[getter]
-    #[pyo3(name = "period")]
-    fn py_period(&self) -> usize {
-        self.period
+    #[pyo3(name = "period_k")]
+    fn py_period_k(&self) -> usize {
+        self.period_k
+    }
+
+    #[getter]
+    #[pyo3(name = "period_d")]
+    fn py_period_d(&self) -> usize {
+        self.period_d
     }
 
     #[getter]
@@ -49,15 +55,15 @@ impl DirectionalMovement {
     }
 
     #[getter]
-    #[pyo3(name = "pos")]
-    fn py_pos(&self) -> f64 {
-        self.pos
+    #[pyo3(name = "value_k")]
+    fn py_value_k(&self) -> f64 {
+        self.value_k
     }
 
     #[getter]
-    #[pyo3(name = "neg")]
-    fn py_neg(&self) -> f64 {
-        self.neg
+    #[pyo3(name = "value_d")]
+    fn py_value_d(&self) -> f64 {
+        self.value_d
     }
 
     #[getter]
@@ -67,8 +73,8 @@ impl DirectionalMovement {
     }
 
     #[pyo3(name = "update_raw")]
-    fn py_update_raw(&mut self, high: f64, low: f64) {
-        self.update_raw(high, low);
+    fn py_update_raw(&mut self, high: f64, low: f64, close: f64) {
+        self.update_raw(high, low, close);
     }
 
     #[pyo3(name = "handle_bar")]

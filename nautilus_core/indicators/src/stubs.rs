@@ -37,7 +37,8 @@ use crate::{
     momentum::{
         amat::ArcherMovingAveragesTrends, bb::BollingerBands, bias::Bias,
         cmo::ChandeMomentumOscillator, dm::DirectionalMovement, kvo::KlingerVolumeOscillator,
-        rsi::RelativeStrengthIndex, swings::Swings, vhf::VerticalHorizontalFilter,
+        rsi::RelativeStrengthIndex, stochastics::Stochastics, swings::Swings,
+        vhf::VerticalHorizontalFilter,
     },
     ratio::efficiency_ratio::EfficiencyRatio,
 };
@@ -206,4 +207,9 @@ pub fn swings_10() -> Swings {
 #[fixture]
 pub fn bb_10() -> BollingerBands {
     BollingerBands::new(10, 0.1, Some(MovingAverageType::Simple)).unwrap()
+}
+
+#[fixture]
+pub fn stochastics_10() -> Stochastics {
+    Stochastics::new(10, 10).unwrap()
 }
