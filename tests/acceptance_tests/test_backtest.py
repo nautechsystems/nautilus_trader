@@ -745,4 +745,4 @@ class TestBacktestAcceptanceTestsMarketMaking:
 
         # Assert
         assert self.engine.iteration == 4216
-        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money("924.65", GBP)
+        assert self.engine.portfolio.account(self.venue).balance_total(GBP) == Money("924.64", GBP)

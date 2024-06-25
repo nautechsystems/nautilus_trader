@@ -1405,8 +1405,8 @@ cdef class OrderMatchingEngine:
                 self._core.set_bid_raw(price._mem.raw)
                 self._core.set_last_raw(price._mem.raw)
 
-        cdef tuple initial_fill
-        cdef Price initial_fill_price
+        cdef tuple[Price, Quantity] fill
+        cdef Price last_px
         if (
             fills
             and order.liquidity_side == LiquiditySide.MAKER
@@ -1414,35 +1414,35 @@ cdef class OrderMatchingEngine:
             ########################################################################
             # Filling as MAKER
             ########################################################################
-            initial_fill = fills[0]
-            initial_fill_price = initial_fill[0]
             price = order.price
             if order.side == OrderSide.BUY:
                 if triggered_price and price > triggered_price:
                     price = triggered_price
-                if initial_fill_price._mem.raw < price._mem.raw:
-                    # Marketable BUY would have filled at limit
-                    self._has_targets = True
-                    self._target_bid = self._core.bid_raw
-                    self._target_ask = self._core.ask_raw
-                    self._target_last = self._core.last_raw
-                    self._core.set_ask_raw(price._mem.raw)
-                    self._core.set_last_raw(price._mem.raw)
-                    initial_fill = (order.price, initial_fill[1])
-                    fills[0] = initial_fill
+                for fill in fills:
+                    last_px = fill[0]
+                    if last_px._mem.raw < price._mem.raw:
+                        # Marketable BUY would have filled at limit
+                        self._has_targets = True
+                        self._target_bid = self._core.bid_raw
+                        self._target_ask = self._core.ask_raw
+                        self._target_last = self._core.last_raw
+                        self._core.set_ask_raw(price._mem.raw)
+                        self._core.set_last_raw(price._mem.raw)
+                        last_px._mem.raw = price._mem.raw
             elif order.side == OrderSide.SELL:
                 if triggered_price and price < triggered_price:
                     price = triggered_price
-                if initial_fill_price._mem.raw > price._mem.raw:
-                    # Marketable SELL would have filled at limit
-                    self._has_targets = True
-                    self._target_bid = self._core.bid_raw
-                    self._target_ask = self._core.ask_raw
-                    self._target_last = self._core.last_raw
-                    self._core.set_bid_raw(price._mem.raw)
-                    self._core.set_last_raw(price._mem.raw)
-                    initial_fill = (order.price, initial_fill[1])
-                    fills[0] = initial_fill
+                for fill in fills:
+                    last_px = fill[0]
+                    if last_px._mem.raw > price._mem.raw:
+                        # Marketable SELL would have filled at limit
+                        self._has_targets = True
+                        self._target_bid = self._core.bid_raw
+                        self._target_ask = self._core.ask_raw
+                        self._target_last = self._core.last_raw
+                        self._core.set_bid_raw(price._mem.raw)
+                        self._core.set_last_raw(price._mem.raw)
+                        last_px._mem.raw = price._mem.raw
             else:
                 raise RuntimeError(f"invalid `OrderSide`, was {order.side}")  # pragma: no cover (design-time error)
 
