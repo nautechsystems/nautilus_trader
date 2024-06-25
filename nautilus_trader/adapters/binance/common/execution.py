@@ -69,6 +69,7 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orders import LimitOrder
@@ -141,7 +142,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         super().__init__(
             loop=loop,
             client_id=ClientId(name or BINANCE_VENUE.value),
-            venue=BINANCE_VENUE,
+            venue=Venue(name or BINANCE_VENUE.value),
             oms_type=OmsType.HEDGING if account_type.is_futures else OmsType.NETTING,
             instrument_provider=instrument_provider,
             account_type=AccountType.CASH if account_type.is_spot else AccountType.MARGIN,
@@ -167,7 +168,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay=}", LogColor.BLUE)
 
-        self._set_account_id(AccountId(f"{name or BINANCE_VENUE.value}-spot-master"))
+        self._set_account_id(
+            AccountId(f"{name or BINANCE_VENUE.value}-{self._binance_account_type.value}-master"),
+        )
 
         # Enum parser
         self._enum_parser = enum_parser
@@ -830,7 +833,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         )
         instrument_id: InstrumentId | None = self._instrument_ids.get(nautilus_symbol)
         if not instrument_id:
-            instrument_id = InstrumentId(Symbol(nautilus_symbol), BINANCE_VENUE)
+            instrument_id = InstrumentId(Symbol(nautilus_symbol), self.venue)
             self._instrument_ids[nautilus_symbol] = instrument_id
         return instrument_id
 
