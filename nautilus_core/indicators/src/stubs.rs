@@ -41,6 +41,7 @@ use crate::{
         vhf::VerticalHorizontalFilter,
     },
     ratio::efficiency_ratio::EfficiencyRatio,
+    volatility::vr::VolatilityRatio,
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -212,4 +213,16 @@ pub fn bb_10() -> BollingerBands {
 #[fixture]
 pub fn stochastics_10() -> Stochastics {
     Stochastics::new(10, 10).unwrap()
+}
+
+#[fixture]
+pub fn vr_10() -> VolatilityRatio {
+    VolatilityRatio::new(
+        10,
+        10,
+        Some(MovingAverageType::Simple),
+        Some(false),
+        Some(10.0),
+    )
+    .unwrap()
 }
