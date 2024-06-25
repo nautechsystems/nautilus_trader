@@ -14,11 +14,13 @@
 # -------------------------------------------------------------------------------------------------
 
 
+from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.config import PositiveFloat
 from nautilus_trader.config import PositiveInt
+from nautilus_trader.model.identifiers import Venue
 
 
 class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
@@ -44,10 +46,12 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
     us : bool, default False
         If client is connecting to Binance US.
     testnet : bool, default False
-        If the client is connecting to the Binance testnet API.
+        If the client is connecting to a Binance testnet.
     use_agg_trade_ticks : bool, default False
         Whether to use aggregated trade tick endpoints instead of raw trade ticks.
         TradeId of ticks will be the Aggregate tradeId returned by Binance.
+    venue : Venue, default BINANCE_VENUE
+        The venue for the client.
 
     """
 
@@ -59,6 +63,7 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
     us: bool = False
     testnet: bool = False
     use_agg_trade_ticks: bool = False
+    venue: Venue = BINANCE_VENUE
 
 
 class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
@@ -84,7 +89,7 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     us : bool, default False
         If client is connecting to Binance US.
     testnet : bool, default False
-        If the client is connecting to the Binance testnet API.
+        If the client is connecting to a Binance testnet.
     use_gtd : bool, default True
         If GTD orders will use the Binance GTD TIF option.
         If False then GTD time in force will be remapped to GTC (this is useful if managing GTD
@@ -104,6 +109,8 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
         The maximum number of times a submit or cancel order request will be retried.
     retry_delay : PositiveFloat, optional
         The delay (seconds) between retries.
+    venue : Venue, default BINANCE_VENUE
+        The venue for the client.
 
     """
 
@@ -120,3 +127,4 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     treat_expired_as_canceled: bool = False
     max_retries: PositiveInt | None = None
     retry_delay: PositiveFloat | None = None
+    venue: Venue = BINANCE_VENUE

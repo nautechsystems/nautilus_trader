@@ -71,6 +71,7 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Quantity
 
@@ -130,7 +131,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         super().__init__(
             loop=loop,
             client_id=ClientId(name or BINANCE_VENUE.value),
-            venue=BINANCE_VENUE,
+            venue=Venue(name or BINANCE_VENUE.value),
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -910,7 +911,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         )
         instrument_id: InstrumentId | None = self._instrument_ids.get(nautilus_symbol)
         if not instrument_id:
-            instrument_id = InstrumentId(Symbol(nautilus_symbol), BINANCE_VENUE)
+            instrument_id = InstrumentId(Symbol(nautilus_symbol), self.venue)
             self._instrument_ids[nautilus_symbol] = instrument_id
         return instrument_id
 
