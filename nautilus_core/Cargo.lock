@@ -348,7 +348,7 @@ version = "52.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32aae6a60458a2389c0da89c9de0b7932427776127da1a738e2efc21d32f3393"
 dependencies = [
- "bitflags 2.5.0",
+ "bitflags 2.6.0",
 ]
 
 [[package]]
@@ -548,9 +548,9 @@ checksum = "bef38d45163c2f1dde094a7dfd33ccf595c92905c8f8f4fdc18d06fb1037718a"
 
 [[package]]
 name = "bitflags"
-version = "2.5.0"
+version = "2.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf4b9d6a944f767f8e5e0db018570623c85f3d925ac718db4e06d0187adb21c1"
+checksum = "b048fb63fd8b5923fc5aa7b340d8e156aec7ec02f0c78fa8a6ddc2613f6f71de"
 dependencies = [
  "serde",
 ]
@@ -3012,7 +3012,7 @@ version = "0.10.64"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "95a0481286a310808298130d22dd1fef0fa571e05a8f44ec801801e84b216b1f"
 dependencies = [
- "bitflags 2.5.0",
+ "bitflags 2.6.0",
  "cfg-if",
  "foreign-types",
  "libc",
@@ -3392,7 +3392,7 @@ version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "731e0d9356b0c25f16f33b5be79b1c57b562f141ebfcdb0ad8ac2c13a24293b4"
 dependencies = [
- "bitflags 2.5.0",
+ "bitflags 2.6.0",
  "chrono",
  "flate2",
  "hex",
@@ -3407,7 +3407,7 @@ version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2d3554923a69f4ce04c4a754260c338f505ce22642d3830e049a399fc2059a29"
 dependencies = [
- "bitflags 2.5.0",
+ "bitflags 2.6.0",
  "chrono",
  "hex",
 ]
@@ -3653,7 +3653,7 @@ version = "0.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c82cf8cff14456045f55ec4241383baeff27af886adb72ffb2162f99911de0fd"
 dependencies = [
- "bitflags 2.5.0",
+ "bitflags 2.6.0",
 ]
 
 [[package]]
@@ -3923,7 +3923,7 @@ version = "0.38.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "70dc5ec042f7a43c4a73241207cecc9873a06d45debb38b329f8541d85c2730f"
 dependencies = [
- "bitflags 2.5.0",
+ "bitflags 2.6.0",
  "errno",
  "libc",
  "linux-raw-sys",
@@ -4060,7 +4060,7 @@ version = "2.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c627723fd09706bacdb5cf41499e95098555af3c3c29d014dc3c458ef6be11c0"
 dependencies = [
- "bitflags 2.5.0",
+ "bitflags 2.6.0",
  "core-foundation",
  "core-foundation-sys",
  "libc",
@@ -4111,9 +4111,9 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.117"
+version = "1.0.118"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "455182ea6142b14f93f4bc5320a2b31c1f266b66a4a5c858b013302a5d8cbfc3"
+checksum = "d947f6b3163d8857ea16c4fa0dd4840d52f3041039a85decd46867eb1abef2e4"
 dependencies = [
  "itoa",
  "ryu",
@@ -4449,7 +4449,7 @@ checksum = "1ed31390216d20e538e447a7a9b959e06ed9fc51c37b514b46eb758016ecd418"
 dependencies = [
  "atoi",
  "base64 0.21.7",
- "bitflags 2.5.0",
+ "bitflags 2.6.0",
  "byteorder",
  "bytes",
  "crc",
@@ -4491,7 +4491,7 @@ checksum = "7c824eb80b894f926f89a0b9da0c7f435d27cdd35b8c655b114e58223918577e"
 dependencies = [
  "atoi",
  "base64 0.21.7",
- "bitflags 2.5.0",
+ "bitflags 2.6.0",
  "byteorder",
  "crc",
  "dotenvy",
@@ -4597,9 +4597,9 @@ dependencies = [
 
 [[package]]
 name = "subtle"
-version = "2.6.0"
+version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d0208408ba0c3df17ed26eb06992cb1a1268d41b2c0e12e65203fbe3972cee5"
+checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "syn"
@@ -4847,9 +4847,9 @@ dependencies = [
 
 [[package]]
 name = "tinyvec"
-version = "1.6.0"
+version = "1.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87cc5ceb3875bb20c2890005a4e226a4651264a5c75edb2421b52861a0a0cb50"
+checksum = "c55115c6fbe2d2bef26eb09ad74bde02d8255476fc0c7b515ef09fbb35742d82"
 dependencies = [
  "tinyvec_macros",
 ]
@@ -5275,9 +5275,9 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
 name = "uuid"
-version = "1.9.0"
+version = "1.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ea73390fe27785838dcbf75b91b1d84799e28f1ce71e6f372a5dc2200c80de5"
+checksum = "5de17fd2f7da591098415cff336e12965a28061ddace43b59cb3c430179c9439"
 dependencies = [
  "getrandom",
 ]
