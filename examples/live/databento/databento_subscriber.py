@@ -44,7 +44,7 @@ from nautilus_trader.trading.strategy import Strategy
 # For correct subscription operation, you must specify all instruments to be immediately
 # subscribed for as part of the data client configuration
 instrument_ids = [
-    InstrumentId.from_str("ESM4.GLBX"),
+    InstrumentId.from_str("ESZ4.GLBX"),
     # InstrumentId.from_str("ES.c.0.GLBX"),
     # InstrumentId.from_str("AAPL.XNAS"),
 ]
