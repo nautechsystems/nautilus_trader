@@ -12,6 +12,7 @@ Released on TBD (UTC).
 - Ported `Swings` indicator to Rust (#1731), thanks @Pushkarm029
 - Ported `BollingerBands` indicator to Rust (#1734), thanks @Pushkarm029
 - Ported `VolatilityRatio` indicator to Rust (#1735), thanks @Pushkarm029
+- Ported `Stochastics` indicator to Rust (#1736), thanks @Pushkarm029
 
 ### Breaking Changes
 None
