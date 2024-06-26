@@ -36,9 +36,10 @@ use crate::{
     },
     momentum::{
         amat::ArcherMovingAveragesTrends, bb::BollingerBands, bias::Bias,
-        cmo::ChandeMomentumOscillator, dm::DirectionalMovement, kvo::KlingerVolumeOscillator,
-        pressure::Pressure, psl::PsychologicalLine, rsi::RelativeStrengthIndex,
-        stochastics::Stochastics, swings::Swings, vhf::VerticalHorizontalFilter,
+        cci::CommodityChannelIndex, cmo::ChandeMomentumOscillator, dm::DirectionalMovement,
+        kvo::KlingerVolumeOscillator, pressure::Pressure, psl::PsychologicalLine,
+        rsi::RelativeStrengthIndex, stochastics::Stochastics, swings::Swings,
+        vhf::VerticalHorizontalFilter,
     },
     ratio::efficiency_ratio::EfficiencyRatio,
     volatility::vr::VolatilityRatio,
@@ -216,6 +217,24 @@ pub fn stochastics_10() -> Stochastics {
 }
 
 #[fixture]
+pub fn psl_10() -> PsychologicalLine {
+    PsychologicalLine::new(10, Some(MovingAverageType::Simple)).unwrap()
+}
+
+#[fixture]
+pub fn pressure_10() -> Pressure {
+    Pressure::new(10, Some(MovingAverageType::Simple), Some(1.0)).unwrap()
+}
+
+#[fixture]
+pub fn cci_10() -> CommodityChannelIndex {
+    CommodityChannelIndex::new(10, 2.0, Some(MovingAverageType::Simple)).unwrap()
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Volatility
+////////////////////////////////////////////////////////////////////////////////
+#[fixture]
 pub fn vr_10() -> VolatilityRatio {
     VolatilityRatio::new(
         10,
@@ -225,14 +244,4 @@ pub fn vr_10() -> VolatilityRatio {
         Some(10.0),
     )
     .unwrap()
-}
-
-#[fixture]
-pub fn psl_10() -> PsychologicalLine {
-    PsychologicalLine::new(10, Some(MovingAverageType::Simple)).unwrap()
-}
-
-#[fixture]
-pub fn pressure_10() -> Pressure {
-    Pressure::new(10, Some(MovingAverageType::Simple), Some(1.0)).unwrap()
 }
