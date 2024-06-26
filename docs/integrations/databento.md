@@ -156,7 +156,7 @@ The following Databento instrument classes are supported by NautilusTrader:
 | FX spot                    | `X`  | `CurrencyPair`               |
 | Bond                       | `B`  | Not yet available            |
 
-### MBO (market-by-order)
+### MBO (market by order)
 
 This schema is the highest granularity data offered by Databento, and represents
 full order book depth. Some messages also provide trade information, and so when
@@ -170,7 +170,7 @@ registered handler.
 Order book snapshots are also buffered into a discrete `OrderBookDeltas` container
 object, which occurs during the replay startup sequence.
 
-### MBP-1 (market-by-price, top-of-book)
+### MBP-1 (market by price, top-of-book)
 
 This schema represents the top-of-book only (quotes *and* trades). Like with MBO messages, some
 messages carry trade information, and so when decoding MBP-1 messages Nautilus 
