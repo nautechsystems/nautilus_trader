@@ -16,6 +16,7 @@ Released on TBD (UTC).
 - Ported `Stochastics` indicator to Rust (#1736), thanks @Pushkarm029
 - Ported `Pressure` indicator to Rust (#1739), thanks @Pushkarm029
 - Ported `PsychologicalLine` indicator to Rust (#1740), thanks @Pushkarm029
+- Ported `CommodityChannelIndex` indicator to Rust (#1742), thanks @Pushkarm029
 
 ### Breaking Changes
 None
