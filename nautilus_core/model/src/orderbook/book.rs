@@ -31,9 +31,9 @@ use crate::{
 /// Provides a performant, generic, multi-purpose order book.
 ///
 /// Can handle the following granularity data:
-/// - MBO (market-by-order) / L3
-/// - MBP (market-by-price) / L2 aggregated order per level
-/// - MBP (market-by-price) / L1 top-of-book only
+/// - MBO (market by order) / L3
+/// - MBP (market by price) / L2 aggregated order per level
+/// - MBP (market by price) / L1 top-of-book only
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",

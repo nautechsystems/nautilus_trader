@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 - Added Bybit demo account support (set `is_demo` to True in configs)
 - Added Bybit stop order types (`STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`, `LIMIT_IF_TOUCHED`, `TRAILING_STOP_MARKET`)
+- Added venue option for Binance adapter configurations, thanks @DevRoss
 - Changed identifier generator time tag component to include seconds (affects new `ClientOrderId`, `OrderId` and `PositionId` generation)
 - Ported `KlingerVolumeOscillator` indicator to Rust (#1724), thanks @Pushkarm029
 - Ported `DirectionalMovement` indicator to Rust (#1725), thanks @Pushkarm029
@@ -13,6 +14,7 @@ Released on TBD (UTC).
 - Ported `BollingerBands` indicator to Rust (#1734), thanks @Pushkarm029
 - Ported `VolatilityRatio` indicator to Rust (#1735), thanks @Pushkarm029
 - Ported `Stochastics` indicator to Rust (#1736), thanks @Pushkarm029
+- Ported `Pressure` indicator to Rust (#1739), thanks @Pushkarm029
 
 ### Breaking Changes
 None

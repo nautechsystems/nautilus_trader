@@ -53,6 +53,7 @@ pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::momentum::bb::BollingerBands>()?;
     m.add_class::<crate::momentum::stochastics::Stochastics>()?;
     m.add_class::<crate::momentum::psl::PsychologicalLine>()?;
+    m.add_class::<crate::momentum::pressure::Pressure>()?;
     // volatility
     m.add_class::<crate::volatility::atr::AverageTrueRange>()?;
     m.add_class::<crate::volatility::vr::VolatilityRatio>()?;

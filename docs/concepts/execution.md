@@ -82,7 +82,7 @@ The `OmsType` enum has three variants:
 - `HEDGING`: Multiple positions per instrument ID are supported (both long and short)
 
 The table below describes different configuration combinations and their applicable scenarios.
-When the strategy and venue OMS types differ, the `ExecutionEngine` handles this by overriding or assigning `position_id` values upon received order fill events.
+When the strategy and venue OMS types differ, the `ExecutionEngine` handles this by overriding or assigning `position_id` values for received `OrderFilled` events.
 A "virtual position" refers to a position ID that exists within the Nautilus system but not on the venue in 
 reality.
 
@@ -95,10 +95,10 @@ reality.
 
 :::note
 Configuring OMS types separately for strategies and venues increases platform complexity but allows
-for a wide range of trading styles and preferences (see the table below).
+for a wide range of trading styles and preferences (see below).
 :::
 
-Examples:
+OMS config examples:
 
 - Most cryptocurrency exchanges use a `NETTING` OMS type, representing a single position per market. It may be desirable for a trader to track multiple "virtual" positions for a strategy.
 - Some FX ECNs or brokers use a `HEDGING` OMS type, tracking multiple positions both `LONG` and `SHORT`. The trader may only care about the NET position per currency pair.
