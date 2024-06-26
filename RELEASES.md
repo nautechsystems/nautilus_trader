@@ -14,6 +14,7 @@ Released on TBD (UTC).
 - Ported `BollingerBands` indicator to Rust (#1734), thanks @Pushkarm029
 - Ported `VolatilityRatio` indicator to Rust (#1735), thanks @Pushkarm029
 - Ported `Stochastics` indicator to Rust (#1736), thanks @Pushkarm029
+- Ported `Pressure` indicator to Rust (#1739), thanks @Pushkarm029
 
 ### Breaking Changes
 None
