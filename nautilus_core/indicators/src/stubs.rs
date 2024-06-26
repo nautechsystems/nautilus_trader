@@ -37,8 +37,8 @@ use crate::{
     momentum::{
         amat::ArcherMovingAveragesTrends, bb::BollingerBands, bias::Bias,
         cmo::ChandeMomentumOscillator, dm::DirectionalMovement, kvo::KlingerVolumeOscillator,
-        pressure::Pressure, rsi::RelativeStrengthIndex, stochastics::Stochastics, swings::Swings,
-        vhf::VerticalHorizontalFilter,
+        pressure::Pressure, psl::PsychologicalLine, rsi::RelativeStrengthIndex,
+        stochastics::Stochastics, swings::Swings, vhf::VerticalHorizontalFilter,
     },
     ratio::efficiency_ratio::EfficiencyRatio,
     volatility::vr::VolatilityRatio,
@@ -225,6 +225,11 @@ pub fn vr_10() -> VolatilityRatio {
         Some(10.0),
     )
     .unwrap()
+}
+
+#[fixture]
+pub fn psl_10() -> PsychologicalLine {
+    PsychologicalLine::new(10, Some(MovingAverageType::Simple)).unwrap()
 }
 
 #[fixture]

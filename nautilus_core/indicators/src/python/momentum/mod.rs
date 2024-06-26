@@ -21,6 +21,7 @@ pub mod cmo;
 pub mod dm;
 pub mod kvo;
 pub mod pressure;
+pub mod psl;
 pub mod rsi;
 pub mod stochastics;
 pub mod swings;
