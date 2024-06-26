@@ -20,6 +20,7 @@ pub mod bias;
 pub mod cmo;
 pub mod dm;
 pub mod kvo;
+pub mod pressure;
 pub mod rsi;
 pub mod stochastics;
 pub mod swings;
