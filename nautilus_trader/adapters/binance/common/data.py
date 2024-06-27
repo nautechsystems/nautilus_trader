@@ -707,24 +707,23 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             return
         else:
             snapshot: OrderBookDeltas = await self._http_market.request_order_book_snapshot(
-                        instrument_id=instrument_id,
-                        limit=limit,
-                        ts_init=self._clock.timestamp_ns(),
-                    )
+                instrument_id=instrument_id,
+                limit=limit,
+                ts_init=self._clock.timestamp_ns(),
+            )
 
             data_type = DataType(
-                        OrderBookDeltas,
-                        metadata={
-                            "instrument_id": instrument_id,
-                            "limit":limit 
-                        },
-                    )
+                OrderBookDeltas,
+                metadata={
+                    "instrument_id": instrument_id,
+                    "limit": limit,
+                },
+            )
             self._handle_data_response(
                 data_type=data_type,
                 data=snapshot,
                 correlation_id=correlation_id,
             )
-
 
     async def _aggregate_internal_from_minute_bars(
         self,

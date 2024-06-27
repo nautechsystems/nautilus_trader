@@ -761,7 +761,7 @@ class LiveMarketDataClient(MarketDataClient):
             ),
             log_msg=f"request: bars {bar_type}",
         )
-    
+
     def request_order_book_snapshot(
         self,
         instrument_id: InstrumentId,
