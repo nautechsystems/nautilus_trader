@@ -16,4 +16,5 @@
 //! Volatility type indicators.
 
 pub mod atr;
+pub mod dc;
 pub mod vr;

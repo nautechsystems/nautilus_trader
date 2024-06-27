@@ -42,7 +42,7 @@ use crate::{
         vhf::VerticalHorizontalFilter,
     },
     ratio::efficiency_ratio::EfficiencyRatio,
-    volatility::vr::VolatilityRatio,
+    volatility::{dc::DonchianChannel, vr::VolatilityRatio},
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -249,4 +249,9 @@ pub fn vr_10() -> VolatilityRatio {
         Some(10.0),
     )
     .unwrap()
+}
+
+#[fixture]
+pub fn dc_10() -> DonchianChannel {
+    DonchianChannel::new(10).unwrap()
 }
