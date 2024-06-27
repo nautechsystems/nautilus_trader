@@ -410,6 +410,25 @@ impl MessageBus {
     }
 }
 
+impl MessageBus {
+    /// Sends a message to a an endpoint
+    pub fn send(&self, endpoint: &str, message: &dyn Any) {
+        if let Some(handler) = self.endpoints.get(&Ustr::from(endpoint)) {
+            handler.borrow_mut().handle(message)
+        }
+    }
+
+    /// Publish a message to a topic
+    pub fn publish(&self, topic: &str, message: &dyn Any) {
+        let topic = Ustr::from(topic);
+        let matching_subs = self.matching_subscriptions(&topic);
+
+        for sub in matching_subs {
+            sub.handler.borrow_mut().handle(message);
+        }
+    }
+}
+
 /// Match a topic and a string pattern
 /// pattern can contains -
 /// '*' - match 0 or more characters after this
