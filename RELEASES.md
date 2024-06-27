@@ -17,6 +17,8 @@ Released on TBD (UTC).
 - Ported `Pressure` indicator to Rust (#1739), thanks @Pushkarm029
 - Ported `PsychologicalLine` indicator to Rust (#1740), thanks @Pushkarm029
 - Ported `CommodityChannelIndex` indicator to Rust (#1742), thanks @Pushkarm029
+- Ported `LinearRegression` indicator to Rust (#1743), thanks @Pushkarm029
+- Ported `DonchianChannel` indicator to Rust (#1744), thanks @Pushkarm029
 
 ### Breaking Changes
 None
