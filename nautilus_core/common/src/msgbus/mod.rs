@@ -33,7 +33,6 @@ use indexmap::IndexMap;
 use log::error;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::TraderId;
-use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
 pub const CLOSE_TOPIC: &str = "CLOSE";
@@ -125,26 +124,6 @@ impl Hash for Subscription {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.topic.hash(state);
         self.handler_id.hash(state);
-    }
-}
-
-/// Represents a bus message including a topic and payload.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct BusMessage {
-    /// The topic to publish on.
-    pub topic: String,
-    /// The serialized payload for the message.
-    pub payload: Vec<u8>,
-}
-
-impl fmt::Display for BusMessage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "[{}] {}",
-            self.topic,
-            String::from_utf8_lossy(&self.payload)
-        )
     }
 }
 

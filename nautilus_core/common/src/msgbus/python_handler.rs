@@ -3,7 +3,7 @@ use std::any::Any;
 use pyo3::prelude::*;
 use ustr::Ustr;
 
-use super::MessageBusHandler;
+use crate::msgbus::MessageBusHandler;
 
 #[pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common.MessageBusHandler")]
 pub struct PythonMessageBusHandler {
