@@ -165,6 +165,13 @@ cdef class MarketDataClient(DataClient):
         datetime end=*,
     )
 
+    cpdef void request_order_book_snapshot(
+        self,
+        InstrumentId instrument_id,
+        int limit,
+        UUID4 correlation_id
+    )
+
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
     cpdef void _handle_instrument(self, Instrument instrument, UUID4 correlation_id)

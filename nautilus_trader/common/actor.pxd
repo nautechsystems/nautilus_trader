@@ -224,6 +224,14 @@ cdef class Actor(Component):
         ClientId client_id=*,
         callback=*,
     )
+
+    cpdef UUID4 request_order_book_snapshot(
+        self,
+        InstrumentId instrument_id,
+        int limit,
+        ClientId client_id=*,
+        callback=*,
+    )
     cpdef bint is_pending_request(self, UUID4 request_id)
     cpdef bint has_pending_requests(self)
     cpdef set pending_requests(self)
