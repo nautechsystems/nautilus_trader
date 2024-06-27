@@ -30,6 +30,7 @@ pub mod ama;
 pub mod dema;
 pub mod ema;
 pub mod hma;
+pub mod lr;
 pub mod rma;
 pub mod sma;
 pub mod vidya;
