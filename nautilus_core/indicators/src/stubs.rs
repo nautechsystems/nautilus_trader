@@ -30,8 +30,8 @@ use rstest::*;
 use crate::{
     average::{
         ama::AdaptiveMovingAverage, dema::DoubleExponentialMovingAverage,
-        ema::ExponentialMovingAverage, hma::HullMovingAverage, rma::WilderMovingAverage,
-        sma::SimpleMovingAverage, vidya::VariableIndexDynamicAverage,
+        ema::ExponentialMovingAverage, hma::HullMovingAverage, lr::LinearRegression,
+        rma::WilderMovingAverage, sma::SimpleMovingAverage, vidya::VariableIndexDynamicAverage,
         vwap::VolumeWeightedAveragePrice, wma::WeightedMovingAverage, MovingAverageType,
     },
     momentum::{
@@ -153,6 +153,11 @@ pub fn indicator_vwap() -> VolumeWeightedAveragePrice {
 pub fn indicator_wma_10() -> WeightedMovingAverage {
     let weights = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
     WeightedMovingAverage::new(10, weights, Some(PriceType::Mid)).unwrap()
+}
+
+#[fixture]
+pub fn indicator_lr_10() -> LinearRegression {
+    LinearRegression::new(10).unwrap()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
