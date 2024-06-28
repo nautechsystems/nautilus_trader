@@ -342,7 +342,25 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn load_orders(&mut self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
-        todo!()
+        let pool = self.pool.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_orders(&pool).await;
+            match result {
+                Ok(orders) => {
+                    let mapping = orders
+                        .into_iter()
+                        .map(|order| (order.client_order_id(), order))
+                        .collect();
+                    let _ = tx.send(mapping);
+                }
+                Err(e) => {
+                    error!("Failed to load orders: {:?}", e);
+                    let _ = tx.send(HashMap::new());
+                }
+            }
+        });
+        Ok(rx.recv().unwrap())
     }
 
     fn load_positions(&mut self) -> anyhow::Result<HashMap<PositionId, Position>> {
