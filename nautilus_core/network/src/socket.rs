@@ -456,14 +456,14 @@ impl SocketClient {
     /// - Any auto-reconnect job should be aborted before closing the client
     #[pyo3(name = "disconnect")]
     fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-    let disconnect_mode = &slf.disconnect_mode;
-    debug!("Setting disconnect mode to true");
+        let disconnect_mode = &slf.disconnect_mode;
+        debug!("Setting disconnect mode to true");
 
-    pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
-        disconnect_mode.store(true, Ordering::SeqCst);
-        Ok(())
-    })
-}
+        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+            disconnect_mode.store(true, Ordering::SeqCst);
+            Ok(())
+        })
+    }
 
     /// Check if the client is still alive.
     ///

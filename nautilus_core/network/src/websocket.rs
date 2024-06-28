@@ -373,7 +373,7 @@ impl WebSocketClient {
     pub fn disconnect(&self) {
         debug!("Disconnecting");
         self.disconnect_mode.store(true, Ordering::SeqCst);
-    }    
+    }
 
     pub async fn send_bytes(&self, data: Vec<u8>) -> Result<(), Error> {
         debug!("Sending bytes: {:?}", data);
@@ -503,7 +503,7 @@ impl WebSocketClient {
             disconnect_mode.store(true, Ordering::SeqCst);
             Ok(())
         })
-    }    
+    }
 
     /// Send bytes data to the server.
     ///
