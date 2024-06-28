@@ -692,6 +692,39 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         partial: Bar = bars.pop()
         self._handle_bars(bar_type, bars, partial, correlation_id)
 
+    async def _request_order_book_snapshot(
+        self,
+        instrument_id: InstrumentId,
+        limit: int,
+        correlation_id: UUID4,
+    ) -> None:
+        if limit not in [5, 10, 20, 50, 100, 500, 1000]:
+            self._log.error(
+                "Cannot get order book snapshots: "
+                f"invalid `limit`, was {limit}. "
+                "Valid limits are 5, 10, 20, 50, 100, 500 or 1000",
+            )
+            return
+        else:
+            snapshot: OrderBookDeltas = await self._http_market.request_order_book_snapshot(
+                instrument_id=instrument_id,
+                limit=limit,
+                ts_init=self._clock.timestamp_ns(),
+            )
+
+            data_type = DataType(
+                OrderBookDeltas,
+                metadata={
+                    "instrument_id": instrument_id,
+                    "limit": limit,
+                },
+            )
+            self._handle_data_response(
+                data_type=data_type,
+                data=snapshot,
+                correlation_id=correlation_id,
+            )
+
     async def _aggregate_internal_from_minute_bars(
         self,
         bar_type: BarType,

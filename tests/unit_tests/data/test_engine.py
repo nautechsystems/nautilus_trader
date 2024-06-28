@@ -2170,6 +2170,38 @@ class TestDataEngine:
         assert len(handler) == 1
         assert len(handler[0].data) == 1
 
+    def test_request_order_book_snapshot_reaches_client(self):
+        # Arrange
+        self.data_engine.register_client(self.binance_client)
+
+        deltas = OrderBookDeltas(
+            instrument_id=ETHUSDT_BINANCE.id,
+            deltas=[TestDataStubs.order_book_delta(instrument_id=ETHUSDT_BINANCE.id)],
+        )
+
+        self.data_engine.process(deltas)
+
+        handler = []
+        request = DataRequest(
+            client_id=None,
+            venue=BINANCE,
+            data_type=DataType(
+                OrderBookDeltas,
+                metadata={
+                    "instrument_id": ETHUSDT_BINANCE.id,
+                    "limit": 10,
+                },
+            ),
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert len(handler) == 0
+
     # TODO: Implement with new Rust datafusion backend"
     # def test_request_quote_ticks_when_catalog_registered_using_rust(self) -> None:
     #     # Arrange

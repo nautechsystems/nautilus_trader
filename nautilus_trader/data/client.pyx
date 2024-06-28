@@ -963,6 +963,29 @@ cdef class MarketDataClient(DataClient):
             f"You can implement by overriding the `request_bars` method for this client",  # pragma: no cover  # noqa
         )
 
+    cpdef void request_order_book_snapshot(
+        self,
+        InstrumentId instrument_id,
+        int limit,
+        UUID4 correlation_id,
+    ):
+        """
+        Request order book snapshot data.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the order book snapshot request.
+        limit : int
+            The limit on the depth of the order book snapshot.
+        correction_id : UUID4
+            The correlation ID for the request.
+        """
+        self._log.error(
+            f"Cannot request order book snapshot data for {instrument_id}: not implemented. "
+            "You can implement by overriding the `request_order_book_snapshot` method for this client."
+        )
+
 # -- PYTHON WRAPPERS ------------------------------------------------------------------------------
 
     # Convenient Python wrappers for the data handlers. Often Python methods
