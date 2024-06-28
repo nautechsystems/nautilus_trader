@@ -84,7 +84,7 @@ docformatter = "^1.7.5"
 mypy = "^1.10.1"
 pandas-stubs = "^2.2.2"
 pre-commit = "^3.7.1"
-ruff = "^0.4.10"
+ruff = "^0.5.0"
 types-pytz = "^2024.1"
 types-requests = "^2.32"
 types-toml = "^0.10.2"
@@ -207,6 +207,7 @@ ignore = [
     "S105",  # Use of hardcoded password (spurious)
     "S106",  # Use of hardcoded password (spurious)
     "S113",  # Probable use of requests call without timeout **fix**
+    "S603",  # `subprocess` call: check for execution of untrusted input **fix**
 ]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided

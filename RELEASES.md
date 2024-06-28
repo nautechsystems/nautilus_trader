@@ -19,6 +19,8 @@ Released on TBD (UTC).
 - Ported `CommodityChannelIndex` indicator to Rust (#1742), thanks @Pushkarm029
 - Ported `LinearRegression` indicator to Rust (#1743), thanks @Pushkarm029
 - Ported `DonchianChannel` indicator to Rust (#1744), thanks @Pushkarm029
+- Ported `KeltnerChannel` indicator to Rust (#1746), thanks @Pushkarm029
+- Ported `RelativeVolatilityIndex` indicator to Rust (#1748), thanks @Pushkarm029
 
 ### Breaking Changes
 None
