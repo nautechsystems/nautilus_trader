@@ -50,7 +50,7 @@ class TestDataMessage:
                 command_id=UUID4(),
                 ts_init=self.clock.timestamp_ns(),
             )
-        assert e.type == ValueError
+        assert issubclass(e.type, ValueError)
         assert e.match("Both `client_id` and `venue` were None")
 
         with pytest.raises(ValueError) as e:
@@ -61,7 +61,7 @@ class TestDataMessage:
                 command_id=UUID4(),
                 ts_init=self.clock.timestamp_ns(),
             )
-        assert e.type == ValueError
+        assert issubclass(e.type, ValueError)
         assert e.match("Both `client_id` and `venue` were None")
 
         with pytest.raises(ValueError) as e:
@@ -74,7 +74,7 @@ class TestDataMessage:
                 request_id=UUID4(),
                 ts_init=self.clock.timestamp_ns(),
             )
-        assert e.type == ValueError
+        assert issubclass(e.type, ValueError)
         assert e.match("Both `client_id` and `venue` were None")
 
         with pytest.raises(ValueError) as e:
@@ -87,7 +87,7 @@ class TestDataMessage:
                 response_id=UUID4(),
                 ts_init=self.clock.timestamp_ns(),
             )
-        assert e.type == ValueError
+        assert issubclass(e.type, ValueError)
         assert e.match("Both `client_id` and `venue` were None")
 
     def test_data_command_str_and_repr(self):
