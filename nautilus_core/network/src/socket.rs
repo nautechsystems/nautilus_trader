@@ -36,6 +36,7 @@ use tracing::{debug, error};
 type TcpWriter = WriteHalf<MaybeTlsStream<TcpStream>>;
 type SharedTcpWriter = Arc<Mutex<WriteHalf<MaybeTlsStream<TcpStream>>>>;
 type TcpReader = ReadHalf<MaybeTlsStream<TcpStream>>;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Configuration for TCP socket connection.
 #[derive(Debug, Clone)]
@@ -301,7 +302,7 @@ impl Drop for SocketClientInner {
 pub struct SocketClient {
     writer: SharedTcpWriter,
     controller_task: task::JoinHandle<()>,
-    disconnect_mode: Arc<Mutex<bool>>,
+    disconnect_mode: AtomicBool,
     suffix: Vec<u8>,
 }
 
@@ -315,7 +316,7 @@ impl SocketClient {
         let suffix = config.suffix.clone();
         let inner = SocketClientInner::connect_url(config).await?;
         let writer = inner.writer.clone();
-        let disconnect_mode = Arc::new(Mutex::new(false));
+        let disconnect_mode = AtomicBool::new(false);
         let controller_task = Self::spawn_controller_task(
             inner,
             disconnect_mode.clone(),
@@ -342,9 +343,9 @@ impl SocketClient {
     ///
     /// Controller task will periodically check the disconnect mode
     /// and shutdown the client if it is not alive.
-    pub async fn disconnect(&self) {
-        *self.disconnect_mode.lock().await = true;
-    }
+    pub fn disconnect(&self) {
+        self.disconnect_mode.store(true, Ordering::SeqCst);
+    }    
 
     pub async fn send_bytes(&self, data: &[u8]) -> Result<(), std::io::Error> {
         let mut writer = self.writer.lock().await;
@@ -359,7 +360,7 @@ impl SocketClient {
 
     fn spawn_controller_task(
         mut inner: SocketClientInner,
-        disconnect_mode: Arc<Mutex<bool>>,
+        disconnect_mode: AtomicBool,
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
     ) -> task::JoinHandle<()> {
@@ -455,14 +456,14 @@ impl SocketClient {
     /// - Any auto-reconnect job should be aborted before closing the client
     #[pyo3(name = "disconnect")]
     fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let disconnect_mode = slf.disconnect_mode.clone();
-        debug!("Setting disconnect mode to true");
+    let disconnect_mode = &slf.disconnect_mode;
+    debug!("Setting disconnect mode to true");
 
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
-            *disconnect_mode.lock().await = true;
-            Ok(())
-        })
-    }
+    pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        disconnect_mode.store(true, Ordering::SeqCst);
+        Ok(())
+    })
+}
 
     /// Check if the client is still alive.
     ///

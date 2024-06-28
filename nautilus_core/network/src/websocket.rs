@@ -31,7 +31,7 @@ use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream,
 };
 use tracing::{debug, error};
-
+use std::sync::atomic::{AtomicBool, Ordering};
 type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
 type SharedMessageWriter =
     Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>;
@@ -322,7 +322,7 @@ impl Drop for WebSocketClientInner {
 pub struct WebSocketClient {
     writer: SharedMessageWriter,
     controller_task: task::JoinHandle<()>,
-    disconnect_mode: Arc<Mutex<bool>>,
+    disconnect_mode: AtomicBool,
 }
 
 impl WebSocketClient {
@@ -339,7 +339,7 @@ impl WebSocketClient {
         debug!("Connecting");
         let inner = WebSocketClientInner::connect_url(config).await?;
         let writer = inner.writer.clone();
-        let disconnect_mode = Arc::new(Mutex::new(false));
+        let disconnect_mode = AtomicBool::new(false);
         let controller_task = Self::spawn_controller_task(
             inner,
             disconnect_mode.clone(),
@@ -370,10 +370,10 @@ impl WebSocketClient {
     ///
     /// Controller task will periodically check the disconnect mode
     /// and shutdown the client if it is alive
-    pub async fn disconnect(&self) {
+    pub fn disconnect(&self) {
         debug!("Disconnecting");
-        *self.disconnect_mode.lock().await = true;
-    }
+        self.disconnect_mode.store(true, Ordering::SeqCst);
+    }    
 
     pub async fn send_bytes(&self, data: Vec<u8>) -> Result<(), Error> {
         debug!("Sending bytes: {:?}", data);
@@ -391,7 +391,7 @@ impl WebSocketClient {
 
     fn spawn_controller_task(
         mut inner: WebSocketClientInner,
-        disconnect_mode: Arc<Mutex<bool>>,
+        disconnect_mode: AtomicBool,
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
     ) -> task::JoinHandle<()> {
@@ -498,12 +498,12 @@ impl WebSocketClient {
     /// - Any auto-reconnect job should be aborted before closing the client
     #[pyo3(name = "disconnect")]
     fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let disconnect_mode = slf.disconnect_mode.clone();
+        let disconnect_mode = &slf.disconnect_mode;
         pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
-            *disconnect_mode.lock().await = true;
+            disconnect_mode.store(true, Ordering::SeqCst);
             Ok(())
         })
-    }
+    }    
 
     /// Send bytes data to the server.
     ///
