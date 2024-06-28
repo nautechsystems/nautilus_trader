@@ -23,6 +23,7 @@ pub mod dm;
 pub mod kvo;
 pub mod pressure;
 pub mod psl;
+pub mod roc;
 pub mod rsi;
 pub mod stochastics;
 pub mod swings;
