@@ -263,6 +263,7 @@ pub fn rvi_10() -> RelativeVolatilityIndex {
     RelativeVolatilityIndex::new(10, Some(10.0), Some(MovingAverageType::Simple)).unwrap()
 }
 
+#[fixture]
 pub fn kc_10() -> KeltnerChannel {
     KeltnerChannel::new(
         10,
