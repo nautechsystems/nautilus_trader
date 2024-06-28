@@ -200,6 +200,13 @@ cdef class Actor(Component):
         ClientId client_id=*,
         callback=*,
     )
+    cpdef UUID4 request_order_book_snapshot(
+        self,
+        InstrumentId instrument_id,
+        int limit,
+        ClientId client_id=*,
+        callback=*,
+    )
     cpdef UUID4 request_quote_ticks(
         self,
         InstrumentId instrument_id,
@@ -221,14 +228,6 @@ cdef class Actor(Component):
         BarType bar_type,
         datetime start=*,
         datetime end=*,
-        ClientId client_id=*,
-        callback=*,
-    )
-
-    cpdef UUID4 request_order_book_snapshot(
-        self,
-        InstrumentId instrument_id,
-        int limit,
         ClientId client_id=*,
         callback=*,
     )

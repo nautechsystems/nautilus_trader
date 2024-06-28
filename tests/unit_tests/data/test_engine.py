@@ -2196,8 +2196,10 @@ class TestDataEngine:
             request_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
         )
+
         # Act
         self.msgbus.request(endpoint="DataEngine.request", request=request)
+
         # Assert
         assert self.data_engine.request_count == 1
         assert len(handler) == 0

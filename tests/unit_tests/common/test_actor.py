@@ -1965,6 +1965,38 @@ class TestActor:
         assert actor.is_pending_request(request_id)
         assert request_id in actor.pending_requests()
 
+    def test_request_order_book_snapshots_sends_request_to_data_engine(self) -> None:
+        # Arrange
+        handler: list[OrderBookDeltas] = []
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        data_type = DataType(
+            OrderBookDeltas,
+            metadata={
+                "instrument_id": AUDUSD_SIM.id,
+                "limit": 5,
+            },
+        )
+
+        # Act
+        request_id = actor.request_data(
+            data_type,
+            ClientId("BLOOMBERG-01"),
+            callback=handler.append,
+        )
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert actor.has_pending_requests()
+        assert actor.is_pending_request(request_id)
+        assert request_id in actor.pending_requests()
+
     def test_request_quote_ticks_sends_request_to_data_engine(self) -> None:
         # Arrange
         actor = MockActor()
@@ -2151,33 +2183,3 @@ class TestActor:
         # Act, Assert
         with pytest.raises(ValueError):
             actor.request_bars(bar_type, start, stop)
-
-    def test_request_order_book_snapshots_sends_request_to_data_engine(self) -> None:
-        # Arrange
-        handler: list[OrderBookDeltas] = []
-        actor = MockActor()
-        actor.register_base(
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-        )
-        data_type = DataType(
-            OrderBookDeltas,
-            metadata={
-                "instrument_id": AUDUSD_SIM.id,
-                "limit": 5,
-            },
-        )
-        # Act
-        request_id = actor.request_data(
-            data_type,
-            ClientId("BLOOMBERG-01"),
-            callback=handler.append,
-        )
-
-        # Assert
-        assert self.data_engine.request_count == 1
-        assert actor.has_pending_requests()
-        assert actor.is_pending_request(request_id)
-        assert request_id in actor.pending_requests()

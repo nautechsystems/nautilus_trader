@@ -367,6 +367,17 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             correlation_id=correlation_id,
         )
 
+    cpdef void request_order_book_snapshot(
+        self,
+        InstrumentId instrument_id,
+        int limit,
+        UUID4 correlation_id,
+    ):
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.not_none(correlation_id, "correlation_id")
+
+        # Do nothing else for backtest
+
     cpdef void request_quote_ticks(
         self,
         InstrumentId instrument_id,
@@ -403,18 +414,6 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         datetime end: datetime | None = None,
     ):
         Condition.not_none(bar_type, "bar_type")
-        Condition.not_negative_int(limit, "limit")
-        Condition.not_none(correlation_id, "correlation_id")
-
-        # Do nothing else for backtest
-
-    cpdef void request_order_book_snapshot(
-        self,
-        InstrumentId instrument_id,
-        int limit,
-        UUID4 correlation_id,
-    ):
-        Condition.not_none(instrument_id, "instrument_id")
         Condition.not_negative_int(limit, "limit")
         Condition.not_none(correlation_id, "correlation_id")
 

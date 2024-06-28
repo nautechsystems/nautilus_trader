@@ -140,6 +140,12 @@ cdef class MarketDataClient(DataClient):
         datetime start=*,
         datetime end=*,
     )
+    cpdef void request_order_book_snapshot(
+        self,
+        InstrumentId instrument_id,
+        int limit,
+        UUID4 correlation_id
+    )
     cpdef void request_quote_ticks(
         self,
         InstrumentId instrument_id,
@@ -163,13 +169,6 @@ cdef class MarketDataClient(DataClient):
         UUID4 correlation_id,
         datetime start=*,
         datetime end=*,
-    )
-
-    cpdef void request_order_book_snapshot(
-        self,
-        InstrumentId instrument_id,
-        int limit,
-        UUID4 correlation_id
     )
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
