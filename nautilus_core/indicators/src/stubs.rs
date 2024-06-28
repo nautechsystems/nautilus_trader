@@ -42,7 +42,7 @@ use crate::{
         vhf::VerticalHorizontalFilter,
     },
     ratio::efficiency_ratio::EfficiencyRatio,
-    volatility::{dc::DonchianChannel, rvi::RelativeVolatilityIndex, vr::VolatilityRatio},
+    volatility::{dc::DonchianChannel,kc::KeltnerChannel, rvi::RelativeVolatilityIndex, vr::VolatilityRatio},
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -259,4 +259,15 @@ pub fn dc_10() -> DonchianChannel {
 #[fixture]
 pub fn rvi_10() -> RelativeVolatilityIndex {
     RelativeVolatilityIndex::new(10, Some(10.0), Some(MovingAverageType::Simple)).unwrap()
+
+pub fn kc_10() -> KeltnerChannel {
+    KeltnerChannel::new(
+        10,
+        2.0,
+        Some(MovingAverageType::Simple),
+        Some(MovingAverageType::Simple),
+        Some(true),
+        Some(0.0),
+    )
+    .unwrap()
 }
