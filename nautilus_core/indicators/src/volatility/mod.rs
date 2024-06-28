@@ -18,4 +18,5 @@
 pub mod atr;
 pub mod dc;
 pub mod kc;
+pub mod rvi;
 pub mod vr;
