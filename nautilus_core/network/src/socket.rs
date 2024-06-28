@@ -345,7 +345,7 @@ impl SocketClient {
     /// and shutdown the client if it is not alive.
     pub fn disconnect(&self) {
         self.disconnect_mode.store(true, Ordering::SeqCst);
-    }    
+    }
 
     pub async fn send_bytes(&self, data: &[u8]) -> Result<(), std::io::Error> {
         let mut writer = self.writer.lock().await;
