@@ -38,7 +38,7 @@ use crate::{
         amat::ArcherMovingAveragesTrends, bb::BollingerBands, bias::Bias,
         cci::CommodityChannelIndex, cmo::ChandeMomentumOscillator, dm::DirectionalMovement,
         kvo::KlingerVolumeOscillator, pressure::Pressure, psl::PsychologicalLine,
-        rsi::RelativeStrengthIndex, stochastics::Stochastics, swings::Swings,
+        roc::RateOfChange, rsi::RelativeStrengthIndex, stochastics::Stochastics, swings::Swings,
         vhf::VerticalHorizontalFilter,
     },
     ratio::efficiency_ratio::EfficiencyRatio,
@@ -274,4 +274,9 @@ pub fn kc_10() -> KeltnerChannel {
         Some(0.0),
     )
     .unwrap()
+}
+
+#[fixture]
+pub fn roc_10() -> RateOfChange {
+    RateOfChange::new(10, Some(true)).unwrap()
 }
