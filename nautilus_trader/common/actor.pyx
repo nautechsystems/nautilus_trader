@@ -2307,6 +2307,69 @@ cdef class Actor(Component):
 
         return request_id
 
+
+    cpdef UUID4 request_order_book_snapshot(
+        self,
+        InstrumentId instrument_id,
+        int limit,
+        ClientId client_id=None,
+        callback: Callable[[UUID4], None] | None=None
+    ):
+        """
+        Request an order book snapshot.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the order book snapshot request.
+        limit : int, optional
+            The limit on the depth of the order book snapshot (default is None).
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If None, it will be inferred from the venue in the instrument ID.
+        callback : Callable[[UUID4], None], optional
+            The registered callback, to be called with the request ID when the response has completed processing.
+
+        Returns
+        -------
+        UUID4
+            The request_id for the request.
+
+        Raises
+        ------
+        ValueError
+            If the instrument_id is None.
+        TypeError
+            If callback is not None and not of type Callable.
+        """
+        # Preconditions and validations
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.callable_or_none(callback, "callback")
+
+        # Generate a unique request ID
+        cdef UUID4 request_id = UUID4()
+
+        # Create the data request
+        cdef DataRequest request = DataRequest(
+            client_id=client_id,
+            venue=instrument_id.venue,
+            data_type=DataType(OrderBookDeltas, metadata={
+                "instrument_id": instrument_id,
+                "limit": limit,
+            }),
+            callback=self._handle_data_response,
+            request_id=request_id,
+            ts_init=self._clock.timestamp_ns(),
+        )
+
+        # Store pending request and send the data request
+        self._pending_requests[request_id] = callback
+        self._send_data_req(request)
+
+        return request_id
+
+
     cpdef bint is_pending_request(self, UUID4 request_id):
         """
         Return whether the request for the given identifier is pending processing.
