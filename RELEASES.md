@@ -36,6 +36,7 @@ Released on TBD (UTC).
 - Fixed `DatabentoDataLoader` OHLCV bar schema loading (incorrectly accounting for display factor0, thanks for reporting @faysou
 - Fixed Binance order report generation `active_symbols` type miss matching (#1729), thanks @DevRoss
 - Fixed Binance trade data websocket schemas (Binance no longer publish `b` buyer and `a` seller order IDs)
+- Fixed Bybit order book deltas subscriptions for `INVERSE` product type
 
 ---
 

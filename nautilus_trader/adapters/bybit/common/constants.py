@@ -33,4 +33,5 @@ BYBIT_HOUR_INTERVALS: Final[tuple[int, ...]] = (1, 2, 4, 6, 12)
 
 BYBIT_SPOT_DEPTHS: Final[tuple[int, ...]] = (1, 50, 200)
 BYBIT_LINEAR_DEPTHS: Final[tuple[int, ...]] = (1, 50, 200, 500)
+BYBIT_INVERSE_DEPTHS: Final[tuple[int, ...]] = (1, 50, 200, 500)
 BYBIT_OPTION_DEPTHS: Final[tuple[int, ...]] = (25, 100)
