@@ -1094,7 +1094,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         position : Position
             The position for the state snapshot.
         ts_snapshot : uint64_t
-            The UNIX timestamp (nanoseconds) when the snapshot was taken.
+            UNIX timestamp (nanoseconds) when the snapshot was taken.
         unrealized_pnl : Money, optional
             The unrealized PnL for the state snapshot.
 

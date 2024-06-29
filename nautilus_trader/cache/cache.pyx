@@ -1752,7 +1752,7 @@ cdef class Cache(CacheFacade):
         position : Position
             The position to snapshot the state for.
         ts_snapshot : uint64_t
-            The UNIX timestamp (nanoseconds) when the snapshot was taken.
+            UNIX timestamp (nanoseconds) when the snapshot was taken.
         open_only : bool, default True
             If only open positions should be snapshot, this flag helps to avoid race conditions
             where a position is snapshot when no longer open.

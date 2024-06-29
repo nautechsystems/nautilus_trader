@@ -1273,7 +1273,7 @@ cdef class OrderMatchingEngine:
         Parameters
         ----------
         timestamp_ns : uint64_t
-            The UNIX timestamp to advance the matching engine time to.
+            UNIX timestamp to advance the matching engine time to.
 
         """
         self._clock.set_time(timestamp_ns)

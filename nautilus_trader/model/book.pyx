@@ -183,7 +183,7 @@ cdef class OrderBook(Data):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
 
         Returns
         -------
@@ -195,7 +195,7 @@ cdef class OrderBook(Data):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -243,7 +243,7 @@ cdef class OrderBook(Data):
         order : BookOrder
             The order to add.
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) when the book event occurred.
+            UNIX timestamp (nanoseconds) when the book event occurred.
         flags : uint8_t, default 0
             The record flags bit field, indicating event end and data information.
         sequence : uint64_t, default 0
@@ -271,7 +271,7 @@ cdef class OrderBook(Data):
         order : Order
             The order to update.
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) when the book event occurred.
+            UNIX timestamp (nanoseconds) when the book event occurred.
         flags : uint8_t, default 0
             The record flags bit field, indicating event end and data information.
         sequence : uint64_t, default 0
@@ -291,7 +291,7 @@ cdef class OrderBook(Data):
         order : Order
             The order to delete.
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) when the book event occurred.
+            UNIX timestamp (nanoseconds) when the book event occurred.
         flags : uint8_t, default 0
             The record flags bit field, indicating event end and data information.
         sequence : uint64_t, default 0

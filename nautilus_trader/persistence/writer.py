@@ -323,7 +323,7 @@ def generate_signal_class(name: str, value_type: type) -> type:
         @property
         def ts_event(self) -> int:
             """
-            The UNIX timestamp (nanoseconds) when the data event occurred.
+            UNIX timestamp (nanoseconds) when the data event occurred.
 
             Returns
             -------
@@ -335,7 +335,7 @@ def generate_signal_class(name: str, value_type: type) -> type:
         @property
         def ts_init(self) -> int:
             """
-            The UNIX timestamp (nanoseconds) when the object was initialized.
+            UNIX timestamp (nanoseconds) when the object was initialized.
 
             Returns
             -------

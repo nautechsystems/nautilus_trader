@@ -134,7 +134,7 @@ cdef class BarBuilder:
         size : Decimal
             The update size.
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) of the update.
+            UNIX timestamp (nanoseconds) of the update.
 
         """
         Condition.not_none(price, "price")
@@ -191,9 +191,9 @@ cdef class BarBuilder:
         Parameters
         ----------
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) for the bar event.
+            UNIX timestamp (nanoseconds) for the bar event.
         ts_init : uint64_t
-            The UNIX timestamp (nanoseconds) for the bar initialization.
+            UNIX timestamp (nanoseconds) for the bar initialization.
 
         Returns
         -------

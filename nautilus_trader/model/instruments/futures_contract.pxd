@@ -24,9 +24,9 @@ cdef class FuturesContract(Instrument):
     cdef readonly str underlying
     """The underlying asset for the contract.\n\n:returns: `str`"""
     cdef readonly uint64_t activation_ns
-    """The UNIX timestamp (nanoseconds) for contract activation.\n\n:returns: `unit64_t`"""
+    """UNIX timestamp (nanoseconds) for contract activation.\n\n:returns: `unit64_t`"""
     cdef readonly uint64_t expiration_ns
-    """The UNIX timestamp (nanoseconds) for contract expiration.\n\n:returns: `unit64_t`"""
+    """UNIX timestamp (nanoseconds) for contract expiration.\n\n:returns: `unit64_t`"""
 
     @staticmethod
     cdef FuturesContract from_dict_c(dict values)

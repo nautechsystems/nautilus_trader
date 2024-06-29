@@ -839,7 +839,7 @@ typedef struct OrderBookDelta_t {
      */
     struct BookOrder_t order;
     /**
-     * The record flags bit field, indicating event end and data information.
+     * The record flags bit field indicating event end and data information.
      */
     uint8_t flags;
     /**
@@ -847,11 +847,11 @@ typedef struct OrderBookDelta_t {
      */
     uint64_t sequence;
     /**
-     * The UNIX timestamp (nanoseconds) when the book event occurred.
+     * UNIX timestamp (nanoseconds) when the book event occurred.
      */
     uint64_t ts_event;
     /**
-     * The UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the struct was initialized.
      */
     uint64_t ts_init;
 } OrderBookDelta_t;
@@ -911,11 +911,11 @@ typedef struct OrderBookDepth10_t {
      */
     uint64_t sequence;
     /**
-     * The UNIX timestamp (nanoseconds) when the book event occurred.
+     * UNIX timestamp (nanoseconds) when the book event occurred.
      */
     uint64_t ts_event;
     /**
-     * The UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the struct was initialized.
      */
     uint64_t ts_init;
 } OrderBookDepth10_t;
@@ -945,11 +945,11 @@ typedef struct QuoteTick_t {
      */
     struct Quantity_t ask_size;
     /**
-     * The UNIX timestamp (nanoseconds) when the quote event occurred.
+     * UNIX timestamp (nanoseconds) when the quote event occurred.
      */
     uint64_t ts_event;
     /**
-     * The UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the struct was initialized.
      */
     uint64_t ts_init;
 } QuoteTick_t;
@@ -991,11 +991,11 @@ typedef struct TradeTick_t {
      */
     struct TradeId_t trade_id;
     /**
-     * The UNIX timestamp (nanoseconds) when the trade event occurred.
+     * UNIX timestamp (nanoseconds) when the trade event occurred.
      */
     uint64_t ts_event;
     /**
-     * The UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the struct was initialized.
      */
     uint64_t ts_init;
 } TradeTick_t;
@@ -1067,11 +1067,11 @@ typedef struct Bar_t {
      */
     struct Quantity_t volume;
     /**
-     * The UNIX timestamp (nanoseconds) when the data event occurred.
+     * UNIX timestamp (nanoseconds) when the data event occurred.
      */
     uint64_t ts_event;
     /**
-     * The UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the struct was initialized.
      */
     uint64_t ts_init;
 } Bar_t;

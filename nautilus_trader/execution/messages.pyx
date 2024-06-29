@@ -51,7 +51,7 @@ cdef class TradingCommand(Command):
     command_id : UUID4
         The commands ID.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
     Warnings
     --------
@@ -90,7 +90,7 @@ cdef class SubmitOrder(TradingCommand):
     command_id : UUID4
         The commands ID.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     position_id : PositionId, optional
         The position ID for the command.
     client_id : ClientId, optional
@@ -224,7 +224,7 @@ cdef class SubmitOrderList(TradingCommand):
     command_id : UUID4
         The command ID.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     position_id : PositionId, optional
         The position ID for the command.
     client_id : ClientId, optional
@@ -369,7 +369,7 @@ cdef class ModifyOrder(TradingCommand):
     command_id : UUID4
         The command ID.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
         The execution client ID for the command.
 
@@ -523,7 +523,7 @@ cdef class CancelOrder(TradingCommand):
     command_id : UUID4
         The command ID.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
         The execution client ID for the command.
 
@@ -656,7 +656,7 @@ cdef class CancelAllOrders(TradingCommand):
     command_id : UUID4
         The command ID.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
         The execution client ID for the command.
     """
@@ -776,7 +776,7 @@ cdef class BatchCancelOrders(TradingCommand):
     command_id : UUID4
         The command ID.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
         The execution client ID for the command.
 
@@ -907,7 +907,7 @@ cdef class QueryOrder(TradingCommand):
     command_id : UUID4
         The command ID.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     client_id : ClientId, optional
         The execution client ID for the command.
     """
