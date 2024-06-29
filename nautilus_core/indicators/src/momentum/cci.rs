@@ -31,7 +31,6 @@ use crate::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
-
 pub struct CommodityChannelIndex {
     pub period: usize,
     pub ma_type: MovingAverageType,

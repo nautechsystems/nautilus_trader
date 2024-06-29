@@ -28,7 +28,6 @@ use crate::indicator::Indicator;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
-
 pub struct Swings {
     pub period: usize,
     pub direction: i64,
@@ -150,17 +149,17 @@ impl Swings {
         }
 
         // Initialization logic
-        if !self.initialized {
-            self.has_inputs = true;
-            if self.high_price != 0.0 && self.low_price != 0.0 {
-                self.initialized = true;
-            }
-        } else {
+        if self.initialized {
             self.length = (self.high_price - self.low_price) as usize;
             if self.direction == 1 {
                 self.duration = self.since_low;
             } else {
                 self.duration = self.since_high;
+            }
+        } else {
+            self.has_inputs = true;
+            if self.high_price != 0.0 && self.low_price != 0.0 {
+                self.initialized = true;
             }
         }
     }
@@ -222,19 +221,19 @@ mod tests {
             1_643_723_540.0,
         ];
 
-        for i in 0..10 {
+        for i in 0..15 {
             swings_10.update_raw(high[i], low[i], time[i]);
         }
 
         assert_eq!(swings_10.direction, 1);
-        assert_eq!(swings_10.high_price, 9.9);
+        assert_eq!(swings_10.high_price, 11.4);
         assert_eq!(swings_10.low_price, 0.0);
-        assert_eq!(swings_10.high_datetime, time[9]);
+        assert_eq!(swings_10.high_datetime, time[14]);
         assert_eq!(swings_10.low_datetime, 0.0);
         assert_eq!(swings_10.length, 0);
         assert_eq!(swings_10.duration, 0);
         assert_eq!(swings_10.since_high, 0);
-        assert_eq!(swings_10.since_low, 10);
+        assert_eq!(swings_10.since_low, 15);
     }
 
     #[rstest]

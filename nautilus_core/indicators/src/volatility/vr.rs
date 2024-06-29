@@ -25,7 +25,6 @@ use crate::{average::MovingAverageType, indicator::Indicator, volatility::atr::A
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
-
 pub struct VolatilityRatio {
     pub fast_period: usize,
     pub slow_period: usize,
@@ -164,7 +163,7 @@ mod tests {
             1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
         ];
 
-        for i in 0..10 {
+        for i in 0..15 {
             vr_10.update_raw(high_values[i], low_values[i], close_values[i]);
         }
 

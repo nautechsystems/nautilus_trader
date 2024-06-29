@@ -29,7 +29,6 @@ use crate::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
-
 pub struct KeltnerChannel {
     pub period: usize,
     pub k_multiplier: f64,
@@ -172,14 +171,14 @@ mod tests {
             11.45,
         ];
 
-        for i in 0..10 {
+        for i in 0..15 {
             kc_10.update_raw(high_values[i], low_values[i], close_values[i]);
         }
 
         assert!(kc_10.initialized());
-        assert_eq!(kc_10.upper, 7.36);
-        assert_eq!(kc_10.middle, 5.45);
-        assert_eq!(kc_10.lower, 3.54);
+        assert_eq!(kc_10.upper, 13.436_666_666_666_666);
+        assert_eq!(kc_10.middle, 9.676_666_666_666_666);
+        assert_eq!(kc_10.lower, 5.916_666_666_666_666);
     }
 
     #[rstest]
