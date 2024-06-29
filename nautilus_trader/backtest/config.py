@@ -53,7 +53,7 @@ def parse_filters_expr(s: str | None):
     assert field  # Required for eval
 
     if not s:
-        return
+        return None
 
     def safer_eval(input_string):
         allowed_names = {"field": field}

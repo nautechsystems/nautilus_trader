@@ -204,7 +204,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         sorted_data = sorted(data, key=lambda x: x.ts_init)
 
         # Check data is strictly non-decreasing prior to write
-        for original, sorted_version in zip(data, sorted_data):
+        for original, sorted_version in zip(data, sorted_data, strict=False):
             if original.ts_init != sorted_version.ts_init:
                 raise ValueError(
                     "Data should be monotonically increasing (or non-decreasing) based on `ts_init`: "
@@ -438,11 +438,10 @@ class ParquetDataCatalog(BaseDataCatalog):
                     dir.startswith(urisafe_instrument_id(x) + "-") for x in instrument_ids
                 ):
                     continue
-            else:
-                if instrument_ids and not any(
-                    dir == urisafe_instrument_id(x) for x in instrument_ids
-                ):
-                    continue
+            elif instrument_ids and not any(
+                dir == urisafe_instrument_id(x) for x in instrument_ids
+            ):
+                continue
 
             # Filter by bar type
             if bar_types and not any(dir == urisafe_instrument_id(x) for x in bar_types):

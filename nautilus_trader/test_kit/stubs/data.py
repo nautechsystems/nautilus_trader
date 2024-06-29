@@ -503,7 +503,11 @@ class TestDataStubs:
         provider = TestDataProvider()
         updates = []
         for _, row in provider.read_csv_ticks("truefx/usdjpy-ticks.csv").iterrows():
-            for side, order_side in zip(("bid", "ask"), (OrderSide.BUY, OrderSide.SELL)):
+            for side, order_side in zip(
+                ("bid", "ask"),
+                (OrderSide.BUY, OrderSide.SELL),
+                strict=False,
+            ):
                 updates.append(
                     {
                         "op": "update",
@@ -577,7 +581,7 @@ class TestDataStubs:
                 return
             for values in updates:
                 keys = ("order_id", "price", "size")
-                data = dict(zip(keys, values))
+                data = dict(zip(keys, values, strict=False))
                 side = OrderSide.BUY if data["size"] >= 0 else OrderSide.SELL
                 if data["price"] == 0:
                     yield {

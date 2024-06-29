@@ -219,7 +219,6 @@ class BetfairDataClient(LiveMarketDataClient):
 
     async def _subscribe_instrument(self, instrument_id: InstrumentId) -> None:
         self._log.debug("Skipping subscribe_instrument, betfair subscribes as part of orderbook")
-        return
 
     async def _subscribe_instruments(self) -> None:
         for instrument in self._instrument_provider.list_all():

@@ -25,9 +25,7 @@ from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 
 def enc_hook(obj: Any) -> Any:
-    if isinstance(obj, BinanceSymbol):
-        return str(obj)  # serialize BinanceSymbol as string.
-    elif isinstance(obj, BinanceSymbols):
+    if isinstance(obj, BinanceSymbol) or isinstance(obj, BinanceSymbols):
         return str(obj)  # serialize BinanceSymbol as string.
     else:
         raise TypeError(f"Objects of type {type(obj)} are not supported")

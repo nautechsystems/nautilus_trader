@@ -182,8 +182,8 @@ class DockerizedIBGateway:
     def __exit__(self, exc_type, exc_val, exc_tb):
         try:
             self.stop()
-        except Exception as e:
-            logging.error("Error stopping container: %s", e)
+        except Exception:
+            logging.exception("Error stopping container")
 
 
 # -- Exceptions -----------------------------------------------------------------------------------

@@ -165,21 +165,11 @@ class StreamingFeatherWriter:
     ) -> dict[bytes, bytes]:
         instrument = self._instruments[obj.instrument_id]
         metadata = {b"instrument_id": obj.instrument_id.value.encode()}
-        if isinstance(obj, OrderBookDelta):
-            metadata.update(
-                {
-                    b"price_precision": str(instrument.price_precision).encode(),
-                    b"size_precision": str(instrument.size_precision).encode(),
-                },
-            )
-        elif isinstance(obj, OrderBookDeltas):
-            metadata.update(
-                {
-                    b"price_precision": str(instrument.price_precision).encode(),
-                    b"size_precision": str(instrument.size_precision).encode(),
-                },
-            )
-        elif isinstance(obj, QuoteTick | TradeTick):
+        if (
+            isinstance(obj, OrderBookDelta)
+            or isinstance(obj, OrderBookDeltas)
+            or isinstance(obj, QuoteTick | TradeTick)
+        ):
             metadata.update(
                 {
                     b"price_precision": str(instrument.price_precision).encode(),
