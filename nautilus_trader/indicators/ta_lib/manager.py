@@ -70,8 +70,8 @@ class TAFunctionWrapper:
     The class utilizes TA-Lib, a popular technical analysis library, to handle the underlying
     functionality related to technical indicators.
 
-    Example
-    -------
+    Examples
+    --------
     - Creating an instance of TAFunctionWrapper:
       ```
       wrapper = TAFunctionWrapper(name="SMA", params={"timeperiod": 5})
@@ -455,7 +455,6 @@ class TALibIndicatorManager(Indicator):
         name : str
             The name of the indicator whose value is to be retrieved. This name should be one of the
             names specified in `self.output_names`.
-
         index : int, optional
             The index specifying which value to retrieve from the output array. The default value is 0,
             which indicates the latest value. A positive value accesses older data points, with higher
@@ -471,8 +470,8 @@ class TALibIndicatorManager(Indicator):
             If `name` is not in `self.output_names`, or if `index` or the internally
             calculated `translated_index` is negative, indicating an invalid index.
 
-        Example
-        -------
+        Examples
+        --------
         - To get the latest value of an indicator named 'EMA':
           ```
           latest_ema = instance.value('EMA_10')
@@ -503,7 +502,8 @@ class TALibIndicatorManager(Indicator):
 
         Returns
         -------
-        - np.recarray: A NumPy record array containing the output data for the indicator.
+        np.recarray
+            A NumPy record array containing the output data for the indicator.
 
         Notes
         -----
@@ -512,8 +512,8 @@ class TALibIndicatorManager(Indicator):
         - The method ensures the use of a single instance of the output array, stored in
           `self._output_array`, to maintain consistency and reduce memory usage.
 
-        Example
-        -------
+        Examples
+        --------
         - To access the output array of an indicator instance:
           ```
           output_data = indicator_instance.output_array()
@@ -554,8 +554,8 @@ class TALibIndicatorManager(Indicator):
         - The method logs different messages based on whether the array is being truncated or not,
           aiding in debugging and monitoring.
 
-        Example:
-        -------
+        Examples
+        --------
         - To generate a truncated output array:
           ```
           truncated_array = indicator_instance.generate_output_array(truncate=True)
@@ -603,8 +603,8 @@ class TALibIndicatorManager(Indicator):
           library, allowing for more complex data manipulations and easier integration with
           other data processing workflows.
 
-        Example
-        -------
+        Examples
+        --------
         - To get the output data of an indicator as a DataFrame:
           ```
           df = indicator_instance.output_dataframe()
@@ -646,8 +646,8 @@ class TALibIndicatorManager(Indicator):
         - This method is particularly useful for preparing time-series data for analysis or
           visualization in a more accessible and familiar format.
 
-        Example
-        -------
+        Examples
+        --------
         - To convert a NumPy record array to a DataFrame with a datetime index:
           ```
           df = TAFunctionWrapper.handle_dataframe(record_array)
@@ -688,8 +688,8 @@ class TALibIndicatorManager(Indicator):
 
         Notes
         -----
-        - The method performs several checks to ensure data integrity, such as verifying the bar
-          type and handling zero-value bars appropriately.
+        The method performs several checks to ensure data integrity, such as verifying the bar
+        type and handling zero-value bars appropriately.
 
         Raises
         ------
