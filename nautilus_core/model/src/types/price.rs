@@ -29,12 +29,21 @@ use thousands::Separable;
 use super::fixed::{check_fixed_precision, FIXED_PRECISION, FIXED_SCALAR};
 use crate::types::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
 
+/// The sentinel value for an unset or null price.
+pub const PRICE_UNDEF: i64 = i64::MAX;
+
+/// The sentinel value for an error or invalid price.
+pub const PRICE_ERROR: i64 = i64::MIN;
+
+/// The maximum valid price value which can be represented.
 pub const PRICE_MAX: f64 = 9_223_372_036.0;
+
+/// The minimum valid price value which can be represented.
 pub const PRICE_MIN: f64 = -9_223_372_036.0;
 
-/// Sentinel Price for errors.
+/// The sentinel `Price` representing errors (this will be removed when Cython is gone).
 pub const ERROR_PRICE: Price = Price {
-    raw: i64::MAX,
+    raw: PRICE_ERROR,
     precision: 0,
 };
 
@@ -87,6 +96,11 @@ impl Price {
     pub fn zero(precision: u8) -> Self {
         check_fixed_precision(precision).unwrap();
         Self { raw: 0, precision }
+    }
+
+    #[must_use]
+    pub fn is_undefined(&self) -> bool {
+        self.raw == PRICE_UNDEF
     }
 
     #[must_use]
@@ -399,6 +413,13 @@ mod tests {
         assert_eq!(price.raw, -9_223_372_036_000_000_000);
         assert_eq!(price.as_decimal(), dec!(-9223372036));
         assert_eq!(price.to_string(), "-9223372036.000000000");
+    }
+
+    #[rstest]
+    fn test_undefined() {
+        let price = Price::from_raw(PRICE_UNDEF, 0).unwrap();
+        assert_eq!(price.raw, PRICE_UNDEF);
+        assert!(price.is_undefined());
     }
 
     #[rstest]
