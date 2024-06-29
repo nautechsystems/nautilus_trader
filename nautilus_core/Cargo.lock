@@ -2510,23 +2510,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nautilus-accounting"
-version = "0.26.0"
-dependencies = [
- "anyhow",
- "cbindgen",
- "log",
- "nautilus-common",
- "nautilus-core",
- "nautilus-model",
- "pyo3",
- "rstest",
- "rust_decimal",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "nautilus-adapters"
 version = "0.26.0"
 dependencies = [
@@ -2779,7 +2762,6 @@ dependencies = [
 name = "nautilus-pyo3"
 version = "0.26.0"
 dependencies = [
- "nautilus-accounting",
  "nautilus-adapters",
  "nautilus-common",
  "nautilus-core",

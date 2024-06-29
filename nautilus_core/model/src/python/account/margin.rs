@@ -14,16 +14,16 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::{
+use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
+
+use crate::{
+    account::margin::MarginAccount,
     events::account::state::AccountState,
     identifiers::{AccountId, InstrumentId},
     instruments::any::InstrumentAny,
     python::instruments::pyobject_to_instrument_any,
     types::{money::Money, price::Price, quantity::Quantity},
 };
-use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
-
-use crate::account::margin::MarginAccount;
 
 #[pymethods]
 impl MarginAccount {

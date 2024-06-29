@@ -1,7 +1,6 @@
 [workspace]
 resolver = "2"
 members = [
-    "accounting",
     "adapters",
     "backtest",
     "common",

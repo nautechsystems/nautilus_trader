@@ -23,6 +23,7 @@ use std::{
 use log::{debug, error, info, warn};
 use nautilus_core::correctness::{check_key_not_in_map, check_slice_not_empty, check_valid_string};
 use nautilus_model::{
+    account::any::AccountAny,
     data::{
         bar::{Bar, BarType},
         quote::QuoteTick,
@@ -42,7 +43,7 @@ use nautilus_model::{
 use ustr::Ustr;
 
 use super::database::CacheDatabaseAdapter;
-use crate::{enums::SerializationEncoding, interface::account::Account};
+use crate::enums::SerializationEncoding;
 
 /// Configuration for `Cache` instances.
 pub struct CacheConfig {
@@ -178,7 +179,7 @@ pub struct Cache {
     currencies: HashMap<Ustr, Currency>,
     instruments: HashMap<InstrumentId, InstrumentAny>,
     synthetics: HashMap<InstrumentId, SyntheticInstrument>,
-    accounts: HashMap<AccountId, Box<dyn Account>>,
+    accounts: HashMap<AccountId, AccountAny>,
     orders: HashMap<ClientOrderId, OrderAny>,
     order_lists: HashMap<OrderListId, OrderList>,
     positions: HashMap<PositionId, Position>,
@@ -1093,11 +1094,11 @@ impl Cache {
     }
 
     /// Adds the given `account` to the cache.
-    pub fn add_account(&mut self, account: Box<dyn Account>) -> anyhow::Result<()> {
+    pub fn add_account(&mut self, account: AccountAny) -> anyhow::Result<()> {
         debug!("Adding `Account` {}", account.id());
 
         if let Some(database) = &mut self.database {
-            database.add_account(account.as_ref())?;
+            database.add_account(&account)?;
         }
 
         self.accounts.insert(account.id(), account);
@@ -1355,9 +1356,9 @@ impl Cache {
     }
 
     /// Updates the given `account` in the cache.
-    pub fn update_account(&mut self, account: &dyn Account) -> anyhow::Result<()> {
+    pub fn update_account(&mut self, account: AccountAny) -> anyhow::Result<()> {
         if let Some(database) = &mut self.database {
-            database.update_account(account)?;
+            database.update_account(&account)?;
         }
         Ok(())
     }
@@ -2470,20 +2471,17 @@ impl Cache {
 
     /// Returns a reference to the account for the given `account_id` (if found).
     #[must_use]
-    pub fn account(&self, account_id: &AccountId) -> Option<&dyn Account> {
-        self.accounts
-            .get(account_id)
-            .map(std::convert::AsRef::as_ref)
+    pub fn account(&self, account_id: &AccountId) -> Option<&AccountAny> {
+        self.accounts.get(account_id)
     }
 
     /// Returns a reference to the account for the given `venue` (if found).
     #[must_use]
-    pub fn account_for_venue(&self, venue: &Venue) -> Option<&dyn Account> {
+    pub fn account_for_venue(&self, venue: &Venue) -> Option<&AccountAny> {
         self.index
             .venue_account
             .get(venue)
             .and_then(|account_id| self.accounts.get(account_id))
-            .map(std::convert::AsRef::as_ref)
     }
 
     /// Returns a reference to the account ID for the given `venue` (if found).
@@ -2494,10 +2492,10 @@ impl Cache {
 
     /// Returns references to all accounts for the given `account_id`.
     #[must_use]
-    pub fn accounts(&self, account_id: &AccountId) -> Vec<&dyn Account> {
+    pub fn accounts(&self, account_id: &AccountId) -> Vec<&AccountAny> {
         self.accounts
             .values()
-            .map(std::convert::AsRef::as_ref)
+            .filter(|account| &account.id() == account_id)
             .collect()
     }
 }
@@ -2519,7 +2517,7 @@ mod tests {
         orders::stubs::{TestOrderEventStubs, TestOrderStubs},
         types::{price::Price, quantity::Quantity},
     };
-    use rstest::*;
+    use rstest::{fixture, rstest};
 
     use super::Cache;
 

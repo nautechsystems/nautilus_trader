@@ -142,13 +142,30 @@ impl OrderFactory {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 pub mod tests {
+    use nautilus_core::time::get_atomic_clock_static;
     use nautilus_model::{
         enums::{OrderSide, TimeInForce},
-        identifiers::{ClientOrderId, InstrumentId, OrderListId},
+        identifiers::{
+            stubs::{strategy_id_ema_cross, trader_id},
+            ClientOrderId, InstrumentId, OrderListId,
+        },
     };
-    use rstest::rstest;
+    use rstest::{fixture, rstest};
 
-    use crate::{factories::OrderFactory, stubs::order_factory};
+    use crate::factories::OrderFactory;
+
+    #[fixture]
+    pub fn order_factory() -> OrderFactory {
+        let trader_id = trader_id();
+        let strategy_id = strategy_id_ema_cross();
+        OrderFactory::new(
+            trader_id,
+            strategy_id,
+            None,
+            None,
+            get_atomic_clock_static(),
+        )
+    }
 
     #[rstest]
     fn test_generate_client_order_id(mut order_factory: OrderFactory) {

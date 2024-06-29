@@ -13,6 +13,25 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Interface traits to faciliate a ports and adapters style architecture.
+use serde::{Deserialize, Serialize};
 
-pub mod account;
+use crate::{
+    account::{cash::CashAccount, margin::MarginAccount},
+    identifiers::AccountId,
+};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AccountAny {
+    Margin(MarginAccount),
+    Cash(CashAccount),
+}
+
+impl AccountAny {
+    #[must_use]
+    pub fn id(&self) -> AccountId {
+        match self {
+            AccountAny::Margin(margin) => margin.id,
+            AccountAny::Cash(cash) => cash.id,
+        }
+    }
+}

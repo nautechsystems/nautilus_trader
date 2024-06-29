@@ -13,27 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Python bindings from `pyo3`.
-
-#![allow(warnings)] // non-local `impl` definition, temporary allow until pyo3 upgrade
-
-use pyo3::{prelude::*, pymodule};
-
 pub mod cash;
 pub mod margin;
 pub mod transformer;
-
-#[pymodule]
-pub fn accounting(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<crate::account::cash::CashAccount>()?;
-    m.add_class::<crate::account::margin::MarginAccount>()?;
-    m.add_function(wrap_pyfunction!(
-        crate::python::transformer::cash_account_from_account_events,
-        m
-    )?)?;
-    m.add_function(wrap_pyfunction!(
-        crate::python::transformer::margin_account_from_account_events,
-        m
-    )?)?;
-    Ok(())
-}
