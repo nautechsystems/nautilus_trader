@@ -406,7 +406,7 @@ def buy(self) -> None:
 ```
 
 :::info
-It's possible to specify both order emulation, and an execution algorithm.
+You can specify both order emulation and an execution algorithm.
 :::
 
 This example submits a `MARKET` BUY order to a TWAP execution algorithm:
