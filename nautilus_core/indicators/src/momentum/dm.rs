@@ -28,7 +28,6 @@ use crate::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
-
 pub struct DirectionalMovement {
     pub period: usize,
     pub ma_type: MovingAverageType,
@@ -168,12 +167,12 @@ mod tests {
             0.9, 1.9, 2.9, 3.9, 4.9, 5.9, 6.9, 7.9, 8.9, 9.9, 10.1, 10.2, 10.3, 11.1, 11.4,
         ];
 
-        for i in 0..10 {
+        for i in 0..15 {
             dm_10.update_raw(high_values[i], low_values[i]);
         }
 
         assert!(dm_10.initialized());
-        assert_eq!(dm_10.pos, 0.9);
+        assert_eq!(dm_10.pos, 1.0);
         assert_eq!(dm_10.neg, 0.0);
     }
 

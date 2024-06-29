@@ -37,9 +37,9 @@ use crate::{
     momentum::{
         amat::ArcherMovingAveragesTrends, bb::BollingerBands, bias::Bias,
         cci::CommodityChannelIndex, cmo::ChandeMomentumOscillator, dm::DirectionalMovement,
-        kvo::KlingerVolumeOscillator, pressure::Pressure, psl::PsychologicalLine,
-        roc::RateOfChange, rsi::RelativeStrengthIndex, stochastics::Stochastics, swings::Swings,
-        vhf::VerticalHorizontalFilter,
+        kvo::KlingerVolumeOscillator, macd::MovingAverageConvergenceDivergence, pressure::Pressure,
+        psl::PsychologicalLine, roc::RateOfChange, rsi::RelativeStrengthIndex,
+        stochastics::Stochastics, swings::Swings, vhf::VerticalHorizontalFilter,
     },
     ratio::efficiency_ratio::EfficiencyRatio,
     volatility::{
@@ -236,6 +236,17 @@ pub fn pressure_10() -> Pressure {
 #[fixture]
 pub fn cci_10() -> CommodityChannelIndex {
     CommodityChannelIndex::new(10, 2.0, Some(MovingAverageType::Simple)).unwrap()
+}
+
+#[fixture]
+pub fn macd_10() -> MovingAverageConvergenceDivergence {
+    MovingAverageConvergenceDivergence::new(
+        10,
+        8,
+        Some(MovingAverageType::Simple),
+        Some(PriceType::Bid),
+    )
+    .unwrap()
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -28,7 +28,6 @@ use crate::indicator::Indicator;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
-
 pub struct RateOfChange {
     pub period: usize,
     pub use_log: bool,
@@ -139,8 +138,8 @@ mod tests {
             11.45,
         ];
 
-        for i in 0..15 {
-            roc_10.update_raw(close_values[i]);
+        for close in &close_values {
+            roc_10.update_raw(*close);
         }
 
         assert!(roc_10.initialized());

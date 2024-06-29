@@ -31,7 +31,6 @@ use crate::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
-
 pub struct ArcherMovingAveragesTrends {
     pub fast_period: usize,
     pub slow_period: usize,
@@ -204,8 +203,8 @@ mod tests {
             0.9, 1.9, 2.9, 3.9, 4.9, 3.2, 6.9, 7.9, 8.9, 9.9, 1.1, 3.2, 10.3, 11.1, 11.4,
         ];
 
-        for i in 0..10 {
-            amat_345.update_raw(closes[i]);
+        for close in &closes {
+            amat_345.update_raw(*close);
         }
 
         assert!(amat_345.initialized());

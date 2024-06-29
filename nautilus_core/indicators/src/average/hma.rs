@@ -89,7 +89,7 @@ impl Indicator for HullMovingAverage {
 }
 
 fn _get_weights(size: usize) -> Vec<f64> {
-    let mut weights: Vec<f64> = (1..size + 1).map(|x| x as f64).collect();
+    let mut weights: Vec<f64> = (1..=size).map(|x| x as f64).collect();
     let divisor: f64 = weights.iter().sum();
     weights = weights.iter().map(|x| x / divisor).collect();
     weights
@@ -105,9 +105,9 @@ impl HullMovingAverage {
         let w2 = _get_weights(period);
         let w3 = _get_weights(period_sqrt);
 
-        let _ma1 = WeightedMovingAverage::new(period_halved, w1, price_type)?;
-        let _ma2 = WeightedMovingAverage::new(period, w2, price_type)?;
-        let _ma3 = WeightedMovingAverage::new(period_sqrt, w3, price_type)?;
+        let ma1 = WeightedMovingAverage::new(period_halved, w1, price_type)?;
+        let ma2 = WeightedMovingAverage::new(period, w2, price_type)?;
+        let ma3 = WeightedMovingAverage::new(period_sqrt, w3, price_type)?;
 
         Ok(Self {
             period,
@@ -116,9 +116,9 @@ impl HullMovingAverage {
             count: 0,
             has_inputs: false,
             initialized: false,
-            ma1: _ma1,
-            ma2: _ma2,
-            ma3: _ma3,
+            ma1,
+            ma2,
+            ma3,
         })
     }
 }
