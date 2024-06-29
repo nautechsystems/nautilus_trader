@@ -269,6 +269,26 @@ def order_update_to_replace_order_params(
     )
 
 
+def order_update_to_cancel_order_params(
+    command: CancelOrder,
+    instrument: BettingInstrument,
+    size_reduction,
+) -> CancelOrders:
+    """
+    Convert a CancelOrder command into the data required by BetfairClient.
+    """
+    return CancelOrders.with_params(
+        market_id=instrument.market_id,
+        instructions=[
+            CancelInstruction(
+                bet_id=BetId(command.venue_order_id.value),
+                size_reduction=size_reduction,
+            ),
+        ],
+        customer_ref=create_customer_ref(command),
+    )
+
+
 def order_cancel_to_cancel_order_params(
     command: CancelOrder,
     instrument: BettingInstrument,
