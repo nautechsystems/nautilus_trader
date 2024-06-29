@@ -15,7 +15,13 @@
 
 //! A high-performance raw TCP client implementation with TLS capability.
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use nautilus_core::python::to_pyruntime_err;
 use pyo3::prelude::*;
@@ -301,7 +307,7 @@ impl Drop for SocketClientInner {
 pub struct SocketClient {
     writer: SharedTcpWriter,
     controller_task: task::JoinHandle<()>,
-    disconnect_mode: Arc<Mutex<bool>>,
+    disconnect_mode: Arc<AtomicBool>,
     suffix: Vec<u8>,
 }
 
@@ -315,7 +321,7 @@ impl SocketClient {
         let suffix = config.suffix.clone();
         let inner = SocketClientInner::connect_url(config).await?;
         let writer = inner.writer.clone();
-        let disconnect_mode = Arc::new(Mutex::new(false));
+        let disconnect_mode = Arc::new(AtomicBool::new(false));
         let controller_task = Self::spawn_controller_task(
             inner,
             disconnect_mode.clone(),
@@ -343,7 +349,7 @@ impl SocketClient {
     /// Controller task will periodically check the disconnect mode
     /// and shutdown the client if it is not alive.
     pub async fn disconnect(&self) {
-        *self.disconnect_mode.lock().await = true;
+        self.disconnect_mode.store(true, Ordering::SeqCst);
     }
 
     pub async fn send_bytes(&self, data: &[u8]) -> Result<(), std::io::Error> {
@@ -359,20 +365,17 @@ impl SocketClient {
 
     fn spawn_controller_task(
         mut inner: SocketClientInner,
-        disconnect_mode: Arc<Mutex<bool>>,
+        disconnect_mode: Arc<AtomicBool>,
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
     ) -> task::JoinHandle<()> {
         task::spawn(async move {
-            let mut disconnect_flag;
+            let disconnect_flag = disconnect_mode.load(Ordering::SeqCst);
             loop {
                 sleep(Duration::from_secs(1)).await;
 
                 // Check if client needs to disconnect
-                let guard = disconnect_mode.lock().await;
-                disconnect_flag = *guard;
-                drop(guard);
-
+                let disconnected = disconnect_mode.load(Ordering::SeqCst);
                 match (disconnect_flag, inner.is_alive()) {
                     (false, false) => match inner.reconnect().await {
                         Ok(()) => {
@@ -459,7 +462,7 @@ impl SocketClient {
         debug!("Setting disconnect mode to true");
 
         pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
-            *disconnect_mode.lock().await = true;
+            disconnect_mode.store(true, Ordering::SeqCst);
             Ok(())
         })
     }
