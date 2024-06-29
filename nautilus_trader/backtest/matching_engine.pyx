@@ -369,7 +369,8 @@ cdef class OrderMatchingEngine:
         if is_logging_initialized():
             self._log.debug(f"Processing {repr(delta)}")
 
-        self._book.apply_delta(delta)
+        if self.book_type in (BookType.L2_MBP, BookType.L3_MBO):
+            self._book.apply_delta(delta)
 
         # TODO: WIP to introduce flags
         # if data.flags == TimeInForce.GTC:
@@ -398,7 +399,8 @@ cdef class OrderMatchingEngine:
         if is_logging_initialized():
             self._log.debug(f"Processing {repr(deltas)}")
 
-        self._book.apply_deltas(deltas)
+        if self.book_type in (BookType.L2_MBP, BookType.L3_MBO):
+            self._book.apply_deltas(deltas)
 
         # TODO: WIP to introduce flags
         # if data.flags == TimeInForce.GTC:
