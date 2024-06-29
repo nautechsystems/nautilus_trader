@@ -15,7 +15,7 @@
 
 #[cfg(test)]
 #[cfg(target_os = "linux")] // Databases only supported on Linux
-mod tests {
+mod serial_tests {
     use std::{collections::HashSet, time::Duration};
 
     use nautilus_common::{
@@ -40,11 +40,9 @@ mod tests {
         orders::stubs::{TestOrderEventStubs, TestOrderStubs},
         types::{currency::Currency, price::Price, quantity::Quantity},
     };
-    use serial_test::serial;
     use ustr::Ustr;
 
     #[tokio::test(flavor = "multi_thread")]
-    #[serial]
     async fn test_add_general_object_adds_to_cache() {
         let mut pg_cache = get_pg_cache_database().await.unwrap();
         let test_id_value = String::from("test_value").into_bytes();
@@ -69,7 +67,6 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    #[serial]
     async fn test_add_currency_and_instruments() {
         // 1. first define and add currencies as they are contain foreign keys for instruments
         let mut pg_cache = get_pg_cache_database().await.unwrap();
@@ -211,7 +208,6 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    #[serial]
     async fn test_add_order() {
         let client_order_id_1 = ClientOrderId::new("O-19700101-000000-001-001-1").unwrap();
         let client_order_id_2 = ClientOrderId::new("O-19700101-000000-001-001-2").unwrap();
@@ -256,7 +252,6 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    #[serial]
     async fn test_update_order_for_open_order() {
         let client_order_id_1 = ClientOrderId::new("O-19700101-000000-001-002-1").unwrap();
         let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
