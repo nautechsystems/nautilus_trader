@@ -489,7 +489,10 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         # Size and Price cannot be modified in a single operation, so we cannot guarantee
         # an atomic amend (pass or fail).
-        if command.quantity != existing_order.quantity and command.price != existing_order.price:
+        if command.quantity not in (None, existing_order.quantity) and command.price not in (
+            None,
+            existing_order.price,
+        ):
             self.generate_order_modify_rejected(
                 command.strategy_id,
                 command.instrument_id,
@@ -500,9 +503,9 @@ class BetfairExecutionClient(LiveExecutionClient):
             )
             return
 
-        if command.price != existing_order.price:
+        if command.price is not None and command.price != existing_order.price:
             await self._modify_price(command, existing_order)
-        elif command.quantity != existing_order.quantity:
+        elif command.quantity is not None and command.quantity != existing_order.quantity:
             await self._modify_quantity(command, existing_order)
         else:
             self.generate_order_modify_rejected(
