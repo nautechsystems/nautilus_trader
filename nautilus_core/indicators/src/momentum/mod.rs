@@ -24,6 +24,7 @@ pub mod cmo;
 pub mod dm;
 pub mod kvo;
 pub mod macd;
+pub mod obv;
 pub mod pressure;
 pub mod psl;
 pub mod roc;
