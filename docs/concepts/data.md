@@ -15,8 +15,8 @@ a trading domain:
 - `InstrumentClose` - An instrument closing price
 
 Each of these data types inherits from `Data`, which defines two fields:
-- `ts_event` - The UNIX timestamp (nanoseconds) when the data event occurred
-- `ts_init` - The UNIX timestamp (nanoseconds) when the object was initialized
+- `ts_event` - UNIX timestamp (nanoseconds) when the data event occurred
+- `ts_init` - UNIX timestamp (nanoseconds) when the object was initialized
 
 This inheritance ensures chronological data ordering (vital for backtesting), while also enhancing analytics.
 

@@ -55,7 +55,7 @@ pub struct TimeEvent {
     pub event_id: UUID4,
     /// The message category
     pub ts_event: UnixNanos,
-    /// The UNIX timestamp (nanoseconds) when the object was initialized.
+    /// UNIX timestamp (nanoseconds) when the object was initialized.
     pub ts_init: UnixNanos,
 }
 

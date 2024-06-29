@@ -39,11 +39,11 @@ class BinanceFuturesMarkPriceUpdate(Data):
     funding_rate : Decimal
         The current funding rate for the instrument.
     ts_next_funding : uint64_t
-        The UNIX timestamp (nanoseconds) when next funding will occur.
+        UNIX timestamp (nanoseconds) when next funding will occur.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the data object was initialized.
+        UNIX timestamp (nanoseconds) when the data object was initialized.
 
     References
     ----------
@@ -87,7 +87,7 @@ class BinanceFuturesMarkPriceUpdate(Data):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
 
         Returns
         -------
@@ -99,7 +99,7 @@ class BinanceFuturesMarkPriceUpdate(Data):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------

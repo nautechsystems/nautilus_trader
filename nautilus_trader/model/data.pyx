@@ -817,9 +817,9 @@ cdef class Bar(Data):
     volume : Quantity
         The bars volume.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the data object was initialized.
+        UNIX timestamp (nanoseconds) when the data object was initialized.
     is_revision : bool, default False
         If this bar is a revision of a previous bar with the same `ts_event`.
 
@@ -995,7 +995,7 @@ cdef class Bar(Data):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
 
         Returns
         -------
@@ -1007,7 +1007,7 @@ cdef class Bar(Data):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -1396,7 +1396,7 @@ cdef class CustomData(Data):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
 
         Returns
         -------
@@ -1408,7 +1408,7 @@ cdef class CustomData(Data):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -1694,9 +1694,9 @@ cdef class OrderBookDelta(Data):
         The unique sequence number for the update.
         If no sequence number provided in the source data then use a value of zero.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the data object was initialized.
+        UNIX timestamp (nanoseconds) when the data object was initialized.
 
     """
 
@@ -1897,7 +1897,7 @@ cdef class OrderBookDelta(Data):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
 
         Returns
         -------
@@ -1909,7 +1909,7 @@ cdef class OrderBookDelta(Data):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -2102,9 +2102,9 @@ cdef class OrderBookDelta(Data):
             The unique sequence number for the update.
             If no sequence number provided in the source data then use a value of zero.
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) when the tick event occurred.
+            UNIX timestamp (nanoseconds) when the tick event occurred.
         ts_init : uint64_t
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
+            UNIX timestamp (nanoseconds) when the data object was initialized.
 
         Returns
         -------
@@ -2453,7 +2453,7 @@ cdef class OrderBookDeltas(Data):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
 
         Returns
         -------
@@ -2465,7 +2465,7 @@ cdef class OrderBookDeltas(Data):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -2556,9 +2556,9 @@ cdef class OrderBookDepth10(Data):
         The unique sequence number for the update.
         If no sequence number provided in the source data then use a value of zero.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the tick event occurred.
+        UNIX timestamp (nanoseconds) when the tick event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the data object was initialized.
+        UNIX timestamp (nanoseconds) when the data object was initialized.
 
     Raises
     ------
@@ -2830,7 +2830,7 @@ cdef class OrderBookDepth10(Data):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
 
         Returns
         -------
@@ -2842,7 +2842,7 @@ cdef class OrderBookDepth10(Data):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -3016,9 +3016,9 @@ cdef class VenueStatus(Data):
     status : MarketStatus
         The venue market status.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the status update event occurred.
+        UNIX timestamp (nanoseconds) when the status update event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
     """
 
@@ -3109,9 +3109,9 @@ cdef class InstrumentStatus(Data):
     status : MarketStatus
         The instrument market session status.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the status update event occurred.
+        UNIX timestamp (nanoseconds) when the status update event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     trading_session : str, default 'Regular'
         The name of the trading session.
     halt_reason : HaltReason, default ``NOT_HALTED``
@@ -3227,9 +3227,9 @@ cdef class InstrumentClose(Data):
     close_type : InstrumentCloseType
         The type of closing price.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the close price event occurred.
+        UNIX timestamp (nanoseconds) when the close price event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
     """
 
@@ -3333,9 +3333,9 @@ cdef class QuoteTick(Data):
     ask_size : Quantity
         The top of book ask size.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the tick event occurred.
+        UNIX timestamp (nanoseconds) when the tick event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the data object was initialized.
+        UNIX timestamp (nanoseconds) when the data object was initialized.
 
     Raises
     ------
@@ -3482,7 +3482,7 @@ cdef class QuoteTick(Data):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
 
         Returns
         -------
@@ -3494,7 +3494,7 @@ cdef class QuoteTick(Data):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -3716,9 +3716,9 @@ cdef class QuoteTick(Data):
         ask_size_prec : uint8_t
             The ask size precision.
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) when the tick event occurred.
+            UNIX timestamp (nanoseconds) when the tick event occurred.
         ts_init : uint64_t
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
+            UNIX timestamp (nanoseconds) when the data object was initialized.
 
         Returns
         -------
@@ -3930,9 +3930,9 @@ cdef class TradeTick(Data):
     trade_id : TradeId
         The trade match ID (assigned by the venue).
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the tick event occurred.
+        UNIX timestamp (nanoseconds) when the tick event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the data object was initialized.
+        UNIX timestamp (nanoseconds) when the data object was initialized.
 
     Raises
     ------
@@ -4068,7 +4068,7 @@ cdef class TradeTick(Data):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
 
         Returns
         -------
@@ -4080,7 +4080,7 @@ cdef class TradeTick(Data):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -4294,9 +4294,9 @@ cdef class TradeTick(Data):
         trade_id : TradeId
             The trade match ID (assigned by the venue).
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) when the tick event occurred.
+            UNIX timestamp (nanoseconds) when the tick event occurred.
         ts_init : uint64_t
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
+            UNIX timestamp (nanoseconds) when the data object was initialized.
 
         Returns
         -------

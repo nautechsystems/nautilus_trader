@@ -457,13 +457,13 @@ cdef extern from "../includes/model.h":
         BookAction action;
         # The order to apply.
         BookOrder_t order;
-        # The record flags bit field, indicating event end and data information.
+        # The record flags bit field indicating event end and data information.
         uint8_t flags;
         # The message sequence number assigned at the venue.
         uint64_t sequence;
-        # The UNIX timestamp (nanoseconds) when the book event occurred.
+        # UNIX timestamp (nanoseconds) when the book event occurred.
         uint64_t ts_event;
-        # The UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the struct was initialized.
         uint64_t ts_init;
 
     # C compatible Foreign Function Interface (FFI) for an underlying [`OrderBookDeltas`].
@@ -501,9 +501,9 @@ cdef extern from "../includes/model.h":
         uint8_t flags;
         # The message sequence number assigned at the venue.
         uint64_t sequence;
-        # The UNIX timestamp (nanoseconds) when the book event occurred.
+        # UNIX timestamp (nanoseconds) when the book event occurred.
         uint64_t ts_event;
-        # The UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the struct was initialized.
         uint64_t ts_init;
 
     # Represents a single quote tick in a market.
@@ -518,9 +518,9 @@ cdef extern from "../includes/model.h":
         Quantity_t bid_size;
         # The top of book ask size.
         Quantity_t ask_size;
-        # The UNIX timestamp (nanoseconds) when the quote event occurred.
+        # UNIX timestamp (nanoseconds) when the quote event occurred.
         uint64_t ts_event;
-        # The UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the struct was initialized.
         uint64_t ts_init;
 
     # Represents a valid trade match ID (assigned by a trading venue).
@@ -542,9 +542,9 @@ cdef extern from "../includes/model.h":
         AggressorSide aggressor_side;
         # The trade match ID (assigned by the venue).
         TradeId_t trade_id;
-        # The UNIX timestamp (nanoseconds) when the trade event occurred.
+        # UNIX timestamp (nanoseconds) when the trade event occurred.
         uint64_t ts_event;
-        # The UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the struct was initialized.
         uint64_t ts_init;
 
     # Represents a bar aggregation specification including a step, aggregation
@@ -581,9 +581,9 @@ cdef extern from "../includes/model.h":
         Price_t close;
         # The bars volume.
         Quantity_t volume;
-        # The UNIX timestamp (nanoseconds) when the data event occurred.
+        # UNIX timestamp (nanoseconds) when the data event occurred.
         uint64_t ts_event;
-        # The UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the struct was initialized.
         uint64_t ts_init;
 
     # A built-in Nautilus data type.

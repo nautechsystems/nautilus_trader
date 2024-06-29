@@ -28,9 +28,9 @@ cdef class OptionsSpread(Instrument):
     cdef readonly str strategy_type
     """The strategy type of the spread.\n\n:returns: `str`"""
     cdef readonly uint64_t activation_ns
-    """The UNIX timestamp (nanoseconds) for contract activation.\n\n:returns: `unit64_t`"""
+    """UNIX timestamp (nanoseconds) for contract activation.\n\n:returns: `unit64_t`"""
     cdef readonly uint64_t expiration_ns
-    """The UNIX timestamp (nanoseconds) for contract expiration.\n\n:returns: `unit64_t`"""
+    """UNIX timestamp (nanoseconds) for contract expiration.\n\n:returns: `unit64_t`"""
 
     @staticmethod
     cdef OptionsSpread from_dict_c(dict values)

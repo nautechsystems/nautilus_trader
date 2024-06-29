@@ -378,9 +378,9 @@ class NewsEvent(Data):
     currency : Currency
         The currency the economic news event is expected to affect.
     ts_event : int
-        The UNIX timestamp (nanoseconds) when the news event occurred.
+        UNIX timestamp (nanoseconds) when the news event occurred.
     ts_init : int
-        The UNIX timestamp (nanoseconds) when the data object was initialized.
+        UNIX timestamp (nanoseconds) when the data object was initialized.
 
     """
 

@@ -60,9 +60,9 @@ pub struct OrderBookDepth10 {
     pub flags: u8,
     /// The message sequence number assigned at the venue.
     pub sequence: u64,
-    /// The UNIX timestamp (nanoseconds) when the book event occurred.
+    /// UNIX timestamp (nanoseconds) when the book event occurred.
     pub ts_event: UnixNanos,
-    /// The UNIX timestamp (nanoseconds) when the struct was initialized.
+    /// UNIX timestamp (nanoseconds) when the struct was initialized.
     pub ts_init: UnixNanos,
 }
 

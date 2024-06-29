@@ -78,13 +78,13 @@ cdef class Position:
     cdef readonly Currency settlement_currency
     """The position settlement currency (for PnL).\n\n:returns: `Currency`"""
     cdef readonly uint64_t ts_init
-    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
+    """UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t ts_opened
-    """The UNIX timestamp (nanoseconds) when the position was opened.\n\n:returns: `uint64_t`"""
+    """UNIX timestamp (nanoseconds) when the position was opened.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t ts_last
-    """The UNIX timestamp (nanoseconds) when the last event occurred.\n\n:returns: `uint64_t`"""
+    """UNIX timestamp (nanoseconds) when the last event occurred.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t ts_closed
-    """The UNIX timestamp (nanoseconds) when the position was closed.\n\n:returns: `uint64_t`"""
+    """UNIX timestamp (nanoseconds) when the position was closed.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t duration_ns
     """The total open duration (nanoseconds).\n\n:returns: `uint64_t`"""
     cdef readonly double avg_px_open

@@ -1898,7 +1898,7 @@ cdef class Actor(Component):
         value : object
             The signal data to publish.
         ts_event : uint64_t, optional
-            The UNIX timestamp (nanoseconds) when the signal event occurred.
+            UNIX timestamp (nanoseconds) when the signal event occurred.
             If ``None`` then will timestamp current time.
 
         """
