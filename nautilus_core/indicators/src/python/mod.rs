@@ -58,6 +58,7 @@ pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::momentum::cci::CommodityChannelIndex>()?;
     m.add_class::<crate::momentum::roc::RateOfChange>()?;
     m.add_class::<crate::momentum::macd::MovingAverageConvergenceDivergence>()?;
+    m.add_class::<crate::momentum::obv::OnBalanceVolume>()?;
     // volatility
     m.add_class::<crate::volatility::atr::AverageTrueRange>()?;
     m.add_class::<crate::volatility::vr::VolatilityRatio>()?;

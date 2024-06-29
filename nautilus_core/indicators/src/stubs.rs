@@ -37,9 +37,10 @@ use crate::{
     momentum::{
         amat::ArcherMovingAveragesTrends, bb::BollingerBands, bias::Bias,
         cci::CommodityChannelIndex, cmo::ChandeMomentumOscillator, dm::DirectionalMovement,
-        kvo::KlingerVolumeOscillator, macd::MovingAverageConvergenceDivergence, pressure::Pressure,
-        psl::PsychologicalLine, roc::RateOfChange, rsi::RelativeStrengthIndex,
-        stochastics::Stochastics, swings::Swings, vhf::VerticalHorizontalFilter,
+        kvo::KlingerVolumeOscillator, macd::MovingAverageConvergenceDivergence,
+        obv::OnBalanceVolume, pressure::Pressure, psl::PsychologicalLine, roc::RateOfChange,
+        rsi::RelativeStrengthIndex, stochastics::Stochastics, swings::Swings,
+        vhf::VerticalHorizontalFilter,
     },
     ratio::efficiency_ratio::EfficiencyRatio,
     volatility::{
@@ -247,6 +248,11 @@ pub fn macd_10() -> MovingAverageConvergenceDivergence {
         Some(PriceType::Bid),
     )
     .unwrap()
+}
+
+#[fixture]
+pub fn obv_10() -> OnBalanceVolume {
+    OnBalanceVolume::new(10).unwrap()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
