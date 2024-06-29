@@ -31,7 +31,6 @@ use crate::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
-
 pub struct BollingerBands {
     pub period: usize,
     pub k: f64,
@@ -197,14 +196,14 @@ mod tests {
             11.45,
         ];
 
-        for i in 0..10 {
+        for i in 0..15 {
             bb_10.update_raw(high_values[i], low_values[i], close_values[i]);
         }
 
         assert!(bb_10.initialized());
-        assert_eq!(bb_10.upper, 5.737_228_132_326_901);
-        assert_eq!(bb_10.middle, 5.45);
-        assert_eq!(bb_10.lower, 5.162_771_867_673_099);
+        assert_eq!(bb_10.upper, 10.108_266_446_984_462);
+        assert_eq!(bb_10.middle, 9.676_666_666_666_666);
+        assert_eq!(bb_10.lower, 9.245_066_886_348_87);
     }
 
     #[rstest]

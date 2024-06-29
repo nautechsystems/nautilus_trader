@@ -28,7 +28,6 @@ use crate::indicator::Indicator;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
-
 pub struct Stochastics {
     pub period_k: usize,
     pub period_d: usize,
@@ -178,7 +177,7 @@ mod tests {
             1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
         ];
 
-        for i in 0..10 {
+        for i in 0..15 {
             stochastics_10.update_raw(high_values[i], low_values[i], close_values[i]);
         }
 

@@ -28,7 +28,6 @@ use crate::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
-
 pub struct KlingerVolumeOscillator {
     pub fast_period: usize,
     pub slow_period: usize,

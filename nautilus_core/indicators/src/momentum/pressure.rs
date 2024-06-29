@@ -29,7 +29,6 @@ use crate::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
-
 pub struct Pressure {
     pub period: usize,
     pub ma_type: MovingAverageType,
@@ -179,7 +178,7 @@ mod tests {
             1300.0, 1400.0, 1500.0,
         ];
 
-        for i in 0..10 {
+        for i in 0..15 {
             pressure_10.update_raw(
                 high_values[i],
                 low_values[i],
@@ -189,8 +188,8 @@ mod tests {
         }
 
         assert!(pressure_10.initialized());
-        assert_eq!(pressure_10.value, 0.545_454_545_454_543_4);
-        assert_eq!(pressure_10.value_cumulative, 4.788_073_593_073_581);
+        assert_eq!(pressure_10.value, 4.377_880_184_331_797);
+        assert_eq!(pressure_10.value_cumulative, 23.231_207_409_222_474);
     }
 
     #[rstest]

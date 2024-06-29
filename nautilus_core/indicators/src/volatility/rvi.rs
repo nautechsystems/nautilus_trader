@@ -197,8 +197,8 @@ mod tests {
             154.75, 157.00, 159.25, 161.50, 163.75, 166.00, 168.25, 170.50,
         ];
 
-        for i in 0..30 {
-            rvi_10.update_raw(close_values[i]);
+        for close in close_values {
+            rvi_10.update_raw(close);
         }
 
         assert!(rvi_10.initialized());

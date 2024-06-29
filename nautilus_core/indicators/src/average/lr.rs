@@ -25,7 +25,6 @@ use crate::indicator::Indicator;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
-
 pub struct LinearRegression {
     pub period: usize,
     pub slope: f64,
@@ -108,17 +107,17 @@ impl LinearRegression {
         let x_arr: Vec<f64> = (1..=self.period).map(|x| x as f64).collect();
         let y_arr: Vec<f64> = self.inputs.clone();
         let x_sum: f64 = 0.5 * self.period as f64 * (self.period as f64 + 1.0);
-        let x2_sum: f64 = x_sum * 2.0f64.mul_add(self.period as f64, 1.0) / 3.0;
-        let divisor: f64 = (self.period as f64).mul_add(x2_sum, -(x_sum * x_sum));
+        let x_mul_sum: f64 = x_sum * 2.0f64.mul_add(self.period as f64, 1.0) / 3.0;
+        let divisor: f64 = (self.period as f64).mul_add(x_mul_sum, -(x_sum * x_sum));
         let y_sum: f64 = y_arr.iter().sum::<f64>();
-        let xy_sum: f64 = x_arr
+        let sum_x_y: f64 = x_arr
             .iter()
             .zip(y_arr.iter())
             .map(|(x, y)| x * y)
             .sum::<f64>();
 
-        self.slope = (self.period as f64).mul_add(xy_sum, -(x_sum * y_sum)) / divisor;
-        self.intercept = y_sum.mul_add(x2_sum, -(x_sum * xy_sum)) / divisor;
+        self.slope = (self.period as f64).mul_add(sum_x_y, -(x_sum * y_sum)) / divisor;
+        self.intercept = y_sum.mul_add(x_mul_sum, -(x_sum * sum_x_y)) / divisor;
 
         let residuals: Vec<f64> = x_arr
             .into_iter()

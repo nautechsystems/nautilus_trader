@@ -34,10 +34,10 @@ pub struct ChandeMomentumOscillator {
     pub value: f64,
     pub count: usize,
     pub initialized: bool,
-    _previous_close: f64,
-    _average_gain: Box<dyn MovingAverage + Send + 'static>,
-    _average_loss: Box<dyn MovingAverage + Send + 'static>,
-    _has_inputs: bool,
+    previous_close: f64,
+    average_gain: Box<dyn MovingAverage + Send + 'static>,
+    average_loss: Box<dyn MovingAverage + Send + 'static>,
+    has_inputs: bool,
 }
 
 impl Display for ChandeMomentumOscillator {
@@ -52,7 +52,7 @@ impl Indicator for ChandeMomentumOscillator {
     }
 
     fn has_inputs(&self) -> bool {
-        self._has_inputs
+        self.has_inputs
     }
 
     fn initialized(&self) -> bool {
@@ -74,9 +74,9 @@ impl Indicator for ChandeMomentumOscillator {
     fn reset(&mut self) {
         self.value = 0.0;
         self.count = 0;
-        self._has_inputs = false;
+        self.has_inputs = false;
         self.initialized = false;
-        self._previous_close = 0.0;
+        self.previous_close = 0.0;
     }
 }
 
@@ -86,48 +86,47 @@ impl ChandeMomentumOscillator {
         Ok(Self {
             period,
             ma_type: ma_type.unwrap_or(MovingAverageType::Wilder),
-            _average_gain: MovingAverageFactory::create(MovingAverageType::Wilder, period),
-            _average_loss: MovingAverageFactory::create(MovingAverageType::Wilder, period),
-            _previous_close: 0.0,
+            average_gain: MovingAverageFactory::create(MovingAverageType::Wilder, period),
+            average_loss: MovingAverageFactory::create(MovingAverageType::Wilder, period),
+            previous_close: 0.0,
             value: 0.0,
             count: 0,
             initialized: false,
-            _has_inputs: false,
+            has_inputs: false,
         })
     }
 
     pub fn update_raw(&mut self, close: f64) {
-        if !self._has_inputs {
-            self._previous_close = close;
-            self._has_inputs = true;
+        if !self.has_inputs {
+            self.previous_close = close;
+            self.has_inputs = true;
         }
 
-        let gain: f64 = close - self._previous_close;
+        let gain: f64 = close - self.previous_close;
         if gain > 0.0 {
-            self._average_gain.update_raw(gain);
-            self._average_loss.update_raw(0.0);
+            self.average_gain.update_raw(gain);
+            self.average_loss.update_raw(0.0);
         } else if gain < 0.0 {
-            self._average_gain.update_raw(0.0);
-            self._average_loss.update_raw(-gain);
+            self.average_gain.update_raw(0.0);
+            self.average_loss.update_raw(-gain);
         } else {
-            self._average_gain.update_raw(0.0);
-            self._average_loss.update_raw(0.0);
+            self.average_gain.update_raw(0.0);
+            self.average_loss.update_raw(0.0);
         }
 
-        if !self.initialized && self._average_gain.initialized() && self._average_loss.initialized()
-        {
+        if !self.initialized && self.average_gain.initialized() && self.average_loss.initialized() {
             self.initialized = true;
         }
         if self.initialized {
-            let divisor = self._average_gain.value() + self._average_loss.value();
+            let divisor = self.average_gain.value() + self.average_loss.value();
             if divisor == 0.0 {
                 self.value = 0.0;
             } else {
                 self.value =
-                    100.0 * (self._average_gain.value() - self._average_loss.value()) / divisor;
+                    100.0 * (self.average_gain.value() - self.average_loss.value()) / divisor;
             }
         }
-        self._previous_close = close;
+        self.previous_close = close;
     }
 }
 
@@ -196,6 +195,8 @@ mod tests {
         cmo_10.reset();
         assert!(!cmo_10.initialized());
         assert_eq!(cmo_10.count, 0);
+        assert_eq!(cmo_10.value, 0.0);
+        assert_eq!(cmo_10.previous_close, 0.0);
     }
 
     #[rstest]
