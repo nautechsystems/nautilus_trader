@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import traceback
 from collections import defaultdict
 
 import msgspec
@@ -23,8 +24,10 @@ from betfair_parser.spec.accounts.type_definitions import AccountDetailsResponse
 from betfair_parser.spec.betting.enums import ExecutionReportStatus
 from betfair_parser.spec.betting.enums import InstructionReportStatus
 from betfair_parser.spec.betting.enums import OrderProjection
+from betfair_parser.spec.betting.orders import CancelOrders
 from betfair_parser.spec.betting.orders import PlaceOrders
 from betfair_parser.spec.betting.orders import ReplaceOrders
+from betfair_parser.spec.betting.type_definitions import CancelExecutionReport
 from betfair_parser.spec.betting.type_definitions import CurrentOrderSummary
 from betfair_parser.spec.betting.type_definitions import PlaceExecutionReport
 from betfair_parser.spec.common import BetId
@@ -50,6 +53,7 @@ from nautilus_trader.adapters.betfair.parsing.requests import make_customer_orde
 from nautilus_trader.adapters.betfair.parsing.requests import order_cancel_to_cancel_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import order_submit_to_place_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import order_to_trade_id
+from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_cancel_order_params
 from nautilus_trader.adapters.betfair.parsing.requests import order_update_to_replace_order_params
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProvider
 from nautilus_trader.adapters.betfair.sockets import BetfairOrderStreamClient
@@ -145,10 +149,12 @@ class BetfairExecutionClient(LiveExecutionClient):
         self.venue_order_id_to_client_order_id: dict[VenueOrderId, ClientOrderId] = {}
         self.pending_update_order_client_ids: set[tuple[ClientOrderId, VenueOrderId]] = set()
         self.published_executions: dict[ClientOrderId, list[TradeId]] = defaultdict(list)
+        self.account_state_task: asyncio.Task | None = None
 
         self._strategy_hashes: dict[str, str] = {}
         self._set_account_id(AccountId(f"{BETFAIR_VENUE}-001"))
         AccountFactory.register_calculated_account(BETFAIR_VENUE.value)
+
         self._reconnect_in_progress = False
 
     @property
@@ -160,12 +166,12 @@ class BetfairExecutionClient(LiveExecutionClient):
     async def _connect(self) -> None:
         self._log.info("Connecting to BetfairHttpClient...")
         await self._client.connect()
-        self._log.info("BetfairHttpClient login successful", LogColor.GREEN)
-
-        # Start scheduled account state updates
-        self.create_task(self.account_state_updates())
+        self._log.info("BetfairHttpClient login successful.", LogColor.GREEN)
 
         # Connections and start-up checks
+        self._log.debug(
+            "Connecting to stream, checking account currency and loading venue id mapping...",
+        )
         aws = [
             self.stream.connect(),
             self.check_account_currency(),
@@ -173,7 +179,13 @@ class BetfairExecutionClient(LiveExecutionClient):
         ]
         await asyncio.gather(*aws)
 
+        self._log.debug("Starting account state update task")
+        self.account_state_task = self.create_task(self.account_state_updates())
+
     async def _disconnect(self) -> None:
+        # Shutdown account updates
+        self.account_state_task.cancel()
+
         # Close socket
         self._log.info("Closing streaming socket")
         await self.stream.disconnect()
@@ -184,13 +196,13 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     # -- ERROR HANDLING ---------------------------------------------------------------------------
     async def on_api_exception(self, error: BetfairError) -> None:
-        if "INVALID_SESSION_INFORMATION" in error.args[0]:
+        if "INVALID_SESSION_INFORMATION" in error.args[0] or "NO_SESSION" in error.args[0]:
             if self._reconnect_in_progress:
                 self._log.info("Reconnect already in progress.")
                 return
 
             # Avoid multiple reconnection attempts when multiple INVALID_SESSION_INFORMATION errors
-            # are received at "the same time" from the BF API. Simulaneous reconnection attempts
+            # are received at "the same time" from the BF API. Simultaneous reconnection attempts
             # will result in MAX_CONNECTION_LIMIT_EXCEEDED errors.
             self._reconnect_in_progress = True
 
@@ -201,20 +213,26 @@ class BetfairExecutionClient(LiveExecutionClient):
                 await self._connect()
                 self._log.info("Reconnected.")
             except Exception:
-                self._log.error("Reconnection failed.", exc_info=True)
+                self._log.error(f"Reconnection failed: {traceback.format_exc()}")
 
             self._reconnect_in_progress = False
 
     # -- ACCOUNT HANDLERS -------------------------------------------------------------------------
 
     async def account_state_updates(self) -> None:
-        while True:
+        async def update_account_state():
             self._log.debug("Requesting account state")
             account_state = await self.request_account_state()
             self._log.debug(f"Received account state: {account_state}")
             self._send_account_state(account_state)
             self._log.debug("Sent account state")
-            await asyncio.sleep(self.request_account_state_period)
+
+        while True:
+            try:
+                await update_account_state()
+                await asyncio.sleep(self.request_account_state_period)
+            except Exception:
+                self._log.error(f"account_state_updates: {traceback.format_exc()}")
 
     async def request_account_state(self) -> AccountState:
         account_details = await self._client.get_account_details()
@@ -439,10 +457,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     async def _modify_order(self, command: ModifyOrder) -> None:
         self._log.debug(f"Received modify_order {command}")
-        client_order_id: ClientOrderId = command.client_order_id
-        instrument = self._cache.instrument(command.instrument_id)
-        PyCondition.not_none(instrument, "instrument")
-        existing_order = self._cache.order(client_order_id)  # type: Order
+        existing_order = self._cache.order(command.client_order_id)  # type: Order
 
         if existing_order is None:
             self._log.warning(
@@ -451,7 +466,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             self.generate_order_modify_rejected(
                 command.strategy_id,
                 command.instrument_id,
-                client_order_id,
+                command.client_order_id,
                 command.venue_order_id,
                 "ORDER NOT IN CACHE",
                 self._clock.timestamp_ns(),
@@ -461,16 +476,50 @@ class BetfairExecutionClient(LiveExecutionClient):
             self._log.warning(f"Order found does not have `id` set: {existing_order}")
             PyCondition.not_none(command.strategy_id, "command.strategy_id")
             PyCondition.not_none(command.instrument_id, "command.instrument_id")
-            PyCondition.not_none(client_order_id, "client_order_id")
+            PyCondition.not_none(command.client_order_id, "client_order_id")
             self.generate_order_modify_rejected(
                 command.strategy_id,
                 command.instrument_id,
-                client_order_id,
+                command.client_order_id,
                 None,
                 "ORDER MISSING VENUE_ORDER_ID",
                 self._clock.timestamp_ns(),
             )
             return
+
+        # Size and Price cannot be modified in a single operation, so we cannot guarantee
+        # an atomic amend (pass or fail).
+        if command.quantity not in (None, existing_order.quantity) and command.price not in (
+            None,
+            existing_order.price,
+        ):
+            self.generate_order_modify_rejected(
+                command.strategy_id,
+                command.instrument_id,
+                command.client_order_id,
+                existing_order.venue_order_id,
+                "CANNOT MODIFY PRICE AND SIZE AT THE SAME TIME",
+                self._clock.timestamp_ns(),
+            )
+            return
+
+        if command.price is not None and command.price != existing_order.price:
+            await self._modify_price(command, existing_order)
+        elif command.quantity is not None and command.quantity != existing_order.quantity:
+            await self._modify_quantity(command, existing_order)
+        else:
+            self.generate_order_modify_rejected(
+                command.strategy_id,
+                command.instrument_id,
+                command.client_order_id,
+                existing_order.venue_order_id,
+                "NOP",
+                self._clock.timestamp_ns(),
+            )
+
+    async def _modify_price(self, command: ModifyOrder, existing_order: Order) -> None:
+        instrument = self._cache.instrument(command.instrument_id)
+        PyCondition.not_none(instrument, "instrument")
 
         # Send order to client
         replace_orders: ReplaceOrders = order_update_to_replace_order_params(
@@ -486,7 +535,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         except Exception as e:
             if isinstance(e, BetfairError):
                 await self.on_api_exception(error=e)
-            self._log.warning(f"Modify failed: {e}")
+            self._log.warning(f"Modify failed (px): {e}")
             self.generate_order_modify_rejected(
                 command.strategy_id,
                 command.instrument_id,
@@ -500,7 +549,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._log.debug(f"result={result}")
 
         for report in result.instruction_reports:
-            if report.status == ExecutionReportStatus.FAILURE:
+            if report.status in {ExecutionReportStatus.FAILURE, InstructionReportStatus.FAILURE}:
                 reason = f"{result.error_code.name} ({result.error_code.__doc__})"
                 self._log.warning(f"replace failed - {reason}")
                 self.generate_order_rejected(
@@ -520,17 +569,81 @@ class BetfairExecutionClient(LiveExecutionClient):
 
             place_instruction = report.place_instruction_report
             venue_order_id = VenueOrderId(str(place_instruction.bet_id))
-            self.set_venue_id_mapping(venue_order_id, client_order_id)
+            self.set_venue_id_mapping(venue_order_id, command.client_order_id)
             self.generate_order_updated(
                 command.strategy_id,
                 command.instrument_id,
-                client_order_id,
+                command.client_order_id,
                 venue_order_id,
                 betfair_float_to_quantity(place_instruction.instruction.limit_order.size),
                 betfair_float_to_price(place_instruction.instruction.limit_order.price),
                 None,  # Not applicable for Betfair
                 self._clock.timestamp_ns(),
                 True,
+            )
+
+    async def _modify_quantity(self, command: ModifyOrder, existing_order: Order) -> None:
+        instrument = self._cache.instrument(command.instrument_id)
+
+        size_reduction = existing_order.quantity - command.quantity
+        if size_reduction <= 0:
+            self.generate_order_modify_rejected(
+                command.strategy_id,
+                command.instrument_id,
+                command.client_order_id,
+                existing_order.venue_order_id,
+                f"Insufficient remaining quantity: {size_reduction}",
+                self._clock.timestamp_ns(),
+            )
+            return
+
+        cancel_orders: CancelOrders = order_update_to_cancel_order_params(
+            command=command,
+            instrument=instrument,
+            size_reduction=size_reduction,
+        )
+
+        try:
+            result: CancelExecutionReport = await self._client.cancel_orders(cancel_orders)
+        except Exception as e:
+            if isinstance(e, BetfairError):
+                await self.on_api_exception(error=e)
+            self._log.warning(f"Modify failed (qty): {e}")
+            self.generate_order_modify_rejected(
+                command.strategy_id,
+                command.instrument_id,
+                command.client_order_id,
+                existing_order.venue_order_id,
+                "client error",
+                self._clock.timestamp_ns(),
+            )
+            return
+
+        self._log.debug(f"result={result}")
+
+        for report in result.instruction_reports:
+            if report.status in {ExecutionReportStatus.FAILURE, InstructionReportStatus.FAILURE}:
+                reason = f"{result.error_code.name} ({result.error_code.__doc__})"
+                self._log.warning(f"size reduction failed - {reason}")
+                self.generate_order_rejected(
+                    command.strategy_id,
+                    command.instrument_id,
+                    command.client_order_id,
+                    reason,
+                    self._clock.timestamp_ns(),
+                )
+                return
+
+            self.generate_order_updated(
+                command.strategy_id,
+                command.instrument_id,
+                command.client_order_id,
+                command.venue_order_id,
+                betfair_float_to_quantity(existing_order.quantity - report.size_cancelled),
+                betfair_float_to_price(existing_order.price),
+                None,  # Not applicable for Betfair
+                self._clock.timestamp_ns(),
+                False,
             )
 
     async def _cancel_order(self, command: CancelOrder) -> None:
