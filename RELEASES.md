@@ -3,10 +3,11 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added `request_order_book_snapshot` method (#1745), thanks @graceyangfan
 - Added Bybit demo account support (set `is_demo` to True in configs)
 - Added Bybit stop order types (`STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`, `LIMIT_IF_TOUCHED`, `TRAILING_STOP_MARKET`)
-- Added venue option for Binance adapter configurations, thanks @DevRoss
-- Added `request_order_book_snapshot` method, thanks @graceyangfan
+- Added Binance venue option for adapter configurations (#1738), thanks @DevRoss
+- Added Betfair amend order quantity support (#1687 and #1751), thanks @imemo88 and @limx0
 - Changed `DatabentoLiveClient` to use new [snapshot on subscribe](https://databento.com/blog/live-MBO-snapshot) feature
 - Changed identifier generator time tag component to include seconds (affects new `ClientOrderId`, `OrderId` and `PositionId` generation)
 - Ported `KlingerVolumeOscillator` indicator to Rust (#1724), thanks @Pushkarm029
