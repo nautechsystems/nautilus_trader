@@ -11,16 +11,49 @@
 
 #define FIXED_SCALAR 1000000000.0
 
+/**
+ * The maximum valid money amount which can be represented.
+ */
 #define MONEY_MAX 9223372036.0
 
+/**
+ * The minimum valid money amount which can be represented.
+ */
 #define MONEY_MIN -9223372036.0
 
+/**
+ * The sentinel value for an unset or null price.
+ */
+#define PRICE_UNDEF INT64_MAX
+
+/**
+ * The sentinel value for an error or invalid price.
+ */
+#define PRICE_ERROR INT64_MIN
+
+/**
+ * The maximum valid price value which can be represented.
+ */
 #define PRICE_MAX 9223372036.0
 
+/**
+ * The minimum valid price value which can be represented.
+ */
 #define PRICE_MIN -9223372036.0
 
+/**
+ * The sentinel value for an unset or null quantity.
+ */
+#define QUANTITY_UNDEF UINT64_MAX
+
+/**
+ * The maximum valid quantity value which can be represented.
+ */
 #define QUANTITY_MAX 18446744073.0
 
+/**
+ * The minimum valid quantity value which can be represented.
+ */
 #define QUANTITY_MIN 0.0
 
 /**
@@ -1280,9 +1313,9 @@ typedef struct Money_t {
 #define NULL_ORDER (BookOrder_t){ .side = OrderSide_NoOrderSide, .price = (Price_t){ .raw = 0, .precision = 0 }, .size = (Quantity_t){ .raw = 0, .precision = 0 }, .order_id = 0 }
 
 /**
- * Sentinel Price for errors.
+ * The sentinel `Price` representing errors (this will be removed when Cython is gone).
  */
-#define ERROR_PRICE (Price_t){ .raw = INT64_MAX, .precision = 0 }
+#define ERROR_PRICE (Price_t){ .raw = PRICE_ERROR, .precision = 0 }
 
 struct Data_t data_clone(const struct Data_t *data);
 

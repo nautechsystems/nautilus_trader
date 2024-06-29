@@ -11,16 +11,31 @@ cdef extern from "../includes/model.h":
 
     const double FIXED_SCALAR # = 1000000000.0
 
+    # The maximum valid money amount which can be represented.
     const double MONEY_MAX # = 9223372036.0
 
+    # The minimum valid money amount which can be represented.
     const double MONEY_MIN # = -9223372036.0
 
+    # The sentinel value for an unset or null price.
+    const int64_t PRICE_UNDEF # = INT64_MAX
+
+    # The sentinel value for an error or invalid price.
+    const int64_t PRICE_ERROR # = INT64_MIN
+
+    # The maximum valid price value which can be represented.
     const double PRICE_MAX # = 9223372036.0
 
+    # The minimum valid price value which can be represented.
     const double PRICE_MIN # = -9223372036.0
 
+    # The sentinel value for an unset or null quantity.
+    const uint64_t QUANTITY_UNDEF # = UINT64_MAX
+
+    # The maximum valid quantity value which can be represented.
     const double QUANTITY_MAX # = 18446744073.0
 
+    # The minimum valid quantity value which can be represented.
     const double QUANTITY_MIN # = 0.0
 
     # An account type provided by a trading venue or broker.
@@ -742,8 +757,8 @@ cdef extern from "../includes/model.h":
 
     const BookOrder_t NULL_ORDER # = <BookOrder_t>{ OrderSide_NoOrderSide, <Price_t>{ 0, 0 }, <Quantity_t>{ 0, 0 }, 0 }
 
-    # Sentinel Price for errors.
-    const Price_t ERROR_PRICE # = <Price_t>{ INT64_MAX, 0 }
+    # The sentinel `Price` representing errors (this will be removed when Cython is gone).
+    const Price_t ERROR_PRICE # = <Price_t>{ PRICE_ERROR, 0 }
 
     Data_t data_clone(const Data_t *data);
 
