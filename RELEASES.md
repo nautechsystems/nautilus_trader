@@ -34,6 +34,7 @@ Released on TBD (UTC).
 ### Fixes
 - Fixed `LIMIT` order fill behavior for `L2_MBP` and `L3_MBO` book types (was not honoring limit price as maker), thanks for reporting @dpmabo
 - Fixed msgspec encoding and decoding of `Environment` enum for `NautilusKernelConfig`
+- Fixed `OrderMatchingEngine` processing by book type for quotes and deltas (#1754), thanks @davidsblom
 - Fixed `DatabentoDataLoader.from_dbn_file` for `OrderBookDelta`s when `as_legacy_cython=False`
 - Fixed `DatabentoDataLoader` OHLCV bar schema loading (incorrectly accounting for display factor0, thanks for reporting @faysou
 - Fixed Binance order report generation `active_symbols` type miss matching (#1729), thanks @DevRoss
