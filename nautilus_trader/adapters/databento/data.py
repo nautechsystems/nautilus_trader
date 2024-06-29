@@ -521,24 +521,26 @@ class DatabentoDataClient(LiveMarketDataClient):
             if not instrument_ids:
                 return  # No subscribing instrument IDs were loaded in the cache
 
-            ids_str = ",".join([i.value for i in instrument_ids])
-            self._log.info(f"Subscribing to MBO/L3 for {ids_str}", LogColor.BLUE)
-
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_ids[0].venue)
             live_client = self._get_live_client_mbo(dataset)
 
-            # Subscribe from UTC midnight snapshot
-            start = self._clock.utc_now().normalize()
+            if dataset == "GLBX.MDP3":
+                start = None
+                snapshot = True
+                detail_str = " with snapshot"
+            else:
+                start = 0
+                snapshot = False
+                detail_str = " with start=0 replay"
 
-            self._log.info(f"Replaying MBO/L3 feeds from {start}", LogColor.BLUE)
-            self._log.warning(
-                "Replaying MBO/L3 feeds is under development and not considered usable",
-            )
+            ids_str = ",".join([i.value for i in instrument_ids])
+            self._log.info(f"Subscribing to MBO/L3 for {ids_str}{detail_str}", LogColor.BLUE)
 
             live_client.subscribe(
                 schema=DatabentoSchema.MBO.value,
                 symbols=[i.symbol.value for i in instrument_ids],
-                start=0,  # Replay from start of weekly session
+                start=start,
+                snapshot=snapshot,
             )
 
             # Add trade tick subscriptions for all instruments (MBO data includes trades)

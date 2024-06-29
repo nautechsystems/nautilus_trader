@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Added Bybit stop order types (`STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`, `LIMIT_IF_TOUCHED`, `TRAILING_STOP_MARKET`)
 - Added venue option for Binance adapter configurations, thanks @DevRoss
 - Added `request_order_book_snapshot` method, thanks @graceyangfan
+- Changed `DatabentoLiveClient` to use new `snapshot` on subscribe feature (https://databento.com/blog/live-MBO-snapshot)
 - Changed identifier generator time tag component to include seconds (affects new `ClientOrderId`, `OrderId` and `PositionId` generation)
 - Ported `KlingerVolumeOscillator` indicator to Rust (#1724), thanks @Pushkarm029
 - Ported `DirectionalMovement` indicator to Rust (#1725), thanks @Pushkarm029
