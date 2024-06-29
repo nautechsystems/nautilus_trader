@@ -14,9 +14,13 @@
 // -------------------------------------------------------------------------------------------------
 
 //! A high-performance WebSocket client implementation.
-
-use std::{str::FromStr, sync::Arc, time::Duration};
-
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 use futures_util::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
@@ -134,7 +138,8 @@ impl WebSocketClientInner {
         // Hacky solution to overcome the new `http` trait bounds
         for (key, val) in headers {
             let header_value = HeaderValue::from_str(&val).unwrap();
-            let header_name = HeaderName::from_str(&key).unwrap();
+            use http::header::HeaderName;
+            let header_name: HeaderName = key.parse().unwrap();
             let header_name_string = header_name.to_string();
             let header_name_str: &'static str = Box::leak(header_name_string.into_boxed_str());
             req_headers.insert(header_name_str, header_value);
@@ -322,7 +327,7 @@ impl Drop for WebSocketClientInner {
 pub struct WebSocketClient {
     writer: SharedMessageWriter,
     controller_task: task::JoinHandle<()>,
-    disconnect_mode: Arc<Mutex<bool>>,
+    disconnect_mode: Arc<AtomicBool>,
 }
 
 impl WebSocketClient {
@@ -339,7 +344,7 @@ impl WebSocketClient {
         debug!("Connecting");
         let inner = WebSocketClientInner::connect_url(config).await?;
         let writer = inner.writer.clone();
-        let disconnect_mode = Arc::new(Mutex::new(false));
+        let disconnect_mode = Arc::new(AtomicBool::new(false));
         let controller_task = Self::spawn_controller_task(
             inner,
             disconnect_mode.clone(),
@@ -372,7 +377,7 @@ impl WebSocketClient {
     /// and shutdown the client if it is alive
     pub async fn disconnect(&self) {
         debug!("Disconnecting");
-        *self.disconnect_mode.lock().await = true;
+        self.disconnect_mode.store(true, Ordering::SeqCst);
     }
 
     pub async fn send_bytes(&self, data: Vec<u8>) -> Result<(), Error> {
@@ -391,20 +396,17 @@ impl WebSocketClient {
 
     fn spawn_controller_task(
         mut inner: WebSocketClientInner,
-        disconnect_mode: Arc<Mutex<bool>>,
+        disconnect_mode: Arc<AtomicBool>,
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
     ) -> task::JoinHandle<()> {
         task::spawn(async move {
-            let mut disconnect_flag;
+            let disconnect_flag = disconnect_mode.load(Ordering::SeqCst);
             loop {
                 sleep(Duration::from_secs(1)).await;
 
                 // Check if client needs to disconnect
-                let guard = disconnect_mode.lock().await;
-                disconnect_flag = *guard;
-                drop(guard);
-
+                let disconnected = disconnect_mode.load(Ordering::SeqCst);
                 match (disconnect_flag, inner.is_alive()) {
                     (false, false) => match inner.reconnect().await {
                         Ok(()) => {
@@ -500,7 +502,7 @@ impl WebSocketClient {
     fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let disconnect_mode = slf.disconnect_mode.clone();
         pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
-            *disconnect_mode.lock().await = true;
+            disconnect_mode.store(true, Ordering::SeqCst);
             Ok(())
         })
     }
