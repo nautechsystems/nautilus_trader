@@ -149,16 +149,13 @@ class BetfairExecutionClient(LiveExecutionClient):
         self.venue_order_id_to_client_order_id: dict[VenueOrderId, ClientOrderId] = {}
         self.pending_update_order_client_ids: set[tuple[ClientOrderId, VenueOrderId]] = set()
         self.published_executions: dict[ClientOrderId, list[TradeId]] = defaultdict(list)
+        self.account_state_task: asyncio.Task | None = None
 
         self._strategy_hashes: dict[str, str] = {}
         self._set_account_id(AccountId(f"{BETFAIR_VENUE}-001"))
         AccountFactory.register_calculated_account(BETFAIR_VENUE.value)
 
         self._reconnect_in_progress = False
-        self._init_scheduled_tasks()
-
-    def _init_scheduled_tasks(self) -> None:
-        self.create_task(self.account_state_updates())
 
     @property
     def instrument_provider(self) -> BetfairInstrumentProvider:
@@ -172,6 +169,9 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._log.info("BetfairHttpClient login successful.", LogColor.GREEN)
 
         # Connections and start-up checks
+        self._log.debug(
+            "Connecting to stream, checking account currency and loading venue id mapping...",
+        )
         aws = [
             self.stream.connect(),
             self.check_account_currency(),
@@ -179,7 +179,13 @@ class BetfairExecutionClient(LiveExecutionClient):
         ]
         await asyncio.gather(*aws)
 
+        self._log.debug("Starting account state update task")
+        self.account_state_task = self.create_task(self.account_state_updates())
+
     async def _disconnect(self) -> None:
+        # Shutdown account updates
+        self.account_state_task.cancel()
+
         # Close socket
         self._log.info("Closing streaming socket")
         await self.stream.disconnect()
@@ -196,7 +202,7 @@ class BetfairExecutionClient(LiveExecutionClient):
                 return
 
             # Avoid multiple reconnection attempts when multiple INVALID_SESSION_INFORMATION errors
-            # are received at "the same time" from the BF API. Simulaneous reconnection attempts
+            # are received at "the same time" from the BF API. Simultaneous reconnection attempts
             # will result in MAX_CONNECTION_LIMIT_EXCEEDED errors.
             self._reconnect_in_progress = True
 
@@ -222,10 +228,9 @@ class BetfairExecutionClient(LiveExecutionClient):
             self._log.debug("Sent account state")
 
         while True:
-            await update_account_state()
             try:
-                await asyncio.sleep(self.request_account_state_period)
                 await update_account_state()
+                await asyncio.sleep(self.request_account_state_period)
             except Exception:
                 self._log.error(f"account_state_updates: {traceback.format_exc()}")
 
