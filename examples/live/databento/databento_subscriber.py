@@ -144,7 +144,7 @@ class DataSubscriber(Strategy):
             #     book_type=BookType.L3_MBO,
             #     client_id=DATABENTO_CLIENT_ID,
             # )
-            # self.subscribe_order_book_snapshots(
+            # self.subscribe_order_book_at_interval(
             #     instrument_id=instrument_id,
             #     book_type=BookType.L2_MBP,
             #     depth=10,

@@ -84,7 +84,7 @@ class SubscribeStrategy(Strategy):
                 book_type=self.config.book_type,
             )
             if self.config.snapshots:
-                self.subscribe_order_book_snapshots(
+                self.subscribe_order_book_at_interval(
                     instrument_id=self.instrument_id,
                     book_type=self.config.book_type,
                 )

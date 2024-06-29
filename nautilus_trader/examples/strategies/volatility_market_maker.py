@@ -132,7 +132,7 @@ class VolatilityMarketMaker(Strategy):
 
         self.subscribe_trade_ticks(self.instrument_id)
         # self.subscribe_order_book_deltas(self.instrument_id)  # For debugging
-        # self.subscribe_order_book_snapshots(
+        # self.subscribe_order_book_at_interval(
         #     self.instrument_id,
         #     depth=20,
         #     interval_ms=1000,
@@ -369,7 +369,7 @@ class VolatilityMarketMaker(Strategy):
         self.unsubscribe_quote_ticks(self.instrument_id)
         self.unsubscribe_trade_ticks(self.instrument_id)
         # self.unsubscribe_order_book_deltas(self.instrument_id)  # For debugging
-        # self.unsubscribe_order_book_snapshots(self.instrument_id)  # For debugging
+        # self.unsubscribe_order_book_at_interval(self.instrument_id)  # For debugging
 
     def on_reset(self) -> None:
         """
