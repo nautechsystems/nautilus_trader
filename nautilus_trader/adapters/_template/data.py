@@ -137,6 +137,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     | _request                               | optional    |
     | _request_instrument                    | optional    |
     | _request_instruments                   | optional    |
+    | _request_order_book_snapshot           | optional    |
     | _request_quote_ticks                   | optional    |
     | _request_trade_ticks                   | optional    |
     | _request_bars                          | optional    |
@@ -311,6 +312,16 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
             "method `_request_instruments` must be implemented in the subclass",
         )  # pragma: no cover
 
+    async def _request_order_book_snapshot(
+        self,
+        instrument_id: InstrumentId,
+        limit: int,
+        correlation_id: UUID4,
+    ) -> None:
+        raise NotImplementedError(
+            "method `_request_quote_tick` must be implemented in the subclass",
+        )  # pragma: no cover
+
     async def _request_quote_ticks(
         self,
         instrument_id: InstrumentId,
@@ -345,14 +356,4 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     ) -> None:
         raise NotImplementedError(
             "method `_request_bars` must be implemented in the subclass",
-        )  # pragma: no cover
-
-    async def _request_order_book_snapshot(
-        self,
-        instrument_id: InstrumentId,
-        limit: int,
-        correlation_id: UUID4,
-    ) -> None:
-        raise NotImplementedError(
-            "method `_request_order_book_snapshot(` must be implemented in the subclass",
         )  # pragma: no cover
