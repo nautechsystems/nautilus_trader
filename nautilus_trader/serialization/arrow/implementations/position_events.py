@@ -24,7 +24,7 @@ from nautilus_trader.model.objects import Money
 
 def try_float(x):
     if x == "None" or x is None:
-        return
+        return None
     return float(x)
 
 

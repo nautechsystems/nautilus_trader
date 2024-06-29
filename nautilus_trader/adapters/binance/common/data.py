@@ -673,21 +673,20 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                     "Inferred INTERNAL time bars from EXTERNAL time bars",
                     LogColor.BLUE,
                 )
+        elif start and start < self._clock.utc_now() - pd.Timedelta(days=1):
+            bars = await self._aggregate_internal_from_minute_bars(
+                bar_type=bar_type,
+                start_time_ms=start_time_ms,
+                end_time_ms=end_time_ms,
+                limit=limit if limit > 0 else None,
+            )
         else:
-            if start and start < self._clock.utc_now() - pd.Timedelta(days=1):
-                bars = await self._aggregate_internal_from_minute_bars(
-                    bar_type=bar_type,
-                    start_time_ms=start_time_ms,
-                    end_time_ms=end_time_ms,
-                    limit=limit if limit > 0 else None,
-                )
-            else:
-                bars = await self._aggregate_internal_from_agg_trade_ticks(
-                    bar_type=bar_type,
-                    start_time_ms=start_time_ms,
-                    end_time_ms=end_time_ms,
-                    limit=limit if limit > 0 else None,
-                )
+            bars = await self._aggregate_internal_from_agg_trade_ticks(
+                bar_type=bar_type,
+                start_time_ms=start_time_ms,
+                end_time_ms=end_time_ms,
+                limit=limit if limit > 0 else None,
+            )
 
         partial: Bar = bars.pop()
         self._handle_bars(bar_type, bars, partial, correlation_id)

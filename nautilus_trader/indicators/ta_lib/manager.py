@@ -70,7 +70,7 @@ class TAFunctionWrapper:
     The class utilizes TA-Lib, a popular technical analysis library, to handle the underlying
     functionality related to technical indicators.
 
-    Example:
+    Example
     -------
     - Creating an instance of TAFunctionWrapper:
       ```
@@ -179,7 +179,7 @@ class TAFunctionWrapper:
         ]
 
         fn = abstract.Function(name)
-        params = dict(zip(fn.parameters.keys(), param_values))
+        params = dict(zip(fn.parameters.keys(), param_values, strict=False))
         fn.set_parameters(params)
         output_names = cls._get_outputs_names(name=name, fn=fn)
         if value in output_names:
@@ -450,8 +450,8 @@ class TALibIndicatorManager(Indicator):
         and so on). The method performs checks to ensure the name exists in the output names and that the
         indices are within valid ranges.
 
-        Args:
-        ----
+        Parameters
+        ----------
         name : str
             The name of the indicator whose value is to be retrieved. This name should be one of the
             names specified in `self.output_names`.
@@ -461,17 +461,17 @@ class TALibIndicatorManager(Indicator):
             which indicates the latest value. A positive value accesses older data points, with higher
             values referring to progressively older data.
 
-        Returns:
+        Returns
         -------
         The value of the specified indicator at the given index.
 
-        Raises:
+        Raises
         ------
         ValueError
             If `name` is not in `self.output_names`, or if `index` or the internally
             calculated `translated_index` is negative, indicating an invalid index.
 
-        Example:
+        Example
         -------
         - To get the latest value of an indicator named 'EMA':
           ```

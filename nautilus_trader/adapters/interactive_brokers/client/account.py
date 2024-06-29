@@ -75,7 +75,7 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
             )
         # Allow fetching all tags upon request even if already subscribed
         if not subscription:
-            return None
+            return
         subscription.handle()
 
     def unsubscribe_account_summary(self, account_id: str) -> None:

@@ -205,7 +205,7 @@ class LiveExecutionClient(ExecutionClient):
         if e:
             tb_str = "".join(traceback.format_exception(type(e), e, e.__traceback__))
             self._log.error(
-                f"Error on `{task.get_name()}`: " f"{task.exception()!r}\n{tb_str}",
+                f"Error on `{task.get_name()}`: {task.exception()!r}\n{tb_str}",
             )
         else:
             if actions:

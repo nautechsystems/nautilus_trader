@@ -211,31 +211,7 @@ ignore = [
 ]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided
-fixable = [
-    "A",
-    "B",
-    "C",
-    "C4",
-    "D",
-    "DTZ",
-    "E",
-    "F",
-    "UP",
-    "S",
-    "W",
-    "I",
-    "PIE",
-    "PT",
-    "PYI",
-    "RSE",
-    "TID",
-    "ARG",
-    "PD",
-    "SIM",
-    # "PGH",
-    "NPY",
-    "RUF",
-]
+fixable = ["ALL"]
 
 unfixable = []
 # Allow unused variables when underscore-prefixed.

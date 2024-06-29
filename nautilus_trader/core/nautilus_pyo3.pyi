@@ -226,7 +226,7 @@ def log_header(
     trader_id: TraderId,
     machine_id: str,
     instance_id: UUID4,
-    component: str
+    component: str,
 ) -> None: ...
 
 def log_sysinfo(component: str) -> None: ...
@@ -241,7 +241,7 @@ class Position:
     def __init__(
         self,
         instrument: CurrencyPair | CryptoPerpetual | Equity | OptionsContract | SyntheticInstrument,
-        fill: OrderFilled
+        fill: OrderFilled,
     ) -> None: ...
     @classmethod
     def from_dict(cls, values: dict[str, str]) -> Position: ...
@@ -317,7 +317,7 @@ class MarginAccount:
     def __init__(
         self,
         event: AccountState,
-        calculate_account_state: bool
+        calculate_account_state: bool,
     ) -> None: ...
     @property
     def id(self) -> AccountId: ...
@@ -343,21 +343,21 @@ class MarginAccount:
         instrument: Instrument,
         quantity: Quantity,
         price: Price,
-        use_quote_for_inverse: bool | None = None
+        use_quote_for_inverse: bool | None = None,
     ) -> Money: ...
     def calculate_maintenance_margin(
         self,
         instrument: Instrument,
         quantity: Quantity,
         price: Price,
-        use_quote_for_inverse: bool | None = None
+        use_quote_for_inverse: bool | None = None,
     ) -> Money: ...
 
 class CashAccount:
     def __init__(
         self,
         event: AccountState,
-        calculate_account_state: bool
+        calculate_account_state: bool,
     ) -> None: ...
     def to_dict(self) -> dict[str, str]: ...
     @staticmethod
@@ -386,7 +386,7 @@ class CashAccount:
         side: OrderSide,
         quantity: Quantity,
         price: Price,
-        use_quote_for_inverse: bool | None = None
+        use_quote_for_inverse: bool | None = None,
     ) -> Money: ...
     def calculate_commission(
         self,
@@ -394,13 +394,13 @@ class CashAccount:
         last_qty: Quantity,
         last_px: Price,
         liquidity_side: LiquiditySide,
-        use_quote_for_inverse: bool | None = None
+        use_quote_for_inverse: bool | None = None,
     ) -> Money: ...
     def calculate_pnls(
         self,
         instrument: Instrument,
         fill: OrderFilled,
-        position: Position | None = None
+        position: Position | None = None,
     ) -> list[Money]: ...
 
 ### Accounting transformers
@@ -2622,7 +2622,7 @@ class DoubleExponentialMovingAverage:
     def __init__(
         self,
         period: int,
-        price_type: PriceType | None = None
+        price_type: PriceType | None = None,
     ) -> None: ...
     @property
     def name(self) -> str: ...
@@ -2646,7 +2646,7 @@ class HullMovingAverage:
     def __init__(
         self,
         period: int,
-        price_type: PriceType | None = None
+        price_type: PriceType | None = None,
     ) -> None: ...
     @property
     def name(self) -> str: ...
@@ -2725,7 +2725,7 @@ class VariableIndexDynamicAverage:
 
 class VolumeWeightedAveragePrice:
     def __init__(
-        self
+        self,
     ) -> None: ...
     @property
     def name(self) -> str: ...
@@ -2806,7 +2806,7 @@ class KlingerVolumeOscillator:
         fast_period: int,
         slow_period: int,
         signal_period: int,
-        ma_type: MovingAverageType = ...
+        ma_type: MovingAverageType = ...,
     ) -> None: ...
     @property
     def name(self) -> str: ...

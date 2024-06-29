@@ -27,9 +27,7 @@ from nautilus_trader.model.objects import Quantity
 
 
 class BybitTrade(msgspec.Struct):
-    """
-    https://bybit-exchange.github.io/docs/v5/market/recent-trade
-    """
+    """https://bybit-exchange.github.io/docs/v5/market/recent-trade"""
 
     execId: str
     symbol: str
