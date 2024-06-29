@@ -3414,6 +3414,7 @@ class DatabentoLiveClient:
         symbols: list[str],
         stype_in: str | None = None,
         start: int | None = None,
+        snapshot: bool | None = False,
     ) -> dict[str, str]: ...
     def start(
         self,
