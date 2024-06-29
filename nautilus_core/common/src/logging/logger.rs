@@ -79,7 +79,7 @@ impl Default for LoggerConfig {
 impl LoggerConfig {
     /// Creates a new [`LoggerConfig`] instance.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         stdout_level: LevelFilter,
         fileout_level: LevelFilter,
         component_level: HashMap<Ustr, LevelFilter>,
@@ -484,7 +484,7 @@ pub struct LogGuard {
 impl LogGuard {
     /// Creates a new [`LogGuard`] instance.
     #[must_use]
-    pub fn new(handle: Option<JoinHandle<()>>) -> Self {
+    pub const fn new(handle: Option<JoinHandle<()>>) -> Self {
         Self { handle }
     }
 }

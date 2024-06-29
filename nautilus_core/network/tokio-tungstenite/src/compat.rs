@@ -138,7 +138,7 @@ where
         &mut self.inner
     }
 
-    pub(crate) fn get_ref(&self) -> &S {
+    pub(crate) const fn get_ref(&self) -> &S {
         &self.inner
     }
 }

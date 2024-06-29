@@ -143,7 +143,7 @@ mod tests {
     fn test_period_returns_expected_value(vr_10: VolatilityRatio) {
         assert_eq!(vr_10.fast_period, 10);
         assert_eq!(vr_10.slow_period, 10);
-        assert_eq!(vr_10.use_previous, false);
+        assert!(!vr_10.use_previous);
         assert_eq!(vr_10.value_floor, 10.0);
     }
 
@@ -182,8 +182,8 @@ mod tests {
 
         assert!(!vr_10.initialized());
         assert_eq!(vr_10.value, 0.0);
-        assert_eq!(vr_10.initialized, false);
-        assert_eq!(vr_10.has_inputs, false);
+        assert!(!vr_10.initialized);
+        assert!(!vr_10.has_inputs);
         assert_eq!(vr_10.atr_fast.value, 0.0);
         assert_eq!(vr_10.atr_slow.value, 0.0);
     }

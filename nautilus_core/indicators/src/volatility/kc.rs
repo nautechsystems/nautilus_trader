@@ -113,9 +113,9 @@ impl KeltnerChannel {
         self.ma.update_raw(typical_price);
         self.atr.update_raw(high, low, close);
 
-        self.upper = self.ma.value() + self.atr.value * self.k_multiplier;
+        self.upper = self.atr.value.mul_add(self.k_multiplier, self.ma.value());
         self.middle = self.ma.value();
-        self.lower = self.ma.value() - self.atr.value * self.k_multiplier;
+        self.lower = self.atr.value.mul_add(-self.k_multiplier, self.ma.value());
 
         // Initialization Logic
         if !self.initialized {

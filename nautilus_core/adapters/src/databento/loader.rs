@@ -123,7 +123,7 @@ impl DatabentoDataLoader {
 
     /// Return the internal Databento publishers currently held by the loader.
     #[must_use]
-    pub fn get_publishers(&self) -> &IndexMap<u16, DatabentoPublisher> {
+    pub const fn get_publishers(&self) -> &IndexMap<u16, DatabentoPublisher> {
         &self.publishers_map
     }
 

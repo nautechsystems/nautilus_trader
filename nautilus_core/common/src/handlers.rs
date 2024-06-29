@@ -60,7 +60,7 @@ pub struct MessageHandler {
 
 impl MessageHandler {
     #[must_use]
-    pub fn new(handler_id: Ustr, callback: Option<SafeMessageCallback>) -> Self {
+    pub const fn new(handler_id: Ustr, callback: Option<SafeMessageCallback>) -> Self {
         Self {
             handler_id,
             _callback: callback,
@@ -103,7 +103,7 @@ impl EventHandler {
 
     #[cfg(feature = "python")]
     #[must_use]
-    pub fn new(callback: PyObject) -> Self {
+    pub const fn new(callback: PyObject) -> Self {
         Self { callback }
     }
 

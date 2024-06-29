@@ -29,7 +29,7 @@ pub struct OrderListIdGenerator {
 impl OrderListIdGenerator {
     /// Creates a new [`OrderListIdGenerator`] instance.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         trader_id: TraderId,
         strategy_id: StrategyId,
         initial_count: usize,
@@ -52,7 +52,7 @@ impl OrderListIdGenerator {
     }
 
     #[must_use]
-    pub fn count(&self) -> usize {
+    pub const fn count(&self) -> usize {
         self.count
     }
 

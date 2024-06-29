@@ -180,7 +180,7 @@ mod tests {
         cci_10.update_raw(1.00030, 0.90020, 1.00020);
         cci_10.update_raw(1.00010, 0.90010, 1.00010);
         cci_10.update_raw(1.00000, 0.90000, 1.00000);
-        assert_eq!(cci_10.value, -0.8984063745016301);
+        assert_eq!(cci_10.value, -0.898_406_374_501_630_1);
     }
     #[rstest]
     fn test_initialized_with_required_input(mut cci_10: CommodityChannelIndex) {

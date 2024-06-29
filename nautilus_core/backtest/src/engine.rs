@@ -31,7 +31,7 @@ pub struct TimeEventAccumulator {
 impl TimeEventAccumulator {
     /// Creates a new [`TimeEventAccumulator`] instance.
     #[must_use]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             event_handlers: Vec::new(),
         }

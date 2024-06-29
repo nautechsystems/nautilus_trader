@@ -131,12 +131,13 @@ impl BollingerBands {
         // Calculate values
         let std = fast_std_with_mean(self.prices.clone(), self.ma.value());
 
-        self.upper = self.ma.value() + self.k * std;
+        self.upper = self.k.mul_add(std, self.ma.value());
         self.middle = self.ma.value();
-        self.lower = self.ma.value() - self.k * std;
+        self.lower = self.k.mul_add(-std, self.ma.value());
     }
 }
 
+#[must_use]
 pub fn fast_std_with_mean(values: VecDeque<f64>, mean: f64) -> f64 {
     if values.is_empty() {
         return 0.0;
@@ -201,9 +202,9 @@ mod tests {
         }
 
         assert!(bb_10.initialized());
-        assert_eq!(bb_10.upper, 5.737228132326901);
+        assert_eq!(bb_10.upper, 5.737_228_132_326_901);
         assert_eq!(bb_10.middle, 5.45);
-        assert_eq!(bb_10.lower, 5.162771867673099);
+        assert_eq!(bb_10.lower, 5.162_771_867_673_099);
     }
 
     #[rstest]

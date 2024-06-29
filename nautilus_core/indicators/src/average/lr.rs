@@ -108,8 +108,8 @@ impl LinearRegression {
         let x_arr: Vec<f64> = (1..=self.period).map(|x| x as f64).collect();
         let y_arr: Vec<f64> = self.inputs.clone();
         let x_sum: f64 = 0.5 * self.period as f64 * (self.period as f64 + 1.0);
-        let x2_sum: f64 = x_sum * (2.0 * self.period as f64 + 1.0) / 3.0;
-        let divisor: f64 = self.period as f64 * x2_sum - x_sum * x_sum;
+        let x2_sum: f64 = x_sum * 2.0f64.mul_add(self.period as f64, 1.0) / 3.0;
+        let divisor: f64 = (self.period as f64).mul_add(x2_sum, -(x_sum * x_sum));
         let y_sum: f64 = y_arr.iter().sum::<f64>();
         let xy_sum: f64 = x_arr
             .iter()
@@ -117,19 +117,19 @@ impl LinearRegression {
             .map(|(x, y)| x * y)
             .sum::<f64>();
 
-        self.slope = (self.period as f64 * xy_sum - x_sum * y_sum) / divisor;
-        self.intercept = (y_sum * x2_sum - x_sum * xy_sum) / divisor;
+        self.slope = (self.period as f64).mul_add(xy_sum, -(x_sum * y_sum)) / divisor;
+        self.intercept = y_sum.mul_add(x2_sum, -(x_sum * xy_sum)) / divisor;
 
         let residuals: Vec<f64> = x_arr
             .into_iter()
             .zip(y_arr.clone())
-            .map(|(x, y)| self.slope * x + self.intercept - y)
+            .map(|(x, y)| self.slope.mul_add(x, self.intercept) - y)
             .collect();
 
         self.value = residuals.last().unwrap() + y_arr.last().unwrap();
         self.degree = 180.0 / std::f64::consts::PI * self.slope.atan();
         self.cfo = 100.0 * residuals.last().unwrap() / y_arr.last().unwrap();
-        let mean: f64 = y_arr.clone().iter().sum::<f64>() / y_arr.len() as f64;
+        let mean: f64 = y_arr.iter().sum::<f64>() / y_arr.len() as f64;
         self.r2 = 1.0
             - residuals.iter().map(|r| r * r).sum::<f64>()
                 / y_arr.iter().map(|y| (y - mean) * (y - mean)).sum::<f64>();
@@ -186,7 +186,7 @@ mod tests {
         indicator_lr_10.update_raw(1.00030);
         indicator_lr_10.update_raw(1.00010);
         indicator_lr_10.update_raw(1.00000);
-        assert_eq!(indicator_lr_10.value, 0.8003072727272715);
+        assert_eq!(indicator_lr_10.value, 0.800_307_272_727_272_2);
     }
 
     #[rstest]
