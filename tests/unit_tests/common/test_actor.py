@@ -1576,7 +1576,7 @@ class TestActor:
         assert self.data_engine.command_count == 2
         assert len(actor.msgbus.subscriptions()) == 4  # Portfolio subscriptions only
 
-    def test_subscribe_order_book(self) -> None:
+    def test_subscribe_order_book_at_interval(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1587,12 +1587,12 @@ class TestActor:
         )
 
         # Act
-        actor.subscribe_order_book_snapshots(AUDUSD_SIM.id, book_type=BookType.L2_MBP)
+        actor.subscribe_order_book_at_interval(AUDUSD_SIM.id, book_type=BookType.L2_MBP)
 
         # Assert
         assert self.data_engine.command_count == 1
 
-    def test_unsubscribe_order_book(self) -> None:
+    def test_unsubscribe_order_book_at_interval(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1602,10 +1602,10 @@ class TestActor:
             clock=self.clock,
         )
 
-        actor.subscribe_order_book_snapshots(AUDUSD_SIM.id, book_type=BookType.L2_MBP)
+        actor.subscribe_order_book_at_interval(AUDUSD_SIM.id, book_type=BookType.L2_MBP)
 
         # Act
-        actor.unsubscribe_order_book_snapshots(AUDUSD_SIM.id)
+        actor.unsubscribe_order_book_at_interval(AUDUSD_SIM.id)
 
         # Assert
         assert self.data_engine.command_count == 2

@@ -1242,7 +1242,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_order_book_snapshots(
+    cpdef void subscribe_order_book_at_interval(
         self,
         InstrumentId instrument_id,
         BookType book_type=BookType.L2_MBP,
@@ -1253,7 +1253,7 @@ cdef class Actor(Component):
         bint managed = True,
     ):
         """
-        Subscribe to `OrderBook` snapshots at a specified interval, for the given instrument ID.
+        Subscribe to an `OrderBook` at a specified interval for the given instrument ID.
 
         The `DataEngine` will only maintain one order book for each instrument.
         Because of this - the level, depth and kwargs for the stream will be set
@@ -1661,14 +1661,14 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_order_book_snapshots(
+    cpdef void unsubscribe_order_book_at_interval(
         self,
         InstrumentId instrument_id,
         int interval_ms = 1000,
         ClientId client_id = None,
     ):
         """
-        Unsubscribe from `OrderBook` snapshots, for the given instrument ID.
+        Unsubscribe from an `OrderBook` at a specified interval for the given instrument ID.
 
         The interval must match the previously subscribed interval.
 

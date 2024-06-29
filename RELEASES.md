@@ -27,7 +27,7 @@ Released on TBD (UTC).
 - Ported `RateOfChange` indicator to Rust (#1750), thanks @Pushkarm029
 
 ### Breaking Changes
-None
+- Renamed `Actor.subscribe_order_book_snapshots` and `unsubscribe_order_book_snapshots` to `subscribe_order_book_at_interval` and `unsubscribe_order_book_at_interval` respectively (this clarifies the method behavior where the handler then receives `OrderBook` at a regular interval, distinct from a collection of deltas representing a snapshot)
 
 ### Fixes
 - Fixed `LIMIT` order fill behavior for `L2_MBP` and `L3_MBO` book types (was not honoring limit price as maker), thanks for reporting @dpmabo
