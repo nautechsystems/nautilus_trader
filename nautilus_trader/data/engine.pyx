@@ -1233,6 +1233,13 @@ cdef class DataEngine(Component):
                     request.data_type.metadata.get("start"),
                     request.data_type.metadata.get("end"),
                 )
+        elif request.data_type.type == OrderBookDeltas:
+            Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
+            client.request_order_book_snapshot(
+                request.data_type.metadata.get("instrument_id"),
+                request.data_type.metadata.get("limit", 0),
+                request.id
+            )
         elif request.data_type.type == QuoteTick:
             Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
             client.request_quote_ticks(
@@ -1259,13 +1266,6 @@ cdef class DataEngine(Component):
                 request.id,
                 request.data_type.metadata.get("start"),
                 request.data_type.metadata.get("end"),
-            )
-        elif request.data_type.type == OrderBookDeltas:
-            Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
-            client.request_order_book_snapshot(
-                request.data_type.metadata.get("instrument_id"),
-                request.data_type.metadata.get("limit", 0),
-                request.id
             )
         else:
             try:
