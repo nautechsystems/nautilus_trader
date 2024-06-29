@@ -41,6 +41,11 @@ product_type = BybitProductType.LINEAR
 symbol = f"ETHUSDT-{product_type.value.upper()}"
 trade_size = Decimal("0.010")
 
+# INVERSE
+# product_type = BybitProductType.INVERSE
+# symbol = f"XRPUSD-{product_type.value.upper()}"  # Use for inverse
+# trade_size = Decimal("100")  # Use for inverse
+
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
@@ -91,7 +96,7 @@ strat_config = EMACrossTrailingStopConfig(
     trailing_atr_multiple=3.0,
     trailing_offset_type="BASIS_POINTS",
     trigger_type="LAST_TRADE",
-    trade_size=Decimal("0.010"),
+    trade_size=trade_size,
 )
 # Instantiate your strategy
 strategy = EMACrossTrailingStop(config=strat_config)
