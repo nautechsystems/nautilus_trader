@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added Bybit stop order types (`STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`, `LIMIT_IF_TOUCHED`, `TRAILING_STOP_MARKET`)
 - Added Binance venue option for adapter configurations (#1738), thanks @DevRoss
 - Added Betfair amend order quantity support (#1687 and #1751), thanks @imemo88 and @limx0
+- Added serial test group to Rust nextest runner for Postgres tests (#1753), thanks @filipmacek
 - Changed `DatabentoLiveClient` to use new [snapshot on subscribe](https://databento.com/blog/live-MBO-snapshot) feature
 - Changed identifier generator time tag component to include seconds (affects new `ClientOrderId`, `OrderId` and `PositionId` generation)
 - Ported `KlingerVolumeOscillator` indicator to Rust (#1724), thanks @Pushkarm029
@@ -25,6 +26,7 @@ Released on TBD (UTC).
 - Ported `KeltnerChannel` indicator to Rust (#1746), thanks @Pushkarm029
 - Ported `RelativeVolatilityIndex` indicator to Rust (#1748), thanks @Pushkarm029
 - Ported `RateOfChange` indicator to Rust (#1750), thanks @Pushkarm029
+- Ported `MovingAverageConvergenceDivergence` indicator to Rust (#1752), thanks @Pushkarm029
 
 ### Breaking Changes
 - Renamed `Actor.subscribe_order_book_snapshots` and `unsubscribe_order_book_snapshots` to `subscribe_order_book_at_interval` and `unsubscribe_order_book_at_interval` respectively (this clarifies the method behavior where the handler then receives `OrderBook` at a regular interval, distinct from a collection of deltas representing a snapshot)
