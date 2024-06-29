@@ -217,8 +217,8 @@ mod tests {
 
         assert!(!rvi_10.initialized());
         assert_eq!(rvi_10.value, 0.0);
-        assert_eq!(rvi_10.initialized, false);
-        assert_eq!(rvi_10.has_inputs, false);
+        assert!(!rvi_10.initialized);
+        assert!(!rvi_10.has_inputs);
         assert_eq!(rvi_10.std, 0.0);
         assert_eq!(rvi_10.prices.len(), 0);
         assert_eq!(rvi_10.ma.value(), 0.0);

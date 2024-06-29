@@ -124,8 +124,8 @@ mod tests {
         assert_eq!(currencies.len(), 4);
         assert_eq!(
             currencies
-                .into_iter()
-                .map(|(_, c)| c.code.to_string())
+                .into_values()
+                .map(|c| c.code.to_string())
                 .collect::<HashSet<String>>(),
             vec![
                 String::from("BTC"),
@@ -196,10 +196,7 @@ mod tests {
         let instruments = pg_cache.load_instruments().unwrap();
         assert_eq!(instruments.len(), 6);
         assert_eq!(
-            instruments
-                .into_iter()
-                .map(|(id, _)| id)
-                .collect::<HashSet<InstrumentId>>(),
+            instruments.into_keys().collect::<HashSet<InstrumentId>>(),
             vec![
                 crypto_future.id(),
                 crypto_perpetual.id(),

@@ -166,7 +166,7 @@ impl OrderMatchingEngine {
     }
 
     #[must_use]
-    pub fn get_book(&self) -> &OrderBook {
+    pub const fn get_book(&self) -> &OrderBook {
         &self.book
     }
 

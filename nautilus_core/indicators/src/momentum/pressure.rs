@@ -189,15 +189,15 @@ mod tests {
         }
 
         assert!(pressure_10.initialized());
-        assert_eq!(pressure_10.value, 0.5454545454545434);
-        assert_eq!(pressure_10.value_cumulative, 4.788073593073581);
+        assert_eq!(pressure_10.value, 0.545_454_545_454_543_4);
+        assert_eq!(pressure_10.value_cumulative, 4.788_073_593_073_581);
     }
 
     #[rstest]
     fn test_handle_bar(mut pressure_10: Pressure, bar_ethusdt_binance_minute_bid: Bar) {
         pressure_10.handle_bar(&bar_ethusdt_binance_minute_bid);
-        assert_eq!(pressure_10.value, -0.018181818181818132);
-        assert_eq!(pressure_10.value_cumulative, -0.018181818181818132);
+        assert_eq!(pressure_10.value, -0.018_181_818_181_818_132);
+        assert_eq!(pressure_10.value_cumulative, -0.018_181_818_181_818_132);
         assert!(pressure_10.has_inputs);
         assert!(!pressure_10.initialized);
     }
@@ -213,6 +213,6 @@ mod tests {
         assert!(!pressure_10.initialized());
         assert_eq!(pressure_10.value, 0.0);
         assert_eq!(pressure_10.value_cumulative, 0.0);
-        assert_eq!(pressure_10.has_inputs, false);
+        assert!(!pressure_10.has_inputs);
     }
 }

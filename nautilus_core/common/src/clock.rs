@@ -94,7 +94,7 @@ impl TestClock {
     }
 
     #[must_use]
-    pub fn get_timers(&self) -> &HashMap<Ustr, TestTimer> {
+    pub const fn get_timers(&self) -> &HashMap<Ustr, TestTimer> {
         &self.timers
     }
 
@@ -287,7 +287,7 @@ impl LiveClock {
     }
 
     #[must_use]
-    pub fn get_timers(&self) -> &HashMap<Ustr, LiveTimer> {
+    pub const fn get_timers(&self) -> &HashMap<Ustr, LiveTimer> {
         &self.timers
     }
 }

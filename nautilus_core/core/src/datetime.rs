@@ -75,14 +75,14 @@ pub extern "C" fn nanos_to_secs(nanos: u64) -> f64 {
 /// Converts nanoseconds (ns) to milliseconds (ms).
 #[inline]
 #[no_mangle]
-pub extern "C" fn nanos_to_millis(nanos: u64) -> u64 {
+pub const extern "C" fn nanos_to_millis(nanos: u64) -> u64 {
     nanos / NANOSECONDS_IN_MILLISECOND
 }
 
 /// Converts nanoseconds (ns) to microseconds (μs).
 #[inline]
 #[no_mangle]
-pub extern "C" fn nanos_to_micros(nanos: u64) -> u64 {
+pub const extern "C" fn nanos_to_micros(nanos: u64) -> u64 {
     nanos / NANOSECONDS_IN_MICROSECOND
 }
 
@@ -96,7 +96,7 @@ pub fn unix_nanos_to_iso8601(unix_nanos: UnixNanos) -> String {
 
 /// Floor the given UNIX nanoseconds to the nearest microsecond.
 #[must_use]
-pub fn floor_to_nearest_microsecond(unix_nanos: u64) -> u64 {
+pub const fn floor_to_nearest_microsecond(unix_nanos: u64) -> u64 {
     (unix_nanos / NANOSECONDS_IN_MICROSECOND) * NANOSECONDS_IN_MICROSECOND
 }
 

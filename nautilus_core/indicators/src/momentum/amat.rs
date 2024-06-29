@@ -209,8 +209,8 @@ mod tests {
         }
 
         assert!(amat_345.initialized());
-        assert_eq!(amat_345.long_run, true);
-        assert_eq!(amat_345.short_run, false);
+        assert!(amat_345.long_run);
+        assert!(!amat_345.short_run);
     }
 
     #[rstest]
@@ -224,7 +224,7 @@ mod tests {
         amat_345.reset();
 
         assert!(!amat_345.initialized());
-        assert_eq!(amat_345.long_run, false);
-        assert_eq!(amat_345.short_run, false);
+        assert!(!amat_345.long_run);
+        assert!(!amat_345.short_run);
     }
 }

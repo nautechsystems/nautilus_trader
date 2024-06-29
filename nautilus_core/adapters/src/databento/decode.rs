@@ -77,7 +77,7 @@ const BAR_CLOSE_ADJUSTMENT_1H: u64 = NANOSECONDS_IN_SECOND * 60 * 60;
 const BAR_CLOSE_ADJUSTMENT_1D: u64 = NANOSECONDS_IN_SECOND * 60 * 60 * 24;
 
 #[must_use]
-pub fn parse_order_side(c: c_char) -> OrderSide {
+pub const fn parse_order_side(c: c_char) -> OrderSide {
     match c as u8 as char {
         'A' => OrderSide::Sell,
         'B' => OrderSide::Buy,
@@ -86,7 +86,7 @@ pub fn parse_order_side(c: c_char) -> OrderSide {
 }
 
 #[must_use]
-pub fn parse_aggressor_side(c: c_char) -> AggressorSide {
+pub const fn parse_aggressor_side(c: c_char) -> AggressorSide {
     match c as u8 as char {
         'A' => AggressorSide::Seller,
         'B' => AggressorSide::Buyer,
@@ -687,7 +687,7 @@ pub fn decode_record(
     Ok(result)
 }
 
-fn determine_timestamp(ts_init: Option<UnixNanos>, msg_timestamp: UnixNanos) -> UnixNanos {
+const fn determine_timestamp(ts_init: Option<UnixNanos>, msg_timestamp: UnixNanos) -> UnixNanos {
     match ts_init {
         Some(ts_init) => ts_init,
         None => msg_timestamp,

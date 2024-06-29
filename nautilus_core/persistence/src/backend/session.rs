@@ -189,7 +189,7 @@ pub struct DataQueryResult {
 impl DataQueryResult {
     /// Creates a new [`DataQueryResult`] instance.
     #[must_use]
-    pub fn new(result: QueryResult, size: usize) -> Self {
+    pub const fn new(result: QueryResult, size: usize) -> Self {
         Self {
             chunk: None,
             result,

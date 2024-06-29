@@ -65,7 +65,7 @@ impl Indicator for BookImbalanceRatio {
 
 impl BookImbalanceRatio {
     /// Creates a new [`BookImbalanceRatio`] instance.
-    pub fn new() -> anyhow::Result<Self> {
+    pub const fn new() -> anyhow::Result<Self> {
         // Inputs don't require validation, however we return a `Result`
         // to standardize with other indicators which do need validation.
         Ok(Self {

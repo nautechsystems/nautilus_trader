@@ -124,7 +124,7 @@ mod tests {
     #[rstest]
     fn test_period_returns_expected_value(roc_10: RateOfChange) {
         assert_eq!(roc_10.period, 10);
-        assert_eq!(roc_10.use_log, true);
+        assert!(roc_10.use_log);
     }
 
     #[rstest]
@@ -144,7 +144,7 @@ mod tests {
         }
 
         assert!(roc_10.initialized());
-        assert_eq!(roc_10.value, 1.081081881387059);
+        assert_eq!(roc_10.value, 1.081_081_881_387_059);
     }
 
     #[rstest]

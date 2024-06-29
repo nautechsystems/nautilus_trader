@@ -227,7 +227,7 @@ impl<S> WebSocketStream<S> {
         .await
     }
 
-    pub(crate) fn new(ws: WebSocket<AllowStd<S>>) -> Self {
+    pub(crate) const fn new(ws: WebSocket<AllowStd<S>>) -> Self {
         Self { inner: ws, closing: false, ended: false }
     }
 
@@ -398,13 +398,13 @@ mod tests {
     #[cfg(feature = "connect")]
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-    fn is_read<T: Read>() {}
-    fn is_write<T: Write>() {}
+    const fn is_read<T: Read>() {}
+    const fn is_write<T: Write>() {}
     #[cfg(feature = "connect")]
-    fn is_async_read<T: AsyncReadExt>() {}
+    const fn is_async_read<T: AsyncReadExt>() {}
     #[cfg(feature = "connect")]
-    fn is_async_write<T: AsyncWriteExt>() {}
-    fn is_unpin<T: Unpin>() {}
+    const fn is_async_write<T: AsyncWriteExt>() {}
+    const fn is_unpin<T: Unpin>() {}
 
     #[test]
     fn web_socket_stream_has_traits() {

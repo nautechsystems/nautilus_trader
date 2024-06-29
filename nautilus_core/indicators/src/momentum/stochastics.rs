@@ -200,8 +200,8 @@ mod tests {
     #[rstest]
     fn test_handle_bar(mut stochastics_10: Stochastics, bar_ethusdt_binance_minute_bid: Bar) {
         stochastics_10.handle_bar(&bar_ethusdt_binance_minute_bid);
-        assert_eq!(stochastics_10.value_d, 49.09090909090909);
-        assert_eq!(stochastics_10.value_k, 49.09090909090909);
+        assert_eq!(stochastics_10.value_d, 49.090_909_090_909_09);
+        assert_eq!(stochastics_10.value_k, 49.090_909_090_909_09);
         assert!(stochastics_10.has_inputs);
         assert!(!stochastics_10.initialized);
     }

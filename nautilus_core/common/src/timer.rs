@@ -64,7 +64,7 @@ impl TimeEvent {
     ///
     /// Assumes `name` is a valid string.
     #[must_use]
-    pub fn new(name: Ustr, event_id: UUID4, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
+    pub const fn new(name: Ustr, event_id: UUID4, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
         Self {
             name,
             event_id,
@@ -155,18 +155,18 @@ impl TestTimer {
 
     /// Returns the next time in UNIX nanoseconds when the timer will fire.
     #[must_use]
-    pub fn next_time_ns(&self) -> UnixNanos {
+    pub const fn next_time_ns(&self) -> UnixNanos {
         self.next_time_ns
     }
 
     /// Returns whether the timer is expired.
     #[must_use]
-    pub fn is_expired(&self) -> bool {
+    pub const fn is_expired(&self) -> bool {
         self.is_expired
     }
 
     #[must_use]
-    pub fn pop_event(&self, event_id: UUID4, ts_init: UnixNanos) -> TimeEvent {
+    pub const fn pop_event(&self, event_id: UUID4, ts_init: UnixNanos) -> TimeEvent {
         TimeEvent {
             name: self.name,
             event_id,
@@ -397,7 +397,7 @@ mod tests {
     use crate::{handlers::EventHandler, testing::wait_until};
 
     #[pyfunction]
-    fn receive_event(_py: Python, _event: TimeEvent) -> PyResult<()> {
+    const fn receive_event(_py: Python, _event: TimeEvent) -> PyResult<()> {
         // TODO: Assert the length of a handler vec
         Ok(())
     }

@@ -60,7 +60,7 @@ impl CashAccount {
     }
 
     #[must_use]
-    pub fn is_unleveraged(&self) -> bool {
+    pub const fn is_unleveraged(&self) -> bool {
         false
     }
 }

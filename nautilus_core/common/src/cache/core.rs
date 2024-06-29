@@ -60,7 +60,7 @@ impl CacheConfig {
     /// Creates a new [`CacheConfig`] instance.
     #[allow(clippy::too_many_arguments)]
     #[must_use]
-    pub fn new(
+    pub const fn new(
         encoding: SerializationEncoding,
         timestamps_as_iso8601: bool,
         use_trader_prefix: bool,

@@ -125,7 +125,7 @@ pub struct FileWriterConfig {
 impl FileWriterConfig {
     /// Creates a new [`FileWriterConfig`] instance.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         directory: Option<String>,
         file_name: Option<String>,
         file_format: Option<String>,
