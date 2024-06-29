@@ -116,9 +116,9 @@ This project makes the [Soundness Pledge](https://raphlinus.github.io/rust/2020/
 
 ## Integrations
 
-NautilusTrader is designed in a modular way to work with _adapters_ which provide
-connectivity to trading venues and data providers - converting their raw API
-into a unified interface. The following integrations are currently supported:
+NautilusTrader is designed in a modular way to work with _adapters_ that provide connectivity to 
+trading venues and data providers by converting their raw APIs into a unified interface.
+The following integrations are currently supported:
 
 | Name                                                      | ID                    | Type                    | Status                                                  | Docs                                                                       |
 | :-------------------------------------------------------- | :-------------------- | :---------------------- | :------------------------------------------------------ | :------------------------------------------------------------------------- |
@@ -212,23 +212,23 @@ See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_start
 
 ## Versioning and releases
 
-NautilusTrader is currently targeting a weekly release schedule, occasionally there may be experimental
-or larger features which will delay a release by several weeks.
+NautilusTrader aims for a weekly release schedule. The introduction of experimental or larger features
+may delay a release by several weeks.
 
-The API is becoming more stable, however breaking changes are still possible between releases.
-Documentation of these changes in the release notes are made on a best-effort basis.
+The API is becoming more stable, but breaking changes may still occur between releases.
+We strive to document these changes in the release notes on a best-effort basis.
 
 ### Branches
 
-We aim to maintain a stable passing build on all branches.
+We strive to maintain a stable, passing build across all branches.
 
-- `master` branch will always reflect the source code for the latest released version
-- `nightly` branch may contain experimental features and is generally merged from `develop` branch daily, and also when required
-- `develop` branch is normally very active with frequent commits and may contain experimental features
+- `master:` Reflects the source code for the latest released version 
+- `nightly:` Contains experimental features, merged from the `develop` branch daily or as needed 
+- `develop:` Very active with frequent commits and may include experimental features 
 
-The current roadmap has a goal of achieving a stable API for a `2.x` version (likely post Rust port).
-From this point we will follow a formal process for releases, with deprecation periods for any API changes.
-This enables us to maintain a maximum pace of development for now.
+Our roadmap aims to achieve a stable API for version 2.x (likely post-Rust port).
+Once we reach this milestone, we will implement a formal release process, including deprecation 
+periods for any API changes. This approach allows us to maintain a rapid development pace for now.
 
 ## Makefile
 
@@ -252,8 +252,8 @@ A `Makefile` is provided to automate most installation and build tasks for devel
 
 ## Examples
 
-Indicators and strategies can be developed in both Python and Cython (although if performance and latency sensitivity are import we recommend Cython).
-The below are some examples of this:
+Indicators and strategies can be developed in both Python and Cython. For performance and
+latency-sensitive applications, we recommend using Cython. Below are some examples:
 
 - [indicator](/nautilus_trader/examples/indicators/ema_python.py) example written in Python
 - [indicator](/nautilus_trader/indicators/) examples written in Cython
@@ -262,7 +262,7 @@ The below are some examples of this:
 
 ## Docker
 
-Docker containers are built using a base `python:3.11-slim` with the following image variant tags:
+Docker containers are built using the base image `python:3.12-slim` with the following variant tags:
 
 - `nautilus_trader:latest` has the latest release version installed
 - `nautilus_trader:nightly` has the head of the `nightly` branch installed
@@ -287,20 +287,19 @@ Then open your browser at the following address:
 | :warning: WARNING |
 | :---------------- |
 
-**NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output),
-this is why `log_level` in the examples is set to `ERROR`. If you lower this level to see more
-logging then the notebook will hang during cell execution. A fix is currently
-being investigated which involves either raising the configured rate limits for
-Jupyter, or throttling the log flushing from Nautilus.**
-https://github.com/jupyterlab/jupyterlab/issues/12845
-https://github.com/deshaw/jupyterlab-limit-output
+**NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output).
+As a result, the `log_level` in the examples is set to `ERROR`. Lowering this level to see more 
+logging will cause the notebook to hang during cell execution. We are investigating a fix, which 
+may involve either raising the configured rate limits for Jupyter or throttling the log flushing 
+from Nautilus.**
+- https://github.com/jupyterlab/jupyterlab/issues/12845
+- https://github.com/deshaw/jupyterlab-limit-output
 
 ## Minimal Strategy
 
-The following is a minimal EMA Cross strategy example which just uses bar data.
-While trading strategies can become very advanced with this platform, it's still possible to put
-together simple strategies. First inherit from the `Strategy` base class, then only the
-methods which are required by the strategy need to be implemented.
+The following is a minimal EMA Cross strategy example that uses bar data. While this platform
+supports very advanced trading strategies, it is also possible to create simple ones. Start by 
+inheriting from the `Strategy` base class and implement only the methods required by your strategy.
 
 ```python
 class EMACross(Strategy):
