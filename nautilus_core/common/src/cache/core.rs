@@ -916,6 +916,7 @@ impl Cache {
         self.trades.clear();
         self.books.clear();
         self.bars.clear();
+        self.currencies.clear();
         self.instruments.clear();
         self.synthetics.clear();
         self.accounts.clear();

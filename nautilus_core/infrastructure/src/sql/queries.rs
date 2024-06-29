@@ -367,4 +367,33 @@ impl DatabaseQueries {
             Err(e) => anyhow::bail!("Failed to load order events: {e}"),
         }
     }
+
+    pub async fn load_orders(pool: &PgPool) -> anyhow::Result<Vec<OrderAny>> {
+        let mut orders: Vec<OrderAny> = Vec::new();
+        let client_order_ids: Vec<ClientOrderId> = sqlx::query(
+            r#"
+            SELECT DISTINCT order_id FROM "order_event"
+        "#,
+        )
+        .fetch_all(pool)
+        .await
+        .map(|rows| {
+            rows.into_iter()
+                .map(|row| ClientOrderId::from(row.get::<&str, _>(0)))
+                .collect()
+        })
+        .map_err(|err| anyhow::anyhow!("Failed to load order ids: {err}"))?;
+        for id in client_order_ids {
+            let order = DatabaseQueries::load_order(pool, &id).await.unwrap();
+            match order {
+                Some(order) => {
+                    orders.push(order);
+                }
+                None => {
+                    continue;
+                }
+            }
+        }
+        Ok(orders)
+    }
 }
