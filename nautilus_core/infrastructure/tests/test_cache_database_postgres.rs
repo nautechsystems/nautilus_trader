@@ -25,7 +25,9 @@ mod serial_tests {
     use nautilus_core::equality::entirely_equal;
     use nautilus_infrastructure::sql::cache_database::get_pg_cache_database;
     use nautilus_model::{
+        accounts::{any::AccountAny, cash::CashAccount},
         enums::{CurrencyType, OrderSide, OrderStatus},
+        events::account::stubs::cash_account_state_million_usd,
         identifiers::{
             stubs::account_id, AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId,
         },
@@ -307,5 +309,25 @@ mod serial_tests {
             .load_order(&market_order.client_order_id())
             .unwrap();
         entirely_equal(market_order_result.unwrap(), market_order);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_add_account() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let account =
+            AccountAny::Cash(CashAccount::new(cash_account_state_million_usd(), false).unwrap());
+        let last_event = account.last_event().unwrap();
+        if last_event.base_currency.is_some() {
+            pg_cache
+                .add_currency(&last_event.base_currency.unwrap())
+                .unwrap();
+        }
+        pg_cache.add_account(&account).unwrap();
+        wait_until(
+            || pg_cache.load_account(&account.id()).unwrap().is_some(),
+            Duration::from_secs(2),
+        );
+        let account_result = pg_cache.load_account(&account.id()).unwrap();
+        entirely_equal(account_result.unwrap(), account);
     }
 }

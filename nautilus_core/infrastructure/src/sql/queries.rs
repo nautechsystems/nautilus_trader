@@ -16,17 +16,24 @@
 use std::collections::HashMap;
 
 use nautilus_model::{
-    events::order::{OrderEvent, OrderEventAny},
-    identifiers::{ClientOrderId, InstrumentId},
+    accounts::{any::AccountAny, base::Account},
+    events::{
+        account::state::AccountState,
+        order::{OrderEvent, OrderEventAny},
+    },
+    identifiers::{AccountId, ClientOrderId, InstrumentId},
     instruments::{any::InstrumentAny, Instrument},
     orders::{any::OrderAny, base::Order},
-    types::currency::Currency,
+    types::{
+        balance::{AccountBalance, MarginBalance},
+        currency::Currency,
+    },
 };
 use sqlx::{PgPool, Row};
 
 use crate::sql::models::{
-    general::GeneralRow, instruments::InstrumentAnyModel, orders::OrderEventAnyModel,
-    types::CurrencyModel,
+    accounts::AccountEventModel, general::GeneralRow, instruments::InstrumentAnyModel,
+    orders::OrderEventAnyModel, types::CurrencyModel,
 };
 
 pub struct DatabaseQueries;
@@ -395,5 +402,86 @@ impl DatabaseQueries {
             }
         }
         Ok(orders)
+    }
+
+    pub async fn add_account(
+        pool: &PgPool,
+        kind: &str,
+        account: Box<dyn Account>,
+    ) -> anyhow::Result<()> {
+        let mut transaction = pool.begin().await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO "account" (id) VALUES ($1) ON CONFLICT (id) DO NOTHING
+        "#,
+        )
+        .bind(account.id().to_string())
+        .execute(&mut *transaction)
+        .await
+        .map(|_| ())
+        .map_err(|err| anyhow::anyhow!("Failed to insert into account table: {err}"))?;
+
+        let account_event = account.last_event().unwrap();
+        sqlx::query(r#"
+            INSERT INTO "account_event" (
+                id, kind, account_id, base_currency, balances, margins, is_reported, ts_event, ts_init, created_at, updated_at
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            ON CONFLICT (id)
+            DO UPDATE
+            SET
+                kind = $2, account_id = $3, base_currency = $4, balances = $5, margins = $6, is_reported = $7,
+                ts_event = $8, ts_init = $9, updated_at = CURRENT_TIMESTAMP
+        "#)
+            .bind(account_event.event_id.to_string())
+            .bind(kind.to_string())
+            .bind(account_event.account_id.to_string())
+            .bind(account_event.base_currency.map(|x| x.code.as_str()))
+            .bind(serde_json::to_value::<Vec<AccountBalance>>(account_event.balances).unwrap())
+            .bind(serde_json::to_value::<Vec<MarginBalance>>(account_event.margins).unwrap())
+            .bind(account_event.is_reported)
+            .bind(account_event.ts_event.to_string())
+            .bind(account_event.ts_init.to_string())
+            .execute(&mut *transaction)
+            .await
+            .map(|_| ())
+            .map_err(|err| anyhow::anyhow!("Failed to insert into account_event table: {err}"))?;
+        transaction
+            .commit()
+            .await
+            .map_err(|err| anyhow::anyhow!("Failed to commit transaction: {err}"))
+    }
+
+    pub async fn load_account_events(
+        pool: &PgPool,
+        account_id: &AccountId,
+    ) -> anyhow::Result<Vec<AccountState>> {
+        sqlx::query_as::<_, AccountEventModel>(
+            r#"SELECT * FROM "account_event" WHERE account_id = $1 ORDER BY created_at ASC"#,
+        )
+        .bind(account_id.to_string())
+        .fetch_all(pool)
+        .await
+        .map(|rows| rows.into_iter().map(|row| row.0).collect())
+        .map_err(|err| anyhow::anyhow!("Failed to load account events: {err}"))
+    }
+
+    pub async fn load_account(
+        pool: &PgPool,
+        account_id: &AccountId,
+    ) -> anyhow::Result<Option<AccountAny>> {
+        let account_events = DatabaseQueries::load_account_events(pool, account_id).await;
+        match account_events {
+            Ok(account_events) => {
+                if account_events.is_empty() {
+                    return Ok(None);
+                }
+                let account = AccountAny::from_events(account_events).unwrap();
+                Ok(Some(account))
+            }
+            Err(e) => anyhow::bail!("Failed to load account events: {e}"),
+        }
     }
 }

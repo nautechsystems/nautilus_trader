@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod accounts;
 pub mod general;
 pub mod instruments;
 pub mod orders;
