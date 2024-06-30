@@ -15,6 +15,7 @@
 
 use nautilus_common::cache::{core::CacheConfig, database::CacheDatabaseAdapter, Cache};
 
+#[must_use]
 pub fn get_cache(cache_database: Option<Box<dyn CacheDatabaseAdapter>>) -> Cache {
     let cache_config = CacheConfig::default();
     Cache::new(cache_config, cache_database)
@@ -56,7 +57,7 @@ mod serial_tests {
             || {
                 let currencies = database.load_currencies().unwrap();
                 let instruments = database.load_instruments().unwrap();
-                currencies.len() >= 2 && instruments.len() >= 1
+                currencies.len() >= 2 && !instruments.is_empty()
             },
             Duration::from_secs(2),
         );
@@ -68,7 +69,7 @@ mod serial_tests {
         assert_eq!(cached_instrument_ids.len(), 1);
         assert_eq!(cached_instrument_ids, vec![&crypto_perpetual.id()]);
         let target_instrument = cache.instrument(&crypto_perpetual.id());
-        assert_eq!(target_instrument.unwrap(), &crypto_perpetual)
+        assert_eq!(target_instrument.unwrap(), &crypto_perpetual);
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -101,6 +102,6 @@ mod serial_tests {
         let cached_order_ids = cache.client_order_ids(None, None, None);
         assert_eq!(cached_order_ids.len(), 1);
         let target_order = cache.order(&market_order.client_order_id());
-        assert_eq!(target_order.unwrap(), &market_order)
+        assert_eq!(target_order.unwrap(), &market_order);
     }
 }
