@@ -792,6 +792,7 @@ counter = Counter()",
 
         // Shutdown client
         client.disconnect().await;
+        assert!(client.is_disconnected());
     }
 
     #[tokio::test]
@@ -858,5 +859,6 @@ checker = Checker()",
 
         // Shutdown client
         client.disconnect().await;
+        assert!(client.is_disconnected());
     }
 }
