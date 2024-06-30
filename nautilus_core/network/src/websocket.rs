@@ -431,9 +431,9 @@ impl WebSocketClient {
                         inner.shutdown().await;
                         if let Some(ref handler) = post_disconnection {
                             Python::with_gil(|py| match handler.call0(py) {
-                                Ok(_) => debug!("Called `post_reconnection` handler"),
+                                Ok(_) => debug!("Called `post_disconnection` handler"),
                                 Err(e) => {
-                                    error!("Error calling `post_reconnection` handler: {e}");
+                                    error!("Error calling `post_disconnection` handler: {e}");
                                 }
                             });
                         }

@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+import sys
 
 import pytest
 
@@ -22,12 +23,10 @@ from nautilus_trader.core.nautilus_pyo3 import SocketConfig
 from nautilus_trader.test_kit.functions import eventually
 
 
-pytestmark = pytest.skip(reason="Investigating timeouts", allow_module_level=True)
-
-# pytestmark = pytest.mark.skipif(
-#     sys.platform == "win32",
-#     reason="Skip raw socket tests on Windows",
-# )
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="Skip raw socket tests on Windows",
+)
 
 
 def _config(socket_server, handler):
@@ -51,7 +50,7 @@ async def test_connect_and_disconnect(socket_server):
 
     # Act, Assert
     await eventually(lambda: client.is_alive)
-    await client.disconnect()
+    client.disconnect()
     await eventually(lambda: not client.is_alive)
 
 

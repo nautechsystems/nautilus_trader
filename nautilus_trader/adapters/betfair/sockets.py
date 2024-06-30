@@ -100,7 +100,7 @@ class BetfairStreamClient:
             self._log.warning("Cannot disconnect: not connected")
             return
 
-        await self._client.disconnect()
+        self._client.disconnect()
 
         self._log.debug("Running post disconnect")
         await self.post_disconnection()

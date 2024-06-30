@@ -176,7 +176,7 @@ class BinanceWebSocketClient:
             return
 
         self._log.debug("Disconnecting...")
-        await self._client.disconnect()
+        self._client.disconnect()
         self._client = None  # Dispose (will go out of scope)
 
         self._log.info(f"Disconnected from {self._base_url}", LogColor.BLUE)
