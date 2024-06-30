@@ -65,6 +65,7 @@ pub enum DatabaseQuery {
     AddCurrency(Currency),
     AddInstrument(InstrumentAny),
     AddOrder(OrderAny, bool),
+    AddAccount(AccountAny),
 }
 
 fn get_buffer_interval() -> Duration {
@@ -174,6 +175,18 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
                 )
                 .await
                 .unwrap(),
+            },
+            DatabaseQuery::AddAccount(account_any) => match account_any {
+                AccountAny::Cash(account) => {
+                    DatabaseQueries::add_account(pool, "CASH", Box::new(account))
+                        .await
+                        .unwrap()
+                }
+                AccountAny::Margin(account) => {
+                    DatabaseQueries::add_account(pool, "MARGIN", Box::new(account))
+                        .await
+                        .unwrap()
+                }
             },
         }
     }
@@ -426,7 +439,22 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<Option<AccountAny>> {
-        todo!()
+        let pool = self.pool.clone();
+        let account_id = account_id.to_owned();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_account(&pool, &account_id).await;
+            match result {
+                Ok(account) => {
+                    let _ = tx.send(account);
+                }
+                Err(e) => {
+                    error!("Failed to load account {}: {:?}", account_id, e);
+                    let _ = tx.send(None);
+                }
+            }
+        });
+        Ok(rx.recv().unwrap())
     }
 
     fn load_order(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<Option<OrderAny>> {
@@ -502,7 +530,10 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn add_account(&mut self, account: &AccountAny) -> anyhow::Result<()> {
-        todo!()
+        let query = DatabaseQuery::AddAccount(account.clone());
+        self.tx.send(query).map_err(|err| {
+            anyhow::anyhow!("Failed to send query add_account to database message handler: {err}")
+        })
     }
 
     fn add_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
