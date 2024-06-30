@@ -697,5 +697,6 @@ counter = Counter()",
 
         // Shutdown client
         client.disconnect().await;
+        assert!(client.is_disconnected());
     }
 }
