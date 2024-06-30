@@ -25,7 +25,10 @@ use crate::{
     accounts::base::{Account, BaseAccount},
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
-    identifiers::AccountId,
+    identifiers::{
+        stubs::{account_id, uuid4},
+        AccountId,
+    },
     instruments::any::InstrumentAny,
     position::Position,
     types::{
@@ -214,6 +217,30 @@ impl Display for CashAccount {
                 |base_currency| format!("{}", base_currency.code)
             ),
         )
+    }
+}
+
+impl Default for CashAccount {
+    fn default() -> Self {
+        // million dollar account
+        let init_event = AccountState::new(
+            account_id(),
+            AccountType::Cash,
+            vec![AccountBalance::new(
+                Money::from("1000000 USD"),
+                Money::from("0 USD"),
+                Money::from("1000000 USD"),
+            )
+            .unwrap()],
+            vec![],
+            true,
+            uuid4(),
+            0.into(),
+            0.into(),
+            Some(Currency::USD()),
+        )
+        .unwrap();
+        Self::new(init_event, false).unwrap()
     }
 }
 

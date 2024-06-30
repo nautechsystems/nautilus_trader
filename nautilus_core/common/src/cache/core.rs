@@ -1101,7 +1101,11 @@ impl Cache {
             database.add_account(&account)?;
         }
 
-        self.accounts.insert(account.id(), account);
+        let account_id = account.id();
+        self.accounts.insert(account_id, account);
+        self.index
+            .venue_account
+            .insert(account_id.get_issuer(), account_id);
         Ok(())
     }
 
@@ -2506,10 +2510,11 @@ impl Cache {
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
+        accounts::any::AccountAny,
         data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
         enums::{OrderSide, OrderStatus},
         events::order::{OrderAccepted, OrderEventAny, OrderRejected, OrderSubmitted},
-        identifiers::{ClientOrderId, PositionId},
+        identifiers::{AccountId, ClientOrderId, PositionId, Venue},
         instruments::{
             any::InstrumentAny, currency_pair::CurrencyPair, stubs::*,
             synthetic::SyntheticInstrument,
@@ -2996,5 +3001,39 @@ mod tests {
         cache.add_bars(&bars).unwrap();
         let result = cache.bars(&bars[0].bar_type);
         assert_eq!(result, Some(bars));
+    }
+
+    // ---------- Account ----------
+
+    #[rstest]
+    fn test_cache_add_account(mut cache: Cache) {
+        let account = AccountAny::default();
+        cache.add_account(account.clone()).unwrap();
+        let result = cache.account(&account.id());
+        assert!(result.is_some());
+        assert_eq!(*result.unwrap(), account);
+    }
+
+    #[rstest]
+    fn test_cache_accounts_when_no_accounts_returns_empty(cache: Cache) {
+        let result = cache.accounts(&AccountId::default());
+        assert!(result.is_empty());
+    }
+
+    #[rstest]
+    fn test_cache_account_for_venue_returns_empty(cache: Cache) {
+        let venue = Venue::default();
+        let result = cache.account_for_venue(&venue);
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_cache_account_for_venue_return_correct(mut cache: Cache) {
+        let account = AccountAny::default();
+        let venue = account.last_event().unwrap().account_id.get_issuer();
+        cache.add_account(account.clone()).unwrap();
+        let result = cache.account_for_venue(&venue);
+        assert!(result.is_some());
+        assert_eq!(*result.unwrap(), account);
     }
 }
