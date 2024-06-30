@@ -26,7 +26,7 @@ use rust_decimal::prelude::ToPrimitive;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    account::base::{Account, BaseAccount},
+    accounts::base::{Account, BaseAccount},
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
     identifiers::{AccountId, InstrumentId},
@@ -415,7 +415,7 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        account::{base::Account, margin::MarginAccount, stubs::*},
+        accounts::{base::Account, margin::MarginAccount, stubs::*},
         events::account::{state::AccountState, stubs::*},
         identifiers::{stubs::*, InstrumentId},
         instruments::{crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair, stubs::*},

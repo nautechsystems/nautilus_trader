@@ -16,7 +16,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    account::{cash::CashAccount, margin::MarginAccount},
+    accounts::{cash::CashAccount, margin::MarginAccount},
     identifiers::AccountId,
 };
 

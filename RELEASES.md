@@ -9,6 +9,7 @@ Released on TBD (UTC).
 - Added Binance venue option for adapter configurations (#1738), thanks @DevRoss
 - Added Betfair amend order quantity support (#1687 and #1751), thanks @imemo88 and @limx0
 - Added serial test group to Rust nextest runner for Postgres tests (#1753), thanks @filipmacek
+- Refactored `AccountAny` pattern in Rust (#1755), thanks @filipmacek
 - Changed `DatabentoLiveClient` to use new [snapshot on subscribe](https://databento.com/blog/live-MBO-snapshot) feature
 - Changed identifier generator time tag component to include seconds (affects new `ClientOrderId`, `OrderId` and `PositionId` generation)
 - Changed `<Arc<Mutex<bool>>` to `AtomicBool` in Rust `network` crate, thanks @NextThread and @twitu

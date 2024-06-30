@@ -17,7 +17,7 @@ use nautilus_core::python::to_pyvalue_err;
 use pyo3::{prelude::*, types::PyDict};
 
 use crate::{
-    account::{base::Account, cash::CashAccount, margin::MarginAccount},
+    accounts::{base::Account, cash::CashAccount, margin::MarginAccount},
     events::account::state::AccountState,
 };
 

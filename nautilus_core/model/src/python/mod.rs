@@ -143,8 +143,8 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::events::account::state::AccountState>()?;
     m.add_class::<crate::position::Position>()?;
     // Account
-    m.add_class::<crate::account::cash::CashAccount>()?;
-    m.add_class::<crate::account::margin::MarginAccount>()?;
+    m.add_class::<crate::accounts::cash::CashAccount>()?;
+    m.add_class::<crate::accounts::margin::MarginAccount>()?;
     m.add_function(wrap_pyfunction!(
         crate::python::account::transformer::cash_account_from_account_events,
         m
