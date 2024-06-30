@@ -349,23 +349,8 @@ impl SocketClient {
     ///
     /// Controller task will periodically check the disconnect mode
     /// and shutdown the client if it is not alive.
-    pub async fn disconnect(&self) {
+    pub fn disconnect(&self) {
         self.disconnect_mode.store(true, Ordering::SeqCst);
-
-        match tokio::time::timeout(Duration::from_secs(5), async {
-            while !self.is_disconnected() {
-                sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        {
-            Ok(_) => {
-                debug!("Controller task finished");
-            }
-            Err(_) => {
-                error!("Timeout waiting for controller task to finish");
-            }
-        }
     }
 
     pub async fn send_bytes(&self, data: &[u8]) -> Result<(), std::io::Error> {
@@ -472,12 +457,8 @@ impl SocketClient {
     /// - The client should not be used after closing it
     /// - Any auto-reconnect job should be aborted before closing the client
     #[pyo3(name = "disconnect")]
-    fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let disconnect_mode = slf.disconnect_mode.clone();
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
-            disconnect_mode.store(true, Ordering::SeqCst);
-            Ok(())
-        })
+    fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) {
+        slf.disconnect_mode.store(true, Ordering::SeqCst);
     }
 
     /// Check if the client is still alive.
@@ -534,6 +515,7 @@ mod tests {
     use tracing_test::traced_test;
 
     use crate::socket::{SocketClient, SocketConfig};
+    use crate::websocket::tests::eventually;
 
     struct TestServer {
         task: JoinHandle<()>,
@@ -697,7 +679,7 @@ counter = Counter()",
         assert_eq!(count_value, N + N);
 
         // Shutdown client
-        client.disconnect().await;
-        assert!(client.is_disconnected());
+        client.disconnect();
+        assert!(eventually(|| { client.is_disconnected() }, Duration::from_millis(500)).await);
     }
 }

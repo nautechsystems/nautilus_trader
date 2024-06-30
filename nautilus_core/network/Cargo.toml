@@ -34,7 +34,7 @@ axum = "0.7.5"
 tracing-test = "0.2.4"
 
 [features]
-default = ["python"]
+default = ["python", "nautilus-core/python" ]
 extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",

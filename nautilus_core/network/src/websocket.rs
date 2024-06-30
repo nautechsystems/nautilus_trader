@@ -377,24 +377,9 @@ impl WebSocketClient {
     ///
     /// Controller task will periodically check the disconnect mode
     /// and shutdown the client if it is alive
-    pub async fn disconnect(&self) {
+    pub fn disconnect(&self) {
         debug!("Disconnecting");
         self.disconnect_mode.store(true, Ordering::SeqCst);
-
-        match tokio::time::timeout(Duration::from_secs(5), async {
-            while !self.is_disconnected() {
-                sleep(Duration::from_millis(10)).await;
-            }
-        })
-        .await
-        {
-            Ok(_) => {
-                debug!("Controller task finished");
-            }
-            Err(_) => {
-                error!("Timeout waiting for controller task to finish");
-            }
-        }
     }
 
     pub async fn send_bytes(&self, data: Vec<u8>) -> Result<(), Error> {
@@ -422,8 +407,8 @@ impl WebSocketClient {
                 sleep(Duration::from_millis(100)).await;
 
                 // Check if client needs to disconnect
-                let disconnected = disconnect_mode.load(Ordering::SeqCst);
-                match (disconnected, inner.is_alive()) {
+                let disconnect_signal = disconnect_mode.load(Ordering::SeqCst);
+                match (disconnect_signal, inner.is_alive()) {
                     (false, false) => match inner.reconnect().await {
                         Ok(()) => {
                             debug!("Reconnected successfully");
@@ -500,12 +485,8 @@ impl WebSocketClient {
     /// - The client should not be used after closing it
     /// - Any auto-reconnect job should be aborted before closing the client
     #[pyo3(name = "disconnect")]
-    fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
-        let disconnect_mode = slf.disconnect_mode.clone();
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
-            disconnect_mode.store(true, Ordering::SeqCst);
-            Ok(())
-        })
+    fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) {
+        slf.disconnect_mode.store(true, Ordering::SeqCst);
     }
 
     /// Send bytes data to the server.
@@ -592,7 +573,7 @@ impl WebSocketClient {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use futures_util::{SinkExt, StreamExt};
     use pyo3::{prelude::*, prepare_freethreaded_python};
     use tokio::{
@@ -611,6 +592,22 @@ mod tests {
     use tracing_test::traced_test;
 
     use crate::websocket::{WebSocketClient, WebSocketConfig};
+
+    pub async fn eventually<F>(test: F, timeout: Duration) -> bool
+    where
+        F: Fn() -> bool,
+    {
+        let start = tokio::time::Instant::now();
+        loop {
+            if test() {
+                return true;
+            }
+            if tokio::time::Instant::now() - start > timeout {
+                return false;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+    }
 
     struct TestServer {
         task: JoinHandle<()>,
@@ -791,8 +788,8 @@ counter = Counter()",
         assert_eq!(success_count, N + N);
 
         // Shutdown client
-        client.disconnect().await;
-        assert!(client.is_disconnected());
+        client.disconnect();
+        assert!(eventually(|| { client.is_disconnected() }, Duration::from_millis(500)).await);
     }
 
     #[tokio::test]
@@ -858,7 +855,7 @@ checker = Checker()",
         assert!(check_value);
 
         // Shutdown client
-        client.disconnect().await;
-        assert!(client.is_disconnected());
+        client.disconnect();
+        assert!(eventually(|| { client.is_disconnected() }, Duration::from_millis(500)).await);
     }
 }
