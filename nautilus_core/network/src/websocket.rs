@@ -381,21 +381,20 @@ impl WebSocketClient {
         debug!("Disconnecting");
         self.disconnect_mode.store(true, Ordering::SeqCst);
 
-        // TODO: Investigate why/how this is timing out
-        // match tokio::time::timeout(Duration::from_secs(2), async {
-        //     while !self.controller_task.is_finished() {
-        //         sleep(Duration::from_millis(10)).await;
-        //     }
-        // })
-        // .await
-        // {
-        //     Ok(_) => {
-        //         debug!("Controller task finished");
-        //     }
-        //     Err(_) => {
-        //         error!("Timeout waiting for controller task to finish");
-        //     }
-        // }
+        match tokio::time::timeout(Duration::from_secs(5), async {
+            while !self.is_disconnected() {
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        {
+            Ok(_) => {
+                debug!("Controller task finished");
+            }
+            Err(_) => {
+                error!("Timeout waiting for controller task to finish");
+            }
+        }
     }
 
     pub async fn send_bytes(&self, data: Vec<u8>) -> Result<(), Error> {
@@ -583,7 +582,7 @@ impl WebSocketClient {
     /// terminate.
     ///
     /// This is particularly useful for checking why a `send` failed. It could
-    /// because the connection disconnected and the client is still alive
+    /// be because the connection disconnected and the client is still alive
     /// and reconnecting. In such cases the send can be retried after some
     /// delay.
     #[getter]
@@ -793,7 +792,6 @@ counter = Counter()",
 
         // Shutdown client
         client.disconnect().await;
-        // assert!(client.is_disconnected());  TODO: Uncomment after timeouts fixed
     }
 
     #[tokio::test]
@@ -860,6 +858,5 @@ checker = Checker()",
 
         // Shutdown client
         client.disconnect().await;
-        // assert!(client.is_disconnected());  TODO: Uncomment after timeouts fixed
     }
 }
