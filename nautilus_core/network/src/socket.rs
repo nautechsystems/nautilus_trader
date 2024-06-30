@@ -322,6 +322,7 @@ impl SocketClient {
         let inner = SocketClientInner::connect_url(config).await?;
         let writer = inner.writer.clone();
         let disconnect_mode = Arc::new(AtomicBool::new(false));
+
         let controller_task = Self::spawn_controller_task(
             inner,
             disconnect_mode.clone(),
@@ -463,7 +464,7 @@ impl SocketClient {
 
     /// Closes the client heart beat and reader task.
     ///
-    /// The connection is not completely closed the till all references
+    /// The connection is not completely closed until all references
     /// to the client are gone and the client is dropped.
     ///
     /// # Safety
