@@ -350,6 +350,21 @@ impl SocketClient {
     /// and shutdown the client if it is not alive.
     pub async fn disconnect(&self) {
         self.disconnect_mode.store(true, Ordering::SeqCst);
+
+        match tokio::time::timeout(Duration::from_secs(2), async {
+            while !self.controller_task.is_finished() {
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        {
+            Ok(_) => {
+                debug!("Controller task finished");
+            }
+            Err(_) => {
+                error!("Timeout waiting for controller task to finish");
+            }
+        }
     }
 
     pub async fn send_bytes(&self, data: &[u8]) -> Result<(), std::io::Error> {
@@ -370,13 +385,12 @@ impl SocketClient {
         post_disconnection: Option<PyObject>,
     ) -> task::JoinHandle<()> {
         task::spawn(async move {
-            let disconnect_flag = disconnect_mode.load(Ordering::SeqCst);
             loop {
-                sleep(Duration::from_secs(1)).await;
+                sleep(Duration::from_millis(100)).await;
 
                 // Check if client needs to disconnect
                 let disconnected = disconnect_mode.load(Ordering::SeqCst);
-                match (disconnect_flag, inner.is_alive()) {
+                match (disconnected, inner.is_alive()) {
                     (false, false) => match inner.reconnect().await {
                         Ok(()) => {
                             debug!("Reconnected successfully");
@@ -459,8 +473,6 @@ impl SocketClient {
     #[pyo3(name = "disconnect")]
     fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let disconnect_mode = slf.disconnect_mode.clone();
-        debug!("Setting disconnect mode to true");
-
         pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
             disconnect_mode.store(true, Ordering::SeqCst);
             Ok(())
@@ -683,9 +695,8 @@ counter = Counter()",
         // check that messages were received correctly after reconnecting
         assert_eq!(count_value, N + N);
 
-        // Shutdown client and wait for read task to terminate
+        // Shutdown client
         client.disconnect().await;
-        sleep(Duration::from_secs(1)).await;
         assert!(client.is_disconnected());
     }
 }
