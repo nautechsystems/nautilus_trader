@@ -610,10 +610,7 @@ mod tests {
     use tracing::debug;
     use tracing_test::traced_test;
 
-    use crate::{
-        testing::wait_until,
-        websocket::{WebSocketClient, WebSocketConfig},
-    };
+    use crate::websocket::{WebSocketClient, WebSocketConfig};
 
     struct TestServer {
         task: JoinHandle<()>,
