@@ -407,7 +407,7 @@ mod tests {
     const fn is_unpin<T: Unpin>() {}
 
     #[test]
-    fn web_socket_stream_has_traits() {
+    const fn web_socket_stream_has_traits() {
         is_read::<AllowStd<tokio::net::TcpStream>>();
         is_write::<AllowStd<tokio::net::TcpStream>>();
 
