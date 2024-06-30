@@ -15,7 +15,10 @@
 
 use std::collections::HashMap;
 
-use nautilus_model::{
+use rust_decimal::prelude::ToPrimitive;
+use serde::{Deserialize, Serialize};
+
+use crate::{
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
     identifiers::AccountId,
@@ -25,9 +28,8 @@ use nautilus_model::{
         balance::AccountBalance, currency::Currency, money::Money, price::Price, quantity::Quantity,
     },
 };
-use rust_decimal::prelude::ToPrimitive;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -243,4 +245,48 @@ impl BaseAccount {
             Ok(Money::new(commission, instrument.quote_currency()).unwrap())
         }
     }
+}
+
+pub trait Account: 'static + Send {
+    fn id(&self) -> AccountId;
+    fn account_type(&self) -> AccountType;
+    fn base_currency(&self) -> Option<Currency>;
+    fn is_cash_account(&self) -> bool;
+    fn is_margin_account(&self) -> bool;
+    fn calculated_account_state(&self) -> bool;
+    fn balance_total(&self, currency: Option<Currency>) -> Option<Money>;
+    fn balances_total(&self) -> HashMap<Currency, Money>;
+    fn balance_free(&self, currency: Option<Currency>) -> Option<Money>;
+    fn balances_free(&self) -> HashMap<Currency, Money>;
+    fn balance_locked(&self, currency: Option<Currency>) -> Option<Money>;
+    fn balances_locked(&self) -> HashMap<Currency, Money>;
+    fn last_event(&self) -> Option<AccountState>;
+    fn events(&self) -> Vec<AccountState>;
+    fn event_count(&self) -> usize;
+    fn currencies(&self) -> Vec<Currency>;
+    fn starting_balances(&self) -> HashMap<Currency, Money>;
+    fn balances(&self) -> HashMap<Currency, AccountBalance>;
+    fn apply(&mut self, event: AccountState);
+    fn calculate_balance_locked(
+        &mut self,
+        instrument: InstrumentAny,
+        side: OrderSide,
+        quantity: Quantity,
+        price: Price,
+        use_quote_for_inverse: Option<bool>,
+    ) -> anyhow::Result<Money>;
+    fn calculate_pnls(
+        &self,
+        instrument: InstrumentAny,
+        fill: OrderFilled,
+        position: Option<Position>,
+    ) -> anyhow::Result<Vec<Money>>;
+    fn calculate_commission(
+        &self,
+        instrument: InstrumentAny,
+        last_qty: Quantity,
+        last_px: Price,
+        liquidity_side: LiquiditySide,
+        use_quote_for_inverse: Option<bool>,
+    ) -> anyhow::Result<Money>;
 }

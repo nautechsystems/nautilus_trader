@@ -28,6 +28,7 @@
 //! - `python`: Enables Python bindings from `pyo3`
 //! - `stubs`: Enables type stubs for use in testing scenarios
 
+pub mod account;
 pub mod currencies;
 pub mod data;
 pub mod enums;

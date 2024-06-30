@@ -19,6 +19,7 @@
 
 use pyo3::prelude::*;
 
+pub mod account;
 pub mod common;
 pub mod data;
 pub mod enums;
@@ -141,5 +142,16 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     // Events - account
     m.add_class::<crate::events::account::state::AccountState>()?;
     m.add_class::<crate::position::Position>()?;
+    // Account
+    m.add_class::<crate::account::cash::CashAccount>()?;
+    m.add_class::<crate::account::margin::MarginAccount>()?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::account::transformer::cash_account_from_account_events,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::account::transformer::margin_account_from_account_events,
+        m
+    )?)?;
     Ok(())
 }

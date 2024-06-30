@@ -19,9 +19,10 @@ use std::{
 };
 
 use log::error;
-use nautilus_common::{cache::database::CacheDatabaseAdapter, interface::account::Account};
+use nautilus_common::cache::database::CacheDatabaseAdapter;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
+    account::any::AccountAny,
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,
@@ -337,7 +338,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn load_accounts(&mut self) -> anyhow::Result<HashMap<AccountId, Box<dyn Account>>> {
+    fn load_accounts(&mut self) -> anyhow::Result<HashMap<AccountId, AccountAny>> {
         todo!()
     }
 
@@ -424,7 +425,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<Box<dyn Account>> {
+    fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<Option<AccountAny>> {
         todo!()
     }
 
@@ -500,7 +501,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn add_account(&mut self, account: &dyn Account) -> anyhow::Result<Box<dyn Account>> {
+    fn add_account(&mut self, account: &AccountAny) -> anyhow::Result<()> {
         todo!()
     }
 
@@ -539,7 +540,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn update_account(&mut self, account: &dyn Account) -> anyhow::Result<()> {
+    fn update_account(&mut self, account: &AccountAny) -> anyhow::Result<()> {
         todo!()
     }
 

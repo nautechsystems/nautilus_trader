@@ -21,12 +21,10 @@ use std::{
     time::{Duration, Instant},
 };
 
-use nautilus_common::{
-    cache::database::CacheDatabaseAdapter, enums::SerializationEncoding,
-    interface::account::Account,
-};
+use nautilus_common::{cache::database::CacheDatabaseAdapter, enums::SerializationEncoding};
 use nautilus_core::{correctness::check_slice_not_empty, nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
+    account::any::AccountAny,
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         TraderId, VenueOrderId,
@@ -749,14 +747,21 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         Ok(synthetics)
     }
 
-    fn load_accounts(&mut self) -> anyhow::Result<HashMap<AccountId, Box<dyn Account>>> {
+    fn load_accounts(&mut self) -> anyhow::Result<HashMap<AccountId, AccountAny>> {
         let mut accounts = HashMap::new();
 
         for key in self.database.keys(&format!("{ACCOUNTS}*"))? {
             let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
             let account_id = AccountId::from(*parts.first().unwrap());
-            let account = self.load_account(&account_id)?;
-            accounts.insert(account_id, account);
+            let result = self.load_account(&account_id)?;
+            match result {
+                Some(account) => {
+                    accounts.insert(account_id, account);
+                }
+                None => {
+                    error!("Account not found: {account_id}");
+                }
+            }
         }
 
         Ok(accounts)
@@ -820,7 +825,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         todo!()
     }
 
-    fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<Box<dyn Account>> {
+    fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<Option<AccountAny>> {
         todo!()
     }
 
@@ -870,7 +875,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         todo!()
     }
 
-    fn add_account(&mut self, account: &dyn Account) -> anyhow::Result<Box<dyn Account>> {
+    fn add_account(&mut self, account: &AccountAny) -> anyhow::Result<()> {
         todo!()
     }
 
@@ -906,7 +911,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         todo!()
     }
 
-    fn update_account(&mut self, account: &dyn Account) -> anyhow::Result<()> {
+    fn update_account(&mut self, account: &AccountAny) -> anyhow::Result<()> {
         todo!()
     }
 

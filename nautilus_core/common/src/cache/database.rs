@@ -23,6 +23,7 @@ use std::collections::HashMap;
 
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
+    account::any::AccountAny,
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,
@@ -33,8 +34,6 @@ use nautilus_model::{
     types::currency::Currency,
 };
 use ustr::Ustr;
-
-use crate::interface::account::Account;
 
 pub trait CacheDatabaseAdapter {
     fn close(&mut self) -> anyhow::Result<()>;
@@ -49,7 +48,7 @@ pub trait CacheDatabaseAdapter {
 
     fn load_synthetics(&mut self) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>>;
 
-    fn load_accounts(&mut self) -> anyhow::Result<HashMap<AccountId, Box<dyn Account>>>;
+    fn load_accounts(&mut self) -> anyhow::Result<HashMap<AccountId, AccountAny>>;
 
     fn load_orders(&mut self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>>;
 
@@ -71,7 +70,7 @@ pub trait CacheDatabaseAdapter {
         instrument_id: &InstrumentId,
     ) -> anyhow::Result<SyntheticInstrument>;
 
-    fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<Box<dyn Account>>;
+    fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<Option<AccountAny>>;
 
     fn load_order(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<Option<OrderAny>>;
 
@@ -99,7 +98,7 @@ pub trait CacheDatabaseAdapter {
 
     fn add_synthetic(&mut self, synthetic: &SyntheticInstrument) -> anyhow::Result<()>;
 
-    fn add_account(&mut self, account: &dyn Account) -> anyhow::Result<Box<dyn Account>>;
+    fn add_account(&mut self, account: &AccountAny) -> anyhow::Result<()>;
 
     fn add_order(&mut self, order: &OrderAny) -> anyhow::Result<()>;
 
@@ -121,7 +120,7 @@ pub trait CacheDatabaseAdapter {
 
     fn update_strategy(&mut self) -> anyhow::Result<()>;
 
-    fn update_account(&mut self, account: &dyn Account) -> anyhow::Result<()>;
+    fn update_account(&mut self, account: &AccountAny) -> anyhow::Result<()>;
 
     fn update_order(&mut self, order: &OrderAny) -> anyhow::Result<()>;
 
