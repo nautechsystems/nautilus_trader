@@ -79,7 +79,7 @@ def test_loader_definition_glbx_futures() -> None:
     assert instrument.price_increment == Price.from_str("0.25")
     assert instrument.size_precision == 0
     assert instrument.size_increment == 1
-    assert instrument.multiplier == 1
+    assert instrument.multiplier == 50
     assert instrument.lot_size == 1
     assert instrument.ts_event == 1680451436501583647
     assert instrument.ts_init == 1680451436501583647
@@ -111,7 +111,7 @@ def test_loader_definition_glbx_options() -> None:
     assert instrument.price_increment == Price.from_str("0.01")
     assert instrument.size_precision == 0
     assert instrument.size_increment == 1
-    assert instrument.multiplier == 1
+    assert instrument.multiplier == 50
     assert instrument.lot_size == 1
     assert instrument.ts_event == 1690848000000000000
     assert instrument.ts_init == 1690848000000000000
