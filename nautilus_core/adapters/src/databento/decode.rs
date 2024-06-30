@@ -191,7 +191,7 @@ pub fn decode_equity_v1(
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Equity> {
-    let currency = Currency::USD(); // TODO: Temporary hard coding of US equities for now
+    let currency = Currency::USD(); // TODO: Hard coding of US equities for now
 
     Equity::new(
         instrument_id,
@@ -204,7 +204,7 @@ pub fn decode_equity_v1(
         None, // TBD
         None, // TBD
         None, // TBD
-        Some(Quantity::new(msg.min_lot_size_round_lot.into(), 0)?),
+        Some(Quantity::new(f64::from(msg.min_lot_size_round_lot), 0)?),
         None,               // TBD
         None,               // TBD
         None,               // TBD
@@ -219,11 +219,20 @@ pub fn decode_futures_contract_v1(
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FuturesContract> {
-    let currency = Currency::USD(); // TODO: Temporary hard coding of US futures for now
+    let currency = Currency::USD(); // TODO: Hard coding of US futures for now
     let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
     let exchange = unsafe { raw_ptr_to_ustr(msg.exchange.as_ptr())? };
     let underlying = unsafe { raw_ptr_to_ustr(msg.asset.as_ptr())? };
     let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+    let unit_of_measure_qty: f64 = match msg.unit_of_measure_qty {
+        i64::MAX => 1.0,
+        other => other as f64 / FIXED_SCALAR,
+    };
+    let lot_size_round: f64 = match msg.min_lot_size_round_lot {
+        i32::MAX => 1.0,
+        0 => 1.0,
+        other => f64::from(other),
+    };
 
     FuturesContract::new(
         instrument_id,
@@ -236,15 +245,15 @@ pub fn decode_futures_contract_v1(
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(1.0, 0)?, // TBD
-        Quantity::new(1.0, 0)?, // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
-        msg.ts_recv.into(),     // More accurate and reliable timestamp
+        Quantity::new(unit_of_measure_qty, 0)?,
+        Quantity::new(lot_size_round, 0)?,
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        msg.ts_recv.into(), // More accurate and reliable timestamp
         ts_init,
     )
 }
@@ -254,12 +263,21 @@ pub fn decode_futures_spread_v1(
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FuturesSpread> {
-    let currency = Currency::USD(); // TODO: Temporary hard coding of US futures for now
+    let currency = Currency::USD(); // TODO: Hard coding of US futures for now
     let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
     let exchange = unsafe { raw_ptr_to_ustr(msg.exchange.as_ptr())? };
     let underlying = unsafe { raw_ptr_to_ustr(msg.asset.as_ptr())? };
     let strategy_type = unsafe { raw_ptr_to_ustr(msg.secsubtype.as_ptr())? };
     let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+    let unit_of_measure_qty: f64 = match msg.unit_of_measure_qty {
+        i64::MAX => 1.0,
+        other => other as f64 / FIXED_SCALAR,
+    };
+    let lot_size_round: f64 = match msg.min_lot_size_round_lot {
+        i32::MAX => 1.0,
+        0 => 1.0,
+        other => f64::from(other),
+    };
 
     FuturesSpread::new(
         instrument_id,
@@ -273,15 +291,15 @@ pub fn decode_futures_spread_v1(
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(1.0, 0)?, // TBD
-        Quantity::new(1.0, 0)?, // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
-        msg.ts_recv.into(),     // More accurate and reliable timestamp
+        Quantity::new(unit_of_measure_qty, 0)?,
+        Quantity::new(lot_size_round, 0)?,
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        msg.ts_recv.into(), // More accurate and reliable timestamp
         ts_init,
     )
 }
@@ -302,6 +320,15 @@ pub fn decode_options_contract_v1(
     };
     let underlying = unsafe { raw_ptr_to_ustr(msg.underlying.as_ptr())? };
     let currency = Currency::from_str(&currency_str)?;
+    let unit_of_measure_qty: f64 = match msg.unit_of_measure_qty {
+        i64::MAX => 1.0,
+        other => other as f64 / FIXED_SCALAR,
+    };
+    let lot_size_round: f64 = match msg.min_lot_size_round_lot {
+        i32::MAX => 1.0,
+        0 => 1.0,
+        other => f64::from(other),
+    };
 
     OptionsContract::new(
         instrument_id,
@@ -316,12 +343,12 @@ pub fn decode_options_contract_v1(
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(1.0, 0)?, // TBD
-        Quantity::new(1.0, 0)?, // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
+        Quantity::new(unit_of_measure_qty, 0)?,
+        Quantity::new(lot_size_round, 0)?,
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
         None,
         None,
         msg.ts_recv.into(), // More accurate and reliable timestamp
@@ -346,6 +373,15 @@ pub fn decode_options_spread_v1(
     let underlying = unsafe { raw_ptr_to_ustr(msg.underlying.as_ptr())? };
     let strategy_type = unsafe { raw_ptr_to_ustr(msg.secsubtype.as_ptr())? };
     let currency = Currency::from_str(&currency_str)?;
+    let unit_of_measure_qty: f64 = match msg.unit_of_measure_qty {
+        i64::MAX => 1.0,
+        other => other as f64 / FIXED_SCALAR,
+    };
+    let lot_size_round: f64 = match msg.min_lot_size_round_lot {
+        i32::MAX => 1.0,
+        0 => 1.0,
+        other => f64::from(other),
+    };
 
     OptionsSpread::new(
         instrument_id,
@@ -359,15 +395,15 @@ pub fn decode_options_spread_v1(
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(1.0, 0)?, // TBD
-        Quantity::new(1.0, 0)?, // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
-        msg.ts_recv.into(),     // More accurate and reliable timestamp
+        Quantity::new(unit_of_measure_qty, 0)?,
+        Quantity::new(lot_size_round, 0)?,
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        msg.ts_recv.into(), // More accurate and reliable timestamp
         ts_init,
     )
 }
@@ -779,7 +815,7 @@ pub fn decode_equity(
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Equity> {
-    let currency = Currency::USD(); // TODO: Temporary hard coding of US equities for now
+    let currency = Currency::USD(); // TODO: Hard coding of US equities for now
 
     Equity::new(
         instrument_id,
@@ -792,7 +828,7 @@ pub fn decode_equity(
         None, // TBD
         None, // TBD
         None, // TBD
-        Some(Quantity::new(msg.min_lot_size_round_lot.into(), 0)?),
+        Some(Quantity::new(f64::from(msg.min_lot_size_round_lot), 0)?),
         None,               // TBD
         None,               // TBD
         None,               // TBD
@@ -807,11 +843,20 @@ pub fn decode_futures_contract(
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FuturesContract> {
-    let currency = Currency::USD(); // TODO: Temporary hard coding of US futures for now
+    let currency = Currency::USD(); // TODO: Hard coding of US futures for now
     let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
     let exchange = unsafe { raw_ptr_to_ustr(msg.exchange.as_ptr())? };
     let underlying = unsafe { raw_ptr_to_ustr(msg.asset.as_ptr())? };
     let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+    let unit_of_measure_qty: f64 = match msg.unit_of_measure_qty {
+        i64::MAX => 1.0,
+        other => other as f64 / FIXED_SCALAR,
+    };
+    let lot_size_round: f64 = match msg.min_lot_size_round_lot {
+        i32::MAX => 1.0,
+        0 => 1.0,
+        other => f64::from(other),
+    };
 
     FuturesContract::new(
         instrument_id,
@@ -824,9 +869,9 @@ pub fn decode_futures_contract(
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(1.0, 0)?, // TBD
-        Quantity::new(1.0, 0)?, // TBD
-        None,
+        Quantity::new(unit_of_measure_qty, 0)?,
+        Quantity::new(lot_size_round, 0)?,
+        None,               // TBD
         None,               // TBD
         None,               // TBD
         None,               // TBD
@@ -842,12 +887,21 @@ pub fn decode_futures_spread(
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FuturesSpread> {
-    let currency = Currency::USD(); // TODO: Temporary hard coding of US futures for now
+    let currency = Currency::USD(); // TODO: Hard coding of US futures for now
     let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
     let exchange = unsafe { raw_ptr_to_ustr(msg.exchange.as_ptr())? };
     let underlying = unsafe { raw_ptr_to_ustr(msg.asset.as_ptr())? };
     let strategy_type = unsafe { raw_ptr_to_ustr(msg.secsubtype.as_ptr())? };
     let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+    let unit_of_measure_qty: f64 = match msg.unit_of_measure_qty {
+        i64::MAX => 1.0,
+        other => other as f64 / FIXED_SCALAR,
+    };
+    let lot_size_round: f64 = match msg.min_lot_size_round_lot {
+        i32::MAX => 1.0,
+        0 => 1.0,
+        other => f64::from(other),
+    };
 
     FuturesSpread::new(
         instrument_id,
@@ -861,15 +915,15 @@ pub fn decode_futures_spread(
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(1.0, 0)?, // TBD
-        Quantity::new(1.0, 0)?, // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
-        msg.ts_recv.into(),     // More accurate and reliable timestamp
+        Quantity::new(unit_of_measure_qty, 0)?,
+        Quantity::new(lot_size_round, 0)?,
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        msg.ts_recv.into(), // More accurate and reliable timestamp
         ts_init,
     )
 }
@@ -890,6 +944,15 @@ pub fn decode_options_contract(
     };
     let underlying = unsafe { raw_ptr_to_ustr(msg.underlying.as_ptr())? };
     let currency = Currency::from_str(&currency_str)?;
+    let unit_of_measure_qty: f64 = match msg.unit_of_measure_qty {
+        i64::MAX => 1.0,
+        other => other as f64 / FIXED_SCALAR,
+    };
+    let lot_size_round: f64 = match msg.min_lot_size_round_lot {
+        i32::MAX => 1.0,
+        0 => 1.0,
+        other => f64::from(other),
+    };
 
     OptionsContract::new(
         instrument_id,
@@ -904,15 +967,15 @@ pub fn decode_options_contract(
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(1.0, 0)?, // TBD
-        Quantity::new(1.0, 0)?, // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
-        msg.ts_recv.into(),     // More accurate and reliable timestamp
+        Quantity::new(unit_of_measure_qty, 0)?,
+        Quantity::new(lot_size_round, 0)?,
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        msg.ts_recv.into(), // More accurate and reliable timestamp
         ts_init,
     )
 }
@@ -934,6 +997,15 @@ pub fn decode_options_spread(
     let underlying = unsafe { raw_ptr_to_ustr(msg.underlying.as_ptr())? };
     let strategy_type = unsafe { raw_ptr_to_ustr(msg.secsubtype.as_ptr())? };
     let currency = Currency::from_str(&currency_str)?;
+    let unit_of_measure_qty: f64 = match msg.unit_of_measure_qty {
+        i64::MAX => 1.0,
+        other => other as f64 / FIXED_SCALAR,
+    };
+    let lot_size_round: f64 = match msg.min_lot_size_round_lot {
+        i32::MAX => 1.0,
+        0 => 1.0,
+        other => f64::from(other),
+    };
 
     OptionsSpread::new(
         instrument_id,
@@ -947,15 +1019,15 @@ pub fn decode_options_spread(
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(1.0, 0)?, // TBD
-        Quantity::new(1.0, 0)?, // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
-        None,                   // TBD
-        msg.ts_recv.into(),     // More accurate and reliable timestamp
+        Quantity::new(unit_of_measure_qty, 0)?,
+        Quantity::new(lot_size_round, 0)?,
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        None,               // TBD
+        msg.ts_recv.into(), // More accurate and reliable timestamp
         ts_init,
     )
 }
