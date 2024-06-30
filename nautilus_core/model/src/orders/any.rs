@@ -117,7 +117,7 @@ impl OrderAny {
 
     pub fn from_events(events: Vec<OrderEventAny>) -> anyhow::Result<Self> {
         if events.is_empty() {
-            anyhow::bail!("No events provided");
+            anyhow::bail!("No order events provided to create OrderAny");
         }
 
         // Pop the first event

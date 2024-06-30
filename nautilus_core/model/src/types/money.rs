@@ -295,8 +295,8 @@ impl<'de> Deserialize<'de> for Money {
     where
         D: Deserializer<'de>,
     {
-        let money_str: &str = Deserialize::deserialize(deserializer)?;
-        Money::from_str(money_str)
+        let money_str: String = Deserialize::deserialize(deserializer)?;
+        Money::from_str(&money_str)
             .map_err(|_| serde::de::Error::custom("Failed to parse Money amount"))
     }
 }

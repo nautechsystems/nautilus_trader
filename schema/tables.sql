@@ -22,6 +22,10 @@ CREATE TABLE IF NOT EXISTS "trader" (
     instance_id UUID NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS "account" (
+  id TEXT PRIMARY KEY NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS "strategy" (
   id TEXT PRIMARY KEY NOT NULL,
   order_id_tag TEXT,
@@ -135,6 +139,20 @@ CREATE TABLE IF NOT EXISTS "order_event" (
     position_id TEXT,
     commission TEXT,
     tags TEXT[],
+    ts_event TEXT NOT NULL,
+    ts_init TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "account_event"(
+    id TEXT PRIMARY KEY NOT NULL,
+    kind TEXT NOT NULL,
+    account_id TEXT REFERENCES account(id) ON DELETE CASCADE,
+    base_currency TEXT REFERENCES currency(id),
+    balances JSONB,
+    margins JSONB,
+    is_reported BOOLEAN DEFAULT FALSE,
     ts_event TEXT NOT NULL,
     ts_init TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
