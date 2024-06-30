@@ -23,7 +23,7 @@ use std::{
 use log::{debug, error, info, warn};
 use nautilus_core::correctness::{check_key_not_in_map, check_slice_not_empty, check_valid_string};
 use nautilus_model::{
-    account::any::AccountAny,
+    accounts::any::AccountAny,
     data::{
         bar::{Bar, BarType},
         quote::QuoteTick,

@@ -24,7 +24,7 @@ use std::{
 use nautilus_common::{cache::database::CacheDatabaseAdapter, enums::SerializationEncoding};
 use nautilus_core::{correctness::check_slice_not_empty, nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
-    account::any::AccountAny,
+    accounts::any::AccountAny,
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         TraderId, VenueOrderId,

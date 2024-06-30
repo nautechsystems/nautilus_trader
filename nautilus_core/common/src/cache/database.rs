@@ -23,7 +23,7 @@ use std::collections::HashMap;
 
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
-    account::any::AccountAny,
+    accounts::any::AccountAny,
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,

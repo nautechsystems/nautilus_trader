@@ -19,7 +19,7 @@ use nautilus_core::python::to_pyvalue_err;
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::{
-    account::{base::Account, cash::CashAccount},
+    accounts::{base::Account, cash::CashAccount},
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
     identifiers::AccountId,
