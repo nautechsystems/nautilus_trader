@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS "general" (
 
 CREATE TABLE IF NOT EXISTS "trader" (
     id TEXT PRIMARY KEY NOT NULL,
-    instance_id UUID NOT NULL
+    instance_id UUID
 );
 
 CREATE TABLE IF NOT EXISTS "account" (
@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS "order" (
 CREATE TABLE IF NOT EXISTS "order_event" (
     id TEXT PRIMARY KEY NOT NULL,
     kind TEXT NOT NULL,
-    trader_id TEXT NOT NULL,
+    trader_id TEXT REFERENCES trader(id) ON DELETE CASCADE,
     strategy_id TEXT NOT NULL,
     instrument_id TEXT NOT NULL,
     order_id TEXT DEFAULT NULL,

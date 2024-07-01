@@ -275,6 +275,19 @@ impl DatabaseQueries {
         pool: &PgPool,
         order_event: Box<dyn OrderEvent>,
     ) -> anyhow::Result<()> {
+        let mut transaction = pool.begin().await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO "trader" (id) VALUES ($1) ON CONFLICT (id) DO NOTHING
+        "#,
+        )
+        .bind(order_event.trader_id().to_string())
+        .execute(&mut *transaction)
+        .await
+        .map(|_| ())
+        .map_err(|err| anyhow::anyhow!("Failed to insert into trader table: {err}"))?;
+
         sqlx::query(r#"
             INSERT INTO "order_event" (
                 id, kind, order_id, order_type, order_side, trader_id, strategy_id, instrument_id, trade_id, currency, quantity, time_in_force, liquidity_side,
@@ -339,10 +352,14 @@ impl DatabaseQueries {
             .bind(order_event.commission().map(|x| x.to_string()))
             .bind(order_event.ts_event().to_string())
             .bind(order_event.ts_init().to_string())
-            .execute(pool)
+            .execute(&mut *transaction)
             .await
             .map(|_| ())
-            .map_err(|err| anyhow::anyhow!("Failed to insert into order_event table: {err}"))
+            .map_err(|err| anyhow::anyhow!("Failed to insert into order_event table: {err}"))?;
+        transaction
+            .commit()
+            .await
+            .map_err(|err| anyhow::anyhow!("Failed to commit transaction: {err}"))
     }
 
     pub async fn load_order_events(
@@ -451,7 +468,7 @@ impl DatabaseQueries {
         transaction
             .commit()
             .await
-            .map_err(|err| anyhow::anyhow!("Failed to commit transaction: {err}"))
+            .map_err(|err| anyhow::anyhow!("Failed to commit add_account transaction: {err}"))
     }
 
     pub async fn load_account_events(
