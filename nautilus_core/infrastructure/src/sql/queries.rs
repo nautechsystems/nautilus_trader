@@ -484,4 +484,33 @@ impl DatabaseQueries {
             Err(e) => anyhow::bail!("Failed to load account events: {e}"),
         }
     }
+
+    pub async fn load_accounts(pool: &PgPool) -> anyhow::Result<Vec<AccountAny>> {
+        let mut accounts: Vec<AccountAny> = Vec::new();
+        let account_ids: Vec<AccountId> = sqlx::query(
+            r#"
+            SELECT DISTINCT account_id FROM "account_event"
+        "#,
+        )
+        .fetch_all(pool)
+        .await
+        .map(|rows| {
+            rows.into_iter()
+                .map(|row| AccountId::from(row.get::<&str, _>(0)))
+                .collect()
+        })
+        .map_err(|err| anyhow::anyhow!("Failed to load account ids: {err}"))?;
+        for id in account_ids {
+            let account = DatabaseQueries::load_account(pool, &id).await.unwrap();
+            match account {
+                Some(account) => {
+                    accounts.push(account);
+                }
+                None => {
+                    continue;
+                }
+            }
+        }
+        Ok(accounts)
+    }
 }
