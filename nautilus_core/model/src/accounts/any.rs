@@ -74,3 +74,15 @@ impl From<AccountState> for AccountAny {
         }
     }
 }
+
+impl Default for AccountAny {
+    fn default() -> Self {
+        AccountAny::Cash(CashAccount::default())
+    }
+}
+
+impl PartialEq for AccountAny {
+    fn eq(&self, other: &Self) -> bool {
+        self.id() == other.id()
+    }
+}
