@@ -15,10 +15,7 @@
 
 use std::fmt::Display;
 
-use nautilus_model::{
-    data::quote::QuoteTick,
-    identifiers::InstrumentId,
-};
+use nautilus_model::{data::quote::QuoteTick, identifiers::InstrumentId};
 
 use crate::indicator::Indicator;
 
@@ -115,7 +112,7 @@ impl SpreadAnalyzer {
 }
 
 fn fast_mean_iterated(
-    values: &Vec<f64>,
+    values: &[f64],
     next_value: f64,
     current_value: f64,
     expected_length: usize,
@@ -140,7 +137,7 @@ fn fast_mean_iterated(
     Ok(current_value + (next_value - value_to_drop) / length as f64)
 }
 
-fn fast_mean(values: &Vec<f64>) -> f64 {
+fn fast_mean(values: &[f64]) -> f64 {
     if values.is_empty() {
         0.0
     } else {
