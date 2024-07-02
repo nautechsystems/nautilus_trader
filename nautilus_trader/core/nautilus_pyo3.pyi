@@ -3258,10 +3258,22 @@ class KeltnerChannel:
 class FuzzyCandle:
     def __init__(
         self,
-        direction: int, # Declare ENUMs
+        direction: CandleDirection,
+        size: CandleSize,
+        body_size: CandleBodySize,
+        upper_wick_size: CandleWickSize,
+        lower_wick_size: CandleWickSize,
     ) -> None: ...
     @property
-    def name(self) -> str: ...
+    def direction(self) -> CandleDirection: ...
+    @property
+    def size(self) -> CandleBodySize: ...
+    @property
+    def body_size(self) -> CandleBodySize: ...
+    @property
+    def upper_wick_size(self) -> CandleWickSize: ...
+    @property
+    def lower_wick_size(self) -> CandleWickSize: ...
 
 class FuzzyCandlestics:
     def __init__(
@@ -3289,12 +3301,41 @@ class FuzzyCandlestics:
     @property
     def has_inputs(self) -> bool: ...
     @property
-    def value(self) -> float: ... # ADD FUZZYCANDLE HERE
+    def value(self) -> FuzzyCandle: ...
     @property
     def vector(self) -> list[int]: ...
     def update_raw(self, open: float, high: float, low: float, close: float) -> None: ...
     def handle_bar(self, bar: Bar) -> None: ...
     def reset(self) -> None: ...
+
+# Fuzzy Enums
+class CandleBodySize(Enum):
+    NONE = 0
+    SMALL = 1
+    MEDIUM = 2
+    LARGE = 3
+    TREND = 4
+
+class CandleDirection(Enum):
+    BULL = 1
+    NONE = 0
+    BEAR = -1
+
+class CandleSize(Enum):
+    NONE = 0
+    VERY_SMALL = 1
+    SMALL = 2
+    MEDIUM = 3
+    LARGE = 4
+    VERY_LARGE = 5
+    EXTREMELY_LARGE = 6
+
+class CandleWickSize(Enum):
+    NONE = 0
+    SMALL = 1
+    MEDIUM = 2
+    LARGE = 3
+
 
 # Book
 
