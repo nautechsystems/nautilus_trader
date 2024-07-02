@@ -44,7 +44,8 @@ use crate::{
     },
     ratio::efficiency_ratio::EfficiencyRatio,
     volatility::{
-        dc::DonchianChannel, kc::KeltnerChannel, rvi::RelativeVolatilityIndex, vr::VolatilityRatio,
+        dc::DonchianChannel, fuzzy_candlesticks::FuzzyCandlesticks, kc::KeltnerChannel,
+        rvi::RelativeVolatilityIndex, vr::VolatilityRatio,
     },
 };
 
@@ -296,4 +297,9 @@ pub fn kc_10() -> KeltnerChannel {
 #[fixture]
 pub fn roc_10() -> RateOfChange {
     RateOfChange::new(10, Some(true)).unwrap()
+}
+
+#[fixture]
+pub fn fuzzy_candlesticks_10() -> FuzzyCandlesticks {
+    FuzzyCandlesticks::new(10, 0.1, 0.15, 0.2, 0.3).unwrap()
 }
