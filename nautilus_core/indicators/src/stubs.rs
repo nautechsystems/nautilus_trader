@@ -44,7 +44,8 @@ use crate::{
     },
     ratio::{efficiency_ratio::EfficiencyRatio, spread_analyzer::SpreadAnalyzer},
     volatility::{
-        dc::DonchianChannel, kc::KeltnerChannel, rvi::RelativeVolatilityIndex, vr::VolatilityRatio,
+        dc::DonchianChannel, kc::KeltnerChannel, kp::KeltnerPosition, rvi::RelativeVolatilityIndex,
+        vr::VolatilityRatio,
     },
 };
 
@@ -288,6 +289,19 @@ pub fn rvi_10() -> RelativeVolatilityIndex {
 #[fixture]
 pub fn kc_10() -> KeltnerChannel {
     KeltnerChannel::new(
+        10,
+        2.0,
+        Some(MovingAverageType::Simple),
+        Some(MovingAverageType::Simple),
+        Some(true),
+        Some(0.0),
+    )
+    .unwrap()
+}
+
+#[fixture]
+pub fn kp_10() -> KeltnerPosition {
+    KeltnerPosition::new(
         10,
         2.0,
         Some(MovingAverageType::Simple),
