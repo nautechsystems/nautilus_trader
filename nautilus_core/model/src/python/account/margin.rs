@@ -50,6 +50,12 @@ impl MarginAccount {
         self.default_leverage
     }
 
+    #[getter]
+    #[pyo3(name = "calculate_account_state")]
+    fn py_calculate_account_state(&self) -> bool {
+        self.calculate_account_state
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "{}(id={}, type={}, base={})",

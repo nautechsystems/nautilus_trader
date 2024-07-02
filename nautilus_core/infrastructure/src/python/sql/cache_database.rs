@@ -18,8 +18,9 @@ use std::collections::HashMap;
 use nautilus_common::{cache::database::CacheDatabaseAdapter, runtime::get_runtime};
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
-    identifiers::{ClientOrderId, InstrumentId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId},
     python::{
+        account::{convert_account_any_to_pyobject, convert_pyobject_to_account_any},
         instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
         orders::{convert_order_any_to_pyobject, convert_pyobject_to_order_any},
     },
@@ -152,6 +153,36 @@ impl PostgresCacheDatabase {
             match result {
                 Some(order) => {
                     let py_object = convert_order_any_to_pyobject(py, order)?;
+                    Ok(Some(py_object))
+                }
+                None => Ok(None),
+            }
+        })
+    }
+
+    #[pyo3(name = "add_account")]
+    fn py_add_account(
+        mut slf: PyRefMut<'_, Self>,
+        account: PyObject,
+        py: Python<'_>,
+    ) -> PyResult<()> {
+        let account_any = convert_pyobject_to_account_any(py, account)?;
+        slf.add_account(&account_any).map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "load_account")]
+    fn py_load_account(
+        slf: PyRef<'_, Self>,
+        account_id: AccountId,
+        py: Python<'_>,
+    ) -> PyResult<Option<PyObject>> {
+        get_runtime().block_on(async {
+            let result = DatabaseQueries::load_account(&slf.pool, &account_id)
+                .await
+                .unwrap();
+            match result {
+                Some(account) => {
+                    let py_object = convert_account_any_to_pyobject(py, account)?;
                     Ok(Some(py_object))
                 }
                 None => Ok(None),

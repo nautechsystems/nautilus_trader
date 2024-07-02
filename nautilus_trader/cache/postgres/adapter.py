@@ -13,8 +13,11 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.cache.facade import CacheDatabaseFacade
+from nautilus_trader.cache.postgres.transformers import transform_account_from_pyo3
+from nautilus_trader.cache.postgres.transformers import transform_account_to_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_currency_from_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_currency_to_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_instrument_from_pyo3
@@ -23,6 +26,7 @@ from nautilus_trader.cache.postgres.transformers import transform_order_from_pyo
 from nautilus_trader.cache.postgres.transformers import transform_order_to_pyo3
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import PostgresCacheDatabase
+from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
@@ -92,3 +96,14 @@ class CachePostgresAdapter(CacheDatabaseFacade):
     def load_orders(self):
         orders = self._backing.load_orders()
         return [transform_order_from_pyo3(order) for order in orders]
+
+    def add_account(self, account: Account):
+        account_pyo3 = transform_account_to_pyo3(account)
+        self._backing.add_account(account_pyo3)
+
+    def load_account(self, account_id: AccountId):
+        account_id_pyo3 = nautilus_pyo3.AccountId.from_str(str(account_id))
+        account_pyo3 = self._backing.load_account(account_id_pyo3)
+        if account_pyo3:
+            return transform_account_from_pyo3(account_pyo3)
+        return None

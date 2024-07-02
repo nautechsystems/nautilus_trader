@@ -97,6 +97,12 @@ impl CashAccount {
         self.events()
     }
 
+    #[getter]
+    #[pyo3(name = "calculate_account_state")]
+    fn py_calculate_account_state(&self) -> bool {
+        self.calculate_account_state
+    }
+
     #[pyo3(name = "balance_total")]
     fn py_balance_total(&self, currency: Option<Currency>) -> Option<Money> {
         self.balance_total(currency)

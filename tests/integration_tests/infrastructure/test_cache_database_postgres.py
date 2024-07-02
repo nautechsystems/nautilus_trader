@@ -34,6 +34,7 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
+from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.strategy import Strategy
 
@@ -416,3 +417,21 @@ class TestCachePostgresAdapter:
         result = self.database.load_order(order.client_order_id)
         assert result == order
         assert order.to_dict() == result.to_dict()
+
+    ################################################################################
+    # Accounts
+    ################################################################################
+    @pytest.mark.asyncio
+    async def test_add_account(self):
+        # Arrange
+        account = TestExecStubs.cash_account()
+
+        # Act
+        self.database.add_currency(account.base_currency)
+        self.database.add_account(account)
+
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_account(account.id))
+
+        # Assert
+        assert self.database.load_account(account.id) == account
