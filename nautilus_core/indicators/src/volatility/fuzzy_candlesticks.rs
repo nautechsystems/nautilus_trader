@@ -249,11 +249,11 @@ impl FuzzyCandlesticks {
         .unwrap();
 
         self.vector = vec![
-            self.value.direction.clone() as i32,
-            self.value.size.clone() as i32,
-            self.value.body_size.clone() as i32,
-            self.value.upper_wick_size.clone() as i32,
-            self.value.lower_wick_size.clone() as i32,
+            self.value.direction as i32,
+            self.value.size as i32,
+            self.value.body_size as i32,
+            self.value.upper_wick_size as i32,
+            self.value.lower_wick_size as i32,
         ];
     }
 
@@ -329,7 +329,7 @@ impl FuzzyCandlesticks {
             return CandleSize::VeryLarge;
         }
 
-        return CandleSize::ExtremelyLarge;
+        CandleSize::ExtremelyLarge
     }
 
     fn fuzzify_body_size(
@@ -365,7 +365,7 @@ impl FuzzyCandlesticks {
             return CandleBodySize::Large;
         }
 
-        return CandleBodySize::Trend;
+        CandleBodySize::Trend
     }
 
     fn fuzzify_wick_size(
@@ -395,7 +395,7 @@ impl FuzzyCandlesticks {
             return CandleWickSize::Medium;
         }
 
-        return CandleWickSize::Large;
+        CandleWickSize::Large
     }
 }
 
