@@ -508,8 +508,7 @@ mod tests {
             fuzzy_candlesticks_10.value.lower_wick_size,
             CandleWickSize::None
         );
-        let expected_vec = vec![0, 0, 0, 0, 0];
-        assert_eq!(fuzzy_candlesticks_10.vector, expected_vec);
+        assert_eq!(fuzzy_candlesticks_10.vector.len(), 0);
         assert_eq!(fuzzy_candlesticks_10.last_open, 0.0);
         assert_eq!(fuzzy_candlesticks_10.last_low, 0.0);
         assert_eq!(fuzzy_candlesticks_10.last_high, 0.0);
