@@ -42,7 +42,7 @@ use crate::{
         rsi::RelativeStrengthIndex, stochastics::Stochastics, swings::Swings,
         vhf::VerticalHorizontalFilter,
     },
-    ratio::efficiency_ratio::EfficiencyRatio,
+    ratio::{efficiency_ratio::EfficiencyRatio, spread_analyzer::SpreadAnalyzer},
     volatility::{
         dc::DonchianChannel, kc::KeltnerChannel, kp::KeltnerPosition, rvi::RelativeVolatilityIndex,
         vr::VolatilityRatio,
@@ -170,6 +170,11 @@ pub fn indicator_lr_10() -> LinearRegression {
 #[fixture]
 pub fn efficiency_ratio_10() -> EfficiencyRatio {
     EfficiencyRatio::new(10, Some(PriceType::Mid)).unwrap()
+}
+
+#[fixture]
+pub fn spread_analyzer_10() -> SpreadAnalyzer {
+    SpreadAnalyzer::new(10, InstrumentId::from("ETHUSDT-PERP.BINANCE")).unwrap()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
