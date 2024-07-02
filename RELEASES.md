@@ -30,6 +30,8 @@ Released on TBD (UTC).
 - Ported `RateOfChange` indicator to Rust (#1750), thanks @Pushkarm029
 - Ported `MovingAverageConvergenceDivergence` indicator to Rust (#1752), thanks @Pushkarm029
 - Ported `OnBalanceVolume` indicator to Rust (#1756), thanks @Pushkarm029
+- Ported `SpreadAnalyzer` indicator to Rust (#1762), thanks @Pushkarm029
+- Ported `KeltnerPosition` indicator to Rust (#1763), thanks @Pushkarm029
 
 ### Breaking Changes
 - Renamed `Actor.subscribe_order_book_snapshots` and `unsubscribe_order_book_snapshots` to `subscribe_order_book_at_interval` and `unsubscribe_order_book_at_interval` respectively (this clarifies the method behavior where the handler then receives `OrderBook` at a regular interval, distinct from a collection of deltas representing a snapshot)

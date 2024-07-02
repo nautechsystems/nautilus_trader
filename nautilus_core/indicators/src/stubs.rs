@@ -42,10 +42,10 @@ use crate::{
         rsi::RelativeStrengthIndex, stochastics::Stochastics, swings::Swings,
         vhf::VerticalHorizontalFilter,
     },
-    ratio::efficiency_ratio::EfficiencyRatio,
+    ratio::{efficiency_ratio::EfficiencyRatio, spread_analyzer::SpreadAnalyzer},
     volatility::{
-        dc::DonchianChannel, fuzzy_candlesticks::FuzzyCandlesticks, kc::KeltnerChannel,
-        rvi::RelativeVolatilityIndex, vr::VolatilityRatio,
+        dc::DonchianChannel, fuzzy_candlesticks::FuzzyCandlesticks, kc::KeltnerChannel, kp::KeltnerPosition, rvi::RelativeVolatilityIndex,
+        vr::VolatilityRatio,
     },
 };
 
@@ -172,6 +172,11 @@ pub fn efficiency_ratio_10() -> EfficiencyRatio {
     EfficiencyRatio::new(10, Some(PriceType::Mid)).unwrap()
 }
 
+#[fixture]
+pub fn spread_analyzer_10() -> SpreadAnalyzer {
+    SpreadAnalyzer::new(10, InstrumentId::from("ETHUSDT-PERP.BINANCE")).unwrap()
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Momentum
 ////////////////////////////////////////////////////////////////////////////////
@@ -284,6 +289,19 @@ pub fn rvi_10() -> RelativeVolatilityIndex {
 #[fixture]
 pub fn kc_10() -> KeltnerChannel {
     KeltnerChannel::new(
+        10,
+        2.0,
+        Some(MovingAverageType::Simple),
+        Some(MovingAverageType::Simple),
+        Some(true),
+        Some(0.0),
+    )
+    .unwrap()
+}
+
+#[fixture]
+pub fn kp_10() -> KeltnerPosition {
+    KeltnerPosition::new(
         10,
         2.0,
         Some(MovingAverageType::Simple),

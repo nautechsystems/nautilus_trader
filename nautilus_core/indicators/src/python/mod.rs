@@ -41,6 +41,7 @@ pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::book::imbalance::BookImbalanceRatio>()?;
     // ratio
     m.add_class::<crate::ratio::efficiency_ratio::EfficiencyRatio>()?;
+    m.add_class::<crate::ratio::spread_analyzer::SpreadAnalyzer>()?;
     // momentum
     m.add_class::<crate::momentum::rsi::RelativeStrengthIndex>()?;
     m.add_class::<crate::momentum::aroon::AroonOscillator>()?;
@@ -66,5 +67,6 @@ pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::volatility::rvi::RelativeVolatilityIndex>()?;
     m.add_class::<crate::volatility::kc::KeltnerChannel>()?;
     m.add_class::<crate::volatility::fuzzy_candlesticks::FuzzyCandlesticks>()?;
+    m.add_class::<crate::volatility::kp::KeltnerPosition>()?;
     Ok(())
 }
