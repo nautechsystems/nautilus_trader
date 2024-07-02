@@ -41,6 +41,7 @@ pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::book::imbalance::BookImbalanceRatio>()?;
     // ratio
     m.add_class::<crate::ratio::efficiency_ratio::EfficiencyRatio>()?;
+    m.add_class::<crate::ratio::spread_analyzer::SpreadAnalyzer>()?;
     // momentum
     m.add_class::<crate::momentum::rsi::RelativeStrengthIndex>()?;
     m.add_class::<crate::momentum::aroon::AroonOscillator>()?;
