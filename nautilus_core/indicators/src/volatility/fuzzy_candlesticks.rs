@@ -24,7 +24,7 @@ use super::fuzzy_enums::{CandleBodySize, CandleDirection, CandleSize, CandleWick
 use crate::{indicator::Indicator, momentum::bb::fast_std_with_mean};
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
@@ -65,6 +65,12 @@ impl FuzzyCandle {
     }
 }
 
+#[repr(C)]
+#[derive(Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+)]
 pub struct FuzzyCandlesticks {
     pub period: usize,
     pub threshold1: f64,

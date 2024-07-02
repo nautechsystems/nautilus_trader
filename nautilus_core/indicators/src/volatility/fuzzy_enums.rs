@@ -1,6 +1,6 @@
 use strum::Display;
 
-#[derive(Debug, Display, Clone, PartialEq)]
+#[derive(Debug, Display, Clone, PartialEq, Copy)]
 pub enum CandleBodySize {
     None = 0,
     Small = 1,
@@ -9,14 +9,14 @@ pub enum CandleBodySize {
     Trend = 4,
 }
 
-#[derive(Debug, Display, Clone, PartialEq)]
+#[derive(Debug, Display, Clone, PartialEq, Copy)]
 pub enum CandleDirection {
     Bull = 1,
     None = 0,
     Bear = -1,
 }
 
-#[derive(Debug, Display, Clone, PartialEq)]
+#[derive(Debug, Display, Clone, PartialEq, Copy)]
 pub enum CandleSize {
     None = 0,
     VerySmall = 1,
@@ -27,7 +27,7 @@ pub enum CandleSize {
     ExtremelyLarge = 6,
 }
 
-#[derive(Debug, Display, Clone, PartialEq)]
+#[derive(Debug, Display, Clone, PartialEq, Copy)]
 pub enum CandleWickSize {
     None = 0,
     Small = 1,
