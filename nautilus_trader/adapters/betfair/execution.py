@@ -112,6 +112,8 @@ class BetfairExecutionClient(LiveExecutionClient):
         The clock for the client.
     instrument_provider : BetfairInstrumentProvider
         The instrument provider.
+    request_account_state_period : int
+        The period (seconds) between checking account state.
 
     """
 
@@ -124,7 +126,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         cache: Cache,
         clock: LiveClock,
         instrument_provider: BetfairInstrumentProvider,
-        request_account_state_period: int = 300,
+        request_account_state_period: int,
     ) -> None:
         super().__init__(
             loop=loop,
@@ -141,7 +143,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         self._instrument_provider: BetfairInstrumentProvider = instrument_provider
         self._client: BetfairHttpClient = client
-        self.request_account_state_period = request_account_state_period
+        self.request_account_state_period = request_account_state_period or 300
         self.stream = BetfairOrderStreamClient(
             http_client=self._client,
             message_handler=self.handle_order_stream_update,
