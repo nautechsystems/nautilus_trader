@@ -53,7 +53,7 @@ pub fn calculate_commission(
     let account_state = if Some(Currency::USDT()) == currency {
         cash_account_state_million_usdt()
     } else {
-        cash_account_state_million_usd()
+        cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD")
     };
     let account = cash_account_million_usd(account_state);
     account
