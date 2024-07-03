@@ -44,6 +44,13 @@ impl AccountAny {
         }
     }
 
+    pub fn events(&self) -> Vec<AccountState> {
+        match self {
+            AccountAny::Margin(margin) => margin.events(),
+            AccountAny::Cash(cash) => cash.events(),
+        }
+    }
+
     pub fn apply(&mut self, event: AccountState) {
         match self {
             AccountAny::Margin(margin) => margin.apply(event),
