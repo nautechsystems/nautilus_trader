@@ -271,6 +271,22 @@ impl DatabaseQueries {
             .map_err(|err| anyhow::anyhow!("Failed to check if order initialized exists: {err}"))
     }
 
+    pub async fn check_if_account_event_exists(
+        pool: &PgPool,
+        account_id: AccountId,
+    ) -> anyhow::Result<bool> {
+        sqlx::query(
+            r#"
+            SELECT EXISTS(SELECT 1 FROM "account_event" WHERE account_id = $1)
+        "#,
+        )
+        .bind(account_id.to_string())
+        .fetch_one(pool)
+        .await
+        .map(|row| row.get(0))
+        .map_err(|err| anyhow::anyhow!("Failed to check if account event exists: {err}"))
+    }
+
     pub async fn add_order_event(
         pool: &PgPool,
         order_event: Box<dyn OrderEvent>,
@@ -424,8 +440,18 @@ impl DatabaseQueries {
     pub async fn add_account(
         pool: &PgPool,
         kind: &str,
+        updated: bool,
         account: Box<dyn Account>,
     ) -> anyhow::Result<()> {
+        if updated {
+            let exists = DatabaseQueries::check_if_account_event_exists(pool, account.id())
+                .await
+                .unwrap();
+            if !exists {
+                panic!("Account event does not exist for account: {}", account.id());
+            }
+        }
+
         let mut transaction = pool.begin().await?;
 
         sqlx::query(

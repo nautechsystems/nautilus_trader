@@ -312,10 +312,15 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_add_account() {
+    async fn test_add_and_update_account() {
         let mut pg_cache = get_pg_cache_database().await.unwrap();
-        let account =
-            AccountAny::Cash(CashAccount::new(cash_account_state_million_usd(), false).unwrap());
+        let mut account = AccountAny::Cash(
+            CashAccount::new(
+                cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD"),
+                false,
+            )
+            .unwrap(),
+        );
         let last_event = account.last_event().unwrap();
         if last_event.base_currency.is_some() {
             pg_cache
@@ -325,6 +330,20 @@ mod serial_tests {
         pg_cache.add_account(&account).unwrap();
         wait_until(
             || pg_cache.load_account(&account.id()).unwrap().is_some(),
+            Duration::from_secs(2),
+        );
+        let account_result = pg_cache.load_account(&account.id()).unwrap();
+        entirely_equal(account_result.unwrap(), account.clone());
+        // Update the account
+        let new_account_state_event =
+            cash_account_state_million_usd("1000000 USD", "100000 USD", "900000 USD");
+        account.apply(new_account_state_event);
+        pg_cache.update_account(&account).unwrap();
+        wait_until(
+            || {
+                let result = pg_cache.load_account(&account.id()).unwrap();
+                result.is_some() && result.unwrap().events().len() >= 2
+            },
             Duration::from_secs(2),
         );
         let account_result = pg_cache.load_account(&account.id()).unwrap();

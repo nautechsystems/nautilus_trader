@@ -65,7 +65,7 @@ pub enum DatabaseQuery {
     AddCurrency(Currency),
     AddInstrument(InstrumentAny),
     AddOrder(OrderAny, bool),
-    AddAccount(AccountAny),
+    AddAccount(AccountAny, bool),
 }
 
 fn get_buffer_interval() -> Duration {
@@ -176,14 +176,14 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
                 .await
                 .unwrap(),
             },
-            DatabaseQuery::AddAccount(account_any) => match account_any {
+            DatabaseQuery::AddAccount(account_any, updated) => match account_any {
                 AccountAny::Cash(account) => {
-                    DatabaseQueries::add_account(pool, "CASH", Box::new(account))
+                    DatabaseQueries::add_account(pool, "CASH", updated, Box::new(account))
                         .await
                         .unwrap()
                 }
                 AccountAny::Margin(account) => {
-                    DatabaseQueries::add_account(pool, "MARGIN", Box::new(account))
+                    DatabaseQueries::add_account(pool, "MARGIN", updated, Box::new(account))
                         .await
                         .unwrap()
                 }
@@ -548,7 +548,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn add_account(&mut self, account: &AccountAny) -> anyhow::Result<()> {
-        let query = DatabaseQuery::AddAccount(account.clone());
+        let query = DatabaseQuery::AddAccount(account.clone(), false);
         self.tx.send(query).map_err(|err| {
             anyhow::anyhow!("Failed to send query add_account to database message handler: {err}")
         })
@@ -590,7 +590,10 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn update_account(&mut self, account: &AccountAny) -> anyhow::Result<()> {
-        todo!()
+        let query = DatabaseQuery::AddAccount(account.clone(), true);
+        self.tx.send(query).map_err(|err| {
+            anyhow::anyhow!("Failed to send query add_account to database message handler: {err}")
+        })
     }
 
     fn update_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
