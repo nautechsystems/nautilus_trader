@@ -48,7 +48,7 @@ impl Display for FuzzyCandle {
 }
 
 impl FuzzyCandle {
-    pub fn new(
+    pub const fn new(
         direction: CandleDirection,
         size: CandleSize,
         body_size: CandleBodySize,
@@ -300,13 +300,13 @@ impl FuzzyCandlesticks {
         // Determine CandleSize fuzzy membership
         // -------------------------------------
         // CandleSize::VerySmall
-        x = mean_length - (sd_lengths * self.threshold2);
+        x = sd_lengths.mul_add(-self.threshold2, mean_length);
         if length <= x {
             return CandleSize::VerySmall;
         }
 
         // CandleSize::Small
-        x = mean_length + (sd_lengths * self.threshold1);
+        x = sd_lengths.mul_add(self.threshold1, mean_length);
         if length <= x {
             return CandleSize::Small;
         }
@@ -318,13 +318,13 @@ impl FuzzyCandlesticks {
         }
 
         // CandleSize.Large
-        x = mean_length + (sd_lengths * self.threshold3);
+        x = sd_lengths.mul_add(self.threshold3, mean_length);
         if length <= x {
             return CandleSize::Large;
         }
 
         // CandleSize::VeryLarge
-        x = mean_length + (sd_lengths * self.threshold4);
+        x = sd_lengths.mul_add(self.threshold4, mean_length);
         if length <= x {
             return CandleSize::VeryLarge;
         }
@@ -348,19 +348,19 @@ impl FuzzyCandlesticks {
         // Determine CandleBodySize fuzzy membership
         // -------------------------------------
         // CandleBodySize::Small
-        x = mean_body_percent - (sd_body_percent * self.threshold1);
+        x = sd_body_percent.mul_add(-self.threshold1, mean_body_percent);
         if body_percent <= x {
             return CandleBodySize::Small;
         }
 
         // CandleBodySize::Medium
-        x = mean_body_percent + (sd_body_percent * self.threshold1);
+        x = sd_body_percent.mul_add(self.threshold1, mean_body_percent);
         if body_percent <= x {
             return CandleBodySize::Medium;
         }
 
         // CandleBodySize::Large
-        x = mean_body_percent + (sd_body_percent * self.threshold2);
+        x = sd_body_percent.mul_add(self.threshold2, mean_body_percent);
         if body_percent <= x {
             return CandleBodySize::Large;
         }
@@ -384,13 +384,13 @@ impl FuzzyCandlesticks {
         // Determine CandleWickSize fuzzy membership
         // -------------------------------------
         // CandleWickSize::Small
-        x = mean_wick_percent - (sd_wick_percents * self.threshold1);
+        x = sd_wick_percents.mul_add(-self.threshold1, mean_wick_percent);
         if wick_percent <= x {
             return CandleWickSize::Small;
         }
 
         // CandleWickSize::Medium
-        x = mean_wick_percent + (sd_wick_percents * self.threshold2);
+        x = sd_wick_percents.mul_add(self.threshold2, mean_wick_percent);
         if wick_percent <= x {
             return CandleWickSize::Medium;
         }
