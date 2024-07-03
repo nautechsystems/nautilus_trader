@@ -16,7 +16,7 @@
 use strum::Display;
 
 #[repr(C)]
-#[derive(Debug, Display, Clone, PartialEq, Copy)]
+#[derive(Debug, Display, Clone, PartialEq, Eq, Copy)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
@@ -32,7 +32,7 @@ pub enum CandleBodySize {
 }
 
 #[repr(C)]
-#[derive(Debug, Display, Clone, PartialEq, Copy)]
+#[derive(Debug, Display, Clone, PartialEq, Eq, Copy)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
@@ -46,7 +46,7 @@ pub enum CandleDirection {
 }
 
 #[repr(C)]
-#[derive(Debug, Display, Clone, PartialEq, Copy)]
+#[derive(Debug, Display, Clone, PartialEq, Eq, Copy)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
@@ -64,7 +64,7 @@ pub enum CandleSize {
 }
 
 #[repr(C)]
-#[derive(Debug, Display, Clone, PartialEq, Copy)]
+#[derive(Debug, Display, Clone, PartialEq, Eq, Copy)]
 #[strum(ascii_case_insensitive)]
 #[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(
