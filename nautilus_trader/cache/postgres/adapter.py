@@ -107,3 +107,7 @@ class CachePostgresAdapter(CacheDatabaseFacade):
         if account_pyo3:
             return transform_account_from_pyo3(account_pyo3)
         return None
+
+    def update_account(self, account: Account):
+        account_pyo3 = transform_account_to_pyo3(account)
+        self._backing.update_account(account_pyo3)

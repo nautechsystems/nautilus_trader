@@ -435,3 +435,21 @@ class TestCachePostgresAdapter:
 
         # Assert
         assert self.database.load_account(account.id) == account
+
+    @pytest.mark.asyncio
+    async def test_update_account(self):
+        # Arrange
+        account = TestExecStubs.cash_account()
+
+        self.database.add_currency(account.base_currency)
+        self.database.add_account(account)
+
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_account(account.id))
+
+        # Act
+        self.database.update_account(account)
+        await asyncio.sleep(0.5)
+
+        # Assert
+        assert self.database.load_account(account.id) == account

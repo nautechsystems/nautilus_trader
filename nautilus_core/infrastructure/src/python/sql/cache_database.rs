@@ -190,6 +190,16 @@ impl PostgresCacheDatabase {
         })
     }
 
+    #[pyo3(name = "update_account")]
+    fn py_update_account(
+        mut slf: PyRefMut<'_, Self>,
+        order: PyObject,
+        py: Python<'_>,
+    ) -> PyResult<()> {
+        let order_any = convert_pyobject_to_account_any(py, order)?;
+        slf.update_account(&order_any).map_err(to_pyruntime_err)
+    }
+
     #[pyo3(name = "flush_db")]
     fn py_drop_schema(slf: PyRef<'_, Self>) -> PyResult<()> {
         let result =
