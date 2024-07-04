@@ -23,11 +23,13 @@ use nautilus_common::cache::database::CacheDatabaseAdapter;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     accounts::any::AccountAny,
+    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,
     },
     instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
+    orderbook::book::OrderBook,
     orders::any::OrderAny,
     position::Position,
     types::currency::Currency,
@@ -562,6 +564,22 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn add_position(&mut self, position: &Position) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add_order_book(&mut self, order_book: &OrderBook) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
         todo!()
     }
 

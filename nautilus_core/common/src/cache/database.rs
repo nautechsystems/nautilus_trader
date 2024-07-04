@@ -24,11 +24,13 @@ use std::collections::HashMap;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     accounts::any::AccountAny,
+    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,
     },
     instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
+    orderbook::book::OrderBook,
     orders::any::OrderAny,
     position::Position,
     types::currency::Currency,
@@ -103,6 +105,14 @@ pub trait CacheDatabaseAdapter {
     fn add_order(&mut self, order: &OrderAny) -> anyhow::Result<()>;
 
     fn add_position(&mut self, position: &Position) -> anyhow::Result<()>;
+
+    fn add_order_book(&mut self, order_book: &OrderBook) -> anyhow::Result<()>;
+
+    fn add_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()>;
+
+    fn add_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()>;
+
+    fn add_bar(&mut self, bar: &Bar) -> anyhow::Result<()>;
 
     fn index_venue_order_id(
         &mut self,

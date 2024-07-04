@@ -25,11 +25,13 @@ use nautilus_common::{cache::database::CacheDatabaseAdapter, enums::Serializatio
 use nautilus_core::{correctness::check_slice_not_empty, nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     accounts::any::AccountAny,
+    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         TraderId, VenueOrderId,
     },
     instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
+    orderbook::book::OrderBook,
     orders::any::OrderAny,
     position::Position,
     types::currency::Currency,
@@ -885,6 +887,22 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
 
     fn add_position(&mut self, position: &Position) -> anyhow::Result<()> {
         todo!()
+    }
+
+    fn add_order_book(&mut self, order_book: &OrderBook) -> anyhow::Result<()> {
+        anyhow::bail!("Saving market data for Redis cache adapter not supported")
+    }
+
+    fn add_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        anyhow::bail!("Saving market data for Redis cache adapter not supported")
+    }
+
+    fn add_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
+        anyhow::bail!("Saving market data for Redis cache adapter not supported")
+    }
+
+    fn add_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
+        anyhow::bail!("Saving market data for Redis cache adapter not supported")
     }
 
     fn index_venue_order_id(
