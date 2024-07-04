@@ -188,14 +188,17 @@ class BetfairTestStubs:
         yield from parser.parse(stream_decode(line))
 
     @staticmethod
-    def betfair_venue_config(name="BETFAIR") -> BacktestVenueConfig:
-        return BacktestVenueConfig(  # typing: ignore
+    def betfair_venue_config(
+        name: str = "BETFAIR",
+        book_type: str = "L2_MBP",
+    ) -> BacktestVenueConfig:
+        return BacktestVenueConfig(
             name=name,
             oms_type="NETTING",
             account_type="BETTING",
             base_currency="GBP",
             starting_balances=["10000 GBP"],
-            book_type="L2_MBP",
+            book_type=book_type,
         )
 
     @staticmethod
@@ -253,17 +256,17 @@ class BetfairTestStubs:
                 else []
             ),
         )
-        run_config = BacktestRunConfig(  # typing: ignore
+        run_config = BacktestRunConfig(
             engine=engine_config,
             venues=[BetfairTestStubs.betfair_venue_config(name=venue_name)],
             data=[
-                BacktestDataConfig(  # typing: ignore
+                BacktestDataConfig(
                     data_cls=TradeTick.fully_qualified_name(),
                     catalog_path=catalog_path,
                     catalog_fs_protocol=catalog_fs_protocol,
                     instrument_id=instrument_id,
                 ),
-                BacktestDataConfig(  # typing: ignore
+                BacktestDataConfig(
                     data_cls=OrderBookDelta.fully_qualified_name(),
                     catalog_path=catalog_path,
                     catalog_fs_protocol=catalog_fs_protocol,
@@ -319,7 +322,7 @@ class BetfairRequests:
 
 class BetfairResponses:
     @staticmethod
-    def load(filename: str):
+    def load(filename: str) -> None:
         raw = (RESOURCES_PATH / "responses" / filename).read_bytes()
         data = msgspec.json.decode(raw)
         return data
@@ -406,9 +409,9 @@ class BetfairResponses:
         selection_id: int,
         customer_order_ref: str = "",
         customer_strategy_ref: str = "",
-    ):
+    ) -> None:
         raw = BetfairResponses.load("list_current_orders_single.json")
-        raw["result"]["currentOrders"][0].update(
+        raw["result"]["currentOrders"][0].update(  # type: ignore
             {
                 "marketId": market_id,
                 "selectionId": selection_id,
@@ -423,10 +426,10 @@ class BetfairResponses:
         return BetfairResponses.load("list_market_catalogue.json")
 
     @staticmethod
-    def betting_list_market_catalogue(filter_: MarketFilter | None = None):
+    def betting_list_market_catalogue(filter_: MarketFilter | None = None) -> dict:
         result = BetfairResponses.load("betting_list_market_catalogue.json")
         if filter_:
-            result = [r for r in result if r["marketId"] in filter_.market_ids]
+            result = [r for r in result if r["marketId"] in filter_.market_ids]  # type: ignore
         return {"jsonrpc": "2.0", "result": result, "id": 1}
 
     @staticmethod

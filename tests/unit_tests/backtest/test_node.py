@@ -98,7 +98,7 @@ class TestBacktestNode:
             account_type="MARGIN",
             base_currency="USD",
             book_type=book_type,
-            starting_balances=["1000000 USD"],
+            starting_balances=["1_000_000 USD"],
         )
 
         run_config = BacktestRunConfig(
