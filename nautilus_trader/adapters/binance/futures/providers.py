@@ -267,7 +267,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
             min_quantity = Quantity(float(lot_size_filter.minQty), precision=size_precision)
             min_notional = None
             if filters.get(BinanceSymbolFilterType.MIN_NOTIONAL):
-                min_notional = Money(min_notional_filter.minNotional, currency=quote_currency)
+                min_notional = Money(min_notional_filter.notional, currency=quote_currency)
             max_notional = (
                 Money(position_risk.maxNotionalValue, currency=quote_currency)
                 if position_risk
