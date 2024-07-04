@@ -200,7 +200,7 @@ class BacktestNode:
                     has_book_data = any(
                         data_config.instrument_id
                         and data_config.instrument_id.venue == venue
-                        and data_config.data_cls in BOOK_DATA_TYPES
+                        and data_config.data_type in BOOK_DATA_TYPES
                         for data_config in config.data
                     )
 
