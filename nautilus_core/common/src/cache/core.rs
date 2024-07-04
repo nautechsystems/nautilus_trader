@@ -55,6 +55,7 @@ pub struct CacheConfig {
     pub drop_instruments_on_reset: bool,
     pub tick_capacity: usize,
     pub bar_capacity: usize,
+    pub save_market_data: bool,
 }
 
 impl CacheConfig {
@@ -70,6 +71,7 @@ impl CacheConfig {
         drop_instruments_on_reset: bool,
         tick_capacity: usize,
         bar_capacity: usize,
+        save_market_data: bool,
     ) -> Self {
         Self {
             encoding,
@@ -80,6 +82,7 @@ impl CacheConfig {
             drop_instruments_on_reset,
             tick_capacity,
             bar_capacity,
+            save_market_data,
         }
     }
 }
@@ -96,6 +99,7 @@ impl Default for CacheConfig {
             true,
             10_000,
             10_000,
+            false,
         )
     }
 }
@@ -969,6 +973,13 @@ impl Cache {
     /// Adds the given order `book` to the cache.
     pub fn add_order_book(&mut self, book: OrderBook) -> anyhow::Result<()> {
         debug!("Adding `OrderBook` {}", book.instrument_id);
+
+        if self.config.save_market_data {
+            if let Some(database) = &mut self.database {
+                database.add_order_book(&book)?;
+            }
+        }
+
         self.books.insert(book.instrument_id, book);
         Ok(())
     }
@@ -976,6 +987,13 @@ impl Cache {
     /// Adds the given `quote` tick to the cache.
     pub fn add_quote(&mut self, quote: QuoteTick) -> anyhow::Result<()> {
         debug!("Adding `QuoteTick` {}", quote.instrument_id);
+
+        if self.config.save_market_data {
+            if let Some(database) = &mut self.database {
+                database.add_quote(&quote)?;
+            }
+        }
+
         let quotes_deque = self
             .quotes
             .entry(quote.instrument_id)
@@ -990,6 +1008,15 @@ impl Cache {
 
         let instrument_id = quotes[0].instrument_id;
         debug!("Adding `QuoteTick`[{}] {}", quotes.len(), instrument_id);
+
+        if self.config.save_market_data {
+            if let Some(database) = &mut self.database {
+                quotes.iter().for_each(|quote| {
+                    database.add_quote(quote).unwrap();
+                });
+            }
+        }
+
         let quotes_deque = self
             .quotes
             .entry(instrument_id)
@@ -1004,6 +1031,13 @@ impl Cache {
     /// Adds the given `trade` tick to the cache.
     pub fn add_trade(&mut self, trade: TradeTick) -> anyhow::Result<()> {
         debug!("Adding `TradeTick` {}", trade.instrument_id);
+
+        if self.config.save_market_data {
+            if let Some(database) = &mut self.database {
+                database.add_trade(&trade)?;
+            }
+        }
+
         let trades_deque = self
             .trades
             .entry(trade.instrument_id)
@@ -1018,6 +1052,15 @@ impl Cache {
 
         let instrument_id = trades[0].instrument_id;
         debug!("Adding `TradeTick`[{}] {}", trades.len(), instrument_id);
+
+        if self.config.save_market_data {
+            if let Some(database) = &mut self.database {
+                trades.iter().for_each(|trade| {
+                    database.add_trade(trade).unwrap();
+                });
+            }
+        }
+
         let trades_deque = self
             .trades
             .entry(instrument_id)
@@ -1032,6 +1075,13 @@ impl Cache {
     /// Adds the given `bar` to the cache.
     pub fn add_bar(&mut self, bar: Bar) -> anyhow::Result<()> {
         debug!("Adding `Bar` {}", bar.bar_type);
+
+        if self.config.save_market_data {
+            if let Some(database) = &mut self.database {
+                database.add_bar(&bar)?;
+            }
+        }
+
         let bars = self
             .bars
             .entry(bar.bar_type)
@@ -1046,6 +1096,15 @@ impl Cache {
 
         let bar_type = bars[0].bar_type;
         debug!("Adding `Bar`[{}] {}", bars.len(), bar_type);
+
+        if self.config.save_market_data {
+            if let Some(database) = &mut self.database {
+                bars.iter().for_each(|bar| {
+                    database.add_bar(bar).unwrap();
+                });
+            }
+        }
+
         let bars_deque = self
             .bars
             .entry(bar_type)
