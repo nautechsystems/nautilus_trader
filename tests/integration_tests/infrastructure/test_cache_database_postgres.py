@@ -44,10 +44,10 @@ _AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 # Requirements:
 # - A Postgres service listening on the default port 5432
 
-pytestmark = pytest.mark.skipif(
-    sys.platform != "linux",
-    reason="databases only supported on Linux",
-)
+# pytestmark = pytest.mark.skipif(
+#     sys.platform != "linux",
+#     reason="databases only supported on Linux",
+# )
 
 
 class TestCachePostgresAdapter:
@@ -432,6 +432,24 @@ class TestCachePostgresAdapter:
 
         # Allow MPSC thread to insert
         await eventually(lambda: self.database.load_account(account.id))
+
+        # Assert
+        assert self.database.load_account(account.id) == account
+
+    @pytest.mark.asyncio
+    async def test_update_account(self):
+        # Arrange
+        account = TestExecStubs.cash_account()
+
+        self.database.add_currency(account.base_currency)
+        self.database.add_account(account)
+
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_account(account.id))
+
+        # Act
+        self.database.update_account(account)
+        await asyncio.sleep(0.5)
 
         # Assert
         assert self.database.load_account(account.id) == account
