@@ -44,10 +44,10 @@ _AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 # Requirements:
 # - A Postgres service listening on the default port 5432
 
-# pytestmark = pytest.mark.skipif(
-#     sys.platform != "linux",
-#     reason="databases only supported on Linux",
-# )
+pytestmark = pytest.mark.skipif(
+    sys.platform != "linux",
+    reason="databases only supported on Linux",
+)
 
 
 class TestCachePostgresAdapter:
