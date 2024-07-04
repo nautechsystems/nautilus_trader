@@ -1094,7 +1094,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void add(self, str key, bytes value):
         """
-        Add the given general object to the cache.
+        Add the given general object `value` to the cache.
 
         The cache is agnostic to what the object actually is (and how it may
         be serialized), offering maximum flexibility.
@@ -2002,7 +2002,7 @@ cdef class Cache(CacheFacade):
 
     cpdef bytes get(self, str key):
         """
-        Add the given general object to the cache.
+        Return the general object for the given `key`.
 
         The cache is agnostic to what the object actually is (and how it may
         be serialized), offering maximum flexibility.

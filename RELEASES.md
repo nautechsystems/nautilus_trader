@@ -47,6 +47,7 @@ Released on TBD (UTC).
 - Fixed Binance order report generation `active_symbols` type miss matching (#1729), thanks @DevRoss
 - Fixed Binance trade data websocket schemas (Binance no longer publish `b` buyer and `a` seller order IDs)
 - Fixed Bybit order book deltas subscriptions for `INVERSE` product type
+- Fixed `Cache` documentation for `get` (was the same as add), thanks for reporting @faysou
 
 ---
 
