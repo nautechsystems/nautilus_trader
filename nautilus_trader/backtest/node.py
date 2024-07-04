@@ -32,9 +32,11 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
+from nautilus_trader.model import BOOK_DATA_TYPES
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import capsule_to_list
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import book_type_from_str
 from nautilus_trader.model.identifiers import ClientId
@@ -163,7 +165,7 @@ class BacktestNode:
 
         return results
 
-    def _validate_configs(self, configs: list[BacktestRunConfig]) -> None:
+    def _validate_configs(self, configs: list[BacktestRunConfig]) -> None:  # noqa: C901
         venue_ids: list[Venue] = []
         for config in configs:
             venue_ids += [Venue(c.name) for c in config.venues]
@@ -188,6 +190,24 @@ class BacktestNode:
                         f"Venue '{instrument_id.venue}' for {instrument_id} "
                         f"does not have a `BacktestVenueConfig`",
                     )
+
+            for venue_config in config.venues:
+                venue = Venue(venue_config.name)
+                book_type = book_type_from_str(venue_config.book_type)
+
+                # Check order book data configuration
+                if book_type in (BookType.L2_MBP, BookType.L3_MBO):
+                    has_book_data = any(
+                        data_config.instrument_id
+                        and data_config.instrument_id.venue == venue
+                        and data_config.data_cls in BOOK_DATA_TYPES
+                        for data_config in config.data
+                    )
+
+                    if not has_book_data:
+                        raise InvalidConfiguration(
+                            f"No order book data available for {venue} with book type {venue_config.book_type}",
+                        )
 
     def _create_engine(
         self,
@@ -214,6 +234,7 @@ class BacktestNode:
                 if config.leverages
                 else {}
             )
+
             engine.add_venue(
                 venue=Venue(config.name),
                 oms_type=OmsType[config.oms_type],
