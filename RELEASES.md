@@ -46,6 +46,7 @@ Released on TBD (UTC).
 - Fixed `DatabentoDataLoader` multiplier and round lot size decoding, thanks for reporting @faysou
 - Fixed Binance order report generation `active_symbols` type miss matching (#1729), thanks @DevRoss
 - Fixed Binance trade data websocket schemas (Binance no longer publish `b` buyer and `a` seller order IDs)
+- Fixed `BinanceFuturesInstrumentProvider` parsing of min notional, thanks for the report @AnthonyVince
 - Fixed Bybit order book deltas subscriptions for `INVERSE` product type
 - Fixed `Cache` documentation for `get` (was the same as add), thanks for reporting @faysou
 
