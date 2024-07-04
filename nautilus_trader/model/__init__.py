@@ -24,7 +24,17 @@ built around this domain model.
 from typing import Union
 
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
+from nautilus_trader.model.data import OrderBookDepth10
 
+
+# Defines all order book data types (capable of updating an L2_MBP and L3_MBO book)
+BOOK_DATA_TYPES: set[type] = {
+    OrderBookDelta,
+    OrderBookDeltas,
+    OrderBookDepth10,
+}
 
 NAUTILUS_PYO3_DATA_TYPES: tuple[type, ...] = (
     nautilus_pyo3.OrderBookDelta,

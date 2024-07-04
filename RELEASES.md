@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added `request_order_book_snapshot` method (#1745), thanks @graceyangfan
+- Added order book data validation for `BacktestNode` when a venue `book_type` is `L2_MBP` or `L3_MBO`
 - Added Bybit demo account support (set `is_demo` to True in configs)
 - Added Bybit stop order types (`STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`, `LIMIT_IF_TOUCHED`, `TRAILING_STOP_MARKET`)
 - Added Binance venue option for adapter configurations (#1738), thanks @DevRoss
