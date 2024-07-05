@@ -510,9 +510,10 @@ class ExecutionMassStatus(Document):
             f"ts_init={self.ts_init})"
         )
 
+    @property
     def order_reports(self) -> dict[VenueOrderId, OrderStatusReport]:
         """
-        Return the order status reports.
+        The order status reports.
 
         Returns
         -------
@@ -521,9 +522,10 @@ class ExecutionMassStatus(Document):
         """
         return self._order_reports.copy()
 
+    @property
     def fill_reports(self) -> dict[VenueOrderId, list[FillReport]]:
         """
-        Return the fill reports.
+        The fill reports.
 
         Returns
         -------
@@ -532,9 +534,10 @@ class ExecutionMassStatus(Document):
         """
         return self._fill_reports.copy()
 
+    @property
     def position_reports(self) -> dict[InstrumentId, list[PositionStatusReport]]:
         """
-        Return the position status reports.
+        The position status reports.
 
         Returns
         -------
