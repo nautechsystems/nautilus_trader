@@ -1011,9 +1011,9 @@ impl Cache {
 
         if self.config.save_market_data {
             if let Some(database) = &mut self.database {
-                quotes.iter().for_each(|quote| {
+                for quote in quotes {
                     database.add_quote(quote).unwrap();
-                });
+                }
             }
         }
 
@@ -1055,9 +1055,9 @@ impl Cache {
 
         if self.config.save_market_data {
             if let Some(database) = &mut self.database {
-                trades.iter().for_each(|trade| {
+                for trade in trades {
                     database.add_trade(trade).unwrap();
-                });
+                }
             }
         }
 
@@ -1099,9 +1099,9 @@ impl Cache {
 
         if self.config.save_market_data {
             if let Some(database) = &mut self.database {
-                bars.iter().for_each(|bar| {
+                for bar in bars {
                     database.add_bar(bar).unwrap();
-                });
+                }
             }
         }
 
