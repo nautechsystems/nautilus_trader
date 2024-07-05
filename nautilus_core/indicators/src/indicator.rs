@@ -30,36 +30,39 @@ const IMPL_ERR: &str = "is not implemented for";
 #[allow(unused_variables)]
 pub trait Indicator {
     fn name(&self) -> String;
+
     fn has_inputs(&self) -> bool;
+
     fn initialized(&self) -> bool;
+
     fn handle_delta(&mut self, delta: &OrderBookDelta) {
-        // Eventually change this to log an error
         panic!("`handle_delta` {} `{}`", IMPL_ERR, self.name());
     }
+
     fn handle_deltas(&mut self, deltas: &OrderBookDeltas) {
-        // Eventually change this to log an error
         panic!("`handle_deltas` {} `{}`", IMPL_ERR, self.name());
     }
+
     fn handle_depth(&mut self, depth: &OrderBookDepth10) {
-        // Eventually change this to log an error
         panic!("`handle_depth` {} `{}`", IMPL_ERR, self.name());
     }
+
     fn handle_book(&mut self, book: &OrderBook) {
-        // Eventually change this to log an error
         panic!("`handle_book_mbo` {} `{}`", IMPL_ERR, self.name());
     }
+
     fn handle_quote_tick(&mut self, quote: &QuoteTick) {
-        // Eventually change this to log an error
         panic!("`handle_quote_tick` {} `{}`", IMPL_ERR, self.name());
     }
+
     fn handle_trade_tick(&mut self, trade: &TradeTick) {
-        // Eventually change this to log an error
         panic!("`handle_trade_tick` {} `{}`", IMPL_ERR, self.name());
     }
+
     fn handle_bar(&mut self, bar: &Bar) {
-        // Eventually change this to log an error
         panic!("`handle_bar` {} `{}`", IMPL_ERR, self.name());
     }
+
     fn reset(&mut self);
 }
 
