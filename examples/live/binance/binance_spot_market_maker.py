@@ -21,6 +21,7 @@ from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
+from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
@@ -50,12 +51,12 @@ config_node = TradingNodeConfig(
         reconciliation=True,
         reconciliation_lookback_mins=1440,
     ),
-    # cache=CacheConfig(
-    #     database=DatabaseConfig(),
-    #     encoding="json",
-    #     timestamps_as_iso8601=True,
-    #     buffer_interval_ms=100,
-    # ),
+    cache=CacheConfig(
+        # database=DatabaseConfig(),
+        timestamps_as_iso8601=True,
+        buffer_interval_ms=100,
+        flush_on_start=False,
+    ),
     # message_bus=MessageBusConfig(
     #     database=DatabaseConfig(),
     #     encoding="json",
