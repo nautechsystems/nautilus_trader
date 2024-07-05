@@ -41,6 +41,7 @@ Released on TBD (UTC).
 
 ### Fixes
 - Fixed `LIMIT` order fill behavior for `L2_MBP` and `L3_MBO` book types (was not honoring limit price as maker), thanks for reporting @dpmabo
+- Fixed `CashAccount` PnL calculations when opening a position with multiple fills, thanks @Otlk
 - Fixed msgspec encoding and decoding of `Environment` enum for `NautilusKernelConfig`
 - Fixed `OrderMatchingEngine` processing by book type for quotes and deltas (#1754), thanks @davidsblom
 - Fixed `DatabentoDataLoader.from_dbn_file` for `OrderBookDelta`s when `as_legacy_cython=False`
