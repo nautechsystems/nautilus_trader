@@ -1,6 +1,6 @@
 # NautilusTrader 1.196.0 Beta
 
-Released on TBD (UTC).
+Released on 5th July 2024 (UTC).
 
 ### Enhancements
 - Added `request_order_book_snapshot` method (#1745), thanks @graceyangfan
