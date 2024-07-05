@@ -165,21 +165,11 @@ class StreamingFeatherWriter:
     ) -> dict[bytes, bytes]:
         instrument = self._instruments[obj.instrument_id]
         metadata = {b"instrument_id": obj.instrument_id.value.encode()}
-        if isinstance(obj, OrderBookDelta):
-            metadata.update(
-                {
-                    b"price_precision": str(instrument.price_precision).encode(),
-                    b"size_precision": str(instrument.size_precision).encode(),
-                },
-            )
-        elif isinstance(obj, OrderBookDeltas):
-            metadata.update(
-                {
-                    b"price_precision": str(instrument.price_precision).encode(),
-                    b"size_precision": str(instrument.size_precision).encode(),
-                },
-            )
-        elif isinstance(obj, QuoteTick | TradeTick):
+        if (
+            isinstance(obj, OrderBookDelta)
+            or isinstance(obj, OrderBookDeltas)
+            or isinstance(obj, QuoteTick | TradeTick)
+        ):
             metadata.update(
                 {
                     b"price_precision": str(instrument.price_precision).encode(),
@@ -323,7 +313,7 @@ def generate_signal_class(name: str, value_type: type) -> type:
         @property
         def ts_event(self) -> int:
             """
-            The UNIX timestamp (nanoseconds) when the data event occurred.
+            UNIX timestamp (nanoseconds) when the data event occurred.
 
             Returns
             -------
@@ -335,7 +325,7 @@ def generate_signal_class(name: str, value_type: type) -> type:
         @property
         def ts_init(self) -> int:
             """
-            The UNIX timestamp (nanoseconds) when the object was initialized.
+            UNIX timestamp (nanoseconds) when the object was initialized.
 
             Returns
             -------

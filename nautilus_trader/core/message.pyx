@@ -30,7 +30,7 @@ cdef class Command:
     command_id : UUID4
         The command ID.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
     Warnings
     --------
@@ -74,7 +74,7 @@ cdef class Document:
     document_id : UUID4
         The command ID.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
     Warnings
     --------
@@ -134,7 +134,7 @@ cdef class Event:
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the event occurred.
+        UNIX timestamp (nanoseconds) when the event occurred.
 
         Returns
         -------
@@ -146,7 +146,7 @@ cdef class Event:
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -167,7 +167,7 @@ cdef class Request:
     request_id : UUID4
         The request ID.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
     Warnings
     --------
@@ -217,7 +217,7 @@ cdef class Response:
     response_id : UUID4
         The response ID.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
     Warnings
     --------

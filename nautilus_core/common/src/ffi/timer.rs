@@ -48,6 +48,6 @@ pub extern "C" fn time_event_to_cstr(event: &TimeEvent) -> *const c_char {
 
 // This function only exists so that `TimeEventHandler` is included in the definitions
 #[no_mangle]
-pub extern "C" fn dummy(v: TimeEventHandler) -> TimeEventHandler {
+pub const extern "C" fn dummy(v: TimeEventHandler) -> TimeEventHandler {
     v
 }

@@ -11,16 +11,49 @@
 
 #define FIXED_SCALAR 1000000000.0
 
+/**
+ * The maximum valid money amount which can be represented.
+ */
 #define MONEY_MAX 9223372036.0
 
+/**
+ * The minimum valid money amount which can be represented.
+ */
 #define MONEY_MIN -9223372036.0
 
+/**
+ * The sentinel value for an unset or null price.
+ */
+#define PRICE_UNDEF INT64_MAX
+
+/**
+ * The sentinel value for an error or invalid price.
+ */
+#define PRICE_ERROR INT64_MIN
+
+/**
+ * The maximum valid price value which can be represented.
+ */
 #define PRICE_MAX 9223372036.0
 
+/**
+ * The minimum valid price value which can be represented.
+ */
 #define PRICE_MIN -9223372036.0
 
+/**
+ * The sentinel value for an unset or null quantity.
+ */
+#define QUANTITY_UNDEF UINT64_MAX
+
+/**
+ * The maximum valid quantity value which can be represented.
+ */
 #define QUANTITY_MAX 18446744073.0
 
+/**
+ * The minimum valid quantity value which can be represented.
+ */
 #define QUANTITY_MIN 0.0
 
 /**
@@ -138,11 +171,11 @@ typedef enum BookType {
      */
     L1_MBP = 1,
     /**
-     * Market-by-price, one order per level (aggregated).
+     * Market by price, one order per level (aggregated).
      */
     L2_MBP = 2,
     /**
-     * Market-by-order, multiple orders per level (full granularity).
+     * Market by order, multiple orders per level (full granularity).
      */
     L3_MBO = 3,
 } BookType;
@@ -708,9 +741,9 @@ typedef struct Level Level;
  * Provides a performant, generic, multi-purpose order book.
  *
  * Can handle the following granularity data:
- * - MBO (market-by-order) / L3
- * - MBP (market-by-price) / L2 aggregated order per level
- * - MBP (market-by-price) / L1 top-of-book only
+ * - MBO (market by order) / L3
+ * - MBP (market by price) / L2 aggregated order per level
+ * - MBP (market by price) / L1 top-of-book only
  */
 typedef struct OrderBook OrderBook;
 
@@ -806,7 +839,7 @@ typedef struct OrderBookDelta_t {
      */
     struct BookOrder_t order;
     /**
-     * The record flags bit field, indicating event end and data information.
+     * The record flags bit field indicating event end and data information.
      */
     uint8_t flags;
     /**
@@ -814,11 +847,11 @@ typedef struct OrderBookDelta_t {
      */
     uint64_t sequence;
     /**
-     * The UNIX timestamp (nanoseconds) when the book event occurred.
+     * UNIX timestamp (nanoseconds) when the book event occurred.
      */
     uint64_t ts_event;
     /**
-     * The UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the struct was initialized.
      */
     uint64_t ts_init;
 } OrderBookDelta_t;
@@ -878,11 +911,11 @@ typedef struct OrderBookDepth10_t {
      */
     uint64_t sequence;
     /**
-     * The UNIX timestamp (nanoseconds) when the book event occurred.
+     * UNIX timestamp (nanoseconds) when the book event occurred.
      */
     uint64_t ts_event;
     /**
-     * The UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the struct was initialized.
      */
     uint64_t ts_init;
 } OrderBookDepth10_t;
@@ -912,11 +945,11 @@ typedef struct QuoteTick_t {
      */
     struct Quantity_t ask_size;
     /**
-     * The UNIX timestamp (nanoseconds) when the quote event occurred.
+     * UNIX timestamp (nanoseconds) when the quote event occurred.
      */
     uint64_t ts_event;
     /**
-     * The UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the struct was initialized.
      */
     uint64_t ts_init;
 } QuoteTick_t;
@@ -958,11 +991,11 @@ typedef struct TradeTick_t {
      */
     struct TradeId_t trade_id;
     /**
-     * The UNIX timestamp (nanoseconds) when the trade event occurred.
+     * UNIX timestamp (nanoseconds) when the trade event occurred.
      */
     uint64_t ts_event;
     /**
-     * The UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the struct was initialized.
      */
     uint64_t ts_init;
 } TradeTick_t;
@@ -1034,11 +1067,11 @@ typedef struct Bar_t {
      */
     struct Quantity_t volume;
     /**
-     * The UNIX timestamp (nanoseconds) when the data event occurred.
+     * UNIX timestamp (nanoseconds) when the data event occurred.
      */
     uint64_t ts_event;
     /**
-     * The UNIX timestamp (nanoseconds) when the struct was initialized.
+     * UNIX timestamp (nanoseconds) when the struct was initialized.
      */
     uint64_t ts_init;
 } Bar_t;
@@ -1280,9 +1313,9 @@ typedef struct Money_t {
 #define NULL_ORDER (BookOrder_t){ .side = OrderSide_NoOrderSide, .price = (Price_t){ .raw = 0, .precision = 0 }, .size = (Quantity_t){ .raw = 0, .precision = 0 }, .order_id = 0 }
 
 /**
- * Sentinel Price for errors.
+ * The sentinel `Price` representing errors (this will be removed when Cython is gone).
  */
-#define ERROR_PRICE (Price_t){ .raw = INT64_MAX, .precision = 0 }
+#define ERROR_PRICE (Price_t){ .raw = PRICE_ERROR, .precision = 0 }
 
 struct Data_t data_clone(const struct Data_t *data);
 

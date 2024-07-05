@@ -19,14 +19,17 @@ use std::{
 };
 
 use log::error;
-use nautilus_common::{cache::database::CacheDatabaseAdapter, interface::account::Account};
+use nautilus_common::cache::database::CacheDatabaseAdapter;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
+    accounts::any::AccountAny,
+    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,
     },
     instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
+    orderbook::book::OrderBook,
     orders::any::OrderAny,
     position::Position,
     types::currency::Currency,
@@ -40,11 +43,14 @@ use ustr::Ustr;
 
 use crate::sql::{
     models::general::GeneralRow,
-    pg::{connect_pg, get_postgres_connect_options},
+    pg::{
+        connect_pg, delete_nautilus_postgres_tables, get_postgres_connect_options,
+        PostgresConnectOptions, PostgresConnectOptionsBuilder,
+    },
     queries::DatabaseQueries,
 };
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.infrastructure")
@@ -61,6 +67,7 @@ pub enum DatabaseQuery {
     AddCurrency(Currency),
     AddInstrument(InstrumentAny),
     AddOrder(OrderAny, bool),
+    AddAccount(AccountAny, bool),
 }
 
 fn get_buffer_interval() -> Duration {
@@ -171,6 +178,18 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
                 .await
                 .unwrap(),
             },
+            DatabaseQuery::AddAccount(account_any, updated) => match account_any {
+                AccountAny::Cash(account) => {
+                    DatabaseQueries::add_account(pool, "CASH", updated, Box::new(account))
+                        .await
+                        .unwrap()
+                }
+                AccountAny::Margin(account) => {
+                    DatabaseQueries::add_account(pool, "MARGIN", updated, Box::new(account))
+                        .await
+                        .unwrap()
+                }
+            },
         }
     }
 }
@@ -243,6 +262,34 @@ impl PostgresCacheDatabase {
     }
 }
 
+pub async fn reset_pg_database(pg_options: Option<PostgresConnectOptions>) -> anyhow::Result<()> {
+    let pg_connect_options = pg_options.unwrap_or(
+        PostgresConnectOptionsBuilder::default()
+            .username(String::from("postgres"))
+            .build()?,
+    );
+    let pg_pool = connect_pg(pg_connect_options.into()).await.unwrap();
+    delete_nautilus_postgres_tables(&pg_pool).await.unwrap();
+    Ok(())
+}
+
+pub async fn get_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
+    reset_pg_database(None).await.unwrap();
+    // run tests as nautilus user
+    let connect_options = PostgresConnectOptionsBuilder::default()
+        .username(String::from("nautilus"))
+        .build()?;
+    Ok(PostgresCacheDatabase::connect(
+        Some(connect_options.host),
+        Some(connect_options.port),
+        Some(connect_options.username),
+        Some(connect_options.password),
+        Some(connect_options.database),
+    )
+    .await
+    .unwrap())
+}
+
 #[allow(dead_code)]
 #[allow(unused)]
 impl CacheDatabaseAdapter for PostgresCacheDatabase {
@@ -306,12 +353,48 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn load_accounts(&mut self) -> anyhow::Result<HashMap<AccountId, Box<dyn Account>>> {
-        todo!()
+    fn load_accounts(&mut self) -> anyhow::Result<HashMap<AccountId, AccountAny>> {
+        let pool = self.pool.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_accounts(&pool).await;
+            match result {
+                Ok(accounts) => {
+                    let mapping = accounts
+                        .into_iter()
+                        .map(|account| (account.id(), account))
+                        .collect();
+                    let _ = tx.send(mapping);
+                }
+                Err(e) => {
+                    error!("Failed to load accounts: {:?}", e);
+                    let _ = tx.send(HashMap::new());
+                }
+            }
+        });
+        Ok(rx.recv().unwrap())
     }
 
     fn load_orders(&mut self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
-        todo!()
+        let pool = self.pool.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_orders(&pool).await;
+            match result {
+                Ok(orders) => {
+                    let mapping = orders
+                        .into_iter()
+                        .map(|order| (order.client_order_id(), order))
+                        .collect();
+                    let _ = tx.send(mapping);
+                }
+                Err(e) => {
+                    error!("Failed to load orders: {:?}", e);
+                    let _ = tx.send(HashMap::new());
+                }
+            }
+        });
+        Ok(rx.recv().unwrap())
     }
 
     fn load_positions(&mut self) -> anyhow::Result<HashMap<PositionId, Position>> {
@@ -375,8 +458,23 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<Box<dyn Account>> {
-        todo!()
+    fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<Option<AccountAny>> {
+        let pool = self.pool.clone();
+        let account_id = account_id.to_owned();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_account(&pool, &account_id).await;
+            match result {
+                Ok(account) => {
+                    let _ = tx.send(account);
+                }
+                Err(e) => {
+                    error!("Failed to load account {}: {:?}", account_id, e);
+                    let _ = tx.send(None);
+                }
+            }
+        });
+        Ok(rx.recv().unwrap())
     }
 
     fn load_order(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<Option<OrderAny>> {
@@ -451,8 +549,11 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn add_account(&mut self, account: &dyn Account) -> anyhow::Result<Box<dyn Account>> {
-        todo!()
+    fn add_account(&mut self, account: &AccountAny) -> anyhow::Result<()> {
+        let query = DatabaseQuery::AddAccount(account.clone(), false);
+        self.tx.send(query).map_err(|err| {
+            anyhow::anyhow!("Failed to send query add_account to database message handler: {err}")
+        })
     }
 
     fn add_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
@@ -463,6 +564,22 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn add_position(&mut self, position: &Position) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add_order_book(&mut self, order_book: &OrderBook) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
         todo!()
     }
 
@@ -490,8 +607,11 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn update_account(&mut self, account: &dyn Account) -> anyhow::Result<()> {
-        todo!()
+    fn update_account(&mut self, account: &AccountAny) -> anyhow::Result<()> {
+        let query = DatabaseQuery::AddAccount(account.clone(), true);
+        self.tx.send(query).map_err(|err| {
+            anyhow::anyhow!("Failed to send query add_account to database message handler: {err}")
+        })
     }
 
     fn update_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {

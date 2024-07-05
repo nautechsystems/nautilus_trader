@@ -68,6 +68,88 @@ This diagram illustrates message flow (commands and events) across the Nautilus 
 
 ```
 
+## Order Management System (OMS)
+
+An order management system (OMS) type refers to the method used for assigning orders to positions and tracking those positions for an instrument.
+OMS types apply to both strategies and venues (simulated and real). Even if a venue doesn't explicitly
+state the method in use, an OMS type is always in effect. The OMS type for a component can be specified 
+using the `OmsType` enum.
+
+The `OmsType` enum has three variants:
+
+- `UNSPECIFIED`: The OMS type defaults based on where it is applied (details below)
+- `NETTING`: Positions are combined into a single position per instrument ID 
+- `HEDGING`: Multiple positions per instrument ID are supported (both long and short)
+
+The table below describes different configuration combinations and their applicable scenarios.
+When the strategy and venue OMS types differ, the `ExecutionEngine` handles this by overriding or assigning `position_id` values for received `OrderFilled` events.
+A "virtual position" refers to a position ID that exists within the Nautilus system but not on the venue in 
+reality.
+
+| Strategy OMS                 | Venue OMS              | Description                                                                                                                                                |
+|:-----------------------------|:-----------------------|:-----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `NETTING`                    | `NETTING`              | The strategy uses the venues native OMS type, with a single position ID per instrument ID.                                                                 |
+| `HEDGING`                    | `HEDGING`              | The strategy uses the venues native OMS type, with multiple position IDs per instrument ID (both `LONG` and `SHORT`).                                      |
+| `NETTING`                    | `HEDGING`              | The strategy **overrides** the venues native OMS type. The venue tracks multiple positions per instrument ID, but Nautilus maintains a single position ID. |
+| `HEDGING`                    | `NETTING`              | The strategy **overrides** the venues native OMS type. The venue tracks a single position per instrument ID, but Nautilus maintains multiple position IDs. |
+
+:::note
+Configuring OMS types separately for strategies and venues increases platform complexity but allows
+for a wide range of trading styles and preferences (see below).
+:::
+
+OMS config examples:
+
+- Most cryptocurrency exchanges use a `NETTING` OMS type, representing a single position per market. It may be desirable for a trader to track multiple "virtual" positions for a strategy.
+- Some FX ECNs or brokers use a `HEDGING` OMS type, tracking multiple positions both `LONG` and `SHORT`. The trader may only care about the NET position per currency pair.
+
+:::info
+Nautilus does not yet support venue-side hedging modes such as Binance `BOTH` vs. `LONG/SHORT` where the venue nets per direction.
+It is advised to keep Binance account configurations as `BOTH` so that a single position is netted.
+:::
+
+### OMS configuration
+
+If a strategy OMS type is not explicitly set using the `oms_type` configuration option,
+it will default to `UNSPECIFIED`. This means the `ExecutionEngine` will not override any venue `position_id`s, 
+and the OMS type will follow the venue's OMS type.
+
+:::tip
+When configuring a backtest, you can specify the `oms_type` for the venue. To enhance backtest
+accuracy, it is recommended to match this with the actual OMS type used by the venue in practice.
+:::
+
+## Risk engine
+
+The `RiskEngine` is a core component of every Nautilus system, including backtest, sandbox, and live environments.
+Every order command and event passes through the `RiskEngine` unless specifically bypassed in the `RiskEngineConfig`.
+
+The `RiskEngine` includes several built-in pre-trade risk checks, including:
+
+- Price precisions correct for the instrument
+- Prices are positive (unless an option type instrument)
+- Quantity precisions correct for the instrument
+- Below maximum notional for the instrument
+- Within maximum or minimum quantity for the instrument
+- Only reducing position when a `reduce_only` execution instruction is specified for the order
+
+If any risk check fails, an `OrderDenied` event is generated, effectively closing the order and 
+preventing it from progressing further. This event includes a human-readable reason for the denial.
+
+### Trading state
+
+Additionally, the current trading state of a Nautilus system affects order flow.
+
+The `TradingState` enum has three variants:
+
+- `ACTIVE`: The system operates normally
+- `HALTED`: The system will not process further order commands until the state changes
+- `REDUCING`: The system will only process cancels or commands that reduce open positions
+
+:::info
+See the `RiskEngineConfig` [API Reference](../api_reference/config#risk) for further details.
+:::
+
 ## Execution algorithms
 
 The platform supports customized execution algorithm components and provides some built-in 
@@ -163,19 +245,6 @@ know as "primary" (original) orders when being handled by an execution algorithm
 from nautilus_trader.model.orders.base import Order
 
 def on_order(self, order: Order) -> None:  # noqa (too complex)
-    """
-    Actions to be performed when running and receives an order.
-
-    Parameters
-    ----------
-    order : Order
-        The order to be handled.
-
-    Warnings
-    --------
-    System method (not intended to be called by user code).
-
-    """
     # Handle the order here
 ```
 
@@ -222,7 +291,8 @@ or confusion with the "parent" and "child" contingent orders terminology (an exe
 ### Managing execution algorithm orders
 
 The `Cache` provides several methods to aid in managing (keeping track of) the activity of
-an execution algorithm:
+an execution algorithm. Calling the below method will return all execution algorithm orders
+for the given query filters.
 
 ```python
 def orders_for_exec_algorithm(
@@ -233,46 +303,71 @@ def orders_for_exec_algorithm(
     strategy_id: StrategyId | None = None,
     side: OrderSide = OrderSide.NO_ORDER_SIDE,
 ) -> list[Order]:
-    """
-    Return all execution algorithm orders for the given query filters.
-
-    Parameters
-    ----------
-    exec_algorithm_id : ExecAlgorithmId
-        The execution algorithm ID.
-    venue : Venue, optional
-        The venue ID query filter.
-    instrument_id : InstrumentId, optional
-        The instrument ID query filter.
-    strategy_id : StrategyId, optional
-        The strategy ID query filter.
-    side : OrderSide, default ``NO_ORDER_SIDE`` (no filter)
-        The order side query filter.
-
-    Returns
-    -------
-    list[Order]
-
-    """
 ```
 
-As well as more specifically querying the orders for a certain execution series/spawn:
+As well as more specifically querying the orders for a certain execution series/spawn.
+Calling the below method will return all orders for the given `exec_spawn_id` (if found).
 
 ```python
 def orders_for_exec_spawn(self, exec_spawn_id: ClientOrderId) -> list[Order]:
-    """
-    Return all orders for the given execution spawn ID (if found).
-
-    Will also include the primary (original) order.
-
-    Parameters
-    ----------
-    exec_spawn_id : ClientOrderId
-        The execution algorithm spawning primary (original) client order ID.
-
-    Returns
-    -------
-    list[Order]
-
-    """
 ```
+
+:::note
+This also includes the primary (original) order.
+:::
+
+
+## Execution reconciliation
+
+Execution reconciliation is the process of aligning the external state of reality for orders and positions
+(both closed and open) with the current system state built from events.
+This process is primarily applicable to live trading, which is why only the `LiveExecutionEngine` includes reconciliation capabilities.
+
+There are two main scenarios for reconciliation:
+
+- **Previous Cached Execution State:** If cached execution state exists, information from reports is used to generate events to align the state
+- **No Previous Cached Execution State:** If there is no cached state, all orders and positions that exist externally are generated from scratch
+
+### Reconciliation configuration
+
+Unless reconciliation is disabled by setting the `reconciliation` configuration parameter to false,
+the execution engine will perform the execution reconciliation procedure for each venue.
+Additionally, you can specify the lookback window for reconciliation by setting the `reconciliation_lookback_mins` configuration parameter.
+
+Each strategy can also be configured to claim any external orders for an instrument ID generated during 
+reconciliation using the `external_order_claims` configuration parameter.
+This is useful in situations where, at system start, there is no cached state or it is desirable for
+a strategy to resume its operations and continue managing existing open orders at the venue for an instrument.
+
+:::info
+See the `LiveExecEngineConfig` [API Reference](../api_reference/config#class-liveexecengineconfig) for further details.
+:::
+
+### Reconciliation procedure
+
+The reconciliation procedure is standardized for all adapter execution clients and uses the following 
+methods to produce an execution mass status:
+
+- `generate_order_status_reports`
+- `generate_fill_reports`
+- `generate_position_status_reports`
+
+The system state is then reconciled with the reports, which represent the external reality:
+
+- **Duplicate Check:**
+    - Check for duplicate order IDs and trade IDs
+- **Order Reconciliation:**
+    - Generate and apply events necessary to update orders from any currently cached state to the current state
+    - If any trade reports are missing, inferred `OrderFilled` events are generated
+    - If any client order ID is not recognized or an order report lacks a client order ID, an external order is generated
+- **Position Reconciliation:**
+    - Ensure the net position per instrument matches the position reports returned from the venue
+
+If reconciliation fails, the system will not continue to start, and an error will be logged.
+
+:::tip
+The current reconciliation procedure can experience state mismatches if the lookback window is 
+misconfigured or if the venue omits certain order or trade reports due to filter conditions.
+If you encounter reconciliation issues, drop any cached state or ensure the account is flat at
+system shutdown and startup.
+:::

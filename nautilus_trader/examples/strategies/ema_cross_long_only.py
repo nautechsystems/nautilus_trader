@@ -141,7 +141,7 @@ class EMACrossLongOnly(Strategy):
         self.subscribe_trade_ticks(self.instrument_id)
         # self.subscribe_ticker(self.instrument_id)  # For debugging
         # self.subscribe_order_book_deltas(self.instrument_id, depth=20)  # For debugging
-        # self.subscribe_order_book_snapshots(self.instrument_id, depth=20)  # For debugging
+        # self.subscribe_order_book_at_interval(self.instrument_id, depth=20)  # For debugging
 
     def on_instrument(self, instrument: Instrument) -> None:
         """
@@ -291,7 +291,7 @@ class EMACrossLongOnly(Strategy):
         self.unsubscribe_trade_ticks(self.instrument_id)
         # self.unsubscribe_ticker(self.instrument_id)
         # self.unsubscribe_order_book_deltas(self.instrument_id)
-        # self.unsubscribe_order_book_snapshots(self.instrument_id)
+        # self.unsubscribe_order_book_at_interval(self.instrument_id)
 
     def on_reset(self) -> None:
         """

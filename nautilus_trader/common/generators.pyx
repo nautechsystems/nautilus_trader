@@ -55,6 +55,7 @@ cdef class IdentifierGenerator:
             f"{now.day:02d}-"
             f"{now.hour:02d}"
             f"{now.minute:02d}"
+            f"{now.second:02d}"
         )
 
 

@@ -14,8 +14,13 @@
 // -------------------------------------------------------------------------------------------------
 
 //! A high-performance WebSocket client implementation.
-
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use futures_util::{
     stream::{SplitSink, SplitStream},
@@ -134,7 +139,8 @@ impl WebSocketClientInner {
         // Hacky solution to overcome the new `http` trait bounds
         for (key, val) in headers {
             let header_value = HeaderValue::from_str(&val).unwrap();
-            let header_name = HeaderName::from_str(&key).unwrap();
+            use http::header::HeaderName;
+            let header_name: HeaderName = key.parse().unwrap();
             let header_name_string = header_name.to_string();
             let header_name_str: &'static str = Box::leak(header_name_string.into_boxed_str());
             req_headers.insert(header_name_str, header_value);
@@ -322,7 +328,7 @@ impl Drop for WebSocketClientInner {
 pub struct WebSocketClient {
     writer: SharedMessageWriter,
     controller_task: task::JoinHandle<()>,
-    disconnect_mode: Arc<Mutex<bool>>,
+    disconnect_mode: Arc<AtomicBool>,
 }
 
 impl WebSocketClient {
@@ -339,7 +345,8 @@ impl WebSocketClient {
         debug!("Connecting");
         let inner = WebSocketClientInner::connect_url(config).await?;
         let writer = inner.writer.clone();
-        let disconnect_mode = Arc::new(Mutex::new(false));
+        let disconnect_mode = Arc::new(AtomicBool::new(false));
+
         let controller_task = Self::spawn_controller_task(
             inner,
             disconnect_mode.clone(),
@@ -372,7 +379,22 @@ impl WebSocketClient {
     /// and shutdown the client if it is alive
     pub async fn disconnect(&self) {
         debug!("Disconnecting");
-        *self.disconnect_mode.lock().await = true;
+        self.disconnect_mode.store(true, Ordering::SeqCst);
+
+        match tokio::time::timeout(Duration::from_secs(5), async {
+            while !self.is_disconnected() {
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        {
+            Ok(_) => {
+                debug!("Controller task finished");
+            }
+            Err(_) => {
+                error!("Timeout waiting for controller task to finish");
+            }
+        }
     }
 
     pub async fn send_bytes(&self, data: Vec<u8>) -> Result<(), Error> {
@@ -391,21 +413,17 @@ impl WebSocketClient {
 
     fn spawn_controller_task(
         mut inner: WebSocketClientInner,
-        disconnect_mode: Arc<Mutex<bool>>,
+        disconnect_mode: Arc<AtomicBool>,
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
     ) -> task::JoinHandle<()> {
         task::spawn(async move {
-            let mut disconnect_flag;
             loop {
-                sleep(Duration::from_secs(1)).await;
+                sleep(Duration::from_millis(100)).await;
 
                 // Check if client needs to disconnect
-                let guard = disconnect_mode.lock().await;
-                disconnect_flag = *guard;
-                drop(guard);
-
-                match (disconnect_flag, inner.is_alive()) {
+                let disconnected = disconnect_mode.load(Ordering::SeqCst);
+                match (disconnected, inner.is_alive()) {
                     (false, false) => match inner.reconnect().await {
                         Ok(()) => {
                             debug!("Reconnected successfully");
@@ -446,21 +464,6 @@ impl WebSocketClient {
 
 #[pymethods]
 impl WebSocketClient {
-    /// Check if the client is still alive.
-    ///
-    /// Even if the connection is disconnected the client will still be alive
-    /// and trying to reconnect. Only when reconnect fails the client will
-    /// terminate.
-    ///
-    /// This is particularly useful for checking why a `send` failed. It could
-    /// because the connection disconnected and the client is still alive
-    /// and reconnecting. In such cases the send can be retried after some
-    /// delay.
-    #[getter]
-    fn is_alive(slf: PyRef<'_, Self>) -> bool {
-        !slf.controller_task.is_finished()
-    }
-
     /// Create a websocket client.
     ///
     /// # Safety
@@ -500,7 +503,7 @@ impl WebSocketClient {
     fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let disconnect_mode = slf.disconnect_mode.clone();
         pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
-            *disconnect_mode.lock().await = true;
+            disconnect_mode.store(true, Ordering::SeqCst);
             Ok(())
         })
     }
@@ -570,6 +573,21 @@ impl WebSocketClient {
                 .await
                 .map_err(to_pyruntime_err)
         })
+    }
+
+    /// Check if the client is still alive.
+    ///
+    /// Even if the connection is disconnected the client will still be alive
+    /// and trying to reconnect. Only when reconnect fails the client will
+    /// terminate.
+    ///
+    /// This is particularly useful for checking why a `send` failed. It could
+    /// be because the connection disconnected and the client is still alive
+    /// and reconnecting. In such cases the send can be retried after some
+    /// delay.
+    #[getter]
+    fn is_alive(slf: PyRef<'_, Self>) -> bool {
+        !slf.controller_task.is_finished()
     }
 }
 
@@ -772,9 +790,8 @@ counter = Counter()",
         assert_eq!(count_value, success_count);
         assert_eq!(success_count, N + N);
 
-        // Shutdown client and wait for read task to terminate
+        // Shutdown client
         client.disconnect().await;
-        sleep(Duration::from_secs(1)).await;
         assert!(client.is_disconnected());
     }
 
@@ -840,9 +857,8 @@ checker = Checker()",
         });
         assert!(check_value);
 
-        // Shutdown client and wait for read task to terminate
+        // Shutdown client
         client.disconnect().await;
-        sleep(Duration::from_secs(1)).await;
         assert!(client.is_disconnected());
     }
 }

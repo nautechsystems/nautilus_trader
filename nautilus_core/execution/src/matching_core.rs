@@ -76,7 +76,7 @@ impl OrderMatchingCore {
     // -- QUERIES ---------------------------------------------------------------------------------
 
     #[must_use]
-    pub fn price_precision(&self) -> u8 {
+    pub const fn price_precision(&self) -> u8 {
         self.price_increment.precision
     }
 

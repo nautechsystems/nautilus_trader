@@ -118,7 +118,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_unsubscribe(self, DataClient client, Unsubscribe command)
     cpdef void _handle_subscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id)
     cpdef void _handle_subscribe_order_book_deltas(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)  # noqa
-    cpdef void _handle_subscribe_order_book_snapshots(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)  # noqa
+    cpdef void _handle_subscribe_order_book(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)  # noqa
     cpdef void _setup_order_book(self, MarketDataClient client, InstrumentId instrument_id, dict metadata, bint only_deltas, bint managed)  # noqa
     cpdef void _handle_subscribe_quote_ticks(self, MarketDataClient client, InstrumentId instrument_id)
     cpdef void _handle_subscribe_synthetic_quote_ticks(self, InstrumentId instrument_id)
@@ -131,7 +131,7 @@ cdef class DataEngine(Component):
     cpdef void _handle_subscribe_instrument_close(self, MarketDataClient client, InstrumentId instrument_id)
     cpdef void _handle_unsubscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id)
     cpdef void _handle_unsubscribe_order_book_deltas(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)  # noqa
-    cpdef void _handle_unsubscribe_order_book_snapshots(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)  # noqa
+    cpdef void _handle_unsubscribe_order_book(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)  # noqa
     cpdef void _handle_unsubscribe_quote_ticks(self, MarketDataClient client, InstrumentId instrument_id)
     cpdef void _handle_unsubscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id)
     cpdef void _handle_unsubscribe_bars(self, MarketDataClient client, BarType bar_type)

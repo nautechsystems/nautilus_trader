@@ -90,10 +90,16 @@ from nautilus_trader.model.orders.trailing_stop_market import TrailingStopMarket
 
 # fmt: on
 
-ib_to_nautilus_trigger_method = dict(zip(MAP_TRIGGER_METHOD.values(), MAP_TRIGGER_METHOD.keys()))
-ib_to_nautilus_time_in_force = dict(zip(MAP_TIME_IN_FORCE.values(), MAP_TIME_IN_FORCE.keys()))
-ib_to_nautilus_order_side = dict(zip(MAP_ORDER_ACTION.values(), MAP_ORDER_ACTION.keys()))
-ib_to_nautilus_order_type = dict(zip(MAP_ORDER_TYPE.values(), MAP_ORDER_TYPE.keys()))
+ib_to_nautilus_trigger_method = dict(
+    zip(MAP_TRIGGER_METHOD.values(), MAP_TRIGGER_METHOD.keys(), strict=False),
+)
+ib_to_nautilus_time_in_force = dict(
+    zip(MAP_TIME_IN_FORCE.values(), MAP_TIME_IN_FORCE.keys(), strict=False),
+)
+ib_to_nautilus_order_side = dict(
+    zip(MAP_ORDER_ACTION.values(), MAP_ORDER_ACTION.keys(), strict=False),
+)
+ib_to_nautilus_order_type = dict(zip(MAP_ORDER_TYPE.values(), MAP_ORDER_TYPE.keys(), strict=False))
 
 
 class InteractiveBrokersExecutionClient(LiveExecutionClient):
@@ -856,7 +862,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             return
         else:
             self._log.warning(
-                f"Unknown {order_status=} received on " f"`_on_order_status` for {order_ref=}",
+                f"Unknown {order_status=} received on `_on_order_status` for {order_ref=}",
             )
             return
 

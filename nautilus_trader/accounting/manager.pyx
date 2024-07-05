@@ -153,7 +153,7 @@ cdef class AccountsManager:
         orders_open : list[Order]
             The open orders for the update.
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) when the account event occurred.
+            UNIX timestamp (nanoseconds) when the account event occurred.
 
         Returns
         -------
@@ -272,7 +272,7 @@ cdef class AccountsManager:
         orders_open : list[Order]
             The open orders for the update.
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) when the account event occurred.
+            UNIX timestamp (nanoseconds) when the account event occurred.
 
         Returns
         -------
@@ -362,7 +362,7 @@ cdef class AccountsManager:
         positions_open : list[Position]
             The open positions for the update.
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) when the account event occurred.
+            UNIX timestamp (nanoseconds) when the account event occurred.
 
         Returns
         -------

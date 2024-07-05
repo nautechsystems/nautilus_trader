@@ -191,11 +191,10 @@ impl DatabentoDataLoader {
         &self,
         path: String,
         instrument_id: Option<InstrumentId>,
-        include_trades: Option<bool>,
     ) -> PyResult<Vec<QuoteTick>> {
         let path_buf = PathBuf::from(path);
         let iter = self
-            .read_records::<dbn::Mbp1Msg>(path_buf, instrument_id, include_trades.unwrap_or(false))
+            .read_records::<dbn::Mbp1Msg>(path_buf, instrument_id, false)
             .map_err(to_pyvalue_err)?;
 
         let mut data = Vec::new();

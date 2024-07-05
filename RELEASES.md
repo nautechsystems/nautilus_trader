@@ -1,3 +1,61 @@
+# NautilusTrader 1.196.0 Beta
+
+Released on 5th July 2024 (UTC).
+
+### Enhancements
+- Added `request_order_book_snapshot` method (#1745), thanks @graceyangfan
+- Added order book data validation for `BacktestNode` when a venue `book_type` is `L2_MBP` or `L3_MBO`
+- Added Bybit demo account support (set `is_demo` to True in configs)
+- Added Bybit stop order types (`STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`, `LIMIT_IF_TOUCHED`, `TRAILING_STOP_MARKET`)
+- Added Binance venue option for adapter configurations (#1738), thanks @DevRoss
+- Added Betfair amend order quantity support (#1687 and #1751), thanks @imemo88 and @limx0
+- Added Postgres tests serial test group for nextest runner (#1753), thanks @filipmacek
+- Added Postgres account persistence capability (#1768), thanks @filipmacek
+- Refactored `AccountAny` pattern in Rust (#1755), thanks @filipmacek
+- Changed `DatabentoLiveClient` to use new [snapshot on subscribe](https://databento.com/blog/live-MBO-snapshot) feature
+- Changed identifier generator time tag component to include seconds (affects new `ClientOrderId`, `OrderId` and `PositionId` generation)
+- Changed `<Arc<Mutex<bool>>` to `AtomicBool` in Rust `network` crate, thanks @NextThread and @twitu
+- Ported `KlingerVolumeOscillator` indicator to Rust (#1724), thanks @Pushkarm029
+- Ported `DirectionalMovement` indicator to Rust (#1725), thanks @Pushkarm029
+- Ported `ArcherMovingAveragesTrends` indicator to Rust (#1726), thanks @Pushkarm029
+- Ported `Swings` indicator to Rust (#1731), thanks @Pushkarm029
+- Ported `BollingerBands` indicator to Rust (#1734), thanks @Pushkarm029
+- Ported `VolatilityRatio` indicator to Rust (#1735), thanks @Pushkarm029
+- Ported `Stochastics` indicator to Rust (#1736), thanks @Pushkarm029
+- Ported `Pressure` indicator to Rust (#1739), thanks @Pushkarm029
+- Ported `PsychologicalLine` indicator to Rust (#1740), thanks @Pushkarm029
+- Ported `CommodityChannelIndex` indicator to Rust (#1742), thanks @Pushkarm029
+- Ported `LinearRegression` indicator to Rust (#1743), thanks @Pushkarm029
+- Ported `DonchianChannel` indicator to Rust (#1744), thanks @Pushkarm029
+- Ported `KeltnerChannel` indicator to Rust (#1746), thanks @Pushkarm029
+- Ported `RelativeVolatilityIndex` indicator to Rust (#1748), thanks @Pushkarm029
+- Ported `RateOfChange` indicator to Rust (#1750), thanks @Pushkarm029
+- Ported `MovingAverageConvergenceDivergence` indicator to Rust (#1752), thanks @Pushkarm029
+- Ported `OnBalanceVolume` indicator to Rust (#1756), thanks @Pushkarm029
+- Ported `SpreadAnalyzer` indicator to Rust (#1762), thanks @Pushkarm029
+- Ported `KeltnerPosition` indicator to Rust (#1763), thanks @Pushkarm029
+- Ported `FuzzyCandlesticks` indicator to Rust (#1766), thanks @Pushkarm029
+
+### Breaking Changes
+- Renamed `Actor.subscribe_order_book_snapshots` and `unsubscribe_order_book_snapshots` to `subscribe_order_book_at_interval` and `unsubscribe_order_book_at_interval` respectively (this clarifies the method behavior where the handler then receives `OrderBook` at a regular interval, distinct from a collection of deltas representing a snapshot)
+
+### Fixes
+- Fixed `LIMIT` order fill behavior for `L2_MBP` and `L3_MBO` book types (was not honoring limit price as maker), thanks for reporting @dpmabo
+- Fixed `CashAccount` PnL calculations when opening a position with multiple fills, thanks @Otlk
+- Fixed msgspec encoding and decoding of `Environment` enum for `NautilusKernelConfig`
+- Fixed `OrderMatchingEngine` processing by book type for quotes and deltas (#1754), thanks @davidsblom
+- Fixed `DatabentoDataLoader.from_dbn_file` for `OrderBookDelta`s when `as_legacy_cython=False`
+- Fixed `DatabentoDataLoader` OHLCV bar schema loading (incorrectly accounting for display factor0, thanks for reporting @faysou
+- Fixed `DatabentoDataLoader` multiplier and round lot size decoding, thanks for reporting @faysou
+- Fixed Binance order report generation `active_symbols` type miss matching (#1729), thanks @DevRoss
+- Fixed Binance trade data websocket schemas (Binance no longer publish `b` buyer and `a` seller order IDs)
+- Fixed `BinanceFuturesInstrumentProvider` parsing of min notional, thanks for the report @AnthonyVince
+- Fixed `BinanceSpotInstrumentProvider` parsing of min and max notional
+- Fixed Bybit order book deltas subscriptions for `INVERSE` product type
+- Fixed `Cache` documentation for `get` (was the same as add), thanks for reporting @faysou
+
+---
+
 # NautilusTrader 1.195.0 Beta
 
 Released on 17th June 2024 (UTC).
@@ -709,7 +767,7 @@ We recommend you do not upgrade to this version if you're using the Betfair adap
 - Renamed `Actor.handle_order_book_delta` to `handle_order_book_deltas` (to more clearly reflect the `OrderBookDeltas` data type)
 - Renamed `Actor.on_order_book_delta` to `on_order_book_deltas` (to more clearly reflect the `OrderBookDeltas` data type)
 - Renamed `inverse_as_quote` to `use_quote_for_inverse` (ambiguous name, only applicable for notional calcs on inverse instruments)
-- Changed `Data` contract (custom data), [see docs](https://nautilustrader.io/docs/develop/concepts/advanced/data.html)
+- Changed `Data` contract (custom data), [see docs](https://nautilustrader.io/docs/latest/concepts/advanced/data.html)
 - Renamed core `LogMessage` to `LogEvent` to more clearly distinguish between the `message` field and the event struct itself (aligns with [vector](https://vector.dev/docs/about/under-the-hood/architecture/data-model/log/) language)
 - Renamed core `LogEvent.timestamp_ns` to `LogEvent.timestamp` (affects field name for JSON format)
 - Renamed core `LogEvent.msg` to `LogEvent.message` (affects field name for JSON format)

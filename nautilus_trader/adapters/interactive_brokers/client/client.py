@@ -433,7 +433,7 @@ class InteractiveBrokersClient(
         """
         if task.exception():
             self._log.error(
-                f"Error on `{task.get_name()}`: " f"{task.exception()!r}",
+                f"Error on `{task.get_name()}`: {task.exception()!r}",
             )
         else:
             if actions:

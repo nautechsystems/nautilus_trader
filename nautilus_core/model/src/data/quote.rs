@@ -54,9 +54,9 @@ pub struct QuoteTick {
     pub bid_size: Quantity,
     /// The top of book ask size.
     pub ask_size: Quantity,
-    /// The UNIX timestamp (nanoseconds) when the quote event occurred.
+    /// UNIX timestamp (nanoseconds) when the quote event occurred.
     pub ts_event: UnixNanos,
-    /// The UNIX timestamp (nanoseconds) when the struct was initialized.
+    /// UNIX timestamp (nanoseconds) when the struct was initialized.
     pub ts_init: UnixNanos,
 }
 

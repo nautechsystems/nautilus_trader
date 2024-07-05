@@ -158,7 +158,7 @@ cdef extern from "../includes/common.h":
         UUID4_t event_id;
         # The message category
         uint64_t ts_event;
-        # The UNIX timestamp (nanoseconds) when the object was initialized.
+        # UNIX timestamp (nanoseconds) when the object was initialized.
         uint64_t ts_init;
 
     # Represents a time event and its associated handler.

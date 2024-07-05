@@ -30,15 +30,23 @@ use rstest::*;
 use crate::{
     average::{
         ama::AdaptiveMovingAverage, dema::DoubleExponentialMovingAverage,
-        ema::ExponentialMovingAverage, hma::HullMovingAverage, rma::WilderMovingAverage,
-        sma::SimpleMovingAverage, vidya::VariableIndexDynamicAverage,
+        ema::ExponentialMovingAverage, hma::HullMovingAverage, lr::LinearRegression,
+        rma::WilderMovingAverage, sma::SimpleMovingAverage, vidya::VariableIndexDynamicAverage,
         vwap::VolumeWeightedAveragePrice, wma::WeightedMovingAverage, MovingAverageType,
     },
     momentum::{
-        bias::Bias, cmo::ChandeMomentumOscillator, rsi::RelativeStrengthIndex,
+        amat::ArcherMovingAveragesTrends, bb::BollingerBands, bias::Bias,
+        cci::CommodityChannelIndex, cmo::ChandeMomentumOscillator, dm::DirectionalMovement,
+        kvo::KlingerVolumeOscillator, macd::MovingAverageConvergenceDivergence,
+        obv::OnBalanceVolume, pressure::Pressure, psl::PsychologicalLine, roc::RateOfChange,
+        rsi::RelativeStrengthIndex, stochastics::Stochastics, swings::Swings,
         vhf::VerticalHorizontalFilter,
     },
-    ratio::efficiency_ratio::EfficiencyRatio,
+    ratio::{efficiency_ratio::EfficiencyRatio, spread_analyzer::SpreadAnalyzer},
+    volatility::{
+        dc::DonchianChannel, fuzzy_candlesticks::FuzzyCandlesticks, kc::KeltnerChannel,
+        kp::KeltnerPosition, rvi::RelativeVolatilityIndex, vr::VolatilityRatio,
+    },
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -151,12 +159,22 @@ pub fn indicator_wma_10() -> WeightedMovingAverage {
     WeightedMovingAverage::new(10, weights, Some(PriceType::Mid)).unwrap()
 }
 
+#[fixture]
+pub fn indicator_lr_10() -> LinearRegression {
+    LinearRegression::new(10).unwrap()
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Ratios
 ////////////////////////////////////////////////////////////////////////////////
 #[fixture]
 pub fn efficiency_ratio_10() -> EfficiencyRatio {
     EfficiencyRatio::new(10, Some(PriceType::Mid)).unwrap()
+}
+
+#[fixture]
+pub fn spread_analyzer_10() -> SpreadAnalyzer {
+    SpreadAnalyzer::new(10, InstrumentId::from("ETHUSDT-PERP.BINANCE")).unwrap()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -180,4 +198,126 @@ pub fn bias_10() -> Bias {
 #[fixture]
 pub fn vhf_10() -> VerticalHorizontalFilter {
     VerticalHorizontalFilter::new(10, Some(MovingAverageType::Simple)).unwrap()
+}
+
+#[fixture]
+pub fn kvo_345() -> KlingerVolumeOscillator {
+    KlingerVolumeOscillator::new(3, 4, 5, Some(MovingAverageType::Simple)).unwrap()
+}
+
+#[fixture]
+pub fn dm_10() -> DirectionalMovement {
+    DirectionalMovement::new(10, Some(MovingAverageType::Simple)).unwrap()
+}
+
+#[fixture]
+pub fn amat_345() -> ArcherMovingAveragesTrends {
+    ArcherMovingAveragesTrends::new(3, 4, 5, Some(MovingAverageType::Simple)).unwrap()
+}
+
+#[fixture]
+pub fn swings_10() -> Swings {
+    Swings::new(10).unwrap()
+}
+
+#[fixture]
+pub fn bb_10() -> BollingerBands {
+    BollingerBands::new(10, 0.1, Some(MovingAverageType::Simple)).unwrap()
+}
+
+#[fixture]
+pub fn stochastics_10() -> Stochastics {
+    Stochastics::new(10, 10).unwrap()
+}
+
+#[fixture]
+pub fn psl_10() -> PsychologicalLine {
+    PsychologicalLine::new(10, Some(MovingAverageType::Simple)).unwrap()
+}
+
+#[fixture]
+pub fn pressure_10() -> Pressure {
+    Pressure::new(10, Some(MovingAverageType::Simple), Some(1.0)).unwrap()
+}
+
+#[fixture]
+pub fn cci_10() -> CommodityChannelIndex {
+    CommodityChannelIndex::new(10, 2.0, Some(MovingAverageType::Simple)).unwrap()
+}
+
+#[fixture]
+pub fn macd_10() -> MovingAverageConvergenceDivergence {
+    MovingAverageConvergenceDivergence::new(
+        10,
+        8,
+        Some(MovingAverageType::Simple),
+        Some(PriceType::Bid),
+    )
+    .unwrap()
+}
+
+#[fixture]
+pub fn obv_10() -> OnBalanceVolume {
+    OnBalanceVolume::new(10).unwrap()
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Volatility
+////////////////////////////////////////////////////////////////////////////////
+#[fixture]
+pub fn vr_10() -> VolatilityRatio {
+    VolatilityRatio::new(
+        10,
+        10,
+        Some(MovingAverageType::Simple),
+        Some(false),
+        Some(10.0),
+    )
+    .unwrap()
+}
+
+#[fixture]
+pub fn dc_10() -> DonchianChannel {
+    DonchianChannel::new(10).unwrap()
+}
+
+#[fixture]
+pub fn rvi_10() -> RelativeVolatilityIndex {
+    RelativeVolatilityIndex::new(10, Some(10.0), Some(MovingAverageType::Simple)).unwrap()
+}
+
+#[fixture]
+pub fn kc_10() -> KeltnerChannel {
+    KeltnerChannel::new(
+        10,
+        2.0,
+        Some(MovingAverageType::Simple),
+        Some(MovingAverageType::Simple),
+        Some(true),
+        Some(0.0),
+    )
+    .unwrap()
+}
+
+#[fixture]
+pub fn kp_10() -> KeltnerPosition {
+    KeltnerPosition::new(
+        10,
+        2.0,
+        Some(MovingAverageType::Simple),
+        Some(MovingAverageType::Simple),
+        Some(true),
+        Some(0.0),
+    )
+    .unwrap()
+}
+
+#[fixture]
+pub fn roc_10() -> RateOfChange {
+    RateOfChange::new(10, Some(true)).unwrap()
+}
+
+#[fixture]
+pub fn fuzzy_candlesticks_10() -> FuzzyCandlesticks {
+    FuzzyCandlesticks::new(10, 0.1, 0.15, 0.2, 0.3).unwrap()
 }

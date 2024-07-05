@@ -29,7 +29,7 @@ pub struct ClientOrderIdGenerator {
 impl ClientOrderIdGenerator {
     /// Creates a new [`ClientOrderIdGenerator`] instance.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         trader_id: TraderId,
         strategy_id: StrategyId,
         initial_count: usize,
@@ -52,7 +52,7 @@ impl ClientOrderIdGenerator {
     }
 
     #[must_use]
-    pub fn count(&self) -> usize {
+    pub const fn count(&self) -> usize {
         self.count
     }
 
@@ -110,15 +110,15 @@ mod tests {
 
         assert_eq!(
             result1,
-            ClientOrderId::new("O-19700101-0000-001-001-1").unwrap()
+            ClientOrderId::new("O-19700101-000000-001-001-1").unwrap()
         );
         assert_eq!(
             result2,
-            ClientOrderId::new("O-19700101-0000-001-001-2").unwrap()
+            ClientOrderId::new("O-19700101-000000-001-001-2").unwrap()
         );
         assert_eq!(
             result3,
-            ClientOrderId::new("O-19700101-0000-001-001-3").unwrap()
+            ClientOrderId::new("O-19700101-000000-001-001-3").unwrap()
         );
     }
 
@@ -131,15 +131,15 @@ mod tests {
 
         assert_eq!(
             result1,
-            ClientOrderId::new("O-19700101-0000-001-001-6").unwrap()
+            ClientOrderId::new("O-19700101-000000-001-001-6").unwrap()
         );
         assert_eq!(
             result2,
-            ClientOrderId::new("O-19700101-0000-001-001-7").unwrap()
+            ClientOrderId::new("O-19700101-000000-001-001-7").unwrap()
         );
         assert_eq!(
             result3,
-            ClientOrderId::new("O-19700101-0000-001-001-8").unwrap()
+            ClientOrderId::new("O-19700101-000000-001-001-8").unwrap()
         );
     }
 
@@ -153,7 +153,7 @@ mod tests {
 
         assert_eq!(
             result,
-            ClientOrderId::new("O-19700101-0000-001-001-1").unwrap()
+            ClientOrderId::new("O-19700101-000000-001-001-1").unwrap()
         );
     }
 }

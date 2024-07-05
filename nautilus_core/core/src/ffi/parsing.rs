@@ -163,7 +163,7 @@ pub unsafe extern "C" fn min_increment_precision_from_cstr(ptr: *const c_char) -
 
 /// Return a `bool` value from the given `u8`.
 #[must_use]
-pub fn u8_as_bool(value: u8) -> bool {
+pub const fn u8_as_bool(value: u8) -> bool {
     value != 0
 }
 

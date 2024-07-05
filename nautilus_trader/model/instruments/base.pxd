@@ -85,9 +85,9 @@ cdef class Instrument(Data):
     cdef readonly dict info
     """The raw info for the instrument.\n\n:returns: `dict[str, object]`"""
     cdef readonly uint64_t ts_event
-    """The UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
+    """UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t ts_init
-    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
+    """UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
 
     @staticmethod
     cdef Instrument base_from_dict_c(dict values)

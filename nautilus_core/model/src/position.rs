@@ -951,7 +951,7 @@ mod tests {
             &order1,
             &audusd_sim,
             None,
-            Some(PositionId::new("P-19700101-0000-001-001-1").unwrap()),
+            Some(PositionId::new("P-19700101-000000-001-001-1").unwrap()),
             Some(Price::from("1.0")),
             None,
             None,
@@ -964,7 +964,7 @@ mod tests {
             &order2,
             &audusd_sim,
             Some(TradeId::new("1").unwrap()),
-            Some(PositionId::new("P-19700101-0000-001-001-1").unwrap()),
+            Some(PositionId::new("P-19700101-000000-001-001-1").unwrap()),
             Some(Price::from("1.00001")),
             Some(Quantity::from(50_000)),
             None,
@@ -975,7 +975,7 @@ mod tests {
             &order2,
             &audusd_sim,
             Some(TradeId::new("2").unwrap()),
-            Some(PositionId::new("P-19700101-0000-001-001-1").unwrap()),
+            Some(PositionId::new("P-19700101-000000-001-001-1").unwrap()),
             Some(Price::from("1.00003")),
             Some(Quantity::from(50_000)),
             None,
@@ -1018,7 +1018,7 @@ mod tests {
         );
         assert_eq!(
             format!("{position}"),
-            "Position(FLAT AUD/USD.SIM, id=P-19700101-0000-001-001-1)"
+            "Position(FLAT AUD/USD.SIM, id=P-19700101-000000-001-001-1)"
         );
     }
 
@@ -1043,7 +1043,7 @@ mod tests {
             &order1,
             &audusd_sim,
             Some(TradeId::new("1").unwrap()),
-            Some(PositionId::new("P-19700101-0000-001-001-1").unwrap()),
+            Some(PositionId::new("P-19700101-000000-001-001-1").unwrap()),
             Some(Price::from("1.0")),
             None,
             None,
@@ -1055,7 +1055,7 @@ mod tests {
             &order2,
             &audusd_sim,
             Some(TradeId::new("2").unwrap()),
-            Some(PositionId::new("P-19700101-0000-001-001-1").unwrap()),
+            Some(PositionId::new("P-19700101-000000-001-001-1").unwrap()),
             Some(Price::from("1.0")),
             None,
             None,
@@ -1098,7 +1098,7 @@ mod tests {
         );
         assert_eq!(
             format!("{position}"),
-            "Position(FLAT AUD/USD.SIM, id=P-19700101-0000-001-001-1)"
+            "Position(FLAT AUD/USD.SIM, id=P-19700101-000000-001-001-1)"
         );
     }
 
@@ -1462,7 +1462,7 @@ mod tests {
             &order1,
             &btcusdt,
             Some(TradeId::from("1")),
-            Some(PositionId::from("P-19700101-0000-001-001-1")),
+            Some(PositionId::from("P-19700101-000000-001-001-1")),
             Some(Price::from("10000.0")),
             None,
             Some(commission1),
@@ -1483,7 +1483,7 @@ mod tests {
             &order2,
             &btcusdt,
             Some(TradeId::from("2")),
-            Some(PositionId::from("P-19700101-0000-001-001-1")),
+            Some(PositionId::from("P-19700101-000000-001-001-1")),
             Some(Price::from("9999.0")),
             None,
             Some(commission2),
@@ -1511,7 +1511,7 @@ mod tests {
             &order3,
             &btcusdt,
             Some(TradeId::from("3")),
-            Some(PositionId::from("P-19700101-0000-001-001-1")),
+            Some(PositionId::from("P-19700101-000000-001-001-1")),
             Some(Price::from("10001.0")),
             None,
             Some(commission3),
@@ -1539,7 +1539,7 @@ mod tests {
             &order4,
             &btcusdt,
             Some(TradeId::from("4")),
-            Some(PositionId::from("P-19700101-0000-001-001-1")),
+            Some(PositionId::from("P-19700101-000000-001-001-1")),
             Some(Price::from("10003.0")),
             None,
             Some(commission4),
@@ -1567,7 +1567,7 @@ mod tests {
             &order5,
             &btcusdt,
             Some(TradeId::from("5")),
-            Some(PositionId::from("P-19700101-0000-001-001-1")),
+            Some(PositionId::from("P-19700101-000000-001-001-1")),
             Some(Price::from("10005.0")),
             None,
             Some(commission5),
@@ -1583,7 +1583,7 @@ mod tests {
         assert_eq!(position.avg_px_open, 9_999.881_559_220_39);
         assert_eq!(
             format!("{position}"),
-            "Position(LONG 19.000000 BTCUSDT.BINANCE, id=P-19700101-0000-001-001-1)"
+            "Position(LONG 19.000000 BTCUSDT.BINANCE, id=P-19700101-000000-001-001-1)"
         );
     }
 

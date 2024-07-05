@@ -37,9 +37,14 @@ from nautilus_trader.model.identifiers import TraderId
 # *** IT IS NOT INTENDED TO BE USED TO TRADE LIVE WITH REAL MONEY. ***
 
 # SPOT/LINEAR
-product_type = BybitProductType.LINEAR
+product_type = BybitProductType.SPOT
 symbol = f"ETHUSDT-{product_type.value.upper()}"
 trade_size = Decimal("0.010")
+
+# INVERSE
+# product_type = BybitProductType.INVERSE
+# symbol = f"XRPUSD-{product_type.value.upper()}"  # Use for inverse
+# trade_size = Decimal("100")  # Use for inverse
 
 # Configure the trading node
 config_node = TradingNodeConfig(
@@ -92,7 +97,7 @@ strat_config = EMACrossStopEntryConfig(
     trailing_offset=Decimal("0.010"),
     trailing_offset_type="BASIS_POINTS",
     trigger_type="LAST_TRADE",
-    trade_size=Decimal("0.010"),
+    trade_size=trade_size,
 )
 # Instantiate your strategy
 strategy = EMACrossStopEntry(config=strat_config)
@@ -100,7 +105,7 @@ strategy = EMACrossStopEntry(config=strat_config)
 # Add your strategies and modules
 node.trader.add_strategy(strategy)
 
-# Register your client factories with the node (can take user defined factories)
+# Register your client factories with the node (can take user-defined factories)
 node.add_data_client_factory("BYBIT", BybitLiveDataClientFactory)
 node.add_exec_client_factory("BYBIT", BybitLiveExecClientFactory)
 node.build()

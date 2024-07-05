@@ -68,7 +68,7 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     Configuration for ``LiveExecEngine`` instances.
 
     The purpose of the in-flight order check is for live reconciliation, events
-    emitted from the exchange may have been lost at some point - leaving an order
+    emitted from the venue may have been lost at some point - leaving an order
     in an intermediate state, the check can recover these events via status reports.
 
     Parameters
@@ -81,7 +81,7 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     filter_unclaimed_external_orders : bool, default False
         If unclaimed order events with an EXTERNAL strategy ID should be filtered/dropped.
     filter_position_reports : bool, default False
-        If `PositionStatusReport`s are filtered from reconciliation.
+        If position status reports are filtered from reconciliation.
         This may be applicable when other nodes are trading the same instrument(s), on the same
         account - which could cause conflicts in position status.
     inflight_check_interval_ms : NonNegativeInt, default 2_000

@@ -318,7 +318,7 @@ mod tests {
         let display = format!("{order_updated}");
         assert_eq!(
             display,
-            "OrderUpdated(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-0000-001-001-1, venue_order_id=001, account_id=SIM-001, quantity=100, price=22_000, trigger_price=None, ts_event=0)"
+            "OrderUpdated(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1, venue_order_id=001, account_id=SIM-001, quantity=100, price=22_000, trigger_price=None, ts_event=0)"
         );
     }
 }

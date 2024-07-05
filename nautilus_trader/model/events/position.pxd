@@ -79,9 +79,9 @@ cdef class PositionEvent(Event):
     cdef readonly Money unrealized_pnl
     """The unrealized PnL for the position (including commissions).\n\n:returns: `Money`"""
     cdef readonly uint64_t ts_opened
-    """The UNIX timestamp (nanoseconds) when the position was opened.\n\n:returns: `uint64_t`"""
+    """UNIX timestamp (nanoseconds) when the position was opened.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t ts_closed
-    """The UNIX timestamp (nanoseconds) when the position was closed.\n\n:returns: `uint64_t`"""
+    """UNIX timestamp (nanoseconds) when the position was closed.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t duration_ns
     """The total open duration (nanoseconds).\n\n:returns: `uint64_t`"""
 

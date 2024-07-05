@@ -126,7 +126,7 @@ pub fn init_logging(
 }
 
 #[must_use]
-pub fn map_log_level_to_filter(log_level: LogLevel) -> LevelFilter {
+pub const fn map_log_level_to_filter(log_level: LogLevel) -> LevelFilter {
     match log_level {
         LogLevel::Off => LevelFilter::Off,
         LogLevel::Debug => LevelFilter::Debug,

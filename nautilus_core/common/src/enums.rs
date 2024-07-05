@@ -229,7 +229,7 @@ pub enum LogColor {
 
 impl LogColor {
     #[must_use]
-    pub fn as_ansi(&self) -> &str {
+    pub const fn as_ansi(&self) -> &str {
         match *self {
             Self::Normal => "",
             Self::Green => "\x1b[92m",

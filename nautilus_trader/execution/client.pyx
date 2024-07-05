@@ -293,7 +293,7 @@ cdef class ExecutionClient(Component):
         reported : bool
             If the balances are reported directly from the exchange.
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) when the account state event occurred.
+            UNIX timestamp (nanoseconds) when the account state event occurred.
         info : dict [str, object]
             The additional implementation specific account information.
 
@@ -333,7 +333,7 @@ cdef class ExecutionClient(Component):
         client_order_id : ClientOrderId
             The client order ID.
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) when the order submitted event occurred.
+            UNIX timestamp (nanoseconds) when the order submitted event occurred.
 
         """
         # Generate event
@@ -372,7 +372,7 @@ cdef class ExecutionClient(Component):
         reason : datetime
             The order rejected reason.
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) when the order rejected event occurred.
+            UNIX timestamp (nanoseconds) when the order rejected event occurred.
 
         """
         # Generate event
@@ -412,7 +412,7 @@ cdef class ExecutionClient(Component):
         venue_order_id : VenueOrderId
             The venue order ID (assigned by the venue).
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) when the order accepted event occurred.
+            UNIX timestamp (nanoseconds) when the order accepted event occurred.
 
         """
         # Generate event
@@ -455,7 +455,7 @@ cdef class ExecutionClient(Component):
         reason : str
             The order update rejected reason.
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) when the order update rejection event occurred.
+            UNIX timestamp (nanoseconds) when the order update rejection event occurred.
 
         """
         # Generate event
@@ -499,7 +499,7 @@ cdef class ExecutionClient(Component):
         reason : str
             The order cancel rejected reason.
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) when the order cancel rejected event occurred.
+            UNIX timestamp (nanoseconds) when the order cancel rejected event occurred.
 
         """
         # Generate event
@@ -550,7 +550,7 @@ cdef class ExecutionClient(Component):
         trigger_price : Price, optional with no default so ``None`` must be passed explicitly
             The orders current trigger price.
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) when the order update event occurred.
+            UNIX timestamp (nanoseconds) when the order update event occurred.
         venue_order_id_modified : bool
             If the ID was modified for this event.
 
@@ -606,7 +606,7 @@ cdef class ExecutionClient(Component):
         venue_order_id : VenueOrderId
             The venue order ID (assigned by the venue).
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) when order canceled event occurred.
+            UNIX timestamp (nanoseconds) when order canceled event occurred.
 
         """
         # Generate event
@@ -646,7 +646,7 @@ cdef class ExecutionClient(Component):
         venue_order_id : VenueOrderId
             The venue order ID (assigned by the venue).
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) when the order triggered event occurred.
+            UNIX timestamp (nanoseconds) when the order triggered event occurred.
 
         """
         # Generate event
@@ -686,7 +686,7 @@ cdef class ExecutionClient(Component):
         venue_order_id : VenueOrderId
             The venue order ID (assigned by the venue).
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) when the order expired event occurred.
+            UNIX timestamp (nanoseconds) when the order expired event occurred.
 
         """
         # Generate event
@@ -756,7 +756,7 @@ cdef class ExecutionClient(Component):
         liquidity_side : LiquiditySide {``NO_LIQUIDITY_SIDE``, ``MAKER``, ``TAKER``}
             The execution liquidity side.
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) when the order filled event occurred.
+            UNIX timestamp (nanoseconds) when the order filled event occurred.
 
         """
         Condition.not_none(instrument_id, "instrument_id")

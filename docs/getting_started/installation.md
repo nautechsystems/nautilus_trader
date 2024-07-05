@@ -5,7 +5,7 @@ NautilusTrader is tested and supported for Python 3.10-3.12 on the following 64-
 | Operating System       | Supported Versions    | CPU Architecture  |
 |------------------------|-----------------------|-------------------|
 | Linux (Ubuntu)         | 20.04 or later        | x86_64            |
-| macOS                  | 12 or later           | x86_64, ARM64     |
+| macOS                  | 14 or later           | ARM64             |
 | Windows Server         | 2022 or later         | x86_64            |
 
 :::tip
@@ -42,7 +42,7 @@ For MacBook Pro M1/M2, make sure your Python installed using pyenv is configured
 See https://pyo3.rs/latest/getting_started#virtualenvs.
 
 It's possible to install from source using `pip` if you first install the build dependencies
-as specified in the `pyproject.toml`. However, we highly recommend installing using [poetry](https://python-poetry.org/) as below.
+as specified in the `pyproject.toml`. We highly recommend installing using [poetry](https://python-poetry.org/) as below.
 
 1. Install [rustup](https://rustup.rs/) (the Rust toolchain installer):
    - Linux and macOS:

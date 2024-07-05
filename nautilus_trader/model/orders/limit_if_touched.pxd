@@ -36,7 +36,7 @@ cdef class LimitIfTouchedOrder(Order):
     cdef readonly bint is_triggered
     """If the order has been triggered.\n\n:returns: `bool`"""
     cdef readonly uint64_t ts_triggered
-    """The UNIX timestamp (nanoseconds) when the order was triggered (0 if not triggered).\n\n:returns: `uint64_t`"""
+    """UNIX timestamp (nanoseconds) when the order was triggered (0 if not triggered).\n\n:returns: `uint64_t`"""
 
     @staticmethod
     cdef LimitIfTouchedOrder create_c(OrderInitialized init)

@@ -83,7 +83,8 @@ config_node = TradingNodeConfig(
             base_url_http=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
             product_types=[product_type],  # Will load all instruments
-            testnet=False,  # If client uses the testnet
+            demo=False,  # If client uses the demo API
+            testnet=False,  # If client uses the testnet API
         ),
     },
     exec_clients={
@@ -94,7 +95,8 @@ config_node = TradingNodeConfig(
             base_url_ws=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
             product_types=[product_type],
-            testnet=False,  # If client uses the testnet
+            demo=False,  # If client uses the demo API
+            testnet=False,  # If client uses the testnet API
         ),
     },
     timeout_connection=20.0,
@@ -122,7 +124,7 @@ strategy = VolatilityMarketMaker(config=strat_config)
 # Add your strategies and modules
 node.trader.add_strategy(strategy)
 
-# Register your client factories with the node (can take user defined factories)
+# Register your client factories with the node (can take user-defined factories)
 node.add_data_client_factory("BYBIT", BybitLiveDataClientFactory)
 node.add_exec_client_factory("BYBIT", BybitLiveExecClientFactory)
 node.build()

@@ -76,18 +76,18 @@ pub struct DatabentoImbalance {
     pub side: OrderSide,
     // A venue-specific character code. For Nasdaq, contains the raw Price Variation Indicator.
     pub significant_imbalance: c_char,
-    // The UNIX timestamp (nanoseconds) when the data event occurred.
+    // UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
-    // The UNIX timestamp (nanoseconds) when the data object was received by Databento.
+    // UNIX timestamp (nanoseconds) when the data object was received by Databento.
     pub ts_recv: UnixNanos,
-    // The UNIX timestamp (nanoseconds) when the data object was initialized.
+    // UNIX timestamp (nanoseconds) when the data object was initialized.
     pub ts_init: UnixNanos,
 }
 
 impl DatabentoImbalance {
     /// Creates a new [`DatabentoImbalance`] instance.
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub const fn new(
         instrument_id: InstrumentId,
         ref_price: Price,
         cont_book_clr_price: Price,
@@ -142,22 +142,22 @@ pub struct DatabentoStatistics {
     pub stat_flags: u8,
     // The message sequence number assigned at the venue.
     pub sequence: u32,
-    // The UNIX timestamp (nanoseconds) Databento `ts_ref` reference timestamp).
+    // UNIX timestamp (nanoseconds) Databento `ts_ref` reference timestamp).
     pub ts_ref: UnixNanos,
     // The matching-engine-sending timestamp expressed as the number of nanoseconds before the Databento `ts_recv`.
     pub ts_in_delta: i32,
-    // The UNIX timestamp (nanoseconds) when the data event occurred.
+    // UNIX timestamp (nanoseconds) when the data event occurred.
     pub ts_event: UnixNanos,
-    // The UNIX timestamp (nanoseconds) when the data object was received by Databento.
+    // UNIX timestamp (nanoseconds) when the data object was received by Databento.
     pub ts_recv: UnixNanos,
-    // The UNIX timestamp (nanoseconds) when the data object was initialized.
+    // UNIX timestamp (nanoseconds) when the data object was initialized.
     pub ts_init: UnixNanos,
 }
 
 impl DatabentoStatistics {
     /// Creates a new [`DatabentoStatistics`] instance.
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub const fn new(
         instrument_id: InstrumentId,
         stat_type: DatabentoStatisticType,
         update_action: DatabentoStatisticUpdateAction,

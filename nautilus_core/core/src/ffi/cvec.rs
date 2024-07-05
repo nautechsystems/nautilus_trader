@@ -43,7 +43,7 @@ unsafe impl Send for CVec {}
 
 impl CVec {
     #[must_use]
-    pub fn empty() -> Self {
+    pub const fn empty() -> Self {
         Self {
             // Explicitly type cast the pointer to some type to satisfy the
             // compiler. Since the pointer is null it works for any type.
@@ -100,7 +100,7 @@ pub extern "C" fn cvec_drop(cvec: CVec) {
 
 #[cfg(feature = "ffi")]
 #[no_mangle]
-pub extern "C" fn cvec_new() -> CVec {
+pub const extern "C" fn cvec_new() -> CVec {
     CVec::empty()
 }
 

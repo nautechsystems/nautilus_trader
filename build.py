@@ -102,7 +102,7 @@ def _build_rust_libs() -> None:
         print(" ".join(cmd_args))
 
         subprocess.run(
-            cmd_args,  # noqa
+            cmd_args,
             cwd="nautilus_core",
             check=True,
         )
@@ -122,7 +122,6 @@ Options.fast_fail = True  # Abort the compilation on the first error occurred
 Options.annotate = ANNOTATION_MODE  # Create annotated HTML files for each .pyx
 if ANNOTATION_MODE:
     Options.annotate_coverage_xml = "coverage.xml"
-Options.fast_fail = True  # Abort compilation on first error
 Options.warning_errors = True  # Treat compiler warnings as errors
 Options.extra_warnings = True
 
@@ -300,7 +299,7 @@ def _strip_unneeded_symbols() -> None:
             else:
                 raise RuntimeError(f"Cannot strip symbols for platform {platform.system()}")
             subprocess.run(
-                strip_cmd,  # type: ignore [arg-type] # noqa
+                strip_cmd,  # type: ignore [arg-type]
                 check=True,
                 capture_output=True,
             )

@@ -15,7 +15,13 @@
 
 //! A high-performance raw TCP client implementation with TLS capability.
 
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use nautilus_core::python::to_pyruntime_err;
 use pyo3::prelude::*;
@@ -77,7 +83,7 @@ impl SocketConfig {
     }
 }
 
-/// Creates a TcpStream with the server
+/// Creates a TcpStream with the server.
 ///
 /// The stream can be encrypted with TLS or Plain. The stream is split into
 /// read and write ends.
@@ -301,7 +307,7 @@ impl Drop for SocketClientInner {
 pub struct SocketClient {
     writer: SharedTcpWriter,
     controller_task: task::JoinHandle<()>,
-    disconnect_mode: Arc<Mutex<bool>>,
+    disconnect_mode: Arc<AtomicBool>,
     suffix: Vec<u8>,
 }
 
@@ -315,7 +321,8 @@ impl SocketClient {
         let suffix = config.suffix.clone();
         let inner = SocketClientInner::connect_url(config).await?;
         let writer = inner.writer.clone();
-        let disconnect_mode = Arc::new(Mutex::new(false));
+        let disconnect_mode = Arc::new(AtomicBool::new(false));
+
         let controller_task = Self::spawn_controller_task(
             inner,
             disconnect_mode.clone(),
@@ -343,7 +350,22 @@ impl SocketClient {
     /// Controller task will periodically check the disconnect mode
     /// and shutdown the client if it is not alive.
     pub async fn disconnect(&self) {
-        *self.disconnect_mode.lock().await = true;
+        self.disconnect_mode.store(true, Ordering::SeqCst);
+
+        match tokio::time::timeout(Duration::from_secs(5), async {
+            while !self.is_disconnected() {
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        {
+            Ok(_) => {
+                debug!("Controller task finished");
+            }
+            Err(_) => {
+                error!("Timeout waiting for controller task to finish");
+            }
+        }
     }
 
     pub async fn send_bytes(&self, data: &[u8]) -> Result<(), std::io::Error> {
@@ -359,21 +381,17 @@ impl SocketClient {
 
     fn spawn_controller_task(
         mut inner: SocketClientInner,
-        disconnect_mode: Arc<Mutex<bool>>,
+        disconnect_mode: Arc<AtomicBool>,
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
     ) -> task::JoinHandle<()> {
         task::spawn(async move {
-            let mut disconnect_flag;
             loop {
-                sleep(Duration::from_secs(1)).await;
+                sleep(Duration::from_millis(100)).await;
 
                 // Check if client needs to disconnect
-                let guard = disconnect_mode.lock().await;
-                disconnect_flag = *guard;
-                drop(guard);
-
-                match (disconnect_flag, inner.is_alive()) {
+                let disconnected = disconnect_mode.load(Ordering::SeqCst);
+                match (disconnected, inner.is_alive()) {
                     (false, false) => match inner.reconnect().await {
                         Ok(()) => {
                             debug!("Reconnected successfully");
@@ -446,7 +464,7 @@ impl SocketClient {
 
     /// Closes the client heart beat and reader task.
     ///
-    /// The connection is not completely closed the till all references
+    /// The connection is not completely closed until all references
     /// to the client are gone and the client is dropped.
     ///
     /// # Safety
@@ -456,10 +474,8 @@ impl SocketClient {
     #[pyo3(name = "disconnect")]
     fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let disconnect_mode = slf.disconnect_mode.clone();
-        debug!("Setting disconnect mode to true");
-
         pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
-            *disconnect_mode.lock().await = true;
+            disconnect_mode.store(true, Ordering::SeqCst);
             Ok(())
         })
     }
@@ -471,7 +487,7 @@ impl SocketClient {
     /// terminate.
     ///
     /// This is particularly useful for check why a `send` failed. It could
-    /// because the connection disconnected and the client is still alive
+    /// be because the connection disconnected and the client is still alive
     /// and reconnecting. In such cases the send can be retried after some
     /// delay
     #[getter]
@@ -680,9 +696,8 @@ counter = Counter()",
         // check that messages were received correctly after reconnecting
         assert_eq!(count_value, N + N);
 
-        // Shutdown client and wait for read task to terminate
+        // Shutdown client
         client.disconnect().await;
-        sleep(Duration::from_secs(1)).await;
         assert!(client.is_disconnected());
     }
 }

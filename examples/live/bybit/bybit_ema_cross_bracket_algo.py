@@ -123,7 +123,7 @@ exec_algorithm = TWAPExecAlgorithm()
 node.trader.add_strategy(strategy)
 node.trader.add_exec_algorithm(exec_algorithm)
 
-# Register your client factories with the node (can take user defined factories)
+# Register your client factories with the node (can take user-defined factories)
 node.add_data_client_factory("BYBIT", BybitLiveDataClientFactory)
 node.add_exec_client_factory("BYBIT", BybitLiveExecClientFactory)
 node.build()

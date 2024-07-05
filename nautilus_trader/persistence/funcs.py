@@ -104,7 +104,7 @@ def urisafe_instrument_id(instrument_id: InstrumentId | str) -> str:
 def combine_filters(*filters):
     filters = tuple(x for x in filters if x is not None)
     if len(filters) == 0:
-        return
+        return None
     elif len(filters) == 1:
         return filters[0]
     else:

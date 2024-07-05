@@ -6,7 +6,7 @@ This developer guide provides instructions on how to develop an integration adap
 Adapters provide connectivity to trading venues and data providers - converting their raw API
 into a unified interface.
 
-## Structure of an Adapter
+## Structure of an adapter
 
 An adapter typically consists of several components:
 1. **Instrument Provider:** Supplies instrument definitions
@@ -14,7 +14,7 @@ An adapter typically consists of several components:
 3. **Execution Client:** Handles order execution and management
 5. **Configuration:** Configures the client settings
 
-## Steps to Implement a New Adapter
+## Adapter implementation steps
 
 1. Create a new Python subpackage for your adapter
 2. Implement the Instrument Provider by inheriting from `InstrumentProvider` and implementing the necessary methods to load instruments
@@ -23,11 +23,11 @@ An adapter typically consists of several components:
 5. Create configuration classes to hold your adapter’s settings
 6. Test your adapter thoroughly to ensure all methods are correctly implemented and the adapter works as expected
 
-## Template for Building an Adapter
+## Template for building an adapter
 
 Below is a step-by-step guide to building an adapter for a new data provider using the provided template.
 
-### Instrument Provider
+### InstrumentProvider
 
 The `InstrumentProvider` supplies instrument definitions available on the venue. This 
 includes loading all available instruments, specific instruments by ID, and applying filters to the 
@@ -57,7 +57,7 @@ class TemplateInstrumentProvider(InstrumentProvider):
 - `load_ids_async`: Loads specific instruments by their IDs
 - `load_async`: Loads a single instrument by its ID
 
-### Data Client
+### DataClient
 
 The `LiveDataClient` handles the subscription and management of data feeds that are not specifically 
 related to market data. This might include news feeds, custom data streams, or other data sources 
@@ -104,7 +104,7 @@ class TemplateLiveDataClient(LiveDataClient):
 - `_unsubscribe`: Unsubscribes from a specific data type
 - `_request`: Requests data from the provider
 
-### Market Data Client
+### MarketDataClient
 
 The `MarketDataClient` handles market-specific data such as order books, top-of-book quotes and trade ticks, 
 and instrument status updates. It focuses on providing historical and real-time market data that is essential for 
@@ -156,7 +156,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
 - `_subscribe_order_book_deltas`: Subscribes to order book delta updates
 - `_unsubscribe_order_book_deltas`: Unsubscribes from order book delta updates
 
-### Execution Client
+### ExecutionClient
 
 The `ExecutionClient` is responsible for order management, including submission, modification, and 
 cancellation of orders. It is a crucial component of the adapter that interacts with the venues 

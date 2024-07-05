@@ -63,13 +63,13 @@ cdef class FuturesSpread(Instrument):
     strategy_type : str
         The strategy type for the spread.
     activation_ns : uint64_t
-        The UNIX timestamp (nanoseconds) for contract activation.
+        UNIX timestamp (nanoseconds) for contract activation.
     expiration_ns : uint64_t
-        The UNIX timestamp (nanoseconds) for contract expiration.
+        UNIX timestamp (nanoseconds) for contract expiration.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the data object was initialized.
+        UNIX timestamp (nanoseconds) when the data object was initialized.
     exchange : str, optional
         The exchange ISO 10383 Market Identifier Code (MIC) where the instrument trades.
     info : dict[str, object], optional

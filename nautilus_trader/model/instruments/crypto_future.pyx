@@ -52,9 +52,9 @@ cdef class CryptoFuture(Instrument):
     is_inverse : bool
         If the instrument costing is inverse (quantity expressed in quote currency units).
     activation_ns : uint64_t
-        The UNIX timestamp (nanoseconds) for contract activation.
+        UNIX timestamp (nanoseconds) for contract activation.
     expiration_ns : uint64_t
-        The UNIX timestamp (nanoseconds) for contract expiration.
+        UNIX timestamp (nanoseconds) for contract expiration.
     price_precision : int
         The price decimal precision.
     size_precision : int
@@ -72,9 +72,9 @@ cdef class CryptoFuture(Instrument):
     taker_fee : Decimal
         The fee rate for liquidity takers as a percentage of order value.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the data object was initialized.
+        UNIX timestamp (nanoseconds) when the data object was initialized.
     max_quantity : Quantity, optional
         The maximum allowable order quantity.
     min_quantity : Quantity, optional

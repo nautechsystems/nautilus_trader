@@ -25,9 +25,9 @@ cdef class CryptoFuture(Instrument):
     cdef readonly Currency settlement_currency
     """The settlement currency for the contract.\n\n:returns: `Currency`"""
     cdef readonly uint64_t activation_ns
-    """The UNIX timestamp (nanoseconds) for contract activation.\n\n:returns: `unit64_t`"""
+    """UNIX timestamp (nanoseconds) for contract activation.\n\n:returns: `unit64_t`"""
     cdef readonly uint64_t expiration_ns
-    """The UNIX timestamp (nanoseconds) for contract expiration.\n\n:returns: `unit64_t`"""
+    """UNIX timestamp (nanoseconds) for contract expiration.\n\n:returns: `unit64_t`"""
 
     @staticmethod
     cdef CryptoFuture from_dict_c(dict values)

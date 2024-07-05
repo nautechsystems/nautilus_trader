@@ -30,7 +30,7 @@ from nautilus_trader.model.identifiers import Venue
 # The reason for their use is to reduce redundant/needless tests which simply
 # assert that a `NotImplementedError` is raised when calling abstract methods.
 # These tests are expensive to maintain (as they must be kept in line with any
-# refactorings), and offer little to no benefit in return. However, the intention
+# refactorings), and offer little to no benefit in return. The intention
 # is for all method implementations to be fully covered by tests.
 
 # *** THESE PRAGMA: NO COVER COMMENTS MUST BE REMOVED IN ANY IMPLEMENTATION. ***
@@ -137,6 +137,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     | _request                               | optional    |
     | _request_instrument                    | optional    |
     | _request_instruments                   | optional    |
+    | _request_order_book_snapshot           | optional    |
     | _request_quote_ticks                   | optional    |
     | _request_trade_ticks                   | optional    |
     | _request_bars                          | optional    |
@@ -309,6 +310,16 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     ) -> None:
         raise NotImplementedError(
             "method `_request_instruments` must be implemented in the subclass",
+        )  # pragma: no cover
+
+    async def _request_order_book_snapshot(
+        self,
+        instrument_id: InstrumentId,
+        limit: int,
+        correlation_id: UUID4,
+    ) -> None:
+        raise NotImplementedError(
+            "method `_request_quote_tick` must be implemented in the subclass",
         )  # pragma: no cover
 
     async def _request_quote_ticks(

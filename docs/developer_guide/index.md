@@ -19,7 +19,7 @@ So we get the best of both worlds - with Pythons clean straight forward syntax, 
 potential to extract several orders of magnitude greater runtime performance through compiled C 
 dynamic libraries.
 
-The main development and runtime environment we are working in is of course Python. However with the 
+The main development and runtime environment we are working in is of course Python. With the 
 introduction of Cython syntax throughout the production codebase in `.pyx` and `.pxd` files - it’s 
 important to be aware of how the CPython implementation of Python interacts with the underlying 
 CPython API, and the NautilusTrader C extension modules which Cython produces.

@@ -152,6 +152,7 @@ impl DatabentoLiveClient {
         schema: String,
         symbols: Vec<String>,
         start: Option<u64>,
+        snapshot: Option<bool>,
     ) -> PyResult<()> {
         let stype_in = infer_symbology_type(symbols.first().unwrap());
         let symbols: Vec<&str> = symbols.iter().map(|s| s.as_str()).collect();
@@ -167,6 +168,7 @@ impl DatabentoLiveClient {
                 .map_err(to_pyvalue_err)?;
             sub.start = Some(start);
         };
+        sub.use_snapshot = snapshot.unwrap_or(false);
 
         self.send_command(LiveCommand::Subscribe(sub))
     }

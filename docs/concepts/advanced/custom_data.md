@@ -1,6 +1,6 @@
 # Custom Data
 Due to the modular nature of the Nautilus design, it is possible to set up systems 
-with very flexible data streams, including custom user defined data types. This
+with very flexible data streams, including custom user-defined data types. This
 guide covers some possible use cases for this functionality.
 
 It's possible to create custom data types within the Nautilus system. First you
@@ -40,7 +40,7 @@ class MyDataPoint(Data):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
 
         Returns
         -------
@@ -52,7 +52,7 @@ class MyDataPoint(Data):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -72,8 +72,8 @@ to backing fields, and then implement the `@property` for each as shown above
 (for completeness, the docstrings are copied from the `Data` base class).
 
 :::info
-These timestamps are what allow Nautilus to correctly order data streams for backtests
-by monotonically increasing `ts_init` UNIX nanoseconds.
+These timestamps enable Nautilus to correctly order data streams for backtests
+using monotonically increasing `ts_init` UNIX nanoseconds.
 :::
 
 We can now work with this data type for backtesting and live trading. For instance,

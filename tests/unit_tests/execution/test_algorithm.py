@@ -531,13 +531,13 @@ class TestExecAlgorithm:
         assert self.exec_engine.command_count == 7
         assert len(spawned_orders) == 7
         assert [o.client_order_id.value for o in spawned_orders] == [
-            "O-19700101-0000-000-None-1",
-            "O-19700101-0000-000-None-1-E1",
-            "O-19700101-0000-000-None-1-E2",
-            "O-19700101-0000-000-None-1-E3",
-            "O-19700101-0000-000-None-1-E4",
-            "O-19700101-0000-000-None-1-E5",
-            "O-19700101-0000-000-None-1-E6",
+            "O-19700101-000000-000-None-1",
+            "O-19700101-000000-000-None-1-E1",
+            "O-19700101-000000-000-None-1-E2",
+            "O-19700101-000000-000-None-1-E3",
+            "O-19700101-000000-000-None-1-E4",
+            "O-19700101-000000-000-None-1-E5",
+            "O-19700101-000000-000-None-1-E6",
         ]
 
     def test_exec_algorithm_on_order_with_small_interval_and_size_precision_zero(self) -> None:
@@ -572,7 +572,7 @@ class TestExecAlgorithm:
         assert self.risk_engine.command_count == 1
         assert self.exec_engine.command_count == 1
         assert len(spawned_orders) == 1
-        assert [o.client_order_id.value for o in spawned_orders] == ["O-19700101-0000-000-None-1"]
+        assert [o.client_order_id.value for o in spawned_orders] == ["O-19700101-000000-000-None-1"]
 
     def test_exec_algorithm_on_order_list_emulated_with_entry_exec_algorithm(self) -> None:
         # Arrange
@@ -648,13 +648,13 @@ class TestExecAlgorithm:
         assert self.exec_engine.command_count == 7
         assert len(spawned_orders) == 7
         assert [o.client_order_id.value for o in spawned_orders] == [
-            "O-19700101-0000-000-None-1",
-            "O-19700101-0000-000-None-1-E1",
-            "O-19700101-0000-000-None-1-E2",
-            "O-19700101-0000-000-None-1-E3",
-            "O-19700101-0000-000-None-1-E4",
-            "O-19700101-0000-000-None-1-E5",
-            "O-19700101-0000-000-None-1-E6",
+            "O-19700101-000000-000-None-1",
+            "O-19700101-000000-000-None-1-E1",
+            "O-19700101-000000-000-None-1-E2",
+            "O-19700101-000000-000-None-1-E3",
+            "O-19700101-000000-000-None-1-E4",
+            "O-19700101-000000-000-None-1-E5",
+            "O-19700101-000000-000-None-1-E6",
         ]
         # Assert final scheduled order quantity
         assert transformed_entry_order.quantity == ETHUSDT_PERP_BINANCE.make_qty(0.004)
@@ -739,8 +739,8 @@ class TestExecAlgorithm:
         assert self.risk_engine.command_count == 1
         assert len(spawned_orders) == 2
         assert [o.client_order_id.value for o in spawned_orders] == [
-            "O-19700101-0000-000-None-1",
-            "O-19700101-0000-000-None-1-E1",
+            "O-19700101-000000-000-None-1",
+            "O-19700101-000000-000-None-1-E1",
         ]
         # Assert final scheduled order quantity
         assert sl_order.quantity == Quantity.from_str("0.250")
@@ -864,8 +864,8 @@ class TestExecAlgorithm:
         assert self.risk_engine.command_count == 1
         assert len(spawned_orders) == 2
         assert [o.client_order_id.value for o in spawned_orders] == [
-            "O-19700101-0000-000-None-2",
-            "O-19700101-0000-000-None-2-E1",
+            "O-19700101-000000-000-None-2",
+            "O-19700101-000000-000-None-2-E1",
         ]
         # Assert final scheduled order quantity
         assert sl_order.quantity == Quantity.from_str("0.750")

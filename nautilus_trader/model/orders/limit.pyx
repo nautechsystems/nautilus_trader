@@ -77,11 +77,11 @@ cdef class LimitOrder(Order):
     init_id : UUID4
         The order initialization event ID.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}, default ``GTC``
         The order time in force.
     expire_time_ns : uint64_t, default 0 (no expiry)
-        The UNIX timestamp (nanoseconds) when the order will expire.
+        UNIX timestamp (nanoseconds) when the order will expire.
     post_only : bool, default False
         If the order will only provide liquidity (make a market).
     reduce_only : bool, default False
@@ -414,7 +414,7 @@ cdef class LimitOrder(Order):
         order : Order
             The order to transform from.
         ts_init : uint64_t
-            The UNIX timestamp (nanoseconds) when the object was initialized.
+            UNIX timestamp (nanoseconds) when the object was initialized.
         price : Price, optional
             The price to assign to the order (will override any existing price on `order`).
 

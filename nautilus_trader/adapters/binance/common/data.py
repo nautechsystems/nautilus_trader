@@ -71,6 +71,7 @@ from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Quantity
 
@@ -130,7 +131,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         super().__init__(
             loop=loop,
             client_id=ClientId(name or BINANCE_VENUE.value),
-            venue=BINANCE_VENUE,
+            venue=Venue(name or BINANCE_VENUE.value),
             msgbus=msgbus,
             cache=cache,
             clock=clock,
@@ -672,24 +673,56 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                     "Inferred INTERNAL time bars from EXTERNAL time bars",
                     LogColor.BLUE,
                 )
+        elif start and start < self._clock.utc_now() - pd.Timedelta(days=1):
+            bars = await self._aggregate_internal_from_minute_bars(
+                bar_type=bar_type,
+                start_time_ms=start_time_ms,
+                end_time_ms=end_time_ms,
+                limit=limit if limit > 0 else None,
+            )
         else:
-            if start and start < self._clock.utc_now() - pd.Timedelta(days=1):
-                bars = await self._aggregate_internal_from_minute_bars(
-                    bar_type=bar_type,
-                    start_time_ms=start_time_ms,
-                    end_time_ms=end_time_ms,
-                    limit=limit if limit > 0 else None,
-                )
-            else:
-                bars = await self._aggregate_internal_from_agg_trade_ticks(
-                    bar_type=bar_type,
-                    start_time_ms=start_time_ms,
-                    end_time_ms=end_time_ms,
-                    limit=limit if limit > 0 else None,
-                )
+            bars = await self._aggregate_internal_from_agg_trade_ticks(
+                bar_type=bar_type,
+                start_time_ms=start_time_ms,
+                end_time_ms=end_time_ms,
+                limit=limit if limit > 0 else None,
+            )
 
         partial: Bar = bars.pop()
         self._handle_bars(bar_type, bars, partial, correlation_id)
+
+    async def _request_order_book_snapshot(
+        self,
+        instrument_id: InstrumentId,
+        limit: int,
+        correlation_id: UUID4,
+    ) -> None:
+        if limit not in [5, 10, 20, 50, 100, 500, 1000]:
+            self._log.error(
+                "Cannot get order book snapshots: "
+                f"invalid `limit`, was {limit}. "
+                "Valid limits are 5, 10, 20, 50, 100, 500 or 1000",
+            )
+            return
+        else:
+            snapshot: OrderBookDeltas = await self._http_market.request_order_book_snapshot(
+                instrument_id=instrument_id,
+                limit=limit,
+                ts_init=self._clock.timestamp_ns(),
+            )
+
+            data_type = DataType(
+                OrderBookDeltas,
+                metadata={
+                    "instrument_id": instrument_id,
+                    "limit": limit,
+                },
+            )
+            self._handle_data_response(
+                data_type=data_type,
+                data=snapshot,
+                correlation_id=correlation_id,
+            )
 
     async def _aggregate_internal_from_minute_bars(
         self,
@@ -910,7 +943,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         )
         instrument_id: InstrumentId | None = self._instrument_ids.get(nautilus_symbol)
         if not instrument_id:
-            instrument_id = InstrumentId(Symbol(nautilus_symbol), BINANCE_VENUE)
+            instrument_id = InstrumentId(Symbol(nautilus_symbol), self.venue)
             self._instrument_ids[nautilus_symbol] = instrument_id
         return instrument_id
 

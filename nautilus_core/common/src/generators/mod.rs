@@ -24,11 +24,12 @@ use chrono::{DateTime, Datelike, Timelike};
 fn get_datetime_tag(unix_ms: u64) -> String {
     let now_utc = DateTime::from_timestamp_millis(unix_ms as i64).unwrap();
     format!(
-        "{}{:02}{:02}-{:02}{:02}",
+        "{}{:02}{:02}-{:02}{:02}{:02}",
         now_utc.year(),
         now_utc.month(),
         now_utc.day(),
         now_utc.hour(),
-        now_utc.minute()
+        now_utc.minute(),
+        now_utc.second(),
     )
 }

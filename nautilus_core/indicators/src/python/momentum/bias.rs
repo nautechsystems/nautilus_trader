@@ -83,7 +83,7 @@ impl Bias {
 
     #[pyo3(name = "handle_bar")]
     fn py_handle_bar(&mut self, bar: &Bar) {
-        self.update_raw((&bar.close).into());
+        self.handle_bar(bar);
     }
 
     #[pyo3(name = "reset")]

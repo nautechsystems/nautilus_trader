@@ -50,9 +50,9 @@ cdef class IndexInstrument(Instrument):
     size_increment : Quantity
         The minimum size increment.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the data object was initialized.
+        UNIX timestamp (nanoseconds) when the data object was initialized.
     info : dict[str, object], optional
         The additional instrument information.
 

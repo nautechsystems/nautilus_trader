@@ -44,7 +44,7 @@ from nautilus_trader.trading.strategy import Strategy
 # For correct subscription operation, you must specify all instruments to be immediately
 # subscribed for as part of the data client configuration
 instrument_ids = [
-    InstrumentId.from_str("ESM4.GLBX"),
+    InstrumentId.from_str("ESZ4.GLBX"),
     # InstrumentId.from_str("ES.c.0.GLBX"),
     # InstrumentId.from_str("AAPL.XNAS"),
 ]
@@ -144,7 +144,7 @@ class DataSubscriber(Strategy):
             #     book_type=BookType.L3_MBO,
             #     client_id=DATABENTO_CLIENT_ID,
             # )
-            # self.subscribe_order_book_snapshots(
+            # self.subscribe_order_book_at_interval(
             #     instrument_id=instrument_id,
             #     book_type=BookType.L2_MBP,
             #     depth=10,
@@ -246,7 +246,7 @@ strategy = DataSubscriber(config=strat_config)
 # Add your strategies and modules
 node.trader.add_strategy(strategy)
 
-# Register your client factories with the node (can take user defined factories)
+# Register your client factories with the node (can take user-defined factories)
 node.add_data_client_factory(DATABENTO, DatabentoLiveDataClientFactory)
 node.build()
 

@@ -253,7 +253,7 @@ impl MessageBus {
     }
 
     /// Close the message bus which will close the sender channel and join the thread.
-    pub fn close(&self) -> anyhow::Result<()> {
+    pub const fn close(&self) -> anyhow::Result<()> {
         // TODO: Integrate the backing database
         Ok(())
     }

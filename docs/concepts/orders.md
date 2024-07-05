@@ -1,13 +1,13 @@
 # Orders
 
-This guide provides more details about the available order types for the platform, along with
+This guide provides further details about the available order types for the platform, along with
 the execution instructions supported for each.
 
 Orders are one of the fundamental building blocks of any algorithmic trading strategy.
 NautilusTrader has unified a large set of order types and execution instructions
 from standard to more advanced, to offer as much of an exchanges available functionality
-as possible. This allows traders to define certain conditions and instructions for
-order execution and management, which allows essentially any type of trading strategy to be created.
+as possible. This enables traders to define certain conditions and instructions for
+order execution and management, facilitating the creation of virtually any type of trading strategy.
 
 ## Overview
 
@@ -29,9 +29,9 @@ The core order types available for the platform are (using the enum values):
 - `TRAILING_STOP_LIMIT`
 
 :::info
-NautilusTrader has unified the API for a large set of order types and execution instructions, however
-not all of these are available for every exchange. If an order is submitted where an instruction or option
-is not available, then the system will **NOT** submit the order and an error will be logged with
+NautilusTrader has unified the API for a large set of order types and execution instructions. 
+Not all of these are available for every exchange. If an order is submitted where an instruction or 
+option is not available, the system will **NOT** submit the order and an error will be logged with 
 a clear explanatory message.
 :::
 
@@ -148,15 +148,14 @@ apply to the order type being created, or are only needed to specify more advanc
 This leaves the factory with simpler order creation methods to work with, all the
 examples will leverage an `OrderFactory` from within a `Strategy` context.
 
-[API Reference](https://nautilustrader.io/docs/api_reference/common.html#module-nautilus_trader.common.factories)
-
 :::info
-Any optional parameters will be clearly marked with a comment which includes the default value.
+See the `OrderFactory` [API Reference](../api_reference/common.md#class-orderfactory) for further details.
 :::
 
 ## Order Types
 
 The following describes the order types which are available for the platform with a code example.
+Any optional parameters will be clearly marked with a comment which includes the default value.
 
 ### Market
 
@@ -184,7 +183,10 @@ order: MarketOrder = self.order_factory.market(
     tags=["ENTRY"],  # <-- optional (default None)
 )
 ```
-[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.market)
+
+:::info
+See the `MarketOrder` [API Reference](../api_reference/model/orders.md#class-marketorder) for further details.
+:::
 
 ### Limit
 
@@ -215,7 +217,10 @@ order: LimitOrder = self.order_factory.limit(
     tags=None,  # <-- optional (default None)
 )
 ```
-[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.limit)
+
+:::info
+See the `LimitOrder` [API Reference](../api_reference/model/orders.md#class-limitorder) for further details.
+:::
 
 ### Stop-Market
 
@@ -247,7 +252,10 @@ order: StopMarketOrder = self.order_factory.stop_market(
     tags=None,  # <-- optional (default None)
 )
 ```
-[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.stop_market)
+
+:::info
+See the `StopMarketOrder` [API Reference](../api_reference/model/orders.md#class-stopmarketorder) for further details.
+:::
 
 ### Stop-Limit
 
@@ -281,7 +289,10 @@ order: StopLimitOrder = self.order_factory.stop_limit(
     tags=None,  # <-- optional (default None)
 )
 ```
-[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.stop_limit)
+
+:::info
+See the `StopLimitOrder` [API Reference](../api_reference/model/orders.md#class-stoplimitorder) for further details.
+:::
 
 ### Market-To-Limit
 
@@ -310,7 +321,9 @@ order: MarketToLimitOrder = self.order_factory.market_to_limit(
 )
 ```
 
-[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.market_to_limit)
+:::info
+See the `MarketToLimitOrder` [API Reference](../api_reference/model/orders.md#class-markettolimitorder) for further details.
+:::
 
 ### Market-If-Touched
 
@@ -344,7 +357,9 @@ order: MarketIfTouchedOrder = self.order_factory.market_if_touched(
 )
 ```
 
-[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.market_if_touched)
+:::info
+See the `MarketIfTouchedOrder` [API Reference](../api_reference/model/orders.md#class-marketiftouchedorder) for further details.
+:::
 
 ### Limit-If-Touched
 
@@ -380,7 +395,9 @@ order: StopLimitOrder = self.order_factory.limit_if_touched(
 )
 ```
 
-[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.limit_if_touched)
+:::info
+See the `StopLimitOrder` [API Reference](../api_reference/model/orders.md#class-stoplimitorder-1) for further details.
+:::
 
 ### Trailing-Stop-Market
 
@@ -418,7 +435,9 @@ order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
 )
 ```
 
-[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.trailing_stop_market)
+:::info
+See the `TrailingStopMarketOrder` [API Reference](../api_reference/model/orders.md#class-trailingstopmarketorder-1) for further details.
+:::
 
 ### Trailing-Stop-Limit
 
@@ -459,4 +478,6 @@ order: TrailingStopLimitOrder = self.order_factory.trailing_stop_limit(
 )
 ```
 
-[API Reference](https://nautilustrader.io/docs/api_reference/model/orders.html#module-nautilus_trader.model.orders.trailing_stop_limit)
+:::info
+See the `TrailingStopLimitOrder` [API Reference](../api_reference/model/orders.md#class-trailingstoplimitorder-1) for further details.
+:::

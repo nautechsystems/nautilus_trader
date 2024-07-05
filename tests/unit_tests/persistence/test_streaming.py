@@ -107,6 +107,7 @@ class TestPersistenceStreaming:
             data_cls=NewsEventData.fully_qualified_name(),
             client_id="NewsClient",
         )
+
         # Add some arbitrary instrument data to appease BacktestEngine
         instrument_data_config = BacktestDataConfig(
             catalog_path=self.catalog.path,
@@ -122,7 +123,7 @@ class TestPersistenceStreaming:
         run_config = BacktestRunConfig(
             engine=BacktestEngineConfig(streaming=streaming),
             data=[data_config, instrument_data_config],
-            venues=[BetfairTestStubs.betfair_venue_config()],
+            venues=[BetfairTestStubs.betfair_venue_config(book_type="L1_MBP")],
         )
 
         # Act
@@ -167,7 +168,7 @@ class TestPersistenceStreaming:
                 ],
             ),
             data=[data_config],
-            venues=[BetfairTestStubs.betfair_venue_config()],
+            venues=[BetfairTestStubs.betfair_venue_config(book_type="L1_MBP")],
         )
 
         # Act
@@ -225,7 +226,7 @@ class TestPersistenceStreaming:
                 ],
             ),
             data=[data_config],
-            venues=[BetfairTestStubs.betfair_venue_config()],
+            venues=[BetfairTestStubs.betfair_venue_config(book_type="L1_MBP")],
         )
 
         # Act

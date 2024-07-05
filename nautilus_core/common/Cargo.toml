@@ -12,7 +12,7 @@ crate-type = ["rlib", "staticlib"]
 
 [dependencies]
 nautilus-core = { path = "../core" }
-nautilus-model = { path = "../model" }
+nautilus-model = { path = "../model", features = ["stubs"] }
 anyhow = { workspace = true }
 chrono = { workspace = true }
 indexmap = { workspace = true }
@@ -34,14 +34,13 @@ tracing = { workspace = true }
 ustr = { workspace = true }
 
 [dev-dependencies]
-rstest = { workspace = true }
 tempfile = { workspace = true }
 
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }
 
 [features]
-default = []
+default = ["rstest"]
 extension-module = [
     "pyo3/extension-module",
     "nautilus-core/extension-module",
@@ -49,4 +48,3 @@ extension-module = [
 ]
 ffi = ["cbindgen", "nautilus-core/ffi", "nautilus-model/ffi"]
 python = ["pyo3", "pyo3-asyncio-0-21", "nautilus-core/python", "nautilus-model/python"]
-stubs = ["rstest", "nautilus-model/stubs"]

@@ -16,3 +16,10 @@
 //! Volatility type indicators.
 
 pub mod atr;
+pub mod dc;
+pub mod fuzzy_candlesticks;
+pub mod fuzzy_enums;
+pub mod kc;
+pub mod kp;
+pub mod rvi;
+pub mod vr;

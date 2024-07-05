@@ -295,14 +295,10 @@ class Subscriptions(Base):
 
         Parameters
         ----------
-        req_id : int
+        req_id : int, optional
             The request ID of the subscription to remove. If None, name is used.
-        name : str | tuple
+        name : str | tuple, optional
             The name of the subscription to remove.
-
-        Args:
-            req_id (Optional[int]):
-            name (Optional[Union[str, tuple]]): The name of the subscription to remove.
 
         """
         if not req_id:

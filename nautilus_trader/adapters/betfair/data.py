@@ -219,7 +219,6 @@ class BetfairDataClient(LiveMarketDataClient):
 
     async def _subscribe_instrument(self, instrument_id: InstrumentId) -> None:
         self._log.debug("Skipping subscribe_instrument, betfair subscribes as part of orderbook")
-        return
 
     async def _subscribe_instruments(self) -> None:
         for instrument in self._instrument_provider.list_all():
@@ -281,6 +280,8 @@ class BetfairDataClient(LiveMarketDataClient):
             self._log.error(f"Error connecting to betfair: {update.error_message}")
             if update.error_code == "MAX_CONNECTION_LIMIT_EXCEEDED":
                 raise RuntimeError("No more connections available")
+            elif update.error_code == "SUBSCRIPTION_LIMIT_EXCEEDED":
+                raise RuntimeError("Subscription request limit exceeded")
             else:
                 self._log.info("Attempting reconnect")
                 if self._stream.is_connected:

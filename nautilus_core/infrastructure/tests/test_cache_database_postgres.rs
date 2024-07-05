@@ -13,52 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_infrastructure::sql::{
-    cache_database::PostgresCacheDatabase,
-    pg::{connect_pg, delete_nautilus_postgres_tables, PostgresConnectOptions},
-};
-use sqlx::PgPool;
-
-#[must_use]
-pub fn get_test_pg_connect_options(username: &str) -> PostgresConnectOptions {
-    PostgresConnectOptions::new(
-        "localhost".to_string(),
-        5432,
-        username.to_string(),
-        "pass".to_string(),
-        "nautilus".to_string(),
-    )
-}
-pub async fn get_pg(username: &str) -> PgPool {
-    let pg_connect_options = get_test_pg_connect_options(username);
-    connect_pg(pg_connect_options.into()).await.unwrap()
-}
-
-pub async fn initialize() -> anyhow::Result<()> {
-    // get pg pool with root postgres user to drop & create schema
-    let pg_pool = get_pg("postgres").await;
-    delete_nautilus_postgres_tables(&pg_pool).await.unwrap();
-    Ok(())
-}
-
-pub async fn get_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
-    initialize().await.unwrap();
-    // run tests as nautilus user
-    let connect_options = get_test_pg_connect_options("nautilus");
-    Ok(PostgresCacheDatabase::connect(
-        Some(connect_options.host),
-        Some(connect_options.port),
-        Some(connect_options.username),
-        Some(connect_options.password),
-        Some(connect_options.database),
-    )
-    .await
-    .unwrap())
-}
-
 #[cfg(test)]
 #[cfg(target_os = "linux")] // Databases only supported on Linux
-mod tests {
+mod serial_tests {
     use std::{collections::HashSet, time::Duration};
 
     use nautilus_common::{
@@ -66,8 +23,11 @@ mod tests {
         testing::{wait_until, wait_until_async},
     };
     use nautilus_core::equality::entirely_equal;
+    use nautilus_infrastructure::sql::cache_database::get_pg_cache_database;
     use nautilus_model::{
+        accounts::{any::AccountAny, cash::CashAccount},
         enums::{CurrencyType, OrderSide, OrderStatus},
+        events::account::stubs::cash_account_state_million_usd,
         identifiers::{
             stubs::account_id, AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId,
         },
@@ -82,13 +42,9 @@ mod tests {
         orders::stubs::{TestOrderEventStubs, TestOrderStubs},
         types::{currency::Currency, price::Price, quantity::Quantity},
     };
-    use serial_test::serial;
     use ustr::Ustr;
 
-    use crate::get_pg_cache_database;
-
     #[tokio::test(flavor = "multi_thread")]
-    #[serial]
     async fn test_add_general_object_adds_to_cache() {
         let mut pg_cache = get_pg_cache_database().await.unwrap();
         let test_id_value = String::from("test_value").into_bytes();
@@ -113,7 +69,6 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    #[serial]
     async fn test_add_currency_and_instruments() {
         // 1. first define and add currencies as they are contain foreign keys for instruments
         let mut pg_cache = get_pg_cache_database().await.unwrap();
@@ -168,8 +123,8 @@ mod tests {
         assert_eq!(currencies.len(), 4);
         assert_eq!(
             currencies
-                .into_iter()
-                .map(|(_, c)| c.code.to_string())
+                .into_values()
+                .map(|c| c.code.to_string())
                 .collect::<HashSet<String>>(),
             vec![
                 String::from("BTC"),
@@ -240,10 +195,7 @@ mod tests {
         let instruments = pg_cache.load_instruments().unwrap();
         assert_eq!(instruments.len(), 6);
         assert_eq!(
-            instruments
-                .into_iter()
-                .map(|(id, _)| id)
-                .collect::<HashSet<InstrumentId>>(),
+            instruments.into_keys().collect::<HashSet<InstrumentId>>(),
             vec![
                 crypto_future.id(),
                 crypto_perpetual.id(),
@@ -258,10 +210,9 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    #[serial]
     async fn test_add_order() {
-        let client_order_id_1 = ClientOrderId::new("O-19700101-0000-001-001-1").unwrap();
-        let client_order_id_2 = ClientOrderId::new("O-19700101-0000-001-001-2").unwrap();
+        let client_order_id_1 = ClientOrderId::new("O-19700101-000000-001-001-1").unwrap();
+        let client_order_id_2 = ClientOrderId::new("O-19700101-000000-001-001-2").unwrap();
         let instrument = currency_pair_ethusdt();
         let mut pg_cache = get_pg_cache_database().await.unwrap();
         let market_order = TestOrderStubs::market_order(
@@ -303,9 +254,8 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    #[serial]
     async fn test_update_order_for_open_order() {
-        let client_order_id_1 = ClientOrderId::new("O-19700101-0000-001-002-1").unwrap();
+        let client_order_id_1 = ClientOrderId::new("O-19700101-000000-001-002-1").unwrap();
         let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
         let account = account_id();
         let mut pg_cache = get_pg_cache_database().await.unwrap();
@@ -335,7 +285,7 @@ mod tests {
         let filled = TestOrderEventStubs::order_filled(
             &market_order,
             &instrument,
-            Some(TradeId::new("T-19700101-0000-001-001-1").unwrap()),
+            Some(TradeId::new("T-19700101-000000-001-001-1").unwrap()),
             None,
             Some(Price::from("100.0")),
             Some(Quantity::from("1.0")),
@@ -359,5 +309,44 @@ mod tests {
             .load_order(&market_order.client_order_id())
             .unwrap();
         entirely_equal(market_order_result.unwrap(), market_order);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_add_and_update_account() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        let mut account = AccountAny::Cash(
+            CashAccount::new(
+                cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD"),
+                false,
+            )
+            .unwrap(),
+        );
+        let last_event = account.last_event().unwrap();
+        if last_event.base_currency.is_some() {
+            pg_cache
+                .add_currency(&last_event.base_currency.unwrap())
+                .unwrap();
+        }
+        pg_cache.add_account(&account).unwrap();
+        wait_until(
+            || pg_cache.load_account(&account.id()).unwrap().is_some(),
+            Duration::from_secs(2),
+        );
+        let account_result = pg_cache.load_account(&account.id()).unwrap();
+        entirely_equal(account_result.unwrap(), account.clone());
+        // Update the account
+        let new_account_state_event =
+            cash_account_state_million_usd("1000000 USD", "100000 USD", "900000 USD");
+        account.apply(new_account_state_event);
+        pg_cache.update_account(&account).unwrap();
+        wait_until(
+            || {
+                let result = pg_cache.load_account(&account.id()).unwrap();
+                result.is_some() && result.unwrap().events().len() >= 2
+            },
+            Duration::from_secs(2),
+        );
+        let account_result = pg_cache.load_account(&account.id()).unwrap();
+        entirely_equal(account_result.unwrap(), account);
     }
 }

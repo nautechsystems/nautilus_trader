@@ -20,6 +20,7 @@ from functools import partial
 import msgspec
 import pandas as pd
 
+from nautilus_trader.adapters.bybit.common.constants import BYBIT_INVERSE_DEPTHS
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_LINEAR_DEPTHS
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_OPTION_DEPTHS
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_SPOT_DEPTHS
@@ -144,8 +145,8 @@ class BybitDataClient(LiveMarketDataClient):
                 handler=partial(self._handle_ws_message, product_type),
                 handler_reconnect=None,
                 base_url=ws_base_urls[product_type],
-                api_key=config.api_key or get_api_key(config.testnet),
-                api_secret=config.api_secret or get_api_secret(config.testnet),
+                api_key=config.api_key or get_api_key(config.demo, config.testnet),
+                api_secret=config.api_secret or get_api_secret(config.demo, config.testnet),
                 loop=loop,
             )
 
@@ -273,6 +274,9 @@ class BybitDataClient(LiveMarketDataClient):
             case BybitProductType.LINEAR:
                 depths_available = BYBIT_LINEAR_DEPTHS
                 depth = depth or BYBIT_LINEAR_DEPTHS[-1]
+            case BybitProductType.INVERSE:
+                depths_available = BYBIT_INVERSE_DEPTHS
+                depth = depth or BYBIT_INVERSE_DEPTHS[-1]
             case BybitProductType.OPTION:
                 depths_available = BYBIT_OPTION_DEPTHS
                 depth = depth or BYBIT_OPTION_DEPTHS[-1]

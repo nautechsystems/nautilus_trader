@@ -59,6 +59,7 @@ from nautilus_trader.adapters.bybit.schemas.order import BybitAmendOrder
 from nautilus_trader.adapters.bybit.schemas.order import BybitCancelOrder
 from nautilus_trader.adapters.bybit.schemas.order import BybitOrder
 from nautilus_trader.adapters.bybit.schemas.order import BybitPlaceOrderResponse
+from nautilus_trader.adapters.bybit.schemas.order import BybitSetTradingStopResponse
 from nautilus_trader.adapters.bybit.schemas.position import BybitPositionStruct
 from nautilus_trader.adapters.bybit.schemas.trade import BybitExecution
 from nautilus_trader.common.component import LiveClock
@@ -239,7 +240,7 @@ class BybitAccountHttpAPI:
         tp_limit_price: str | None = None,
         sl_limit_price: str | None = None,
     ) -> BybitPlaceOrderResponse:
-        result = await self._endpoint_place_order.post(
+        return await self._endpoint_place_order.post(
             params=BybitPlaceOrderPostParams(
                 category=product_type,
                 symbol=symbol,
@@ -266,7 +267,6 @@ class BybitAccountHttpAPI:
                 slOrderType=sl_order_type,
             ),
         )
-        return result
 
     async def set_trading_stop(
         self,
@@ -278,13 +278,14 @@ class BybitAccountHttpAPI:
         sl_order_type: BybitOrderType | None = None,
         trigger_type: BybitTriggerType | None = None,
         trailing_offset: str | None = None,  # By price
+        tpsl_mode: BybitTpSlMode | None = None,
         tp_quantity: str | None = None,
         sl_quantity: str | None = None,
         tp_limit_price: str | None = None,
         sl_limit_price: str | None = None,
-    ) -> None:
+    ) -> BybitSetTradingStopResponse:
         position_idx = BybitPositionIdx.ONE_WAY  # TODO
-        await self._endpoint_set_trading_stop.post(
+        return await self._endpoint_set_trading_stop.post(
             BybitSetTradingStopPostParams(
                 category=product_type,
                 symbol=symbol,
@@ -295,10 +296,13 @@ class BybitAccountHttpAPI:
                 slTriggerBy=trigger_type if product_type != BybitProductType.SPOT else None,
                 tpTriggerBy=trigger_type if product_type != BybitProductType.SPOT else None,
                 activePrice=None,  # Immediately active
+                tpslMode=tpsl_mode,
                 tpSize=tp_quantity,
                 slSize=sl_quantity,
                 tpLimitPrice=tp_limit_price,
                 slLimitPrice=sl_limit_price,
+                tpOrderType=tp_order_type,
+                slOrderType=sl_order_type,
             ),
         )
 

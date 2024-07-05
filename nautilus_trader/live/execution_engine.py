@@ -478,7 +478,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
     def reconcile_report(self, report: ExecutionReport) -> bool:
         """
-        Check the given execution report.
+        Reconcile the given execution report.
 
         Parameters
         ----------
@@ -536,10 +536,6 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.debug(f"[RECV][RPT] {mass_status}")
         self.report_count += 1
 
-        if mass_status is None:
-            self._log.error("Error reconciling mass status (was None)")
-            return False
-
         self._log.info(
             f"Reconciling ExecutionMassStatus for {mass_status.venue}",
             color=LogColor.BLUE,
@@ -550,8 +546,8 @@ class LiveExecutionEngine(ExecutionEngine):
         reconciled_trades: set[TradeId] = set()
 
         # Reconcile all reported orders
-        for venue_order_id, order_report in mass_status.order_reports().items():
-            trades = mass_status.fill_reports().get(venue_order_id, [])
+        for venue_order_id, order_report in mass_status.order_reports.items():
+            trades = mass_status.fill_reports.get(venue_order_id, [])
 
             # Check and handle duplicate client order IDs
             client_order_id = order_report.client_order_id
@@ -578,7 +574,7 @@ class LiveExecutionEngine(ExecutionEngine):
         if not self.filter_position_reports:
             position_reports: list[PositionStatusReport]
             # Reconcile all reported positions
-            for position_reports in mass_status.position_reports().values():
+            for position_reports in mass_status.position_reports.values():
                 for report in position_reports:
                     result = self._reconcile_position_report(report)
                     results.append(result)
@@ -619,7 +615,7 @@ class LiveExecutionEngine(ExecutionEngine):
         instrument: Instrument | None = self._cache.instrument(order.instrument_id)
         if instrument is None:
             self._log.error(
-                f"Cannot reconcile order {order.client_order_id}: "
+                f"Cannot reconcile order for {order.client_order_id!r}: "
                 f"instrument {order.instrument_id} not found",
             )
             return False  # Failed
@@ -694,21 +690,21 @@ class LiveExecutionEngine(ExecutionEngine):
         )
         if client_order_id is None:
             self._log.error(
-                f"Cannot reconcile FillReport: client order ID {client_order_id} not found",
+                f"Cannot reconcile FillReport: client order ID for {report.venue_order_id!r} not found",
             )
             return False  # Failed
 
         order: Order | None = self._cache.order(client_order_id)
         if order is None:
             self._log.error(
-                f"Cannot reconcile FillReport: no order for client order ID {client_order_id}",
+                f"Cannot reconcile FillReport: no order for {client_order_id!r}",
             )
             return False  # Failed
 
         instrument: Instrument | None = self._cache.instrument(order.instrument_id)
         if instrument is None:
             self._log.error(
-                f"Cannot reconcile order {order.client_order_id}: "
+                f"Cannot reconcile order for {order.client_order_id!r}: "
                 f"instrument {order.instrument_id} not found",
             )
             return False  # Failed
@@ -745,13 +741,13 @@ class LiveExecutionEngine(ExecutionEngine):
         position: Position | None = self._cache.position(report.venue_position_id)
         if position is None:
             self._log.error(
-                f"Cannot reconcile position: position ID {report.venue_position_id} not found",
+                f"Cannot reconcile position: {report.venue_position_id!r} not found",
             )
             return False  # Failed
         position_signed_decimal_qty: Decimal = position.signed_decimal_qty()
         if position_signed_decimal_qty != report.signed_decimal_qty:
             self._log.error(
-                f"Cannot reconcile {report.instrument_id} {report.venue_position_id}: position "
+                f"Cannot reconcile {report.instrument_id} {report.venue_position_id!r}: position "
                 f"net qty {position_signed_decimal_qty} != reported net qty {report.signed_decimal_qty},"
                 f"{report}",
             )

@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_core::uuid::UUID4;
 use rstest::fixture;
 
 use crate::{
@@ -44,19 +45,21 @@ pub fn cash_account_state() -> AccountState {
 }
 
 #[fixture]
-pub fn cash_account_state_million_usd() -> AccountState {
+pub fn cash_account_state_million_usd(
+    #[default("1000000 USD")] total: &str,
+    #[default("0 USD")] locked: &str,
+    #[default("1000000 USD")] free: &str,
+) -> AccountState {
     AccountState::new(
         account_id(),
         AccountType::Cash,
-        vec![AccountBalance::new(
-            Money::from("1000000 USD"),
-            Money::from("0 USD"),
-            Money::from("1000000 USD"),
-        )
-        .unwrap()],
+        vec![
+            AccountBalance::new(Money::from(total), Money::from(locked), Money::from(free))
+                .unwrap(),
+        ],
         vec![],
         true,
-        uuid4(),
+        UUID4::new(),
         0.into(),
         0.into(),
         Some(Currency::USD()),

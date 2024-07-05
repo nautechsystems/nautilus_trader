@@ -5,6 +5,7 @@ The test suite is divided into broad categories of tests including:
 - Integration tests
 - Acceptance tests
 - Performance tests
+- Memory leak tests
 
 The performance tests exist to aid development of performance-critical components.
 
@@ -12,7 +13,7 @@ Tests can be run using [Pytest](https://docs.pytest.org).
 
 If you’re using PyCharm then tests should run directly by right clicking on the respective folder (or top-level tests folder) and clicking ‘Run pytest’.
 
-Alternatively you can use the `pytest .` command from the root level tests directory, or the other subdirectories.
+Alternatively you can use the `pytest` command from the root level tests directory, or the other subdirectories.
 
 ## Mocks
 
@@ -43,6 +44,6 @@ The reason for their use is to reduce redundant/needless tests just to keep cove
 - Asserting the final condition check of an if-else block when impossible to test (as above).
 
 These tests are expensive to maintain (as they must be kept in line with any refactorings), and 
-offer little to no benefit in return. However, the intention is for all abstract method 
+offer little to no benefit in return. The intention is for all abstract method 
 implementations to be fully covered by tests. Therefore `pragma: no cover` should be judiciously 
 removed when no longer appropriate, and its use *restricted* to the above cases.

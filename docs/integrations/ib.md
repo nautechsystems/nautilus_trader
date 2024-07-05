@@ -1,6 +1,6 @@
 # Interactive Brokers
 
-Interactive Brokers (IB) is a trading platform that allows trading across a wide range of financial instruments, including stocks, options, futures, currencies, bonds, funds, and cryptocurrencies. NautilusTrader offers an adapter to integrate with IB using their [Trader Workstation (TWS) API](https://ibkrcampus.com/ibkr-api-page/trader-workstation-api/) through their Python library, [ibapi](https://github.com/nautechsystems/ibapi).
+Interactive Brokers (IB) is a trading platform providing market access across a wide range of financial instruments, including stocks, options, futures, currencies, bonds, funds, and cryptocurrencies. NautilusTrader offers an adapter to integrate with IB using their [Trader Workstation (TWS) API](https://ibkrcampus.com/ibkr-api-page/trader-workstation-api/) through their Python library, [ibapi](https://github.com/nautechsystems/ibapi).
 
 The TWS API serves as an interface to IB's standalone trading applications: TWS and IB Gateway. Both can be downloaded from the IB website. If you haven't installed TWS or IB Gateway yet, refer to the [Initial Setup](https://ibkrcampus.com/ibkr-api-page/trader-workstation-api/#tws-download) guide. In NautilusTrader, you'll establish a connection to one of these applications via the `InteractiveBrokersClient`.
 
@@ -123,8 +123,8 @@ In IB, a NautilusTrader `Instrument` is equivalent to a [Contract](https://ibkrc
 
 To search for contract information, use the [IB Contract Information Center](https://pennies.interactivebrokers.com/cstools/contract_info/).
 
-It's typically suggested to utilize `strict_symbology=False` (which is the default setting). This allows for a cleaner and more intuitive use of InstrumentId by employing `load_ids` in the `InteractiveBrokersInstrumentProviderConfig`, following the guidelines established in the Simplified Symbology section. 
-Nonetheless, in order to load multiple Instruments, such as Options Instrument without having to specify each strike explicitly, you would need to utilize `load_contracts` with provided instances of `IBContract`.
+It's typically suggested to utilize `strict_symbology=False` (which is the default setting). This provides a cleaner and more intuitive use of `InstrumentId` by employing `load_ids` in the `InteractiveBrokersInstrumentProviderConfig`, following the guidelines established in the Simplified Symbology section. 
+In order to load multiple Instruments, such as Options Instrument without having to specify each strike explicitly, you would need to utilize `load_contracts` with provided instances of `IBContract`.
 
 ```python
 for_loading_instrument_expiry = IBContract(
@@ -218,7 +218,7 @@ Engaging in live or paper trading requires constructing and running a `TradingNo
 
 ### InstrumentProvider
 
-The `InteractiveBrokersInstrumentProvider` class functions as a bridge for accessing financial instrument data from IB. Configurable through `InteractiveBrokersInstrumentProviderConfig`, it allows for the customization of various instrument type parameters. Additionally, this provider offers specialized methods to build and retrieve the entire futures and options chains.
+The `InteractiveBrokersInstrumentProvider` class functions as a bridge for accessing financial instrument data from IB. Configurable through `InteractiveBrokersInstrumentProviderConfig`, it enables the customization of various instrument type parameters. Additionally, this provider offers specialized methods to build and retrieve the entire futures and options chains.
 
 ```python
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
@@ -253,7 +253,7 @@ instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
 
 `InteractiveBrokersDataClient` interfaces with IB for streaming and retrieving market data. Upon connection, it configures the [market data type](https://ibkrcampus.com/ibkr-api-page/trader-workstation-api/#delayed-market-data) and loads instruments based on the settings in `InteractiveBrokersInstrumentProviderConfig`. This client can subscribe to and unsubscribe from various market data types, including quote ticks, trade ticks, and bars.
 
-Configurable through `InteractiveBrokersDataClientConfig`, it allows adjustments for handling revised bars, trading hours preferences, and market data types (e.g., `IBMarketDataTypeEnum.REALTIME` or `IBMarketDataTypeEnum.DELAYED_FROZEN`).
+Configurable through `InteractiveBrokersDataClientConfig`, it enables adjustments for handling revised bars, trading hours preferences, and market data types (e.g., `IBMarketDataTypeEnum.REALTIME` or `IBMarketDataTypeEnum.DELAYED_FROZEN`).
 
 ```python
 from nautilus_trader.adapters.interactive_brokers.config import IBMarketDataTypeEnum
