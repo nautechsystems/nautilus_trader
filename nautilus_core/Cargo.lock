@@ -1141,6 +1141,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "dashmap"
+version = "6.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "804c8821570c3f8b70230c2ba75ffa5c0f9a4189b9a432b6656c536712acae28"
+dependencies = [
+ "cfg-if",
+ "crossbeam-utils",
+ "hashbrown 0.14.5",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core",
+]
+
+[[package]]
 name = "data-encoding"
 version = "2.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1183,7 +1197,7 @@ dependencies = [
  "bytes",
  "bzip2",
  "chrono",
- "dashmap",
+ "dashmap 5.5.3",
  "datafusion-common",
  "datafusion-common-runtime",
  "datafusion-execution",
@@ -1260,7 +1274,7 @@ checksum = "8385aba84fc4a06d3ebccfbcbf9b4f985e80c762fac634b49079f7cc14933fb1"
 dependencies = [
  "arrow",
  "chrono",
- "dashmap",
+ "dashmap 5.5.3",
  "datafusion-common",
  "datafusion-expr",
  "futures",
@@ -2511,7 +2525,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-adapters"
-version = "0.26.0"
+version = "0.27.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2541,7 +2555,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.26.0"
+version = "0.27.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2558,7 +2572,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cli"
-version = "0.26.0"
+version = "0.27.0"
 dependencies = [
  "anyhow",
  "clap 4.5.8",
@@ -2575,7 +2589,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.26.0"
+version = "0.27.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2603,7 +2617,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.26.0"
+version = "0.27.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2623,7 +2637,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-execution"
-version = "0.26.0"
+version = "0.27.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -2647,7 +2661,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.26.0"
+version = "0.27.0"
 dependencies = [
  "anyhow",
  "log",
@@ -2660,7 +2674,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-infrastructure"
-version = "0.26.0"
+version = "0.27.0"
 dependencies = [
  "anyhow",
  "derive_builder",
@@ -2683,7 +2697,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.26.0"
+version = "0.27.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2711,12 +2725,12 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.26.0"
+version = "0.27.0"
 dependencies = [
  "anyhow",
  "axum",
  "criterion",
- "dashmap",
+ "dashmap 6.0.1",
  "futures",
  "futures-util",
  "http",
@@ -2736,7 +2750,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.26.0"
+version = "0.27.0"
 dependencies = [
  "anyhow",
  "binary-heap-plus",
@@ -2760,7 +2774,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.26.0"
+version = "0.27.0"
 dependencies = [
  "nautilus-adapters",
  "nautilus-common",
@@ -4788,9 +4802,9 @@ dependencies = [
 
 [[package]]
 name = "tinyvec"
-version = "1.6.1"
+version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c55115c6fbe2d2bef26eb09ad74bde02d8255476fc0c7b515ef09fbb35742d82"
+checksum = "ce6b6a2fb3a985e99cebfaefa9faa3024743da73304ca1c683a36429613d3d22"
 dependencies = [
  "tinyvec_macros",
 ]
