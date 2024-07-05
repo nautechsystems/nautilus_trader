@@ -339,9 +339,7 @@ cdef class CashAccount(Account):
         cdef double fill_qty = fill.last_qty.as_f64_c()
         cdef double last_qty = fill_qty
 
-        # TODO: This adjustment is potentially problematic and causing other bugs,
-        # the intent is to only 'book' PnL when a position is being reduced - rather than entered.
-        if position is not None and position.quantity._mem.raw != 0:
+        if position is not None and position.quantity._mem.raw != 0 and position.entry != fill.order_side:
             # Only book open quantity towards realized PnL
             fill_qty = fmin(fill_qty, position.quantity.as_f64_c())
 
