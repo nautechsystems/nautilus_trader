@@ -874,3 +874,52 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         if not done:
             return
         await self._process_trade_ticks(req_id, ticks)
+
+    async def get_price(self, contract, tick_type="MidPoint"):
+        """
+        Helper function to request market data for a specific contract and tick type.
+        """
+        # Generate Request ID
+        req_id = self._next_req_id()
+        # Create a Request object and add it to the _requests
+        request = self._requests.add(
+            req_id=req_id,
+            name=f"{contract.symbol}-{tick_type}",
+            handle=functools.partial(self._eclient.reqMktData, req_id, contract, tick_type, False, False, []),
+            cancel=functools.partial(self._eclient.cancelMktData, req_id)
+        )
+        # Request Market Data
+        request.handle()
+        # Await Request
+        result = await self._await_request(request, timeout=60)
+        return result
+
+    async def _await_request(self, request, timeout=60):
+        """
+        Wait for the request to complete or timeout.
+
+        Parameters
+        ----------
+        request : Request
+            The Request object to wait for.
+        timeout : int
+            The maximum time in seconds to wait for the request to complete.
+
+        Returns
+        -------
+        Any
+            The result of the request.
+
+        Raises
+        ------
+        asyncio.TimeoutError
+            If the request times out.
+        """
+        future = request.future
+        try:
+            result = await asyncio.wait_for(future, timeout)
+        except asyncio.TimeoutError:
+            self._log.warning(f"Request {request.req_id} timed out.")
+            self._requests.remove(req_id=request.req_id)
+            raise
+        return result
