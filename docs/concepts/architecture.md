@@ -198,6 +198,6 @@ library, or from third party library dependencies.
 ### Processes and threads
 
 :::tip
-Recommendation: For optimal performance and to prevent potential issues related to Python's memory 
+For optimal performance and to prevent potential issues related to Python's memory 
 model and equality, it is highly recommended to run each trader instance in a separate process.
 :::
