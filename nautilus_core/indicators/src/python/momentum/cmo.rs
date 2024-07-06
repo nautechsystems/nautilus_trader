@@ -18,11 +18,11 @@ use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
 use pyo3::prelude::*;
 
 use crate::{
-    average::MovingAverageType, indicator::Indicator, momentum::cmo::ChandelMomentumOscillator,
+    average::MovingAverageType, indicator::Indicator, momentum::cmo::ChandeMomentumOscillator,
 };
 
 #[pymethods]
-impl ChandelMomentumOscillator {
+impl ChandeMomentumOscillator {
     #[new]
     pub fn py_new(period: usize, ma_type: Option<MovingAverageType>) -> PyResult<Self> {
         Self::new(period, ma_type).map_err(to_pyvalue_err)
