@@ -1,5 +1,9 @@
 # Live trading
 
+:::info
+We are currently working on this article.
+:::
+
 Live trading in NautilusTrader enables traders to deploy their backtested strategies in a real-time 
 trading environment with no code changes. This seamless transition from backtesting to live trading 
 is a cornerstone of the platform's design, ensuring consistency and reliability. Even so, there are
@@ -31,7 +35,7 @@ See also the `LiveExecEngineConfig` [API Reference](../api_reference/config#clas
  - `reconciliation_lookback_mins`: Specifies how far back (in minutes) the system should request past events to reconcile. This provides recovery for uncached execution state.
 
 :::info
-See also [Execution reconciliation](/execution#execution-reconciliation) for further details.
+See also [Execution reconciliation](../concepts/execution#execution-reconciliation) for further details.
 :::
 
 #### Order filtering
