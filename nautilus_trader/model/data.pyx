@@ -1293,6 +1293,18 @@ cdef class Bar(Data):
         """
         return Bar.from_pyo3_c(pyo3_bar)
 
+    def to_pyo3(self) -> nautilus_pyo3.Bar:
+        return nautilus_pyo3.Bar(
+            nautilus_pyo3.BarType.from_str(BarType.from_mem_c(self._mem.bar_type).to_str()),
+            nautilus_pyo3.Price.from_raw(self._mem.open.raw, self._mem.open.precision),
+            nautilus_pyo3.Price.from_raw(self._mem.high.raw, self._mem.high.precision),
+            nautilus_pyo3.Price.from_raw(self._mem.low.raw, self._mem.low.precision),
+            nautilus_pyo3.Price.from_raw(self._mem.close.raw, self._mem.close.precision),
+            nautilus_pyo3.Quantity.from_raw(self._mem.volume.raw, self._mem.volume.precision),
+            self._mem.ts_event,
+            self._mem.ts_init,
+        )
+
     cpdef bint is_single_price(self):
         """
         If the OHLC are all equal to a single price.
@@ -3863,6 +3875,17 @@ cdef class QuoteTick(Data):
         """
         return QuoteTick.from_pyo3_c(pyo3_quote)
 
+    def to_pyo3(self) -> nautilus_pyo3.QuoteTick:
+        return nautilus_pyo3.QuoteTick(
+            nautilus_pyo3.InstrumentId.from_str(self.instrument_id.value),
+            nautilus_pyo3.Price.from_raw(self._mem.bid_price.raw, self._mem.bid_price.precision),
+            nautilus_pyo3.Price.from_raw(self._mem.ask_price.raw, self._mem.ask_price.precision),
+            nautilus_pyo3.Quantity.from_raw(self._mem.bid_size.raw, self._mem.bid_size.precision),
+            nautilus_pyo3.Quantity.from_raw(self._mem.ask_size.raw, self._mem.ask_size.precision),
+            self._mem.ts_event,
+            self._mem.ts_init,
+        )
+
     cpdef Price extract_price(self, PriceType price_type):
         """
         Extract the price for the given price type.
@@ -4424,3 +4447,14 @@ cdef class TradeTick(Data):
 
         """
         return TradeTick.from_pyo3_c(pyo3_trade)
+
+    def to_pyo3(self) -> nautilus_pyo3.TradeTick:
+        return nautilus_pyo3.TradeTick(
+            nautilus_pyo3.InstrumentId.from_str(self.instrument_id.value),
+            nautilus_pyo3.Price.from_raw(self._mem.price.raw, self._mem.price.precision),
+            nautilus_pyo3.Quantity.from_raw(self._mem.size.raw, self._mem.size.precision),
+            nautilus_pyo3.AggressorSide(aggressor_side_to_str(self._mem.aggressor_side)),
+            nautilus_pyo3.TradeId(self.trade_id.value),
+            self._mem.ts_event,
+            self._mem.ts_init,
+        )
