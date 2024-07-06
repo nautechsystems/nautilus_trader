@@ -31,7 +31,7 @@ proprietary indicator algorithms with the platform.
 # from nautilus_trader.core.nautilus_pyo3 import CandleDirection
 # from nautilus_trader.core.nautilus_pyo3 import CandleSize
 # from nautilus_trader.core.nautilus_pyo3 import CandleWickSize
-# from nautilus_trader.core.nautilus_pyo3 import ChandelMomentumOscillator
+# from nautilus_trader.core.nautilus_pyo3 import ChandeMomentumOscillator
 # from nautilus_trader.core.nautilus_pyo3 import CommodityChannelIndex
 # from nautilus_trader.core.nautilus_pyo3 import DonchianChannel
 # from nautilus_trader.core.nautilus_pyo3 import DoubleExponentialMovingAverage
@@ -76,7 +76,7 @@ proprietary indicator algorithms with the platform.
 #     "CandleSize",
 #     "CandleBodySize",
 #     "CandleWickSize",
-#     "ChandelMomentumOscillator",
+#     "ChandeMomentumOscillator",
 #     "CommodityChannelIndex",
 #     "DonchianChannel",
 #     "DoubleExponentialMovingAverage",

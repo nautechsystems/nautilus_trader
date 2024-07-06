@@ -51,7 +51,7 @@ pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::momentum::rsi::RelativeStrengthIndex>()?;
     m.add_class::<crate::momentum::aroon::AroonOscillator>()?;
     m.add_class::<crate::momentum::bias::Bias>()?;
-    m.add_class::<crate::momentum::cmo::ChandelMomentumOscillator>()?;
+    m.add_class::<crate::momentum::cmo::ChandeMomentumOscillator>()?;
     m.add_class::<crate::momentum::vhf::VerticalHorizontalFilter>()?;
     m.add_class::<crate::momentum::kvo::KlingerVolumeOscillator>()?;
     m.add_class::<crate::momentum::dm::DirectionalMovement>()?;

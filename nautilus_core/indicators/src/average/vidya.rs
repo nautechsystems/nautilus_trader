@@ -23,7 +23,7 @@ use nautilus_model::{
 use crate::{
     average::MovingAverageType,
     indicator::{Indicator, MovingAverage},
-    momentum::cmo::ChandelMomentumOscillator,
+    momentum::cmo::ChandeMomentumOscillator,
 };
 
 #[repr(C)]
@@ -40,7 +40,7 @@ pub struct VariableIndexDynamicAverage {
     pub count: usize,
     pub initialized: bool,
     has_inputs: bool,
-    pub cmo: ChandelMomentumOscillator,
+    pub cmo: ChandeMomentumOscillator,
     pub cmo_pct: f64,
 }
 
@@ -100,7 +100,7 @@ impl VariableIndexDynamicAverage {
             has_inputs: false,
             initialized: false,
             alpha: 2.0 / (period as f64 + 1.0),
-            cmo: ChandelMomentumOscillator::new(period, cmo_ma_type)?,
+            cmo: ChandeMomentumOscillator::new(period, cmo_ma_type)?,
             cmo_pct: 0.0,
         })
     }
