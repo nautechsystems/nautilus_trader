@@ -28,7 +28,7 @@ use crate::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
-pub struct ChandeMomentumOscillator {
+pub struct ChandelMomentumOscillator {
     pub period: usize,
     pub ma_type: MovingAverageType,
     pub value: f64,
@@ -40,13 +40,13 @@ pub struct ChandeMomentumOscillator {
     has_inputs: bool,
 }
 
-impl Display for ChandeMomentumOscillator {
+impl Display for ChandelMomentumOscillator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}({})", self.name(), self.period)
     }
 }
 
-impl Indicator for ChandeMomentumOscillator {
+impl Indicator for ChandelMomentumOscillator {
     fn name(&self) -> String {
         stringify!(ChandeMomentumOscillator).to_string()
     }
@@ -80,7 +80,7 @@ impl Indicator for ChandeMomentumOscillator {
     }
 }
 
-impl ChandeMomentumOscillator {
+impl ChandelMomentumOscillator {
     /// Creates a new [`ChandeMomentumOscillator`] instance.
     pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> anyhow::Result<Self> {
         Ok(Self {
@@ -138,10 +138,10 @@ mod tests {
     use nautilus_model::data::{bar::Bar, quote::QuoteTick};
     use rstest::rstest;
 
-    use crate::{indicator::Indicator, momentum::cmo::ChandeMomentumOscillator, stubs::*};
+    use crate::{indicator::Indicator, momentum::cmo::ChandelMomentumOscillator, stubs::*};
 
     #[rstest]
-    fn test_cmo_initialized(cmo_10: ChandeMomentumOscillator) {
+    fn test_cmo_initialized(cmo_10: ChandelMomentumOscillator) {
         let display_str = format!("{cmo_10}");
         assert_eq!(display_str, "ChandeMomentumOscillator(10)");
         assert_eq!(cmo_10.period, 10);
@@ -149,7 +149,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_initialized_with_required_inputs_returns_true(mut cmo_10: ChandeMomentumOscillator) {
+    fn test_initialized_with_required_inputs_returns_true(mut cmo_10: ChandelMomentumOscillator) {
         for i in 0..12 {
             cmo_10.update_raw(f64::from(i));
         }
@@ -157,7 +157,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_value_all_higher_inputs_returns_expected_value(mut cmo_10: ChandeMomentumOscillator) {
+    fn test_value_all_higher_inputs_returns_expected_value(mut cmo_10: ChandelMomentumOscillator) {
         cmo_10.update_raw(109.93);
         cmo_10.update_raw(110.0);
         cmo_10.update_raw(109.77);
@@ -182,13 +182,13 @@ mod tests {
     }
 
     #[rstest]
-    fn test_value_with_one_input_returns_expected_value(mut cmo_10: ChandeMomentumOscillator) {
+    fn test_value_with_one_input_returns_expected_value(mut cmo_10: ChandelMomentumOscillator) {
         cmo_10.update_raw(1.00000);
         assert_eq!(cmo_10.value, 0.0);
     }
 
     #[rstest]
-    fn test_reset(mut cmo_10: ChandeMomentumOscillator) {
+    fn test_reset(mut cmo_10: ChandelMomentumOscillator) {
         cmo_10.update_raw(1.00020);
         cmo_10.update_raw(1.00030);
         cmo_10.update_raw(1.00050);
@@ -200,14 +200,14 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_quote_tick(mut cmo_10: ChandeMomentumOscillator, quote_tick: QuoteTick) {
+    fn test_handle_quote_tick(mut cmo_10: ChandelMomentumOscillator, quote_tick: QuoteTick) {
         cmo_10.handle_quote_tick(&quote_tick);
         assert_eq!(cmo_10.count, 0);
         assert_eq!(cmo_10.value, 0.0);
     }
 
     #[rstest]
-    fn test_handle_bar(mut cmo_10: ChandeMomentumOscillator, bar_ethusdt_binance_minute_bid: Bar) {
+    fn test_handle_bar(mut cmo_10: ChandelMomentumOscillator, bar_ethusdt_binance_minute_bid: Bar) {
         cmo_10.handle_bar(&bar_ethusdt_binance_minute_bid);
         assert_eq!(cmo_10.count, 0);
         assert_eq!(cmo_10.value, 0.0);

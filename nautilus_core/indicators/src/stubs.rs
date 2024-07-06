@@ -36,7 +36,7 @@ use crate::{
     },
     momentum::{
         amat::ArcherMovingAveragesTrends, bb::BollingerBands, bias::Bias,
-        cci::CommodityChannelIndex, cmo::ChandeMomentumOscillator, dm::DirectionalMovement,
+        cci::CommodityChannelIndex, cmo::ChandelMomentumOscillator, dm::DirectionalMovement,
         kvo::KlingerVolumeOscillator, macd::MovingAverageConvergenceDivergence,
         obv::OnBalanceVolume, pressure::Pressure, psl::PsychologicalLine, roc::RateOfChange,
         rsi::RelativeStrengthIndex, stochastics::Stochastics, swings::Swings,
@@ -186,8 +186,8 @@ pub fn rsi_10() -> RelativeStrengthIndex {
 }
 
 #[fixture]
-pub fn cmo_10() -> ChandeMomentumOscillator {
-    ChandeMomentumOscillator::new(10, Some(MovingAverageType::Wilder)).unwrap()
+pub fn cmo_10() -> ChandelMomentumOscillator {
+    ChandelMomentumOscillator::new(10, Some(MovingAverageType::Wilder)).unwrap()
 }
 
 #[fixture]
