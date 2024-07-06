@@ -1294,6 +1294,14 @@ cdef class Bar(Data):
         return Bar.from_pyo3_c(pyo3_bar)
 
     def to_pyo3(self) -> nautilus_pyo3.Bar:
+        """
+        Return a pyo3 object from this legacy Cython instance.
+
+        Returns
+        -------
+        nautilus_pyo3.Bar
+
+        """
         return nautilus_pyo3.Bar(
             nautilus_pyo3.BarType.from_str(BarType.from_mem_c(self._mem.bar_type).to_str()),
             nautilus_pyo3.Price.from_raw(self._mem.open.raw, self._mem.open.precision),
@@ -2539,6 +2547,14 @@ cdef class OrderBookDeltas(Data):
         return capsule
 
     cpdef to_pyo3(self):
+        """
+        Return a pyo3 object from this legacy Cython instance.
+
+        Returns
+        -------
+        nautilus_pyo3.OrderBookDeltas
+
+        """
         capsule = self.to_capsule()
         deltas = nautilus_pyo3.OrderBookDeltas.from_pycapsule(capsule)
         return deltas
@@ -3876,6 +3892,14 @@ cdef class QuoteTick(Data):
         return QuoteTick.from_pyo3_c(pyo3_quote)
 
     def to_pyo3(self) -> nautilus_pyo3.QuoteTick:
+        """
+        Return a pyo3 object from this legacy Cython instance.
+
+        Returns
+        -------
+        nautilus_pyo3.QuoteTick
+
+        """
         return nautilus_pyo3.QuoteTick(
             nautilus_pyo3.InstrumentId.from_str(self.instrument_id.value),
             nautilus_pyo3.Price.from_raw(self._mem.bid_price.raw, self._mem.bid_price.precision),
@@ -4449,6 +4473,14 @@ cdef class TradeTick(Data):
         return TradeTick.from_pyo3_c(pyo3_trade)
 
     def to_pyo3(self) -> nautilus_pyo3.TradeTick:
+        """
+        Return a pyo3 object from this legacy Cython instance.
+
+        Returns
+        -------
+        nautilus_pyo3.TradeTick
+
+        """
         return nautilus_pyo3.TradeTick(
             nautilus_pyo3.InstrumentId.from_str(self.instrument_id.value),
             nautilus_pyo3.Price.from_raw(self._mem.price.raw, self._mem.price.precision),
