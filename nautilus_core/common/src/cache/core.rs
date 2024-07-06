@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! The core cache in-memory structure.
+//! Provides an in-memory cache for market, execution and custom data.
 
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -926,7 +926,7 @@ impl Cache {
         self.synthetics.clear();
         self.accounts.clear();
         self.orders.clear();
-        // self.order_lists.clear();  // TODO
+        self.order_lists.clear();
         self.positions.clear();
         self.position_snapshots.clear();
 
@@ -938,7 +938,6 @@ impl Cache {
     /// Dispose of the cache which will close any underlying database adapter.
     pub fn dispose(&mut self) -> anyhow::Result<()> {
         if let Some(database) = &mut self.database {
-            // TODO: Log operations in database adapter
             database.close()?;
         }
         Ok(())
@@ -947,7 +946,6 @@ impl Cache {
     /// Flushes the caches database which permanently removes all persisted data.
     pub fn flush_db(&mut self) -> anyhow::Result<()> {
         if let Some(database) = &mut self.database {
-            // TODO: Log operations in database adapter
             database.flush()?;
         }
         Ok(())
@@ -2571,13 +2569,14 @@ mod tests {
     use nautilus_model::{
         accounts::any::AccountAny,
         data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
-        enums::{OrderSide, OrderStatus},
+        enums::{BookType, OrderSide, OrderStatus},
         events::order::{OrderAccepted, OrderEventAny, OrderRejected, OrderSubmitted},
         identifiers::{AccountId, ClientOrderId, PositionId, Venue},
         instruments::{
             any::InstrumentAny, currency_pair::CurrencyPair, stubs::*,
             synthetic::SyntheticInstrument,
         },
+        orderbook::book::OrderBook,
         orders::stubs::{TestOrderEventStubs, TestOrderStubs},
         types::{price::Price, quantity::Quantity},
     };
@@ -2670,6 +2669,8 @@ mod tests {
         let result = cache.order(&client_order_id);
         assert!(result.is_none());
     }
+
+    // -- Execution -------------------------------------------------------------------------------
 
     #[rstest]
     fn test_order_when_initialized(mut cache: Cache, audusd_sim: CurrencyPair) {
@@ -2933,6 +2934,22 @@ mod tests {
         assert_eq!(cache.orders_for_position(&position_id), vec![&order]);
     }
 
+    // -- Data ------------------------------------------------------------------------------------
+
+    #[rstest]
+    fn test_order_book_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
+        let result = cache.order_book(&audusd_sim.id);
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_order_book_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
+        let book = OrderBook::new(BookType::L2_MBP, audusd_sim.id);
+        cache.add_order_book(book.clone()).unwrap();
+        let result = cache.order_book(&audusd_sim.id);
+        assert_eq!(result, Some(book).as_ref());
+    }
+
     #[rstest]
     fn test_instrument_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
         let result = cache.instrument(&audusd_sim.id);
@@ -3062,7 +3079,7 @@ mod tests {
         assert_eq!(result, Some(bars));
     }
 
-    // ---------- Account ----------
+    // -- Account ---------------------------------------------------------------------------------
 
     #[rstest]
     fn test_cache_add_account(mut cache: Cache) {
