@@ -32,7 +32,7 @@ class TestMessage:
 
         # Act
         pickled = pickle.dumps(command)
-        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle is safe here)
 
         # Assert
         assert command == unpickled
@@ -46,7 +46,7 @@ class TestMessage:
 
         # Act
         pickled = pickle.dumps(doc)
-        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle is safe here)
 
         # Assert
         assert doc == unpickled
@@ -61,7 +61,7 @@ class TestMessage:
 
         # Act
         pickled = pickle.dumps(req)
-        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle is safe here)
 
         # Assert
         assert req == unpickled
@@ -76,7 +76,7 @@ class TestMessage:
 
         # Act
         pickled = pickle.dumps(res)
-        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle is safe here)
 
         # Assert
         assert res == unpickled

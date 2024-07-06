@@ -622,7 +622,7 @@ class TestOrderBook:
         )
         # Act
         pickled = pickle.dumps(book)
-        unpickled = pickle.loads(pickled)  # noqa
+        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle safe here)
 
         # Assert
         assert str(book) == str(unpickled)

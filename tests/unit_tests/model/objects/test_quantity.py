@@ -639,4 +639,4 @@ class TestQuantity:
         pickled = pickle.dumps(quantity)
 
         # Assert
-        assert pickle.loads(pickled) == quantity  # noqa (testing pickle)
+        assert pickle.loads(pickled) == quantity  # noqa: S301 (testing pickle)
