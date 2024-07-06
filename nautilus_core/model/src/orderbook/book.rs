@@ -54,6 +54,14 @@ pub struct OrderBook {
     pub(crate) asks: Ladder,
 }
 
+impl PartialEq for OrderBook {
+    fn eq(&self, other: &Self) -> bool {
+        self.instrument_id == other.instrument_id && self.book_type == other.book_type
+    }
+}
+
+impl Eq for OrderBook {}
+
 impl OrderBook {
     /// Creates a new [`OrderBook`] instance.
     #[must_use]
