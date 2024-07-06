@@ -83,7 +83,7 @@ def test_symbol_pickling() -> None:
 
     # Act
     pickled = pickle.dumps(symbol)
-    unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+    unpickled = pickle.loads(pickled)  # noqa: S301 (pickle is safe here)
 
     # Act, Assert
     assert symbol == unpickled
@@ -140,7 +140,7 @@ def test_venue_pickling() -> None:
 
     # Act
     pickled = pickle.dumps(venue)
-    unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+    unpickled = pickle.loads(pickled)  # noqa: S301 (pickle is safe here)
 
     # Act, Assert
     assert venue == unpickled
@@ -172,7 +172,7 @@ def test_instrument_id_pickling() -> None:
 
     # Act
     pickled = pickle.dumps(instrument_id)
-    unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+    unpickled = pickle.loads(pickled)  # noqa: S301 (pickle is safe here)
 
     # Act, Assert
     assert unpickled == instrument_id

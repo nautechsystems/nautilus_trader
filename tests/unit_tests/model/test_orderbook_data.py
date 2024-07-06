@@ -216,7 +216,7 @@ def test_delta_pickle_round_trip() -> None:
 
     # Act
     pickled = pickle.dumps(delta)
-    unpickled = pickle.loads(pickled)  # noqa
+    unpickled = pickle.loads(pickled)  # noqa: S301 (pickle safe here)
 
     # Assert
     assert delta == unpickled
@@ -389,7 +389,7 @@ def test_deltas_pickle_round_trip() -> None:
 
     # Act
     pickled = pickle.dumps(deltas)
-    unpickled = pickle.loads(pickled)  # noqa
+    unpickled = pickle.loads(pickled)  # noqa: S301 (pickle safe here)
 
     # Assert
     assert deltas == unpickled
@@ -652,7 +652,7 @@ def test_depth10_pickle_round_trip() -> None:
 
     # Act
     pickled = pickle.dumps(depth)
-    unpickled = pickle.loads(pickled)  # noqa
+    unpickled = pickle.loads(pickled)  # noqa: S301 (pickle safe here)
 
     # Assert
     assert depth == unpickled

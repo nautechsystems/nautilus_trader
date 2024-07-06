@@ -222,7 +222,7 @@ def test_pickling_round_trip_results_in_expected_tick():
 
     # Act
     pickled = pickle.dumps(synthetic)
-    unpickled = pickle.loads(pickled)  # S301 (pickle is safe here)
+    unpickled = pickle.loads(pickled)
 
     # Assert
     assert synthetic == unpickled

@@ -92,7 +92,7 @@ class TestMoney:
 
         # Act
         pickled = pickle.dumps(money)
-        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle is safe here)
 
         # Assert
         assert unpickled == money
