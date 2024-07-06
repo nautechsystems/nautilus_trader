@@ -587,7 +587,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
         return all(results)
 
-    def _reconcile_order_report(  # noqa (too complex)
+    def _reconcile_order_report(  # noqa: C901 (too complex)
         self,
         report: OrderStatusReport,
         trades: list[FillReport],
