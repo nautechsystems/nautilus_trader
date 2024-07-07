@@ -320,19 +320,27 @@ This also includes the primary (original) order.
 ## Execution reconciliation
 
 Execution reconciliation is the process of aligning the external state of reality for orders and positions
-(both closed and open) with the current system state built from events.
-This process is primarily applicable to live trading, which is why only the `LiveExecutionEngine` includes reconciliation capabilities.
+(both closed and open) with the current system internal state built from events.
+This process is primarily applicable to live trading, which is why only the `LiveExecutionEngine` has reconciliation capability.
 
 There are two main scenarios for reconciliation:
 
-- **Previous Cached Execution State:** If cached execution state exists, information from reports is used to generate events to align the state
-- **No Previous Cached Execution State:** If there is no cached state, all orders and positions that exist externally are generated from scratch
+- **Previous Cached Execution State:** Where cached execution state exists, information from reports is used to generate missing events to align the state
+- **No Previous Cached Execution State:** Where there is no cached state, all orders and positions that exist externally are generated from scratch
 
 ### Reconciliation configuration
 
 Unless reconciliation is disabled by setting the `reconciliation` configuration parameter to false,
 the execution engine will perform the execution reconciliation procedure for each venue.
 Additionally, you can specify the lookback window for reconciliation by setting the `reconciliation_lookback_mins` configuration parameter.
+
+:::warning
+If executions have occurred prior to the lookback window, any necessary events will be generated to align
+internal and external states. This may result in some information loss that could have been avoided with a longer lookback window.
+
+Additionally, some venues may filter or drop execution information under certain conditions, resulting
+in further information loss. This would not occur if all events were persisted in the cache database.
+:::
 
 Each strategy can also be configured to claim any external orders for an instrument ID generated during 
 reconciliation using the `external_order_claims` configuration parameter.
@@ -362,6 +370,7 @@ The system state is then reconciled with the reports, which represent the extern
     - If any client order ID is not recognized or an order report lacks a client order ID, an external order is generated
 - **Position Reconciliation:**
     - Ensure the net position per instrument matches the position reports returned from the venue
+    - If the state resulting from order reconciliation does not match the external state, external orders will be generated to resolve discrepancies
 
 If reconciliation fails, the system will not continue to start, and an error will be logged.
 
