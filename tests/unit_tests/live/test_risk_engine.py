@@ -36,6 +36,7 @@ from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.test_kit.functions import ensure_all_tasks_completed
+from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.mocks.exec_clients import MockExecutionClient
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
@@ -179,10 +180,9 @@ class TestLiveRiskEngine:
         # Act
         self.risk_engine.execute(submit_order)
         self.risk_engine.execute(submit_order)
-        await asyncio.sleep(0.1)
 
         # Assert
-        assert self.risk_engine.cmd_qsize() == 1
+        await eventually(lambda: self.risk_engine.cmd_qsize() == 1)
         assert self.risk_engine.command_count == 0
 
     @pytest.mark.asyncio()
@@ -229,20 +229,18 @@ class TestLiveRiskEngine:
         # Act
         self.risk_engine.execute(submit_order)
         self.risk_engine.process(event)  # Add over max size
-        await asyncio.sleep(0.1)
 
         # Assert
-        assert self.risk_engine.cmd_qsize() == 1
+        await eventually(lambda: self.risk_engine.cmd_qsize() == 1)
         assert self.risk_engine.event_count == 0
 
     @pytest.mark.asyncio()
     async def test_start(self):
         # Arrange, Act
         self.risk_engine.start()
-        await asyncio.sleep(0.1)
 
         # Assert
-        assert self.risk_engine.is_running
+        await eventually(lambda: self.risk_engine.is_running)
 
     @pytest.mark.asyncio()
     async def test_kill_when_running_and_no_messages_on_queues(self):
@@ -294,10 +292,9 @@ class TestLiveRiskEngine:
 
         # Act
         self.risk_engine.execute(submit_order)
-        await asyncio.sleep(0.1)
 
         # Assert
-        assert self.risk_engine.cmd_qsize() == 0
+        await eventually(lambda: self.risk_engine.cmd_qsize() == 0)
         assert self.risk_engine.command_count == 1
 
     @pytest.mark.asyncio()
@@ -324,8 +321,7 @@ class TestLiveRiskEngine:
 
         # Act
         self.risk_engine.process(event)
-        await asyncio.sleep(0.1)
 
         # Assert
-        assert self.risk_engine.cmd_qsize() == 0
+        await eventually(lambda: self.risk_engine.cmd_qsize() == 0)
         assert self.risk_engine.event_count == 1
