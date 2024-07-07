@@ -922,7 +922,7 @@ cdef class ExecutionEngine(Component):
             )
         if position_id is not None:
             if fill.position_id is not None and fill.position_id != position_id:
-                self._log.error(
+                self._log.warning(
                     "Incorrect position ID assigned to fill: "
                     f"cached={position_id!r}, assigned={fill.position_id!r}. "
                     "re-assigning from cache",

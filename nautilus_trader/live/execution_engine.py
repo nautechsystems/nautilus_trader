@@ -15,6 +15,7 @@
 
 import asyncio
 import math
+import uuid
 from asyncio import Queue
 from decimal import Decimal
 from typing import Any, Final
@@ -38,6 +39,7 @@ from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import TimeInForce
@@ -57,6 +59,7 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
+from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
@@ -738,12 +741,18 @@ class LiveExecutionEngine(ExecutionEngine):
             return self._reconcile_position_report_netting(report)
 
     def _reconcile_position_report_hedging(self, report: PositionStatusReport) -> bool:
+        self._log.info(
+            f"Reconciling HEDGE position for {report.instrument_id}, venue_position_id={report.venue_position_id}",
+            LogColor.BLUE,
+        )
+
         position: Position | None = self._cache.position(report.venue_position_id)
         if position is None:
             self._log.error(
                 f"Cannot reconcile position: {report.venue_position_id!r} not found",
             )
             return False  # Failed
+
         position_signed_decimal_qty: Decimal = position.signed_decimal_qty()
         if position_signed_decimal_qty != report.signed_decimal_qty:
             self._log.error(
@@ -756,6 +765,15 @@ class LiveExecutionEngine(ExecutionEngine):
         return True  # Reconciled
 
     def _reconcile_position_report_netting(self, report: PositionStatusReport) -> bool:
+        self._log.info(f"Reconciling NET position for {report.instrument_id}", LogColor.BLUE)
+
+        instrument = self._cache.instrument(report.instrument_id)
+        if instrument is None:
+            self._log.error(
+                f"Cannot reconcile position for {report.instrument_id}: instrument not found",
+            )
+            return False  # Failed
+
         positions_open: list[Position] = self._cache.positions_open(
             venue=None,  # Faster query filtering
             instrument_id=report.instrument_id,
@@ -764,13 +782,38 @@ class LiveExecutionEngine(ExecutionEngine):
         position_signed_decimal_qty: Decimal = Decimal()
         for position in positions_open:
             position_signed_decimal_qty += position.signed_decimal_qty()
+
+        self._log.info(f"{report.signed_decimal_qty=}", LogColor.BLUE)
+        self._log.info(f"{position_signed_decimal_qty=}", LogColor.BLUE)
+
         if position_signed_decimal_qty != report.signed_decimal_qty:
-            self._log.error(
-                f"Cannot reconcile {report.instrument_id}: position "
-                f"net qty {position_signed_decimal_qty} != reported net qty {report.signed_decimal_qty}, "
-                f"{report}",
+            diff = abs(position_signed_decimal_qty - report.signed_decimal_qty)
+            diff_quantity = Quantity(diff, instrument.size_precision)
+            self._log.info(f"{diff_quantity=}", LogColor.BLUE)
+
+            order_side = (
+                OrderSide.BUY
+                if report.signed_decimal_qty > position_signed_decimal_qty
+                else OrderSide.SELL
             )
-            return False  # Failed
+
+            now = self._clock.timestamp_ns()
+            diff_report = OrderStatusReport(
+                instrument_id=report.instrument_id,
+                account_id=report.account_id,
+                venue_order_id=VenueOrderId(str(uuid.uuid4())),
+                order_side=order_side,
+                order_type=OrderType.MARKET,
+                time_in_force=TimeInForce.DAY,
+                order_status=OrderStatus.FILLED,
+                quantity=diff_quantity,
+                filled_qty=diff_quantity,
+                report_id=UUID4(),
+                ts_accepted=now,
+                ts_last=now,
+                ts_init=now,
+            )
+            self._reconcile_order_report(diff_report, trades=[])  # Will infer trade
 
         return True  # Reconciled
 

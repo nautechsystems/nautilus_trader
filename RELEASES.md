@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Improve live reconciliation robustness (will now generate inferred orders necessary to align external position state)
 
 ### Breaking Changes
 None
