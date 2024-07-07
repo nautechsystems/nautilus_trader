@@ -684,7 +684,7 @@ impl OrderSide {
         match &self {
             Self::Buy => OrderSideSpecified::Buy,
             Self::Sell => OrderSideSpecified::Sell,
-            _ => panic!("Order invariant failed: side must be 'Buy' or 'Sell'"),
+            _ => panic!("Order invariant failed: side must be `Buy` or `Sell`"),
         }
     }
 }
