@@ -19,7 +19,7 @@
 //! and also deploy those same strategies live, with no code changes.
 //!
 //!
-//! NautilusTrader is modularly designed to work with *adapters*, enabling connectivity to trading venues
+//! The platform is modularly designed to work with *adapters*, enabling connectivity to trading venues
 //! and data providers by converting their raw APIs into a unified interface.
 //!
 //! # Feature flags
