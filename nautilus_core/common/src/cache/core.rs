@@ -2944,7 +2944,7 @@ mod tests {
             None,
             None,
         );
-        let position = Position::new(&audusd_sim, fill.clone().into()).unwrap();
+        let position = Position::new(&audusd_sim, fill.into()).unwrap();
         cache
             .add_position(position.clone(), OmsType::Netting)
             .unwrap();
