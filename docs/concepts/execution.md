@@ -334,6 +334,11 @@ Unless reconciliation is disabled by setting the `reconciliation` configuration 
 the execution engine will perform the execution reconciliation procedure for each venue.
 Additionally, you can specify the lookback window for reconciliation by setting the `reconciliation_lookback_mins` configuration parameter.
 
+:::tip
+It's recommended not to set a specific `reconciliation_lookback_mins`. This allows the requests made
+to the venues to utilize the maximum execution history available for reconciliation.
+:::
+
 :::warning
 If executions have occurred prior to the lookback window, any necessary events will be generated to align
 internal and external states. This may result in some information loss that could have been avoided with a longer lookback window.
@@ -365,18 +370,19 @@ The system state is then reconciled with the reports, which represent the extern
 - **Duplicate Check:**
     - Check for duplicate order IDs and trade IDs
 - **Order Reconciliation:**
-    - Generate and apply events necessary to update orders from any currently cached state to the current state
+    - Generate and apply events necessary to update orders from any cached state to the current state
     - If any trade reports are missing, inferred `OrderFilled` events are generated
-    - If any client order ID is not recognized or an order report lacks a client order ID, an external order is generated
+    - If any client order ID is not recognized or an order report lacks a client order ID, external order events are generated
 - **Position Reconciliation:**
     - Ensure the net position per instrument matches the position reports returned from the venue
-    - If the state resulting from order reconciliation does not match the external state, external orders will be generated to resolve discrepancies
+    - If the position state resulting from order reconciliation does not match the external state, external order events will be generated to resolve discrepancies
 
 If reconciliation fails, the system will not continue to start, and an error will be logged.
 
 :::tip
 The current reconciliation procedure can experience state mismatches if the lookback window is 
 misconfigured or if the venue omits certain order or trade reports due to filter conditions.
+
 If you encounter reconciliation issues, drop any cached state or ensure the account is flat at
 system shutdown and startup.
 :::
