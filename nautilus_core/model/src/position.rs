@@ -82,6 +82,7 @@ pub struct Position {
 }
 
 impl Position {
+    /// Creates a new [`Position`] instance.
     pub fn new(instrument: &InstrumentAny, fill: OrderFilled) -> anyhow::Result<Self> {
         assert_eq!(instrument.id(), fill.instrument_id);
         assert_ne!(fill.order_side, OrderSide::NoOrderSide);
