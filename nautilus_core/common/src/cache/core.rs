@@ -2569,7 +2569,7 @@ mod tests {
     use nautilus_model::{
         accounts::any::AccountAny,
         data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
-        enums::{BookType, OrderSide, OrderStatus},
+        enums::{BookType, OmsType, OrderSide, OrderStatus},
         events::order::{OrderAccepted, OrderEventAny, OrderRejected, OrderSubmitted},
         identifiers::{AccountId, ClientOrderId, PositionId, Venue},
         instruments::{
@@ -2578,6 +2578,7 @@ mod tests {
         },
         orderbook::book::OrderBook,
         orders::stubs::{TestOrderEventStubs, TestOrderStubs},
+        position::Position,
         types::{price::Price, quantity::Quantity},
     };
     use rstest::{fixture, rstest};
@@ -2633,34 +2634,11 @@ mod tests {
         assert!(cache.cache_general().is_ok());
     }
 
-    #[rstest]
-    fn test_cache_currencies_when_no_database(mut cache: Cache) {
-        assert!(cache.cache_currencies().is_ok());
-    }
-
-    #[rstest]
-    fn test_cache_instruments_when_no_database(mut cache: Cache) {
-        assert!(cache.cache_instruments().is_ok());
-    }
-
-    #[rstest]
-    fn test_cache_synthetics_when_no_database(mut cache: Cache) {
-        assert!(cache.cache_synthetics().is_ok());
-    }
-
-    #[rstest]
-    fn test_cache_accounts_when_no_database(mut cache: Cache) {
-        assert!(cache.cache_accounts().is_ok());
-    }
+    // -- EXECUTION -------------------------------------------------------------------------------
 
     #[rstest]
     fn test_cache_orders_when_no_database(mut cache: Cache) {
         assert!(cache.cache_orders().is_ok());
-    }
-
-    #[rstest]
-    fn test_cache_positions_when_no_database(mut cache: Cache) {
-        assert!(cache.cache_positions().is_ok());
     }
 
     #[rstest]
@@ -2669,8 +2647,6 @@ mod tests {
         let result = cache.order(&client_order_id);
         assert!(result.is_none());
     }
-
-    // -- Execution -------------------------------------------------------------------------------
 
     #[rstest]
     fn test_order_when_initialized(mut cache: Cache, audusd_sim: CurrencyPair) {
@@ -2934,20 +2910,74 @@ mod tests {
         assert_eq!(cache.orders_for_position(&position_id), vec![&order]);
     }
 
-    // -- Data ------------------------------------------------------------------------------------
-
     #[rstest]
-    fn test_order_book_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
-        let result = cache.order_book(&audusd_sim.id);
-        assert!(result.is_none());
+    fn test_cache_positions_when_no_database(mut cache: Cache) {
+        assert!(cache.cache_positions().is_ok());
     }
 
     #[rstest]
-    fn test_order_book_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
-        let book = OrderBook::new(BookType::L2_MBP, audusd_sim.id);
-        cache.add_order_book(book.clone()).unwrap();
-        let result = cache.order_book(&audusd_sim.id);
-        assert_eq!(result, Some(book).as_ref());
+    fn test_position_when_empty(cache: Cache) {
+        let position_id = PositionId::from("1");
+        let result = cache.position(&position_id);
+        assert!(result.is_none());
+        assert!(!cache.position_exists(&position_id));
+    }
+
+    #[rstest]
+    fn test_position_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+        let order = TestOrderStubs::market_order(
+            audusd_sim.id(),
+            OrderSide::Buy,
+            Quantity::from("1000000"),
+            None,
+            None,
+        );
+        let fill = TestOrderEventStubs::order_filled(
+            &order,
+            &audusd_sim,
+            None,
+            Some(PositionId::new("P-123456").unwrap()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        let position = Position::new(&audusd_sim, fill.clone().into()).unwrap();
+        cache
+            .add_position(position.clone(), OmsType::Netting)
+            .unwrap();
+
+        let result = cache.position(&position.id);
+        assert_eq!(result, Some(&position));
+        assert!(cache.position_exists(&position.id));
+        assert_eq!(
+            cache.position_id(&order.client_order_id()),
+            Some(&position.id)
+        );
+        assert_eq!(
+            cache.positions_open(None, None, None, None),
+            vec![&position]
+        );
+        assert_eq!(
+            cache.positions_closed(None, None, None, None),
+            Vec::<&Position>::new()
+        );
+        assert_eq!(cache.positions_open_count(None, None, None, None), 1);
+        assert_eq!(cache.positions_closed_count(None, None, None, None), 0);
+    }
+
+    // -- DATA ------------------------------------------------------------------------------------
+
+    #[rstest]
+    fn test_cache_currencies_when_no_database(mut cache: Cache) {
+        assert!(cache.cache_currencies().is_ok());
+    }
+
+    #[rstest]
+    fn test_cache_instruments_when_no_database(mut cache: Cache) {
+        assert!(cache.cache_instruments().is_ok());
     }
 
     #[rstest]
@@ -2963,10 +2993,12 @@ mod tests {
             .unwrap();
 
         let result = cache.instrument(&audusd_sim.id);
-        assert_eq!(
-            result,
-            Some(InstrumentAny::CurrencyPair(audusd_sim)).as_ref()
-        );
+        assert_eq!(result, Some(&InstrumentAny::CurrencyPair(audusd_sim)));
+    }
+
+    #[rstest]
+    fn test_cache_synthetics_when_no_database(mut cache: Cache) {
+        assert!(cache.cache_synthetics().is_ok());
     }
 
     #[rstest]
@@ -2982,7 +3014,21 @@ mod tests {
         let synth = SyntheticInstrument::default();
         cache.add_synthetic(synth.clone()).unwrap();
         let result = cache.synthetic(&synth.id);
-        assert_eq!(result, Some(synth).as_ref());
+        assert_eq!(result, Some(&synth));
+    }
+
+    #[rstest]
+    fn test_order_book_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
+        let result = cache.order_book(&audusd_sim.id);
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_order_book_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
+        let book = OrderBook::new(BookType::L2_MBP, audusd_sim.id);
+        cache.add_order_book(book.clone()).unwrap();
+        let result = cache.order_book(&audusd_sim.id);
+        assert_eq!(result, Some(&book));
     }
 
     #[rstest]
@@ -3061,7 +3107,7 @@ mod tests {
         let bar = Bar::default();
         cache.add_bar(bar).unwrap();
         let result = cache.bar(&bar.bar_type);
-        assert_eq!(result, Some(bar).as_ref());
+        assert_eq!(result, Some(&bar));
     }
 
     #[rstest]
@@ -3079,7 +3125,12 @@ mod tests {
         assert_eq!(result, Some(bars));
     }
 
-    // -- Account ---------------------------------------------------------------------------------
+    // -- ACCOUNT ---------------------------------------------------------------------------------
+
+    #[rstest]
+    fn test_cache_accounts_when_no_database(mut cache: Cache) {
+        assert!(cache.cache_accounts().is_ok());
+    }
 
     #[rstest]
     fn test_cache_add_account(mut cache: Cache) {
