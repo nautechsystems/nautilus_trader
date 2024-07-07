@@ -390,7 +390,7 @@ class TestLiveExecutionEngine:
 
         # Assert
         await eventually(lambda: self.exec_engine.evt_qsize() == 0)
-        assert self.exec_engine.command_count == 1
+        await eventually(lambda: self.exec_engine.command_count == 1)
 
         # Tear Down
         self.exec_engine.stop()

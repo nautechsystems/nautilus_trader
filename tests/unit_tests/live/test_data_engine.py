@@ -273,7 +273,7 @@ class TestLiveDataEngine:
 
         # Assert
         await eventually(lambda: self.engine.cmd_qsize() == 0)
-        assert self.engine.command_count == 1
+        await eventually(lambda: self.engine.command_count == 1)
 
         # Tear Down
         self.engine.stop()
@@ -306,7 +306,7 @@ class TestLiveDataEngine:
 
         # Assert
         await eventually(lambda: self.engine.req_qsize() == 0)
-        assert self.engine.request_count == 1
+        await eventually(lambda: self.engine.request_count == 1)
 
         # Tear Down
         self.engine.stop()
@@ -331,7 +331,7 @@ class TestLiveDataEngine:
 
         # Assert
         await eventually(lambda: self.engine.res_qsize() == 0)
-        assert self.engine.response_count == 1
+        await eventually(lambda: self.engine.response_count == 1)
 
         # Tear Down
         self.engine.stop()
@@ -349,7 +349,7 @@ class TestLiveDataEngine:
 
         # Assert
         await eventually(lambda: self.engine.data_qsize() == 0)
-        assert self.engine.data_count == 1
+        await eventually(lambda: self.engine.data_count == 1)
 
         # Tear Down
         self.engine.stop()

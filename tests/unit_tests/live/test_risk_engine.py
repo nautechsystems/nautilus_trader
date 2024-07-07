@@ -295,7 +295,7 @@ class TestLiveRiskEngine:
 
         # Assert
         await eventually(lambda: self.risk_engine.cmd_qsize() == 0)
-        assert self.risk_engine.command_count == 1
+        await eventually(lambda: self.risk_engine.command_count == 1)
 
     @pytest.mark.asyncio()
     async def test_handle_position_opening_with_position_id_none(self):
@@ -324,4 +324,4 @@ class TestLiveRiskEngine:
 
         # Assert
         await eventually(lambda: self.risk_engine.cmd_qsize() == 0)
-        assert self.risk_engine.event_count == 1
+        await eventually(lambda: self.risk_engine.event_count == 1)
