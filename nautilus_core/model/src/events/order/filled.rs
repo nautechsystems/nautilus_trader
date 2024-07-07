@@ -22,8 +22,8 @@ use ustr::Ustr;
 
 use crate::{
     enums::{
-        ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TrailingOffsetType,
-        TriggerType,
+        ContingencyType, LiquiditySide, OrderSide, OrderSideSpecified, OrderType, TimeInForce,
+        TrailingOffsetType, TriggerType,
     },
     events::order::OrderEvent,
     identifiers::{
@@ -108,6 +108,11 @@ impl OrderFilled {
             position_id,
             commission,
         })
+    }
+
+    #[must_use]
+    pub fn specified_side(&self) -> OrderSideSpecified {
+        self.order_side.as_specified()
     }
 
     #[must_use]
