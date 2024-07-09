@@ -53,9 +53,9 @@ pub struct TradeTick {
     pub aggressor_side: AggressorSide,
     /// The trade match ID (assigned by the venue).
     pub trade_id: TradeId,
-    /// The UNIX timestamp (nanoseconds) when the trade event occurred.
+    /// UNIX timestamp (nanoseconds) when the trade event occurred.
     pub ts_event: UnixNanos,
-    /// The UNIX timestamp (nanoseconds) when the struct was initialized.
+    /// UNIX timestamp (nanoseconds) when the struct was initialized.
     pub ts_init: UnixNanos,
 }
 

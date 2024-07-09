@@ -39,7 +39,7 @@ pub struct QueryOrder {
 impl QueryOrder {
     /// Creates a new [`QueryOrder`] instance.
     #[allow(clippy::too_many_arguments)]
-    pub fn new(
+    pub const fn new(
         trader_id: TraderId,
         client_id: ClientId,
         strategy_id: StrategyId,

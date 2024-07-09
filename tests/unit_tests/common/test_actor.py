@@ -34,6 +34,7 @@ from nautilus_trader.model.currencies import EUR
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import BookType
@@ -1575,7 +1576,7 @@ class TestActor:
         assert self.data_engine.command_count == 2
         assert len(actor.msgbus.subscriptions()) == 4  # Portfolio subscriptions only
 
-    def test_subscribe_order_book(self) -> None:
+    def test_subscribe_order_book_at_interval(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1586,12 +1587,12 @@ class TestActor:
         )
 
         # Act
-        actor.subscribe_order_book_snapshots(AUDUSD_SIM.id, book_type=BookType.L2_MBP)
+        actor.subscribe_order_book_at_interval(AUDUSD_SIM.id, book_type=BookType.L2_MBP)
 
         # Assert
         assert self.data_engine.command_count == 1
 
-    def test_unsubscribe_order_book(self) -> None:
+    def test_unsubscribe_order_book_at_interval(self) -> None:
         # Arrange
         actor = MockActor()
         actor.register_base(
@@ -1601,10 +1602,10 @@ class TestActor:
             clock=self.clock,
         )
 
-        actor.subscribe_order_book_snapshots(AUDUSD_SIM.id, book_type=BookType.L2_MBP)
+        actor.subscribe_order_book_at_interval(AUDUSD_SIM.id, book_type=BookType.L2_MBP)
 
         # Act
-        actor.unsubscribe_order_book_snapshots(AUDUSD_SIM.id)
+        actor.unsubscribe_order_book_at_interval(AUDUSD_SIM.id)
 
         # Assert
         assert self.data_engine.command_count == 2
@@ -1950,6 +1951,38 @@ class TestActor:
         )
 
         data_type = DataType(NewsEvent, {"type": "NEWS_WIRE", "topic": "Earthquakes"})
+
+        # Act
+        request_id = actor.request_data(
+            data_type,
+            ClientId("BLOOMBERG-01"),
+            callback=handler.append,
+        )
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert actor.has_pending_requests()
+        assert actor.is_pending_request(request_id)
+        assert request_id in actor.pending_requests()
+
+    def test_request_order_book_snapshots_sends_request_to_data_engine(self) -> None:
+        # Arrange
+        handler: list[OrderBookDeltas] = []
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        data_type = DataType(
+            OrderBookDeltas,
+            metadata={
+                "instrument_id": AUDUSD_SIM.id,
+                "limit": 5,
+            },
+        )
 
         # Act
         request_id = actor.request_data(

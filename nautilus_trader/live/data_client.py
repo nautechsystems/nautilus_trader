@@ -172,7 +172,7 @@ class LiveDataClient(DataClient):
         if e:
             tb_str = "".join(traceback.format_exception(type(e), e, e.__traceback__))
             self._log.error(
-                f"Error on `{task.get_name()}`: " f"{task.exception()!r}\n{tb_str}",
+                f"Error on `{task.get_name()}`: {task.exception()!r}\n{tb_str}",
             )
         else:
             if actions:
@@ -399,7 +399,7 @@ class LiveMarketDataClient(MarketDataClient):
         if e:
             tb_str = "".join(traceback.format_exception(type(e), e, e.__traceback__))
             self._log.error(
-                f"Error on `{task.get_name()}`: " f"{task.exception()!r}\n{tb_str}",
+                f"Error on `{task.get_name()}`: {task.exception()!r}\n{tb_str}",
             )
         else:
             if actions:
@@ -762,6 +762,23 @@ class LiveMarketDataClient(MarketDataClient):
             log_msg=f"request: bars {bar_type}",
         )
 
+    def request_order_book_snapshot(
+        self,
+        instrument_id: InstrumentId,
+        limit: int,
+        correlation_id: UUID4,
+    ) -> None:
+        limit_str = f" limit={limit}" if limit else ""
+        self._log.info(f"Request {instrument_id} order_book_snapshot{limit_str}", LogColor.BLUE)
+        self.create_task(
+            self._request_order_book_snapshot(
+                instrument_id=instrument_id,
+                limit=limit,
+                correlation_id=correlation_id,
+            ),
+            log_msg=f"request: order_book_snapshot {instrument_id}",
+        )
+
     ############################################################################
     # Coroutines to implement
     ############################################################################
@@ -949,3 +966,13 @@ class LiveMarketDataClient(MarketDataClient):
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_bars` coroutine",  # pragma: no cover
         )
+
+    async def _request_order_book_snapshot(
+        self,
+        instrument_id: InstrumentId,
+        limit: int,
+        correlation_id: UUID4,
+    ) -> None:
+        raise NotImplementedError(
+            "implement the `_request_order_book_snapshot` coroutine",  # pragma: no cover
+        )  # pra

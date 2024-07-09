@@ -649,7 +649,7 @@ cdef class DataEngine(Component):
                 command.data_type.metadata,
             )
         elif command.data_type.type == OrderBook:
-            self._handle_subscribe_order_book_snapshots(
+            self._handle_subscribe_order_book(
                 client,
                 command.data_type.metadata.get("instrument_id"),
                 command.data_type.metadata,
@@ -695,7 +695,7 @@ cdef class DataEngine(Component):
                 command.data_type.metadata.get("instrument_id"),
             )
         elif command.data_type.type == OrderBook:
-            self._handle_unsubscribe_order_book_snapshots(
+            self._handle_unsubscribe_order_book(
                 client,
                 command.data_type.metadata.get("instrument_id"),
                 command.data_type.metadata,
@@ -764,7 +764,7 @@ cdef class DataEngine(Component):
             managed=metadata["managed"]
         )
 
-    cpdef void _handle_subscribe_order_book_snapshots(
+    cpdef void _handle_subscribe_order_book(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
@@ -1097,7 +1097,7 @@ cdef class DataEngine(Component):
             if instrument_id in client.subscribed_order_book_deltas():
                 client.unsubscribe_order_book_deltas(instrument_id)
 
-    cpdef void _handle_unsubscribe_order_book_snapshots(
+    cpdef void _handle_unsubscribe_order_book(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
@@ -1233,6 +1233,13 @@ cdef class DataEngine(Component):
                     request.data_type.metadata.get("start"),
                     request.data_type.metadata.get("end"),
                 )
+        elif request.data_type.type == OrderBookDeltas:
+            Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
+            client.request_order_book_snapshot(
+                request.data_type.metadata.get("instrument_id"),
+                request.data_type.metadata.get("limit", 0),
+                request.id
+            )
         elif request.data_type.type == QuoteTick:
             Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
             client.request_quote_ticks(

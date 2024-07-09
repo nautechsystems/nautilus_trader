@@ -928,14 +928,17 @@ class BybitExecutionClient(LiveExecutionClient):
                             continue
                         if order.quantity != Quantity.from_str(bybit_order.qty):
                             continue
-                        if bybit_order.orderType == BybitOrderType.MARKET and not isinstance(
-                            order,
-                            TrailingStopMarketOrder,
-                        ):
-                            continue
-                        elif bybit_order.orderType == BybitOrderType.LIMIT and not isinstance(
-                            order,
-                            TrailingStopLimitOrder,
+                        if (
+                            bybit_order.orderType == BybitOrderType.MARKET
+                            and not isinstance(
+                                order,
+                                TrailingStopMarketOrder,
+                            )
+                            or bybit_order.orderType == BybitOrderType.LIMIT
+                            and not isinstance(
+                                order,
+                                TrailingStopLimitOrder,
+                            )
                         ):
                             continue
 

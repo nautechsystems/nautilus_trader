@@ -187,8 +187,8 @@ class TestExecutionReports:
         assert report.client_id == client_id
         assert report.account_id == account_id
         assert report.ts_init == 0
-        assert report.order_reports() == {}
-        assert report.position_reports() == {}
+        assert report.order_reports == {}
+        assert report.position_reports == {}
         assert (
             str(report)
             == f"ExecutionMassStatus(client_id=IB, account_id=IB-U123456789, venue=IDEALPRO, order_reports={{}}, fill_reports={{}}, position_reports={{}}, report_id={report_id}, ts_init=0)"  # noqa
@@ -247,7 +247,7 @@ class TestExecutionReports:
         mass_status.add_order_reports([report])
 
         # Assert
-        assert mass_status.order_reports()[venue_order_id] == report
+        assert mass_status.order_reports[venue_order_id] == report
         assert (
             repr(mass_status)
             == f"ExecutionMassStatus(client_id=IB, account_id=IB-U123456789, venue=IDEALPRO, order_reports={{VenueOrderId('2'): OrderStatusReport(account_id=IB-U123456789, instrument_id=AUD/USD.IDEALPRO, client_order_id=O-123456, order_list_id=1, venue_order_id=2, order_side=SELL, order_type=STOP_LIMIT, contingency_type=OCO, time_in_force=DAY, expire_time=None, order_status=REJECTED, price=0.90090, trigger_price=0.90100, trigger_type=DEFAULT, limit_offset=None, trailing_offset=0.00010, trailing_offset_type=PRICE, quantity=1_000_000, filled_qty=0, leaves_qty=1_000_000, display_qty=None, avg_px=None, post_only=True, reduce_only=False, cancel_reason=SOME_REASON, report_id={report_id2}, ts_accepted=1000000, ts_triggered=0, ts_last=2000000, ts_init=3000000)}}, fill_reports={{}}, position_reports={{}}, report_id={report_id1}, ts_init=0)"  # noqa
@@ -307,7 +307,7 @@ class TestExecutionReports:
         mass_status.add_fill_reports([report1, report2])
 
         # Assert
-        assert mass_status.fill_reports()[VenueOrderId("1")] == [report1, report2]
+        assert mass_status.fill_reports[VenueOrderId("1")] == [report1, report2]
 
     def test_add_position_state_reports(self):
         report_id1 = UUID4()
@@ -335,7 +335,7 @@ class TestExecutionReports:
         mass_status.add_position_reports([report])
 
         # Assert
-        assert mass_status.position_reports()[AUDUSD_IDEALPRO] == [report]
+        assert mass_status.position_reports[AUDUSD_IDEALPRO] == [report]
         assert (
             repr(mass_status)
             == f"ExecutionMassStatus(client_id=IB, account_id=IB-U123456789, venue=IDEALPRO, order_reports={{}}, fill_reports={{}}, position_reports={{InstrumentId('AUD/USD.IDEALPRO'): [PositionStatusReport(account_id=IB-U123456789, instrument_id=AUD/USD.IDEALPRO, venue_position_id=1, position_side=LONG, quantity=1_000_000, signed_decimal_qty=1000000, report_id={report_id2}, ts_last=0, ts_init=0)]}}, report_id={report_id1}, ts_init=0)"  # noqa

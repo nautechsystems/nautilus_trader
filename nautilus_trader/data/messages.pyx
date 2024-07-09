@@ -38,7 +38,7 @@ cdef class DataCommand(Command):
     command_id : UUID4
         The command ID.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
     Raises
     ------
@@ -93,7 +93,7 @@ cdef class Subscribe(DataCommand):
     command_id : UUID4
         The command ID.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
     Raises
     ------
@@ -134,7 +134,7 @@ cdef class Unsubscribe(DataCommand):
     command_id : UUID4
         The command ID.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
     Raises
     ------
@@ -177,7 +177,7 @@ cdef class DataRequest(Request):
     request_id : UUID4
         The request ID.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
     Raises
     ------
@@ -239,7 +239,7 @@ cdef class DataResponse(Response):
     response_id : UUID4
         The response ID.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
     Raises
     ------

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! The core cache in-memory structure.
+//! Provides an in-memory cache for market, execution and custom data.
 
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -23,6 +23,7 @@ use std::{
 use log::{debug, error, info, warn};
 use nautilus_core::correctness::{check_key_not_in_map, check_slice_not_empty, check_valid_string};
 use nautilus_model::{
+    accounts::any::AccountAny,
     data::{
         bar::{Bar, BarType},
         quote::QuoteTick,
@@ -42,7 +43,7 @@ use nautilus_model::{
 use ustr::Ustr;
 
 use super::database::CacheDatabaseAdapter;
-use crate::{enums::SerializationEncoding, interface::account::Account};
+use crate::enums::SerializationEncoding;
 
 /// Configuration for `Cache` instances.
 pub struct CacheConfig {
@@ -54,13 +55,14 @@ pub struct CacheConfig {
     pub drop_instruments_on_reset: bool,
     pub tick_capacity: usize,
     pub bar_capacity: usize,
+    pub save_market_data: bool,
 }
 
 impl CacheConfig {
     /// Creates a new [`CacheConfig`] instance.
     #[allow(clippy::too_many_arguments)]
     #[must_use]
-    pub fn new(
+    pub const fn new(
         encoding: SerializationEncoding,
         timestamps_as_iso8601: bool,
         use_trader_prefix: bool,
@@ -69,6 +71,7 @@ impl CacheConfig {
         drop_instruments_on_reset: bool,
         tick_capacity: usize,
         bar_capacity: usize,
+        save_market_data: bool,
     ) -> Self {
         Self {
             encoding,
@@ -79,6 +82,7 @@ impl CacheConfig {
             drop_instruments_on_reset,
             tick_capacity,
             bar_capacity,
+            save_market_data,
         }
     }
 }
@@ -95,6 +99,7 @@ impl Default for CacheConfig {
             true,
             10_000,
             10_000,
+            false,
         )
     }
 }
@@ -178,7 +183,7 @@ pub struct Cache {
     currencies: HashMap<Ustr, Currency>,
     instruments: HashMap<InstrumentId, InstrumentAny>,
     synthetics: HashMap<InstrumentId, SyntheticInstrument>,
-    accounts: HashMap<AccountId, Box<dyn Account>>,
+    accounts: HashMap<AccountId, AccountAny>,
     orders: HashMap<ClientOrderId, OrderAny>,
     order_lists: HashMap<OrderListId, OrderList>,
     positions: HashMap<PositionId, Position>,
@@ -916,11 +921,12 @@ impl Cache {
         self.trades.clear();
         self.books.clear();
         self.bars.clear();
+        self.currencies.clear();
         self.instruments.clear();
         self.synthetics.clear();
         self.accounts.clear();
         self.orders.clear();
-        // self.order_lists.clear();  // TODO
+        self.order_lists.clear();
         self.positions.clear();
         self.position_snapshots.clear();
 
@@ -932,7 +938,6 @@ impl Cache {
     /// Dispose of the cache which will close any underlying database adapter.
     pub fn dispose(&mut self) -> anyhow::Result<()> {
         if let Some(database) = &mut self.database {
-            // TODO: Log operations in database adapter
             database.close()?;
         }
         Ok(())
@@ -941,7 +946,6 @@ impl Cache {
     /// Flushes the caches database which permanently removes all persisted data.
     pub fn flush_db(&mut self) -> anyhow::Result<()> {
         if let Some(database) = &mut self.database {
-            // TODO: Log operations in database adapter
             database.flush()?;
         }
         Ok(())
@@ -967,6 +971,13 @@ impl Cache {
     /// Adds the given order `book` to the cache.
     pub fn add_order_book(&mut self, book: OrderBook) -> anyhow::Result<()> {
         debug!("Adding `OrderBook` {}", book.instrument_id);
+
+        if self.config.save_market_data {
+            if let Some(database) = &mut self.database {
+                database.add_order_book(&book)?;
+            }
+        }
+
         self.books.insert(book.instrument_id, book);
         Ok(())
     }
@@ -974,6 +985,13 @@ impl Cache {
     /// Adds the given `quote` tick to the cache.
     pub fn add_quote(&mut self, quote: QuoteTick) -> anyhow::Result<()> {
         debug!("Adding `QuoteTick` {}", quote.instrument_id);
+
+        if self.config.save_market_data {
+            if let Some(database) = &mut self.database {
+                database.add_quote(&quote)?;
+            }
+        }
+
         let quotes_deque = self
             .quotes
             .entry(quote.instrument_id)
@@ -988,6 +1006,15 @@ impl Cache {
 
         let instrument_id = quotes[0].instrument_id;
         debug!("Adding `QuoteTick`[{}] {}", quotes.len(), instrument_id);
+
+        if self.config.save_market_data {
+            if let Some(database) = &mut self.database {
+                for quote in quotes {
+                    database.add_quote(quote).unwrap();
+                }
+            }
+        }
+
         let quotes_deque = self
             .quotes
             .entry(instrument_id)
@@ -1002,6 +1029,13 @@ impl Cache {
     /// Adds the given `trade` tick to the cache.
     pub fn add_trade(&mut self, trade: TradeTick) -> anyhow::Result<()> {
         debug!("Adding `TradeTick` {}", trade.instrument_id);
+
+        if self.config.save_market_data {
+            if let Some(database) = &mut self.database {
+                database.add_trade(&trade)?;
+            }
+        }
+
         let trades_deque = self
             .trades
             .entry(trade.instrument_id)
@@ -1016,6 +1050,15 @@ impl Cache {
 
         let instrument_id = trades[0].instrument_id;
         debug!("Adding `TradeTick`[{}] {}", trades.len(), instrument_id);
+
+        if self.config.save_market_data {
+            if let Some(database) = &mut self.database {
+                for trade in trades {
+                    database.add_trade(trade).unwrap();
+                }
+            }
+        }
+
         let trades_deque = self
             .trades
             .entry(instrument_id)
@@ -1030,6 +1073,13 @@ impl Cache {
     /// Adds the given `bar` to the cache.
     pub fn add_bar(&mut self, bar: Bar) -> anyhow::Result<()> {
         debug!("Adding `Bar` {}", bar.bar_type);
+
+        if self.config.save_market_data {
+            if let Some(database) = &mut self.database {
+                database.add_bar(&bar)?;
+            }
+        }
+
         let bars = self
             .bars
             .entry(bar.bar_type)
@@ -1044,6 +1094,15 @@ impl Cache {
 
         let bar_type = bars[0].bar_type;
         debug!("Adding `Bar`[{}] {}", bars.len(), bar_type);
+
+        if self.config.save_market_data {
+            if let Some(database) = &mut self.database {
+                for bar in bars {
+                    database.add_bar(bar).unwrap();
+                }
+            }
+        }
+
         let bars_deque = self
             .bars
             .entry(bar_type)
@@ -1092,14 +1151,18 @@ impl Cache {
     }
 
     /// Adds the given `account` to the cache.
-    pub fn add_account(&mut self, account: Box<dyn Account>) -> anyhow::Result<()> {
+    pub fn add_account(&mut self, account: AccountAny) -> anyhow::Result<()> {
         debug!("Adding `Account` {}", account.id());
 
         if let Some(database) = &mut self.database {
-            database.add_account(account.as_ref())?;
+            database.add_account(&account)?;
         }
 
-        self.accounts.insert(account.id(), account);
+        let account_id = account.id();
+        self.accounts.insert(account_id, account);
+        self.index
+            .venue_account
+            .insert(account_id.get_issuer(), account_id);
         Ok(())
     }
 
@@ -1354,9 +1417,9 @@ impl Cache {
     }
 
     /// Updates the given `account` in the cache.
-    pub fn update_account(&mut self, account: &dyn Account) -> anyhow::Result<()> {
+    pub fn update_account(&mut self, account: AccountAny) -> anyhow::Result<()> {
         if let Some(database) = &mut self.database {
-            database.update_account(account)?;
+            database.update_account(&account)?;
         }
         Ok(())
     }
@@ -2469,20 +2532,17 @@ impl Cache {
 
     /// Returns a reference to the account for the given `account_id` (if found).
     #[must_use]
-    pub fn account(&self, account_id: &AccountId) -> Option<&dyn Account> {
-        self.accounts
-            .get(account_id)
-            .map(std::convert::AsRef::as_ref)
+    pub fn account(&self, account_id: &AccountId) -> Option<&AccountAny> {
+        self.accounts.get(account_id)
     }
 
     /// Returns a reference to the account for the given `venue` (if found).
     #[must_use]
-    pub fn account_for_venue(&self, venue: &Venue) -> Option<&dyn Account> {
+    pub fn account_for_venue(&self, venue: &Venue) -> Option<&AccountAny> {
         self.index
             .venue_account
             .get(venue)
             .and_then(|account_id| self.accounts.get(account_id))
-            .map(std::convert::AsRef::as_ref)
     }
 
     /// Returns a reference to the account ID for the given `venue` (if found).
@@ -2493,10 +2553,10 @@ impl Cache {
 
     /// Returns references to all accounts for the given `account_id`.
     #[must_use]
-    pub fn accounts(&self, account_id: &AccountId) -> Vec<&dyn Account> {
+    pub fn accounts(&self, account_id: &AccountId) -> Vec<&AccountAny> {
         self.accounts
             .values()
-            .map(std::convert::AsRef::as_ref)
+            .filter(|account| &account.id() == account_id)
             .collect()
     }
 }
@@ -2507,18 +2567,21 @@ impl Cache {
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
+        accounts::any::AccountAny,
         data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
-        enums::{OrderSide, OrderStatus},
+        enums::{BookType, OmsType, OrderSide, OrderStatus},
         events::order::{OrderAccepted, OrderEventAny, OrderRejected, OrderSubmitted},
-        identifiers::{ClientOrderId, PositionId},
+        identifiers::{AccountId, ClientOrderId, PositionId, Venue},
         instruments::{
             any::InstrumentAny, currency_pair::CurrencyPair, stubs::*,
             synthetic::SyntheticInstrument,
         },
+        orderbook::book::OrderBook,
         orders::stubs::{TestOrderEventStubs, TestOrderStubs},
+        position::Position,
         types::{price::Price, quantity::Quantity},
     };
-    use rstest::*;
+    use rstest::{fixture, rstest};
 
     use super::Cache;
 
@@ -2571,34 +2634,11 @@ mod tests {
         assert!(cache.cache_general().is_ok());
     }
 
-    #[rstest]
-    fn test_cache_currencies_when_no_database(mut cache: Cache) {
-        assert!(cache.cache_currencies().is_ok());
-    }
-
-    #[rstest]
-    fn test_cache_instruments_when_no_database(mut cache: Cache) {
-        assert!(cache.cache_instruments().is_ok());
-    }
-
-    #[rstest]
-    fn test_cache_synthetics_when_no_database(mut cache: Cache) {
-        assert!(cache.cache_synthetics().is_ok());
-    }
-
-    #[rstest]
-    fn test_cache_accounts_when_no_database(mut cache: Cache) {
-        assert!(cache.cache_accounts().is_ok());
-    }
+    // -- EXECUTION -------------------------------------------------------------------------------
 
     #[rstest]
     fn test_cache_orders_when_no_database(mut cache: Cache) {
         assert!(cache.cache_orders().is_ok());
-    }
-
-    #[rstest]
-    fn test_cache_positions_when_no_database(mut cache: Cache) {
-        assert!(cache.cache_positions().is_ok());
     }
 
     #[rstest]
@@ -2871,6 +2911,76 @@ mod tests {
     }
 
     #[rstest]
+    fn test_cache_positions_when_no_database(mut cache: Cache) {
+        assert!(cache.cache_positions().is_ok());
+    }
+
+    #[rstest]
+    fn test_position_when_empty(cache: Cache) {
+        let position_id = PositionId::from("1");
+        let result = cache.position(&position_id);
+        assert!(result.is_none());
+        assert!(!cache.position_exists(&position_id));
+    }
+
+    #[rstest]
+    fn test_position_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+        let order = TestOrderStubs::market_order(
+            audusd_sim.id(),
+            OrderSide::Buy,
+            Quantity::from("1000000"),
+            None,
+            None,
+        );
+        let fill = TestOrderEventStubs::order_filled(
+            &order,
+            &audusd_sim,
+            None,
+            Some(PositionId::new("P-123456").unwrap()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        let position = Position::new(&audusd_sim, fill.into()).unwrap();
+        cache
+            .add_position(position.clone(), OmsType::Netting)
+            .unwrap();
+
+        let result = cache.position(&position.id);
+        assert_eq!(result, Some(&position));
+        assert!(cache.position_exists(&position.id));
+        assert_eq!(
+            cache.position_id(&order.client_order_id()),
+            Some(&position.id)
+        );
+        assert_eq!(
+            cache.positions_open(None, None, None, None),
+            vec![&position]
+        );
+        assert_eq!(
+            cache.positions_closed(None, None, None, None),
+            Vec::<&Position>::new()
+        );
+        assert_eq!(cache.positions_open_count(None, None, None, None), 1);
+        assert_eq!(cache.positions_closed_count(None, None, None, None), 0);
+    }
+
+    // -- DATA ------------------------------------------------------------------------------------
+
+    #[rstest]
+    fn test_cache_currencies_when_no_database(mut cache: Cache) {
+        assert!(cache.cache_currencies().is_ok());
+    }
+
+    #[rstest]
+    fn test_cache_instruments_when_no_database(mut cache: Cache) {
+        assert!(cache.cache_instruments().is_ok());
+    }
+
+    #[rstest]
     fn test_instrument_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
         let result = cache.instrument(&audusd_sim.id);
         assert!(result.is_none());
@@ -2883,10 +2993,12 @@ mod tests {
             .unwrap();
 
         let result = cache.instrument(&audusd_sim.id);
-        assert_eq!(
-            result,
-            Some(InstrumentAny::CurrencyPair(audusd_sim)).as_ref()
-        );
+        assert_eq!(result, Some(&InstrumentAny::CurrencyPair(audusd_sim)));
+    }
+
+    #[rstest]
+    fn test_cache_synthetics_when_no_database(mut cache: Cache) {
+        assert!(cache.cache_synthetics().is_ok());
     }
 
     #[rstest]
@@ -2902,7 +3014,21 @@ mod tests {
         let synth = SyntheticInstrument::default();
         cache.add_synthetic(synth.clone()).unwrap();
         let result = cache.synthetic(&synth.id);
-        assert_eq!(result, Some(synth).as_ref());
+        assert_eq!(result, Some(&synth));
+    }
+
+    #[rstest]
+    fn test_order_book_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
+        let result = cache.order_book(&audusd_sim.id);
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_order_book_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
+        let book = OrderBook::new(BookType::L2_MBP, audusd_sim.id);
+        cache.add_order_book(book.clone()).unwrap();
+        let result = cache.order_book(&audusd_sim.id);
+        assert_eq!(result, Some(&book));
     }
 
     #[rstest]
@@ -2981,7 +3107,7 @@ mod tests {
         let bar = Bar::default();
         cache.add_bar(bar).unwrap();
         let result = cache.bar(&bar.bar_type);
-        assert_eq!(result, Some(bar).as_ref());
+        assert_eq!(result, Some(&bar));
     }
 
     #[rstest]
@@ -2997,5 +3123,44 @@ mod tests {
         cache.add_bars(&bars).unwrap();
         let result = cache.bars(&bars[0].bar_type);
         assert_eq!(result, Some(bars));
+    }
+
+    // -- ACCOUNT ---------------------------------------------------------------------------------
+
+    #[rstest]
+    fn test_cache_accounts_when_no_database(mut cache: Cache) {
+        assert!(cache.cache_accounts().is_ok());
+    }
+
+    #[rstest]
+    fn test_cache_add_account(mut cache: Cache) {
+        let account = AccountAny::default();
+        cache.add_account(account.clone()).unwrap();
+        let result = cache.account(&account.id());
+        assert!(result.is_some());
+        assert_eq!(*result.unwrap(), account);
+    }
+
+    #[rstest]
+    fn test_cache_accounts_when_no_accounts_returns_empty(cache: Cache) {
+        let result = cache.accounts(&AccountId::default());
+        assert!(result.is_empty());
+    }
+
+    #[rstest]
+    fn test_cache_account_for_venue_returns_empty(cache: Cache) {
+        let venue = Venue::default();
+        let result = cache.account_for_venue(&venue);
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_cache_account_for_venue_return_correct(mut cache: Cache) {
+        let account = AccountAny::default();
+        let venue = account.last_event().unwrap().account_id.get_issuer();
+        cache.add_account(account.clone()).unwrap();
+        let result = cache.account_for_venue(&venue);
+        assert!(result.is_some());
+        assert_eq!(*result.unwrap(), account);
     }
 }

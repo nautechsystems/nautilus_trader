@@ -29,9 +29,9 @@ The core order types available for the platform are (using the enum values):
 - `TRAILING_STOP_LIMIT`
 
 :::info
-NautilusTrader has unified the API for a large set of order types and execution instructions, however
-not all of these are available for every exchange. If an order is submitted where an instruction or option
-is not available, then the system will **NOT** submit the order and an error will be logged with
+NautilusTrader has unified the API for a large set of order types and execution instructions. 
+Not all of these are available for every exchange. If an order is submitted where an instruction or 
+option is not available, the system will **NOT** submit the order and an error will be logged with 
 a clear explanatory message.
 :::
 

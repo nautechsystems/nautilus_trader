@@ -426,7 +426,7 @@ class LiveDataEngine(DataEngine):
         )
         try:
             while True:
-                response: DataRequest | None = await self._res_queue.get()
+                response: DataResponse | None = await self._res_queue.get()
                 if response is self._sentinel:
                     break
                 self._handle_response(response)

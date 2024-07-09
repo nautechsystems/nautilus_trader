@@ -98,11 +98,11 @@ class OrderStatusReport(ExecutionReport):
     report_id : UUID4
         The report ID.
     ts_accepted : int
-        The UNIX timestamp (nanoseconds) when the reported order was accepted.
+        UNIX timestamp (nanoseconds) when the reported order was accepted.
     ts_last : int
-        The UNIX timestamp (nanoseconds) of the last order status change.
+        UNIX timestamp (nanoseconds) of the last order status change.
     ts_init : int
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     client_order_id : ClientOrderId, optional
         The reported client order ID.
     order_list_id : OrderListId, optional
@@ -134,7 +134,7 @@ class OrderStatusReport(ExecutionReport):
     cancel_reason : str, optional
         The reported reason for order cancellation.
     ts_triggered : int, optional
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
     Raises
     ------
@@ -300,9 +300,9 @@ class FillReport(ExecutionReport):
     report_id : UUID4
         The report ID.
     ts_event : int
-        The UNIX timestamp (nanoseconds) when the trade occurred.
+        UNIX timestamp (nanoseconds) when the trade occurred.
     ts_init : int
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     client_order_id : ClientOrderId, optional
         The reported client order ID for the trade.
     venue_position_id : PositionId, optional
@@ -404,9 +404,9 @@ class PositionStatusReport(ExecutionReport):
     report_id : UUID4
         The report ID.
     ts_last : int
-        The UNIX timestamp (nanoseconds) of the last position change.
+        UNIX timestamp (nanoseconds) of the last position change.
     ts_init : int
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     venue_position_id : PositionId, optional
         The reported venue position ID (assigned by the venue). If the trading
         venue has assigned a position ID / ticket for the trade then pass that
@@ -473,7 +473,7 @@ class ExecutionMassStatus(Document):
     report_id : UUID4
         The report ID.
     ts_init : int
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
     """
 
@@ -510,9 +510,10 @@ class ExecutionMassStatus(Document):
             f"ts_init={self.ts_init})"
         )
 
+    @property
     def order_reports(self) -> dict[VenueOrderId, OrderStatusReport]:
         """
-        Return the order status reports.
+        The order status reports.
 
         Returns
         -------
@@ -521,9 +522,10 @@ class ExecutionMassStatus(Document):
         """
         return self._order_reports.copy()
 
+    @property
     def fill_reports(self) -> dict[VenueOrderId, list[FillReport]]:
         """
-        Return the fill reports.
+        The fill reports.
 
         Returns
         -------
@@ -532,9 +534,10 @@ class ExecutionMassStatus(Document):
         """
         return self._fill_reports.copy()
 
+    @property
     def position_reports(self) -> dict[InstrumentId, list[PositionStatusReport]]:
         """
-        Return the position status reports.
+        The position status reports.
 
         Returns
         -------

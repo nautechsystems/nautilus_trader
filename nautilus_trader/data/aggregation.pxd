@@ -39,7 +39,7 @@ cdef class BarBuilder:
     cdef readonly bint initialized
     """If the builder is initialized.\n\n:returns: `bool`"""
     cdef readonly uint64_t ts_last
-    """The UNIX timestamp (nanoseconds) when the builder last updated.\n\n:returns: `uint64_t`"""
+    """UNIX timestamp (nanoseconds) when the builder last updated.\n\n:returns: `uint64_t`"""
     cdef readonly int count
     """The builders current update count.\n\n:returns: `int`"""
 

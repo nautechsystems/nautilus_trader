@@ -61,7 +61,9 @@ FUTURES_MONTH_TO_CODE: dict[str, str] = {
     "NOV": "X",
     "DEC": "Z",
 }
-FUTURES_CODE_TO_MONTH = dict(zip(FUTURES_MONTH_TO_CODE.values(), FUTURES_MONTH_TO_CODE.keys()))
+FUTURES_CODE_TO_MONTH = dict(
+    zip(FUTURES_MONTH_TO_CODE.values(), FUTURES_MONTH_TO_CODE.keys(), strict=False),
+)
 
 VENUES_CASH = ["IDEALPRO"]
 VENUES_CRYPTO = ["PAXOS"]
@@ -496,10 +498,7 @@ def ib_contract_to_instrument_id_simplified_symbology(  # noqa: C901 (too comple
     elif security_type == "IND":
         symbol = f"^{(contract.localSymbol or contract.symbol)}"
         venue = contract.exchange
-    elif security_type == "OPT":
-        symbol = contract.localSymbol.replace(" ", "") or contract.symbol.replace(" ", "")
-        venue = contract.exchange
-    elif security_type == "CONTFUT":
+    elif security_type == "OPT" or security_type == "CONTFUT":
         symbol = contract.localSymbol.replace(" ", "") or contract.symbol.replace(" ", "")
         venue = contract.exchange
     elif security_type == "FUT" and (m := RE_FUT_ORIGINAL.match(contract.localSymbol)):

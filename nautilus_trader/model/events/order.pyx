@@ -169,7 +169,7 @@ cdef class OrderEvent(Event):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the event occurred.
+        UNIX timestamp (nanoseconds) when the event occurred.
 
         Returns
         -------
@@ -181,7 +181,7 @@ cdef class OrderEvent(Event):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -253,7 +253,7 @@ cdef class OrderInitialized(OrderEvent):
     event_id : UUID4
         The event ID.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
 
@@ -495,7 +495,7 @@ cdef class OrderInitialized(OrderEvent):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the event occurred.
+        UNIX timestamp (nanoseconds) when the event occurred.
 
         Returns
         -------
@@ -507,7 +507,7 @@ cdef class OrderInitialized(OrderEvent):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -640,7 +640,7 @@ cdef class OrderDenied(OrderEvent):
     event_id : UUID4
         The event ID.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
     Raises
     ------
@@ -811,7 +811,7 @@ cdef class OrderDenied(OrderEvent):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the event occurred.
+        UNIX timestamp (nanoseconds) when the event occurred.
 
         Returns
         -------
@@ -823,7 +823,7 @@ cdef class OrderDenied(OrderEvent):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -907,7 +907,7 @@ cdef class OrderEmulated(OrderEvent):
     event_id : UUID4
         The event ID.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
     """
 
@@ -1056,7 +1056,7 @@ cdef class OrderEmulated(OrderEvent):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the event occurred.
+        UNIX timestamp (nanoseconds) when the event occurred.
 
         Returns
         -------
@@ -1068,7 +1068,7 @@ cdef class OrderEmulated(OrderEvent):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -1152,7 +1152,7 @@ cdef class OrderReleased(OrderEvent):
     event_id : UUID4
         The event ID.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
     """
 
@@ -1317,7 +1317,7 @@ cdef class OrderReleased(OrderEvent):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the event occurred.
+        UNIX timestamp (nanoseconds) when the event occurred.
 
         Returns
         -------
@@ -1329,7 +1329,7 @@ cdef class OrderReleased(OrderEvent):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -1416,9 +1416,9 @@ cdef class OrderSubmitted(OrderEvent):
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the order submitted event occurred.
+        UNIX timestamp (nanoseconds) when the order submitted event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
     def __init__(
@@ -1573,7 +1573,7 @@ cdef class OrderSubmitted(OrderEvent):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the event occurred.
+        UNIX timestamp (nanoseconds) when the event occurred.
 
         Returns
         -------
@@ -1585,7 +1585,7 @@ cdef class OrderSubmitted(OrderEvent):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -1676,9 +1676,9 @@ cdef class OrderAccepted(OrderEvent):
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the order accepted event occurred.
+        UNIX timestamp (nanoseconds) when the order accepted event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
 
@@ -1845,7 +1845,7 @@ cdef class OrderAccepted(OrderEvent):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the event occurred.
+        UNIX timestamp (nanoseconds) when the event occurred.
 
         Returns
         -------
@@ -1857,7 +1857,7 @@ cdef class OrderAccepted(OrderEvent):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -1950,9 +1950,9 @@ cdef class OrderRejected(OrderEvent):
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the order rejected event occurred.
+        UNIX timestamp (nanoseconds) when the order rejected event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
 
@@ -2134,7 +2134,7 @@ cdef class OrderRejected(OrderEvent):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the event occurred.
+        UNIX timestamp (nanoseconds) when the event occurred.
 
         Returns
         -------
@@ -2146,7 +2146,7 @@ cdef class OrderRejected(OrderEvent):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -2239,9 +2239,9 @@ cdef class OrderCanceled(OrderEvent):
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when order canceled event occurred.
+        UNIX timestamp (nanoseconds) when order canceled event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
     """
@@ -2402,7 +2402,7 @@ cdef class OrderCanceled(OrderEvent):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the event occurred.
+        UNIX timestamp (nanoseconds) when the event occurred.
 
         Returns
         -------
@@ -2414,7 +2414,7 @@ cdef class OrderCanceled(OrderEvent):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -2509,9 +2509,9 @@ cdef class OrderExpired(OrderEvent):
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the order expired event occurred.
+        UNIX timestamp (nanoseconds) when the order expired event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
     """
@@ -2672,7 +2672,7 @@ cdef class OrderExpired(OrderEvent):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the event occurred.
+        UNIX timestamp (nanoseconds) when the event occurred.
 
         Returns
         -------
@@ -2684,7 +2684,7 @@ cdef class OrderExpired(OrderEvent):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -2781,9 +2781,9 @@ cdef class OrderTriggered(OrderEvent):
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the order triggered event occurred.
+        UNIX timestamp (nanoseconds) when the order triggered event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
     """
@@ -2944,7 +2944,7 @@ cdef class OrderTriggered(OrderEvent):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the event occurred.
+        UNIX timestamp (nanoseconds) when the event occurred.
 
         Returns
         -------
@@ -2956,7 +2956,7 @@ cdef class OrderTriggered(OrderEvent):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -3052,9 +3052,9 @@ cdef class OrderPendingUpdate(OrderEvent):
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the order pending update event occurred.
+        UNIX timestamp (nanoseconds) when the order pending update event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
     """
@@ -3215,7 +3215,7 @@ cdef class OrderPendingUpdate(OrderEvent):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the event occurred.
+        UNIX timestamp (nanoseconds) when the event occurred.
 
         Returns
         -------
@@ -3227,7 +3227,7 @@ cdef class OrderPendingUpdate(OrderEvent):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -3323,9 +3323,9 @@ cdef class OrderPendingCancel(OrderEvent):
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the order pending cancel event occurred.
+        UNIX timestamp (nanoseconds) when the order pending cancel event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
     """
@@ -3486,7 +3486,7 @@ cdef class OrderPendingCancel(OrderEvent):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the event occurred.
+        UNIX timestamp (nanoseconds) when the event occurred.
 
         Returns
         -------
@@ -3498,7 +3498,7 @@ cdef class OrderPendingCancel(OrderEvent):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -3596,9 +3596,9 @@ cdef class OrderModifyRejected(OrderEvent):
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the order update rejected event occurred.
+        UNIX timestamp (nanoseconds) when the order update rejected event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
 
@@ -3782,7 +3782,7 @@ cdef class OrderModifyRejected(OrderEvent):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the event occurred.
+        UNIX timestamp (nanoseconds) when the event occurred.
 
         Returns
         -------
@@ -3794,7 +3794,7 @@ cdef class OrderModifyRejected(OrderEvent):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -3894,9 +3894,9 @@ cdef class OrderCancelRejected(OrderEvent):
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the order cancel rejected event occurred.
+        UNIX timestamp (nanoseconds) when the order cancel rejected event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
 
@@ -4080,7 +4080,7 @@ cdef class OrderCancelRejected(OrderEvent):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the event occurred.
+        UNIX timestamp (nanoseconds) when the event occurred.
 
         Returns
         -------
@@ -4092,7 +4092,7 @@ cdef class OrderCancelRejected(OrderEvent):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -4195,9 +4195,9 @@ cdef class OrderUpdated(OrderEvent):
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the order updated event occurred.
+        UNIX timestamp (nanoseconds) when the order updated event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     reconciliation : bool, default False
         If the event was generated during reconciliation.
 
@@ -4378,7 +4378,7 @@ cdef class OrderUpdated(OrderEvent):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the event occurred.
+        UNIX timestamp (nanoseconds) when the event occurred.
 
         Returns
         -------
@@ -4390,7 +4390,7 @@ cdef class OrderUpdated(OrderEvent):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -4511,9 +4511,9 @@ cdef class OrderFilled(OrderEvent):
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the order filled event occurred.
+        UNIX timestamp (nanoseconds) when the order filled event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     info : dict[str, object], optional
         The additional fill information.
     reconciliation : bool, default False
@@ -4726,7 +4726,7 @@ cdef class OrderFilled(OrderEvent):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the event occurred.
+        UNIX timestamp (nanoseconds) when the event occurred.
 
         Returns
         -------
@@ -4738,7 +4738,7 @@ cdef class OrderFilled(OrderEvent):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------

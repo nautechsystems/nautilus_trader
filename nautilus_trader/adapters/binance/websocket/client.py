@@ -150,7 +150,7 @@ class BinanceWebSocketClient:
 
         await self._client.send_pong(raw)
 
-    # TODO: Temporarily synch
+    # TODO: Temporarily sync
     def reconnect(self) -> None:
         """
         Reconnect the client to the server and resubscribe to all streams.

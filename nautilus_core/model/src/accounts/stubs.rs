@@ -13,16 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_common::interface::account::Account;
-use nautilus_model::{
+use rstest::fixture;
+
+use crate::{
+    accounts::{base::Account, cash::CashAccount, margin::MarginAccount},
     enums::LiquiditySide,
     events::account::{state::AccountState, stubs::*},
     instruments::any::InstrumentAny,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
-use rstest::fixture;
-
-use crate::account::{cash::CashAccount, margin::MarginAccount};
 
 #[fixture]
 pub fn margin_account(margin_account_state: AccountState) -> MarginAccount {
@@ -54,7 +53,7 @@ pub fn calculate_commission(
     let account_state = if Some(Currency::USDT()) == currency {
         cash_account_state_million_usdt()
     } else {
-        cash_account_state_million_usd()
+        cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD")
     };
     let account = cash_account_million_usd(account_state);
     account

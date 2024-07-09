@@ -18,6 +18,7 @@ from datetime import timedelta
 
 import pytest
 
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
@@ -72,7 +73,7 @@ class TestBarSpecification:
 
         # Act
         pickled = pickle.dumps(bar_spec)
-        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle is safe here)
 
         # Assert
         assert unpickled == bar_spec
@@ -293,7 +294,7 @@ class TestBarType:
 
         # Act
         pickled = pickle.dumps(bar_type)
-        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle is safe here)
 
         # Assert
         assert unpickled == bar_type
@@ -650,6 +651,32 @@ class TestBar:
         # Assert
         assert isinstance(bar, Bar)
 
+    def test_to_pyo3(self):
+        # Arrange
+        bar = Bar(
+            AUDUSD_1_MIN_BID,
+            Price.from_str("1.00000"),
+            Price.from_str("1.00000"),
+            Price.from_str("1.00000"),
+            Price.from_str("1.00000"),
+            Quantity.from_int(100_000),
+            1,
+            2,
+        )
+
+        # Act
+        pyo3_bar = bar.to_pyo3()
+
+        # Assert
+        assert isinstance(pyo3_bar, nautilus_pyo3.Bar)
+        assert pyo3_bar.open == nautilus_pyo3.Price.from_str("1.00000")
+        assert pyo3_bar.high == nautilus_pyo3.Price.from_str("1.00000")
+        assert pyo3_bar.low == nautilus_pyo3.Price.from_str("1.00000")
+        assert pyo3_bar.close == nautilus_pyo3.Price.from_str("1.00000")
+        assert pyo3_bar.volume == nautilus_pyo3.Quantity.from_int(100_000)
+        assert pyo3_bar.ts_event == 1
+        assert pyo3_bar.ts_init == 2
+
     def test_from_pyo3_list(self):
         # Arrange
         pyo3_bars = [TestDataProviderPyo3.bar_5decimal()] * 1024
@@ -676,7 +703,7 @@ class TestBar:
 
         # Act
         pickled = pickle.dumps(bar)
-        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle is safe here)
 
         # Assert
         assert unpickled == bar

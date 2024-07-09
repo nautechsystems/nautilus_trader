@@ -35,7 +35,7 @@ AUDUSD_SIM_ID = InstrumentId.from_str("AUD/USD.SIM")
 class TestQuoteTick:
     def test_pickling_instrument_id_round_trip(self):
         pickled = pickle.dumps(AUDUSD_SIM_ID)
-        unpickled = pickle.loads(pickled)  # noqa
+        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle safe here)
 
         assert unpickled == AUDUSD_SIM_ID
 
@@ -193,7 +193,7 @@ class TestQuoteTick:
 
         # Act
         pickled = pickle.dumps(tick)
-        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle is safe here)
 
         # Assert
         assert tick == unpickled
@@ -282,7 +282,7 @@ class TestTradeTick:
 
         # Act
         pickled = pickle.dumps(tick)
-        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle is safe here)
 
         # Assert
         assert unpickled == tick

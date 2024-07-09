@@ -233,12 +233,11 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
             filters: dict[BinanceSymbolFilterType, BinanceSymbolFilter] = {
                 f.filterType: f for f in symbol_info.filters
             }
-            price_filter: BinanceSymbolFilter = filters.get(BinanceSymbolFilterType.PRICE_FILTER)
-            lot_size_filter: BinanceSymbolFilter = filters.get(BinanceSymbolFilterType.LOT_SIZE)
-            min_notional_filter: BinanceSymbolFilter = filters.get(
-                BinanceSymbolFilterType.MIN_NOTIONAL,
-            )
-            # market_lot_size_filter = symbol_filters.get("MARKET_LOT_SIZE")
+            price_filter = filters[BinanceSymbolFilterType.PRICE_FILTER]
+            lot_size_filter = filters[BinanceSymbolFilterType.LOT_SIZE]
+
+            min_notional_filter = filters.get(BinanceSymbolFilterType.MIN_NOTIONAL)
+            notional_filter = filters.get(BinanceSymbolFilterType.NOTIONAL)
 
             tick_size = price_filter.tickSize
             step_size = lot_size_filter.stepSize
@@ -263,11 +262,18 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
                 QUANTITY_MAX,
                 "minQty",
             )
+
             max_quantity = Quantity(float(lot_size_filter.maxQty), precision=size_precision)
             min_quantity = Quantity(float(lot_size_filter.minQty), precision=size_precision)
+
+            max_notional = None
             min_notional = None
-            if filters.get(BinanceSymbolFilterType.MIN_NOTIONAL):
+            if min_notional_filter:
                 min_notional = Money(min_notional_filter.minNotional, currency=quote_currency)
+            elif notional_filter:
+                max_notional = Money(notional_filter.maxNotional, currency=quote_currency)
+                min_notional = Money(notional_filter.minNotional, currency=quote_currency)
+
             max_price = Price(
                 min(float(price_filter.maxPrice), 4294967296.0),
                 precision=price_precision,
@@ -295,7 +301,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
                 lot_size=lot_size,
                 max_quantity=max_quantity,
                 min_quantity=min_quantity,
-                max_notional=None,
+                max_notional=max_notional,
                 min_notional=min_notional,
                 max_price=max_price,
                 min_price=min_price,

@@ -21,17 +21,17 @@ use std::{
     time::{Duration, Instant},
 };
 
-use nautilus_common::{
-    cache::database::CacheDatabaseAdapter, enums::SerializationEncoding,
-    interface::account::Account,
-};
+use nautilus_common::{cache::database::CacheDatabaseAdapter, enums::SerializationEncoding};
 use nautilus_core::{correctness::check_slice_not_empty, nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
+    accounts::any::AccountAny,
+    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         TraderId, VenueOrderId,
     },
     instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
+    orderbook::book::OrderBook,
     orders::any::OrderAny,
     position::Position,
     types::currency::Currency,
@@ -749,14 +749,21 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         Ok(synthetics)
     }
 
-    fn load_accounts(&mut self) -> anyhow::Result<HashMap<AccountId, Box<dyn Account>>> {
+    fn load_accounts(&mut self) -> anyhow::Result<HashMap<AccountId, AccountAny>> {
         let mut accounts = HashMap::new();
 
         for key in self.database.keys(&format!("{ACCOUNTS}*"))? {
             let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
             let account_id = AccountId::from(*parts.first().unwrap());
-            let account = self.load_account(&account_id)?;
-            accounts.insert(account_id, account);
+            let result = self.load_account(&account_id)?;
+            match result {
+                Some(account) => {
+                    accounts.insert(account_id, account);
+                }
+                None => {
+                    error!("Account not found: {account_id}");
+                }
+            }
         }
 
         Ok(accounts)
@@ -820,7 +827,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         todo!()
     }
 
-    fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<Box<dyn Account>> {
+    fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<Option<AccountAny>> {
         todo!()
     }
 
@@ -870,7 +877,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         todo!()
     }
 
-    fn add_account(&mut self, account: &dyn Account) -> anyhow::Result<Box<dyn Account>> {
+    fn add_account(&mut self, account: &AccountAny) -> anyhow::Result<()> {
         todo!()
     }
 
@@ -880,6 +887,22 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
 
     fn add_position(&mut self, position: &Position) -> anyhow::Result<()> {
         todo!()
+    }
+
+    fn add_order_book(&mut self, order_book: &OrderBook) -> anyhow::Result<()> {
+        anyhow::bail!("Saving market data for Redis cache adapter not supported")
+    }
+
+    fn add_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+        anyhow::bail!("Saving market data for Redis cache adapter not supported")
+    }
+
+    fn add_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
+        anyhow::bail!("Saving market data for Redis cache adapter not supported")
+    }
+
+    fn add_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
+        anyhow::bail!("Saving market data for Redis cache adapter not supported")
     }
 
     fn index_venue_order_id(
@@ -906,7 +929,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         todo!()
     }
 
-    fn update_account(&mut self, account: &dyn Account) -> anyhow::Result<()> {
+    fn update_account(&mut self, account: &AccountAny) -> anyhow::Result<()> {
         todo!()
     }
 

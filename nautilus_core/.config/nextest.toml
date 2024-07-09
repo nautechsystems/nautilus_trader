@@ -1,0 +1,6 @@
+[test-groups]
+serial-tests = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'test(serial_tests::)'
+test-group = 'serial-tests'

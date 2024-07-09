@@ -23,18 +23,19 @@ use std::collections::HashMap;
 
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
+    accounts::any::AccountAny,
+    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,
     },
     instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
+    orderbook::book::OrderBook,
     orders::any::OrderAny,
     position::Position,
     types::currency::Currency,
 };
 use ustr::Ustr;
-
-use crate::interface::account::Account;
 
 pub trait CacheDatabaseAdapter {
     fn close(&mut self) -> anyhow::Result<()>;
@@ -49,7 +50,7 @@ pub trait CacheDatabaseAdapter {
 
     fn load_synthetics(&mut self) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>>;
 
-    fn load_accounts(&mut self) -> anyhow::Result<HashMap<AccountId, Box<dyn Account>>>;
+    fn load_accounts(&mut self) -> anyhow::Result<HashMap<AccountId, AccountAny>>;
 
     fn load_orders(&mut self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>>;
 
@@ -71,7 +72,7 @@ pub trait CacheDatabaseAdapter {
         instrument_id: &InstrumentId,
     ) -> anyhow::Result<SyntheticInstrument>;
 
-    fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<Box<dyn Account>>;
+    fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<Option<AccountAny>>;
 
     fn load_order(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<Option<OrderAny>>;
 
@@ -99,11 +100,19 @@ pub trait CacheDatabaseAdapter {
 
     fn add_synthetic(&mut self, synthetic: &SyntheticInstrument) -> anyhow::Result<()>;
 
-    fn add_account(&mut self, account: &dyn Account) -> anyhow::Result<Box<dyn Account>>;
+    fn add_account(&mut self, account: &AccountAny) -> anyhow::Result<()>;
 
     fn add_order(&mut self, order: &OrderAny) -> anyhow::Result<()>;
 
     fn add_position(&mut self, position: &Position) -> anyhow::Result<()>;
+
+    fn add_order_book(&mut self, order_book: &OrderBook) -> anyhow::Result<()>;
+
+    fn add_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()>;
+
+    fn add_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()>;
+
+    fn add_bar(&mut self, bar: &Bar) -> anyhow::Result<()>;
 
     fn index_venue_order_id(
         &mut self,
@@ -121,7 +130,7 @@ pub trait CacheDatabaseAdapter {
 
     fn update_strategy(&mut self) -> anyhow::Result<()>;
 
-    fn update_account(&mut self, account: &dyn Account) -> anyhow::Result<()>;
+    fn update_account(&mut self, account: &AccountAny) -> anyhow::Result<()>;
 
     fn update_order(&mut self, order: &OrderAny) -> anyhow::Result<()>;
 

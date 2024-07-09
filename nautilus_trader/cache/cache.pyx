@@ -1094,7 +1094,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void add(self, str key, bytes value):
         """
-        Add the given general object to the cache.
+        Add the given general object `value` to the cache.
 
         The cache is agnostic to what the object actually is (and how it may
         be serialized), offering maximum flexibility.
@@ -1752,7 +1752,7 @@ cdef class Cache(CacheFacade):
         position : Position
             The position to snapshot the state for.
         ts_snapshot : uint64_t
-            The UNIX timestamp (nanoseconds) when the snapshot was taken.
+            UNIX timestamp (nanoseconds) when the snapshot was taken.
         open_only : bool, default True
             If only open positions should be snapshot, this flag helps to avoid race conditions
             where a position is snapshot when no longer open.
@@ -2002,7 +2002,7 @@ cdef class Cache(CacheFacade):
 
     cpdef bytes get(self, str key):
         """
-        Add the given general object to the cache.
+        Return the general object for the given `key`.
 
         The cache is agnostic to what the object actually is (and how it may
         be serialized), offering maximum flexibility.

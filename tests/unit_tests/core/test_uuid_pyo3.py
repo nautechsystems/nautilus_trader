@@ -25,7 +25,7 @@ class TestUUID:
 
         # Act
         pickled = pickle.dumps(uuid)
-        unpickled = pickle.loads(pickled)  # noqa
+        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle safe here)
 
         # Assert
         assert unpickled == uuid

@@ -96,7 +96,11 @@ class BetfairStreamClient:
     async def disconnect(self):
         self._log.info("Disconnecting .. ")
         self.disconnecting = True
-        self._client.disconnect()
+        if self._client is None:
+            self._log.warning("Cannot disconnect: not connected")
+            return
+
+        await self._client.disconnect()
 
         self._log.debug("Running post disconnect")
         await self.post_disconnection()
@@ -119,10 +123,10 @@ class BetfairStreamClient:
         Actions to be performed post disconnection.
         """
 
-    async def send(self, message: bytes):
+    async def send(self, message: bytes) -> None:
         self._log.debug(f"[SEND] {message.decode()}")
         if self._client is None:
-            raise RuntimeError("Cannot send message: no client.")
+            raise RuntimeError("Cannot send message: no client")
         await self._client.send(message)
         self._log.debug("[SENT]")
 
@@ -217,7 +221,7 @@ class BetfairMarketStreamClient(BetfairStreamClient):
         subscribe_ticker=True,
         subscribe_bsp_updates=True,
         subscribe_bsp_projected=True,
-    ):
+    ) -> None:
         filters = (
             market_ids,
             betting_types,
@@ -276,10 +280,10 @@ class BetfairMarketStreamClient(BetfairStreamClient):
         }
         await self.send(msgspec.json.encode(message))
 
-    async def post_connection(self):
+    async def post_connection(self) -> None:
         await super().post_connection()
         await self.send(msgspec.json.encode(self.auth_message()))
 
-    def post_reconnection(self):
+    def post_reconnection(self) -> None:
         super().post_reconnection()
         self._loop.create_task(self.post_connection())

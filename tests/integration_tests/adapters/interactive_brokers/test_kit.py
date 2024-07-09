@@ -445,12 +445,12 @@ class IBTestDataStubs:
     @staticmethod
     def market_depth(name: str = "eurusd"):
         with open(STREAMING_PATH / f"{name}_depth.pkl", "rb") as f:
-            return pickle.loads(f.read())  # noqa: S301
+            return pickle.loads(f.read())  # noqa: S301 (pickle is safe here)
 
     @staticmethod
     def tickers(name: str = "eurusd"):
         with open(STREAMING_PATH / f"{name}_ticker.pkl", "rb") as f:
-            return pickle.loads(f.read())  # noqa: S301
+            return pickle.loads(f.read())  # noqa: S301 (pickle is safe here)
 
     @staticmethod
     def historic_bars():

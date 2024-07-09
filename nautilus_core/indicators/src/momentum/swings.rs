@@ -28,7 +28,6 @@ use crate::indicator::Indicator;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
-
 pub struct Swings {
     pub period: usize,
     pub direction: i64,
@@ -150,17 +149,17 @@ impl Swings {
         }
 
         // Initialization logic
-        if !self.initialized {
-            self.has_inputs = true;
-            if self.high_price != 0.0 && self.low_price != 0.0 {
-                self.initialized = true;
-            }
-        } else {
+        if self.initialized {
             self.length = (self.high_price - self.low_price) as usize;
             if self.direction == 1 {
                 self.duration = self.since_low;
             } else {
                 self.duration = self.since_high;
+            }
+        } else {
+            self.has_inputs = true;
+            if self.high_price != 0.0 && self.low_price != 0.0 {
+                self.initialized = true;
             }
         }
     }
@@ -205,36 +204,36 @@ mod tests {
             0.8, 1.8, 2.8, 3.8, 4.8, 3.1, 6.8, 7.8, 0.8, 9.8, 1.0, 3.1, 10.2, 11.0, 11.3,
         ];
         let time = [
-            1643723400.0,
-            1643723410.0,
-            1643723420.0,
-            1643723430.0,
-            1643723440.0,
-            1643723450.0,
-            1643723460.0,
-            1643723470.0,
-            1643723480.0,
-            1643723490.0,
-            1643723500.0,
-            1643723510.0,
-            1643723520.0,
-            1643723530.0,
-            1643723540.0,
+            1_643_723_400.0,
+            1_643_723_410.0,
+            1_643_723_420.0,
+            1_643_723_430.0,
+            1_643_723_440.0,
+            1_643_723_450.0,
+            1_643_723_460.0,
+            1_643_723_470.0,
+            1_643_723_480.0,
+            1_643_723_490.0,
+            1_643_723_500.0,
+            1_643_723_510.0,
+            1_643_723_520.0,
+            1_643_723_530.0,
+            1_643_723_540.0,
         ];
 
-        for i in 0..10 {
+        for i in 0..15 {
             swings_10.update_raw(high[i], low[i], time[i]);
         }
 
         assert_eq!(swings_10.direction, 1);
-        assert_eq!(swings_10.high_price, 9.9);
+        assert_eq!(swings_10.high_price, 11.4);
         assert_eq!(swings_10.low_price, 0.0);
-        assert_eq!(swings_10.high_datetime, time[9]);
+        assert_eq!(swings_10.high_datetime, time[14]);
         assert_eq!(swings_10.low_datetime, 0.0);
         assert_eq!(swings_10.length, 0);
         assert_eq!(swings_10.duration, 0);
         assert_eq!(swings_10.since_high, 0);
-        assert_eq!(swings_10.since_low, 10);
+        assert_eq!(swings_10.since_low, 15);
     }
 
     #[rstest]
@@ -243,11 +242,11 @@ mod tests {
         let high = [1.0, 2.0, 3.0, 4.0, 5.0];
         let low = [0.9, 1.9, 2.9, 3.9, 4.9];
         let time = [
-            1643723400.0,
-            1643723410.0,
-            1643723420.0,
-            1643723430.0,
-            1643723440.0,
+            1_643_723_400.0,
+            1_643_723_410.0,
+            1_643_723_420.0,
+            1_643_723_430.0,
+            1_643_723_440.0,
         ];
 
         for i in 0..5 {

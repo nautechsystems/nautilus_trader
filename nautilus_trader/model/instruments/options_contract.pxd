@@ -28,9 +28,9 @@ cdef class OptionsContract(Instrument):
     cdef readonly OptionKind option_kind
     """The option kind (PUT | CALL) for the contract.\n\n:returns: `OptionKind`"""
     cdef readonly uint64_t activation_ns
-    """The UNIX timestamp (nanoseconds) for contract activation.\n\n:returns: `unit64_t`"""
+    """UNIX timestamp (nanoseconds) for contract activation.\n\n:returns: `unit64_t`"""
     cdef readonly uint64_t expiration_ns
-    """The UNIX timestamp (nanoseconds) for contract expiration.\n\n:returns: `unit64_t`"""
+    """UNIX timestamp (nanoseconds) for contract expiration.\n\n:returns: `unit64_t`"""
     cdef readonly Price strike_price
     """The strike price for the contract.\n\n:returns: `Price`"""
 

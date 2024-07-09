@@ -817,9 +817,9 @@ cdef class TimeEvent(Event):
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the time event occurred.
+        UNIX timestamp (nanoseconds) when the time event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
     def __init__(
@@ -897,7 +897,7 @@ cdef class TimeEvent(Event):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the event occurred.
+        UNIX timestamp (nanoseconds) when the event occurred.
 
         Returns
         -------
@@ -909,7 +909,7 @@ cdef class TimeEvent(Event):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------

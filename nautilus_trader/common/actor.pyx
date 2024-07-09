@@ -1242,7 +1242,7 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_order_book_snapshots(
+    cpdef void subscribe_order_book_at_interval(
         self,
         InstrumentId instrument_id,
         BookType book_type=BookType.L2_MBP,
@@ -1253,7 +1253,7 @@ cdef class Actor(Component):
         bint managed = True,
     ):
         """
-        Subscribe to `OrderBook` snapshots at a specified interval, for the given instrument ID.
+        Subscribe to an `OrderBook` at a specified interval for the given instrument ID.
 
         The `DataEngine` will only maintain one order book for each instrument.
         Because of this - the level, depth and kwargs for the stream will be set
@@ -1661,14 +1661,14 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void unsubscribe_order_book_snapshots(
+    cpdef void unsubscribe_order_book_at_interval(
         self,
         InstrumentId instrument_id,
         int interval_ms = 1000,
         ClientId client_id = None,
     ):
         """
-        Unsubscribe from `OrderBook` snapshots, for the given instrument ID.
+        Unsubscribe from an `OrderBook` at a specified interval for the given instrument ID.
 
         The interval must match the previously subscribed interval.
 
@@ -1898,7 +1898,7 @@ cdef class Actor(Component):
         value : object
             The signal data to publish.
         ts_event : uint64_t, optional
-            The UNIX timestamp (nanoseconds) when the signal event occurred.
+            UNIX timestamp (nanoseconds) when the signal event occurred.
             If ``None`` then will timestamp current time.
 
         """
@@ -2097,6 +2097,63 @@ cdef class Actor(Component):
                 "end": end,
             }),
             callback=self._handle_instruments_response,
+            request_id=request_id,
+            ts_init=self._clock.timestamp_ns(),
+        )
+
+        self._pending_requests[request_id] = callback
+        self._send_data_req(request)
+
+        return request_id
+
+    cpdef UUID4 request_order_book_snapshot(
+        self,
+        InstrumentId instrument_id,
+        int limit,
+        ClientId client_id=None,
+        callback: Callable[[UUID4], None] | None=None
+    ):
+        """
+        Request an order book snapshot.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The instrument ID for the order book snapshot request.
+        limit : int, optional
+            The limit on the depth of the order book snapshot (default is None).
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If None, it will be inferred from the venue in the instrument ID.
+        callback : Callable[[UUID4], None], optional
+            The registered callback, to be called with the request ID when the response has completed processing.
+
+        Returns
+        -------
+        UUID4
+            The `request_id` for the request.
+
+        Raises
+        ------
+        ValueError
+            If the instrument_id is None.
+        TypeError
+            If callback is not None and not of type Callable.
+
+        """
+        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.not_none(instrument_id, "instrument_id")
+        Condition.callable_or_none(callback, "callback")
+
+        cdef UUID4 request_id = UUID4()
+        cdef DataRequest request = DataRequest(
+            client_id=client_id,
+            venue=instrument_id.venue,
+            data_type=DataType(OrderBookDeltas, metadata={
+                "instrument_id": instrument_id,
+                "limit": limit,
+            }),
+            callback=self._handle_data_response,
             request_id=request_id,
             ts_init=self._clock.timestamp_ns(),
         )

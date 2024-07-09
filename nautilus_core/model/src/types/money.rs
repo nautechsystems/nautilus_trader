@@ -32,7 +32,10 @@ use crate::types::{
     fixed::{f64_to_fixed_i64, fixed_i64_to_f64},
 };
 
+/// The maximum valid money amount which can be represented.
 pub const MONEY_MAX: f64 = 9_223_372_036.0;
+
+/// The minimum valid money amount which can be represented.
 pub const MONEY_MIN: f64 = -9_223_372_036.0;
 
 #[repr(C)]
@@ -292,8 +295,8 @@ impl<'de> Deserialize<'de> for Money {
     where
         D: Deserializer<'de>,
     {
-        let money_str: &str = Deserialize::deserialize(deserializer)?;
-        Money::from_str(money_str)
+        let money_str: String = Deserialize::deserialize(deserializer)?;
+        Money::from_str(&money_str)
             .map_err(|_| serde::de::Error::custom("Failed to parse Money amount"))
     }
 }

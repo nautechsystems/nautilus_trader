@@ -63,9 +63,9 @@ cdef class CurrencyPair(Instrument):
     taker_fee : Decimal
         The fee rate for liquidity takers as a percentage of order value.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the data object was initialized.
+        UNIX timestamp (nanoseconds) when the data object was initialized.
     lot_size : Quantity, optional
         The rounded lot unit size.
     max_quantity : Quantity, optional

@@ -73,7 +73,7 @@ cdef class MarketOrder(Order):
     init_id : UUID4
         The order initialization event ID.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}, default ``GTC``
         The order time in force.
     reduce_only : bool, default False
@@ -326,7 +326,7 @@ cdef class MarketOrder(Order):
         order : Order
             The order to transform from.
         ts_init : uint64_t
-            The UNIX timestamp (nanoseconds) when the object was initialized.
+            UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------

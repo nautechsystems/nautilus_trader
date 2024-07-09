@@ -84,15 +84,15 @@ cdef class PositionEvent(Event):
     event_id : UUID4
         The event ID.
     ts_opened : uint64_t
-        The UNIX timestamp (nanoseconds) when the position opened event occurred.
+        UNIX timestamp (nanoseconds) when the position opened event occurred.
     ts_closed : uint64_t
-        The UNIX timestamp (nanoseconds) when the position closed event occurred.
+        UNIX timestamp (nanoseconds) when the position closed event occurred.
     duration_ns : uint64_t
         The total open duration (nanoseconds), will be 0 if still open.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the event occurred.
+        UNIX timestamp (nanoseconds) when the event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
     Warnings
     --------
@@ -230,7 +230,7 @@ cdef class PositionEvent(Event):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the event occurred.
+        UNIX timestamp (nanoseconds) when the event occurred.
 
         Returns
         -------
@@ -242,7 +242,7 @@ cdef class PositionEvent(Event):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -295,9 +295,9 @@ cdef class PositionOpened(PositionEvent):
     event_id : UUID4
         The event ID.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the position opened event occurred.
+        UNIX timestamp (nanoseconds) when the position opened event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
     def __init__(
@@ -456,7 +456,7 @@ cdef class PositionOpened(PositionEvent):
         event_id : UUID4
             The event ID.
         ts_init : uint64_t
-            The UNIX timestamp (nanoseconds) when the object was initialized.
+            UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -544,11 +544,11 @@ cdef class PositionChanged(PositionEvent):
     event_id : UUID4
         The event ID.
     ts_opened : uint64_t
-        The UNIX timestamp (nanoseconds) when the position opened event occurred.
+        UNIX timestamp (nanoseconds) when the position opened event occurred.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the position changed event occurred.
+        UNIX timestamp (nanoseconds) when the position changed event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
     def __init__(
@@ -722,7 +722,7 @@ cdef class PositionChanged(PositionEvent):
         event_id : UUID4
             The event ID.
         ts_init : uint64_t
-            The UNIX timestamp (nanoseconds) when the object was initialized.
+            UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -810,13 +810,13 @@ cdef class PositionClosed(PositionEvent):
     event_id : UUID4
         The event ID.
     ts_opened : uint64_t
-        The UNIX timestamp (nanoseconds) when the position opened event occurred.
+        UNIX timestamp (nanoseconds) when the position opened event occurred.
     ts_closed : uint64_t
-        The UNIX timestamp (nanoseconds) when the position closed event occurred.
+        UNIX timestamp (nanoseconds) when the position closed event occurred.
     duration_ns : uint64_t
         The total open duration (nanoseconds).
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     """
 
     def __init__(
@@ -994,7 +994,7 @@ cdef class PositionClosed(PositionEvent):
         event_id : UUID4
             The event ID.
         ts_init : uint64_t
-            The UNIX timestamp (nanoseconds) when the object was initialized.
+            UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------

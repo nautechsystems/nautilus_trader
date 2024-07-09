@@ -28,7 +28,6 @@ use crate::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
-
 pub struct PsychologicalLine {
     pub period: usize,
     pub ma_type: MovingAverageType,
@@ -146,7 +145,7 @@ mod tests {
         psl_10.update_raw(1.0);
         psl_10.update_raw(2.0);
         psl_10.update_raw(3.0);
-        assert_eq!(psl_10.value, 66.66666666666666);
+        assert_eq!(psl_10.value, 66.666_666_666_666_66);
     }
 
     #[rstest]

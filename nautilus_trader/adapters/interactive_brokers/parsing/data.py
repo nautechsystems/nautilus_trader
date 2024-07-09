@@ -68,9 +68,12 @@ def generate_trade_id(ts_event: int, price: float, size: Decimal) -> TradeId:
 def bar_spec_to_bar_size(bar_spec: BarSpecification) -> str:
     aggregation = bar_spec.aggregation
     step = bar_spec.step
-    if aggregation == BarAggregation.SECOND and step == 5:
-        return f"{step} secs"
-    elif aggregation == BarAggregation.SECOND and step in [10, 15, 30]:
+    if (
+        aggregation == BarAggregation.SECOND
+        and step == 5
+        or aggregation == BarAggregation.SECOND
+        and step in [10, 15, 30]
+    ):
         return f"{step} secs"
     elif aggregation == BarAggregation.MINUTE and step in [1, 2, 3, 5, 10, 15, 20, 30]:
         return f"{step} min{'' if step == 1 else 's'}"

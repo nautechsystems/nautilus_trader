@@ -58,8 +58,8 @@ class TALibStrategy(Strategy):
     indicators to make decisions. It can identify conditions like EMA crossovers, overbought or
     oversold RSI levels, and MACD histogram values to log potential buy or sell signals.
 
-    Args
-    ----
+    Parameters
+    ----------
     config : TALibStrategyConfig
         The configuration object for the strategy, which includes the `bar_type` specifying the
         market data type (like minute bars, tick bars, etc.) to be used in the strategy.

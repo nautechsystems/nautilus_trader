@@ -25,7 +25,6 @@ use crate::{average::MovingAverageType, indicator::Indicator, volatility::atr::A
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
-
 pub struct VolatilityRatio {
     pub fast_period: usize,
     pub slow_period: usize,
@@ -143,7 +142,7 @@ mod tests {
     fn test_period_returns_expected_value(vr_10: VolatilityRatio) {
         assert_eq!(vr_10.fast_period, 10);
         assert_eq!(vr_10.slow_period, 10);
-        assert_eq!(vr_10.use_previous, false);
+        assert!(!vr_10.use_previous);
         assert_eq!(vr_10.value_floor, 10.0);
     }
 
@@ -164,7 +163,7 @@ mod tests {
             1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0, 13.0, 14.0, 15.0,
         ];
 
-        for i in 0..10 {
+        for i in 0..15 {
             vr_10.update_raw(high_values[i], low_values[i], close_values[i]);
         }
 
@@ -182,8 +181,8 @@ mod tests {
 
         assert!(!vr_10.initialized());
         assert_eq!(vr_10.value, 0.0);
-        assert_eq!(vr_10.initialized, false);
-        assert_eq!(vr_10.has_inputs, false);
+        assert!(!vr_10.initialized);
+        assert!(!vr_10.has_inputs);
         assert_eq!(vr_10.atr_fast.value, 0.0);
         assert_eq!(vr_10.atr_slow.value, 0.0);
     }

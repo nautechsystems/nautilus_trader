@@ -817,9 +817,9 @@ cdef class Bar(Data):
     volume : Quantity
         The bars volume.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the data object was initialized.
+        UNIX timestamp (nanoseconds) when the data object was initialized.
     is_revision : bool, default False
         If this bar is a revision of a previous bar with the same `ts_event`.
 
@@ -995,7 +995,7 @@ cdef class Bar(Data):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
 
         Returns
         -------
@@ -1007,7 +1007,7 @@ cdef class Bar(Data):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -1293,6 +1293,26 @@ cdef class Bar(Data):
         """
         return Bar.from_pyo3_c(pyo3_bar)
 
+    def to_pyo3(self) -> nautilus_pyo3.Bar:
+        """
+        Return a pyo3 object from this legacy Cython instance.
+
+        Returns
+        -------
+        nautilus_pyo3.Bar
+
+        """
+        return nautilus_pyo3.Bar(
+            nautilus_pyo3.BarType.from_str(BarType.from_mem_c(self._mem.bar_type).to_str()),
+            nautilus_pyo3.Price.from_raw(self._mem.open.raw, self._mem.open.precision),
+            nautilus_pyo3.Price.from_raw(self._mem.high.raw, self._mem.high.precision),
+            nautilus_pyo3.Price.from_raw(self._mem.low.raw, self._mem.low.precision),
+            nautilus_pyo3.Price.from_raw(self._mem.close.raw, self._mem.close.precision),
+            nautilus_pyo3.Quantity.from_raw(self._mem.volume.raw, self._mem.volume.precision),
+            self._mem.ts_event,
+            self._mem.ts_init,
+        )
+
     cpdef bint is_single_price(self):
         """
         If the OHLC are all equal to a single price.
@@ -1396,7 +1416,7 @@ cdef class CustomData(Data):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
 
         Returns
         -------
@@ -1408,7 +1428,7 @@ cdef class CustomData(Data):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -1694,9 +1714,9 @@ cdef class OrderBookDelta(Data):
         The unique sequence number for the update.
         If no sequence number provided in the source data then use a value of zero.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the data object was initialized.
+        UNIX timestamp (nanoseconds) when the data object was initialized.
 
     """
 
@@ -1897,7 +1917,7 @@ cdef class OrderBookDelta(Data):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
 
         Returns
         -------
@@ -1909,7 +1929,7 @@ cdef class OrderBookDelta(Data):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -2102,9 +2122,9 @@ cdef class OrderBookDelta(Data):
             The unique sequence number for the update.
             If no sequence number provided in the source data then use a value of zero.
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) when the tick event occurred.
+            UNIX timestamp (nanoseconds) when the tick event occurred.
         ts_init : uint64_t
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
+            UNIX timestamp (nanoseconds) when the data object was initialized.
 
         Returns
         -------
@@ -2453,7 +2473,7 @@ cdef class OrderBookDeltas(Data):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
 
         Returns
         -------
@@ -2465,7 +2485,7 @@ cdef class OrderBookDeltas(Data):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -2527,6 +2547,14 @@ cdef class OrderBookDeltas(Data):
         return capsule
 
     cpdef to_pyo3(self):
+        """
+        Return a pyo3 object from this legacy Cython instance.
+
+        Returns
+        -------
+        nautilus_pyo3.OrderBookDeltas
+
+        """
         capsule = self.to_capsule()
         deltas = nautilus_pyo3.OrderBookDeltas.from_pycapsule(capsule)
         return deltas
@@ -2556,9 +2584,9 @@ cdef class OrderBookDepth10(Data):
         The unique sequence number for the update.
         If no sequence number provided in the source data then use a value of zero.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the tick event occurred.
+        UNIX timestamp (nanoseconds) when the tick event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the data object was initialized.
+        UNIX timestamp (nanoseconds) when the data object was initialized.
 
     Raises
     ------
@@ -2830,7 +2858,7 @@ cdef class OrderBookDepth10(Data):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
 
         Returns
         -------
@@ -2842,7 +2870,7 @@ cdef class OrderBookDepth10(Data):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -3016,9 +3044,9 @@ cdef class VenueStatus(Data):
     status : MarketStatus
         The venue market status.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the status update event occurred.
+        UNIX timestamp (nanoseconds) when the status update event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
     """
 
@@ -3109,9 +3137,9 @@ cdef class InstrumentStatus(Data):
     status : MarketStatus
         The instrument market session status.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the status update event occurred.
+        UNIX timestamp (nanoseconds) when the status update event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
     trading_session : str, default 'Regular'
         The name of the trading session.
     halt_reason : HaltReason, default ``NOT_HALTED``
@@ -3227,9 +3255,9 @@ cdef class InstrumentClose(Data):
     close_type : InstrumentCloseType
         The type of closing price.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the close price event occurred.
+        UNIX timestamp (nanoseconds) when the close price event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
     """
 
@@ -3333,9 +3361,9 @@ cdef class QuoteTick(Data):
     ask_size : Quantity
         The top of book ask size.
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the tick event occurred.
+        UNIX timestamp (nanoseconds) when the tick event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the data object was initialized.
+        UNIX timestamp (nanoseconds) when the data object was initialized.
 
     Raises
     ------
@@ -3482,7 +3510,7 @@ cdef class QuoteTick(Data):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
 
         Returns
         -------
@@ -3494,7 +3522,7 @@ cdef class QuoteTick(Data):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -3716,9 +3744,9 @@ cdef class QuoteTick(Data):
         ask_size_prec : uint8_t
             The ask size precision.
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) when the tick event occurred.
+            UNIX timestamp (nanoseconds) when the tick event occurred.
         ts_init : uint64_t
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
+            UNIX timestamp (nanoseconds) when the data object was initialized.
 
         Returns
         -------
@@ -3863,6 +3891,25 @@ cdef class QuoteTick(Data):
         """
         return QuoteTick.from_pyo3_c(pyo3_quote)
 
+    def to_pyo3(self) -> nautilus_pyo3.QuoteTick:
+        """
+        Return a pyo3 object from this legacy Cython instance.
+
+        Returns
+        -------
+        nautilus_pyo3.QuoteTick
+
+        """
+        return nautilus_pyo3.QuoteTick(
+            nautilus_pyo3.InstrumentId.from_str(self.instrument_id.value),
+            nautilus_pyo3.Price.from_raw(self._mem.bid_price.raw, self._mem.bid_price.precision),
+            nautilus_pyo3.Price.from_raw(self._mem.ask_price.raw, self._mem.ask_price.precision),
+            nautilus_pyo3.Quantity.from_raw(self._mem.bid_size.raw, self._mem.bid_size.precision),
+            nautilus_pyo3.Quantity.from_raw(self._mem.ask_size.raw, self._mem.ask_size.precision),
+            self._mem.ts_event,
+            self._mem.ts_init,
+        )
+
     cpdef Price extract_price(self, PriceType price_type):
         """
         Extract the price for the given price type.
@@ -3930,9 +3977,9 @@ cdef class TradeTick(Data):
     trade_id : TradeId
         The trade match ID (assigned by the venue).
     ts_event : uint64_t
-        The UNIX timestamp (nanoseconds) when the tick event occurred.
+        UNIX timestamp (nanoseconds) when the tick event occurred.
     ts_init : uint64_t
-        The UNIX timestamp (nanoseconds) when the data object was initialized.
+        UNIX timestamp (nanoseconds) when the data object was initialized.
 
     Raises
     ------
@@ -4068,7 +4115,7 @@ cdef class TradeTick(Data):
     @property
     def ts_event(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the data event occurred.
+        UNIX timestamp (nanoseconds) when the data event occurred.
 
         Returns
         -------
@@ -4080,7 +4127,7 @@ cdef class TradeTick(Data):
     @property
     def ts_init(self) -> int:
         """
-        The UNIX timestamp (nanoseconds) when the object was initialized.
+        UNIX timestamp (nanoseconds) when the object was initialized.
 
         Returns
         -------
@@ -4294,9 +4341,9 @@ cdef class TradeTick(Data):
         trade_id : TradeId
             The trade match ID (assigned by the venue).
         ts_event : uint64_t
-            The UNIX timestamp (nanoseconds) when the tick event occurred.
+            UNIX timestamp (nanoseconds) when the tick event occurred.
         ts_init : uint64_t
-            The UNIX timestamp (nanoseconds) when the data object was initialized.
+            UNIX timestamp (nanoseconds) when the data object was initialized.
 
         Returns
         -------
@@ -4424,3 +4471,22 @@ cdef class TradeTick(Data):
 
         """
         return TradeTick.from_pyo3_c(pyo3_trade)
+
+    def to_pyo3(self) -> nautilus_pyo3.TradeTick:
+        """
+        Return a pyo3 object from this legacy Cython instance.
+
+        Returns
+        -------
+        nautilus_pyo3.TradeTick
+
+        """
+        return nautilus_pyo3.TradeTick(
+            nautilus_pyo3.InstrumentId.from_str(self.instrument_id.value),
+            nautilus_pyo3.Price.from_raw(self._mem.price.raw, self._mem.price.precision),
+            nautilus_pyo3.Quantity.from_raw(self._mem.size.raw, self._mem.size.precision),
+            nautilus_pyo3.AggressorSide(aggressor_side_to_str(self._mem.aggressor_side)),
+            nautilus_pyo3.TradeId(self.trade_id.value),
+            self._mem.ts_event,
+            self._mem.ts_init,
+        )

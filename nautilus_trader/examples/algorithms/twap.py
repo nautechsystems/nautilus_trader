@@ -190,7 +190,7 @@ class TWAPExecAlgorithm(ExecAlgorithm):
 
         if horizon_secs < interval_secs:
             self.log.error(
-                f"Cannot execute order: " f"{horizon_secs=} was less than {interval_secs=}",
+                f"Cannot execute order: {horizon_secs=} was less than {interval_secs=}",
             )
             return
 

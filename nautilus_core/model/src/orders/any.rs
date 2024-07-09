@@ -54,8 +54,7 @@ pub enum OrderAny {
 }
 
 impl OrderAny {
-    /// Consumes the `OrderAny` enum and returns the underlying order as a boxed trait.
-
+    /// Applies the given `event` to the order.
     pub fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
         match self {
             OrderAny::Limit(order) => order.apply(event),
@@ -117,7 +116,7 @@ impl OrderAny {
 
     pub fn from_events(events: Vec<OrderEventAny>) -> anyhow::Result<Self> {
         if events.is_empty() {
-            anyhow::bail!("No events provided");
+            anyhow::bail!("No order events provided to create OrderAny");
         }
 
         // Pop the first event

@@ -33,4 +33,4 @@ cdef class OrderList:
     cdef readonly Order first
     """The first order in the list (typically the parent).\n\n:returns: `list[Order]`"""
     cdef readonly uint64_t ts_init
-    """The UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
+    """UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""

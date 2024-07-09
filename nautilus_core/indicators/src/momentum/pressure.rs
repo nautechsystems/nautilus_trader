@@ -29,7 +29,6 @@ use crate::{
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
 )]
-
 pub struct Pressure {
     pub period: usize,
     pub ma_type: MovingAverageType,
@@ -179,7 +178,7 @@ mod tests {
             1300.0, 1400.0, 1500.0,
         ];
 
-        for i in 0..10 {
+        for i in 0..15 {
             pressure_10.update_raw(
                 high_values[i],
                 low_values[i],
@@ -189,15 +188,15 @@ mod tests {
         }
 
         assert!(pressure_10.initialized());
-        assert_eq!(pressure_10.value, 0.5454545454545434);
-        assert_eq!(pressure_10.value_cumulative, 4.788073593073581);
+        assert_eq!(pressure_10.value, 4.377_880_184_331_797);
+        assert_eq!(pressure_10.value_cumulative, 23.231_207_409_222_474);
     }
 
     #[rstest]
     fn test_handle_bar(mut pressure_10: Pressure, bar_ethusdt_binance_minute_bid: Bar) {
         pressure_10.handle_bar(&bar_ethusdt_binance_minute_bid);
-        assert_eq!(pressure_10.value, -0.018181818181818132);
-        assert_eq!(pressure_10.value_cumulative, -0.018181818181818132);
+        assert_eq!(pressure_10.value, -0.018_181_818_181_818_132);
+        assert_eq!(pressure_10.value_cumulative, -0.018_181_818_181_818_132);
         assert!(pressure_10.has_inputs);
         assert!(!pressure_10.initialized);
     }
@@ -213,6 +212,6 @@ mod tests {
         assert!(!pressure_10.initialized());
         assert_eq!(pressure_10.value, 0.0);
         assert_eq!(pressure_10.value_cumulative, 0.0);
-        assert_eq!(pressure_10.has_inputs, false);
+        assert!(!pressure_10.has_inputs);
     }
 }

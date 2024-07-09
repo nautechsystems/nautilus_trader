@@ -85,7 +85,7 @@ pub struct DatabentoFeedHandler {
 impl DatabentoFeedHandler {
     /// Creates a new [`DatabentoFeedHandler`] instance.
     #[must_use]
-    pub fn new(
+    pub const fn new(
         key: String,
         dataset: String,
         rx: mpsc::UnboundedReceiver<LiveCommand>,

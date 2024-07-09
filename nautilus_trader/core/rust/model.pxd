@@ -11,16 +11,31 @@ cdef extern from "../includes/model.h":
 
     const double FIXED_SCALAR # = 1000000000.0
 
+    # The maximum valid money amount which can be represented.
     const double MONEY_MAX # = 9223372036.0
 
+    # The minimum valid money amount which can be represented.
     const double MONEY_MIN # = -9223372036.0
 
+    # The sentinel value for an unset or null price.
+    const int64_t PRICE_UNDEF # = INT64_MAX
+
+    # The sentinel value for an error or invalid price.
+    const int64_t PRICE_ERROR # = INT64_MIN
+
+    # The maximum valid price value which can be represented.
     const double PRICE_MAX # = 9223372036.0
 
+    # The minimum valid price value which can be represented.
     const double PRICE_MIN # = -9223372036.0
 
+    # The sentinel value for an unset or null quantity.
+    const uint64_t QUANTITY_UNDEF # = UINT64_MAX
+
+    # The maximum valid quantity value which can be represented.
     const double QUANTITY_MAX # = 18446744073.0
 
+    # The minimum valid quantity value which can be represented.
     const double QUANTITY_MIN # = 0.0
 
     # An account type provided by a trading venue or broker.
@@ -442,13 +457,13 @@ cdef extern from "../includes/model.h":
         BookAction action;
         # The order to apply.
         BookOrder_t order;
-        # The record flags bit field, indicating event end and data information.
+        # The record flags bit field indicating event end and data information.
         uint8_t flags;
         # The message sequence number assigned at the venue.
         uint64_t sequence;
-        # The UNIX timestamp (nanoseconds) when the book event occurred.
+        # UNIX timestamp (nanoseconds) when the book event occurred.
         uint64_t ts_event;
-        # The UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the struct was initialized.
         uint64_t ts_init;
 
     # C compatible Foreign Function Interface (FFI) for an underlying [`OrderBookDeltas`].
@@ -486,9 +501,9 @@ cdef extern from "../includes/model.h":
         uint8_t flags;
         # The message sequence number assigned at the venue.
         uint64_t sequence;
-        # The UNIX timestamp (nanoseconds) when the book event occurred.
+        # UNIX timestamp (nanoseconds) when the book event occurred.
         uint64_t ts_event;
-        # The UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the struct was initialized.
         uint64_t ts_init;
 
     # Represents a single quote tick in a market.
@@ -503,9 +518,9 @@ cdef extern from "../includes/model.h":
         Quantity_t bid_size;
         # The top of book ask size.
         Quantity_t ask_size;
-        # The UNIX timestamp (nanoseconds) when the quote event occurred.
+        # UNIX timestamp (nanoseconds) when the quote event occurred.
         uint64_t ts_event;
-        # The UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the struct was initialized.
         uint64_t ts_init;
 
     # Represents a valid trade match ID (assigned by a trading venue).
@@ -527,9 +542,9 @@ cdef extern from "../includes/model.h":
         AggressorSide aggressor_side;
         # The trade match ID (assigned by the venue).
         TradeId_t trade_id;
-        # The UNIX timestamp (nanoseconds) when the trade event occurred.
+        # UNIX timestamp (nanoseconds) when the trade event occurred.
         uint64_t ts_event;
-        # The UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the struct was initialized.
         uint64_t ts_init;
 
     # Represents a bar aggregation specification including a step, aggregation
@@ -566,9 +581,9 @@ cdef extern from "../includes/model.h":
         Price_t close;
         # The bars volume.
         Quantity_t volume;
-        # The UNIX timestamp (nanoseconds) when the data event occurred.
+        # UNIX timestamp (nanoseconds) when the data event occurred.
         uint64_t ts_event;
-        # The UNIX timestamp (nanoseconds) when the struct was initialized.
+        # UNIX timestamp (nanoseconds) when the struct was initialized.
         uint64_t ts_init;
 
     # A built-in Nautilus data type.
@@ -742,8 +757,8 @@ cdef extern from "../includes/model.h":
 
     const BookOrder_t NULL_ORDER # = <BookOrder_t>{ OrderSide_NoOrderSide, <Price_t>{ 0, 0 }, <Quantity_t>{ 0, 0 }, 0 }
 
-    # Sentinel Price for errors.
-    const Price_t ERROR_PRICE # = <Price_t>{ INT64_MAX, 0 }
+    # The sentinel `Price` representing errors (this will be removed when Cython is gone).
+    const Price_t ERROR_PRICE # = <Price_t>{ PRICE_ERROR, 0 }
 
     Data_t data_clone(const Data_t *data);
 

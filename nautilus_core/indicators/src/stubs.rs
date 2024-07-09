@@ -30,19 +30,23 @@ use rstest::*;
 use crate::{
     average::{
         ama::AdaptiveMovingAverage, dema::DoubleExponentialMovingAverage,
-        ema::ExponentialMovingAverage, hma::HullMovingAverage, rma::WilderMovingAverage,
-        sma::SimpleMovingAverage, vidya::VariableIndexDynamicAverage,
+        ema::ExponentialMovingAverage, hma::HullMovingAverage, lr::LinearRegression,
+        rma::WilderMovingAverage, sma::SimpleMovingAverage, vidya::VariableIndexDynamicAverage,
         vwap::VolumeWeightedAveragePrice, wma::WeightedMovingAverage, MovingAverageType,
     },
     momentum::{
         amat::ArcherMovingAveragesTrends, bb::BollingerBands, bias::Bias,
         cci::CommodityChannelIndex, cmo::ChandeMomentumOscillator, dm::DirectionalMovement,
-        kvo::KlingerVolumeOscillator, pressure::Pressure, psl::PsychologicalLine,
+        kvo::KlingerVolumeOscillator, macd::MovingAverageConvergenceDivergence,
+        obv::OnBalanceVolume, pressure::Pressure, psl::PsychologicalLine, roc::RateOfChange,
         rsi::RelativeStrengthIndex, stochastics::Stochastics, swings::Swings,
         vhf::VerticalHorizontalFilter,
     },
-    ratio::efficiency_ratio::EfficiencyRatio,
-    volatility::vr::VolatilityRatio,
+    ratio::{efficiency_ratio::EfficiencyRatio, spread_analyzer::SpreadAnalyzer},
+    volatility::{
+        dc::DonchianChannel, fuzzy::FuzzyCandlesticks, kc::KeltnerChannel, kp::KeltnerPosition,
+        rvi::RelativeVolatilityIndex, vr::VolatilityRatio,
+    },
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -155,12 +159,22 @@ pub fn indicator_wma_10() -> WeightedMovingAverage {
     WeightedMovingAverage::new(10, weights, Some(PriceType::Mid)).unwrap()
 }
 
+#[fixture]
+pub fn indicator_lr_10() -> LinearRegression {
+    LinearRegression::new(10).unwrap()
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Ratios
 ////////////////////////////////////////////////////////////////////////////////
 #[fixture]
 pub fn efficiency_ratio_10() -> EfficiencyRatio {
     EfficiencyRatio::new(10, Some(PriceType::Mid)).unwrap()
+}
+
+#[fixture]
+pub fn spread_analyzer_10() -> SpreadAnalyzer {
+    SpreadAnalyzer::new(10, InstrumentId::from("ETHUSDT-PERP.BINANCE")).unwrap()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -231,6 +245,22 @@ pub fn cci_10() -> CommodityChannelIndex {
     CommodityChannelIndex::new(10, 2.0, Some(MovingAverageType::Simple)).unwrap()
 }
 
+#[fixture]
+pub fn macd_10() -> MovingAverageConvergenceDivergence {
+    MovingAverageConvergenceDivergence::new(
+        10,
+        8,
+        Some(MovingAverageType::Simple),
+        Some(PriceType::Bid),
+    )
+    .unwrap()
+}
+
+#[fixture]
+pub fn obv_10() -> OnBalanceVolume {
+    OnBalanceVolume::new(10).unwrap()
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Volatility
 ////////////////////////////////////////////////////////////////////////////////
@@ -244,4 +274,50 @@ pub fn vr_10() -> VolatilityRatio {
         Some(10.0),
     )
     .unwrap()
+}
+
+#[fixture]
+pub fn dc_10() -> DonchianChannel {
+    DonchianChannel::new(10).unwrap()
+}
+
+#[fixture]
+pub fn rvi_10() -> RelativeVolatilityIndex {
+    RelativeVolatilityIndex::new(10, Some(10.0), Some(MovingAverageType::Simple)).unwrap()
+}
+
+#[fixture]
+pub fn kc_10() -> KeltnerChannel {
+    KeltnerChannel::new(
+        10,
+        2.0,
+        Some(MovingAverageType::Simple),
+        Some(MovingAverageType::Simple),
+        Some(true),
+        Some(0.0),
+    )
+    .unwrap()
+}
+
+#[fixture]
+pub fn kp_10() -> KeltnerPosition {
+    KeltnerPosition::new(
+        10,
+        2.0,
+        Some(MovingAverageType::Simple),
+        Some(MovingAverageType::Simple),
+        Some(true),
+        Some(0.0),
+    )
+    .unwrap()
+}
+
+#[fixture]
+pub fn roc_10() -> RateOfChange {
+    RateOfChange::new(10, Some(true)).unwrap()
+}
+
+#[fixture]
+pub fn fuzzy_candlesticks_10() -> FuzzyCandlesticks {
+    FuzzyCandlesticks::new(10, 0.1, 0.15, 0.2, 0.3).unwrap()
 }

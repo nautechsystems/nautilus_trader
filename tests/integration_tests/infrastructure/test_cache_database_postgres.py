@@ -22,10 +22,14 @@ import pytest
 from nautilus_trader.cache.postgres.adapter import CachePostgresAdapter
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.events import AccountState
 from nautilus_trader.model.instruments import CurrencyPair
+from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.portfolio.portfolio import Portfolio
@@ -34,6 +38,7 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
+from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 from nautilus_trader.trading.strategy import Strategy
 
@@ -154,9 +159,8 @@ class TestCachePostgresAdapter:
         self.database.add_currency(btc_usdt_crypto_future.quote_currency)
         self.database.add_currency(btc_usdt_crypto_future.settlement_currency)
 
-        await asyncio.sleep(0.5)
         # Check that we have added target currencies, because of foreign key constraints
-        await eventually(lambda: self.database.load_currencies())
+        await eventually(lambda: len(self.database.load_currencies().keys()) >= 2)
 
         currencies = self.database.load_currencies()
         assert list(currencies.keys()) == ["BTC", "USDT"]
@@ -181,9 +185,8 @@ class TestCachePostgresAdapter:
         self.database.add_currency(eth_usdt_crypto_perpetual.quote_currency)
         self.database.add_currency(eth_usdt_crypto_perpetual.settlement_currency)
 
-        await asyncio.sleep(0.5)
         # Check that we have added target currencies, because of foreign key constraints
-        await eventually(lambda: self.database.load_currencies())
+        await eventually(lambda: len(self.database.load_currencies().keys()) >= 2)
 
         currencies = self.database.load_currencies()
         assert list(currencies.keys()) == ["ETH", "USDT"]
@@ -206,10 +209,10 @@ class TestCachePostgresAdapter:
     async def test_add_instrument_currency_pair(self):
         self.database.add_currency(_AUDUSD_SIM.base_currency)
         self.database.add_currency(_AUDUSD_SIM.quote_currency)
-        await asyncio.sleep(0.6)
 
         # Check that we have added target currencies, because of foreign key constraints
-        await eventually(lambda: self.database.load_currencies())
+        await eventually(lambda: len(self.database.load_currencies()) >= 2)
+
         currencies = self.database.load_currencies()
         assert list(currencies.keys()) == ["AUD", "USD"]
 
@@ -250,7 +253,10 @@ class TestCachePostgresAdapter:
         self.database.add_instrument(aud_usd_currency_pair_updated)
 
         # We have to manually sleep and not use eventually
-        await asyncio.sleep(0.5)
+        await eventually(
+            lambda: self.database.load_instrument(_AUDUSD_SIM.id).min_price
+            == Price.from_str("111"),
+        )
 
         # Assert
         result = self.database.load_instrument(_AUDUSD_SIM.id)
@@ -268,9 +274,8 @@ class TestCachePostgresAdapter:
         appl_equity = TestInstrumentProvider.equity()
         self.database.add_currency(appl_equity.quote_currency)
 
-        await asyncio.sleep(0.1)
         # Check that we have added target currencies, because of foreign key constraints
-        await eventually(lambda: self.database.load_currencies())
+        await eventually(lambda: len(self.database.load_currencies()) >= 1)
 
         currencies = self.database.load_currencies()
         assert list(currencies.keys()) == ["USD"]
@@ -293,7 +298,7 @@ class TestCachePostgresAdapter:
         self.database.add_currency(es_futures.quote_currency)
 
         # Check that we have added target currencies, because of foreign key constraints
-        await eventually(lambda: self.database.load_currencies())
+        await eventually(lambda: len(self.database.load_currencies()) >= 1)
 
         currencies = self.database.load_currencies()
         assert list(currencies.keys()) == ["USD"]
@@ -383,7 +388,7 @@ class TestCachePostgresAdapter:
         order.apply(fill)
         self.database.update_order(order)
 
-        await asyncio.sleep(0.5)
+        await eventually(lambda: len(self.database.load_order(order.client_order_id).events) >= 4)
 
         result = self.database.load_order(order.client_order_id)
         assert result == order
@@ -411,8 +416,68 @@ class TestCachePostgresAdapter:
         # Act
         self.database.update_order(order)
 
-        await asyncio.sleep(0.5)
+        await eventually(lambda: len(self.database.load_order(order.client_order_id).events) >= 3)
 
         result = self.database.load_order(order.client_order_id)
         assert result == order
         assert order.to_dict() == result.to_dict()
+
+    ################################################################################
+    # Accounts
+    ################################################################################
+    @pytest.mark.asyncio
+    async def test_add_and_update_account(self):
+        account = TestExecStubs.cash_account()
+
+        self.database.add_currency(account.base_currency)
+        self.database.add_account(account)
+
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_account(account.id))
+
+        assert self.database.load_account(account.id) == account
+        # apply modified account event
+        account_event = AccountState(
+            account_id=account.id,
+            account_type=account.type,
+            base_currency=account.base_currency,
+            reported=True,  # reported
+            balances=[
+                AccountBalance(
+                    Money(1_000_000, account.base_currency),
+                    Money(100_000, account.base_currency),
+                    Money(900_000, account.base_currency),
+                ),
+            ],
+            margins=[],
+            info={},
+            event_id=UUID4(),
+            ts_event=0,
+            ts_init=0,
+        )
+        account.apply(account_event)
+
+        self.database.update_account(account)
+
+        await eventually(lambda: len(self.database.load_account(account.id).events) >= 2)
+
+        result = self.database.load_account(account.id)
+        assert result == account
+
+    @pytest.mark.asyncio
+    async def test_update_account(self):
+        # Arrange
+        account = TestExecStubs.cash_account()
+
+        self.database.add_currency(account.base_currency)
+        self.database.add_account(account)
+
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_account(account.id))
+
+        # Act
+        self.database.update_account(account)
+        await asyncio.sleep(0.5)
+
+        # Assert
+        assert self.database.load_account(account.id) == account

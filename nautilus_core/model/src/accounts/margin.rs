@@ -22,8 +22,11 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use nautilus_common::interface::account::Account;
-use nautilus_model::{
+use rust_decimal::prelude::ToPrimitive;
+use serde::{Deserialize, Serialize};
+
+use crate::{
+    accounts::base::{Account, BaseAccount},
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
     identifiers::{AccountId, InstrumentId},
@@ -37,14 +40,11 @@ use nautilus_model::{
         quantity::Quantity,
     },
 };
-use rust_decimal::prelude::ToPrimitive;
 
-use crate::account::base::BaseAccount;
-
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.accounting")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct MarginAccount {
     pub base: BaseAccount,
@@ -412,16 +412,15 @@ impl Hash for MarginAccount {
 mod tests {
     use std::collections::HashMap;
 
-    use nautilus_common::interface::account::Account;
-    use nautilus_model::{
+    use rstest::rstest;
+
+    use crate::{
+        accounts::{base::Account, margin::MarginAccount, stubs::*},
         events::account::{state::AccountState, stubs::*},
         identifiers::{stubs::*, InstrumentId},
         instruments::{crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair, stubs::*},
         types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
     };
-    use rstest::rstest;
-
-    use crate::account::{margin::MarginAccount, stubs::*};
 
     #[rstest]
     fn test_display(margin_account: MarginAccount) {

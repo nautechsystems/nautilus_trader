@@ -165,12 +165,11 @@ class BinanceFuturesTradeData(msgspec.Struct, frozen=True):
 
     e: str  # Event type
     E: int  # Event time
-    T: int  # Trade time
     s: str  # Symbol
     t: int  # Trade ID
     p: str  # Price
     q: str  # Quantity
-    X: BinanceOrderType  # Buyer order type
+    T: int  # Trade time
     m: bool  # Is the buyer the market maker?
 
     def parse_to_trade_tick(

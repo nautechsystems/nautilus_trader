@@ -33,12 +33,12 @@ pub struct UnixNanos(u64);
 
 impl UnixNanos {
     #[must_use]
-    pub fn as_u64(&self) -> u64 {
+    pub const fn as_u64(&self) -> u64 {
         self.0
     }
 
     #[must_use]
-    pub fn as_f64(&self) -> f64 {
+    pub const fn as_f64(&self) -> f64 {
         self.0 as f64
     }
 }

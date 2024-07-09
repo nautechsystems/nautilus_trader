@@ -19,11 +19,16 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use nautilus_common::interface::account::Account;
-use nautilus_model::{
+use serde::{Deserialize, Serialize};
+
+use crate::{
+    accounts::base::{Account, BaseAccount},
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
-    identifiers::AccountId,
+    identifiers::{
+        stubs::{account_id, uuid4},
+        AccountId,
+    },
     instruments::any::InstrumentAny,
     position::Position,
     types::{
@@ -31,12 +36,10 @@ use nautilus_model::{
     },
 };
 
-use crate::account::base::BaseAccount;
-
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.accounting")
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct CashAccount {
     pub base: BaseAccount,
@@ -60,7 +63,7 @@ impl CashAccount {
     }
 
     #[must_use]
-    pub fn is_unleveraged(&self) -> bool {
+    pub const fn is_unleveraged(&self) -> bool {
         false
     }
 }
@@ -217,6 +220,30 @@ impl Display for CashAccount {
     }
 }
 
+impl Default for CashAccount {
+    fn default() -> Self {
+        // million dollar account
+        let init_event = AccountState::new(
+            account_id(),
+            AccountType::Cash,
+            vec![AccountBalance::new(
+                Money::from("1000000 USD"),
+                Money::from("0 USD"),
+                Money::from("1000000 USD"),
+            )
+            .unwrap()],
+            vec![],
+            true,
+            uuid4(),
+            0.into(),
+            0.into(),
+            Some(Currency::USD()),
+        )
+        .unwrap();
+        Self::new(init_event, false).unwrap()
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -224,8 +251,10 @@ impl Display for CashAccount {
 mod tests {
     use std::collections::{HashMap, HashSet};
 
-    use nautilus_common::{factories::OrderFactory, interface::account::Account, stubs::*};
-    use nautilus_model::{
+    use rstest::rstest;
+
+    use crate::{
+        accounts::{base::Account, cash::CashAccount, stubs::*},
         enums::{AccountType, LiquiditySide, OrderSide},
         events::account::{state::AccountState, stubs::*},
         identifiers::{position_id::PositionId, AccountId},
@@ -233,13 +262,10 @@ mod tests {
             any::InstrumentAny, crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair,
             equity::Equity, stubs::*, Instrument,
         },
-        orders::stubs::TestOrderEventStubs,
+        orders::stubs::{TestOrderEventStubs, TestOrderStubs},
         position::Position,
         types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
     };
-    use rstest::rstest;
-
-    use crate::account::{cash::CashAccount, stubs::*};
 
     #[rstest]
     fn test_display(cash_account: CashAccount) {
@@ -438,18 +464,13 @@ mod tests {
     #[rstest]
     fn test_calculate_pnls_for_single_currency_cash_account(
         cash_account_million_usd: CashAccount,
-        mut order_factory: OrderFactory,
         audusd_sim: CurrencyPair,
     ) {
         let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
-        let order = order_factory.market(
+        let order = TestOrderStubs::market_order(
             audusd_sim.id(),
             OrderSide::Buy,
             Quantity::from("1000000"),
-            None,
-            None,
-            None,
-            None,
             None,
             None,
         );
@@ -474,18 +495,13 @@ mod tests {
     #[rstest]
     fn test_calculate_pnls_for_multi_currency_cash_account_btcusdt(
         cash_account_multi: CashAccount,
-        mut order_factory: OrderFactory,
         currency_pair_btcusdt: CurrencyPair,
     ) {
         let btcusdt = InstrumentAny::CurrencyPair(currency_pair_btcusdt);
-        let order1 = order_factory.market(
+        let order1 = TestOrderStubs::market_order(
             currency_pair_btcusdt.id,
             OrderSide::Sell,
             Quantity::from("0.5"),
-            None,
-            None,
-            None,
-            None,
             None,
             None,
         );
@@ -508,14 +524,10 @@ mod tests {
                 Some(position.clone()),
             )
             .unwrap();
-        let order2 = order_factory.market(
+        let order2 = TestOrderStubs::market_order(
             currency_pair_btcusdt.id,
             OrderSide::Buy,
             Quantity::from("0.5"),
-            None,
-            None,
-            None,
-            None,
             None,
             None,
         );

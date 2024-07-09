@@ -15,9 +15,11 @@
 
 use std::collections::HashMap;
 
-use nautilus_common::interface::account::Account;
 use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::{
+use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
+
+use crate::{
+    accounts::{base::Account, cash::CashAccount},
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{account::state::AccountState, order::filled::OrderFilled},
     identifiers::AccountId,
@@ -25,9 +27,6 @@ use nautilus_model::{
     python::instruments::pyobject_to_instrument_any,
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
-use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
-
-use crate::account::cash::CashAccount;
 
 #[pymethods]
 impl CashAccount {
@@ -96,6 +95,12 @@ impl CashAccount {
     #[pyo3(name = "events")]
     fn py_events(&self) -> Vec<AccountState> {
         self.events()
+    }
+
+    #[getter]
+    #[pyo3(name = "calculate_account_state")]
+    fn py_calculate_account_state(&self) -> bool {
+        self.calculate_account_state
     }
 
     #[pyo3(name = "balance_total")]

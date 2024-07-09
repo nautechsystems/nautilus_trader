@@ -102,7 +102,7 @@ def _build_rust_libs() -> None:
         print(" ".join(cmd_args))
 
         subprocess.run(
-            cmd_args,  # noqa
+            cmd_args,
             cwd="nautilus_core",
             check=True,
         )
@@ -299,7 +299,7 @@ def _strip_unneeded_symbols() -> None:
             else:
                 raise RuntimeError(f"Cannot strip symbols for platform {platform.system()}")
             subprocess.run(
-                strip_cmd,  # type: ignore [arg-type] # noqa
+                strip_cmd,  # type: ignore [arg-type]
                 check=True,
                 capture_output=True,
             )

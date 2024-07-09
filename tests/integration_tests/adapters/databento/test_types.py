@@ -72,7 +72,7 @@
 #
 #     # Act
 #     pickled = pickle.dumps(imbalance)
-#     unpickled = pickle.loads(pickled)  # S301 (pickle is safe here)
+#     unpickled = pickle.loads(pickled)  # (pickle is safe here)
 #
 #     # Assert
 #     assert unpickled == imbalance
@@ -165,7 +165,7 @@
 #
 #     # Act
 #     pickled = pickle.dumps(statistics)
-#     unpickled = pickle.loads(pickled)  # S301 (pickle is safe here)
+#     unpickled = pickle.loads(pickled)  # (pickle is safe here)
 #
 #     # Assert
 #     assert unpickled == statistics

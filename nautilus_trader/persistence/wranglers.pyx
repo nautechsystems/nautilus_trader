@@ -43,8 +43,8 @@ from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 
 
-BAR_PRICES = ('open', 'high', 'low', 'close')
-BAR_COLUMNS = (*BAR_PRICES, 'volume')
+BAR_PRICES = ("open", "high", "low", "close")
+BAR_COLUMNS = (*BAR_PRICES, "volume")
 
 
 def preprocess_bar_data(data: pd.DataFrame, is_raw: bool):
@@ -117,7 +117,7 @@ def calculate_bar_price_offsets(num_records, timestamp_is_close: bool, offset_in
         local_random = random.Random(random_seed)
         for i in range(num_records):
             if local_random.getrandbits(1):  # With a 50% chance, swap high and low
-                offsets['high'][i], offsets['low'][i] = offsets['low'][i], offsets['high'][i]
+                offsets["high"][i], offsets["low"][i] = offsets["low"][i], offsets["high"][i]
 
     return offsets
 
@@ -126,14 +126,18 @@ def calculate_volume_quarter(volume: np.ndarray, precision: int):
     """
     Convert raw volume data to quarter precision.
 
-    Args:
-        volume : np.ndarray
-            An array of volume data to be processed.
-        precision : int
-            The decimal precision to which the volume data is rounded, adjusted by subtracting 9.
+    Parameters
+    ----------
+    volume : np.ndarray
+        An array of volume data to be processed.
+    precision : int
+        The decimal precision to which the volume data is rounded, adjusted by subtracting 9.
 
-    Returns:
-        np.ndarray: The volume data adjusted to quarter precision.
+    Returns
+    -------
+    np.ndarray
+        The volume data adjusted to quarter precision.
+
     """
     # Convert raw volume to quarter precision
     return np.round(volume / 4, precision - 9).astype(np.uint64)
@@ -143,18 +147,21 @@ def align_bid_ask_bar_data(bid_data: pd.DataFrame, ask_data: pd.DataFrame):
     """
     Merge bid and ask data into a single DataFrame with prefixed column names.
 
-    Args:
-        bid_data : pd.DataFrame
-            The DataFrame containing bid data.
-        ask_data : pd.DataFrame
-            The DataFrame containing ask data.
+    Parameters
+    ----------
+    bid_data : pd.DataFrame
+        The DataFrame containing bid data.
+    ask_data : pd.DataFrame
+        The DataFrame containing ask data.
 
-    Returns:
-        pd.DataFrame: A merged DataFrame with columns prefixed by 'bid_' for bid data and 'ask_' for ask data, joined on their indexes.
+    Returns
+    pd.DataFrame
+        A merged DataFrame with columns prefixed by 'bid_' for bid data and 'ask_' for ask data, joined on their indexes.
+
     """
-    bid_prefixed = bid_data.add_prefix('bid_')
-    ask_prefixed = ask_data.add_prefix('ask_')
-    merged_data = pd.merge(bid_prefixed, ask_prefixed, left_index=True, right_index=True, how='inner')
+    bid_prefixed = bid_data.add_prefix("bid_")
+    ask_prefixed = ask_data.add_prefix("ask_")
+    merged_data = pd.merge(bid_prefixed, ask_prefixed, left_index=True, right_index=True, how="inner")
     return merged_data
 
 
@@ -456,7 +463,7 @@ cdef class QuoteTickDataWrangler:
 
         # Sort data by timestamp, if required
         if sort_data:
-            sorted_indices = np.argsort(ticks_final['timestamp'])
+            sorted_indices = np.argsort(ticks_final["timestamp"])
             ticks_final = ticks_final[sorted_indices]
 
         ts_events = ticks_final["timestamp"].view(np.uint64)
@@ -483,14 +490,14 @@ cdef class QuoteTickDataWrangler:
         ts_init_delta,
     ):
         dtype = [
-            ('bid_price_raw', np.int64), ('ask_price_raw', np.int64),
-            ('bid_size_raw', np.uint64), ('ask_size_raw', np.uint64),
-            ('timestamp', 'datetime64[ns]')
+            ("bid_price_raw", np.int64), ("ask_price_raw", np.int64),
+            ("bid_size_raw", np.uint64), ("ask_size_raw", np.uint64),
+            ("timestamp", "datetime64[ns]")
         ]
 
         size_precision = instrument.size_precision
-        merged_data.loc[:, 'bid_volume'] = calculate_volume_quarter(merged_data['bid_volume'], size_precision)
-        merged_data.loc[:, 'ask_volume'] = calculate_volume_quarter(merged_data['ask_volume'], size_precision)
+        merged_data.loc[:, "bid_volume"] = calculate_volume_quarter(merged_data["bid_volume"], size_precision)
+        merged_data.loc[:, "ask_volume"] = calculate_volume_quarter(merged_data["ask_volume"], size_precision)
 
         # Convert to record array
         records = merged_data.to_records()
@@ -503,11 +510,11 @@ cdef class QuoteTickDataWrangler:
             start_index = i * len(records)
             end_index = start_index + len(records)
 
-            tick_data['bid_price_raw'][start_index:end_index] = records[f'bid_{price_key}'].astype(np.int64)
-            tick_data['ask_price_raw'][start_index:end_index] = records[f'ask_{price_key}'].astype(np.int64)
-            tick_data['bid_size_raw'][start_index:end_index] = records['bid_volume'].astype(np.uint64)
-            tick_data['ask_size_raw'][start_index:end_index] = records['ask_volume'].astype(np.uint64)
-            tick_data['timestamp'][start_index:end_index] = records['timestamp'] + offsets[price_key]
+            tick_data["bid_price_raw"][start_index:end_index] = records[f"bid_{price_key}"].astype(np.int64)
+            tick_data["ask_price_raw"][start_index:end_index] = records[f"ask_{price_key}"].astype(np.int64)
+            tick_data["bid_size_raw"][start_index:end_index] = records["bid_volume"].astype(np.uint64)
+            tick_data["ask_size_raw"][start_index:end_index] = records["ask_volume"].astype(np.uint64)
+            tick_data["timestamp"][start_index:end_index] = records["timestamp"] + offsets[price_key]
 
         return tick_data
 
@@ -674,8 +681,8 @@ cdef class TradeTickDataWrangler:
 
         # Standardize and preprocess data
         data = preprocess_bar_data(data, is_raw)
-        data.loc[:, 'volume'] = calculate_volume_quarter(data['volume'], self.instrument.size_precision)
-        data.loc[:, 'trade_id'] = data.index.view(np.uint64).astype(str)
+        data.loc[:, "volume"] = calculate_volume_quarter(data["volume"], self.instrument.size_precision)
+        data.loc[:, "trade_id"] = data.index.view(np.uint64).astype(str)
 
         records = data.to_records()
         offsets = calculate_bar_price_offsets(len(records), timestamp_is_close, offset_interval_ms, random_seed)
@@ -683,7 +690,7 @@ cdef class TradeTickDataWrangler:
 
         # Sort data by timestamp, if required
         if sort_data:
-            sorted_indices = np.argsort(ticks_final['timestamp'])
+            sorted_indices = np.argsort(ticks_final["timestamp"])
             ticks_final = ticks_final[sorted_indices]
 
         ts_events = ticks_final["timestamp"].view(np.uint64)

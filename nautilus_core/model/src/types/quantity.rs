@@ -29,7 +29,13 @@ use thousands::Separable;
 use super::fixed::{check_fixed_precision, FIXED_PRECISION, FIXED_SCALAR};
 use crate::types::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
 
+/// The sentinel value for an unset or null quantity.
+pub const QUANTITY_UNDEF: u64 = u64::MAX;
+
+/// The maximum valid quantity value which can be represented.
 pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
+
+/// The minimum valid quantity value which can be represented.
 pub const QUANTITY_MIN: f64 = 0.0;
 
 #[repr(C)]
@@ -64,6 +70,11 @@ impl Quantity {
     pub fn zero(precision: u8) -> Self {
         check_fixed_precision(precision).unwrap();
         Self::new(0.0, precision).unwrap()
+    }
+
+    #[must_use]
+    pub fn is_undefined(&self) -> bool {
+        self.raw == QUANTITY_UNDEF
     }
 
     #[must_use]
@@ -345,6 +356,13 @@ mod tests {
         assert!(qty.is_positive());
         assert_eq!(qty.as_decimal(), dec!(0.00812000));
         assert!(approx_eq!(f64, qty.as_f64(), 0.00812, epsilon = 0.000_001));
+    }
+
+    #[rstest]
+    fn test_undefined() {
+        let qty = Quantity::from_raw(QUANTITY_UNDEF, 0).unwrap();
+        assert_eq!(qty.raw, QUANTITY_UNDEF);
+        assert!(qty.is_undefined());
     }
 
     #[rstest]
