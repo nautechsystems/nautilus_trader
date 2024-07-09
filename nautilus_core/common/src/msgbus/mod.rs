@@ -158,10 +158,6 @@ pub struct MessageBus {
     pub name: String,
     // The count of messages sent through the bus.
     pub sent_count: u64,
-    // The count of requests processed by the bus.
-    pub req_count: u64,
-    // The count of responses processed by the bus.
-    pub res_count: u64,
     /// The count of messages published by the bus.
     pub pub_count: u64,
     /// If the message bus is backed by a database.
@@ -176,10 +172,6 @@ pub struct MessageBus {
     patterns: IndexMap<Ustr, Vec<Subscription>>,
     /// handles a message or a request destined for a specific endpoint.
     endpoints: IndexMap<Ustr, ShareableMessageBusHandler>,
-    /// Relates a request with a response
-    /// a request maps it's id to a handler so that a response
-    /// with the same id can later be handled.
-    correlation_index: IndexMap<UUID4, ShareableMessageBusHandler>,
 }
 
 impl MessageBus {
@@ -195,13 +187,10 @@ impl MessageBus {
             instance_id,
             name: name.unwrap_or(stringify!(MessageBus).to_owned()),
             sent_count: 0,
-            req_count: 0,
-            res_count: 0,
             pub_count: 0,
             subscriptions: IndexMap::new(),
             patterns: IndexMap::new(),
             endpoints: IndexMap::new(),
-            correlation_index: IndexMap::new(),
             has_backing: false,
         })
     }
@@ -219,12 +208,6 @@ impl MessageBus {
             .keys()
             .map(|s| s.topic.as_str())
             .collect()
-    }
-
-    /// Returns the active correlation IDs.
-    #[must_use]
-    pub fn correlation_ids(&self) -> Vec<&UUID4> {
-        self.correlation_index.keys().collect()
     }
 
     /// Returns whether there are subscribers for the given `pattern`.
@@ -261,12 +244,6 @@ impl MessageBus {
     pub fn is_subscribed(&self, topic: &str, handler: ShareableMessageBusHandler) -> bool {
         let sub = Subscription::new(Ustr::from(topic), handler, self.subscriptions.len(), None);
         self.subscriptions.contains_key(&sub)
-    }
-
-    /// Returns whether there is a pending request for the given `request_id`.
-    #[must_use]
-    pub fn is_pending_response(&self, request_id: &UUID4) -> bool {
-        self.correlation_index.contains_key(request_id)
     }
 
     /// Close the message bus which will close the sender channel and join the thread.
@@ -328,42 +305,6 @@ impl MessageBus {
     #[must_use]
     pub fn get_endpoint(&self, endpoint: &Ustr) -> Option<&ShareableMessageBusHandler> {
         self.endpoints.get(&Ustr::from(endpoint))
-    }
-
-    /// Returns the handler for the request `endpoint` and adds the request ID to the internal
-    /// correlation index to match with the expected response.
-    #[must_use]
-    pub fn request_handler(
-        &mut self,
-        endpoint: &Ustr,
-        request_id: UUID4,
-        response_handler: ShareableMessageBusHandler,
-    ) -> Option<&ShareableMessageBusHandler> {
-        if let Some(handler) = self.endpoints.get(endpoint) {
-            self.correlation_index.insert(request_id, response_handler);
-            Some(handler)
-        } else {
-            None
-        }
-    }
-
-    /// Returns the handler for the matching correlation ID (if found).
-    #[must_use]
-    pub fn correlation_id_handler(
-        &mut self,
-        correlation_id: &UUID4,
-    ) -> Option<&ShareableMessageBusHandler> {
-        self.correlation_index.get(correlation_id)
-    }
-
-    /// Returns the handler for the matching response `endpoint` based on the internal correlation
-    /// index.
-    #[must_use]
-    pub fn response_handler(
-        &mut self,
-        correlation_id: &UUID4,
-    ) -> Option<ShareableMessageBusHandler> {
-        self.correlation_index.shift_remove(correlation_id)
     }
 
     #[must_use]
@@ -617,22 +558,6 @@ mod tests {
             msgbus.request_handler(&Ustr::from(endpoint), request_id, handler2),
             Some(&handler1)
         );
-    }
-
-    #[rstest]
-    fn test_response_handler() {
-        let mut msgbus = stub_msgbus();
-        let correlation_id = UUID4::new();
-
-        let callback = stub_rust_callback();
-        let handler_id = Ustr::from("1");
-        let handler = MessageBusHandler::new(handler_id, Some(callback));
-
-        msgbus
-            .correlation_index
-            .insert(correlation_id, handler.clone());
-
-        assert_eq!(msgbus.response_handler(&correlation_id), Some(handler));
     }
 
     #[rstest]
