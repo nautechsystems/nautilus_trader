@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides a generic `ExecutionEngine` for backtesting and live environments.
+//! Provides a generic `ExecutionEngine` for all environments.
 
 // Under development
 #![allow(dead_code)]
@@ -22,7 +22,10 @@
 use std::collections::{HashMap, HashSet};
 
 use log::debug;
-use nautilus_common::{cache::Cache, generators::position_id::PositionIdGenerator};
+use nautilus_common::{
+    cache::Cache, generators::position_id::PositionIdGenerator, msgbus::MessageBus,
+};
+use nautilus_core::time::AtomicTime;
 use nautilus_model::{
     enums::{OmsType, OrderSide},
     events::order::{filled::OrderFilled, OrderEventAny},
@@ -50,13 +53,15 @@ pub struct ExecutionEngine {
     pub command_count: u64,
     pub event_count: u64,
     pub report_count: u64,
+    clock: &'static AtomicTime,
     cache: &'static Cache,
-    default_client: Option<ExecutionClient>,
-    pos_id_generator: PositionIdGenerator,
+    msgbus: &'static MessageBus,
     clients: HashMap<ClientId, ExecutionClient>,
+    default_client: Option<ExecutionClient>,
     routing_map: HashMap<Venue, ClientId>,
     oms_overrides: HashMap<StrategyId, OmsType>,
     external_order_claims: HashMap<InstrumentId, StrategyId>,
+    pos_id_generator: PositionIdGenerator,
     config: ExecutionEngineConfig,
 }
 

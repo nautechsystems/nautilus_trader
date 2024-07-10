@@ -2636,6 +2636,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-data"
+version = "0.27.0"
+dependencies = [
+ "anyhow",
+ "criterion",
+ "derive_builder",
+ "indexmap 2.2.6",
+ "log",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-model",
+ "pyo3",
+ "pyo3-asyncio-0-21",
+ "rstest",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "strum",
+ "thiserror",
+ "ustr",
+]
+
+[[package]]
 name = "nautilus-execution"
 version = "0.27.0"
 dependencies = [

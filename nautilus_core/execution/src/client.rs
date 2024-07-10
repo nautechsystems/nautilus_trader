@@ -20,12 +20,13 @@
 #![allow(unused_variables)]
 
 use nautilus_common::cache::Cache;
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
 use nautilus_model::{
+    accounts::any::AccountAny,
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType},
     events::{account::state::AccountState, order::OrderEventAny},
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, Venue,
+        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, Venue,
         VenueOrderId,
     },
     types::{
@@ -43,20 +44,21 @@ use crate::messages::{
 };
 
 pub struct ExecutionClient {
+    pub client_id: ClientId,
     pub venue: Venue,
     pub oms_type: OmsType,
     pub account_id: AccountId,
     pub account_type: AccountType,
     pub base_currency: Option<Currency>,
     pub is_connected: bool,
+    clock: &'static AtomicTime,
     cache: &'static Cache,
 }
 
 impl ExecutionClient {
-    // TODO: Polymorphism for `Account` TBD?
-    // pub fn get_account(&self) -> Box<dyn Account> {
-    //     todo!();
-    // }
+    pub fn get_account(&self) -> &AccountAny {
+        todo!();
+    }
 
     // -- COMMAND HANDLERS ----------------------------------------------------
 
