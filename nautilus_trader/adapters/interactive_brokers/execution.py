@@ -508,7 +508,10 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
         return report
 
-    def _transform_order_to_ib_order(self, order: Order) -> IBOrder:
+    def _transform_order_to_ib_order(self, order: Order) -> IBOrder:  # noqa: C901 11 > 10
+        if getattr(order, "is_post_only", None) is True:
+            raise ValueError("post_only=True, not supported by InteractiveBrokers")
+
         ib_order = IBOrder()
         time_in_force = order.time_in_force
         for key, field, fn in MAP_ORDER_FIELDS:
@@ -523,6 +526,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             ib_order.totalQuantity = 0
 
         if isinstance(order, TrailingStopLimitOrder | TrailingStopMarketOrder):
+            if order.trailing_offset_type != TrailingOffsetType.PRICE:
+                raise ValueError(
+                    f"TrailingOffsetType `{order.trailing_offset_type}` is not supported",
+                )
+
             ib_order.auxPrice = float(order.trailing_offset)
             if order.trigger_price:
                 ib_order.trailStopPrice = order.trigger_price.as_double()
@@ -563,30 +571,17 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         PyCondition.type(command, SubmitOrder, "command")
-        # Reject the non-compliant orders.
-        # These conditions are based on available info and can be relaxed if there is use case.
-        reject_reason = None
-        if getattr(command.order, "trailing_offset_type", None) not in [
-            TrailingOffsetType.PRICE,
-            None,
-        ]:
-            reject_reason = f"{command.order.trailing_offset_type!r} not implemented"
-        elif getattr(command.order, "is_post_only", None) is True:
-            reject_reason = (
-                "post_only=True, `Marketing making` not supported by InteractiveBrokers."
-            )
-        if reject_reason:
+        try:
+            ib_order: IBOrder = self._transform_order_to_ib_order(command.order)
+            ib_order.orderId = self._client.next_order_id()
+            self._client.place_order(ib_order)
+            self._handle_order_event(status=OrderStatus.SUBMITTED, order=command.order)
+        except ValueError as e:
             self._handle_order_event(
                 status=OrderStatus.REJECTED,
                 order=command.order,
-                reason=reject_reason,
+                reason=str(e),
             )
-            return
-
-        ib_order: IBOrder = self._transform_order_to_ib_order(command.order)
-        ib_order.orderId = self._client.next_order_id()
-        self._client.place_order(ib_order)
-        self._handle_order_event(status=OrderStatus.SUBMITTED, order=command.order)
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
         PyCondition.type(command, SubmitOrderList, "command")
@@ -600,10 +595,28 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             order_id_map[order.client_order_id.value] = self._client.next_order_id()
             client_id_to_orders[order.client_order_id.value] = order
 
-            ib_order = self._transform_order_to_ib_order(order)
-            ib_order.transmit = False
-            ib_order.orderId = order_id_map[order.client_order_id.value]
-            ib_orders.append(ib_order)
+            try:
+                ib_order = self._transform_order_to_ib_order(order)
+                ib_order.transmit = False
+                ib_order.orderId = order_id_map[order.client_order_id.value]
+                ib_orders.append(ib_order)
+            except ValueError as e:
+                # All orders in the list are declined to prevent unintended side effects
+                for o in command.order_list.orders:
+                    if o == order:
+                        self._handle_order_event(
+                            status=OrderStatus.REJECTED,
+                            order=command.order,
+                            reason=str(e),
+                        )
+                    else:
+                        self._handle_order_event(
+                            status=OrderStatus.REJECTED,
+                            order=command.order,
+                            reason=f"The order has been rejected due to the rejection of the order with ID "
+                            f"{order.client_order_id} in the list.",
+                        )
+                return
 
         # Mark last order to transmit
         ib_orders[-1].transmit = True
@@ -626,8 +639,17 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             return
 
         nautilus_order: Order = self._cache.order(command.client_order_id)
-        self._log.info(f"Nautilus order status is {nautilus_order.status!r}", LogColor.GREEN)
-        ib_order: IBOrder = self._transform_order_to_ib_order(nautilus_order)
+        self._log.info(f"Nautilus order status is {nautilus_order.status!r}")
+        try:
+            ib_order: IBOrder = self._transform_order_to_ib_order(nautilus_order)
+        except ValueError as e:
+            self._handle_order_event(
+                status=OrderStatus.REJECTED,
+                order=command.order,
+                reason=str(e),
+            )
+            return
+
         ib_order.orderId = int(command.venue_order_id.value)
         if ib_order.parentId:
             parent_nautilus_order = self._cache.order(ClientOrderId(ib_order.parentId))
