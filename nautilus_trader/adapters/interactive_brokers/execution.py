@@ -67,6 +67,7 @@ from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
+from nautilus_trader.model.enums import trailing_offset_type_to_str
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -492,7 +493,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 position.contract.conId,
             )
             if not self._cache.instrument(instrument.id):
-                self._msgbus.send(endpoint="DataEngine.process", msg=instrument)
+                self._handle_data(instrument)
 
             position_status = PositionStatusReport(
                 account_id=self.account_id,
@@ -509,8 +510,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         return report
 
     def _transform_order_to_ib_order(self, order: Order) -> IBOrder:  # noqa: C901 11 > 10
-        if getattr(order, "is_post_only", None) is True:
-            raise ValueError("post_only=True, not supported by InteractiveBrokers")
+        if order.is_post_only:
+            raise ValueError("`post_only` not supported by Interactive Brokers")
 
         ib_order = IBOrder()
         time_in_force = order.time_in_force
@@ -528,7 +529,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         if isinstance(order, TrailingStopLimitOrder | TrailingStopMarketOrder):
             if order.trailing_offset_type != TrailingOffsetType.PRICE:
                 raise ValueError(
-                    f"TrailingOffsetType `{order.trailing_offset_type}` is not supported",
+                    f"`TrailingOffsetType` {trailing_offset_type_to_str(order.trailing_offset_type)} is not supported",
                 )
 
             ib_order.auxPrice = float(order.trailing_offset)
@@ -613,8 +614,8 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                         self._handle_order_event(
                             status=OrderStatus.REJECTED,
                             order=command.order,
-                            reason=f"The order has been rejected due to the rejection of the order with ID "
-                            f"{order.client_order_id} in the list.",
+                            reason=f"The order has been rejected due to the rejection of the order with "
+                            f"{order.client_order_id!r} in the list",
                         )
                 return
 
@@ -639,7 +640,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             return
 
         nautilus_order: Order = self._cache.order(command.client_order_id)
-        self._log.info(f"Nautilus order status is {nautilus_order.status!r}")
+        self._log.info(f"Nautilus order status is {nautilus_order.status_string()}")
         try:
             ib_order: IBOrder = self._transform_order_to_ib_order(nautilus_order)
         except ValueError as e:
