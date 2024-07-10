@@ -56,6 +56,7 @@ pub struct ExecutionClient {
 }
 
 impl ExecutionClient {
+    #[must_use]
     pub fn get_account(&self) -> &AccountAny {
         todo!();
     }
