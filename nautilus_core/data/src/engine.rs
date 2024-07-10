@@ -63,11 +63,11 @@ pub struct DataEngine {
 impl DataEngine {
     #[must_use]
     pub fn registed_clients(&self) -> Vec<ClientId> {
-        self.clients.keys().cloned().collect()
+        self.clients.keys().copied().collect()
     }
 
     #[must_use]
-    pub fn default_client(&self) -> Option<&DataClient> {
+    pub const fn default_client(&self) -> Option<&DataClient> {
         self.default_client.as_ref()
     }
 
@@ -128,6 +128,6 @@ impl DataEngine {
         correctness::check_key_in_map(&client_id, &self.clients, "client_id", "clients").unwrap();
 
         self.clients.remove(&client_id);
-        log::info!("Deregistered client {client_id}")
+        log::info!("Deregistered client {client_id}");
     }
 }
