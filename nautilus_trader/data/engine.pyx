@@ -132,7 +132,7 @@ cdef class DataEngine(Component):
         self._routing_map: dict[Venue, DataClient] = {}
         self._default_client: DataClient | None = None
         self._catalog: ParquetDataCatalog | None = None
-        self._order_book_intervals: dict[(InstrumentId, int), list[Callable[[Bar], None]]] = {}
+        self._order_book_intervals: dict[(InstrumentId, int), list[Callable[[OrderBook], None]]] = {}
         self._bar_aggregators: dict[BarType, BarAggregator] = {}
         self._synthetic_quote_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
         self._synthetic_trade_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
@@ -297,7 +297,7 @@ cdef class DataEngine(Component):
 
     cpdef void register_venue_routing(self, DataClient client, Venue venue):
         """
-        Register the given client to route orders to the given venue.
+        Register the given client to route messages to the given venue.
 
         Any existing client in the routing map for the given venue will be
         overwritten.
@@ -305,8 +305,8 @@ cdef class DataEngine(Component):
         Parameters
         ----------
         venue : Venue
-            The venue to route orders to.
-        client : ExecutionClient
+            The venue to route messages to.
+        client : DataClient
             The client for the venue routing.
 
         """
@@ -318,7 +318,7 @@ cdef class DataEngine(Component):
 
         self._routing_map[venue] = client
 
-        self._log.info(f"Registered ExecutionClient-{client} for routing to {venue}")
+        self._log.info(f"Registered DataClient-{client} for routing to {venue}")
 
     cpdef void deregister_client(self, DataClient client):
         """
