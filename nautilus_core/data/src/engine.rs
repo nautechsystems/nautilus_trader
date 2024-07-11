@@ -19,7 +19,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
 use log;
 use nautilus_common::{cache::Cache, msgbus::MessageBus};
@@ -47,8 +47,8 @@ pub struct DataEngine {
     pub request_count: u64,
     pub response_count: u64,
     clock: &'static AtomicTime,
-    cache: &'static Cache,
-    msgbus: &'static MessageBus,
+    cache: Rc<Cache>,
+    msgbus: Rc<MessageBus>,
     clients: HashMap<ClientId, DataClient>,
     default_client: Option<DataClient>,
     routing_map: HashMap<Venue, ClientId>,

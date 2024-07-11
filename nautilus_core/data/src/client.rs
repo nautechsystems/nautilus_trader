@@ -19,6 +19,8 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+use std::rc::Rc;
+
 use nautilus_common::cache::Cache;
 use nautilus_core::time::AtomicTime;
 use nautilus_model::identifiers::{ClientId, Venue};
@@ -28,5 +30,5 @@ pub struct DataClient {
     pub venue: Venue,
     pub is_connected: bool,
     clock: &'static AtomicTime,
-    cache: &'static Cache,
+    cache: Rc<Cache>,
 }
