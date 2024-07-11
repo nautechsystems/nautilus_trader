@@ -194,6 +194,12 @@ impl Deref for Quantity {
 impl Add for Quantity {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
+        assert!(
+            self.precision >= rhs.precision,
+            "Precision mismatch: cannot add precision {} to precision {} (precision loss)",
+            rhs.precision,
+            self.precision,
+        );
         Self {
             raw: self
                 .raw
@@ -207,6 +213,12 @@ impl Add for Quantity {
 impl Sub for Quantity {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
+        assert!(
+            self.precision >= rhs.precision,
+            "Precision mismatch: cannot subtract precision {} from precision {} (precision loss)",
+            rhs.precision,
+            self.precision,
+        );
         Self {
             raw: self
                 .raw
@@ -221,6 +233,13 @@ impl Sub for Quantity {
 impl Mul for Quantity {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self::Output {
+        assert!(
+            self.precision >= rhs.precision,
+            "Precision mismatch: cannot multiply precision {} with precision {} (precision loss)",
+            rhs.precision,
+            self.precision,
+        );
+
         let result_raw = self
             .raw
             .checked_mul(rhs.raw)

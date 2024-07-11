@@ -197,7 +197,7 @@ impl Add for Money {
         assert_eq!(
             self.currency, rhs.currency,
             "Currency mismatch: cannot add {} to {}",
-            self.currency.code, rhs.currency.code
+            rhs.currency.code, self.currency.code
         );
         Self {
             raw: self
@@ -215,7 +215,7 @@ impl Sub for Money {
         assert_eq!(
             self.currency, rhs.currency,
             "Currency mismatch: cannot subtract {} from {}",
-            self.currency.code, rhs.currency.code
+            rhs.currency.code, self.currency.code
         );
         Self {
             raw: self
@@ -232,7 +232,7 @@ impl AddAssign for Money {
         assert_eq!(
             self.currency, other.currency,
             "Currency mismatch: cannot add {} to {}",
-            self.currency.code, other.currency.code
+            other.currency.code, self.currency.code
         );
         self.raw = self
             .raw
@@ -246,7 +246,7 @@ impl SubAssign for Money {
         assert_eq!(
             self.currency, other.currency,
             "Currency mismatch: cannot subtract {} from {}",
-            self.currency.code, other.currency.code
+            other.currency.code, self.currency.code
         );
         self.raw = self
             .raw
