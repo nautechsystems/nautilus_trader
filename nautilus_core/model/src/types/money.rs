@@ -194,9 +194,16 @@ impl Neg for Money {
 impl Add for Money {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
-        assert_eq!(self.currency, rhs.currency);
+        assert_eq!(
+            self.currency, rhs.currency,
+            "Currency mismatch: cannot add {} to {}",
+            self.currency.code, rhs.currency.code
+        );
         Self {
-            raw: self.raw + rhs.raw,
+            raw: self
+                .raw
+                .checked_add(rhs.raw)
+                .expect("Overflow occurred when adding `Money`"),
             currency: self.currency,
         }
     }
@@ -205,9 +212,16 @@ impl Add for Money {
 impl Sub for Money {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
-        assert_eq!(self.currency, rhs.currency);
+        assert_eq!(
+            self.currency, rhs.currency,
+            "Currency mismatch: cannot subtract {} from {}",
+            self.currency.code, rhs.currency.code
+        );
         Self {
-            raw: self.raw - rhs.raw,
+            raw: self
+                .raw
+                .checked_sub(rhs.raw)
+                .expect("Underflow occurred when subtracting `Money`"),
             currency: self.currency,
         }
     }
@@ -215,15 +229,29 @@ impl Sub for Money {
 
 impl AddAssign for Money {
     fn add_assign(&mut self, other: Self) {
-        assert_eq!(self.currency, other.currency);
-        self.raw += other.raw;
+        assert_eq!(
+            self.currency, other.currency,
+            "Currency mismatch: cannot add {} to {}",
+            self.currency.code, other.currency.code
+        );
+        self.raw = self
+            .raw
+            .checked_add(other.raw)
+            .expect("Overflow occurred when adding `Money`");
     }
 }
 
 impl SubAssign for Money {
     fn sub_assign(&mut self, other: Self) {
-        assert_eq!(self.currency, other.currency);
-        self.raw -= other.raw;
+        assert_eq!(
+            self.currency, other.currency,
+            "Currency mismatch: cannot subtract {} from {}",
+            self.currency.code, other.currency.code
+        );
+        self.raw = self
+            .raw
+            .checked_sub(other.raw)
+            .expect("Underflow occurred when subtracting `Money`");
     }
 }
 
@@ -248,7 +276,6 @@ impl Mul<f64> for Money {
     }
 }
 
-// DIVIDE
 impl Div<f64> for Money {
     type Output = f64;
     fn div(self, rhs: f64) -> Self::Output {

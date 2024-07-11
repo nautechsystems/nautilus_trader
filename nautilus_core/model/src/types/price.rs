@@ -220,7 +220,10 @@ impl Add for Price {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
         Self {
-            raw: self.raw + rhs.raw,
+            raw: self
+                .raw
+                .checked_add(rhs.raw)
+                .expect("Overflow occurred when adding `Price`"),
             precision: self.precision,
         }
     }
@@ -230,7 +233,10 @@ impl Sub for Price {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
         Self {
-            raw: self.raw - rhs.raw,
+            raw: self
+                .raw
+                .checked_sub(rhs.raw)
+                .expect("Underflow occurred when subtracting `Price`"),
             precision: self.precision,
         }
     }
@@ -238,13 +244,19 @@ impl Sub for Price {
 
 impl AddAssign for Price {
     fn add_assign(&mut self, other: Self) {
-        self.raw += other.raw;
+        self.raw = self
+            .raw
+            .checked_add(other.raw)
+            .expect("Overflow occurred when adding `Price`");
     }
 }
 
 impl SubAssign for Price {
     fn sub_assign(&mut self, other: Self) {
-        self.raw -= other.raw;
+        self.raw = self
+            .raw
+            .checked_sub(other.raw)
+            .expect("Underflow occurred when subtracting `Price`");
     }
 }
 
