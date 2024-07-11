@@ -3,8 +3,9 @@
 Released on TBD (UTC).
 
 ### Enhancements
-- Improve live reconciliation robustness (will now generate inferred orders necessary to align external position state)
-- Refactor order submission error handling for Interactive Brokers, thanks @rsmb7z
+- Implemented `MessageBus` v2 in Rust (#1786), thanks @twitu
+- Improved live reconciliation robustness (will now generate inferred orders necessary to align external position state)
+- Refactor order submission error handling for Interactive Brokers (#1783), thanks @rsmb7z
 
 ### Breaking Changes
 None
