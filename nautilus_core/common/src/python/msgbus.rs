@@ -37,6 +37,20 @@ impl MessageBus {
     }
 
     /// Subscribes the given `handler` to the `topic`.
+    ///
+    /// The priority for the subscription determines the ordering of
+    /// handlers receiving messages being processed, higher priority
+    /// handlers will receive messages before lower priority handlers.
+    ///
+    /// Safety: Priority should be between 0 and 255
+    ///
+    /// Warning:
+    /// Assigning priority handling is an advanced feature which *shouldn't
+    /// normally be needed by most users*. **Only assign a higher priority to the
+    /// subscription if you are certain of what you're doing**. If an inappropriate
+    /// priority is assigned then the handler may receive messages before core
+    /// system components have been able to process necessary calculations and
+    /// produce potential side effects for logically sound behavior.
     #[pyo3(name = "subscribe")]
     pub fn subscribe_py(
         mut slf: PyRefMut<'_, Self>,

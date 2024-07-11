@@ -61,26 +61,31 @@ pub struct Subscription {
     /// Store a copy of the handler id for faster equality checks
     pub handler_id: Ustr,
     pub topic: Ustr,
-    pub sequence: usize,
+    /// The priority for the subscription determines the ordering of
+    /// handlers receiving messages being processed, higher priority
+    /// handlers will receive messages before lower priority handlers.
+    ///
+    ///
+    /// Warning:
+    /// Assigning priority handling is an advanced feature which *shouldn't
+    /// normally be needed by most users*. **Only assign a higher priority to the
+    /// subscription if you are certain of what you're doing**. If an inappropriate
+    /// priority is assigned then the handler may receive messages before core
+    /// system components have been able to process necessary calculations and
+    /// produce potential side effects for logically sound behavior.
     pub priority: u8,
 }
 
 impl Subscription {
     /// Creates a new [`Subscription`] instance.
     #[must_use]
-    pub fn new(
-        topic: Ustr,
-        handler: ShareableMessageHandler,
-        sequence: usize,
-        priority: Option<u8>,
-    ) -> Self {
+    pub fn new(topic: Ustr, handler: ShareableMessageHandler, priority: Option<u8>) -> Self {
         let handler_id = handler.0.id();
 
         Self {
             handler_id,
             topic,
             handler,
-            sequence,
             priority: priority.unwrap_or(0),
         }
     }
@@ -90,8 +95,8 @@ impl Debug for Subscription {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "Subscription {{ topic: {}, handler: {}, sequence: {}, priority: {} }}",
-            self.topic, self.handler_id, self.sequence, self.priority
+            "Subscription {{ topic: {}, handler: {}, priority: {} }}",
+            self.topic, self.handler_id, self.priority
         )
     }
 }
@@ -112,10 +117,7 @@ impl PartialOrd for Subscription {
 
 impl Ord for Subscription {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match other.priority.cmp(&self.priority) {
-            std::cmp::Ordering::Equal => self.sequence.cmp(&other.sequence),
-            other => other,
-        }
+        other.priority.cmp(&self.priority)
     }
 }
 
@@ -151,7 +153,6 @@ impl Hash for Subscription {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
 )]
 #[allow(clippy::type_complexity)] // Complexity will reduce when Cython eliminated
-#[derive(Clone)]
 pub struct MessageBus {
     /// The trader ID associated with the message bus.
     pub trader_id: TraderId,
@@ -239,7 +240,7 @@ impl MessageBus {
     /// Returns whether there are subscribers for the given `pattern`.
     #[must_use]
     pub fn is_subscribed(&self, topic: &str, handler: ShareableMessageHandler) -> bool {
-        let sub = Subscription::new(Ustr::from(topic), handler, self.subscriptions.len(), None);
+        let sub = Subscription::new(Ustr::from(topic), handler, None);
         self.subscriptions.contains_key(&sub)
     }
 
@@ -269,7 +270,7 @@ impl MessageBus {
         priority: Option<u8>,
     ) {
         let topic = Ustr::from(topic);
-        let sub = Subscription::new(topic, handler, self.subscriptions.len(), priority);
+        let sub = Subscription::new(topic, handler, priority);
 
         if self.subscriptions.contains_key(&sub) {
             error!("{sub:?} already exists.");
@@ -294,7 +295,7 @@ impl MessageBus {
 
     /// Unsubscribes the given `handler` from the `topic`.
     pub fn unsubscribe(&mut self, topic: &str, handler: ShareableMessageHandler) {
-        let sub = Subscription::new(Ustr::from(topic), handler, self.subscriptions.len(), None);
+        let sub = Subscription::new(Ustr::from(topic), handler, None);
         self.subscriptions.shift_remove(&sub);
     }
 
