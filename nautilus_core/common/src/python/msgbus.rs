@@ -1,15 +1,29 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2024 2Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 use std::rc::Rc;
 
 use pyo3::{pymethods, PyObject, PyRef, PyRefMut};
 use ustr::Ustr;
 
+use super::handler::PythonMessageHandler;
 use crate::msgbus::{MessageBus, ShareableMessageHandler};
-
-use super::python_handler::PythonMessageHandler;
 
 #[pymethods]
 impl MessageBus {
-    /// Sends a message to a an endpoint
+    /// Sends a message to a an endpoint.
     #[pyo3(name = "send")]
     pub fn send_py(&self, endpoint: &str, message: PyObject) {
         if let Some(handler) = self.get_endpoint(&Ustr::from(endpoint)) {
@@ -17,7 +31,7 @@ impl MessageBus {
         }
     }
 
-    /// Publish a message to a topic
+    /// Publish a message to a topic.
     #[pyo3(name = "publish")]
     pub fn publish_py(&self, topic: &str, message: PyObject) {
         let topic = Ustr::from(topic);
@@ -44,7 +58,8 @@ impl MessageBus {
     ///
     /// Safety: Priority should be between 0 and 255
     ///
-    /// Warning:
+    /// # Warnings
+    ///
     /// Assigning priority handling is an advanced feature which *shouldn't
     /// normally be needed by most users*. **Only assign a higher priority to the
     /// subscription if you are certain of what you're doing**. If an inappropriate
