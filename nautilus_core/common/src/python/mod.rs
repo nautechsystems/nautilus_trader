@@ -19,14 +19,14 @@
 
 pub mod clock;
 pub mod enums;
+pub mod handler;
 pub mod logging;
 pub mod msgbus;
-pub mod python_handler;
 pub mod timer;
 pub mod versioning;
 
+use handler::PythonMessageHandler;
 use pyo3::prelude::*;
-use python_handler::PythonMessageHandler;
 
 /// Loaded as nautilus_pyo3.common
 #[pymodule]

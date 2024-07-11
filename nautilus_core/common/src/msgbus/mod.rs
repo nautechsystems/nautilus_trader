@@ -44,7 +44,7 @@ pub struct ShareableMessageHandler(pub Rc<dyn MessageHandler>);
 
 impl From<Rc<dyn MessageHandler>> for ShareableMessageHandler {
     fn from(value: Rc<dyn MessageHandler>) -> Self {
-        ShareableMessageHandler(value)
+        Self(value)
     }
 }
 
@@ -65,8 +65,8 @@ pub struct Subscription {
     /// handlers receiving messages being processed, higher priority
     /// handlers will receive messages before lower priority handlers.
     ///
+    /// # Warnings
     ///
-    /// Warning:
     /// Assigning priority handling is an advanced feature which *shouldn't
     /// normally be needed by most users*. **Only assign a higher priority to the
     /// subscription if you are certain of what you're doing**. If an inappropriate
@@ -176,6 +176,7 @@ pub struct MessageBus {
 
 impl MessageBus {
     /// Creates a new [`MessageBus`] instance.
+    #[must_use]
     pub fn new(
         trader_id: TraderId,
         instance_id: UUID4,
@@ -351,7 +352,7 @@ impl MessageBus {
     /// Sends a message to an endpoint
     pub fn send(&self, endpoint: &str, message: &dyn Any) {
         if let Some(handler) = self.get_endpoint(&Ustr::from(endpoint)) {
-            handler.0.handle(message)
+            handler.0.handle(message);
         }
     }
 
