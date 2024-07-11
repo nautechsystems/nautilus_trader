@@ -219,6 +219,12 @@ impl Neg for Price {
 impl Add for Price {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
+        assert!(
+            self.precision >= rhs.precision,
+            "Precision mismatch: cannot add precision {} to precision {} (precision loss)",
+            rhs.precision,
+            self.precision,
+        );
         Self {
             raw: self
                 .raw
@@ -232,6 +238,12 @@ impl Add for Price {
 impl Sub for Price {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
+        assert!(
+            self.precision >= rhs.precision,
+            "Precision mismatch: cannot subtract precision {} from precision {} (precision loss)",
+            rhs.precision,
+            self.precision,
+        );
         Self {
             raw: self
                 .raw
@@ -244,6 +256,12 @@ impl Sub for Price {
 
 impl AddAssign for Price {
     fn add_assign(&mut self, other: Self) {
+        assert!(
+            self.precision >= other.precision,
+            "Precision mismatch: cannot add precision {} to precision {} (precision loss)",
+            other.precision,
+            self.precision,
+        );
         self.raw = self
             .raw
             .checked_add(other.raw)
@@ -253,6 +271,12 @@ impl AddAssign for Price {
 
 impl SubAssign for Price {
     fn sub_assign(&mut self, other: Self) {
+        assert!(
+            self.precision >= other.precision,
+            "Precision mismatch: cannot subtract precision {} from precision {} (precision loss)",
+            other.precision,
+            self.precision,
+        );
         self.raw = self
             .raw
             .checked_sub(other.raw)
