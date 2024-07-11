@@ -3,7 +3,7 @@ use std::any::Any;
 use pyo3::prelude::*;
 use ustr::Ustr;
 
-use crate::msgbus::MessageBusHandler;
+use crate::msgbus::MessageHandler;
 
 #[pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common.MessageBusHandler")]
 pub struct PythonMessageBusHandler {
@@ -20,9 +20,9 @@ impl PythonMessageBusHandler {
     }
 }
 
-impl MessageBusHandler for PythonMessageBusHandler {
+impl MessageHandler for PythonMessageBusHandler {
     #[allow(unused_variables)]
-    fn handle(&mut self, message: &dyn Any) {
+    fn handle(&self, message: &dyn Any) {
         // TODO: convert message to PyObject
         let py_event = ();
         let result =
