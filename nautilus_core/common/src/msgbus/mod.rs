@@ -17,9 +17,6 @@
 
 pub mod database;
 
-#[cfg(feature = "python")]
-pub mod python_handler;
-
 use std::{
     any::Any,
     collections::HashMap,
@@ -41,7 +38,18 @@ pub trait MessageHandler {
     fn handle(&self, message: &dyn Any);
 }
 
-type ShareableMessageHandler = Rc<dyn MessageHandler>;
+#[derive(Clone)]
+#[repr(transparent)]
+pub struct ShareableMessageHandler(pub Rc<dyn MessageHandler>);
+
+impl From<Rc<dyn MessageHandler>> for ShareableMessageHandler {
+    fn from(value: Rc<dyn MessageHandler>) -> Self {
+        ShareableMessageHandler(value)
+    }
+}
+
+// Message handlers are not expected to be sent across thread boundaries
+unsafe impl Send for ShareableMessageHandler {}
 
 // Represents a subscription to a particular topic.
 //
@@ -66,7 +74,7 @@ impl Subscription {
         sequence: usize,
         priority: Option<u8>,
     ) -> Self {
-        let handler_id = handler.id();
+        let handler_id = handler.0.id();
 
         Self {
             handler_id,
@@ -138,8 +146,12 @@ impl Hash for Subscription {
 /// A question mark matches a single character once. For example, `c?mp` matches
 /// `camp` and `comp`. The question mark can also be used more than once.
 /// For example, `c??p` would match both of the above examples and `coop`.
-#[derive(Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
+)]
 #[allow(clippy::type_complexity)] // Complexity will reduce when Cython eliminated
+#[derive(Clone)]
 pub struct MessageBus {
     /// The trader ID associated with the message bus.
     pub trader_id: TraderId,
@@ -334,13 +346,11 @@ impl MessageBus {
             }
         })
     }
-}
 
-impl MessageBus {
-    /// Sends a message to a an endpoint
+    /// Sends a message to an endpoint
     pub fn send(&self, endpoint: &str, message: &dyn Any) {
-        if let Some(handler) = self.endpoints.get(&Ustr::from(endpoint)) {
-            handler.handle(message)
+        if let Some(handler) = self.get_endpoint(&Ustr::from(endpoint)) {
+            handler.0.handle(message)
         }
     }
 
@@ -350,7 +360,7 @@ impl MessageBus {
         let matching_subs = self.matching_subscriptions(&topic);
 
         for sub in matching_subs {
-            sub.handler.handle(message);
+            sub.handler.0.handle(message);
         }
     }
 }
@@ -419,12 +429,12 @@ mod tests {
     }
 
     fn stub_shareable_handler(id: Ustr) -> ShareableMessageHandler {
-        Rc::new(StubMessageHandler {
+        ShareableMessageHandler(Rc::new(StubMessageHandler {
             id,
             callback: Arc::new(|m: Message| {
                 format!("{m:?}");
             }),
-        })
+        }))
     }
 
     #[rstest]

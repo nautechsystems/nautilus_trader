@@ -5,22 +5,23 @@ use ustr::Ustr;
 
 use crate::msgbus::MessageHandler;
 
-#[pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common.MessageBusHandler")]
-pub struct PythonMessageBusHandler {
+#[pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common.PyMessageHandler")]
+#[derive(Clone)]
+pub struct PythonMessageHandler {
     id: Ustr,
     handler: PyObject,
 }
 
 #[pymethods]
-impl PythonMessageBusHandler {
+impl PythonMessageHandler {
     #[new]
     pub fn new(id: &str, handler: PyObject) -> Self {
         let id = Ustr::from(id);
-        PythonMessageBusHandler { id, handler }
+        PythonMessageHandler { id, handler }
     }
 }
 
-impl MessageHandler for PythonMessageBusHandler {
+impl MessageHandler for PythonMessageHandler {
     #[allow(unused_variables)]
     fn handle(&self, message: &dyn Any) {
         // TODO: convert message to PyObject
