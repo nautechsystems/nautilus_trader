@@ -194,9 +194,22 @@ impl Deref for Quantity {
 impl Add for Quantity {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
+        let precision = match self.precision {
+            0 => rhs.precision,
+            _ => self.precision,
+        };
+        assert!(
+            self.precision >= rhs.precision,
+            "Precision mismatch: cannot add precision {} to precision {} (precision loss)",
+            rhs.precision,
+            self.precision,
+        );
         Self {
-            raw: self.raw + rhs.raw,
-            precision: self.precision,
+            raw: self
+                .raw
+                .checked_add(rhs.raw)
+                .expect("Overflow occurred when adding `Quantity`"),
+            precision,
         }
     }
 }
@@ -204,19 +217,49 @@ impl Add for Quantity {
 impl Sub for Quantity {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
+        let precision = match self.precision {
+            0 => rhs.precision,
+            _ => self.precision,
+        };
+        assert!(
+            self.precision >= rhs.precision,
+            "Precision mismatch: cannot subtract precision {} from precision {} (precision loss)",
+            rhs.precision,
+            self.precision,
+        );
         Self {
-            raw: self.raw - rhs.raw,
-            precision: self.precision,
+            raw: self
+                .raw
+                .checked_sub(rhs.raw)
+                .expect("Underflow occurred when subtracting `Quantity`"),
+            precision,
         }
     }
 }
 
+#[allow(clippy::suspicious_arithmetic_impl)] // Can use division to scale back
 impl Mul for Quantity {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self::Output {
+        let precision = match self.precision {
+            0 => rhs.precision,
+            _ => self.precision,
+        };
+        assert!(
+            self.precision >= rhs.precision,
+            "Precision mismatch: cannot multiply precision {} with precision {} (precision loss)",
+            rhs.precision,
+            self.precision,
+        );
+
+        let result_raw = self
+            .raw
+            .checked_mul(rhs.raw)
+            .expect("Overflow occurred when multiplying `Quantity`");
+
         Self {
-            raw: (self.raw * rhs.raw) / (FIXED_SCALAR as u64),
-            precision: self.precision,
+            raw: result_raw / (FIXED_SCALAR as u64),
+            precision,
         }
     }
 }
@@ -242,19 +285,28 @@ impl From<&Quantity> for u64 {
 
 impl<T: Into<u64>> AddAssign<T> for Quantity {
     fn add_assign(&mut self, other: T) {
-        self.raw += other.into();
+        self.raw = self
+            .raw
+            .checked_add(other.into())
+            .expect("Overflow occurred when adding `Quantity`");
     }
 }
 
 impl<T: Into<u64>> SubAssign<T> for Quantity {
     fn sub_assign(&mut self, other: T) {
-        self.raw -= other.into();
+        self.raw = self
+            .raw
+            .checked_sub(other.into())
+            .expect("Underflow occurred when subtracting `Quantity`");
     }
 }
 
 impl<T: Into<u64>> MulAssign<T> for Quantity {
     fn mul_assign(&mut self, other: T) {
-        self.raw *= other.into();
+        self.raw = self
+            .raw
+            .checked_mul(other.into())
+            .expect("Overflow occurred when multiplying `Quantity`");
     }
 }
 

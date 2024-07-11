@@ -1,5 +1,5 @@
 [package]
-name = "nautilus-adapters"
+name = "nautilus-data"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -7,36 +7,26 @@ description.workspace = true
 documentation.workspace = true
 
 [lib]
-name = "nautilus_adapters"
-crate-type = ["rlib", "staticlib", "cdylib"]
-
-[[bin]]
-name = "sandbox"
-path = "src/databento/bin/sandbox.rs"
+name = "nautilus_data"
+crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 nautilus-common = { path = "../common" }
 nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model", features = ["stubs"] }
 anyhow = { workspace = true }
-chrono = { workspace = true }
+derive_builder = { workspace = true }
 indexmap = { workspace = true }
-itoa = { workspace = true }
+log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-asyncio-0-21 = { workspace = true, optional = true }
-rand = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
-tokio = { workspace = true }
-tracing = { workspace = true }
 thiserror = { workspace = true }
 ustr = { workspace = true }
-databento = { version = "0.11.3", optional = true }
-fallible-streaming-iterator = "0.1.9"
-time = "0.3.36"
 
 [dev-dependencies]
 criterion = { workspace = true }
@@ -50,7 +40,6 @@ extension-module = [
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
 ]
-databento = ["dep:databento", "python"]
 ffi = [
   "nautilus-common/ffi",
   "nautilus-core/ffi",
