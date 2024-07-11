@@ -194,6 +194,10 @@ impl Deref for Quantity {
 impl Add for Quantity {
     type Output = Self;
     fn add(self, rhs: Self) -> Self::Output {
+        let precision = match self.precision {
+            0 => rhs.precision,
+            _ => self.precision,
+        };
         assert!(
             self.precision >= rhs.precision,
             "Precision mismatch: cannot add precision {} to precision {} (precision loss)",
@@ -205,7 +209,7 @@ impl Add for Quantity {
                 .raw
                 .checked_add(rhs.raw)
                 .expect("Overflow occurred when adding `Quantity`"),
-            precision: self.precision,
+            precision,
         }
     }
 }
@@ -213,6 +217,10 @@ impl Add for Quantity {
 impl Sub for Quantity {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self::Output {
+        let precision = match self.precision {
+            0 => rhs.precision,
+            _ => self.precision,
+        };
         assert!(
             self.precision >= rhs.precision,
             "Precision mismatch: cannot subtract precision {} from precision {} (precision loss)",
@@ -224,7 +232,7 @@ impl Sub for Quantity {
                 .raw
                 .checked_sub(rhs.raw)
                 .expect("Underflow occurred when subtracting `Quantity`"),
-            precision: self.precision,
+            precision,
         }
     }
 }
@@ -233,6 +241,10 @@ impl Sub for Quantity {
 impl Mul for Quantity {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self::Output {
+        let precision = match self.precision {
+            0 => rhs.precision,
+            _ => self.precision,
+        };
         assert!(
             self.precision >= rhs.precision,
             "Precision mismatch: cannot multiply precision {} with precision {} (precision loss)",
@@ -247,7 +259,7 @@ impl Mul for Quantity {
 
         Self {
             raw: result_raw / (FIXED_SCALAR as u64),
-            precision: self.precision,
+            precision,
         }
     }
 }
