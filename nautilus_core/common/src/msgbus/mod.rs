@@ -181,8 +181,8 @@ impl MessageBus {
         instance_id: UUID4,
         name: Option<String>,
         _config: Option<HashMap<String, serde_json::Value>>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             trader_id,
             instance_id,
             name: name.unwrap_or(stringify!(MessageBus).to_owned()),
@@ -190,7 +190,7 @@ impl MessageBus {
             patterns: IndexMap::new(),
             endpoints: IndexMap::new(),
             has_backing: false,
-        })
+        }
     }
 
     /// Returns the registered endpoint addresses.
@@ -411,7 +411,7 @@ mod tests {
     use super::*;
 
     fn stub_msgbus() -> MessageBus {
-        MessageBus::new(TraderId::from("trader-001"), UUID4::new(), None, None).unwrap()
+        MessageBus::new(TraderId::from("trader-001"), UUID4::new(), None, None)
     }
 
     struct StubMessageHandler {
@@ -441,7 +441,7 @@ mod tests {
     #[rstest]
     fn test_new() {
         let trader_id = TraderId::from("trader-001");
-        let msgbus = MessageBus::new(trader_id, UUID4::new(), None, None).unwrap();
+        let msgbus = MessageBus::new(trader_id, UUID4::new(), None, None);
 
         assert_eq!(msgbus.trader_id, trader_id);
         assert_eq!(msgbus.name, stringify!(MessageBus));
