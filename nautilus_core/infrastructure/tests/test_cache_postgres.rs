@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_common::cache::{core::CacheConfig, database::CacheDatabaseAdapter, Cache};
+use nautilus_common::cache::{database::CacheDatabaseAdapter, Cache, CacheConfig};
 
 #[must_use]
 pub fn get_cache(cache_database: Option<Box<dyn CacheDatabaseAdapter>>) -> Cache {

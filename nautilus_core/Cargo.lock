@@ -2713,6 +2713,7 @@ dependencies = [
  "rstest",
  "rust_decimal",
  "semver",
+ "serde",
  "serde_json",
  "sqlx",
  "tokio",

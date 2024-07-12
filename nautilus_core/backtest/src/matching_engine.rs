@@ -19,7 +19,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
 use log::{debug, info};
 use nautilus_common::{cache::Cache, msgbus::MessageBus};
@@ -71,8 +71,8 @@ pub struct OrderMatchingEngine {
     /// The config for the matching engine.
     pub config: OrderMatchingEngineConfig,
     clock: &'static AtomicTime,
-    msgbus: &'static MessageBus,
-    cache: &'static Cache,
+    msgbus: Rc<MessageBus>,
+    cache: Rc<Cache>,
     book: OrderBook,
     core: OrderMatchingCore,
     target_bid: Option<Price>,
@@ -99,8 +99,8 @@ impl OrderMatchingEngine {
         oms_type: OmsType,
         account_type: AccountType,
         clock: &'static AtomicTime,
-        msgbus: &'static MessageBus,
-        cache: &'static Cache,
+        msgbus: Rc<MessageBus>,
+        cache: Rc<Cache>,
         config: OrderMatchingEngineConfig,
     ) -> Self {
         let book = OrderBook::new(book_type, instrument.id());
