@@ -542,5 +542,10 @@ async def test_get_price_retrieval(ib_client):
     # Assert
     # Verify that the market data request was made with the correct parameters
     ib_client._eclient.reqMktData.assert_called_once_with(
-        999, contract, tick_type, False, False, []
+        999,
+        contract,
+        tick_type,
+        False,
+        False,
+        [],
     )

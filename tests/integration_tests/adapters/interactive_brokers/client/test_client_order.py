@@ -30,7 +30,9 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 def test_place_order(ib_client):
     """
     Test case for placing an order with the Interactive Brokers client.
+
     This test verifies that the placeOrder method is called with the correct parameters.
+
     """
     # Arrange: Set up the order and mock the placeOrder method
     ib_order = IBTestExecStubs.aapl_buy_ib_order(order_id=1)
