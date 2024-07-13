@@ -24,7 +24,10 @@
 //! An [`anyhow::Result`] is returned with a descriptive message when the
 //! condition check fails.
 
-use std::{collections::HashMap, hash::Hash};
+use std::{
+    collections::{HashMap, HashSet},
+    hash::Hash,
+};
 
 const FAILED: &str = "Condition failed:";
 
@@ -271,6 +274,48 @@ where
         anyhow::bail!(
             "{FAILED} the '{key_name}' key {key} was not in the '{map_name}' map `&<{}, {}>`",
             std::any::type_name::<K>(),
+            std::any::type_name::<V>(),
+        )
+    }
+    Ok(())
+}
+
+/// Checks the `member` is **not** in the `set`.
+pub fn check_member_not_in_set<V>(
+    member: &V,
+    set: &HashSet<V>,
+    member_name: &str,
+    set_name: &str,
+) -> anyhow::Result<()>
+where
+    V: Hash,
+    V: std::cmp::Eq,
+    V: std::fmt::Display,
+{
+    if set.contains(member) {
+        anyhow::bail!(
+            "{FAILED} the '{member_name}' member was already in the '{set_name}' set `&<{}>`",
+            std::any::type_name::<V>(),
+        )
+    }
+    Ok(())
+}
+
+/// Checks the `member` is in the `set`.
+pub fn check_member_in_set<V>(
+    member: &V,
+    set: &HashSet<V>,
+    member_name: &str,
+    set_name: &str,
+) -> anyhow::Result<()>
+where
+    V: Hash,
+    V: std::cmp::Eq,
+    V: std::fmt::Display,
+{
+    if !set.contains(member) {
+        anyhow::bail!(
+            "{FAILED} the '{member_name}' member was not in the '{set_name}' set `&<{}>`",
             std::any::type_name::<V>(),
         )
     }
@@ -601,6 +646,36 @@ mod tests {
         #[case] expected: bool,
     ) {
         let result = check_key_in_map(&key, map, key_name, map_name).is_ok();
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(&HashSet::<u32>::new(), 5, "member", "set", true)] // Empty set
+    #[case(&HashSet::from([1, 2]), 1, "member", "set", false)] // Member exists
+    #[case(&HashSet::from([1, 2]), 5, "member", "set", true)] // Member doesn't exist
+    fn test_check_member_not_in_set(
+        #[case] set: &HashSet<u32>,
+        #[case] member: u32,
+        #[case] member_name: &str,
+        #[case] set_name: &str,
+        #[case] expected: bool,
+    ) {
+        let result = check_member_not_in_set(&member, set, member_name, set_name).is_ok();
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(&HashSet::<u32>::new(), 5, "member", "set", false)] // Empty set
+    #[case(&HashSet::from([1, 2]), 1, "member", "set", true)] // Member exists
+    #[case(&HashSet::from([1, 2]), 5, "member", "set", false)] // Member doesn't exist
+    fn test_check_member_in_set(
+        #[case] set: &HashSet<u32>,
+        #[case] member: u32,
+        #[case] member_name: &str,
+        #[case] set_name: &str,
+        #[case] expected: bool,
+    ) {
+        let result = check_member_in_set(&member, set, member_name, set_name).is_ok();
         assert_eq!(result, expected);
     }
 }
