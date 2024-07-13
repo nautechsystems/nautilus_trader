@@ -29,7 +29,7 @@ use log;
 use nautilus_common::{cache::Cache, msgbus::MessageBus};
 use nautilus_core::{correctness, time::AtomicTime};
 use nautilus_model::{
-    data::{bar::BarType, delta::OrderBookDelta},
+    data::{bar::BarType, delta::OrderBookDelta, DataType},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::synthetic::SyntheticInstrument,
 };
@@ -147,7 +147,10 @@ impl DataEngine {
         subs
     }
 
-    // pub fn subscribed_custom_data(&self) -> &[DataType] {}  TODO: Implement DataType
+    #[must_use]
+    pub fn subscribed_custom_data(&self) -> Vec<DataType> {
+        self.collect_subscriptions(|client| client.subscribed_generic_data())
+    }
 
     #[must_use]
     pub fn subscribed_instruments(&self) -> Vec<InstrumentId> {

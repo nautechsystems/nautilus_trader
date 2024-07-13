@@ -25,6 +25,9 @@ pub mod quote;
 pub mod stubs;
 pub mod trade;
 
+use std::hash::{Hash, Hasher};
+
+use indexmap::IndexMap;
 use nautilus_core::nanos::UnixNanos;
 
 use self::{
@@ -109,4 +112,252 @@ impl From<Bar> for Data {
 #[no_mangle]
 pub extern "C" fn data_clone(data: &Data) -> Data {
     data.clone()
+}
+
+/// Represents a data type including metadata.
+#[derive(Clone)]
+pub struct DataType {
+    type_name: String,
+    metadata: Option<IndexMap<String, String>>,
+    topic: String,
+    hash: u64,
+}
+
+impl DataType {
+    /// Creates a new [`DataType`] instance.
+    pub fn new(type_name: &str, metadata: Option<IndexMap<String, String>>) -> Self {
+        // Precompute topic
+        let topic = if let Some(ref meta) = metadata {
+            let meta_str = meta
+                .iter()
+                .map(|(k, v)| format!("{}={}", k, v))
+                .collect::<Vec<_>>()
+                .join(".");
+            format!("{}.{}", type_name, meta_str)
+        } else {
+            type_name.to_string()
+        };
+
+        // Precompute hash
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        topic.hash(&mut hasher);
+
+        Self {
+            type_name: type_name.to_owned(),
+            metadata,
+            topic,
+            hash: hasher.finish(),
+        }
+    }
+
+    /// Returns the type name for the data type.
+    pub fn type_name(&self) -> &str {
+        self.type_name.as_str()
+    }
+
+    /// Returns the metadata for the data type.
+    pub fn metadata(&self) -> Option<&IndexMap<String, String>> {
+        self.metadata.as_ref()
+    }
+
+    /// Returns the messaging topic for the data type.
+    pub fn topic(&self) -> &str {
+        self.topic.as_str()
+    }
+}
+
+impl PartialEq for DataType {
+    fn eq(&self, other: &Self) -> bool {
+        self.topic == other.topic
+    }
+}
+
+impl Eq for DataType {}
+
+impl PartialOrd for DataType {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for DataType {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.topic.cmp(&other.topic)
+    }
+}
+
+impl Hash for DataType {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.hash.hash(state);
+    }
+}
+
+impl std::fmt::Display for DataType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.topic)
+    }
+}
+
+impl std::fmt::Debug for DataType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "DataType(type_name={}, metadata={:?})",
+            self.type_name, self.metadata
+        )
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use std::hash::DefaultHasher;
+
+    use rstest::*;
+
+    use super::*;
+
+    #[rstest]
+    fn test_data_type_creation_with_metadata() {
+        let metadata = Some(
+            [
+                ("key1".to_string(), "value1".to_string()),
+                ("key2".to_string(), "value2".to_string()),
+            ]
+            .iter()
+            .cloned()
+            .collect(),
+        );
+        let data_type = DataType::new("ExampleType", metadata.clone());
+
+        assert_eq!(data_type.type_name(), "ExampleType");
+        assert_eq!(data_type.topic(), "ExampleType.key1=value1.key2=value2");
+        assert_eq!(data_type.metadata(), metadata.as_ref());
+    }
+
+    #[rstest]
+    fn test_data_type_creation_without_metadata() {
+        let data_type = DataType::new("ExampleType", None);
+
+        assert_eq!(data_type.type_name(), "ExampleType");
+        assert_eq!(data_type.topic(), "ExampleType");
+        assert_eq!(data_type.metadata(), None);
+    }
+
+    #[rstest]
+    fn test_data_type_equality() {
+        let metadata1 = Some(
+            [("key1".to_string(), "value1".to_string())]
+                .iter()
+                .cloned()
+                .collect(),
+        );
+        let metadata2 = Some(
+            [("key1".to_string(), "value1".to_string())]
+                .iter()
+                .cloned()
+                .collect(),
+        );
+
+        let data_type1 = DataType::new("ExampleType", metadata1);
+        let data_type2 = DataType::new("ExampleType", metadata2);
+
+        assert_eq!(data_type1, data_type2);
+    }
+
+    #[rstest]
+    fn test_data_type_inequality() {
+        let metadata1 = Some(
+            [("key1".to_string(), "value1".to_string())]
+                .iter()
+                .cloned()
+                .collect(),
+        );
+        let metadata2 = Some(
+            [("key2".to_string(), "value2".to_string())]
+                .iter()
+                .cloned()
+                .collect(),
+        );
+
+        let data_type1 = DataType::new("ExampleType", metadata1);
+        let data_type2 = DataType::new("ExampleType", metadata2);
+
+        assert_ne!(data_type1, data_type2);
+    }
+
+    #[rstest]
+    fn test_data_type_ordering() {
+        let metadata1 = Some(
+            [("key1".to_string(), "value1".to_string())]
+                .iter()
+                .cloned()
+                .collect(),
+        );
+        let metadata2 = Some(
+            [("key2".to_string(), "value2".to_string())]
+                .iter()
+                .cloned()
+                .collect(),
+        );
+
+        let data_type1 = DataType::new("ExampleTypeA", metadata1);
+        let data_type2 = DataType::new("ExampleTypeB", metadata2);
+
+        assert!(data_type1 < data_type2);
+    }
+
+    #[rstest]
+    fn test_data_type_hash() {
+        let metadata = Some(
+            [("key1".to_string(), "value1".to_string())]
+                .iter()
+                .cloned()
+                .collect(),
+        );
+
+        let data_type1 = DataType::new("ExampleType", metadata.clone());
+        let data_type2 = DataType::new("ExampleType", metadata.clone());
+
+        let mut hasher1 = DefaultHasher::new();
+        data_type1.hash(&mut hasher1);
+        let hash1 = hasher1.finish();
+
+        let mut hasher2 = DefaultHasher::new();
+        data_type2.hash(&mut hasher2);
+        let hash2 = hasher2.finish();
+
+        assert_eq!(hash1, hash2);
+    }
+
+    #[test]
+    fn test_data_type_display() {
+        let metadata = Some(
+            [("key1".to_string(), "value1".to_string())]
+                .iter()
+                .cloned()
+                .collect(),
+        );
+        let data_type = DataType::new("ExampleType", metadata);
+
+        assert_eq!(format!("{}", data_type), "ExampleType.key1=value1");
+    }
+
+    #[test]
+    fn test_data_type_debug() {
+        let metadata = Some(
+            [("key1".to_string(), "value1".to_string())]
+                .iter()
+                .cloned()
+                .collect(),
+        );
+        let data_type = DataType::new("ExampleType", metadata.clone());
+
+        assert_eq!(
+            format!("{:?}", data_type),
+            format!("DataType(type_name=ExampleType, metadata={:?})", metadata)
+        );
+    }
 }
