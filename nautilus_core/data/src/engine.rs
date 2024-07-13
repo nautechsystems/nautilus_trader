@@ -53,7 +53,7 @@ pub struct DataEngine {
     default_client: Option<Box<dyn DataClient>>,
     routing_map: HashMap<Venue, ClientId>,
     // order_book_intervals: HashMap<(InstrumentId, usize), Vec<fn(&OrderBook)>>,  // TODO
-    //bar_aggregators:  // TODO
+    // bar_aggregators:  // TODO
     synthetic_quote_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     synthetic_trade_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     buffered_deltas_map: HashMap<InstrumentId, Vec<OrderBookDelta>>,
