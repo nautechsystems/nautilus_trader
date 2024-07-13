@@ -22,12 +22,11 @@ pub struct Running;
 pub struct Stopping;
 pub struct Stopped;
 pub struct Resuming;
-pub struct Disposing;
-pub struct Disposed;
 pub struct Degrading;
 pub struct Degraded;
 pub struct Faulting;
 pub struct Faulted;
+pub struct Disposed;
 
 pub trait State {
     fn state() -> ComponentState;
@@ -75,18 +74,6 @@ impl State for Resuming {
     }
 }
 
-impl State for Disposing {
-    fn state() -> ComponentState {
-        ComponentState::Disposing
-    }
-}
-
-impl State for Disposed {
-    fn state() -> ComponentState {
-        ComponentState::Disposed
-    }
-}
-
 impl State for Degrading {
     fn state() -> ComponentState {
         ComponentState::Degrading
@@ -108,5 +95,11 @@ impl State for Faulting {
 impl State for Faulted {
     fn state() -> ComponentState {
         ComponentState::Faulted
+    }
+}
+
+impl State for Disposed {
+    fn state() -> ComponentState {
+        ComponentState::Disposed
     }
 }
