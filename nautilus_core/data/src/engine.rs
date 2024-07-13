@@ -29,10 +29,7 @@ use std::{
 use log;
 use nautilus_common::{
     cache::Cache,
-    component::{
-        Disposed, Faulted, Faulting, PreInitialized, Ready, Resuming, Running, Starting, State,
-        Stopped, Stopping,
-    },
+    component::{Disposed, PreInitialized, Ready, Running, Starting, State, Stopped, Stopping},
     enums::ComponentState,
     msgbus::MessageBus,
 };
@@ -268,10 +265,6 @@ impl DataEngine<Starting> {
     pub fn on_start(self) -> DataEngine<Running> {
         self.transition()
     }
-
-    pub fn fault(self) -> DataEngine<Faulting> {
-        self.transition()
-    }
 }
 
 impl DataEngine<Running> {
@@ -286,48 +279,20 @@ impl DataEngine<Running> {
     pub fn stop(self) -> DataEngine<Stopping> {
         self.transition()
     }
-
-    pub fn fault(self) -> DataEngine<Faulting> {
-        self.transition()
-    }
 }
 
 impl DataEngine<Stopping> {
     pub fn on_stop(self) -> DataEngine<Stopped> {
         self.transition()
     }
-
-    pub fn fault(self) -> DataEngine<Faulting> {
-        self.transition()
-    }
 }
 
 impl DataEngine<Stopped> {
-    pub fn resume(self) -> DataEngine<Resuming> {
-        self.transition()
-    }
-
     pub fn reset(self) -> DataEngine<Ready> {
         self.transition()
     }
 
     pub fn dispose(self) -> DataEngine<Disposed> {
-        self.transition()
-    }
-}
-
-impl DataEngine<Resuming> {
-    pub fn on_resume(self) -> DataEngine<Running> {
-        self.transition()
-    }
-
-    pub fn fault(self) -> DataEngine<Faulting> {
-        self.transition()
-    }
-}
-
-impl DataEngine<Faulting> {
-    pub fn on_fault(self) -> DataEngine<Faulted> {
         self.transition()
     }
 }
