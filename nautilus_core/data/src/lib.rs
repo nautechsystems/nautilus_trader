@@ -28,4 +28,6 @@
 //! - `python`: Enables Python bindings from `pyo3`
 
 pub mod client;
+#[allow(dead_code)]
+pub mod data_engine;
 pub mod engine;
