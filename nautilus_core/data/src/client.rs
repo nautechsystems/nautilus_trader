@@ -19,9 +19,9 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::{any::Any, cell::RefCell, collections::HashSet, rc::Rc};
+use std::{any::Any, cell::RefCell, collections::HashSet, rc::Rc, sync::Arc};
 
-use nautilus_common::{cache::Cache, msgbus::MessageBus};
+use nautilus_common::{cache::Cache, messages::data::DataResponse, msgbus::MessageBus};
 use nautilus_core::{correctness, nanos::UnixNanos, time::AtomicTime, uuid::UUID4};
 use nautilus_model::{
     data::{
@@ -485,11 +485,15 @@ impl DataClientCore {
     pub fn handle_data(&self, data: Data) {
         self.msgbus
             .borrow()
-            .send("DataEngine.process", &data as &dyn Any);
+            .send("DataEngine.process", &data as &dyn Any); // TODO: Optimize
     }
 
     pub fn handle_instrument(&self, instrument: InstrumentAny, correlation_id: UUID4) {
-        todo!()
+        let data = Arc::new(instrument);
+        let response = DataResponse::new(UUID4::new(), correlation_id, self.client_id, data);
+        self.msgbus
+            .borrow()
+            .send("DataEngine.response", &response as &dyn Any); // TODO: Optimize
     }
 
     pub fn handle_instruments(
@@ -498,7 +502,11 @@ impl DataClientCore {
         instruments: Vec<InstrumentAny>,
         correlation_id: UUID4,
     ) {
-        todo!()
+        let data = Arc::new(instruments);
+        let response = DataResponse::new(UUID4::new(), correlation_id, self.client_id, data);
+        self.msgbus
+            .borrow()
+            .send("DataEngine.response", &response as &dyn Any); // TODO: Optimize
     }
 
     pub fn handle_quote_ticks(
@@ -507,7 +515,11 @@ impl DataClientCore {
         quotes: Vec<QuoteTick>,
         correlation_id: UUID4,
     ) {
-        todo!()
+        let data = Arc::new(quotes);
+        let response = DataResponse::new(UUID4::new(), correlation_id, self.client_id, data);
+        self.msgbus
+            .borrow()
+            .send("DataEngine.response", &response as &dyn Any); // TODO: Optimize
     }
 
     pub fn handle_trade_ticks(
@@ -516,10 +528,18 @@ impl DataClientCore {
         trades: Vec<TradeTick>,
         correlation_id: UUID4,
     ) {
-        todo!()
+        let data = Arc::new(trades);
+        let response = DataResponse::new(UUID4::new(), correlation_id, self.client_id, data);
+        self.msgbus
+            .borrow()
+            .send("DataEngine.response", &response as &dyn Any); // TODO: Optimize
     }
 
     pub fn handle_bars(&self, instrument_id: &InstrumentId, bars: Vec<Bar>, correlation_id: UUID4) {
-        todo!()
+        let data = Arc::new(bars);
+        let response = DataResponse::new(UUID4::new(), correlation_id, self.client_id, data);
+        self.msgbus
+            .borrow()
+            .send("DataEngine.response", &response as &dyn Any); // TODO: Optimize
     }
 }

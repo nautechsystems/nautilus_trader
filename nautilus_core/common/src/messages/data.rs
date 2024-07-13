@@ -13,17 +13,36 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::{any::Any, sync::Arc};
+
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::ClientId;
 
 pub struct DataRequest {
-    pub actor_id: UUID4,
-    pub req_id: UUID4,
+    pub request_id: UUID4,
+    pub correlation_id: UUID4,
     pub client_id: ClientId,
 }
 
 pub struct DataResponse {
-    pub actor_id: UUID4,
-    pub req_id: UUID4,
+    pub response_id: UUID4,
+    pub correlation_id: UUID4,
     pub client_id: ClientId,
+    pub data: Arc<dyn Any + Send + Sync>,
+}
+
+impl DataResponse {
+    pub fn new<T: Any + Send + Sync>(
+        response_id: UUID4,
+        correlation_id: UUID4,
+        client_id: ClientId,
+        data: T,
+    ) -> Self {
+        Self {
+            response_id,
+            correlation_id,
+            client_id,
+            data: Arc::new(data),
+        }
+    }
 }

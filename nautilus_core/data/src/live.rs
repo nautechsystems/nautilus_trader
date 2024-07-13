@@ -85,7 +85,7 @@ impl SyncDataEngine {
 
         // TODO: consider which tokio runtime to use for blocking
         while let Some(resp) = resp_rx.blocking_recv() {
-            if let Some(actor) = actors.get(&resp.actor_id) {
+            if let Some(actor) = actors.get(&resp.correlation_id) {
                 actor.handle(resp);
             }
         }
@@ -110,7 +110,7 @@ impl LiveDataEngine {
 
         // TODO: consider which tokio runtime to use for blocking
         while let Some(resp) = resp_rx.blocking_recv() {
-            if let Some(actor) = actors.get(&resp.actor_id) {
+            if let Some(actor) = actors.get(&resp.correlation_id) {
                 actor.handle(resp);
             }
         }
@@ -121,7 +121,7 @@ impl LiveDataEngine {
 
 fn request_handler_task(
     mut req_rx: tokio::sync::mpsc::UnboundedReceiver<DataRequest>,
-    resp_tx: tokio::sync::mpsc::Sender<DataResponse>,
+    resp_tx: tokio::sync::mpsc::Sender<DataResponse>, // TODO: Draft
     clients: HashMap<ClientId, Box<dyn DataClient>>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
