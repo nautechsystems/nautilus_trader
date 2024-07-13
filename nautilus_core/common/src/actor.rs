@@ -18,6 +18,6 @@ use nautilus_core::uuid::UUID4;
 use crate::messages::data::DataResponse;
 
 pub trait Actor {
-    fn handle(&self, resp: DataResponse);
+    fn handle(&self, resp: DataResponse); // TODO: Draft
     fn id(&self) -> UUID4;
 }
