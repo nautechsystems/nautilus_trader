@@ -28,6 +28,7 @@
 //! - `python`: Enables Python bindings from `pyo3`
 //! - `stubs`: Enables type stubs for use in testing scenarios
 
+pub mod actor;
 pub mod cache;
 pub mod clock;
 pub mod component;
@@ -36,6 +37,7 @@ pub mod factories;
 pub mod generators;
 pub mod handlers;
 pub mod logging;
+pub mod messages;
 pub mod msgbus;
 pub mod runtime;
 pub mod testing;
