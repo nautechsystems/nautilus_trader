@@ -521,3 +521,31 @@ async def test_realtimeBar(ib_client):
         is_revision=False,
     )
     ib_client._handle_data.assert_called_once_with(bar)
+
+
+@pytest.mark.asyncio
+async def test_get_price_retrieval(ib_client):
+    """
+    Test case for retrieving price data.
+    """
+    # Arrange
+    # Set up the request ID and mock the necessary methods
+    ib_client._request_id_seq = 999
+    contract = IBTestContractStubs.aapl_equity_ib_contract()
+    tick_type = "MidPoint"
+    ib_client._eclient.reqMktData = MagicMock()
+
+    # Act
+    # Call the method to get the price
+    await ib_client.get_price(contract, tick_type)
+
+    # Assert
+    # Verify that the market data request was made with the correct parameters
+    ib_client._eclient.reqMktData.assert_called_once_with(
+        999,
+        contract,
+        tick_type,
+        False,
+        False,
+        [],
+    )
