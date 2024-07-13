@@ -22,7 +22,6 @@ pub struct Running;
 pub struct Stopping;
 pub struct Stopped;
 pub struct Resuming;
-pub struct Resetting;
 pub struct Disposing;
 pub struct Disposed;
 pub struct Degrading;
@@ -30,6 +29,84 @@ pub struct Degraded;
 pub struct Faulting;
 pub struct Faulted;
 
-pub trait Component<State> {
-    fn state(&self) -> ComponentState;
+pub trait State {
+    fn state() -> ComponentState;
+}
+
+impl State for PreInitialized {
+    fn state() -> ComponentState {
+        ComponentState::PreInitialized
+    }
+}
+
+impl State for Ready {
+    fn state() -> ComponentState {
+        ComponentState::Ready
+    }
+}
+
+impl State for Starting {
+    fn state() -> ComponentState {
+        ComponentState::Starting
+    }
+}
+
+impl State for Running {
+    fn state() -> ComponentState {
+        ComponentState::Running
+    }
+}
+
+impl State for Stopping {
+    fn state() -> ComponentState {
+        ComponentState::Stopping
+    }
+}
+
+impl State for Stopped {
+    fn state() -> ComponentState {
+        ComponentState::Stopped
+    }
+}
+
+impl State for Resuming {
+    fn state() -> ComponentState {
+        ComponentState::Resuming
+    }
+}
+
+impl State for Disposing {
+    fn state() -> ComponentState {
+        ComponentState::Disposing
+    }
+}
+
+impl State for Disposed {
+    fn state() -> ComponentState {
+        ComponentState::Disposed
+    }
+}
+
+impl State for Degrading {
+    fn state() -> ComponentState {
+        ComponentState::Degrading
+    }
+}
+
+impl State for Degraded {
+    fn state() -> ComponentState {
+        ComponentState::Degraded
+    }
+}
+
+impl State for Faulting {
+    fn state() -> ComponentState {
+        ComponentState::Faulting
+    }
+}
+
+impl State for Faulted {
+    fn state() -> ComponentState {
+        ComponentState::Faulted
+    }
 }

@@ -29,7 +29,11 @@ use std::{
 use log;
 use nautilus_common::{
     cache::Cache,
-    component::{PreInitialized, Ready, Running, Starting, Stopped, Stopping},
+    component::{
+        Disposed, Disposing, Faulted, Faulting, PreInitialized, Ready, Running, Starting, State,
+        Stopped, Stopping,
+    },
+    enums::ComponentState,
     msgbus::MessageBus,
 };
 use nautilus_core::{correctness, time::AtomicTime};
@@ -50,7 +54,7 @@ pub struct DataEngineConfig {
     pub buffer_deltas: bool,
 }
 
-pub struct DataEngine<State> {
+pub struct DataEngine<State = PreInitialized> {
     state: PhantomData<State>,
     clock: &'static AtomicTime,
     cache: Rc<RefCell<Cache>>,
@@ -66,7 +70,51 @@ pub struct DataEngine<State> {
     config: DataEngineConfig,
 }
 
-impl<State> DataEngine<State> {
+impl DataEngine {
+    #[must_use]
+    pub fn new(
+        clock: &'static AtomicTime,
+        cache: Rc<RefCell<Cache>>,
+        msgbus: Rc<RefCell<MessageBus>>,
+        config: DataEngineConfig,
+    ) -> Self {
+        Self {
+            state: PhantomData::<PreInitialized>,
+            clock,
+            cache,
+            msgbus,
+            clients: HashMap::new(),
+            default_client: None,
+            routing_map: HashMap::new(),
+            synthetic_quote_feeds: HashMap::new(),
+            synthetic_trade_feeds: HashMap::new(),
+            buffered_deltas_map: HashMap::new(),
+            config,
+        }
+    }
+}
+
+impl<S: State> DataEngine<S> {
+    fn transition<NewState>(self) -> DataEngine<NewState> {
+        DataEngine {
+            state: PhantomData,
+            clock: self.clock,
+            cache: self.cache,
+            msgbus: self.msgbus,
+            clients: self.clients,
+            default_client: self.default_client,
+            routing_map: self.routing_map,
+            synthetic_quote_feeds: self.synthetic_quote_feeds,
+            synthetic_trade_feeds: self.synthetic_trade_feeds,
+            buffered_deltas_map: self.buffered_deltas_map,
+            config: self.config,
+        }
+    }
+
+    pub fn state(&self) -> ComponentState {
+        S::state()
+    }
+
     #[must_use]
     pub fn check_connected(&self) -> bool {
         self.clients.values().all(|client| client.is_connected())
@@ -153,28 +201,6 @@ impl<State> DataEngine<State> {
 }
 
 impl DataEngine<PreInitialized> {
-    #[must_use]
-    pub fn new(
-        clock: &'static AtomicTime,
-        cache: Rc<RefCell<Cache>>,
-        msgbus: Rc<RefCell<MessageBus>>,
-        config: DataEngineConfig,
-    ) -> Self {
-        Self {
-            state: PhantomData,
-            clock,
-            cache,
-            msgbus,
-            clients: HashMap::new(),
-            default_client: None,
-            routing_map: HashMap::new(),
-            synthetic_quote_feeds: HashMap::new(),
-            synthetic_trade_feeds: HashMap::new(),
-            buffered_deltas_map: HashMap::new(),
-            config,
-        }
-    }
-
     // pub fn register_catalog(&mut self, catalog: ParquetDataCatalog) {}  TODO: Implement catalog
 
     /// Register the given data `client` with the engine.
@@ -216,89 +242,37 @@ impl DataEngine<PreInitialized> {
     }
 
     fn initialize(self) -> DataEngine<Ready> {
-        DataEngine {
-            state: PhantomData,
-            clock: self.clock,
-            cache: self.cache,
-            msgbus: self.msgbus,
-            clients: self.clients,
-            default_client: self.default_client,
-            routing_map: self.routing_map,
-            synthetic_quote_feeds: self.synthetic_quote_feeds,
-            synthetic_trade_feeds: self.synthetic_trade_feeds,
-            buffered_deltas_map: self.buffered_deltas_map,
-            config: self.config,
-        }
+        self.transition()
     }
 }
 
 impl DataEngine<Ready> {
     fn start(self) -> DataEngine<Starting> {
-        DataEngine {
-            state: PhantomData,
-            clock: self.clock,
-            cache: self.cache,
-            msgbus: self.msgbus,
-            clients: self.clients,
-            default_client: self.default_client,
-            routing_map: self.routing_map,
-            synthetic_quote_feeds: self.synthetic_quote_feeds,
-            synthetic_trade_feeds: self.synthetic_trade_feeds,
-            buffered_deltas_map: self.buffered_deltas_map,
-            config: self.config,
-        }
+        self.transition()
     }
 
     fn stop(self) -> DataEngine<Stopping> {
-        DataEngine {
-            state: PhantomData,
-            clock: self.clock,
-            cache: self.cache,
-            msgbus: self.msgbus,
-            clients: self.clients,
-            default_client: self.default_client,
-            routing_map: self.routing_map,
-            synthetic_quote_feeds: self.synthetic_quote_feeds,
-            synthetic_trade_feeds: self.synthetic_trade_feeds,
-            buffered_deltas_map: self.buffered_deltas_map,
-            config: self.config,
-        }
+        self.transition()
+    }
+
+    fn reset(self) -> DataEngine<Ready> {
+        self.transition()
+    }
+
+    fn dispose(self) -> DataEngine<Disposing> {
+        self.transition()
     }
 }
 
 impl DataEngine<Starting> {
     pub fn on_start(self) -> DataEngine<Running> {
-        DataEngine {
-            state: PhantomData,
-            clock: self.clock,
-            cache: self.cache,
-            msgbus: self.msgbus,
-            clients: self.clients,
-            default_client: self.default_client,
-            routing_map: self.routing_map,
-            synthetic_quote_feeds: self.synthetic_quote_feeds,
-            synthetic_trade_feeds: self.synthetic_trade_feeds,
-            buffered_deltas_map: self.buffered_deltas_map,
-            config: self.config,
-        }
+        self.transition()
     }
 }
 
 impl DataEngine<Stopping> {
     pub fn on_stop(self) -> DataEngine<Stopped> {
-        DataEngine {
-            state: PhantomData,
-            clock: self.clock,
-            cache: self.cache,
-            msgbus: self.msgbus,
-            clients: self.clients,
-            default_client: self.default_client,
-            routing_map: self.routing_map,
-            synthetic_quote_feeds: self.synthetic_quote_feeds,
-            synthetic_trade_feeds: self.synthetic_trade_feeds,
-            buffered_deltas_map: self.buffered_deltas_map,
-            config: self.config,
-        }
+        self.transition()
     }
 }
 
@@ -309,5 +283,21 @@ impl DataEngine<Running> {
 
     pub fn disconnect(&self) {
         todo!() // Implement actual client connections for a live/sandbox context
+    }
+
+    pub fn fault(self) -> DataEngine<Faulting> {
+        self.transition()
+    }
+}
+
+impl DataEngine<Faulting> {
+    pub fn on_fault(self) -> DataEngine<Faulted> {
+        self.transition()
+    }
+}
+
+impl DataEngine<Disposing> {
+    pub fn on_dispose(self) -> DataEngine<Disposed> {
+        self.transition()
     }
 }
