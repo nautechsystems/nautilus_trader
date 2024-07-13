@@ -19,13 +19,17 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::{collections::HashMap, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 
 use log;
 use nautilus_common::{cache::Cache, msgbus::MessageBus};
 use nautilus_core::{correctness, time::AtomicTime};
 use nautilus_model::{
-    data::delta::OrderBookDelta,
+    data::{bar::BarType, delta::OrderBookDelta},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::synthetic::SyntheticInstrument,
 };
@@ -42,15 +46,11 @@ pub struct DataEngineConfig {
 }
 
 pub struct DataEngine {
-    pub command_count: u64,
-    pub event_count: u64,
-    pub request_count: u64,
-    pub response_count: u64,
     clock: &'static AtomicTime,
-    cache: Rc<Cache>,
-    msgbus: Rc<MessageBus>,
-    clients: HashMap<ClientId, DataClient>,
-    default_client: Option<DataClient>,
+    cache: Rc<RefCell<Cache>>,
+    msgbus: Rc<RefCell<MessageBus>>,
+    clients: HashMap<ClientId, Box<dyn DataClient>>,
+    default_client: Option<Box<dyn DataClient>>,
     routing_map: HashMap<Venue, ClientId>,
     // order_book_intervals: HashMap<(InstrumentId, usize), Vec<fn(&OrderBook)>>,  // TODO
     //bar_aggregators:  // TODO
@@ -67,18 +67,18 @@ impl DataEngine {
     }
 
     #[must_use]
-    pub const fn default_client(&self) -> Option<&DataClient> {
-        self.default_client.as_ref()
+    pub fn default_client(&self) -> Option<&dyn DataClient> {
+        self.default_client.as_deref()
     }
 
     #[must_use]
     pub fn check_connected(&self) -> bool {
-        self.clients.values().all(|client| client.is_connected)
+        self.clients.values().all(|client| client.is_connected())
     }
 
     #[must_use]
     pub fn check_disconnected(&self) -> bool {
-        self.clients.values().all(|client| !client.is_connected)
+        self.clients.values().all(|client| !client.is_connected())
     }
 
     pub fn connect(&self) {
@@ -93,15 +93,17 @@ impl DataEngine {
         todo!()
     }
 
+    // pub fn register_catalog(&mut self, catalog: ParquetDataCatalog) {}  TODO: Implement catalog
+
     /// Register the given data `client` with the engine.
-    pub fn register_client(&mut self, client: DataClient, routing: Option<Venue>) {
+    pub fn register_client(&mut self, client: Box<dyn DataClient>, routing: Option<Venue>) {
         if let Some(routing) = routing {
-            self.routing_map.insert(routing, client.client_id);
-            log::info!("Set client {} routing for {routing}", client.client_id);
+            self.routing_map.insert(routing, client.client_id());
+            log::info!("Set client {} routing for {routing}", client.client_id());
         }
 
-        log::info!("Registered client {}", client.client_id);
-        self.clients.insert(client.client_id, client);
+        log::info!("Registered client {}", client.client_id());
+        self.clients.insert(client.client_id(), client);
     }
 
     /// Register the given data `client` with the engine as the default routing client.
@@ -111,8 +113,8 @@ impl DataEngine {
     /// # Warnings
     ///
     /// Any existing default routing client will be overwritten.
-    pub fn register_default_client(&mut self, client: DataClient) {
-        log::info!("Registered default client {}", client.client_id);
+    pub fn register_default_client(&mut self, client: Box<dyn DataClient>) {
+        log::info!("Registered default client {}", client.client_id());
         self.default_client = Some(client);
     }
 
@@ -129,5 +131,66 @@ impl DataEngine {
 
         self.clients.remove(&client_id);
         log::info!("Deregistered client {client_id}");
+    }
+
+    // -- SUBSCRIPTIONS ---------------------------------------------------------------------------
+
+    fn collect_subscriptions<F, T>(&self, get_subs: F) -> Vec<T>
+    where
+        F: Fn(&Box<dyn DataClient>) -> &HashSet<T>,
+        T: Clone,
+    {
+        let mut subs = Vec::new();
+        for client in self.clients.values() {
+            subs.extend(get_subs(client).iter().cloned());
+        }
+        subs
+    }
+
+    // pub fn subscribed_custom_data(&self) -> &[DataType] {}  TODO: Implement DataType
+
+    #[must_use]
+    pub fn subscribed_instruments(&self) -> Vec<InstrumentId> {
+        self.collect_subscriptions(|client| client.subscribed_instruments())
+    }
+
+    #[must_use]
+    pub fn subscribed_order_book_deltas(&self) -> Vec<InstrumentId> {
+        self.collect_subscriptions(|client| client.subscribed_order_book_deltas())
+    }
+
+    #[must_use]
+    pub fn subscribed_order_book_snapshots(&self) -> Vec<InstrumentId> {
+        self.collect_subscriptions(|client| client.subscribed_order_book_snapshots())
+    }
+
+    #[must_use]
+    pub fn subscribed_quote_ticks(&self) -> Vec<InstrumentId> {
+        self.collect_subscriptions(|client| client.subscribed_quote_ticks())
+    }
+
+    #[must_use]
+    pub fn subscribed_trade_ticks(&self) -> Vec<InstrumentId> {
+        self.collect_subscriptions(|client| client.subscribed_trade_ticks())
+    }
+
+    #[must_use]
+    pub fn subscribed_bars(&self) -> Vec<BarType> {
+        self.collect_subscriptions(|client| client.subscribed_bars())
+    }
+
+    #[must_use]
+    pub fn subscribed_venue_status(&self) -> Vec<Venue> {
+        self.collect_subscriptions(|client| client.subscribed_venue_status())
+    }
+
+    #[must_use]
+    pub fn subscribed_instrument_status(&self) -> Vec<InstrumentId> {
+        self.collect_subscriptions(|client| client.subscribed_instrument_status())
+    }
+
+    #[must_use]
+    pub fn subscribed_instrument_close(&self) -> Vec<InstrumentId> {
+        self.collect_subscriptions(|client| client.subscribed_instrument_close())
     }
 }
