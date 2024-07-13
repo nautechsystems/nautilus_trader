@@ -30,7 +30,7 @@ use log;
 use nautilus_common::{
     cache::Cache,
     component::{
-        Disposed, Disposing, Faulted, Faulting, PreInitialized, Ready, Running, Starting, State,
+        Disposed, Faulted, Faulting, PreInitialized, Ready, Resuming, Running, Starting, State,
         Stopped, Stopping,
     },
     enums::ComponentState,
@@ -247,19 +247,19 @@ impl DataEngine<PreInitialized> {
 }
 
 impl DataEngine<Ready> {
-    fn start(self) -> DataEngine<Starting> {
+    pub fn start(self) -> DataEngine<Starting> {
         self.transition()
     }
 
-    fn stop(self) -> DataEngine<Stopping> {
+    pub fn stop(self) -> DataEngine<Stopping> {
         self.transition()
     }
 
-    fn reset(self) -> DataEngine<Ready> {
+    pub fn reset(self) -> DataEngine<Ready> {
         self.transition()
     }
 
-    fn dispose(self) -> DataEngine<Disposing> {
+    pub fn dispose(self) -> DataEngine<Disposed> {
         self.transition()
     }
 }
@@ -268,10 +268,8 @@ impl DataEngine<Starting> {
     pub fn on_start(self) -> DataEngine<Running> {
         self.transition()
     }
-}
 
-impl DataEngine<Stopping> {
-    pub fn on_stop(self) -> DataEngine<Stopped> {
+    pub fn fault(self) -> DataEngine<Faulting> {
         self.transition()
     }
 }
@@ -285,6 +283,44 @@ impl DataEngine<Running> {
         todo!() // Implement actual client connections for a live/sandbox context
     }
 
+    pub fn stop(self) -> DataEngine<Stopping> {
+        self.transition()
+    }
+
+    pub fn fault(self) -> DataEngine<Faulting> {
+        self.transition()
+    }
+}
+
+impl DataEngine<Stopping> {
+    pub fn on_stop(self) -> DataEngine<Stopped> {
+        self.transition()
+    }
+
+    pub fn fault(self) -> DataEngine<Faulting> {
+        self.transition()
+    }
+}
+
+impl DataEngine<Stopped> {
+    pub fn resume(self) -> DataEngine<Resuming> {
+        self.transition()
+    }
+
+    pub fn reset(self) -> DataEngine<Ready> {
+        self.transition()
+    }
+
+    pub fn dispose(self) -> DataEngine<Disposed> {
+        self.transition()
+    }
+}
+
+impl DataEngine<Resuming> {
+    pub fn on_resume(self) -> DataEngine<Running> {
+        self.transition()
+    }
+
     pub fn fault(self) -> DataEngine<Faulting> {
         self.transition()
     }
@@ -292,12 +328,6 @@ impl DataEngine<Running> {
 
 impl DataEngine<Faulting> {
     pub fn on_fault(self) -> DataEngine<Faulted> {
-        self.transition()
-    }
-}
-
-impl DataEngine<Disposing> {
-    pub fn on_dispose(self) -> DataEngine<Disposed> {
         self.transition()
     }
 }
