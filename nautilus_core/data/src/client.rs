@@ -22,10 +22,16 @@
 use std::{any::Any, cell::RefCell, collections::HashSet, rc::Rc};
 
 use nautilus_common::{cache::Cache, msgbus::MessageBus};
-use nautilus_core::{correctness, time::AtomicTime};
+use nautilus_core::{correctness, nanos::UnixNanos, time::AtomicTime, uuid::UUID4};
 use nautilus_model::{
-    data::{bar::BarType, Data},
+    data::{
+        bar::{Bar, BarType},
+        quote::QuoteTick,
+        trade::TradeTick,
+        Data,
+    },
     identifiers::{ClientId, InstrumentId, Venue},
+    instruments::any::InstrumentAny,
 };
 
 pub trait DataClient {
@@ -33,6 +39,7 @@ pub trait DataClient {
     fn venue(&self) -> Option<Venue>;
     fn is_connected(&self) -> bool;
     fn is_disconnected(&self) -> bool;
+    fn subscribed_instrument_venues(&self) -> &HashSet<Venue>;
     fn subscribed_instruments(&self) -> &HashSet<InstrumentId>;
     fn subscribed_order_book_deltas(&self) -> &HashSet<InstrumentId>;
     fn subscribed_order_book_snapshots(&self) -> &HashSet<InstrumentId>;
@@ -43,7 +50,7 @@ pub trait DataClient {
     fn subscribed_instrument_status(&self) -> &HashSet<InstrumentId>;
     fn subscribed_instrument_close(&self) -> &HashSet<InstrumentId>;
     // pub fn subscribe(&mut self, data_type: DataType) {}  TODO: Implement DataType
-    fn subscribe_instruments(&mut self) {}
+    fn subscribe_instruments(&mut self, venue: Option<Venue>) -> anyhow::Result<()>;
     fn subscribe_instrument(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn subscribe_order_book_deltas(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn subscribe_order_book_snapshots(&mut self, instrument_id: InstrumentId)
@@ -67,6 +74,50 @@ pub trait DataClient {
     fn unsubscribe_venue_status(&mut self, venue: Venue) -> anyhow::Result<()>;
     fn unsubscribe_instrument_status(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn unsubscribe_instrument_close(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
+    fn request_instruments(
+        &mut self,
+        instrument_id: InstrumentId,
+        correlation_id: UUID4,
+        start: UnixNanos,
+        end: UnixNanos,
+    );
+    fn request_instrument(
+        &mut self,
+        correlation_id: UUID4,
+        instrument_id: InstrumentId,
+        start: UnixNanos,
+        end: UnixNanos,
+    );
+    fn request_order_book_snapshot(
+        &mut self,
+        correlation_id: UUID4,
+        instrument_id: InstrumentId,
+        depth: usize,
+    );
+    fn request_quote_ticks(
+        &mut self,
+        correlation_id: UUID4,
+        instrument_id: InstrumentId,
+        start: UnixNanos,
+        end: UnixNanos,
+        limit: Option<usize>,
+    );
+    fn request_trade_ticks(
+        &mut self,
+        correlation_id: UUID4,
+        instrument_id: InstrumentId,
+        start: UnixNanos,
+        end: UnixNanos,
+        limit: Option<usize>,
+    );
+    fn request_bars(
+        &mut self,
+        correlation_id: UUID4,
+        instrument_id: InstrumentId,
+        start: UnixNanos,
+        end: UnixNanos,
+        limit: Option<usize>,
+    );
 }
 
 pub struct DataClientCore {
@@ -86,9 +137,15 @@ pub struct DataClientCore {
     subscriptions_instrument_status: HashSet<InstrumentId>,
     subscriptions_instrument_close: HashSet<InstrumentId>,
     subscriptions_instrument: HashSet<InstrumentId>,
+    subscriptions_instrument_venue: HashSet<Venue>,
 }
 
 impl DataClientCore {
+    #[must_use]
+    pub const fn subscribed_instrument_venues(&self) -> &HashSet<Venue> {
+        &self.subscriptions_instrument_venue
+    }
+
     #[must_use]
     pub const fn subscribed_instruments(&self) -> &HashSet<InstrumentId> {
         &self.subscriptions_instrument
@@ -136,7 +193,18 @@ impl DataClientCore {
 
     // pub fn subscribe(&mut self, data_type: DataType) {}  TODO: Implement DataType
 
-    pub const fn subscribe_instruments(&self) {}
+    pub const fn subscribe_instruments(&self, venue: Option<Venue>) {}
+
+    pub fn add_subscription_instrument_venue(&mut self, venue: Venue) -> anyhow::Result<()> {
+        correctness::check_member_not_in_set(
+            &venue,
+            &self.subscriptions_instrument_venue,
+            "instrument_id",
+            "subscriptions_instrument_venue",
+        )?;
+        self.subscriptions_instrument_venue.insert(venue);
+        Ok(())
+    }
 
     pub fn add_subscription_instrument(
         &mut self,
@@ -152,7 +220,7 @@ impl DataClientCore {
         Ok(())
     }
 
-    pub fn add_subscription_order_book_delta(
+    pub fn add_subscription_order_book_deltas(
         &mut self,
         instrument_id: InstrumentId,
     ) -> anyhow::Result<()> {
@@ -260,122 +328,121 @@ impl DataClientCore {
 
     pub fn remove_subscription_instrument(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_id: &InstrumentId,
     ) -> anyhow::Result<()> {
         correctness::check_member_in_set(
-            &instrument_id,
+            instrument_id,
             &self.subscriptions_instrument,
             "instrument_id",
             "subscriptions_instrument",
         )?;
-        self.subscriptions_instrument.remove(&instrument_id);
+        self.subscriptions_instrument.remove(instrument_id);
         Ok(())
     }
 
     pub fn remove_subscription_order_book_delta(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_id: &InstrumentId,
     ) -> anyhow::Result<()> {
         correctness::check_member_in_set(
-            &instrument_id,
+            instrument_id,
             &self.subscriptions_order_book_delta,
             "instrument_id",
             "subscriptions_order_book_delta",
         )?;
-        self.subscriptions_order_book_delta.remove(&instrument_id);
+        self.subscriptions_order_book_delta.remove(instrument_id);
         Ok(())
     }
 
     pub fn remove_subscription_order_book_snapshots(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_id: &InstrumentId,
     ) -> anyhow::Result<()> {
         correctness::check_member_in_set(
-            &instrument_id,
+            instrument_id,
             &self.subscriptions_order_book_snapshot,
             "instrument_id",
             "subscriptions_order_book_snapshot",
         )?;
-        self.subscriptions_order_book_snapshot
-            .remove(&instrument_id);
+        self.subscriptions_order_book_snapshot.remove(instrument_id);
         Ok(())
     }
 
     pub fn remove_subscription_quote_ticks(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_id: &InstrumentId,
     ) -> anyhow::Result<()> {
         correctness::check_member_in_set(
-            &instrument_id,
+            instrument_id,
             &self.subscriptions_quote_tick,
             "instrument_id",
             "subscriptions_quote_tick",
         )?;
-        self.subscriptions_quote_tick.remove(&instrument_id);
+        self.subscriptions_quote_tick.remove(instrument_id);
         Ok(())
     }
 
     pub fn remove_subscription_trade_ticks(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_id: &InstrumentId,
     ) -> anyhow::Result<()> {
         correctness::check_member_in_set(
-            &instrument_id,
+            instrument_id,
             &self.subscriptions_trade_tick,
             "instrument_id",
             "subscriptions_trade_tick",
         )?;
-        self.subscriptions_trade_tick.remove(&instrument_id);
+        self.subscriptions_trade_tick.remove(instrument_id);
         Ok(())
     }
 
-    pub fn remove_subscription_bars(&mut self, bar_type: BarType) -> anyhow::Result<()> {
+    pub fn remove_subscription_bars(&mut self, bar_type: &BarType) -> anyhow::Result<()> {
         correctness::check_member_in_set(
-            &bar_type,
+            bar_type,
             &self.subscriptions_bar,
             "bar_type",
             "subscriptions_bar",
         )?;
-        self.subscriptions_bar.remove(&bar_type);
+        self.subscriptions_bar.remove(bar_type);
         Ok(())
     }
 
-    pub fn remove_subscription_venue_status(&mut self, venue: Venue) -> anyhow::Result<()> {
+    pub fn remove_subscription_venue_status(&mut self, venue: &Venue) -> anyhow::Result<()> {
         correctness::check_member_in_set(
-            &venue,
+            venue,
             &self.subscriptions_venue_status,
             "venue",
             "subscriptions_venue_status",
         )?;
-        self.subscriptions_venue_status.remove(&venue);
+        self.subscriptions_venue_status.remove(venue);
         Ok(())
     }
 
     pub fn remove_subscription_instrument_status(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_id: &InstrumentId,
     ) -> anyhow::Result<()> {
         correctness::check_member_in_set(
-            &instrument_id,
+            instrument_id,
             &self.subscriptions_instrument_status,
             "instrument_id",
             "subscriptions_instrument_status",
         )?;
-        self.subscriptions_instrument_status.remove(&instrument_id);
+        self.subscriptions_instrument_status.remove(instrument_id);
         Ok(())
     }
 
     pub fn remove_subscription_instrument_close(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_id: &InstrumentId,
     ) -> anyhow::Result<()> {
         correctness::check_member_in_set(
-            &instrument_id,
+            instrument_id,
             &self.subscriptions_instrument_close,
             "instrument_id",
             "subscriptions_instrument_close",
         )?;
-        self.subscriptions_instrument_close.remove(&instrument_id);
+        self.subscriptions_instrument_close.remove(instrument_id);
         Ok(())
     }
 
@@ -383,5 +450,40 @@ impl DataClientCore {
         self.msgbus
             .borrow()
             .send("DataEngine.process", &data as &dyn Any);
+    }
+
+    pub fn handle_instrument(&self, instrument: InstrumentAny, correlation_id: UUID4) {
+        todo!()
+    }
+
+    pub fn handle_instruments(
+        &self,
+        venue: Venue,
+        instruments: Vec<InstrumentAny>,
+        correlation_id: UUID4,
+    ) {
+        todo!()
+    }
+
+    pub fn handle_quote_ticks(
+        &self,
+        instrument_id: &InstrumentId,
+        quotes: Vec<QuoteTick>,
+        correlation_id: UUID4,
+    ) {
+        todo!()
+    }
+
+    pub fn handle_trade_ticks(
+        &self,
+        instrument_id: &InstrumentId,
+        trades: Vec<TradeTick>,
+        correlation_id: UUID4,
+    ) {
+        todo!()
+    }
+
+    pub fn handle_bars(&self, instrument_id: &InstrumentId, bars: Vec<Bar>, correlation_id: UUID4) {
+        todo!()
     }
 }
