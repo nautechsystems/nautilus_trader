@@ -19,7 +19,11 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 
 use log::debug;
 use nautilus_common::{
@@ -50,12 +54,9 @@ pub struct ExecutionEngineConfig {
 }
 
 pub struct ExecutionEngine {
-    pub command_count: u64,
-    pub event_count: u64,
-    pub report_count: u64,
     clock: &'static AtomicTime,
-    cache: &'static Cache,
-    msgbus: &'static MessageBus,
+    cache: Rc<RefCell<Cache>>,
+    msgbus: Rc<RefCell<MessageBus>>,
     clients: HashMap<ClientId, ExecutionClient>,
     default_client: Option<ExecutionClient>,
     routing_map: HashMap<Venue, ClientId>,
@@ -143,9 +144,8 @@ impl ExecutionEngine {
 
     // -- COMMAND HANDLERS ----------------------------------------------------
 
-    fn execute_command(&mut self, command: TradingCommand) {
+    fn execute_command(&self, command: TradingCommand) {
         debug!("<--[CMD] {:?}", command); // TODO: Log constants
-        self.command_count += 1;
 
         // TODO: Refine getting the client (no need for two expects)
         let client = if let Some(client) = self.clients.get(&command.client_id()) {
