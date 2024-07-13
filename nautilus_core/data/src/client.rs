@@ -28,7 +28,7 @@ use nautilus_model::{
         bar::{Bar, BarType},
         quote::QuoteTick,
         trade::TradeTick,
-        Data,
+        Data, DataType,
     },
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::any::InstrumentAny,
@@ -39,6 +39,7 @@ pub trait DataClient {
     fn venue(&self) -> Option<Venue>;
     fn is_connected(&self) -> bool;
     fn is_disconnected(&self) -> bool;
+    fn subscribed_generic_data(&self) -> &HashSet<DataType>;
     fn subscribed_instrument_venues(&self) -> &HashSet<Venue>;
     fn subscribed_instruments(&self) -> &HashSet<InstrumentId>;
     fn subscribed_order_book_deltas(&self) -> &HashSet<InstrumentId>;
@@ -49,7 +50,7 @@ pub trait DataClient {
     fn subscribed_venue_status(&self) -> &HashSet<Venue>;
     fn subscribed_instrument_status(&self) -> &HashSet<InstrumentId>;
     fn subscribed_instrument_close(&self) -> &HashSet<InstrumentId>;
-    // pub fn subscribe(&mut self, data_type: DataType) {}  TODO: Implement DataType
+    fn subscribe(&mut self, data_type: DataType) -> anyhow::Result<()>;
     fn subscribe_instruments(&mut self, venue: Option<Venue>) -> anyhow::Result<()>;
     fn subscribe_instrument(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn subscribe_order_book_deltas(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
@@ -61,7 +62,8 @@ pub trait DataClient {
     fn subscribe_venue_status(&mut self, venue: Venue) -> anyhow::Result<()>;
     fn subscribe_instrument_status(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn subscribe_instrument_close(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
-    fn unsubscribe_instruments(&mut self) {}
+    fn unsunscribe(&mut self) -> anyhow::Result<()>;
+    fn unsubscribe_instruments(&mut self) -> anyhow::Result<()>;
     fn unsubscribe_instrument(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn unsubscribe_order_book_deltas(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn unsubscribe_order_book_snapshots(
@@ -127,7 +129,7 @@ pub struct DataClientCore {
     clock: &'static AtomicTime,
     cache: Rc<RefCell<Cache>>,
     msgbus: Rc<RefCell<MessageBus>>,
-    // subscriptions_generic: HashSet<DataType>,  // TODO: Implement DataType
+    subscriptions_generic: HashSet<DataType>,
     subscriptions_order_book_delta: HashSet<InstrumentId>,
     subscriptions_order_book_snapshot: HashSet<InstrumentId>,
     subscriptions_quote_tick: HashSet<InstrumentId>,
@@ -141,6 +143,11 @@ pub struct DataClientCore {
 }
 
 impl DataClientCore {
+    #[must_use]
+    pub const fn subscribed_generic(&self) -> &HashSet<DataType> {
+        &self.subscriptions_generic
+    }
+
     #[must_use]
     pub const fn subscribed_instrument_venues(&self) -> &HashSet<Venue> {
         &self.subscriptions_instrument_venue
@@ -191,15 +198,22 @@ impl DataClientCore {
         &self.subscriptions_instrument_close
     }
 
-    // pub fn subscribe(&mut self, data_type: DataType) {}  TODO: Implement DataType
-
-    pub const fn subscribe_instruments(&self, venue: Option<Venue>) {}
+    pub fn add_subscription_generic(&mut self, data_type: DataType) -> anyhow::Result<()> {
+        correctness::check_member_not_in_set(
+            &data_type,
+            &self.subscriptions_generic,
+            "data_type",
+            "subscriptions_generic",
+        )?;
+        self.subscriptions_generic.insert(data_type);
+        Ok(())
+    }
 
     pub fn add_subscription_instrument_venue(&mut self, venue: Venue) -> anyhow::Result<()> {
         correctness::check_member_not_in_set(
             &venue,
             &self.subscriptions_instrument_venue,
-            "instrument_id",
+            "venue",
             "subscriptions_instrument_venue",
         )?;
         self.subscriptions_instrument_venue.insert(venue);
@@ -323,6 +337,28 @@ impl DataClientCore {
             "subscriptions_instrument_close",
         )?;
         self.subscriptions_instrument_close.insert(instrument_id);
+        Ok(())
+    }
+
+    pub fn remove_subscription_generic(&mut self, data_type: &DataType) -> anyhow::Result<()> {
+        correctness::check_member_in_set(
+            data_type,
+            &self.subscriptions_generic,
+            "data_type",
+            "subscriptions_generic",
+        )?;
+        self.subscriptions_generic.remove(data_type);
+        Ok(())
+    }
+
+    pub fn remove_subscription_instrument_venue(&mut self, venue: &Venue) -> anyhow::Result<()> {
+        correctness::check_member_in_set(
+            venue,
+            &self.subscriptions_instrument_venue,
+            "venue",
+            "subscriptions_instrument_venue",
+        )?;
+        self.subscriptions_instrument_venue.remove(venue);
         Ok(())
     }
 
