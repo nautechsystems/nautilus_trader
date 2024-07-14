@@ -25,7 +25,10 @@ pub mod quote;
 pub mod stubs;
 pub mod trade;
 
-use std::hash::{Hash, Hasher};
+use std::{
+    hash::{Hash, Hasher},
+    str::FromStr,
+};
 
 use indexmap::IndexMap;
 use nautilus_core::nanos::UnixNanos;
@@ -33,6 +36,10 @@ use nautilus_core::nanos::UnixNanos;
 use self::{
     bar::Bar, delta::OrderBookDelta, deltas::OrderBookDeltas_API, depth::OrderBookDepth10,
     quote::QuoteTick, trade::TradeTick,
+};
+use crate::{
+    enums::BookType,
+    identifiers::{InstrumentId, Venue},
 };
 
 /// A built-in Nautilus data type.
@@ -163,6 +170,54 @@ impl DataType {
     /// Returns the messaging topic for the data type.
     pub fn topic(&self) -> &str {
         self.topic.as_str()
+    }
+
+    pub fn parse_instrument_id_from_metadata(&self) -> anyhow::Result<Option<InstrumentId>> {
+        let instrument_id_str = self
+            .metadata
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("metadata was None"))?
+            .get("instrument_id");
+
+        if let Some(instrument_id_str) = instrument_id_str {
+            Ok(Some(InstrumentId::from_str(instrument_id_str)?))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn parse_venue_from_metadata(&self) -> anyhow::Result<Option<Venue>> {
+        let venue_str = self
+            .metadata
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("metadata was None"))?
+            .get("venue");
+
+        if let Some(venue_str) = venue_str {
+            Ok(Some(Venue::from_str(venue_str).unwrap())) //  TODO: Propagate parsing error
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn parse_book_type_from_metadata(&self) -> anyhow::Result<BookType> {
+        let venue_str = self
+            .metadata
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("metadata was None"))?
+            .get("book_type")
+            .ok_or_else(|| anyhow::anyhow!("'venue' not found in metadata"))?;
+        Ok(BookType::from_str(venue_str)?)
+    }
+
+    pub fn parse_depth_from_metadata(&self) -> anyhow::Result<usize> {
+        let depth_str = self
+            .metadata
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("metadata was None"))?
+            .get("depth")
+            .ok_or_else(|| anyhow::anyhow!("'depth' not found in metadata"))?;
+        Ok(depth_str.parse::<usize>()?)
     }
 }
 

@@ -29,13 +29,16 @@ use std::{
 use log;
 use nautilus_common::{
     cache::Cache,
+    clock::Clock,
     component::{Disposed, PreInitialized, Ready, Running, Starting, State, Stopped, Stopping},
     enums::ComponentState,
+    logging::{CMD, RECV},
+    messages::data::{DataCommand, DataCommandAction, DataRequest, DataResponse},
     msgbus::MessageBus,
 };
-use nautilus_core::{correctness, time::AtomicTime};
+use nautilus_core::correctness;
 use nautilus_model::{
-    data::{bar::BarType, delta::OrderBookDelta, DataType},
+    data::{bar::BarType, delta::OrderBookDelta, Data, DataType},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::synthetic::SyntheticInstrument,
 };
@@ -53,7 +56,7 @@ pub struct DataEngineConfig {
 
 pub struct DataEngine<State = PreInitialized> {
     state: PhantomData<State>,
-    clock: &'static AtomicTime,
+    clock: Box<dyn Clock>,
     cache: Rc<RefCell<Cache>>,
     msgbus: Rc<RefCell<MessageBus>>,
     clients: HashMap<ClientId, Box<dyn DataClient>>,
@@ -70,7 +73,7 @@ pub struct DataEngine<State = PreInitialized> {
 impl DataEngine {
     #[must_use]
     pub fn new(
-        clock: &'static AtomicTime,
+        clock: Box<dyn Clock>,
         cache: Rc<RefCell<Cache>>,
         msgbus: Rc<RefCell<MessageBus>>,
         config: DataEngineConfig,
@@ -245,18 +248,31 @@ impl DataEngine<PreInitialized> {
 
 impl DataEngine<Ready> {
     pub fn start(self) -> DataEngine<Starting> {
+        for client in self.clients.values() {
+            client.start()
+        }
         self.transition()
     }
 
     pub fn stop(self) -> DataEngine<Stopping> {
+        for client in self.clients.values() {
+            client.stop()
+        }
         self.transition()
     }
 
     pub fn reset(self) -> DataEngine<Ready> {
+        for client in self.clients.values() {
+            client.reset()
+        }
         self.transition()
     }
 
-    pub fn dispose(self) -> DataEngine<Disposed> {
+    pub fn dispose(mut self) -> DataEngine<Disposed> {
+        for client in self.clients.values() {
+            client.dispose()
+        }
+        self.clock.cancel_timers();
         self.transition()
     }
 }
@@ -278,6 +294,248 @@ impl DataEngine<Running> {
 
     pub fn stop(self) -> DataEngine<Stopping> {
         self.transition()
+    }
+
+    pub fn execute(&mut self, command: DataCommand) {
+        if self.config.debug {
+            log::debug!("{}", format!("{RECV}{CMD} commmand")); // TODO: Display for command
+        }
+
+        // Determine the client ID
+        let client_id = if self.clients.contains_key(&command.client_id) {
+            Some(command.client_id)
+        } else {
+            self.routing_map.get(&command.venue).copied()
+        };
+
+        if let Some(client_id) = client_id {
+            match command.action {
+                DataCommandAction::Subscribe => self.handle_subscribe(client_id, command),
+                DataCommandAction::Unsubscibe => self.handle_unsubscribe(client_id, command),
+            }
+        } else {
+            log::error!(
+                "Cannot execute command: no data client configured for {} or `client_id` {}",
+                command.venue,
+                command.client_id
+            );
+        }
+    }
+
+    fn handle_subscribe(&mut self, client_id: ClientId, command: DataCommand) {
+        match command.data_type.type_name() {
+            stringify!(InstrumentAny) => self.handle_subscribe_instrument(client_id, command),
+            stringify!(OrderBookDelta) => {
+                self.handle_subscribe_order_book_deltas(client_id, command)
+            }
+            stringify!(QuoteTick) => self.handle_subscribe_quote_ticks(client_id, command),
+            stringify!(TradeTick) => self.handle_subscribe_trade_ticks(client_id, command),
+            _ => panic!(
+                "Invalid data type for `Subscribe` action {}",
+                command.data_type.type_name()
+            ),
+        }
+    }
+
+    fn handle_unsubscribe(&mut self, client_id: ClientId, command: DataCommand) {
+        match command.data_type.type_name() {
+            stringify!(InstrumentAny) => self.handle_unsubscribe_instrument(client_id, command),
+            stringify!(OrderBookDelta) => {
+                self.handle_unsubscribe_order_book_deltas(client_id, command)
+            }
+            stringify!(QuoteTick) => self.handle_unsubscribe_quote_ticks(client_id, command),
+            stringify!(TradeTick) => self.handle_unsubscribe_trade_ticks(client_id, command),
+            _ => panic!(
+                "Invalid data type for `Unsubscribe` action {}",
+                command.data_type.type_name()
+            ),
+        }
+    }
+
+    fn handle_subscribe_instrument(&mut self, client_id: ClientId, command: DataCommand) {
+        let instrument_id = command
+            .data_type
+            .parse_instrument_id_from_metadata()
+            .expect("Invalid `InstrumentId`");
+
+        let venue = command
+            .data_type
+            .parse_venue_from_metadata()
+            .expect("Invalid `Venue`");
+
+        // SAFETY: client_id already determined
+        let client = self.clients.get_mut(&client_id).unwrap();
+
+        if let Some(instrument_id) = instrument_id {
+            if !client.subscribed_instruments().contains(&instrument_id) {
+                client
+                    .subscribe_instrument(instrument_id)
+                    .expect("Error on subscribe");
+            }
+        }
+
+        if let Some(venue) = venue {
+            if !client.subscribed_instrument_venues().contains(&venue) {
+                client
+                    .subscribe_instruments(Some(venue))
+                    .expect("Error on subscribe");
+            }
+        }
+    }
+
+    fn handle_subscribe_order_book_deltas(&mut self, client_id: ClientId, command: DataCommand) {
+        let instrument_id = command
+            .data_type
+            .parse_instrument_id_from_metadata()
+            .expect("Invalid `InstrumentId`")
+            .expect("Error on subscribe");
+        let book_type = command.data_type.parse_book_type_from_metadata().unwrap();
+        let depth = command.data_type.parse_depth_from_metadata().unwrap();
+
+        // SAFETY: client_id already determined
+        let client = self.clients.get_mut(&client_id).unwrap();
+
+        if !client
+            .subscribed_order_book_deltas()
+            .contains(&instrument_id)
+        {
+            client
+                .subscribe_order_book_deltas(instrument_id, book_type, depth)
+                .expect("Error on subscribe");
+        }
+    }
+
+    fn handle_subscribe_quote_ticks(&mut self, client_id: ClientId, command: DataCommand) {
+        let instrument_id = command
+            .data_type
+            .parse_instrument_id_from_metadata()
+            .expect("Invalid `InstrumentId`")
+            .expect("Error on subscribe");
+        let book_type = command.data_type.parse_book_type_from_metadata().unwrap();
+        let depth = command.data_type.parse_depth_from_metadata().unwrap();
+
+        // SAFETY: client_id already determined
+        let client = self.clients.get_mut(&client_id).unwrap();
+
+        if !client.subscribed_quote_ticks().contains(&instrument_id) {
+            client
+                .subscribe_quote_ticks(instrument_id)
+                .expect("Error on subscribe");
+        }
+    }
+
+    fn handle_subscribe_trade_ticks(&mut self, client_id: ClientId, command: DataCommand) {
+        let instrument_id = command
+            .data_type
+            .parse_instrument_id_from_metadata()
+            .expect("Invalid `InstrumentId`")
+            .expect("Error on subscribe");
+
+        // SAFETY: client_id already determined
+        let client = self.clients.get_mut(&client_id).unwrap();
+
+        if !client.subscribed_trade_ticks().contains(&instrument_id) {
+            client
+                .subscribe_trade_ticks(instrument_id)
+                .expect("Error on subscribe");
+        }
+    }
+
+    fn handle_unsubscribe_instrument(&mut self, client_id: ClientId, command: DataCommand) {
+        let instrument_id = command
+            .data_type
+            .parse_instrument_id_from_metadata()
+            .expect("Invalid `InstrumentId`");
+
+        let venue = command
+            .data_type
+            .parse_venue_from_metadata()
+            .expect("Invalid `Venue`");
+
+        // SAFETY: client_id already determined
+        let client = self.clients.get_mut(&client_id).unwrap();
+
+        if let Some(instrument_id) = instrument_id {
+            if client.subscribed_instruments().contains(&instrument_id) {
+                client
+                    .unsubscribe_instrument(instrument_id)
+                    .expect("Error on unsubscribe");
+            }
+        }
+
+        if let Some(venue) = venue {
+            if client.subscribed_instrument_venues().contains(&venue) {
+                client
+                    .unsubscribe_instruments(Some(venue))
+                    .expect("Error on unsubscribe");
+            }
+        }
+    }
+
+    fn handle_unsubscribe_order_book_deltas(&mut self, client_id: ClientId, command: DataCommand) {
+        let instrument_id = command
+            .data_type
+            .parse_instrument_id_from_metadata()
+            .expect("Invalid `InstrumentId`")
+            .expect("Error on unsubscribe");
+
+        // SAFETY: client_id already determined
+        let client = self.clients.get_mut(&client_id).unwrap();
+
+        if client
+            .subscribed_order_book_deltas()
+            .contains(&instrument_id)
+        {
+            client
+                .unsubscribe_order_book_deltas(instrument_id)
+                .expect("Error on subscribe");
+        }
+    }
+
+    fn handle_unsubscribe_quote_ticks(&mut self, client_id: ClientId, command: DataCommand) {
+        let instrument_id = command
+            .data_type
+            .parse_instrument_id_from_metadata()
+            .expect("Invalid `InstrumentId`")
+            .expect("Error on unsubscribe");
+
+        // SAFETY: client_id already determined
+        let client = self.clients.get_mut(&client_id).unwrap();
+
+        if client.subscribed_quote_ticks().contains(&instrument_id) {
+            client
+                .unsubscribe_quote_ticks(instrument_id)
+                .expect("Error on unsubscribe");
+        }
+    }
+
+    fn handle_unsubscribe_trade_ticks(&mut self, client_id: ClientId, command: DataCommand) {
+        let instrument_id = command
+            .data_type
+            .parse_instrument_id_from_metadata()
+            .expect("Invalid `InstrumentId`")
+            .expect("Error on unsubscribe");
+
+        // SAFETY: client_id already determined
+        let client = self.clients.get_mut(&client_id).unwrap();
+
+        if client.subscribed_trade_ticks().contains(&instrument_id) {
+            client
+                .unsubscribe_trade_ticks(instrument_id)
+                .expect("Error on unsubscribe");
+        }
+    }
+
+    pub fn process(&self, data: Data) {
+        todo!()
+    }
+
+    pub fn request(&self, request: DataRequest) {
+        todo!()
+    }
+
+    pub fn response(&self, response: DataResponse) {
+        todo!()
     }
 }
 

@@ -15,8 +15,11 @@
 
 use std::{any::Any, sync::Arc};
 
-use nautilus_core::uuid::UUID4;
-use nautilus_model::identifiers::ClientId;
+use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+use nautilus_model::{
+    data::DataType,
+    identifiers::{ClientId, Venue},
+};
 
 pub struct DataRequest {
     pub request_id: UUID4,
@@ -45,4 +48,18 @@ impl DataResponse {
             data: Arc::new(data),
         }
     }
+}
+
+pub enum DataCommandAction {
+    Subscribe,
+    Unsubscibe,
+}
+
+pub struct DataCommand {
+    pub client_id: ClientId,
+    pub venue: Venue,
+    pub data_type: DataType,
+    pub action: DataCommandAction,
+    pub command_id: UUID4,
+    pub ts_init: UnixNanos,
 }
