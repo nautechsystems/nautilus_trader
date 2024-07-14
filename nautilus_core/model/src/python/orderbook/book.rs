@@ -132,17 +132,17 @@ impl OrderBook {
     }
 
     #[pyo3(name = "apply_delta")]
-    fn py_apply_delta(&mut self, delta: OrderBookDelta) {
+    fn py_apply_delta(&mut self, delta: &OrderBookDelta) {
         self.apply_delta(delta);
     }
 
     #[pyo3(name = "apply_deltas")]
-    fn py_apply_deltas(&mut self, deltas: OrderBookDeltas) {
+    fn py_apply_deltas(&mut self, deltas: &OrderBookDeltas) {
         self.apply_deltas(deltas);
     }
 
     #[pyo3(name = "apply_depth")]
-    fn py_apply_depth(&mut self, depth: OrderBookDepth10) {
+    fn py_apply_depth(&mut self, depth: &OrderBookDepth10) {
         self.apply_depth(depth);
     }
 

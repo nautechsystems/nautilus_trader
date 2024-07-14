@@ -131,7 +131,7 @@ impl OrderBook {
         self.increment(sequence, ts_event);
     }
 
-    pub fn apply_delta(&mut self, delta: OrderBookDelta) {
+    pub fn apply_delta(&mut self, delta: &OrderBookDelta) {
         let order = delta.order;
         let flags = delta.flags;
         let sequence = delta.sequence;
@@ -144,13 +144,13 @@ impl OrderBook {
         }
     }
 
-    pub fn apply_deltas(&mut self, deltas: OrderBookDeltas) {
-        for delta in deltas.deltas {
+    pub fn apply_deltas(&mut self, deltas: &OrderBookDeltas) {
+        for delta in &deltas.deltas {
             self.apply_delta(delta);
         }
     }
 
-    pub fn apply_depth(&mut self, depth: OrderBookDepth10) {
+    pub fn apply_depth(&mut self, depth: &OrderBookDepth10) {
         self.bids.clear();
         self.asks.clear();
 
@@ -524,7 +524,7 @@ mod tests {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let mut book = OrderBook::new(BookType::L2_MBP, instrument_id);
 
-        book.apply_depth(depth);
+        book.apply_depth(&depth);
 
         assert_eq!(book.best_bid_price().unwrap().as_f64(), 99.00);
         assert_eq!(book.best_ask_price().unwrap().as_f64(), 100.00);

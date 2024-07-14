@@ -20,9 +20,9 @@ The following integrations are currently supported:
 
 ### Status
 
-- `building` - Under construction and likely not in a usable state
-- `beta` - Completed to a minimally working state and in a 'beta' testing phase
-- `stable` - Stabilized feature set and API, the integration has been tested by both developers and users to a reasonable level (some bugs may still remain)
+- `building`: Under construction and likely not in a usable state
+- `beta`: Completed to a minimally working state and in a 'beta' testing phase
+- `stable`: Stabilized feature set and API, the integration has been tested by both developers and users to a reasonable level (some bugs may still remain)
 
 ## Implementation goals
 

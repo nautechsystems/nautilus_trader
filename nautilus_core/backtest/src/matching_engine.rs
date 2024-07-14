@@ -188,7 +188,7 @@ impl OrderMatchingEngine {
     // -- DATA PROCESSING -----------------------------------------------------
 
     /// Process the venues market for the given order book delta.
-    pub fn process_order_book_delta(&mut self, delta: OrderBookDelta) {
+    pub fn process_order_book_delta(&mut self, delta: &OrderBookDelta) {
         debug!("Processing {delta}");
 
         self.book.apply_delta(delta);

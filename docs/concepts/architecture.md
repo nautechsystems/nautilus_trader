@@ -57,9 +57,9 @@ with. Understanding these contexts is crucial for effective backtesting, develop
 
 Here are the available environments you can work with:
 
-- `Backtest` - Historical data with simulated venues
-- `Sandbox` - Real-time data with simulated venues
-- `Live` - Real-time data with live venues (paper trading or real accounts)
+- `Backtest`: Historical data with simulated venues
+- `Sandbox`: Real-time data with simulated venues
+- `Live`: Real-time data with live venues (paper trading or real accounts)
 
 ### Common core
 
@@ -95,33 +95,33 @@ for each of these subpackages from the left nav menu.
 
 ### Core / low-Level
 
-- `core` - constants, functions and low-level components used throughout the framework
-- `common` - common parts for assembling the frameworks various components
-- `network` - low-level base components for networking clients
-- `serialization` - serialization base components and serializer implementations
-- `model` - defines a rich trading domain model
+- `core`: Constants, functions and low-level components used throughout the framework
+- `common`: Common parts for assembling the frameworks various components
+- `network`: Low-level base components for networking clients
+- `serialization`: Serialization base components and serializer implementations
+- `model`: Defines a rich trading domain model
 
 ### Components
 
-- `accounting` - different account types and account management machinery
-- `adapters` - integration adapters for the platform including brokers and exchanges
-- `analysis` - components relating to trading performance statistics and analysis
-- `cache` - provides common caching infrastructure
-- `data` - the data stack and data tooling for the platform
-- `execution` - the execution stack for the platform
-- `indicators` - a set of efficient indicators and analyzers
-- `infrastructure` - technology specific infrastructure implementations
-- `msgbus` - a universal message bus for connecting system components
-- `persistence` - data storage, cataloging and retrieval, mainly to support backtesting
-- `portfolio` - portfolio management functionality
-- `risk` - risk specific components and tooling
-- `trading` - trading domain specific components and tooling
+- `accounting`: Different account types and account management machinery
+- `adapters`: Integration adapters for the platform including brokers and exchanges
+- `analysis`: Components relating to trading performance statistics and analysis
+- `cache`: Provides common caching infrastructure
+- `data`: The data stack and data tooling for the platform
+- `execution`: The execution stack for the platform
+- `indicators`: A set of efficient indicators and analyzers
+- `infrastructure`: Technology specific infrastructure implementations
+- `msgbus`: A universal message bus for connecting system components
+- `persistence`: Data storage, cataloging and retrieval, mainly to support backtesting
+- `portfolio`: Portfolio management functionality
+- `risk`: Risk specific components and tooling
+- `trading`: Trading domain specific components and tooling
 
 ### System implementations
 
-- `backtest` - backtesting componentry as well as a backtest engine and node implementations
-- `live` - live engine and client implementations as well as a node for live trading
-- `system` - the core system kernel common between `backtest`, `sandbox`, `live` environment contexts
+- `backtest`: Backtesting componentry as well as a backtest engine and node implementations
+- `live`: Live engine and client implementations as well as a node for live trading
+- `system`: The core system kernel common between `backtest`, `sandbox`, `live` environment contexts
 
 ## Code structure
 

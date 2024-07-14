@@ -15,13 +15,13 @@ The following documentation assumes a trader is setting up for both live market
 data feeds, and trade execution. The full Bybit integration consists of an assortment of components,
 which can be used together or separately depending on the users needs.
 
-- `BybitHttpClient` - Low-level HTTP API connectivity
-- `BybitWebSocketClient` - Low-level WebSocket API connectivity
-- `BybitInstrumentProvider` - Instrument parsing and loading functionality
-- `BybitDataClient` - A market data feed manager
-- `BybitExecutionClient` - An account management and trade execution gateway
-- `BybitLiveDataClientFactory` - Factory for Bybit data clients (used by the trading node builder)
-- `BybitLiveExecClientFactory` - Factory for Bybit execution clients (used by the trading node builder)
+- `BybitHttpClient`: Low-level HTTP API connectivity
+- `BybitWebSocketClient`: Low-level WebSocket API connectivity
+- `BybitInstrumentProvider`: Instrument parsing and loading functionality
+- `BybitDataClient`: A market data feed manager
+- `BybitExecutionClient`: An account management and trade execution gateway
+- `BybitLiveDataClientFactory`: Factory for Bybit data clients (used by the trading node builder)
+- `BybitLiveExecClientFactory`: Factory for Bybit execution clients (used by the trading node builder)
 
 :::note
 Most users will simply define a configuration for a live trading node (as below),

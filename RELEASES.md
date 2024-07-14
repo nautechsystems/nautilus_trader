@@ -4,11 +4,13 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Implemented `MessageBus` v2 in Rust (#1786), thanks @twitu
-- Improved live reconciliation robustness (will now generate inferred orders necessary to align external position state)
+- Implemented `DataEngine` v2 in Rust (#1785), thanks @twitu
 - Refactor order submission error handling for Interactive Brokers (#1783), thanks @rsmb7z
+- Improved live reconciliation robustness (will now generate inferred orders necessary to align external position state)
+- Improved tests for Interactive Brokers (#1776), thanks @mylesgamez
 
 ### Breaking Changes
-None
+- Rust `OrderBook` API now takes data by reference instead of by value
 
 ### Fixes
 None

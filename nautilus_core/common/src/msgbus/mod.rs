@@ -349,14 +349,14 @@ impl MessageBus {
         })
     }
 
-    /// Sends a message to an endpoint
+    /// Sends a message to an endpoint.
     pub fn send(&self, endpoint: &str, message: &dyn Any) {
         if let Some(handler) = self.get_endpoint(&Ustr::from(endpoint)) {
             handler.0.handle(message);
         }
     }
 
-    /// Publish a message to a topic
+    /// Publish a message to a topic.
     pub fn publish(&self, topic: &str, message: &dyn Any) {
         let topic = Ustr::from(topic);
         let matching_subs = self.matching_subscriptions(&topic);

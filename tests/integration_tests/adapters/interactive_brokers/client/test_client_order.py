@@ -28,20 +28,34 @@ from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTest
 
 
 def test_place_order(ib_client):
-    # Arrange
+    """
+    Test case for placing an order with the Interactive Brokers client.
+
+    This test verifies that the placeOrder method is called with the correct parameters.
+
+    """
+    # Arrange: Set up the order and mock the placeOrder method
     ib_order = IBTestExecStubs.aapl_buy_ib_order(order_id=1)
     ib_order.contract = IBTestContractStubs.aapl_equity_ib_contract()
     ib_client._eclient.placeOrder = MagicMock()
 
-    # Act
+    # Act: Place the order using the ib_client
     ib_client.place_order(ib_order)
 
-    # Assert
-    ib_client._eclient.placeOrder.assert_called_with(
+    # Assert: Verify that the placeOrder method was called with the correct parameters
+    ib_client._eclient.placeOrder.assert_called_once_with(
         ib_order.orderId,
         ib_order.contract,
         ib_order,
     )
+
+    # Additional assertions to verify the attributes of the order
+    assert ib_order.orderId == 1
+    assert ib_order.action == "BUY"
+    assert ib_order.totalQuantity == Decimal("100")
+    assert ib_order.orderType == "MKT"
+    assert ib_order.account == "DU123456"
+    assert ib_order.tif == "IOC"
 
 
 def test_cancel_order(ib_client):
