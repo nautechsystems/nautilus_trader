@@ -20,6 +20,7 @@
 #![allow(unused_variables)]
 
 use std::{
+    any::Any,
     cell::RefCell,
     collections::{HashMap, HashSet},
     marker::PhantomData,
@@ -43,6 +44,8 @@ use nautilus_model::{
     data::{
         bar::{Bar, BarType},
         delta::OrderBookDelta,
+        deltas::OrderBookDeltas,
+        depth::OrderBookDepth10,
         quote::QuoteTick,
         trade::TradeTick,
         Data, DataType,
@@ -305,7 +308,14 @@ impl DataEngine<Running> {
     }
 
     pub fn process(&self, data: Data) {
-        todo!()
+        match data {
+            Data::Delta(delta) => self.handle_delta(delta),
+            Data::Deltas(deltas) => self.handle_deltas(deltas.deref().clone()), // TODO: Optimize
+            Data::Depth10(depth) => self.handle_depth10(depth),
+            Data::Quote(quote) => self.handle_quote(quote),
+            Data::Trade(trade) => self.handle_trade(trade),
+            Data::Bar(bar) => self.handle_bar(bar),
+        }
     }
 
     pub fn execute(&mut self, command: DataCommand) {
@@ -398,27 +408,90 @@ impl DataEngine<Running> {
     // -- DATA HANDLERS ---------------------------------------------------------------------------
 
     fn handle_instrument(&self, instrument: InstrumentAny) {
-        if let Err(e) = self.cache.borrow_mut().add_instrument(instrument) {
+        if let Err(e) = self.cache.borrow_mut().add_instrument(instrument.clone()) {
             log::error!("Error on cache insert: {e}");
         }
+
+        let instrument_id = instrument.id();
+        let topic = format!(
+            "data.instrument.{}.{}",
+            instrument_id.venue, instrument_id.symbol
+        );
+
+        self.msgbus
+            .borrow()
+            .publish(&topic, &instrument as &dyn Any); // TODO: Optimize
+    }
+
+    fn handle_delta(&self, delta: OrderBookDelta) {
+        // TODO: Manage buffered deltas
+        // TODO: Manage book
+
+        let topic = format!(
+            "data.book.deltas.{}.{}",
+            delta.instrument_id.venue, delta.instrument_id.symbol
+        );
+
+        self.msgbus.borrow().publish(&topic, &delta as &dyn Any); // TODO: Optimize
+    }
+
+    fn handle_deltas(&self, deltas: OrderBookDeltas) {
+        // TODO: Manage book
+
+        let topic = format!(
+            "data.book.snapshots.{}.{}", // TODO: Revise snapshots topic component
+            deltas.instrument_id.venue, deltas.instrument_id.symbol
+        );
+        self.msgbus.borrow().publish(&topic, &deltas as &dyn Any); // TODO: Optimize
+    }
+
+    fn handle_depth10(&self, depth: OrderBookDepth10) {
+        // TODO: Manage book
+
+        let topic = format!(
+            "data.book.depth.{}.{}",
+            depth.instrument_id.venue, depth.instrument_id.symbol
+        );
+        self.msgbus.borrow().publish(&topic, &depth as &dyn Any); // TODO: Optimize
     }
 
     fn handle_quote(&self, quote: QuoteTick) {
         if let Err(e) = self.cache.borrow_mut().add_quote(quote) {
             log::error!("Error on cache insert: {e}");
         }
+
+        // TODO: Handle synthetics
+
+        let topic = format!(
+            "data.quotes.{}.{}",
+            quote.instrument_id.venue, quote.instrument_id.symbol
+        );
+        self.msgbus.borrow().publish(&topic, &quote as &dyn Any); // TODO: Optimize
     }
 
     fn handle_trade(&self, trade: TradeTick) {
         if let Err(e) = self.cache.borrow_mut().add_trade(trade) {
             log::error!("Error on cache insert: {e}");
         }
+
+        // TODO: Handle synthetics
+
+        let topic = format!(
+            "data.trades.{}.{}",
+            trade.instrument_id.venue, trade.instrument_id.symbol
+        );
+        self.msgbus.borrow().publish(&topic, &trade as &dyn Any); // TODO: Optimize
     }
 
     fn handle_bar(&self, bar: Bar) {
         if let Err(e) = self.cache.borrow_mut().add_bar(bar) {
             log::error!("Error on cache insert: {e}");
         }
+
+        // TODO: Handle additional bar logic
+
+        let topic = format!("data.bars.{}", bar.bar_type);
+        self.msgbus.borrow().publish(&topic, &bar as &dyn Any); // TODO: Optimize
     }
 
     // -- COMMAND HANDLERS ------------------------------------------------------------------------
@@ -426,32 +499,26 @@ impl DataEngine<Running> {
     fn handle_subscribe(&mut self, client_id: ClientId, command: DataCommand) {
         match command.data_type.type_name() {
             stringify!(InstrumentAny) => self.handle_subscribe_instrument(client_id, command),
-            stringify!(OrderBookDelta) => {
-                self.handle_subscribe_order_book_deltas(client_id, command)
-            }
+            stringify!(OrderBookDelta) => self.handle_subscribe_deltas(client_id, command),
+            stringify!(OrderBookDeltas) => self.handle_subscribe_snapshots(client_id, command),
+            stringify!(OrderBookDepth10) => self.handle_subscribe_snapshots(client_id, command),
             stringify!(QuoteTick) => self.handle_subscribe_quote_ticks(client_id, command),
             stringify!(TradeTick) => self.handle_subscribe_trade_ticks(client_id, command),
             stringify!(Bar) => self.handle_subscribe_bars(client_id, command),
-            _ => panic!(
-                "Invalid data type for `Subscribe` action {}",
-                command.data_type.type_name()
-            ),
+            _ => self.handle_subscribe_generic(client_id, command),
         }
     }
 
     fn handle_unsubscribe(&mut self, client_id: ClientId, command: DataCommand) {
         match command.data_type.type_name() {
             stringify!(InstrumentAny) => self.handle_unsubscribe_instrument(client_id, command),
-            stringify!(OrderBookDelta) => {
-                self.handle_unsubscribe_order_book_deltas(client_id, command)
-            }
+            stringify!(OrderBookDelta) => self.handle_unsubscribe_deltas(client_id, command),
+            stringify!(OrderBookDeltas) => self.handle_unsubscribe_snapshots(client_id, command),
+            stringify!(OrderBookDepth10) => self.handle_unsubscribe_snapshots(client_id, command),
             stringify!(QuoteTick) => self.handle_unsubscribe_quote_ticks(client_id, command),
             stringify!(TradeTick) => self.handle_unsubscribe_trade_ticks(client_id, command),
             stringify!(Bar) => self.handle_unsubscribe_bars(client_id, command),
-            _ => panic!(
-                "Invalid data type for `Unsubscribe` action {}",
-                command.data_type.type_name()
-            ),
+            _ => self.handle_unsubscribe_generic(client_id, command),
         }
     }
 
@@ -479,7 +546,7 @@ impl DataEngine<Running> {
         }
     }
 
-    fn handle_subscribe_order_book_deltas(&mut self, client_id: ClientId, command: DataCommand) {
+    fn handle_subscribe_deltas(&mut self, client_id: ClientId, command: DataCommand) {
         let instrument_id = command
             .data_type
             .parse_instrument_id_from_metadata()
@@ -497,6 +564,28 @@ impl DataEngine<Running> {
         {
             client
                 .subscribe_order_book_deltas(instrument_id, book_type, depth)
+                .expect("Error on subscribe");
+        }
+    }
+
+    fn handle_subscribe_snapshots(&mut self, client_id: ClientId, command: DataCommand) {
+        let instrument_id = command
+            .data_type
+            .parse_instrument_id_from_metadata()
+            .expect("Error on subscribe: no 'instrument_id' in metadata");
+
+        let book_type = command.data_type.parse_book_type_from_metadata();
+        let depth = command.data_type.parse_depth_from_metadata();
+
+        // SAFETY: client_id already determined
+        let client = self.clients.get_mut(&client_id).unwrap();
+
+        if !client
+            .subscribed_order_book_snapshots()
+            .contains(&instrument_id)
+        {
+            client
+                .subscribe_order_book_snapshots(instrument_id, book_type, depth)
                 .expect("Error on subscribe");
         }
     }
@@ -547,6 +636,19 @@ impl DataEngine<Running> {
         }
     }
 
+    fn handle_subscribe_generic(&mut self, client_id: ClientId, command: DataCommand) {
+        // SAFETY: client_id already determined
+        let client = self.clients.get_mut(&client_id).unwrap();
+        if !client
+            .subscribed_generic_data()
+            .contains(&command.data_type)
+        {
+            client
+                .subscribe(command.data_type)
+                .expect("Error on subscribe");
+        }
+    }
+
     fn handle_unsubscribe_instrument(&mut self, client_id: ClientId, command: DataCommand) {
         let instrument_id = command.data_type.parse_instrument_id_from_metadata();
         let venue = command.data_type.parse_venue_from_metadata();
@@ -571,7 +673,7 @@ impl DataEngine<Running> {
         }
     }
 
-    fn handle_unsubscribe_order_book_deltas(&mut self, client_id: ClientId, command: DataCommand) {
+    fn handle_unsubscribe_deltas(&mut self, client_id: ClientId, command: DataCommand) {
         let instrument_id = command
             .data_type
             .parse_instrument_id_from_metadata()
@@ -586,6 +688,25 @@ impl DataEngine<Running> {
         {
             client
                 .unsubscribe_order_book_deltas(instrument_id)
+                .expect("Error on subscribe");
+        }
+    }
+
+    fn handle_unsubscribe_snapshots(&mut self, client_id: ClientId, command: DataCommand) {
+        let instrument_id = command
+            .data_type
+            .parse_instrument_id_from_metadata()
+            .expect("Error on subscribe: no 'instrument_id' in metadata");
+
+        // SAFETY: client_id already determined
+        let client = self.clients.get_mut(&client_id).unwrap();
+
+        if client
+            .subscribed_order_book_snapshots()
+            .contains(&instrument_id)
+        {
+            client
+                .unsubscribe_order_book_snapshots(instrument_id)
                 .expect("Error on subscribe");
         }
     }
@@ -630,6 +751,19 @@ impl DataEngine<Running> {
         if client.subscribed_bars().contains(&bar_type) {
             client
                 .unsubscribe_bars(bar_type)
+                .expect("Error on unsubscribe");
+        }
+    }
+
+    fn handle_unsubscribe_generic(&mut self, client_id: ClientId, command: DataCommand) {
+        // SAFETY: client_id already determined
+        let client = self.clients.get_mut(&client_id).unwrap();
+        if client
+            .subscribed_generic_data()
+            .contains(&command.data_type)
+        {
+            client
+                .unsubscribe(command.data_type)
                 .expect("Error on unsubscribe");
         }
     }

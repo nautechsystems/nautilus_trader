@@ -22,8 +22,10 @@
 use std::{any::Any, cell::RefCell, collections::HashSet, rc::Rc, sync::Arc};
 
 use indexmap::IndexMap;
-use nautilus_common::{cache::Cache, messages::data::DataResponse, msgbus::MessageBus};
-use nautilus_core::{correctness, nanos::UnixNanos, time::AtomicTime, uuid::UUID4};
+use nautilus_common::{
+    cache::Cache, clock::Clock, messages::data::DataResponse, msgbus::MessageBus,
+};
+use nautilus_core::{correctness, nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     data::{
         bar::{Bar, BarType},
@@ -77,7 +79,7 @@ pub trait DataClient {
     fn subscribe_venue_status(&mut self, venue: Venue) -> anyhow::Result<()>;
     fn subscribe_instrument_status(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn subscribe_instrument_close(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
-    fn unsunscribe(&mut self) -> anyhow::Result<()>;
+    fn unsubscribe(&mut self, data_type: DataType) -> anyhow::Result<()>;
     fn unsubscribe_instruments(&mut self, venue: Option<Venue>) -> anyhow::Result<()>;
     fn unsubscribe_instrument(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn unsubscribe_order_book_deltas(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
@@ -142,7 +144,7 @@ pub struct DataClientCore {
     pub client_id: ClientId,
     pub venue: Venue,
     pub is_connected: bool,
-    clock: &'static AtomicTime,
+    clock: Box<dyn Clock>,
     cache: Rc<RefCell<Cache>>,
     msgbus: Rc<RefCell<MessageBus>>,
     subscriptions_generic: HashSet<DataType>,
@@ -517,6 +519,7 @@ impl DataClientCore {
             instrument_id.venue,
             data_type,
             data,
+            self.clock.timestamp_ns(),
         );
 
         self.msgbus
@@ -541,6 +544,7 @@ impl DataClientCore {
             venue,
             data_type,
             data,
+            self.clock.timestamp_ns(),
         );
 
         self.msgbus
@@ -565,6 +569,7 @@ impl DataClientCore {
             instrument_id.venue,
             data_type,
             data,
+            self.clock.timestamp_ns(),
         );
 
         self.msgbus
@@ -589,6 +594,7 @@ impl DataClientCore {
             instrument_id.venue,
             data_type,
             data,
+            self.clock.timestamp_ns(),
         );
 
         self.msgbus
@@ -608,6 +614,7 @@ impl DataClientCore {
             bar_type.instrument_id.venue,
             data_type,
             data,
+            self.clock.timestamp_ns(),
         );
 
         self.msgbus
