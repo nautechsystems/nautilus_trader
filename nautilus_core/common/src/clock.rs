@@ -35,6 +35,18 @@ use crate::{
 /// # Notes
 /// An active timer is one which has not expired (`timer.is_expired == False`).
 pub trait Clock {
+    /// Return the current UNIX timestamp in nanoseconds (ns).
+    fn timestamp_ns(&self) -> UnixNanos;
+
+    /// Return the current UNIX timestamp in microseconds (μs).
+    fn timestamp_us(&self) -> u64;
+
+    /// Return the current UNIX timestamp in milliseconds (ms).
+    fn timestamp_ms(&self) -> u64;
+
+    /// Return the current UNIX time in seconds.
+    fn timestamp(&self) -> f64;
+
     /// Return the names of active timers in the clock.
     fn timer_names(&self) -> Vec<&str>;
 
@@ -168,6 +180,22 @@ impl Deref for TestClock {
 }
 
 impl Clock for TestClock {
+    fn timestamp_ns(&self) -> UnixNanos {
+        self.time.get_time_ns()
+    }
+
+    fn timestamp_us(&self) -> u64 {
+        self.time.get_time_us()
+    }
+
+    fn timestamp_ms(&self) -> u64 {
+        self.time.get_time_ms()
+    }
+
+    fn timestamp(&self) -> f64 {
+        self.time.get_time()
+    }
+
     fn timer_names(&self) -> Vec<&str> {
         self.timers
             .iter()
@@ -308,6 +336,22 @@ impl Deref for LiveClock {
 }
 
 impl Clock for LiveClock {
+    fn timestamp_ns(&self) -> UnixNanos {
+        self.time.get_time_ns()
+    }
+
+    fn timestamp_us(&self) -> u64 {
+        self.time.get_time_us()
+    }
+
+    fn timestamp_ms(&self) -> u64 {
+        self.time.get_time_ms()
+    }
+
+    fn timestamp(&self) -> f64 {
+        self.time.get_time()
+    }
+
     fn timer_names(&self) -> Vec<&str> {
         self.timers
             .iter()
