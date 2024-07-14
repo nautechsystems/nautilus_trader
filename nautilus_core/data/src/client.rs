@@ -30,6 +30,7 @@ use nautilus_model::{
         trade::TradeTick,
         Data, DataType,
     },
+    enums::BookType,
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::any::InstrumentAny,
 };
@@ -37,6 +38,10 @@ use nautilus_model::{
 pub trait DataClient {
     fn client_id(&self) -> ClientId;
     fn venue(&self) -> Option<Venue>;
+    fn start(&self);
+    fn stop(&self);
+    fn reset(&self);
+    fn dispose(&self);
     fn is_connected(&self) -> bool;
     fn is_disconnected(&self) -> bool;
     fn subscribed_generic_data(&self) -> &HashSet<DataType>;
@@ -53,9 +58,18 @@ pub trait DataClient {
     fn subscribe(&mut self, data_type: DataType) -> anyhow::Result<()>;
     fn subscribe_instruments(&mut self, venue: Option<Venue>) -> anyhow::Result<()>;
     fn subscribe_instrument(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
-    fn subscribe_order_book_deltas(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
-    fn subscribe_order_book_snapshots(&mut self, instrument_id: InstrumentId)
-        -> anyhow::Result<()>;
+    fn subscribe_order_book_deltas(
+        &mut self,
+        instrument_id: InstrumentId,
+        book_type: BookType,
+        depth: usize,
+    ) -> anyhow::Result<()>;
+    fn subscribe_order_book_snapshots(
+        &mut self,
+        instrument_id: InstrumentId,
+        book_type: BookType,
+        depth: usize,
+    ) -> anyhow::Result<()>;
     fn subscribe_quote_ticks(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn subscribe_trade_ticks(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn subscribe_bars(&mut self, bar_type: BarType) -> anyhow::Result<()>;
@@ -63,7 +77,7 @@ pub trait DataClient {
     fn subscribe_instrument_status(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn subscribe_instrument_close(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn unsunscribe(&mut self) -> anyhow::Result<()>;
-    fn unsubscribe_instruments(&mut self) -> anyhow::Result<()>;
+    fn unsubscribe_instruments(&mut self, venue: Option<Venue>) -> anyhow::Result<()>;
     fn unsubscribe_instrument(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn unsubscribe_order_book_deltas(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn unsubscribe_order_book_snapshots(

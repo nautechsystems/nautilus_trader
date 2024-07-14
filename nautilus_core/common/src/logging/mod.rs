@@ -39,6 +39,15 @@ pub mod headers;
 pub mod logger;
 pub mod writer;
 
+pub const RECV: &str = "<--";
+pub const SENT: &str = "-->";
+pub const CMD: &str = "[CMD]";
+pub const EVT: &str = "[EVT]";
+pub const DOC: &str = "[DOC]";
+pub const RPT: &str = "[RPT]";
+pub const REQ: &str = "[REQ]";
+pub const RES: &str = "[RES]";
+
 static LOGGING_INITIALIZED: AtomicBool = AtomicBool::new(false);
 static LOGGING_BYPASSED: AtomicBool = AtomicBool::new(false);
 static LOGGING_REALTIME: AtomicBool = AtomicBool::new(true);
