@@ -11,13 +11,13 @@ The following documentation assumes a trader is setting up for both live market
 data feeds, and trade execution. The full Binance integration consists of an assortment of components,
 which can be used together or separately depending on the users needs.
 
-- `BinanceHttpClient` - Low-level HTTP API connectivity
-- `BinanceWebSocketClient` - Low-level WebSocket API connectivity
-- `BinanceInstrumentProvider` - Instrument parsing and loading functionality
-- `BinanceSpotDataClient`/ `BinanceFuturesDataClient` - A market data feed manager
-- `BinanceSpotExecutionClient`/`BinanceFuturesExecutionClient` - An account management and trade execution gateway
-- `BinanceLiveDataClientFactory` - Factory for Binance data clients (used by the trading node builder)
-- `BinanceLiveExecClientFactory` - Factory for Binance execution clients (used by the trading node builder)
+- `BinanceHttpClient`: Low-level HTTP API connectivity
+- `BinanceWebSocketClient`: Low-level WebSocket API connectivity
+- `BinanceInstrumentProvider`: Instrument parsing and loading functionality
+- `BinanceSpotDataClient`/`BinanceFuturesDataClient`: A market data feed manager
+- `BinanceSpotExecutionClient`/`BinanceFuturesExecutionClient`: An account management and trade execution gateway
+- `BinanceLiveDataClientFactory`: Factory for Binance data clients (used by the trading node builder)
+- `BinanceLiveExecClientFactory`: Factory for Binance execution clients (used by the trading node builder)
 
 :::note
 Most users will simply define a configuration for a live trading node (as below),
