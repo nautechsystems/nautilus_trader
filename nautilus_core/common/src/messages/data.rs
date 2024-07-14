@@ -25,12 +25,16 @@ pub struct DataRequest {
     pub request_id: UUID4,
     pub correlation_id: UUID4,
     pub client_id: ClientId,
+    pub venue: Venue,
+    pub data_type: DataType,
 }
 
 pub struct DataResponse {
     pub response_id: UUID4,
     pub correlation_id: UUID4,
     pub client_id: ClientId,
+    pub venue: Venue,
+    pub data_type: DataType,
     pub data: Arc<dyn Any + Send + Sync>,
 }
 
@@ -39,12 +43,16 @@ impl DataResponse {
         response_id: UUID4,
         correlation_id: UUID4,
         client_id: ClientId,
+        venue: Venue,
+        data_type: DataType,
         data: T,
     ) -> Self {
         Self {
             response_id,
             correlation_id,
             client_id,
+            venue,
+            data_type,
             data: Arc::new(data),
         }
     }

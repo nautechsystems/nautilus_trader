@@ -30,6 +30,7 @@ use std::{
     str::FromStr,
 };
 
+use bar::BarType;
 use indexmap::IndexMap;
 use nautilus_core::nanos::UnixNanos;
 
@@ -191,52 +192,64 @@ impl DataType {
         self.topic.as_str()
     }
 
-    pub fn parse_instrument_id_from_metadata(&self) -> anyhow::Result<Option<InstrumentId>> {
-        let instrument_id_str = self
-            .metadata
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("metadata was None"))?
-            .get("instrument_id");
-
-        if let Some(instrument_id_str) = instrument_id_str {
-            Ok(Some(InstrumentId::from_str(instrument_id_str)?))
-        } else {
-            Ok(None)
-        }
+    pub fn parse_instrument_id_from_metadata(&self) -> Option<InstrumentId> {
+        let metadata = self.metadata.as_ref().expect("metadata was None");
+        let venue_str = metadata.get("venue")?;
+        Some(InstrumentId::from_str(venue_str).expect("Invalid `InstrumentId`"))
     }
 
-    pub fn parse_venue_from_metadata(&self) -> anyhow::Result<Option<Venue>> {
-        let venue_str = self
-            .metadata
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("metadata was None"))?
-            .get("venue");
-
-        if let Some(venue_str) = venue_str {
-            Ok(Some(Venue::from_str(venue_str).unwrap())) //  TODO: Propagate parsing error
-        } else {
-            Ok(None)
-        }
+    pub fn parse_venue_from_metadata(&self) -> Option<Venue> {
+        let metadata = self.metadata.as_ref().expect("metadata was None");
+        let venue_str = metadata.get("venue")?;
+        Some(Venue::from_str(venue_str).expect("Invalid `Venue`"))
     }
 
-    pub fn parse_book_type_from_metadata(&self) -> anyhow::Result<BookType> {
-        let venue_str = self
-            .metadata
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("metadata was None"))?
+    pub fn parse_bar_type_from_metadata(&self) -> BarType {
+        let metadata = self.metadata.as_ref().expect("metadata was None");
+        let bar_type_str = metadata
+            .get("bar_type")
+            .expect("No 'bar_type' found in metadata");
+        BarType::from_str(bar_type_str).expect("Invalid `BarType`")
+    }
+
+    pub fn parse_start_from_metadata(&self) -> Option<UnixNanos> {
+        let metadata = self.metadata.as_ref()?;
+        let start_str = metadata.get("start")?;
+        Some(UnixNanos::from_str(start_str).expect("Invalid `UnixNanos`"))
+    }
+
+    pub fn parse_end_from_metadata(&self) -> Option<UnixNanos> {
+        let metadata = self.metadata.as_ref()?;
+        let end_str = metadata.get("end")?;
+        Some(UnixNanos::from_str(end_str).expect("Invalid `UnixNanos`"))
+    }
+
+    pub fn parse_limit_from_metadata(&self) -> Option<usize> {
+        let metadata = self.metadata.as_ref()?;
+        let depth_str = metadata.get("limit")?;
+        Some(
+            depth_str
+                .parse::<usize>()
+                .expect("Invalid `usize` for limit"),
+        )
+    }
+
+    pub fn parse_book_type_from_metadata(&self) -> BookType {
+        let metadata = self.metadata.as_ref().expect("metadata was None");
+        let book_type_str = metadata
             .get("book_type")
-            .ok_or_else(|| anyhow::anyhow!("'venue' not found in metadata"))?;
-        Ok(BookType::from_str(venue_str)?)
+            .expect("'book_type' not found in metadata");
+        BookType::from_str(book_type_str).expect("Invalid `BookType`")
     }
 
-    pub fn parse_depth_from_metadata(&self) -> anyhow::Result<usize> {
-        let depth_str = self
-            .metadata
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("metadata was None"))?
-            .get("depth")
-            .ok_or_else(|| anyhow::anyhow!("'depth' not found in metadata"))?;
-        Ok(depth_str.parse::<usize>()?)
+    pub fn parse_depth_from_metadata(&self) -> Option<usize> {
+        let metadata = self.metadata.as_ref()?;
+        let depth_str = metadata.get("depth")?;
+        Some(
+            depth_str
+                .parse::<usize>()
+                .expect("Invalid `usize` for depth"),
+        )
     }
 }
 
