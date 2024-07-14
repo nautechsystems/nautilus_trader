@@ -194,8 +194,8 @@ impl DataType {
 
     pub fn parse_instrument_id_from_metadata(&self) -> Option<InstrumentId> {
         let metadata = self.metadata.as_ref().expect("metadata was None");
-        let venue_str = metadata.get("venue")?;
-        Some(InstrumentId::from_str(venue_str).expect("Invalid `InstrumentId`"))
+        let instrument_id = metadata.get("instrument_id")?;
+        Some(InstrumentId::from_str(instrument_id).expect("Invalid `InstrumentId`"))
     }
 
     pub fn parse_venue_from_metadata(&self) -> Option<Venue> {
@@ -446,5 +446,135 @@ mod tests {
             format!("{:?}", data_type),
             format!("DataType(type_name=ExampleType, metadata={:?})", metadata)
         );
+    }
+
+    #[rstest]
+    fn test_parse_instrument_id_from_metadata() {
+        let instrument_id_str = "MSFT.XNAS";
+        let metadata = Some(
+            [("instrument_id".to_string(), instrument_id_str.to_string())]
+                .iter()
+                .cloned()
+                .collect(),
+        );
+        let data_type = DataType::new("InstrumentAny", metadata);
+
+        assert_eq!(
+            data_type.parse_instrument_id_from_metadata().unwrap(),
+            InstrumentId::from_str(instrument_id_str).unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_parse_venue_from_metadata() {
+        let venue_str = "BINANCE";
+        let metadata = Some(
+            [("venue".to_string(), venue_str.to_string())]
+                .iter()
+                .cloned()
+                .collect(),
+        );
+        let data_type = DataType::new(stringify!(InstrumentAny), metadata);
+
+        assert_eq!(
+            data_type.parse_venue_from_metadata().unwrap(),
+            Venue::from_str(venue_str).unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_parse_bar_type_from_metadata() {
+        let bar_type_str = "MSFT.XNAS-1000-TICK-LAST-INTERNAL";
+        let metadata = Some(
+            [("bar_type".to_string(), bar_type_str.to_string())]
+                .iter()
+                .cloned()
+                .collect(),
+        );
+        let data_type = DataType::new(stringify!(BarType), metadata);
+
+        assert_eq!(
+            data_type.parse_bar_type_from_metadata(),
+            BarType::from_str(bar_type_str).unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_parse_start_from_metadata() {
+        let start_ns = 1600054595844758000;
+        let metadata = Some(
+            [("start".to_string(), start_ns.to_string())]
+                .iter()
+                .cloned()
+                .collect(),
+        );
+        let data_type = DataType::new(stringify!(TradeTick), metadata);
+
+        assert_eq!(
+            data_type.parse_start_from_metadata().unwrap(),
+            UnixNanos::from(start_ns),
+        );
+    }
+
+    #[rstest]
+    fn test_parse_end_from_metadata() {
+        let end_ns = 1720954595844758000;
+        let metadata = Some(
+            [("end".to_string(), end_ns.to_string())]
+                .iter()
+                .cloned()
+                .collect(),
+        );
+        let data_type = DataType::new(stringify!(TradeTick), metadata);
+
+        assert_eq!(
+            data_type.parse_end_from_metadata().unwrap(),
+            UnixNanos::from(end_ns),
+        );
+    }
+
+    #[rstest]
+    fn test_parse_limit_from_metadata() {
+        let limit = 1000;
+        let metadata = Some(
+            [("limit".to_string(), limit.to_string())]
+                .iter()
+                .cloned()
+                .collect(),
+        );
+        let data_type = DataType::new(stringify!(TradeTick), metadata);
+
+        assert_eq!(data_type.parse_limit_from_metadata().unwrap(), limit);
+    }
+
+    #[rstest]
+    fn test_parse_book_type_from_metadata() {
+        let book_type_str = "L3_MBO";
+        let metadata = Some(
+            [("book_type".to_string(), book_type_str.to_string())]
+                .iter()
+                .cloned()
+                .collect(),
+        );
+        let data_type = DataType::new(stringify!(OrderBookDelta), metadata);
+
+        assert_eq!(
+            data_type.parse_book_type_from_metadata(),
+            BookType::from_str(book_type_str).unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_parse_depth_from_metadata() {
+        let depth = 25;
+        let metadata = Some(
+            [("depth".to_string(), depth.to_string())]
+                .iter()
+                .cloned()
+                .collect(),
+        );
+        let data_type = DataType::new(stringify!(OrderBookDeltas), metadata);
+
+        assert_eq!(data_type.parse_depth_from_metadata().unwrap(), depth);
     }
 }
