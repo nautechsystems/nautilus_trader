@@ -337,7 +337,7 @@ cdef class OrderBook(Data):
         """
         Condition.not_none(delta, "delta")
 
-        orderbook_apply_delta(&self._mem, delta._mem)
+        orderbook_apply_delta(&self._mem, &delta._mem)
 
     cpdef void apply_deltas(self, OrderBookDeltas deltas):
         """
@@ -365,7 +365,7 @@ cdef class OrderBook(Data):
         """
         Condition.not_none(depth, "depth")
 
-        orderbook_apply_depth(&self._mem, depth._mem)
+        orderbook_apply_depth(&self._mem, &depth._mem)
 
     cpdef void apply(self, Data data):
         """

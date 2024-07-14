@@ -10,7 +10,7 @@ Released on TBD (UTC).
 - Improved tests for Interactive Brokers (#1776), thanks @mylesgamez
 
 ### Breaking Changes
-None
+- Rust `OrderBook` API now takes data by reference instead of by value
 
 ### Fixes
 None
