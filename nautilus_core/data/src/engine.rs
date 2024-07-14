@@ -25,6 +25,7 @@ use std::{
     marker::PhantomData,
     ops::Deref,
     rc::Rc,
+    sync::Arc,
 };
 
 use log;
@@ -33,15 +34,21 @@ use nautilus_common::{
     clock::Clock,
     component::{Disposed, PreInitialized, Ready, Running, Starting, State, Stopped, Stopping},
     enums::ComponentState,
-    logging::{CMD, RECV},
+    logging::{CMD, RECV, RES},
     messages::data::{DataCommand, DataCommandAction, DataRequest, DataResponse},
     msgbus::MessageBus,
 };
 use nautilus_core::correctness;
 use nautilus_model::{
-    data::{bar::BarType, delta::OrderBookDelta, Data, DataType},
+    data::{
+        bar::{Bar, BarType},
+        delta::OrderBookDelta,
+        quote::QuoteTick,
+        trade::TradeTick,
+        Data, DataType,
+    },
     identifiers::{ClientId, InstrumentId, Venue},
-    instruments::synthetic::SyntheticInstrument,
+    instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
 };
 
 use crate::client::DataClient;
@@ -297,6 +304,10 @@ impl DataEngine<Running> {
         self.transition()
     }
 
+    pub fn process(&self, data: Data) {
+        todo!()
+    }
+
     pub fn execute(&mut self, command: DataCommand) {
         if self.config.debug {
             log::debug!("{}", format!("{RECV}{CMD} commmand")); // TODO: Display for command
@@ -323,6 +334,95 @@ impl DataEngine<Running> {
         }
     }
 
+    pub fn request(&mut self, request: DataRequest) {
+        if self.config.debug {
+            log::debug!("{}", format!("{RECV}{RES} response")); // TODO: Display for response
+        }
+
+        // Determine the client ID
+        let client_id = if self.clients.contains_key(&request.client_id) {
+            Some(request.client_id)
+        } else {
+            self.routing_map.get(&request.venue).copied()
+        };
+
+        if let Some(client_id) = client_id {
+            match request.data_type.type_name() {
+                stringify!(InstrumentAny) => self.handle_instruments_request(client_id, request),
+                stringify!(QuoteTick) => self.handle_quote_ticks_request(client_id, request),
+                stringify!(TradeTick) => self.handle_trade_ticks_request(client_id, request),
+                stringify!(Bar) => self.handle_bars_request(client_id, request),
+                _ => self.handle_request(client_id, request),
+            }
+        } else {
+            log::error!(
+                "Cannot execute request: no data client configured for {} or `client_id` {}",
+                request.venue,
+                request.client_id
+            );
+        }
+    }
+
+    pub fn response(&self, response: DataResponse) {
+        if self.config.debug {
+            log::debug!("{}", format!("{RECV}{RES} response")); // TODO: Display for response
+        }
+
+        match response.data_type.type_name() {
+            stringify!(InstrumentAny) => {
+                let instruments = Arc::downcast::<Vec<InstrumentAny>>(response.data.clone())
+                    .expect("Invalid response data");
+                self.handle_instruments(instruments);
+            }
+            stringify!(QuoteTick) => {
+                let quotes = Arc::downcast::<Vec<QuoteTick>>(response.data.clone())
+                    .expect("Invalid response data");
+                self.handle_quotes(quotes);
+            }
+            stringify!(TradeTick) => {
+                let trades = Arc::downcast::<Vec<TradeTick>>(response.data.clone())
+                    .expect("Invalid response data");
+                self.handle_trades(trades);
+            }
+            stringify!(Bar) => {
+                let bars = Arc::downcast::<Vec<Bar>>(response.data.clone())
+                    .expect("Invalid response data");
+                self.handle_bars(bars);
+            }
+            _ => {} // Nothing else to handle
+        }
+
+        // self.msgbus.response()  // TODO: Send response to registered handler
+    }
+
+    // -- DATA HANDLERS ---------------------------------------------------------------------------
+
+    fn handle_instrument(&self, instrument: InstrumentAny) {
+        if let Err(e) = self.cache.borrow_mut().add_instrument(instrument) {
+            log::error!("Error on cache insert: {e}");
+        }
+    }
+
+    fn handle_quote(&self, quote: QuoteTick) {
+        if let Err(e) = self.cache.borrow_mut().add_quote(quote) {
+            log::error!("Error on cache insert: {e}");
+        }
+    }
+
+    fn handle_trade(&self, trade: TradeTick) {
+        if let Err(e) = self.cache.borrow_mut().add_trade(trade) {
+            log::error!("Error on cache insert: {e}");
+        }
+    }
+
+    fn handle_bar(&self, bar: Bar) {
+        if let Err(e) = self.cache.borrow_mut().add_bar(bar) {
+            log::error!("Error on cache insert: {e}");
+        }
+    }
+
+    // -- COMMAND HANDLERS ------------------------------------------------------------------------
+
     fn handle_subscribe(&mut self, client_id: ClientId, command: DataCommand) {
         match command.data_type.type_name() {
             stringify!(InstrumentAny) => self.handle_subscribe_instrument(client_id, command),
@@ -331,6 +431,7 @@ impl DataEngine<Running> {
             }
             stringify!(QuoteTick) => self.handle_subscribe_quote_ticks(client_id, command),
             stringify!(TradeTick) => self.handle_subscribe_trade_ticks(client_id, command),
+            stringify!(Bar) => self.handle_subscribe_bars(client_id, command),
             _ => panic!(
                 "Invalid data type for `Subscribe` action {}",
                 command.data_type.type_name()
@@ -346,6 +447,7 @@ impl DataEngine<Running> {
             }
             stringify!(QuoteTick) => self.handle_unsubscribe_quote_ticks(client_id, command),
             stringify!(TradeTick) => self.handle_unsubscribe_trade_ticks(client_id, command),
+            stringify!(Bar) => self.handle_unsubscribe_bars(client_id, command),
             _ => panic!(
                 "Invalid data type for `Unsubscribe` action {}",
                 command.data_type.type_name()
@@ -354,15 +456,8 @@ impl DataEngine<Running> {
     }
 
     fn handle_subscribe_instrument(&mut self, client_id: ClientId, command: DataCommand) {
-        let instrument_id = command
-            .data_type
-            .parse_instrument_id_from_metadata()
-            .expect("Invalid `InstrumentId`");
-
-        let venue = command
-            .data_type
-            .parse_venue_from_metadata()
-            .expect("Invalid `Venue`");
+        let instrument_id = command.data_type.parse_instrument_id_from_metadata();
+        let venue = command.data_type.parse_venue_from_metadata();
 
         // SAFETY: client_id already determined
         let client = self.clients.get_mut(&client_id).unwrap();
@@ -388,10 +483,10 @@ impl DataEngine<Running> {
         let instrument_id = command
             .data_type
             .parse_instrument_id_from_metadata()
-            .expect("Invalid `InstrumentId`")
-            .expect("Error on subscribe");
-        let book_type = command.data_type.parse_book_type_from_metadata().unwrap();
-        let depth = command.data_type.parse_depth_from_metadata().unwrap();
+            .expect("Error on subscribe: no 'instrument_id' in metadata");
+
+        let book_type = command.data_type.parse_book_type_from_metadata();
+        let depth = command.data_type.parse_depth_from_metadata();
 
         // SAFETY: client_id already determined
         let client = self.clients.get_mut(&client_id).unwrap();
@@ -410,10 +505,10 @@ impl DataEngine<Running> {
         let instrument_id = command
             .data_type
             .parse_instrument_id_from_metadata()
-            .expect("Invalid `InstrumentId`")
-            .expect("Error on subscribe");
-        let book_type = command.data_type.parse_book_type_from_metadata().unwrap();
-        let depth = command.data_type.parse_depth_from_metadata().unwrap();
+            .expect("Error on subscribe: no 'instrument_id' in metadata");
+
+        let book_type = command.data_type.parse_book_type_from_metadata();
+        let depth = command.data_type.parse_depth_from_metadata();
 
         // SAFETY: client_id already determined
         let client = self.clients.get_mut(&client_id).unwrap();
@@ -429,8 +524,7 @@ impl DataEngine<Running> {
         let instrument_id = command
             .data_type
             .parse_instrument_id_from_metadata()
-            .expect("Invalid `InstrumentId`")
-            .expect("Error on subscribe");
+            .expect("Error on subscribe: no 'instrument_id' in metadata");
 
         // SAFETY: client_id already determined
         let client = self.clients.get_mut(&client_id).unwrap();
@@ -442,16 +536,20 @@ impl DataEngine<Running> {
         }
     }
 
-    fn handle_unsubscribe_instrument(&mut self, client_id: ClientId, command: DataCommand) {
-        let instrument_id = command
-            .data_type
-            .parse_instrument_id_from_metadata()
-            .expect("Invalid `InstrumentId`");
+    fn handle_subscribe_bars(&mut self, client_id: ClientId, command: DataCommand) {
+        let bar_type = command.data_type.parse_bar_type_from_metadata();
 
-        let venue = command
-            .data_type
-            .parse_venue_from_metadata()
-            .expect("Invalid `Venue`");
+        // SAFETY: client_id already determined
+        let client = self.clients.get_mut(&client_id).unwrap();
+
+        if !client.subscribed_bars().contains(&bar_type) {
+            client.subscribe_bars(bar_type).expect("Error on subscribe");
+        }
+    }
+
+    fn handle_unsubscribe_instrument(&mut self, client_id: ClientId, command: DataCommand) {
+        let instrument_id = command.data_type.parse_instrument_id_from_metadata();
+        let venue = command.data_type.parse_venue_from_metadata();
 
         // SAFETY: client_id already determined
         let client = self.clients.get_mut(&client_id).unwrap();
@@ -477,8 +575,7 @@ impl DataEngine<Running> {
         let instrument_id = command
             .data_type
             .parse_instrument_id_from_metadata()
-            .expect("Invalid `InstrumentId`")
-            .expect("Error on unsubscribe");
+            .expect("Error on subscribe: no 'instrument_id' in metadata");
 
         // SAFETY: client_id already determined
         let client = self.clients.get_mut(&client_id).unwrap();
@@ -497,12 +594,10 @@ impl DataEngine<Running> {
         let instrument_id = command
             .data_type
             .parse_instrument_id_from_metadata()
-            .expect("Invalid `InstrumentId`")
-            .expect("Error on unsubscribe");
+            .expect("Error on subscribe: no 'instrument_id' in metadata");
 
         // SAFETY: client_id already determined
         let client = self.clients.get_mut(&client_id).unwrap();
-
         if client.subscribed_quote_ticks().contains(&instrument_id) {
             client
                 .unsubscribe_quote_ticks(instrument_id)
@@ -514,8 +609,7 @@ impl DataEngine<Running> {
         let instrument_id = command
             .data_type
             .parse_instrument_id_from_metadata()
-            .expect("Invalid `InstrumentId`")
-            .expect("Error on unsubscribe");
+            .expect("Error on subscribe: no 'instrument_id' in metadata");
 
         // SAFETY: client_id already determined
         let client = self.clients.get_mut(&client_id).unwrap();
@@ -527,17 +621,119 @@ impl DataEngine<Running> {
         }
     }
 
-    pub fn process(&self, data: Data) {
-        todo!()
+    fn handle_unsubscribe_bars(&mut self, client_id: ClientId, command: DataCommand) {
+        let bar_type = command.data_type.parse_bar_type_from_metadata();
+
+        // SAFETY: client_id already determined
+        let client = self.clients.get_mut(&client_id).unwrap();
+
+        if client.subscribed_bars().contains(&bar_type) {
+            client
+                .unsubscribe_bars(bar_type)
+                .expect("Error on unsubscribe");
+        }
     }
 
-    pub fn request(&self, request: DataRequest) {
-        todo!()
+    // -- REQUEST HANDLERS ------------------------------------------------------------------------
+
+    fn handle_request(&mut self, client_id: ClientId, request: DataRequest) {
+        // SAFETY: client_id already determined
+        let client = self.clients.get_mut(&client_id).unwrap();
+        client.request(request.correlation_id, request.data_type);
     }
 
-    pub fn response(&self, response: DataResponse) {
-        todo!()
+    fn handle_instruments_request(&mut self, client_id: ClientId, request: DataRequest) {
+        let instrument_id = request.data_type.parse_instrument_id_from_metadata();
+        let venue = request.data_type.parse_venue_from_metadata();
+        let start = request.data_type.parse_start_from_metadata();
+        let end = request.data_type.parse_end_from_metadata();
+
+        // SAFETY: client_id already determined
+        let client = self.clients.get_mut(&client_id).unwrap();
+
+        if let Some(instrument_id) = instrument_id {
+            client.request_instrument(request.correlation_id, instrument_id, start, end)
+        }
+
+        if let Some(venue) = venue {
+            client.request_instruments(request.correlation_id, venue, start, end)
+        }
     }
+
+    fn handle_quote_ticks_request(&mut self, client_id: ClientId, request: DataRequest) {
+        let instrument_id = request
+            .data_type
+            .parse_instrument_id_from_metadata()
+            .expect("Error on request: no 'instrument_id' found in metadata");
+        let start = request.data_type.parse_start_from_metadata();
+        let end = request.data_type.parse_end_from_metadata();
+        let limit = request.data_type.parse_limit_from_metadata();
+
+        // SAFETY: client_id already determined
+        let client = self.clients.get_mut(&client_id).unwrap();
+        client.request_quote_ticks(request.correlation_id, instrument_id, start, end, limit)
+    }
+
+    fn handle_trade_ticks_request(&mut self, client_id: ClientId, request: DataRequest) {
+        let instrument_id = request
+            .data_type
+            .parse_instrument_id_from_metadata()
+            .expect("Error on request: no 'instrument_id' found in metadata");
+        let start = request.data_type.parse_start_from_metadata();
+        let end = request.data_type.parse_end_from_metadata();
+        let limit = request.data_type.parse_limit_from_metadata();
+
+        // SAFETY: client_id already determined
+        let client = self.clients.get_mut(&client_id).unwrap();
+        client.request_trade_ticks(request.correlation_id, instrument_id, start, end, limit)
+    }
+
+    fn handle_bars_request(&mut self, client_id: ClientId, request: DataRequest) {
+        let bar_type = request.data_type.parse_bar_type_from_metadata();
+        let start = request.data_type.parse_start_from_metadata();
+        let end = request.data_type.parse_end_from_metadata();
+        let limit = request.data_type.parse_limit_from_metadata();
+
+        // SAFETY: client_id already determined
+        let client = self.clients.get_mut(&client_id).unwrap();
+        client.request_bars(request.correlation_id, bar_type, start, end, limit)
+    }
+
+    // -- RESPONSE HANDLERS -----------------------------------------------------------------------
+
+    fn handle_instruments(&self, instruments: Arc<Vec<InstrumentAny>>) {
+        for instrument in instruments.iter() {
+            if let Err(e) = self.cache.borrow_mut().add_instrument(instrument.clone()) {
+                log::error!("Error on cache insert: {e}");
+            }
+        }
+    }
+
+    fn handle_quotes(&self, quotes: Arc<Vec<QuoteTick>>) {
+        for quote in quotes.iter() {
+            if let Err(e) = self.cache.borrow_mut().add_quote(*quote) {
+                log::error!("Error on cache insert: {e}");
+            }
+        }
+    }
+
+    fn handle_trades(&self, trades: Arc<Vec<TradeTick>>) {
+        for trade in trades.iter() {
+            if let Err(e) = self.cache.borrow_mut().add_trade(*trade) {
+                log::error!("Error on cache insert: {e}");
+            }
+        }
+    }
+
+    fn handle_bars(&self, bars: Arc<Vec<Bar>>) {
+        for bar in bars.iter() {
+            if let Err(e) = self.cache.borrow_mut().add_bar(*bar) {
+                log::error!("Error on cache insert: {e}");
+            }
+        }
+    }
+
+    // -- INTERNAL --------------------------------------------------------------------------------
 
     fn update_order_book(&self, data: &Data) {
         // Only apply data if there is a book being managed,

@@ -21,6 +21,7 @@
 
 use std::{any::Any, cell::RefCell, collections::HashSet, rc::Rc, sync::Arc};
 
+use indexmap::IndexMap;
 use nautilus_common::{cache::Cache, messages::data::DataResponse, msgbus::MessageBus};
 use nautilus_core::{correctness, nanos::UnixNanos, time::AtomicTime, uuid::UUID4};
 use nautilus_model::{
@@ -62,13 +63,13 @@ pub trait DataClient {
         &mut self,
         instrument_id: InstrumentId,
         book_type: BookType,
-        depth: usize,
+        depth: Option<usize>,
     ) -> anyhow::Result<()>;
     fn subscribe_order_book_snapshots(
         &mut self,
         instrument_id: InstrumentId,
         book_type: BookType,
-        depth: usize,
+        depth: Option<usize>,
     ) -> anyhow::Result<()>;
     fn subscribe_quote_ticks(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn subscribe_trade_ticks(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
@@ -90,48 +91,49 @@ pub trait DataClient {
     fn unsubscribe_venue_status(&mut self, venue: Venue) -> anyhow::Result<()>;
     fn unsubscribe_instrument_status(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn unsubscribe_instrument_close(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
+    fn request(&mut self, correlation_id: UUID4, data_type: DataType);
     fn request_instruments(
         &mut self,
-        instrument_id: InstrumentId,
         correlation_id: UUID4,
-        start: UnixNanos,
-        end: UnixNanos,
+        venue: Venue,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
     );
     fn request_instrument(
         &mut self,
         correlation_id: UUID4,
         instrument_id: InstrumentId,
-        start: UnixNanos,
-        end: UnixNanos,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
     );
     fn request_order_book_snapshot(
         &mut self,
         correlation_id: UUID4,
         instrument_id: InstrumentId,
-        depth: usize,
+        depth: Option<usize>,
     );
     fn request_quote_ticks(
         &mut self,
         correlation_id: UUID4,
         instrument_id: InstrumentId,
-        start: UnixNanos,
-        end: UnixNanos,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
         limit: Option<usize>,
     );
     fn request_trade_ticks(
         &mut self,
         correlation_id: UUID4,
         instrument_id: InstrumentId,
-        start: UnixNanos,
-        end: UnixNanos,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
         limit: Option<usize>,
     );
     fn request_bars(
         &mut self,
         correlation_id: UUID4,
-        instrument_id: InstrumentId,
-        start: UnixNanos,
-        end: UnixNanos,
+        bar_type: BarType,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
         limit: Option<usize>,
     );
 }
@@ -503,8 +505,20 @@ impl DataClientCore {
     }
 
     pub fn handle_instrument(&self, instrument: InstrumentAny, correlation_id: UUID4) {
+        let instrument_id = instrument.id();
+        let metadata = IndexMap::from([("instrument_id".to_string(), instrument_id.to_string())]);
+        let data_type = DataType::new(stringify!(InstrumentAny), Some(metadata));
         let data = Arc::new(instrument);
-        let response = DataResponse::new(UUID4::new(), correlation_id, self.client_id, data);
+
+        let response = DataResponse::new(
+            UUID4::new(),
+            correlation_id,
+            self.client_id,
+            instrument_id.venue,
+            data_type,
+            data,
+        );
+
         self.msgbus
             .borrow()
             .send("DataEngine.response", &response as &dyn Any); // TODO: Optimize
@@ -516,8 +530,19 @@ impl DataClientCore {
         instruments: Vec<InstrumentAny>,
         correlation_id: UUID4,
     ) {
+        let metadata = IndexMap::from([("venue".to_string(), venue.to_string())]);
+        let data_type = DataType::new(stringify!(InstrumentAny), Some(metadata));
         let data = Arc::new(instruments);
-        let response = DataResponse::new(UUID4::new(), correlation_id, self.client_id, data);
+
+        let response = DataResponse::new(
+            UUID4::new(),
+            correlation_id,
+            self.client_id,
+            venue,
+            data_type,
+            data,
+        );
+
         self.msgbus
             .borrow()
             .send("DataEngine.response", &response as &dyn Any); // TODO: Optimize
@@ -529,8 +554,19 @@ impl DataClientCore {
         quotes: Vec<QuoteTick>,
         correlation_id: UUID4,
     ) {
+        let metadata = IndexMap::from([("instrument_id".to_string(), instrument_id.to_string())]);
+        let data_type = DataType::new(stringify!(QuoteTick), Some(metadata));
         let data = Arc::new(quotes);
-        let response = DataResponse::new(UUID4::new(), correlation_id, self.client_id, data);
+
+        let response = DataResponse::new(
+            UUID4::new(),
+            correlation_id,
+            self.client_id,
+            instrument_id.venue,
+            data_type,
+            data,
+        );
+
         self.msgbus
             .borrow()
             .send("DataEngine.response", &response as &dyn Any); // TODO: Optimize
@@ -542,16 +578,38 @@ impl DataClientCore {
         trades: Vec<TradeTick>,
         correlation_id: UUID4,
     ) {
+        let metadata = IndexMap::from([("instrument_id".to_string(), instrument_id.to_string())]);
+        let data_type = DataType::new(stringify!(TradeTick), Some(metadata));
         let data = Arc::new(trades);
-        let response = DataResponse::new(UUID4::new(), correlation_id, self.client_id, data);
+
+        let response = DataResponse::new(
+            UUID4::new(),
+            correlation_id,
+            self.client_id,
+            instrument_id.venue,
+            data_type,
+            data,
+        );
+
         self.msgbus
             .borrow()
             .send("DataEngine.response", &response as &dyn Any); // TODO: Optimize
     }
 
-    pub fn handle_bars(&self, instrument_id: &InstrumentId, bars: Vec<Bar>, correlation_id: UUID4) {
+    pub fn handle_bars(&self, bar_type: &BarType, bars: Vec<Bar>, correlation_id: UUID4) {
+        let metadata = IndexMap::from([("bar_type".to_string(), bar_type.to_string())]);
+        let data_type = DataType::new(stringify!(Bar), Some(metadata));
         let data = Arc::new(bars);
-        let response = DataResponse::new(UUID4::new(), correlation_id, self.client_id, data);
+
+        let response = DataResponse::new(
+            UUID4::new(),
+            correlation_id,
+            self.client_id,
+            bar_type.instrument_id.venue,
+            data_type,
+            data,
+        );
+
         self.msgbus
             .borrow()
             .send("DataEngine.response", &response as &dyn Any); // TODO: Optimize
