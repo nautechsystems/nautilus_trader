@@ -58,6 +58,25 @@ pub enum Data {
     Bar(Bar),
 }
 
+impl Data {
+    /// Returns the instrument ID for the data.
+    pub fn instrument_id(&self) -> &InstrumentId {
+        match self {
+            Self::Delta(delta) => &delta.instrument_id,
+            Self::Deltas(deltas) => &deltas.instrument_id,
+            Self::Depth10(depth) => &depth.instrument_id,
+            Self::Quote(quote) => &quote.instrument_id,
+            Self::Trade(trade) => &trade.instrument_id,
+            Self::Bar(bar) => &bar.bar_type.instrument_id,
+        }
+    }
+
+    /// Returns whether the data is a type of order book data.
+    pub fn is_order_book_data(&self) -> bool {
+        matches!(self, Self::Delta(_) | Self::Deltas(_) | Self::Depth10(_))
+    }
+}
+
 pub trait GetTsInit {
     fn ts_init(&self) -> UnixNanos;
 }

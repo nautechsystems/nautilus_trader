@@ -2185,11 +2185,11 @@ void orderbook_clear_bids(struct OrderBook_API *book, uint64_t sequence, uint64_
 
 void orderbook_clear_asks(struct OrderBook_API *book, uint64_t sequence, uint64_t ts_event);
 
-void orderbook_apply_delta(struct OrderBook_API *book, struct OrderBookDelta_t delta);
+void orderbook_apply_delta(struct OrderBook_API *book, const struct OrderBookDelta_t *delta);
 
 void orderbook_apply_deltas(struct OrderBook_API *book, const struct OrderBookDeltas_API *deltas);
 
-void orderbook_apply_depth(struct OrderBook_API *book, struct OrderBookDepth10_t depth);
+void orderbook_apply_depth(struct OrderBook_API *book, const struct OrderBookDepth10_t *depth);
 
 CVec orderbook_bids(struct OrderBook_API *book);
 

@@ -23,6 +23,7 @@ use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
     marker::PhantomData,
+    ops::Deref,
     rc::Rc,
 };
 
@@ -536,6 +537,19 @@ impl DataEngine<Running> {
 
     pub fn response(&self, response: DataResponse) {
         todo!()
+    }
+
+    fn update_order_book(&self, data: &Data) {
+        // Only apply data if there is a book being managed,
+        // as it may be being managed manually.
+        if let Some(book) = self.cache.borrow_mut().order_book(data.instrument_id()) {
+            match data {
+                Data::Delta(delta) => book.apply_delta(delta),
+                Data::Deltas(deltas) => book.apply_deltas(deltas.deref()),
+                Data::Depth10(depth) => book.apply_depth(depth),
+                _ => log::error!("Invalid data type for book update"),
+            }
+        }
     }
 }
 
