@@ -1,4 +1,8 @@
-use std::collections::HashMap;
+use std::{
+    cell::RefCell,
+    collections::{HashMap, VecDeque},
+    rc::Rc,
+};
 
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::ClientId;
@@ -31,23 +35,44 @@ struct LiveDataEngine;
 pub struct DataEngineConfig {
     clients: HashMap<ClientId, Box<dyn DataClient>>,
     actors: HashMap<UUID4, Box<dyn Actor>>,
+    sync_data_client: SyncDataEngineClient,
     req_tx: tokio::sync::mpsc::UnboundedSender<DataRequest>,
     req_rx: tokio::sync::mpsc::UnboundedReceiver<DataRequest>,
     resp_tx: tokio::sync::mpsc::Sender<DataResponse>,
     resp_rx: tokio::sync::mpsc::Receiver<DataResponse>,
+    live: bool,
+}
+
+#[derive(Clone)]
+struct SyncDataEngineClient {
+    req_queue: Rc<RefCell<VecDeque<DataRequest>>>,
+}
+
+#[derive(Clone)]
+struct AsyncDataEngineClient {
+    req_tx: tokio::sync::mpsc::UnboundedSender<DataRequest>,
+}
+
+pub trait DataEngineClient {
+    fn send(&self, req: DataRequest);
+}
+
+impl DataEngineClient for SyncDataEngineClient {
+    fn send(&self, req: DataRequest) {
+        self.req_queue.borrow_mut().push_back(req);
+    }
 }
 
 impl DataEngineConfig {
-    pub fn new() -> Self {
+    pub fn new(live: bool) -> Self {
         let (req_tx, req_rx) = tokio::sync::mpsc::unbounded_channel::<DataRequest>();
         let (resp_tx, resp_rx) = tokio::sync::mpsc::channel::<DataResponse>(10);
+        let req_queue = Rc::new(RefCell::new(VecDeque::new()));
         Self {
             clients: HashMap::new(),
             actors: HashMap::new(),
-            req_tx,
-            req_rx,
-            resp_tx,
-            resp_rx,
+            sync_data_client: SyncDataEngineClient { req_queue },
+            live,
         }
     }
 
@@ -58,11 +83,18 @@ impl DataEngineConfig {
     pub fn add_actor(&mut self, actor: Box<dyn Actor>) {
         self.actors.insert(actor.id(), actor);
     }
+
+    pub fn get_data_engine_client(&self) -> Rc<dyn DataEngineClient> {
+        if self.live {
+        } else {
+            self.sync_data_client
+        }
+    }
 }
 
 impl Default for DataEngineConfig {
     fn default() -> Self {
-        Self::new()
+        Self::new(false)
     }
 }
 
@@ -71,23 +103,24 @@ impl SyncDataEngine {
         let DataEngineConfig {
             clients,
             actors,
-            req_tx: _,
-            req_rx,
-            resp_tx,
-            mut resp_rx,
+            req_queue,
+            live,
         } = config;
 
-        // TODO: Run in a separate thread
-        let request_handler_task = request_handler_task(req_rx, resp_tx, clients);
-
         // TODO: consider which tokio runtime to use for blocking
-        while let Some(resp) = resp_rx.blocking_recv() {
-            if let Some(actor) = actors.get(&resp.actor_id) {
-                actor.handle(resp);
+        while let Some(req) = req_queue.borrow_mut().pop_front() {
+            let client = clients.get(&req.client_id);
+            let actor = actors.get(&req.actor_id);
+            match (client, actor) {
+                (Some(client), Some(actor)) => {
+                    let resp = client.handle(req);
+                    actor.handle(resp)
+                }
+                _ => {
+                    // TODO: log error
+                }
             }
         }
-
-        request_handler_task.abort();
     }
 }
 
