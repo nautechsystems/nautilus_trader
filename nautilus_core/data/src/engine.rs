@@ -122,6 +122,7 @@ impl<S: State> DataEngine<S> {
         }
     }
 
+    #[must_use]
     pub fn state(&self) -> ComponentState {
         S::state()
     }
@@ -258,30 +259,34 @@ impl DataEngine<PreInitialized> {
 }
 
 impl DataEngine<Ready> {
+    #[must_use]
     pub fn start(self) -> DataEngine<Starting> {
         for client in self.clients.values() {
-            client.start()
+            client.start();
         }
         self.transition()
     }
 
+    #[must_use]
     pub fn stop(self) -> DataEngine<Stopping> {
         for client in self.clients.values() {
-            client.stop()
+            client.stop();
         }
         self.transition()
     }
 
-    pub fn reset(self) -> DataEngine<Ready> {
+    #[must_use]
+    pub fn reset(self) -> Self {
         for client in self.clients.values() {
-            client.reset()
+            client.reset();
         }
         self.transition()
     }
 
+    #[must_use]
     pub fn dispose(mut self) -> DataEngine<Disposed> {
         for client in self.clients.values() {
-            client.dispose()
+            client.dispose();
         }
         self.clock.cancel_timers();
         self.transition()
@@ -289,6 +294,7 @@ impl DataEngine<Ready> {
 }
 
 impl DataEngine<Starting> {
+    #[must_use]
     pub fn on_start(self) -> DataEngine<Running> {
         self.transition()
     }
@@ -303,6 +309,7 @@ impl DataEngine<Running> {
         todo!() // Implement actual client connections for a live/sandbox context
     }
 
+    #[must_use]
     pub fn stop(self) -> DataEngine<Stopping> {
         self.transition()
     }
@@ -786,11 +793,11 @@ impl DataEngine<Running> {
         let client = self.clients.get_mut(&client_id).unwrap();
 
         if let Some(instrument_id) = instrument_id {
-            client.request_instrument(request.correlation_id, instrument_id, start, end)
+            client.request_instrument(request.correlation_id, instrument_id, start, end);
         }
 
         if let Some(venue) = venue {
-            client.request_instruments(request.correlation_id, venue, start, end)
+            client.request_instruments(request.correlation_id, venue, start, end);
         }
     }
 
@@ -805,7 +812,7 @@ impl DataEngine<Running> {
 
         // SAFETY: client_id already determined
         let client = self.clients.get_mut(&client_id).unwrap();
-        client.request_quote_ticks(request.correlation_id, instrument_id, start, end, limit)
+        client.request_quote_ticks(request.correlation_id, instrument_id, start, end, limit);
     }
 
     fn handle_trade_ticks_request(&mut self, client_id: ClientId, request: DataRequest) {
@@ -819,7 +826,7 @@ impl DataEngine<Running> {
 
         // SAFETY: client_id already determined
         let client = self.clients.get_mut(&client_id).unwrap();
-        client.request_trade_ticks(request.correlation_id, instrument_id, start, end, limit)
+        client.request_trade_ticks(request.correlation_id, instrument_id, start, end, limit);
     }
 
     fn handle_bars_request(&mut self, client_id: ClientId, request: DataRequest) {
@@ -830,7 +837,7 @@ impl DataEngine<Running> {
 
         // SAFETY: client_id already determined
         let client = self.clients.get_mut(&client_id).unwrap();
-        client.request_bars(request.correlation_id, bar_type, start, end, limit)
+        client.request_bars(request.correlation_id, bar_type, start, end, limit);
     }
 
     // -- RESPONSE HANDLERS -----------------------------------------------------------------------
@@ -875,7 +882,7 @@ impl DataEngine<Running> {
         if let Some(book) = self.cache.borrow_mut().order_book(data.instrument_id()) {
             match data {
                 Data::Delta(delta) => book.apply_delta(delta),
-                Data::Deltas(deltas) => book.apply_deltas(deltas.deref()),
+                Data::Deltas(deltas) => book.apply_deltas(deltas),
                 Data::Depth10(depth) => book.apply_depth(depth),
                 _ => log::error!("Invalid data type for book update"),
             }
@@ -884,16 +891,19 @@ impl DataEngine<Running> {
 }
 
 impl DataEngine<Stopping> {
+    #[must_use]
     pub fn on_stop(self) -> DataEngine<Stopped> {
         self.transition()
     }
 }
 
 impl DataEngine<Stopped> {
+    #[must_use]
     pub fn reset(self) -> DataEngine<Ready> {
         self.transition()
     }
 
+    #[must_use]
     pub fn dispose(self) -> DataEngine<Disposed> {
         self.transition()
     }

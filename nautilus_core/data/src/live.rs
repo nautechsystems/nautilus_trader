@@ -41,6 +41,7 @@ pub struct DataEngineConfig {
 }
 
 impl DataEngineConfig {
+    #[must_use]
     pub fn new() -> Self {
         let (req_tx, req_rx) = tokio::sync::mpsc::unbounded_channel::<DataRequest>();
         let (resp_tx, resp_rx) = tokio::sync::mpsc::channel::<DataResponse>(10);
@@ -130,7 +131,7 @@ fn request_handler_task(
                 let resp = client.handle(req);
                 // TODO add logging
                 match resp_tx.send(resp).await {
-                    Ok(_) => todo!(),
+                    Ok(()) => todo!(),
                     Err(_) => todo!(),
                 };
             }
