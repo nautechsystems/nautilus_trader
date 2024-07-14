@@ -27,6 +27,7 @@ pub struct DataRequest {
     pub client_id: ClientId,
     pub venue: Venue,
     pub data_type: DataType,
+    pub ts_init: UnixNanos,
 }
 
 pub struct DataResponse {
@@ -36,6 +37,7 @@ pub struct DataResponse {
     pub venue: Venue,
     pub data_type: DataType,
     pub data: Arc<dyn Any + Send + Sync>,
+    pub ts_init: UnixNanos,
 }
 
 impl DataResponse {
@@ -46,6 +48,7 @@ impl DataResponse {
         venue: Venue,
         data_type: DataType,
         data: T,
+        ts_init: UnixNanos,
     ) -> Self {
         Self {
             response_id,
@@ -54,6 +57,7 @@ impl DataResponse {
             venue,
             data_type,
             data: Arc::new(data),
+            ts_init,
         }
     }
 }
