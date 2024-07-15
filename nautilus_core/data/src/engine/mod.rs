@@ -73,7 +73,6 @@ pub struct DataEngine<State = PreInitialized> {
     state: PhantomData<State>,
     clock: Box<dyn Clock>,
     cache: Rc<RefCell<Cache>>,
-    msgbus: Rc<RefCell<MessageBus>>,
     clients: HashMap<ClientId, Box<dyn DataClient>>,
     default_client: Option<Box<dyn DataClient>>,
     routing_map: HashMap<Venue, ClientId>,
@@ -87,17 +86,11 @@ pub struct DataEngine<State = PreInitialized> {
 
 impl DataEngine {
     #[must_use]
-    pub fn new(
-        clock: Box<dyn Clock>,
-        cache: Rc<RefCell<Cache>>,
-        msgbus: Rc<RefCell<MessageBus>>,
-        config: DataEngineConfig,
-    ) -> Self {
+    pub fn new(clock: Box<dyn Clock>, cache: Rc<RefCell<Cache>>, config: DataEngineConfig) -> Self {
         Self {
             state: PhantomData::<PreInitialized>,
             clock,
             cache,
-            msgbus,
             clients: HashMap::new(),
             default_client: None,
             routing_map: HashMap::new(),
@@ -115,7 +108,6 @@ impl<S: State> DataEngine<S> {
             state: PhantomData,
             clock: self.clock,
             cache: self.cache,
-            msgbus: self.msgbus,
             clients: self.clients,
             default_client: self.default_client,
             routing_map: self.routing_map,
@@ -330,9 +322,7 @@ impl DataEngine<Running> {
     }
 
     pub fn execute(&mut self, command: DataCommand) {
-        if self.config.debug {
-            log::debug!("{}", format!("{RECV}{CMD} commmand")); // TODO: Display for command
-        }
+        log::debug!("{}", format!("{RECV}{CMD} commmand")); // TODO: Display for command
 
         // Determine the client ID
         let client_id = if self.clients.contains_key(&command.client_id) {
@@ -356,9 +346,7 @@ impl DataEngine<Running> {
     }
 
     pub fn request(&mut self, request: DataRequest) {
-        if self.config.debug {
-            log::debug!("{}", format!("{RECV}{RES} response")); // TODO: Display for response
-        }
+        log::debug!("{}", format!("{RECV}{RES} response")); // TODO: Display for response
 
         // Determine the client ID
         let client_id = if self.clients.contains_key(&request.client_id) {
@@ -385,9 +373,7 @@ impl DataEngine<Running> {
     }
 
     pub fn response(&self, response: DataResponse) {
-        if self.config.debug {
-            log::debug!("{}", format!("{RECV}{RES} response")); // TODO: Display for response
-        }
+        log::debug!("{}", format!("{RECV}{RES} response")); // TODO: Display for response
 
         match response.data_type.type_name() {
             stringify!(InstrumentAny) => {
@@ -784,7 +770,7 @@ impl DataEngine<Running> {
     fn handle_request(&mut self, client_id: ClientId, request: DataRequest) {
         // SAFETY: client_id already determined
         let client = self.clients.get_mut(&client_id).unwrap();
-        client.request(request.correlation_id, request.data_type);
+        client.request(request.req_id, request.data_type);
     }
 
     fn handle_instruments_request(&mut self, client_id: ClientId, request: DataRequest) {
@@ -797,11 +783,11 @@ impl DataEngine<Running> {
         let client = self.clients.get_mut(&client_id).unwrap();
 
         if let Some(instrument_id) = instrument_id {
-            client.request_instrument(request.correlation_id, instrument_id, start, end);
+            client.request_instrument(request.req_id, instrument_id, start, end);
         }
 
         if let Some(venue) = venue {
-            client.request_instruments(request.correlation_id, venue, start, end);
+            client.request_instruments(request.req_id, venue, start, end);
         }
     }
 
@@ -816,7 +802,7 @@ impl DataEngine<Running> {
 
         // SAFETY: client_id already determined
         let client = self.clients.get_mut(&client_id).unwrap();
-        client.request_quote_ticks(request.correlation_id, instrument_id, start, end, limit);
+        client.request_quote_ticks(request.req_id, instrument_id, start, end, limit);
     }
 
     fn handle_trade_ticks_request(&mut self, client_id: ClientId, request: DataRequest) {
@@ -830,7 +816,7 @@ impl DataEngine<Running> {
 
         // SAFETY: client_id already determined
         let client = self.clients.get_mut(&client_id).unwrap();
-        client.request_trade_ticks(request.correlation_id, instrument_id, start, end, limit);
+        client.request_trade_ticks(request.req_id, instrument_id, start, end, limit);
     }
 
     fn handle_bars_request(&mut self, client_id: ClientId, request: DataRequest) {
@@ -841,7 +827,7 @@ impl DataEngine<Running> {
 
         // SAFETY: client_id already determined
         let client = self.clients.get_mut(&client_id).unwrap();
-        client.request_bars(request.correlation_id, bar_type, start, end, limit);
+        client.request_bars(request.req_id, bar_type, start, end, limit);
     }
 
     // -- RESPONSE HANDLERS -----------------------------------------------------------------------
