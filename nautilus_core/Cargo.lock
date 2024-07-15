@@ -2640,6 +2640,7 @@ name = "nautilus-data"
 version = "0.27.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "criterion",
  "derive_builder",
  "indexmap 2.2.6",
