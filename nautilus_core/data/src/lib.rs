@@ -27,6 +27,7 @@
 //! - `ffi`: Enables the C foreign function interface (FFI) from `cbindgen`
 //! - `python`: Enables Python bindings from `pyo3`
 
+pub mod aggregation;
 pub mod client;
 #[allow(dead_code)]
 pub mod data_engine;

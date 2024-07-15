@@ -88,6 +88,21 @@ pub fn check_string_contains(s: &str, pat: &str, param: &str) -> anyhow::Result<
     Ok(())
 }
 
+/// Checks the values are equal.
+pub fn check_equal<T: PartialEq + std::fmt::Debug>(
+    lhs: T,
+    rhs: T,
+    lhs_param: &str,
+    rhs_param: &str,
+) -> anyhow::Result<()> {
+    if lhs != rhs {
+        anyhow::bail!(
+            "{FAILED} '{lhs_param}' value of {lhs:?} was not equal to '{rhs_param}' value of {rhs:?}",
+        );
+    }
+    Ok(())
+}
+
 /// Checks the `u8` values are equal.
 pub fn check_equal_u8(lhs: u8, rhs: u8, lhs_param: &str, rhs_param: &str) -> anyhow::Result<()> {
     if lhs != rhs {
@@ -387,6 +402,26 @@ mod tests {
     #[case("a", "b")]
     fn test_check_string_contains_when_does_not_contain(#[case] s: &str, #[case] pat: &str) {
         assert!(check_string_contains(s, pat, "value").is_err());
+    }
+
+    #[rstest]
+    #[case(0u8, 0u8, "left", "right", true)]
+    #[case(1u8, 1u8, "left", "right", true)]
+    #[case(0u8, 1u8, "left", "right", false)]
+    #[case(1u8, 0u8, "left", "right", false)]
+    #[case(10i32, 10i32, "left", "right", true)]
+    #[case(10i32, 20i32, "left", "right", false)]
+    #[case("hello", "hello", "left", "right", true)]
+    #[case("hello", "world", "left", "right", false)]
+    fn test_check_equal<T: PartialEq + std::fmt::Debug>(
+        #[case] lhs: T,
+        #[case] rhs: T,
+        #[case] lhs_param: &str,
+        #[case] rhs_param: &str,
+        #[case] expected: bool,
+    ) {
+        let result = check_equal(lhs, rhs, lhs_param, rhs_param).is_ok();
+        assert_eq!(result, expected);
     }
 
     #[rstest]
