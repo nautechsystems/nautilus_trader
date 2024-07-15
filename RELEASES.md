@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Refactor order submission error handling for Interactive Brokers (#1783), thanks @rsmb7z
 - Improved live reconciliation robustness (will now generate inferred orders necessary to align external position state)
 - Improved tests for Interactive Brokers (#1776), thanks @mylesgamez
+- Upgrade `datafusion` to 40.0.0
 
 ### Breaking Changes
 - Rust `OrderBook` API now takes data by reference instead of by value
