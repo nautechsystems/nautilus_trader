@@ -29,8 +29,4 @@
 
 pub mod aggregation;
 pub mod client;
-#[allow(dead_code)]
-pub mod data_engine;
 pub mod engine;
-#[allow(dead_code)]
-pub mod live;

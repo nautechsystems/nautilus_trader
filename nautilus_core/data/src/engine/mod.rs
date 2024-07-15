@@ -19,6 +19,10 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+pub mod backtest;
+pub mod config;
+pub mod live;
+
 use std::{
     any::Any,
     cell::RefCell,
