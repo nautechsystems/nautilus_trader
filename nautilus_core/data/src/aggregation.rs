@@ -32,6 +32,7 @@ use nautilus_model::{
     types::{fixed::FIXED_SCALAR, price::Price, quantity::Quantity},
 };
 
+/// Provides a generic bar builder for aggregation.
 pub struct BarBuilder {
     bar_type: BarType,
     size_precision: u8,
@@ -48,6 +49,11 @@ pub struct BarBuilder {
 }
 
 impl BarBuilder {
+    /// Creates a new [`BarBuilder`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `instrument.id` is not equal to the `bar_type.instrument_id`.
     #[must_use]
     pub fn new(instrument: &InstrumentAny, bar_type: BarType) -> Self {
         correctness::check_equal(
@@ -74,6 +80,7 @@ impl BarBuilder {
         }
     }
 
+    /// Set the initial values for a partially completed bar.
     pub fn set_partial(&mut self, partial_bar: Bar) {
         if self.partial_set {
             return; // Already updated
@@ -103,6 +110,7 @@ impl BarBuilder {
         self.initialized = true;
     }
 
+    /// Update the bar builder.
     pub fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
         if ts_event < self.ts_last {
             return; // Not applicable
@@ -128,6 +136,9 @@ impl BarBuilder {
         self.ts_last = ts_event;
     }
 
+    /// Reset the bar builder.
+    ///
+    /// All stateful fields are reset to their initial value.
     pub fn reset(&mut self) {
         self.open = None;
         self.high = None;
@@ -136,10 +147,12 @@ impl BarBuilder {
         self.count = 0;
     }
 
+    /// Return the aggregated bar and reset.
     pub fn build_now(&mut self) -> Bar {
         self.build(self.ts_last, self.ts_last)
     }
 
+    /// Return the aggregated bar with the given closing timestamp, and reset.
     pub fn build(&mut self, ts_event: UnixNanos, ts_init: UnixNanos) -> Bar {
         if self.open.is_none() {
             self.open = self.last_close;
@@ -148,6 +161,7 @@ impl BarBuilder {
             self.close = self.last_close;
         }
 
+        // SAFETY: The open was checked, so we can assume all prices are Some
         let bar = Bar::new(
             self.bar_type,
             self.open.unwrap(),
@@ -165,6 +179,7 @@ impl BarBuilder {
     }
 }
 
+/// Provides a means of aggregating specified bars and sending to a registered handler.
 pub struct BarAggregator {
     builder: BarBuilder,
     handler: Arc<dyn Fn(Bar) + Send + Sync>,
@@ -173,20 +188,17 @@ pub struct BarAggregator {
 }
 
 impl BarAggregator {
+    /// Creates a new [`BarAggregator`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `instrument.id` is not equal to the `bar_type.instrument_id`.
     pub fn new(
         instrument: &InstrumentAny,
         bar_type: BarType,
         handler: Arc<dyn Fn(Bar) + Send + Sync>,
         await_partial: bool,
     ) -> Self {
-        correctness::check_equal(
-            instrument.id(),
-            bar_type.instrument_id,
-            "instrument.id",
-            "bar_type.instrument_id",
-        )
-        .unwrap();
-
         Self {
             builder: BarBuilder::new(instrument, bar_type),
             handler,
@@ -199,22 +211,25 @@ impl BarAggregator {
         self.await_partial = value;
     }
 
-    pub fn handle_quote_tick(&mut self, tick: QuoteTick) {
+    /// Update the aggregator with the given quote.
+    pub fn handle_quote_tick(&mut self, quote: QuoteTick) {
         if !self.await_partial {
             self.apply_update(
-                tick.extract_price(self.bar_type.spec.price_type),
-                tick.extract_volume(self.bar_type.spec.price_type),
-                tick.ts_event,
+                quote.extract_price(self.bar_type.spec.price_type),
+                quote.extract_volume(self.bar_type.spec.price_type),
+                quote.ts_event,
             );
         }
     }
 
-    pub fn handle_trade_tick(&mut self, tick: TradeTick) {
+    /// Update the aggregator with the given trade.
+    pub fn handle_trade_tick(&mut self, trade: TradeTick) {
         if !self.await_partial {
-            self.apply_update(tick.price, tick.size, tick.ts_event);
+            self.apply_update(trade.price, trade.size, trade.ts_event);
         }
     }
 
+    /// Set the initial values for a partially completed bar.
     pub fn set_partial(&mut self, partial_bar: Bar) {
         self.builder.set_partial(partial_bar);
     }
@@ -234,11 +249,20 @@ impl BarAggregator {
     }
 }
 
+/// Provides a means of building tick bars from quote and trade ticks.
+///
+/// When received tick count reaches the step threshold of the bar
+/// specification, then a bar is created and sent to the handler.
 pub struct TickBarAggregator {
     aggregator: BarAggregator,
 }
 
 impl TickBarAggregator {
+    /// Creates a new [`TickBarAggregator`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `instrument.id` is not equal to the `bar_type.instrument_id`.
     pub fn new(
         instrument: &InstrumentAny,
         bar_type: BarType,
@@ -249,20 +273,27 @@ impl TickBarAggregator {
         }
     }
 
-    fn apply_update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
+    /// Apply the given update to the aggregator.
+    pub fn apply_update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
         self.aggregator.apply_update(price, size, ts_event);
 
-        if self.aggregator.builder.count == self.aggregator.bar_type.spec.step {
+        if self.aggregator.builder.count >= self.aggregator.bar_type.spec.step {
             self.aggregator.build_now_and_send();
         }
     }
 }
 
+/// Provides a means of building volume bars from quote and trade ticks.
 pub struct VolumeBarAggregator {
     aggregator: BarAggregator,
 }
 
 impl VolumeBarAggregator {
+    /// Creates a new [`VolumeBarAggregator`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `instrument.id` is not equal to the `bar_type.instrument_id`.
     pub fn new(
         instrument: &InstrumentAny,
         bar_type: BarType,
@@ -273,6 +304,7 @@ impl VolumeBarAggregator {
         }
     }
 
+    /// Apply the given update to the aggregator.
     #[allow(unused_assignments)] // Temp for development
     fn apply_update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
         let mut raw_size_update = size.raw;
@@ -302,12 +334,21 @@ impl VolumeBarAggregator {
     }
 }
 
+/// Provides a means of building value bars from ticks.
+///
+/// When received value reaches the step threshold of the bar
+/// specification, then a bar is created and sent to the handler.
 pub struct ValueBarAggregator {
     aggregator: BarAggregator,
     cum_value: f64,
 }
 
 impl ValueBarAggregator {
+    /// Creates a new [`ValueBarAggregator`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the `instrument.id` is not equal to the `bar_type.instrument_id`.
     pub fn new(
         instrument: &InstrumentAny,
         bar_type: BarType,
@@ -320,11 +361,13 @@ impl ValueBarAggregator {
     }
 
     #[must_use]
+    /// Returns the cumulative value for the aggregator.
     pub const fn get_cumulative_value(&self) -> f64 {
         self.cum_value
     }
 
-    fn apply_update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
+    /// Apply the given update to the aggregator.
+    pub fn apply_update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
         let mut size_update = size.as_f64();
 
         while size_update > 0.0 {
@@ -544,3 +587,388 @@ impl ValueBarAggregator {
 //         self.clock.cancel_timer(&self.timer_name);
 //     }
 // }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use nautilus_model::{
+        data::bar::{BarSpecification, BarType},
+        enums::{AggregationSource, BarAggregation, PriceType},
+        instruments::{any::InstrumentAny, equity::Equity, stubs::*},
+        types::{price::Price, quantity::Quantity},
+    };
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    fn test_bar_builder_instantiate(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let builder = BarBuilder::new(&instrument, bar_type);
+        assert!(!builder.initialized);
+        assert_eq!(builder.ts_last, 0);
+        assert_eq!(builder.count, 0);
+    }
+
+    #[rstest]
+    fn test_bar_builder_set_partial_updates_bar_to_expected_properties(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let mut builder = BarBuilder::new(&instrument, bar_type);
+
+        let partial_bar = Bar::new(
+            bar_type,
+            Price::new(1.00001, 8).unwrap(),
+            Price::new(1.00010, 8).unwrap(),
+            Price::new(1.00000, 8).unwrap(),
+            Price::new(1.00002, 8).unwrap(),
+            Quantity::new(1.0, 0).unwrap(),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(2_000_000_000),
+        );
+
+        builder.set_partial(partial_bar);
+        let bar = builder.build_now();
+
+        assert_eq!(bar.open, Price::new(1.00001, 8).unwrap());
+        assert_eq!(bar.high, Price::new(1.00010, 8).unwrap());
+        assert_eq!(bar.low, Price::new(1.00000, 8).unwrap());
+        assert_eq!(bar.close, Price::new(1.00002, 8).unwrap());
+        assert_eq!(bar.volume, Quantity::new(1.0, 0).unwrap());
+        assert_eq!(bar.ts_init, 2_000_000_000);
+        assert_eq!(builder.ts_last, 2_000_000_000);
+    }
+
+    #[rstest]
+    fn test_bar_builder_set_partial_when_already_set_does_not_update(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let mut builder = BarBuilder::new(&instrument, bar_type);
+
+        let partial_bar1 = Bar::new(
+            bar_type,
+            Price::new(1.00001, 8).unwrap(),
+            Price::new(1.00010, 8).unwrap(),
+            Price::new(1.00000, 8).unwrap(),
+            Price::new(1.00002, 8).unwrap(),
+            Quantity::new(1.0, 0).unwrap(),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(1_000_000_000),
+        );
+
+        let partial_bar2 = Bar::new(
+            bar_type,
+            Price::new(2.00001, 8).unwrap(),
+            Price::new(2.00010, 8).unwrap(),
+            Price::new(2.00000, 8).unwrap(),
+            Price::new(2.00002, 8).unwrap(),
+            Quantity::new(2.0, 0).unwrap(),
+            UnixNanos::from(3_000_000_000),
+            UnixNanos::from(3_000_000_000),
+        );
+
+        builder.set_partial(partial_bar1);
+        builder.set_partial(partial_bar2);
+        let bar = builder.build(
+            UnixNanos::from(4_000_000_000),
+            UnixNanos::from(4_000_000_000),
+        );
+
+        assert_eq!(bar.open, Price::new(1.00001, 8).unwrap());
+        assert_eq!(bar.high, Price::new(1.00010, 8).unwrap());
+        assert_eq!(bar.low, Price::new(1.00000, 8).unwrap());
+        assert_eq!(bar.close, Price::new(1.00002, 8).unwrap());
+        assert_eq!(bar.volume, Quantity::new(1.0, 0).unwrap());
+        assert_eq!(bar.ts_init, 4_000_000_000);
+        assert_eq!(builder.ts_last, 1_000_000_000);
+    }
+
+    #[rstest]
+    fn test_bar_builder_single_update_results_in_expected_properties(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let mut builder = BarBuilder::new(&instrument, bar_type);
+
+        builder.update(
+            Price::new(1.00000, 8).unwrap(),
+            Quantity::new(1.0, 0).unwrap(),
+            UnixNanos::from(0),
+        );
+
+        assert!(builder.initialized);
+        assert_eq!(builder.ts_last, 0);
+        assert_eq!(builder.count, 1);
+    }
+
+    #[rstest]
+    fn test_bar_builder_single_update_when_timestamp_less_than_last_update_ignores(
+        equity_aapl: Equity,
+    ) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let mut builder = BarBuilder::new(&instrument, bar_type);
+
+        builder.update(
+            Price::new(1.00000, 8).unwrap(),
+            Quantity::new(1.0, 0).unwrap(),
+            UnixNanos::from(1_000),
+        );
+        builder.update(
+            Price::new(1.00001, 8).unwrap(),
+            Quantity::new(1.0, 0).unwrap(),
+            UnixNanos::from(500),
+        );
+
+        assert!(builder.initialized);
+        assert_eq!(builder.ts_last, 1_000);
+        assert_eq!(builder.count, 1);
+    }
+
+    #[rstest]
+    fn test_bar_builder_multiple_updates_correctly_increments_count(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let mut builder = BarBuilder::new(&instrument, bar_type);
+
+        for _ in 0..5 {
+            builder.update(
+                Price::new(1.00000, 8).unwrap(),
+                Quantity::new(1.0, 0).unwrap(),
+                UnixNanos::from(1_000),
+            );
+        }
+
+        assert_eq!(builder.count, 5);
+    }
+
+    #[rstest]
+    fn test_bar_builder_build_when_no_updates_panics(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let builder = BarBuilder::new(&instrument, bar_type);
+
+        // TODO: WIP
+        // let result = std::panic::catch_unwind(|| {
+        //     builder.build_now();
+        // });
+        //
+        // assert!(result.is_err());
+    }
+
+    #[rstest]
+    fn test_bar_builder_build_when_received_updates_returns_expected_bar(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let mut builder = BarBuilder::new(&instrument, bar_type);
+
+        builder.update(
+            Price::new(1.00001, 8).unwrap(),
+            Quantity::new(2.0, 0).unwrap(),
+            UnixNanos::from(0),
+        );
+        builder.update(
+            Price::new(1.00002, 8).unwrap(),
+            Quantity::new(2.0, 0).unwrap(),
+            UnixNanos::from(0),
+        );
+        builder.update(
+            Price::new(1.00000, 8).unwrap(),
+            Quantity::new(1.0, 0).unwrap(),
+            UnixNanos::from(1_000_000_000),
+        );
+
+        let bar = builder.build_now();
+
+        assert_eq!(bar.open, Price::new(1.00001, 8).unwrap());
+        assert_eq!(bar.high, Price::new(1.00002, 8).unwrap());
+        assert_eq!(bar.low, Price::new(1.00000, 8).unwrap());
+        assert_eq!(bar.close, Price::new(1.00000, 8).unwrap());
+        assert_eq!(bar.volume, Quantity::new(5.0, 0).unwrap());
+        assert_eq!(bar.ts_init, 1_000_000_000);
+        assert_eq!(builder.ts_last, 1_000_000_000);
+        assert_eq!(builder.count, 0);
+    }
+
+    #[rstest]
+    fn test_bar_builder_build_with_previous_close(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_type = BarType::new(
+            instrument.id(),
+            BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
+            AggregationSource::Internal,
+        );
+        let mut builder = BarBuilder::new(&instrument, bar_type);
+
+        builder.update(
+            Price::new(1.00001, 8).unwrap(),
+            Quantity::new(1.0, 0).unwrap(),
+            UnixNanos::from(0),
+        );
+        builder.build_now(); // This close should become the next open
+
+        builder.update(
+            Price::new(1.00000, 8).unwrap(),
+            Quantity::new(1.0, 0).unwrap(),
+            UnixNanos::from(0),
+        );
+        builder.update(
+            Price::new(1.00003, 8).unwrap(),
+            Quantity::new(1.0, 0).unwrap(),
+            UnixNanos::from(0),
+        );
+        builder.update(
+            Price::new(1.00002, 8).unwrap(),
+            Quantity::new(1.0, 0).unwrap(),
+            UnixNanos::from(0),
+        );
+
+        let bar = builder.build_now();
+
+        assert_eq!(bar.open, Price::new(1.00000, 8).unwrap());
+        assert_eq!(bar.high, Price::new(1.00003, 8).unwrap());
+        assert_eq!(bar.low, Price::new(1.00000, 8).unwrap());
+        assert_eq!(bar.close, Price::new(1.00002, 8).unwrap());
+        assert_eq!(bar.volume, Quantity::new(3.0, 0).unwrap());
+    }
+
+    // #[rstest]
+    // fn test_tick_bar_aggregator_handle_quote_tick_when_count_below_threshold_updates(
+    //     equity_aapl: Equity,
+    // ) {
+    //     let instrument = InstrumentAny::Equity(equity_aapl);
+    //     let bar_spec = BarSpecification::new(3, BarAggregation::Tick, PriceType::Mid);
+    //     let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+    //     let handler = Arc::new(Mutex::new(Vec::new()));
+    //     let mut aggregator = TickBarAggregator::new(&instrument, bar_type, Arc::clone(&handler));
+    //
+    //     let tick = QuoteTick::new(
+    //         instrument.id(),
+    //         Price::new(1.00001, 8).unwrap(),
+    //         Price::new(1.00004, 8).unwrap(),
+    //         Quantity::new(1.0, 0).unwrap(),
+    //         Quantity::new(1.0, 0).unwrap(),
+    //         UnixNanos::from(0),
+    //         UnixNanos::from(0),
+    //     );
+    //
+    //     aggregator.handle_quote_tick(tick);
+    //
+    //     let handler_guard = handler.lock().unwrap();
+    //     assert_eq!(handler_guard.len(), 0);
+    // }
+    //
+    // #[rstest]
+    // fn test_tick_bar_aggregator_handle_trade_tick_when_count_below_threshold_updates(
+    //     equity_aapl: Equity,
+    // ) {
+    //     let instrument = InstrumentAny::Equity(equity_aapl);
+    //     let bar_spec = BarSpecification::new(3, BarAggregation::Tick, PriceType::Last);
+    //     let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+    //     let handler = Arc::new(Mutex::new(Vec::new()));
+    //     let mut aggregator = TickBarAggregator::new(&instrument, bar_type, Arc::clone(&handler));
+    //
+    //     let tick = TradeTick::new(
+    //         instrument.id(),
+    //         Price::new(1.00001, 8).unwrap(),
+    //         Quantity::new(1.0, 0).unwrap(),
+    //         AggressorSide::Buyer,
+    //         TradeId::new("123456"),
+    //         UnixNanos::from(0),
+    //         UnixNanos::from(0),
+    //     );
+    //
+    //     aggregator.handle_trade_tick(tick);
+    //
+    //     let handler_guard = handler.lock().unwrap();
+    //     assert_eq!(handler_guard.len(), 0);
+    // }
+    //
+    // #[rstest]
+    // fn test_tick_bar_aggregator_handle_quote_tick_when_count_at_threshold_sends_bar_to_handler(
+    //     equity_aapl: Equity,
+    // ) {
+    //     let instrument = InstrumentAny::Equity(equity_aapl);
+    //     let bar_spec = BarSpecification::new(3, BarAggregation::Tick, PriceType::Mid);
+    //     let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+    //     let handler = Arc::new(Mutex::new(Vec::new()));
+    //     let mut aggregator = TickBarAggregator::new(&instrument, bar_type, Arc::clone(&handler));
+    //
+    //     let tick1 = QuoteTick::new(
+    //         instrument.id(),
+    //         Price::new(1.00001, 8).unwrap(),
+    //         Price::new(1.00004, 8).unwrap(),
+    //         Quantity::new(1.0, 0).unwrap(),
+    //         Quantity::new(1.0, 0).unwrap(),
+    //         UnixNanos::from(0),
+    //         UnixNanos::from(0),
+    //     );
+    //
+    //     let tick2 = QuoteTick::new(
+    //         instrument.id(),
+    //         Price::new(1.00002, 8).unwrap(),
+    //         Price::new(1.00005, 8).unwrap(),
+    //         Quantity::new(1.0, 0).unwrap(),
+    //         Quantity::new(1.0, 0).unwrap(),
+    //         UnixNanos::from(0),
+    //         UnixNanos::from(0),
+    //     );
+    //
+    //     let tick3 = QuoteTick::new(
+    //         instrument.id(),
+    //         Price::new(1.00000, 8).unwrap(),
+    //         Price::new(1.00003, 8).unwrap(),
+    //         Quantity::new(1.0, 0).unwrap(),
+    //         Quantity::new(1.0, 0).unwrap(),
+    //         UnixNanos::from(0),
+    //         UnixNanos::from(0),
+    //     );
+    //
+    //     aggregator.handle_quote_tick(tick1);
+    //     aggregator.handle_quote_tick(tick2);
+    //     aggregator.handle_quote_tick(tick3);
+    //
+    //     let handler_guard = handler.lock().unwrap();
+    //     assert_eq!(handler_guard.len(), 1);
+    //     let bar = &handler_guard[0];
+    //     assert_eq!(bar.open, Price::new(1.000025, 8).unwrap());
+    //     assert_eq!(bar.high, Price::new(1.000035, 8).unwrap());
+    //     assert_eq!(bar.low, Price::new(1.000015, 8).unwrap());
+    //     assert_eq!(bar.close, Price::new(1.000015, 8).unwrap());
+    //     assert_eq!(bar.volume, Quantity::new(3.0, 0).unwrap());
+    // }
+}
