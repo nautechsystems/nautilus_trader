@@ -58,7 +58,7 @@ use nautilus_model::{
     instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
 };
 
-use crate::client::DataClient;
+use crate::client::{DataClient, DataClientCore};
 
 pub struct DataEngineConfig {
     pub debug: bool,
@@ -73,8 +73,8 @@ pub struct DataEngine<State = PreInitialized> {
     state: PhantomData<State>,
     clock: Box<dyn Clock>,
     cache: Rc<RefCell<Cache>>,
-    clients: HashMap<ClientId, Box<dyn DataClient>>,
-    default_client: Option<Box<dyn DataClient>>,
+    clients: HashMap<ClientId, DataClientCore>,
+    default_client: Option<DataClientCore>,
     routing_map: HashMap<Venue, ClientId>,
     // order_book_intervals: HashMap<(InstrumentId, usize), Vec<fn(&OrderBook)>>,  // TODO
     // bar_aggregators:  // TODO
@@ -138,16 +138,11 @@ impl<S: State> DataEngine<S> {
         self.clients.keys().copied().collect()
     }
 
-    #[must_use]
-    pub fn default_client(&self) -> Option<&dyn DataClient> {
-        self.default_client.as_deref()
-    }
-
     // -- SUBSCRIPTIONS ---------------------------------------------------------------------------
 
     fn collect_subscriptions<F, T>(&self, get_subs: F) -> Vec<T>
     where
-        F: Fn(&Box<dyn DataClient>) -> &HashSet<T>,
+        F: Fn(&DataClientCore) -> &HashSet<T>,
         T: Clone,
     {
         let mut subs = Vec::new();
@@ -159,52 +154,52 @@ impl<S: State> DataEngine<S> {
 
     #[must_use]
     pub fn subscribed_custom_data(&self) -> Vec<DataType> {
-        self.collect_subscriptions(|client| client.subscribed_generic_data())
+        self.collect_subscriptions(|client| &client.subscriptions_generic)
     }
 
     #[must_use]
     pub fn subscribed_instruments(&self) -> Vec<InstrumentId> {
-        self.collect_subscriptions(|client| client.subscribed_instruments())
+        self.collect_subscriptions(|client| &client.subscriptions_instrument)
     }
 
     #[must_use]
     pub fn subscribed_order_book_deltas(&self) -> Vec<InstrumentId> {
-        self.collect_subscriptions(|client| client.subscribed_order_book_deltas())
+        self.collect_subscriptions(|client| &client.subscriptions_order_book_delta)
     }
 
     #[must_use]
     pub fn subscribed_order_book_snapshots(&self) -> Vec<InstrumentId> {
-        self.collect_subscriptions(|client| client.subscribed_order_book_snapshots())
+        self.collect_subscriptions(|client| &client.subscriptions_order_book_snapshot)
     }
 
     #[must_use]
     pub fn subscribed_quote_ticks(&self) -> Vec<InstrumentId> {
-        self.collect_subscriptions(|client| client.subscribed_quote_ticks())
+        self.collect_subscriptions(|client| &client.subscriptions_quote_tick)
     }
 
     #[must_use]
     pub fn subscribed_trade_ticks(&self) -> Vec<InstrumentId> {
-        self.collect_subscriptions(|client| client.subscribed_trade_ticks())
+        self.collect_subscriptions(|client| &client.subscriptions_trade_tick)
     }
 
     #[must_use]
     pub fn subscribed_bars(&self) -> Vec<BarType> {
-        self.collect_subscriptions(|client| client.subscribed_bars())
+        self.collect_subscriptions(|client| &client.subscriptions_bar)
     }
 
     #[must_use]
     pub fn subscribed_venue_status(&self) -> Vec<Venue> {
-        self.collect_subscriptions(|client| client.subscribed_venue_status())
+        self.collect_subscriptions(|client| &client.subscriptions_venue_status)
     }
 
     #[must_use]
     pub fn subscribed_instrument_status(&self) -> Vec<InstrumentId> {
-        self.collect_subscriptions(|client| client.subscribed_instrument_status())
+        self.collect_subscriptions(|client| &client.subscriptions_instrument_status)
     }
 
     #[must_use]
     pub fn subscribed_instrument_close(&self) -> Vec<InstrumentId> {
-        self.collect_subscriptions(|client| client.subscribed_instrument_close())
+        self.collect_subscriptions(|client| &client.subscriptions_instrument_close)
     }
 }
 
@@ -212,7 +207,7 @@ impl DataEngine<PreInitialized> {
     // pub fn register_catalog(&mut self, catalog: ParquetDataCatalog) {}  TODO: Implement catalog
 
     /// Register the given data `client` with the engine.
-    pub fn register_client(&mut self, client: Box<dyn DataClient>, routing: Option<Venue>) {
+    pub fn register_client(&mut self, client: DataClientCore, routing: Option<Venue>) {
         if let Some(routing) = routing {
             self.routing_map.insert(routing, client.client_id());
             log::info!("Set client {} routing for {routing}", client.client_id());
@@ -229,7 +224,7 @@ impl DataEngine<PreInitialized> {
     /// # Warnings
     ///
     /// Any existing default routing client will be overwritten.
-    pub fn register_default_client(&mut self, client: Box<dyn DataClient>) {
+    pub fn register_default_client(&mut self, client: DataClientCore) {
         log::info!("Registered default client {}", client.client_id());
         self.default_client = Some(client);
     }
@@ -331,11 +326,11 @@ impl DataEngine<Running> {
             self.routing_map.get(&command.venue).copied()
         };
 
-        if let Some(client_id) = client_id {
-            match command.action {
-                DataCommandAction::Subscribe => self.handle_subscribe(client_id, command),
-                DataCommandAction::Unsubscibe => self.handle_unsubscribe(client_id, command),
-            }
+        if let Some(client) = client_id
+            .map(|client_id| self.clients.get_mut(&client_id))
+            .flatten()
+        {
+            client.execute(command)
         } else {
             log::error!(
                 "Cannot execute command: no data client configured for {} or `client_id` {}",
@@ -404,6 +399,7 @@ impl DataEngine<Running> {
 
     // -- DATA HANDLERS ---------------------------------------------------------------------------
 
+    // TODO: Fix all handlers to not use msgbus
     fn handle_instrument(&self, instrument: InstrumentAny) {
         if let Err(e) = self.cache.borrow_mut().add_instrument(instrument.clone()) {
             log::error!("Error on cache insert: {e}");
@@ -414,10 +410,6 @@ impl DataEngine<Running> {
             "data.instrument.{}.{}",
             instrument_id.venue, instrument_id.symbol
         );
-
-        self.msgbus
-            .borrow()
-            .publish(&topic, &instrument as &dyn Any); // TODO: Optimize
     }
 
     fn handle_delta(&self, delta: OrderBookDelta) {
@@ -428,8 +420,6 @@ impl DataEngine<Running> {
             "data.book.deltas.{}.{}",
             delta.instrument_id.venue, delta.instrument_id.symbol
         );
-
-        self.msgbus.borrow().publish(&topic, &delta as &dyn Any); // TODO: Optimize
     }
 
     fn handle_deltas(&self, deltas: OrderBookDeltas) {
@@ -439,7 +429,6 @@ impl DataEngine<Running> {
             "data.book.snapshots.{}.{}", // TODO: Revise snapshots topic component
             deltas.instrument_id.venue, deltas.instrument_id.symbol
         );
-        self.msgbus.borrow().publish(&topic, &deltas as &dyn Any); // TODO: Optimize
     }
 
     fn handle_depth10(&self, depth: OrderBookDepth10) {
@@ -449,7 +438,6 @@ impl DataEngine<Running> {
             "data.book.depth.{}.{}",
             depth.instrument_id.venue, depth.instrument_id.symbol
         );
-        self.msgbus.borrow().publish(&topic, &depth as &dyn Any); // TODO: Optimize
     }
 
     fn handle_quote(&self, quote: QuoteTick) {
@@ -463,7 +451,6 @@ impl DataEngine<Running> {
             "data.quotes.{}.{}",
             quote.instrument_id.venue, quote.instrument_id.symbol
         );
-        self.msgbus.borrow().publish(&topic, &quote as &dyn Any); // TODO: Optimize
     }
 
     fn handle_trade(&self, trade: TradeTick) {
@@ -477,7 +464,6 @@ impl DataEngine<Running> {
             "data.trades.{}.{}",
             trade.instrument_id.venue, trade.instrument_id.symbol
         );
-        self.msgbus.borrow().publish(&topic, &trade as &dyn Any); // TODO: Optimize
     }
 
     fn handle_bar(&self, bar: Bar) {
@@ -488,281 +474,6 @@ impl DataEngine<Running> {
         // TODO: Handle additional bar logic
 
         let topic = format!("data.bars.{}", bar.bar_type);
-        self.msgbus.borrow().publish(&topic, &bar as &dyn Any); // TODO: Optimize
-    }
-
-    // -- COMMAND HANDLERS ------------------------------------------------------------------------
-
-    fn handle_subscribe(&mut self, client_id: ClientId, command: DataCommand) {
-        match command.data_type.type_name() {
-            stringify!(InstrumentAny) => self.handle_subscribe_instrument(client_id, command),
-            stringify!(OrderBookDelta) => self.handle_subscribe_deltas(client_id, command),
-            stringify!(OrderBookDeltas) => self.handle_subscribe_snapshots(client_id, command),
-            stringify!(OrderBookDepth10) => self.handle_subscribe_snapshots(client_id, command),
-            stringify!(QuoteTick) => self.handle_subscribe_quote_ticks(client_id, command),
-            stringify!(TradeTick) => self.handle_subscribe_trade_ticks(client_id, command),
-            stringify!(Bar) => self.handle_subscribe_bars(client_id, command),
-            _ => self.handle_subscribe_generic(client_id, command),
-        }
-    }
-
-    fn handle_unsubscribe(&mut self, client_id: ClientId, command: DataCommand) {
-        match command.data_type.type_name() {
-            stringify!(InstrumentAny) => self.handle_unsubscribe_instrument(client_id, command),
-            stringify!(OrderBookDelta) => self.handle_unsubscribe_deltas(client_id, command),
-            stringify!(OrderBookDeltas) => self.handle_unsubscribe_snapshots(client_id, command),
-            stringify!(OrderBookDepth10) => self.handle_unsubscribe_snapshots(client_id, command),
-            stringify!(QuoteTick) => self.handle_unsubscribe_quote_ticks(client_id, command),
-            stringify!(TradeTick) => self.handle_unsubscribe_trade_ticks(client_id, command),
-            stringify!(Bar) => self.handle_unsubscribe_bars(client_id, command),
-            _ => self.handle_unsubscribe_generic(client_id, command),
-        }
-    }
-
-    fn handle_subscribe_instrument(&mut self, client_id: ClientId, command: DataCommand) {
-        let instrument_id = command.data_type.parse_instrument_id_from_metadata();
-        let venue = command.data_type.parse_venue_from_metadata();
-
-        // SAFETY: client_id already determined
-        let client = self.clients.get_mut(&client_id).unwrap();
-
-        if let Some(instrument_id) = instrument_id {
-            if !client.subscribed_instruments().contains(&instrument_id) {
-                client
-                    .subscribe_instrument(instrument_id)
-                    .expect("Error on subscribe");
-            }
-        }
-
-        if let Some(venue) = venue {
-            if !client.subscribed_instrument_venues().contains(&venue) {
-                client
-                    .subscribe_instruments(Some(venue))
-                    .expect("Error on subscribe");
-            }
-        }
-    }
-
-    fn handle_subscribe_deltas(&mut self, client_id: ClientId, command: DataCommand) {
-        let instrument_id = command
-            .data_type
-            .parse_instrument_id_from_metadata()
-            .expect("Error on subscribe: no 'instrument_id' in metadata");
-
-        let book_type = command.data_type.parse_book_type_from_metadata();
-        let depth = command.data_type.parse_depth_from_metadata();
-
-        // SAFETY: client_id already determined
-        let client = self.clients.get_mut(&client_id).unwrap();
-
-        if !client
-            .subscribed_order_book_deltas()
-            .contains(&instrument_id)
-        {
-            client
-                .subscribe_order_book_deltas(instrument_id, book_type, depth)
-                .expect("Error on subscribe");
-        }
-    }
-
-    fn handle_subscribe_snapshots(&mut self, client_id: ClientId, command: DataCommand) {
-        let instrument_id = command
-            .data_type
-            .parse_instrument_id_from_metadata()
-            .expect("Error on subscribe: no 'instrument_id' in metadata");
-
-        let book_type = command.data_type.parse_book_type_from_metadata();
-        let depth = command.data_type.parse_depth_from_metadata();
-
-        // SAFETY: client_id already determined
-        let client = self.clients.get_mut(&client_id).unwrap();
-
-        if !client
-            .subscribed_order_book_snapshots()
-            .contains(&instrument_id)
-        {
-            client
-                .subscribe_order_book_snapshots(instrument_id, book_type, depth)
-                .expect("Error on subscribe");
-        }
-    }
-
-    fn handle_subscribe_quote_ticks(&mut self, client_id: ClientId, command: DataCommand) {
-        let instrument_id = command
-            .data_type
-            .parse_instrument_id_from_metadata()
-            .expect("Error on subscribe: no 'instrument_id' in metadata");
-
-        let book_type = command.data_type.parse_book_type_from_metadata();
-        let depth = command.data_type.parse_depth_from_metadata();
-
-        // SAFETY: client_id already determined
-        let client = self.clients.get_mut(&client_id).unwrap();
-
-        if !client.subscribed_quote_ticks().contains(&instrument_id) {
-            client
-                .subscribe_quote_ticks(instrument_id)
-                .expect("Error on subscribe");
-        }
-    }
-
-    fn handle_subscribe_trade_ticks(&mut self, client_id: ClientId, command: DataCommand) {
-        let instrument_id = command
-            .data_type
-            .parse_instrument_id_from_metadata()
-            .expect("Error on subscribe: no 'instrument_id' in metadata");
-
-        // SAFETY: client_id already determined
-        let client = self.clients.get_mut(&client_id).unwrap();
-
-        if !client.subscribed_trade_ticks().contains(&instrument_id) {
-            client
-                .subscribe_trade_ticks(instrument_id)
-                .expect("Error on subscribe");
-        }
-    }
-
-    fn handle_subscribe_bars(&mut self, client_id: ClientId, command: DataCommand) {
-        let bar_type = command.data_type.parse_bar_type_from_metadata();
-
-        // SAFETY: client_id already determined
-        let client = self.clients.get_mut(&client_id).unwrap();
-
-        if !client.subscribed_bars().contains(&bar_type) {
-            client.subscribe_bars(bar_type).expect("Error on subscribe");
-        }
-    }
-
-    fn handle_subscribe_generic(&mut self, client_id: ClientId, command: DataCommand) {
-        // SAFETY: client_id already determined
-        let client = self.clients.get_mut(&client_id).unwrap();
-        if !client
-            .subscribed_generic_data()
-            .contains(&command.data_type)
-        {
-            client
-                .subscribe(command.data_type)
-                .expect("Error on subscribe");
-        }
-    }
-
-    fn handle_unsubscribe_instrument(&mut self, client_id: ClientId, command: DataCommand) {
-        let instrument_id = command.data_type.parse_instrument_id_from_metadata();
-        let venue = command.data_type.parse_venue_from_metadata();
-
-        // SAFETY: client_id already determined
-        let client = self.clients.get_mut(&client_id).unwrap();
-
-        if let Some(instrument_id) = instrument_id {
-            if client.subscribed_instruments().contains(&instrument_id) {
-                client
-                    .unsubscribe_instrument(instrument_id)
-                    .expect("Error on unsubscribe");
-            }
-        }
-
-        if let Some(venue) = venue {
-            if client.subscribed_instrument_venues().contains(&venue) {
-                client
-                    .unsubscribe_instruments(Some(venue))
-                    .expect("Error on unsubscribe");
-            }
-        }
-    }
-
-    fn handle_unsubscribe_deltas(&mut self, client_id: ClientId, command: DataCommand) {
-        let instrument_id = command
-            .data_type
-            .parse_instrument_id_from_metadata()
-            .expect("Error on subscribe: no 'instrument_id' in metadata");
-
-        // SAFETY: client_id already determined
-        let client = self.clients.get_mut(&client_id).unwrap();
-
-        if client
-            .subscribed_order_book_deltas()
-            .contains(&instrument_id)
-        {
-            client
-                .unsubscribe_order_book_deltas(instrument_id)
-                .expect("Error on subscribe");
-        }
-    }
-
-    fn handle_unsubscribe_snapshots(&mut self, client_id: ClientId, command: DataCommand) {
-        let instrument_id = command
-            .data_type
-            .parse_instrument_id_from_metadata()
-            .expect("Error on subscribe: no 'instrument_id' in metadata");
-
-        // SAFETY: client_id already determined
-        let client = self.clients.get_mut(&client_id).unwrap();
-
-        if client
-            .subscribed_order_book_snapshots()
-            .contains(&instrument_id)
-        {
-            client
-                .unsubscribe_order_book_snapshots(instrument_id)
-                .expect("Error on subscribe");
-        }
-    }
-
-    fn handle_unsubscribe_quote_ticks(&mut self, client_id: ClientId, command: DataCommand) {
-        let instrument_id = command
-            .data_type
-            .parse_instrument_id_from_metadata()
-            .expect("Error on subscribe: no 'instrument_id' in metadata");
-
-        // SAFETY: client_id already determined
-        let client = self.clients.get_mut(&client_id).unwrap();
-        if client.subscribed_quote_ticks().contains(&instrument_id) {
-            client
-                .unsubscribe_quote_ticks(instrument_id)
-                .expect("Error on unsubscribe");
-        }
-    }
-
-    fn handle_unsubscribe_trade_ticks(&mut self, client_id: ClientId, command: DataCommand) {
-        let instrument_id = command
-            .data_type
-            .parse_instrument_id_from_metadata()
-            .expect("Error on subscribe: no 'instrument_id' in metadata");
-
-        // SAFETY: client_id already determined
-        let client = self.clients.get_mut(&client_id).unwrap();
-
-        if client.subscribed_trade_ticks().contains(&instrument_id) {
-            client
-                .unsubscribe_trade_ticks(instrument_id)
-                .expect("Error on unsubscribe");
-        }
-    }
-
-    fn handle_unsubscribe_bars(&mut self, client_id: ClientId, command: DataCommand) {
-        let bar_type = command.data_type.parse_bar_type_from_metadata();
-
-        // SAFETY: client_id already determined
-        let client = self.clients.get_mut(&client_id).unwrap();
-
-        if client.subscribed_bars().contains(&bar_type) {
-            client
-                .unsubscribe_bars(bar_type)
-                .expect("Error on unsubscribe");
-        }
-    }
-
-    fn handle_unsubscribe_generic(&mut self, client_id: ClientId, command: DataCommand) {
-        // SAFETY: client_id already determined
-        let client = self.clients.get_mut(&client_id).unwrap();
-        if client
-            .subscribed_generic_data()
-            .contains(&command.data_type)
-        {
-            client
-                .unsubscribe(command.data_type)
-                .expect("Error on unsubscribe");
-        }
     }
 
     // -- REQUEST HANDLERS ------------------------------------------------------------------------
@@ -770,7 +481,7 @@ impl DataEngine<Running> {
     fn handle_request(&mut self, client_id: ClientId, request: DataRequest) {
         // SAFETY: client_id already determined
         let client = self.clients.get_mut(&client_id).unwrap();
-        client.request(request.req_id, request.data_type);
+        client.request(request.request_id, request.data_type);
     }
 
     fn handle_instruments_request(&mut self, client_id: ClientId, request: DataRequest) {
@@ -783,11 +494,11 @@ impl DataEngine<Running> {
         let client = self.clients.get_mut(&client_id).unwrap();
 
         if let Some(instrument_id) = instrument_id {
-            client.request_instrument(request.req_id, instrument_id, start, end);
+            client.request_instrument(request.request_id, instrument_id, start, end);
         }
 
         if let Some(venue) = venue {
-            client.request_instruments(request.req_id, venue, start, end);
+            client.request_instruments(request.request_id, venue, start, end);
         }
     }
 
@@ -802,7 +513,7 @@ impl DataEngine<Running> {
 
         // SAFETY: client_id already determined
         let client = self.clients.get_mut(&client_id).unwrap();
-        client.request_quote_ticks(request.req_id, instrument_id, start, end, limit);
+        client.request_quote_ticks(request.request_id, instrument_id, start, end, limit);
     }
 
     fn handle_trade_ticks_request(&mut self, client_id: ClientId, request: DataRequest) {
@@ -816,7 +527,7 @@ impl DataEngine<Running> {
 
         // SAFETY: client_id already determined
         let client = self.clients.get_mut(&client_id).unwrap();
-        client.request_trade_ticks(request.req_id, instrument_id, start, end, limit);
+        client.request_trade_ticks(request.request_id, instrument_id, start, end, limit);
     }
 
     fn handle_bars_request(&mut self, client_id: ClientId, request: DataRequest) {
@@ -827,7 +538,7 @@ impl DataEngine<Running> {
 
         // SAFETY: client_id already determined
         let client = self.clients.get_mut(&client_id).unwrap();
-        client.request_bars(request.req_id, bar_type, start, end, limit);
+        client.request_bars(request.request_id, bar_type, start, end, limit);
     }
 
     // -- RESPONSE HANDLERS -----------------------------------------------------------------------

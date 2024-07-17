@@ -19,11 +19,14 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::{any::Any, cell::RefCell, collections::HashSet, rc::Rc, sync::Arc};
+use std::{any::Any, cell::RefCell, collections::HashSet, ops::{Deref, DerefMut}, rc::Rc, sync::Arc};
 
 use indexmap::IndexMap;
 use nautilus_common::{
-    cache::Cache, clock::Clock, messages::data::DataResponse, msgbus::MessageBus,
+    cache::Cache,
+    clock::Clock,
+    messages::data::{DataCommand, DataCommandAction, DataResponse},
+    msgbus::MessageBus,
 };
 use nautilus_core::{correctness, nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
@@ -39,6 +42,7 @@ use nautilus_model::{
 };
 
 pub trait DataClient {
+    // -- GETTERS ---------------------------------------------------------------------------
     fn client_id(&self) -> ClientId;
     fn venue(&self) -> Option<Venue>;
     fn start(&self);
@@ -47,17 +51,10 @@ pub trait DataClient {
     fn dispose(&self);
     fn is_connected(&self) -> bool;
     fn is_disconnected(&self) -> bool;
-    fn subscribed_generic_data(&self) -> &HashSet<DataType>;
-    fn subscribed_instrument_venues(&self) -> &HashSet<Venue>;
-    fn subscribed_instruments(&self) -> &HashSet<InstrumentId>;
-    fn subscribed_order_book_deltas(&self) -> &HashSet<InstrumentId>;
-    fn subscribed_order_book_snapshots(&self) -> &HashSet<InstrumentId>;
-    fn subscribed_quote_ticks(&self) -> &HashSet<InstrumentId>;
-    fn subscribed_trade_ticks(&self) -> &HashSet<InstrumentId>;
-    fn subscribed_bars(&self) -> &HashSet<BarType>;
-    fn subscribed_venue_status(&self) -> &HashSet<Venue>;
-    fn subscribed_instrument_status(&self) -> &HashSet<InstrumentId>;
-    fn subscribed_instrument_close(&self) -> &HashSet<InstrumentId>;
+
+    // -- COMMAND HANDLERS ---------------------------------------------------------------------------
+
+    /// Parse command and call specific function
     fn subscribe(&mut self, data_type: DataType) -> anyhow::Result<()>;
     fn subscribe_instruments(&mut self, venue: Option<Venue>) -> anyhow::Result<()>;
     fn subscribe_instrument(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
@@ -93,27 +90,29 @@ pub trait DataClient {
     fn unsubscribe_venue_status(&mut self, venue: Venue) -> anyhow::Result<()>;
     fn unsubscribe_instrument_status(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn unsubscribe_instrument_close(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
-    fn request(&mut self, correlation_id: UUID4, data_type: DataType);
+
+    // -- DATA REQUEST HANDLERS ---------------------------------------------------------------------------
+
     fn request_instruments(
         &mut self,
         correlation_id: UUID4,
         venue: Venue,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
-    );
+    ) -> DataResponse;
     fn request_instrument(
         &mut self,
         correlation_id: UUID4,
         instrument_id: InstrumentId,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
-    );
+    ) -> DataResponse;
     fn request_order_book_snapshot(
         &mut self,
         correlation_id: UUID4,
         instrument_id: InstrumentId,
         depth: Option<usize>,
-    );
+    ) -> DataResponse;
     fn request_quote_ticks(
         &mut self,
         correlation_id: UUID4,
@@ -121,7 +120,7 @@ pub trait DataClient {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         limit: Option<usize>,
-    );
+    ) -> DataResponse;
     fn request_trade_ticks(
         &mut self,
         correlation_id: UUID4,
@@ -129,7 +128,7 @@ pub trait DataClient {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         limit: Option<usize>,
-    );
+    ) -> DataResponse;
     fn request_bars(
         &mut self,
         correlation_id: UUID4,
@@ -137,374 +136,307 @@ pub trait DataClient {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         limit: Option<usize>,
-    );
+    ) -> DataResponse;
 }
 
 pub struct DataClientCore {
     pub client_id: ClientId,
     pub venue: Venue,
     pub is_connected: bool,
+    client: Box<dyn DataClient>,
     clock: Box<dyn Clock>,
     cache: Rc<RefCell<Cache>>,
-    msgbus: Rc<RefCell<MessageBus>>,
-    subscriptions_generic: HashSet<DataType>,
-    subscriptions_order_book_delta: HashSet<InstrumentId>,
-    subscriptions_order_book_snapshot: HashSet<InstrumentId>,
-    subscriptions_quote_tick: HashSet<InstrumentId>,
-    subscriptions_trade_tick: HashSet<InstrumentId>,
-    subscriptions_bar: HashSet<BarType>,
-    subscriptions_venue_status: HashSet<Venue>,
-    subscriptions_instrument_status: HashSet<InstrumentId>,
-    subscriptions_instrument_close: HashSet<InstrumentId>,
-    subscriptions_instrument: HashSet<InstrumentId>,
-    subscriptions_instrument_venue: HashSet<Venue>,
+    pub subscriptions_generic: HashSet<DataType>,
+    pub subscriptions_order_book_delta: HashSet<InstrumentId>,
+    pub subscriptions_order_book_snapshot: HashSet<InstrumentId>,
+    pub subscriptions_quote_tick: HashSet<InstrumentId>,
+    pub subscriptions_trade_tick: HashSet<InstrumentId>,
+    pub subscriptions_bar: HashSet<BarType>,
+    pub subscriptions_venue_status: HashSet<Venue>,
+    pub subscriptions_instrument_status: HashSet<InstrumentId>,
+    pub subscriptions_instrument_close: HashSet<InstrumentId>,
+    pub subscriptions_instrument: HashSet<InstrumentId>,
+    pub subscriptions_instrument_venue: HashSet<Venue>,
 }
 
+impl Deref for DataClientCore {
+    type Target = Box<dyn DataClient>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.client
+    }
+}
+
+impl DerefMut for DataClientCore {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.client
+    }
+}
+
+
+
 impl DataClientCore {
-    #[must_use]
-    pub const fn subscribed_generic(&self) -> &HashSet<DataType> {
-        &self.subscriptions_generic
+    pub fn execute(&mut self, command: DataCommand) {
+        match command.action {
+            DataCommandAction::Subscribe => self.execute_subscribe_command(command),
+            DataCommandAction::Unsubscribe => self.execute_unsubscribe_command(command),
+        }
     }
 
-    #[must_use]
-    pub const fn subscribed_instrument_venues(&self) -> &HashSet<Venue> {
-        &self.subscriptions_instrument_venue
+    #[inline]
+    fn execute_subscribe_command(&mut self, command: DataCommand) {
+        match command.data_type.type_name() {
+            stringify!(InstrumentAny) => Self::subscribe_instrument(self, command),
+            stringify!(OrderBookDelta) => Self::subscribe_order_book_deltas(self, command),
+            stringify!(OrderBookDeltas) | stringify!(OrderBookDepth10) => {
+                Self::subscribe_snapshots(self, command)
+            }
+            stringify!(QuoteTick) => Self::subscribe_quote_ticks(self, command),
+            stringify!(TradeTick) => Self::subscribe_trade_ticks(self, command),
+            stringify!(Bar) => Self::subscribe_bars(self, command),
+            _ => Self::subscribe(self, command),
+        }
     }
 
-    #[must_use]
-    pub const fn subscribed_instruments(&self) -> &HashSet<InstrumentId> {
-        &self.subscriptions_instrument
+    #[inline]
+    fn execute_unsubscribe_command(&mut self, command: DataCommand) {
+        match command.data_type.type_name() {
+            stringify!(InstrumentAny) => Self::unsubscribe_instrument(self, command),
+            stringify!(OrderBookDelta) => Self::unsubscribe_order_book_deltas(self, command),
+            stringify!(OrderBookDeltas) | stringify!(OrderBookDepth10) => {
+                Self::unsubscribe_snapshots(self, command)
+            }
+            stringify!(QuoteTick) => Self::unsubscribe_quote_ticks(self, command),
+            stringify!(TradeTick) => Self::unsubscribe_trade_ticks(self, command),
+            stringify!(Bar) => Self::unsubscribe_bars(self, command),
+            _ => Self::unsubscribe(self, command),
+        }
     }
 
-    #[must_use]
-    pub const fn subscribed_order_book_deltas(&self) -> &HashSet<InstrumentId> {
-        &self.subscriptions_order_book_delta
+    fn subscribe_instrument(&mut self, command: DataCommand) {
+        let instrument_id = command.data_type.parse_instrument_id_from_metadata();
+        let venue = command.data_type.parse_venue_from_metadata();
+
+        if let Some(instrument_id) = instrument_id {
+            // TODO: consider using insert_with once it stabilizes
+            // https://github.com/rust-lang/rust/issues/60896
+            if !self.subscriptions_instrument.contains(&instrument_id) {
+                self.client
+                    .subscribe_instrument(instrument_id)
+                    .expect("Error on subscribe");
+            }
+
+            self.subscriptions_instrument.insert(instrument_id);
+        }
+
+        if let Some(venue) = venue {
+            if !self.subscriptions_instrument_venue.contains(&venue) {
+                self.client
+                    .subscribe_instruments(Some(venue))
+                    .expect("Error on subscribe");
+            }
+
+            self.subscriptions_instrument_venue.insert(venue);
+        }
     }
 
-    #[must_use]
-    pub const fn subscribed_order_book_snapshots(&self) -> &HashSet<InstrumentId> {
-        &self.subscriptions_order_book_snapshot
+    fn unsubscribe_instrument(&mut self, command: DataCommand) {
+        let instrument_id = command.data_type.parse_instrument_id_from_metadata();
+        let venue = command.data_type.parse_venue_from_metadata();
+
+        if let Some(instrument_id) = instrument_id {
+            if self.subscriptions_instrument.contains(&instrument_id) {
+                self.client
+                    .unsubscribe_instrument(instrument_id)
+                    .expect("Error on subscribe");
+            }
+
+            self.subscriptions_instrument.remove(&instrument_id);
+        }
+
+        if let Some(venue) = venue {
+            if self.subscriptions_instrument_venue.contains(&venue) {
+                self.client
+                    .unsubscribe_instruments(Some(venue))
+                    .expect("Error on subscribe");
+            }
+
+            self.subscriptions_instrument_venue.remove(&venue);
+        }
     }
 
-    #[must_use]
-    pub const fn subscribed_quote_ticks(&self) -> &HashSet<InstrumentId> {
-        &self.subscriptions_quote_tick
-    }
+    fn subscribe_order_book_deltas(&mut self, command: DataCommand) {
+        let instrument_id = command
+            .data_type
+            .parse_instrument_id_from_metadata()
+            .expect("Error on subscribe: no 'instrument_id' in metadata");
 
-    #[must_use]
-    pub const fn subscribed_trade_ticks(&self) -> &HashSet<InstrumentId> {
-        &self.subscriptions_trade_tick
-    }
+        let book_type = command.data_type.parse_book_type_from_metadata();
+        let depth = command.data_type.parse_depth_from_metadata();
 
-    #[must_use]
-    pub const fn subscribed_bars(&self) -> &HashSet<BarType> {
-        &self.subscriptions_bar
-    }
+        if !self.subscriptions_order_book_delta.contains(&instrument_id) {
+            self.client
+                .subscribe_order_book_deltas(instrument_id, book_type, depth)
+                .expect("Error on subscribe");
+        }
 
-    #[must_use]
-    pub const fn subscribed_venue_status(&self) -> &HashSet<Venue> {
-        &self.subscriptions_venue_status
-    }
-
-    #[must_use]
-    pub const fn subscribed_instrument_status(&self) -> &HashSet<InstrumentId> {
-        &self.subscriptions_instrument_status
-    }
-
-    #[must_use]
-    pub const fn subscribed_instrument_close(&self) -> &HashSet<InstrumentId> {
-        &self.subscriptions_instrument_close
-    }
-
-    pub fn add_subscription_generic(&mut self, data_type: DataType) -> anyhow::Result<()> {
-        correctness::check_member_not_in_set(
-            &data_type,
-            &self.subscriptions_generic,
-            "data_type",
-            "subscriptions_generic",
-        )?;
-        self.subscriptions_generic.insert(data_type);
-        Ok(())
-    }
-
-    pub fn add_subscription_instrument_venue(&mut self, venue: Venue) -> anyhow::Result<()> {
-        correctness::check_member_not_in_set(
-            &venue,
-            &self.subscriptions_instrument_venue,
-            "venue",
-            "subscriptions_instrument_venue",
-        )?;
-        self.subscriptions_instrument_venue.insert(venue);
-        Ok(())
-    }
-
-    pub fn add_subscription_instrument(
-        &mut self,
-        instrument_id: InstrumentId,
-    ) -> anyhow::Result<()> {
-        correctness::check_member_not_in_set(
-            &instrument_id,
-            &self.subscriptions_instrument,
-            "instrument_id",
-            "subscriptions_instrument",
-        )?;
-        self.subscriptions_instrument.insert(instrument_id);
-        Ok(())
-    }
-
-    pub fn add_subscription_order_book_deltas(
-        &mut self,
-        instrument_id: InstrumentId,
-    ) -> anyhow::Result<()> {
-        correctness::check_member_not_in_set(
-            &instrument_id,
-            &self.subscriptions_order_book_delta,
-            "instrument_id",
-            "subscriptions_order_book_delta",
-        )?;
         self.subscriptions_order_book_delta.insert(instrument_id);
-        Ok(())
     }
 
-    pub fn add_subscription_order_book_snapshots(
-        &mut self,
-        instrument_id: InstrumentId,
-    ) -> anyhow::Result<()> {
-        correctness::check_member_not_in_set(
-            &instrument_id,
-            &self.subscriptions_order_book_snapshot,
-            "instrument_id",
-            "subscriptions_order_book_snapshot",
-        )?;
+    fn unsubscribe_order_book_deltas(&mut self, command: DataCommand) {
+        let instrument_id = command
+            .data_type
+            .parse_instrument_id_from_metadata()
+            .expect("Error on subscribe: no 'instrument_id' in metadata");
+
+        if self.subscriptions_order_book_delta.contains(&instrument_id) {
+            self.client
+                .unsubscribe_order_book_deltas(instrument_id)
+                .expect("Error on subscribe");
+        }
+
+        self.subscriptions_order_book_delta.remove(&instrument_id);
+    }
+
+    fn subscribe_snapshots(&mut self, command: DataCommand) {
+        let instrument_id = command
+            .data_type
+            .parse_instrument_id_from_metadata()
+            .expect("Error on subscribe: no 'instrument_id' in metadata");
+
+        let book_type = command.data_type.parse_book_type_from_metadata();
+        let depth = command.data_type.parse_depth_from_metadata();
+
+        if !self
+            .subscriptions_order_book_snapshot
+            .contains(&instrument_id)
+        {
+            self.client
+                .subscribe_order_book_snapshots(instrument_id, book_type, depth)
+                .expect("Error on subscribe");
+        }
+
         self.subscriptions_order_book_snapshot.insert(instrument_id);
-        Ok(())
     }
 
-    pub fn add_subscription_quote_ticks(
-        &mut self,
-        instrument_id: InstrumentId,
-    ) -> anyhow::Result<()> {
-        correctness::check_member_not_in_set(
-            &instrument_id,
-            &self.subscriptions_quote_tick,
-            "instrument_id",
-            "subscriptions_quote_tick",
-        )?;
+    fn unsubscribe_snapshots(&mut self, command: DataCommand) {
+        let instrument_id = command
+            .data_type
+            .parse_instrument_id_from_metadata()
+            .expect("Error on subscribe: no 'instrument_id' in metadata");
+
+        if self
+            .subscriptions_order_book_snapshot
+            .contains(&instrument_id)
+        {
+            self.client
+                .unsubscribe_order_book_snapshots(instrument_id)
+                .expect("Error on subscribe");
+        }
+
+        self.subscriptions_order_book_snapshot
+            .remove(&instrument_id);
+    }
+
+    fn subscribe_quote_ticks(&mut self, command: DataCommand) {
+        let instrument_id = command
+            .data_type
+            .parse_instrument_id_from_metadata()
+            .expect("Error on subscribe: no 'instrument_id' in metadata");
+
+        if !self.subscriptions_quote_tick.contains(&instrument_id) {
+            self.client
+                .subscribe_quote_ticks(instrument_id)
+                .expect("Error on subscribe");
+        }
         self.subscriptions_quote_tick.insert(instrument_id);
-        Ok(())
     }
 
-    pub fn add_subscription_trade_ticks(
-        &mut self,
-        instrument_id: InstrumentId,
-    ) -> anyhow::Result<()> {
-        correctness::check_member_not_in_set(
-            &instrument_id,
-            &self.subscriptions_trade_tick,
-            "instrument_id",
-            "subscriptions_trade_tick",
-        )?;
+    fn unsubscribe_quote_ticks(&mut self, command: DataCommand) {
+        let instrument_id = command
+            .data_type
+            .parse_instrument_id_from_metadata()
+            .expect("Error on subscribe: no 'instrument_id' in metadata");
+
+        if self.subscriptions_quote_tick.contains(&instrument_id) {
+            self.client
+                .unsubscribe_quote_ticks(instrument_id)
+                .expect("Error on subscribe");
+        }
+        self.subscriptions_quote_tick.remove(&instrument_id);
+    }
+
+    fn unsubscribe_trade_ticks(&mut self, command: DataCommand) {
+        let instrument_id = command
+            .data_type
+            .parse_instrument_id_from_metadata()
+            .expect("Error on subscribe: no 'instrument_id' in metadata");
+
+        if self.subscriptions_trade_tick.contains(&instrument_id) {
+            self.client
+                .unsubscribe_trade_ticks(instrument_id)
+                .expect("Error on subscribe");
+        }
+        self.subscriptions_trade_tick.remove(&instrument_id);
+    }
+
+    fn subscribe_trade_ticks(&mut self, command: DataCommand) {
+        let instrument_id = command
+            .data_type
+            .parse_instrument_id_from_metadata()
+            .expect("Error on subscribe: no 'instrument_id' in metadata");
+
+        if !self.subscriptions_trade_tick.contains(&instrument_id) {
+            self.client
+                .subscribe_trade_ticks(instrument_id)
+                .expect("Error on subscribe");
+        }
         self.subscriptions_trade_tick.insert(instrument_id);
-        Ok(())
     }
 
-    pub fn add_subscription_bars(&mut self, bar_type: BarType) -> anyhow::Result<()> {
-        correctness::check_member_not_in_set(
-            &bar_type,
-            &self.subscriptions_bar,
-            "bar_type",
-            "subscriptions_bar",
-        )?;
+    fn subscribe_bars(&mut self, command: DataCommand) {
+        let bar_type = command.data_type.parse_bar_type_from_metadata();
+
+        if !self.subscriptions_bar.contains(&bar_type) {
+            self.client
+                .subscribe_bars(bar_type)
+                .expect("Error on subscribe");
+        }
         self.subscriptions_bar.insert(bar_type);
-        Ok(())
     }
 
-    pub fn add_subscription_venue_status(&mut self, venue: Venue) -> anyhow::Result<()> {
-        correctness::check_member_not_in_set(
-            &venue,
-            &self.subscriptions_venue_status,
-            "venue",
-            "subscriptions_venue_status",
-        )?;
-        self.subscriptions_venue_status.insert(venue);
-        Ok(())
+    fn unsubscribe_bars(&mut self, command: DataCommand) {
+        let bar_type = command.data_type.parse_bar_type_from_metadata();
+
+        if self.subscriptions_bar.contains(&bar_type) {
+            self.client
+                .subscribe_bars(bar_type)
+                .expect("Error on subscribe");
+        }
+        self.subscriptions_bar.remove(&bar_type);
     }
 
-    pub fn add_subscription_instrument_status(
-        &mut self,
-        instrument_id: InstrumentId,
-    ) -> anyhow::Result<()> {
-        correctness::check_member_not_in_set(
-            &instrument_id,
-            &self.subscriptions_instrument_status,
-            "instrument_id",
-            "subscriptions_instrument_status",
-        )?;
-        self.subscriptions_instrument_status.insert(instrument_id);
-        Ok(())
+    pub fn subscribe(&mut self, command: DataCommand) {
+        let data_type = command.data_type;
+        if !self.subscriptions_generic.contains(&data_type) {
+            self.client
+                .subscribe(data_type.clone())
+                .expect("Error on subscribe");
+        }
+        self.subscriptions_generic.insert(data_type);
     }
 
-    pub fn add_subscription_instrument_close(
-        &mut self,
-        instrument_id: InstrumentId,
-    ) -> anyhow::Result<()> {
-        correctness::check_member_not_in_set(
-            &instrument_id,
-            &self.subscriptions_instrument_close,
-            "instrument_id",
-            "subscriptions_instrument_close",
-        )?;
-        self.subscriptions_instrument_close.insert(instrument_id);
-        Ok(())
+    pub fn unsubscribe(&mut self, command: DataCommand) {
+        let data_type = command.data_type;
+        if self.subscriptions_generic.contains(&data_type) {
+            self.client
+                .unsubscribe(data_type.clone())
+                .expect("Error on unsubscribe");
+        }
+        self.subscriptions_generic.remove(&data_type);
     }
 
-    pub fn remove_subscription_generic(&mut self, data_type: &DataType) -> anyhow::Result<()> {
-        correctness::check_member_in_set(
-            data_type,
-            &self.subscriptions_generic,
-            "data_type",
-            "subscriptions_generic",
-        )?;
-        self.subscriptions_generic.remove(data_type);
-        Ok(())
-    }
-
-    pub fn remove_subscription_instrument_venue(&mut self, venue: &Venue) -> anyhow::Result<()> {
-        correctness::check_member_in_set(
-            venue,
-            &self.subscriptions_instrument_venue,
-            "venue",
-            "subscriptions_instrument_venue",
-        )?;
-        self.subscriptions_instrument_venue.remove(venue);
-        Ok(())
-    }
-
-    pub fn remove_subscription_instrument(
-        &mut self,
-        instrument_id: &InstrumentId,
-    ) -> anyhow::Result<()> {
-        correctness::check_member_in_set(
-            instrument_id,
-            &self.subscriptions_instrument,
-            "instrument_id",
-            "subscriptions_instrument",
-        )?;
-        self.subscriptions_instrument.remove(instrument_id);
-        Ok(())
-    }
-
-    pub fn remove_subscription_order_book_delta(
-        &mut self,
-        instrument_id: &InstrumentId,
-    ) -> anyhow::Result<()> {
-        correctness::check_member_in_set(
-            instrument_id,
-            &self.subscriptions_order_book_delta,
-            "instrument_id",
-            "subscriptions_order_book_delta",
-        )?;
-        self.subscriptions_order_book_delta.remove(instrument_id);
-        Ok(())
-    }
-
-    pub fn remove_subscription_order_book_snapshots(
-        &mut self,
-        instrument_id: &InstrumentId,
-    ) -> anyhow::Result<()> {
-        correctness::check_member_in_set(
-            instrument_id,
-            &self.subscriptions_order_book_snapshot,
-            "instrument_id",
-            "subscriptions_order_book_snapshot",
-        )?;
-        self.subscriptions_order_book_snapshot.remove(instrument_id);
-        Ok(())
-    }
-
-    pub fn remove_subscription_quote_ticks(
-        &mut self,
-        instrument_id: &InstrumentId,
-    ) -> anyhow::Result<()> {
-        correctness::check_member_in_set(
-            instrument_id,
-            &self.subscriptions_quote_tick,
-            "instrument_id",
-            "subscriptions_quote_tick",
-        )?;
-        self.subscriptions_quote_tick.remove(instrument_id);
-        Ok(())
-    }
-
-    pub fn remove_subscription_trade_ticks(
-        &mut self,
-        instrument_id: &InstrumentId,
-    ) -> anyhow::Result<()> {
-        correctness::check_member_in_set(
-            instrument_id,
-            &self.subscriptions_trade_tick,
-            "instrument_id",
-            "subscriptions_trade_tick",
-        )?;
-        self.subscriptions_trade_tick.remove(instrument_id);
-        Ok(())
-    }
-
-    pub fn remove_subscription_bars(&mut self, bar_type: &BarType) -> anyhow::Result<()> {
-        correctness::check_member_in_set(
-            bar_type,
-            &self.subscriptions_bar,
-            "bar_type",
-            "subscriptions_bar",
-        )?;
-        self.subscriptions_bar.remove(bar_type);
-        Ok(())
-    }
-
-    pub fn remove_subscription_venue_status(&mut self, venue: &Venue) -> anyhow::Result<()> {
-        correctness::check_member_in_set(
-            venue,
-            &self.subscriptions_venue_status,
-            "venue",
-            "subscriptions_venue_status",
-        )?;
-        self.subscriptions_venue_status.remove(venue);
-        Ok(())
-    }
-
-    pub fn remove_subscription_instrument_status(
-        &mut self,
-        instrument_id: &InstrumentId,
-    ) -> anyhow::Result<()> {
-        correctness::check_member_in_set(
-            instrument_id,
-            &self.subscriptions_instrument_status,
-            "instrument_id",
-            "subscriptions_instrument_status",
-        )?;
-        self.subscriptions_instrument_status.remove(instrument_id);
-        Ok(())
-    }
-
-    pub fn remove_subscription_instrument_close(
-        &mut self,
-        instrument_id: &InstrumentId,
-    ) -> anyhow::Result<()> {
-        correctness::check_member_in_set(
-            instrument_id,
-            &self.subscriptions_instrument_close,
-            "instrument_id",
-            "subscriptions_instrument_close",
-        )?;
-        self.subscriptions_instrument_close.remove(instrument_id);
-        Ok(())
-    }
-
-    pub fn handle_data(&self, data: Data) {
-        self.msgbus
-            .borrow()
-            .send("DataEngine.process", &data as &dyn Any); // TODO: Optimize
-    }
+    // -- DATA REQUEST HANDLERS IMPLEMENTATION ---------------------------------------------------------------------------
 
     pub fn handle_instrument(&self, instrument: InstrumentAny, correlation_id: UUID4) {
         let instrument_id = instrument.id();
@@ -512,7 +444,7 @@ impl DataClientCore {
         let data_type = DataType::new(stringify!(InstrumentAny), Some(metadata));
         let data = Arc::new(instrument);
 
-        let response = DataResponse::new(
+        DataResponse::new(
             UUID4::new(),
             correlation_id,
             self.client_id,
@@ -521,10 +453,6 @@ impl DataClientCore {
             data,
             self.clock.timestamp_ns(),
         );
-
-        self.msgbus
-            .borrow()
-            .send("DataEngine.response", &response as &dyn Any); // TODO: Optimize
     }
 
     pub fn handle_instruments(
@@ -537,7 +465,7 @@ impl DataClientCore {
         let data_type = DataType::new(stringify!(InstrumentAny), Some(metadata));
         let data = Arc::new(instruments);
 
-        let response = DataResponse::new(
+        DataResponse::new(
             UUID4::new(),
             correlation_id,
             self.client_id,
@@ -546,10 +474,6 @@ impl DataClientCore {
             data,
             self.clock.timestamp_ns(),
         );
-
-        self.msgbus
-            .borrow()
-            .send("DataEngine.response", &response as &dyn Any); // TODO: Optimize
     }
 
     pub fn handle_quote_ticks(
@@ -562,7 +486,7 @@ impl DataClientCore {
         let data_type = DataType::new(stringify!(QuoteTick), Some(metadata));
         let data = Arc::new(quotes);
 
-        let response = DataResponse::new(
+        DataResponse::new(
             UUID4::new(),
             correlation_id,
             self.client_id,
@@ -571,10 +495,6 @@ impl DataClientCore {
             data,
             self.clock.timestamp_ns(),
         );
-
-        self.msgbus
-            .borrow()
-            .send("DataEngine.response", &response as &dyn Any); // TODO: Optimize
     }
 
     pub fn handle_trade_ticks(
@@ -587,7 +507,7 @@ impl DataClientCore {
         let data_type = DataType::new(stringify!(TradeTick), Some(metadata));
         let data = Arc::new(trades);
 
-        let response = DataResponse::new(
+        DataResponse::new(
             UUID4::new(),
             correlation_id,
             self.client_id,
@@ -596,10 +516,6 @@ impl DataClientCore {
             data,
             self.clock.timestamp_ns(),
         );
-
-        self.msgbus
-            .borrow()
-            .send("DataEngine.response", &response as &dyn Any); // TODO: Optimize
     }
 
     pub fn handle_bars(&self, bar_type: &BarType, bars: Vec<Bar>, correlation_id: UUID4) {
@@ -607,7 +523,7 @@ impl DataClientCore {
         let data_type = DataType::new(stringify!(Bar), Some(metadata));
         let data = Arc::new(bars);
 
-        let response = DataResponse::new(
+        DataResponse::new(
             UUID4::new(),
             correlation_id,
             self.client_id,
@@ -616,9 +532,5 @@ impl DataClientCore {
             data,
             self.clock.timestamp_ns(),
         );
-
-        self.msgbus
-            .borrow()
-            .send("DataEngine.response", &response as &dyn Any); // TODO: Optimize
     }
 }

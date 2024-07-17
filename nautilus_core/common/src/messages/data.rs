@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{any::Any, ops::Deref, sync::Arc};
+use std::{any::Any, sync::Arc};
 
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
@@ -21,8 +21,10 @@ use nautilus_model::{
     identifiers::{ClientId, Venue},
 };
 
+// TOOD: redesign data messages for a tighter model
 pub struct DataRequest {
-    pub req_id: UUID4,
+    pub request_id: UUID4,
+    pub correlation_id: UUID4,
     pub client_id: ClientId,
     pub venue: Venue,
     pub data_type: DataType,
@@ -30,65 +32,41 @@ pub struct DataRequest {
 }
 
 pub struct DataResponse {
-    pub req: DataRequest,
+    pub response_id: UUID4,
+    pub correlation_id: UUID4,
+    pub client_id: ClientId,
+    pub venue: Venue,
+    pub data_type: DataType,
     pub data: Arc<dyn Any + Send + Sync>,
+    pub ts_init: UnixNanos,
 }
 
-impl DataRequest {
-    pub fn new(
-        req_id: UUID4,
+impl DataResponse {
+    pub fn new<T: Any + Send + Sync>(
+        response_id: UUID4,
+        correlation_id: UUID4,
         client_id: ClientId,
         venue: Venue,
         data_type: DataType,
+        data: T,
         ts_init: UnixNanos,
     ) -> Self {
         Self {
-            req_id,
+            response_id,
+            correlation_id,
             client_id,
             venue,
             data_type,
+            data: Arc::new(data),
             ts_init,
         }
     }
 }
 
-impl DataResponse {
-    // TODO: remove this. It should not be possible to create a data response
-    // without a data request.
-    pub fn new<T: Any + Send + Sync>(
-        req_id: UUID4,
-        client_id: ClientId,
-        venue: Venue,
-        data_type: DataType,
-        ts_init: UnixNanos,
-        data: T,
-    ) -> Self {
-        let req = DataRequest::new(req_id, client_id, venue, data_type, ts_init);
-        Self {
-            req,
-            data: Arc::new(data),
-        }
-    }
-
-    pub fn new_with_req<T: Any + Send + Sync>(req: DataRequest, data: T) -> Self {
-        Self {
-            req,
-            data: Arc::new(data),
-        }
-    }
-}
-
-impl Deref for DataResponse {
-    type Target = DataRequest;
-
-    fn deref(&self) -> &Self::Target {
-        &self.req
-    }
-}
-
+#[derive(Debug, Clone, Copy)]
 pub enum DataCommandAction {
     Subscribe,
-    Unsubscibe,
+    Unsubscribe,
 }
 
 pub struct DataCommand {
