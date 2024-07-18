@@ -76,8 +76,8 @@ To facilitate this, nearly all configuration and domain objects can be serialize
 
 ## Common core
 
-The common system core is utilized by all node environment contexts (`backtest`, `sandbox`, and `live`).
-User-defined Actor, Strategy and ExecAlgorithm components are managed consistently across these environment contexts.
+The common system core is utilized by all node [environment contexts](/concepts/architecture.md#environment-contexts) (`backtest`, `sandbox`, and `live`).
+User-defined `Actor`, `Strategy` and `ExecAlgorithm` components are managed consistently across these environment contexts.
 
 ## Backtesting
 
@@ -93,10 +93,6 @@ For live trading, a `TradingNode` can ingest data and events from multiple data 
 The platform supports both demo/paper trading accounts and real accounts. High performance can be achieved by running
 asynchronously on a single [event loop](https://docs.python.org/3/library/asyncio-eventloop.html), 
 with the potential to further boost performance by leveraging the [uvloop](https://github.com/MagicStack/uvloop) implementation (available for Linux and macOS).
-
-:::tip
-Python 3.11 offers improved run-time performance, while Python 3.12 additionally offers improved asyncio performance.
-:::
 
 ## Domain model
 
