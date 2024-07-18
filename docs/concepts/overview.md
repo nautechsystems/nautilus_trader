@@ -100,9 +100,10 @@ The platform features a comprehensive trading domain model that includes various
 `Price` and `Quantity`, as well as more complex entities such as `Order` and `Position` objects, 
 which are used to aggregate multiple events to determine state.
 
-### Data Types
+### Data types
 
 The following market data types can be requested historically, and also subscribed to as live streams when available from a venue / data provider, and implemented in an integrations adapter.
+
 - `OrderBookDelta` (L1/L2/L3)
 - `OrderBookDeltas` (container type)
 - `OrderBookDepth10` (fixed depth of 10 levels per side)
@@ -114,13 +115,17 @@ The following market data types can be requested historically, and also subscrib
 - `InstrumentClose`
 - `VenueStatus`
 
-The following PriceType options can be used for bar aggregations;
+The following `PriceType` options can be used for bar aggregations:
+
 - `BID`
 - `ASK`
 - `MID`
 - `LAST`
 
-The following BarAggregation options are possible;
+### Bar aggregations
+
+The following `BarAggregation` methods are available:
+
 - `MILLISECOND`
 - `SECOND`
 - `MINUTE`
@@ -143,7 +148,7 @@ This enables maximum flexibility and now allows alternative bars to be aggregate
 
 ### Account Types
 
-The following account types are available for both live and backtest environments;
+The following account types are available for both live and backtest environments:
 
 - `Cash` single-currency (base currency)
 - `Cash` multi-currency
@@ -153,7 +158,7 @@ The following account types are available for both live and backtest environment
 
 ### Order Types
 
-The following order types are available (when possible on a venue);
+The following order types are available (when possible on a venue):
 
 - `MARKET`
 - `LIMIT`
