@@ -19,24 +19,32 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::{any::Any, cell::RefCell, collections::HashSet, ops::{Deref, DerefMut}, rc::Rc, sync::Arc};
+use std::{
+    cell::RefCell,
+    collections::HashSet,
+    ops::{Deref, DerefMut},
+    rc::Rc,
+    sync::Arc,
+};
 
 use indexmap::IndexMap;
 use nautilus_common::{
     cache::Cache,
     clock::Clock,
-    messages::data::{DataCommand, DataCommandAction, DataResponse},
-    msgbus::MessageBus,
+    messages::data::{
+        DataCommand, DataCommandAction, DataRequest, DataResponse, DataResponsePayload,
+    },
 };
-use nautilus_core::{correctness, nanos::UnixNanos, uuid::UUID4};
+use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     data::{
         bar::{Bar, BarType},
         quote::QuoteTick,
         trade::TradeTick,
-        Data, DataType,
+        DataType,
     },
     enums::BookType,
+    ffi::identifiers::instrument_id,
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::any::InstrumentAny,
 };
@@ -99,20 +107,21 @@ pub trait DataClient {
         venue: Venue,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
-    ) -> DataResponse;
+    ) -> Vec<InstrumentAny>;
     fn request_instrument(
         &mut self,
         correlation_id: UUID4,
         instrument_id: InstrumentId,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
-    ) -> DataResponse;
+    ) -> InstrumentAny;
+    // TODO: figure out where to call this and it's return type
     fn request_order_book_snapshot(
         &mut self,
         correlation_id: UUID4,
         instrument_id: InstrumentId,
         depth: Option<usize>,
-    ) -> DataResponse;
+    ) -> DataResponsePayload;
     fn request_quote_ticks(
         &mut self,
         correlation_id: UUID4,
@@ -120,7 +129,7 @@ pub trait DataClient {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         limit: Option<usize>,
-    ) -> DataResponse;
+    ) -> Vec<QuoteTick>;
     fn request_trade_ticks(
         &mut self,
         correlation_id: UUID4,
@@ -128,7 +137,7 @@ pub trait DataClient {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         limit: Option<usize>,
-    ) -> DataResponse;
+    ) -> Vec<TradeTick>;
     fn request_bars(
         &mut self,
         correlation_id: UUID4,
@@ -136,13 +145,12 @@ pub trait DataClient {
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
         limit: Option<usize>,
-    ) -> DataResponse;
+    ) -> Vec<Bar>;
 }
 
 pub struct DataClientCore {
     pub client_id: ClientId,
     pub venue: Venue,
-    pub is_connected: bool,
     client: Box<dyn DataClient>,
     clock: Box<dyn Clock>,
     cache: Rc<RefCell<Cache>>,
@@ -172,8 +180,6 @@ impl DerefMut for DataClientCore {
         &mut self.client
     }
 }
-
-
 
 impl DataClientCore {
     pub fn execute(&mut self, command: DataCommand) {
@@ -438,7 +444,73 @@ impl DataClientCore {
 
     // -- DATA REQUEST HANDLERS IMPLEMENTATION ---------------------------------------------------------------------------
 
-    pub fn handle_instrument(&self, instrument: InstrumentAny, correlation_id: UUID4) {
+    pub fn request(&mut self, req: DataRequest) -> DataResponse {
+        let instrument_id = req.data_type.parse_instrument_id_from_metadata();
+        let venue = req.data_type.parse_venue_from_metadata();
+        let start = req.data_type.parse_start_from_metadata();
+        let end = req.data_type.parse_end_from_metadata();
+        let limit = req.data_type.parse_limit_from_metadata();
+
+        match req.data_type.type_name() {
+            stringify!(InstrumentAny) => match (instrument_id, venue) {
+                (None, Some(venue)) => {
+                    let instruments =
+                        self.client
+                            .request_instruments(req.request_id, venue, start, end);
+                    self.handle_instruments(venue, instruments, req.request_id)
+                }
+                (Some(instrument_id), None) => {
+                    let instrument =
+                        self.client
+                            .request_instrument(req.request_id, instrument_id, start, end);
+                    self.handle_instrument(instrument, req.request_id)
+                }
+                _ => {
+                    todo!()
+                }
+            },
+            stringify!(QuoteTick) => {
+                let instrument_id =
+                    instrument_id.expect("Error on request: no 'instrument_id' found in metadata");
+                let quotes = self.client.request_quote_ticks(
+                    req.request_id,
+                    instrument_id,
+                    start,
+                    end,
+                    limit,
+                );
+                self.handle_quote_ticks(&instrument_id, quotes, req.request_id)
+            }
+            stringify!(TradeTick) => {
+                let instrument_id =
+                    instrument_id.expect("Error on request: no 'instrument_id' found in metadata");
+                let trades = self.client.request_trade_ticks(
+                    req.request_id,
+                    instrument_id,
+                    start,
+                    end,
+                    limit,
+                );
+                self.handle_trade_ticks(&instrument_id, trades, req.request_id)
+            }
+            stringify!(Bar) => {
+                let bar_type = req.data_type.parse_bar_type_from_metadata();
+                let bars = self
+                    .client
+                    .request_bars(req.request_id, bar_type, start, end, limit);
+                self.handle_bars(&bar_type, bars, req.request_id)
+            }
+            _ => {
+                todo!()
+            }
+        }
+    }
+
+    pub fn handle_instrument(
+        &self,
+        instrument: InstrumentAny,
+        correlation_id: UUID4,
+    ) -> DataResponse {
         let instrument_id = instrument.id();
         let metadata = IndexMap::from([("instrument_id".to_string(), instrument_id.to_string())]);
         let data_type = DataType::new(stringify!(InstrumentAny), Some(metadata));
@@ -452,7 +524,7 @@ impl DataClientCore {
             data_type,
             data,
             self.clock.timestamp_ns(),
-        );
+        )
     }
 
     pub fn handle_instruments(
@@ -460,7 +532,7 @@ impl DataClientCore {
         venue: Venue,
         instruments: Vec<InstrumentAny>,
         correlation_id: UUID4,
-    ) {
+    ) -> DataResponse {
         let metadata = IndexMap::from([("venue".to_string(), venue.to_string())]);
         let data_type = DataType::new(stringify!(InstrumentAny), Some(metadata));
         let data = Arc::new(instruments);
@@ -473,7 +545,7 @@ impl DataClientCore {
             data_type,
             data,
             self.clock.timestamp_ns(),
-        );
+        )
     }
 
     pub fn handle_quote_ticks(
@@ -481,7 +553,7 @@ impl DataClientCore {
         instrument_id: &InstrumentId,
         quotes: Vec<QuoteTick>,
         correlation_id: UUID4,
-    ) {
+    ) -> DataResponse {
         let metadata = IndexMap::from([("instrument_id".to_string(), instrument_id.to_string())]);
         let data_type = DataType::new(stringify!(QuoteTick), Some(metadata));
         let data = Arc::new(quotes);
@@ -494,7 +566,7 @@ impl DataClientCore {
             data_type,
             data,
             self.clock.timestamp_ns(),
-        );
+        )
     }
 
     pub fn handle_trade_ticks(
@@ -502,7 +574,7 @@ impl DataClientCore {
         instrument_id: &InstrumentId,
         trades: Vec<TradeTick>,
         correlation_id: UUID4,
-    ) {
+    ) -> DataResponse {
         let metadata = IndexMap::from([("instrument_id".to_string(), instrument_id.to_string())]);
         let data_type = DataType::new(stringify!(TradeTick), Some(metadata));
         let data = Arc::new(trades);
@@ -515,10 +587,15 @@ impl DataClientCore {
             data_type,
             data,
             self.clock.timestamp_ns(),
-        );
+        )
     }
 
-    pub fn handle_bars(&self, bar_type: &BarType, bars: Vec<Bar>, correlation_id: UUID4) {
+    pub fn handle_bars(
+        &self,
+        bar_type: &BarType,
+        bars: Vec<Bar>,
+        correlation_id: UUID4,
+    ) -> DataResponse {
         let metadata = IndexMap::from([("bar_type".to_string(), bar_type.to_string())]);
         let data_type = DataType::new(stringify!(Bar), Some(metadata));
         let data = Arc::new(bars);
@@ -531,6 +608,6 @@ impl DataClientCore {
             data_type,
             data,
             self.clock.timestamp_ns(),
-        );
+        )
     }
 }

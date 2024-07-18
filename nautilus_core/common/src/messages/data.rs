@@ -31,13 +31,15 @@ pub struct DataRequest {
     pub ts_init: UnixNanos,
 }
 
+pub type DataResponsePayload = Arc<dyn Any + Send + Sync>;
+
 pub struct DataResponse {
     pub response_id: UUID4,
     pub correlation_id: UUID4,
     pub client_id: ClientId,
     pub venue: Venue,
     pub data_type: DataType,
-    pub data: Arc<dyn Any + Send + Sync>,
+    pub data: DataResponsePayload,
     pub ts_init: UnixNanos,
 }
 

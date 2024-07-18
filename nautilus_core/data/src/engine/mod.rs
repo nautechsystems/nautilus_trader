@@ -24,7 +24,6 @@ pub mod config;
 pub mod live;
 
 use std::{
-    any::Any,
     cell::RefCell,
     collections::{HashMap, HashSet},
     marker::PhantomData,
@@ -40,8 +39,7 @@ use nautilus_common::{
     component::{Disposed, PreInitialized, Ready, Running, Starting, State, Stopped, Stopping},
     enums::ComponentState,
     logging::{CMD, RECV, RES},
-    messages::data::{DataCommand, DataCommandAction, DataRequest, DataResponse},
-    msgbus::MessageBus,
+    messages::data::{DataCommand, DataRequest, DataResponse},
 };
 use nautilus_core::correctness;
 use nautilus_model::{
@@ -58,7 +56,7 @@ use nautilus_model::{
     instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
 };
 
-use crate::client::{DataClient, DataClientCore};
+use crate::client::DataClientCore;
 
 pub struct DataEngineConfig {
     pub debug: bool,
@@ -350,14 +348,13 @@ impl DataEngine<Running> {
             self.routing_map.get(&request.venue).copied()
         };
 
-        if let Some(client_id) = client_id {
-            match request.data_type.type_name() {
-                stringify!(InstrumentAny) => self.handle_instruments_request(client_id, request),
-                stringify!(QuoteTick) => self.handle_quote_ticks_request(client_id, request),
-                stringify!(TradeTick) => self.handle_trade_ticks_request(client_id, request),
-                stringify!(Bar) => self.handle_bars_request(client_id, request),
-                _ => self.handle_request(client_id, request),
-            }
+        if let Some(client) = client_id
+            .map(|client_id| self.clients.get_mut(&client_id))
+            .flatten()
+        {
+            let response = client.request(request);
+            // TODO: add response to cache
+            // or should client do that??
         } else {
             log::error!(
                 "Cannot execute request: no data client configured for {} or `client_id` {}",
@@ -476,74 +473,10 @@ impl DataEngine<Running> {
         let topic = format!("data.bars.{}", bar.bar_type);
     }
 
-    // -- REQUEST HANDLERS ------------------------------------------------------------------------
-
-    fn handle_request(&mut self, client_id: ClientId, request: DataRequest) {
-        // SAFETY: client_id already determined
-        let client = self.clients.get_mut(&client_id).unwrap();
-        client.request(request.request_id, request.data_type);
-    }
-
-    fn handle_instruments_request(&mut self, client_id: ClientId, request: DataRequest) {
-        let instrument_id = request.data_type.parse_instrument_id_from_metadata();
-        let venue = request.data_type.parse_venue_from_metadata();
-        let start = request.data_type.parse_start_from_metadata();
-        let end = request.data_type.parse_end_from_metadata();
-
-        // SAFETY: client_id already determined
-        let client = self.clients.get_mut(&client_id).unwrap();
-
-        if let Some(instrument_id) = instrument_id {
-            client.request_instrument(request.request_id, instrument_id, start, end);
-        }
-
-        if let Some(venue) = venue {
-            client.request_instruments(request.request_id, venue, start, end);
-        }
-    }
-
-    fn handle_quote_ticks_request(&mut self, client_id: ClientId, request: DataRequest) {
-        let instrument_id = request
-            .data_type
-            .parse_instrument_id_from_metadata()
-            .expect("Error on request: no 'instrument_id' found in metadata");
-        let start = request.data_type.parse_start_from_metadata();
-        let end = request.data_type.parse_end_from_metadata();
-        let limit = request.data_type.parse_limit_from_metadata();
-
-        // SAFETY: client_id already determined
-        let client = self.clients.get_mut(&client_id).unwrap();
-        client.request_quote_ticks(request.request_id, instrument_id, start, end, limit);
-    }
-
-    fn handle_trade_ticks_request(&mut self, client_id: ClientId, request: DataRequest) {
-        let instrument_id = request
-            .data_type
-            .parse_instrument_id_from_metadata()
-            .expect("Error on request: no 'instrument_id' found in metadata");
-        let start = request.data_type.parse_start_from_metadata();
-        let end = request.data_type.parse_end_from_metadata();
-        let limit = request.data_type.parse_limit_from_metadata();
-
-        // SAFETY: client_id already determined
-        let client = self.clients.get_mut(&client_id).unwrap();
-        client.request_trade_ticks(request.request_id, instrument_id, start, end, limit);
-    }
-
-    fn handle_bars_request(&mut self, client_id: ClientId, request: DataRequest) {
-        let bar_type = request.data_type.parse_bar_type_from_metadata();
-        let start = request.data_type.parse_start_from_metadata();
-        let end = request.data_type.parse_end_from_metadata();
-        let limit = request.data_type.parse_limit_from_metadata();
-
-        // SAFETY: client_id already determined
-        let client = self.clients.get_mut(&client_id).unwrap();
-        client.request_bars(request.request_id, bar_type, start, end, limit);
-    }
-
     // -- RESPONSE HANDLERS -----------------------------------------------------------------------
 
     fn handle_instruments(&self, instruments: Arc<Vec<InstrumentAny>>) {
+        // TODO improve by adding bulk update methods to cache and database
         for instrument in instruments.iter() {
             if let Err(e) = self.cache.borrow_mut().add_instrument(instrument.clone()) {
                 log::error!("Error on cache insert: {e}");
@@ -552,26 +485,20 @@ impl DataEngine<Running> {
     }
 
     fn handle_quotes(&self, quotes: Arc<Vec<QuoteTick>>) {
-        for quote in quotes.iter() {
-            if let Err(e) = self.cache.borrow_mut().add_quote(*quote) {
-                log::error!("Error on cache insert: {e}");
-            }
+        if let Err(e) = self.cache.borrow_mut().add_quotes(&quotes) {
+            log::error!("Error on cache insert: {e}");
         }
     }
 
     fn handle_trades(&self, trades: Arc<Vec<TradeTick>>) {
-        for trade in trades.iter() {
-            if let Err(e) = self.cache.borrow_mut().add_trade(*trade) {
-                log::error!("Error on cache insert: {e}");
-            }
+        if let Err(e) = self.cache.borrow_mut().add_trades(&trades) {
+            log::error!("Error on cache insert: {e}");
         }
     }
 
     fn handle_bars(&self, bars: Arc<Vec<Bar>>) {
-        for bar in bars.iter() {
-            if let Err(e) = self.cache.borrow_mut().add_bar(*bar) {
-                log::error!("Error on cache insert: {e}");
-            }
+        if let Err(e) = self.cache.borrow_mut().add_bars(&bars) {
+            log::error!("Error on cache insert: {e}");
         }
     }
 
