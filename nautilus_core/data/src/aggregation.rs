@@ -19,7 +19,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::{ops::Add, sync::Arc};
+use std::ops::Add;
 
 use nautilus_core::{correctness, nanos::UnixNanos};
 use nautilus_model::{
@@ -31,6 +31,23 @@ use nautilus_model::{
     instruments::any::InstrumentAny,
     types::{fixed::FIXED_SCALAR, price::Price, quantity::Quantity},
 };
+
+pub trait BarAggregator {
+    fn bar_type(&self) -> BarType;
+    fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos);
+    /// Update the aggregator with the given quote.
+    fn handle_quote_tick(&mut self, quote: QuoteTick) {
+        self.update(
+            quote.extract_price(self.bar_type().spec.price_type),
+            quote.extract_volume(self.bar_type().spec.price_type),
+            quote.ts_event,
+        )
+    }
+    /// Update the aggregator with the given trade.
+    fn handle_trade_tick(&mut self, trade: TradeTick) {
+        self.update(trade.price, trade.size, trade.ts_event);
+    }
+}
 
 /// Provides a generic bar builder for aggregation.
 pub struct BarBuilder {
@@ -180,14 +197,14 @@ impl BarBuilder {
 }
 
 /// Provides a means of aggregating specified bars and sending to a registered handler.
-pub struct BarAggregator {
+pub struct BarAggregatorCore {
     builder: BarBuilder,
-    handler: Arc<dyn Fn(Bar) + Send + Sync>,
+    handler: fn(Bar),
     await_partial: bool,
     bar_type: BarType,
 }
 
-impl BarAggregator {
+impl BarAggregatorCore {
     /// Creates a new [`BarAggregator`] instance.
     ///
     /// # Panics
@@ -196,7 +213,7 @@ impl BarAggregator {
     pub fn new(
         instrument: &InstrumentAny,
         bar_type: BarType,
-        handler: Arc<dyn Fn(Bar) + Send + Sync>,
+        handler: fn(Bar),
         await_partial: bool,
     ) -> Self {
         Self {
@@ -209,24 +226,6 @@ impl BarAggregator {
 
     pub fn set_await_partial(&mut self, value: bool) {
         self.await_partial = value;
-    }
-
-    /// Update the aggregator with the given quote.
-    pub fn handle_quote_tick(&mut self, quote: QuoteTick) {
-        if !self.await_partial {
-            self.apply_update(
-                quote.extract_price(self.bar_type.spec.price_type),
-                quote.extract_volume(self.bar_type.spec.price_type),
-                quote.ts_event,
-            );
-        }
-    }
-
-    /// Update the aggregator with the given trade.
-    pub fn handle_trade_tick(&mut self, trade: TradeTick) {
-        if !self.await_partial {
-            self.apply_update(trade.price, trade.size, trade.ts_event);
-        }
     }
 
     /// Set the initial values for a partially completed bar.
@@ -254,7 +253,7 @@ impl BarAggregator {
 /// When received tick count reaches the step threshold of the bar
 /// specification, then a bar is created and sent to the handler.
 pub struct TickBarAggregator {
-    aggregator: BarAggregator,
+    core: BarAggregatorCore,
 }
 
 impl TickBarAggregator {
@@ -263,29 +262,31 @@ impl TickBarAggregator {
     /// # Panics
     ///
     /// Panics if the `instrument.id` is not equal to the `bar_type.instrument_id`.
-    pub fn new(
-        instrument: &InstrumentAny,
-        bar_type: BarType,
-        handler: Arc<dyn Fn(Bar) + Send + Sync>,
-    ) -> Self {
+    pub fn new(instrument: &InstrumentAny, bar_type: BarType, handler: fn(Bar)) -> Self {
         Self {
-            aggregator: BarAggregator::new(instrument, bar_type, handler, false),
+            core: BarAggregatorCore::new(instrument, bar_type, handler, false),
         }
+    }
+}
+
+impl BarAggregator for TickBarAggregator {
+    fn bar_type(&self) -> BarType {
+        self.core.bar_type
     }
 
     /// Apply the given update to the aggregator.
-    pub fn apply_update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
-        self.aggregator.apply_update(price, size, ts_event);
+    fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
+        self.core.apply_update(price, size, ts_event);
 
-        if self.aggregator.builder.count >= self.aggregator.bar_type.spec.step {
-            self.aggregator.build_now_and_send();
+        if self.core.builder.count >= self.core.bar_type.spec.step {
+            self.core.build_now_and_send();
         }
     }
 }
 
 /// Provides a means of building volume bars from quote and trade ticks.
 pub struct VolumeBarAggregator {
-    aggregator: BarAggregator,
+    core: BarAggregatorCore,
 }
 
 impl VolumeBarAggregator {
@@ -294,26 +295,28 @@ impl VolumeBarAggregator {
     /// # Panics
     ///
     /// Panics if the `instrument.id` is not equal to the `bar_type.instrument_id`.
-    pub fn new(
-        instrument: &InstrumentAny,
-        bar_type: BarType,
-        handler: Arc<dyn Fn(Bar) + Send + Sync>,
-    ) -> Self {
+    pub fn new(instrument: &InstrumentAny, bar_type: BarType, handler: fn(Bar)) -> Self {
         Self {
-            aggregator: BarAggregator::new(instrument, bar_type, handler, false),
+            core: BarAggregatorCore::new(instrument, bar_type, handler, false),
         }
+    }
+}
+
+impl BarAggregator for VolumeBarAggregator {
+    fn bar_type(&self) -> BarType {
+        self.core.bar_type
     }
 
     /// Apply the given update to the aggregator.
     #[allow(unused_assignments)] // Temp for development
-    fn apply_update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
+    fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
         let mut raw_size_update = size.raw;
-        let raw_step = (self.aggregator.bar_type.spec.step as f64 * FIXED_SCALAR) as u64;
+        let raw_step = (self.core.bar_type.spec.step as f64 * FIXED_SCALAR) as u64;
         let mut raw_size_diff = 0;
 
         while raw_size_update > 0 {
-            if self.aggregator.builder.volume.raw + raw_size_update < raw_step {
-                self.aggregator.apply_update(
+            if self.core.builder.volume.raw + raw_size_update < raw_step {
+                self.core.apply_update(
                     price,
                     Quantity::from_raw(raw_size_update, size.precision).unwrap(),
                     ts_event,
@@ -321,14 +324,14 @@ impl VolumeBarAggregator {
                 break;
             }
 
-            raw_size_diff = raw_step - self.aggregator.builder.volume.raw;
-            self.aggregator.apply_update(
+            raw_size_diff = raw_step - self.core.builder.volume.raw;
+            self.core.apply_update(
                 price,
                 Quantity::from_raw(raw_size_update, size.precision).unwrap(),
                 ts_event,
             );
 
-            self.aggregator.build_now_and_send();
+            self.core.build_now_and_send();
             raw_size_update -= raw_size_diff;
         }
     }
@@ -339,7 +342,7 @@ impl VolumeBarAggregator {
 /// When received value reaches the step threshold of the bar
 /// specification, then a bar is created and sent to the handler.
 pub struct ValueBarAggregator {
-    aggregator: BarAggregator,
+    core: BarAggregatorCore,
     cum_value: f64,
 }
 
@@ -349,13 +352,9 @@ impl ValueBarAggregator {
     /// # Panics
     ///
     /// Panics if the `instrument.id` is not equal to the `bar_type.instrument_id`.
-    pub fn new(
-        instrument: &InstrumentAny,
-        bar_type: BarType,
-        handler: Arc<dyn Fn(Bar) + Send + Sync>,
-    ) -> Self {
+    pub fn new(instrument: &InstrumentAny, bar_type: BarType, handler: fn(Bar)) -> Self {
         Self {
-            aggregator: BarAggregator::new(instrument, bar_type, handler, false),
+            core: BarAggregatorCore::new(instrument, bar_type, handler, false),
             cum_value: 0.0,
         }
     }
@@ -365,16 +364,22 @@ impl ValueBarAggregator {
     pub const fn get_cumulative_value(&self) -> f64 {
         self.cum_value
     }
+}
+
+impl BarAggregator for ValueBarAggregator {
+    fn bar_type(&self) -> BarType {
+        self.core.bar_type
+    }
 
     /// Apply the given update to the aggregator.
-    pub fn apply_update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
+    fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
         let mut size_update = size.as_f64();
 
         while size_update > 0.0 {
             let value_update = price.as_f64() * size_update;
-            if self.cum_value + value_update < self.aggregator.bar_type.spec.step as f64 {
+            if self.cum_value + value_update < self.core.bar_type.spec.step as f64 {
                 self.cum_value += value_update;
-                self.aggregator.apply_update(
+                self.core.apply_update(
                     price,
                     Quantity::new(size_update, size.precision).unwrap(),
                     ts_event,
@@ -382,15 +387,15 @@ impl ValueBarAggregator {
                 break;
             }
 
-            let value_diff = self.aggregator.bar_type.spec.step as f64 - self.cum_value;
+            let value_diff = self.core.bar_type.spec.step as f64 - self.cum_value;
             let size_diff = size_update * (value_diff / value_update);
-            self.aggregator.apply_update(
+            self.core.apply_update(
                 price,
                 Quantity::new(size_diff, size.precision).unwrap(),
                 ts_event,
             );
 
-            self.aggregator.build_now_and_send();
+            self.core.build_now_and_send();
             self.cum_value = 0.0;
             size_update -= size_diff;
         }
@@ -593,6 +598,8 @@ impl ValueBarAggregator {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::panic::AssertUnwindSafe;
+
     use nautilus_model::{
         data::bar::{BarSpecification, BarType},
         enums::{AggregationSource, BarAggregation, PriceType},
@@ -776,14 +783,13 @@ mod tests {
             BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
             AggregationSource::Internal,
         );
-        let builder = BarBuilder::new(&instrument, bar_type);
+        let mut builder = BarBuilder::new(&instrument, bar_type);
 
-        // TODO: WIP
-        // let result = std::panic::catch_unwind(|| {
-        //     builder.build_now();
-        // });
-        //
-        // assert!(result.is_err());
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            builder.build_now();
+        }));
+
+        assert!(result.is_err());
     }
 
     #[rstest]
@@ -891,6 +897,7 @@ mod tests {
     //     let handler_guard = handler.lock().unwrap();
     //     assert_eq!(handler_guard.len(), 0);
     // }
+
     //
     // #[rstest]
     // fn test_tick_bar_aggregator_handle_trade_tick_when_count_below_threshold_updates(
