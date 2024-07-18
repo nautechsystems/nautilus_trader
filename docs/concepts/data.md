@@ -8,7 +8,7 @@ a trading domain:
 - `OrderBookDepth10`: Aggregated order book snapshot (10 levels per side)
 - `QuoteTick`: Top-of-book best bid and ask prices and sizes
 - `TradeTick`: A single trade/match event between counterparties
-- `Bar`: OHLCV bar data, aggregated using a specific *method*
+- `Bar`: OHLCV bar data, aggregated using a specific *aggregation method*
 - `Instrument`: General base class for a tradable instrument
 - `VenueStatus`: A venue level status event
 - `InstrumentStatus`: An instrument level status event
@@ -20,7 +20,7 @@ Each of these data types inherits from `Data`, which defines two fields:
 
 This inheritance ensures chronological data ordering (vital for backtesting), while also enhancing analytics.
 
-Consistency is key; data flows through the platform in exactly the same way for all system environment contexts (`backtest`, `sandbox`, `live`)
+Consistency is key; data flows through the platform in exactly the same way for all system [environment contexts](/concepts/architecture.md#environment-contexts) (`backtest`, `sandbox`, `live`)
 primarily through the `MessageBus` to the `DataEngine` and onto subscribed or registered handlers.
 
 For those seeking customization, the platform supports user-defined data types. Refer to the advanced [Custom data guide](advanced/custom_data.md) for further details.
