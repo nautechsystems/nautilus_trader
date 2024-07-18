@@ -929,19 +929,19 @@ typedef struct QuoteTick_t {
      */
     struct InstrumentId_t instrument_id;
     /**
-     * The top of book bid price.
+     * The top-of-book bid price.
      */
     struct Price_t bid_price;
     /**
-     * The top of book ask price.
+     * The top-of-book ask price.
      */
     struct Price_t ask_price;
     /**
-     * The top of book bid size.
+     * The top-of-book bid size.
      */
     struct Quantity_t bid_size;
     /**
-     * The top of book ask size.
+     * The top-of-book ask size.
      */
     struct Quantity_t ask_size;
     /**

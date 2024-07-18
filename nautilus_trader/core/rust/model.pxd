@@ -510,13 +510,13 @@ cdef extern from "../includes/model.h":
     cdef struct QuoteTick_t:
         # The quotes instrument ID.
         InstrumentId_t instrument_id;
-        # The top of book bid price.
+        # The top-of-book bid price.
         Price_t bid_price;
-        # The top of book ask price.
+        # The top-of-book ask price.
         Price_t ask_price;
-        # The top of book bid size.
+        # The top-of-book bid size.
         Quantity_t bid_size;
-        # The top of book ask size.
+        # The top-of-book ask size.
         Quantity_t ask_size;
         # UNIX timestamp (nanoseconds) when the quote event occurred.
         uint64_t ts_event;

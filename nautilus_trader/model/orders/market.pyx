@@ -50,7 +50,7 @@ cdef class MarketOrder(Order):
     A Market order is an order to BUY (or SELL) at the market bid or offer price.
     A market order may increase the likelihood of a fill and the speed of
     execution, but unlike the Limit order - a Market order provides no price
-    protection and may fill at a price far lower/higher than the top of book
+    protection and may fill at a price far lower/higher than the top-of-book
     bid/ask.
 
     - A `Market-On-Open (MOO)` order can be represented using a time in force of ``AT_THE_OPEN``.

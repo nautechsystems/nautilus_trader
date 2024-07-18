@@ -46,13 +46,13 @@ use crate::{
 pub struct QuoteTick {
     /// The quotes instrument ID.
     pub instrument_id: InstrumentId,
-    /// The top of book bid price.
+    /// The top-of-book bid price.
     pub bid_price: Price,
-    /// The top of book ask price.
+    /// The top-of-book ask price.
     pub ask_price: Price,
-    /// The top of book bid size.
+    /// The top-of-book bid size.
     pub bid_size: Quantity,
-    /// The top of book ask size.
+    /// The top-of-book ask size.
     pub ask_size: Quantity,
     /// UNIX timestamp (nanoseconds) when the quote event occurred.
     pub ts_event: UnixNanos,

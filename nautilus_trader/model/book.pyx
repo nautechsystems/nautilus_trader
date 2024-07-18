@@ -508,7 +508,7 @@ cdef class OrderBook(Data):
 
     cpdef spread(self):
         """
-        Return the top of book spread (if no bids or asks then returns ``None``).
+        Return the top-of-book spread (if no bids or asks then returns ``None``).
 
         Returns
         -------

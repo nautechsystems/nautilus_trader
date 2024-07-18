@@ -3346,20 +3346,20 @@ cdef class QuoteTick(Data):
     """
     Represents a single quote tick in a market.
 
-    Contains information about the best top of book bid and ask.
+    Contains information about the best top-of-book bid and ask.
 
     Parameters
     ----------
     instrument_id : InstrumentId
         The quotes instrument ID.
     bid_price : Price
-        The top of book bid price.
+        The top-of-book bid price.
     ask_price : Price
-        The top of book ask price.
+        The top-of-book ask price.
     bid_size : Quantity
-        The top of book bid size.
+        The top-of-book bid size.
     ask_size : Quantity
-        The top of book ask size.
+        The top-of-book ask size.
     ts_event : uint64_t
         UNIX timestamp (nanoseconds) when the tick event occurred.
     ts_init : uint64_t
@@ -3462,7 +3462,7 @@ cdef class QuoteTick(Data):
     @property
     def bid_price(self) -> Price:
         """
-        Return the top of book bid price.
+        Return the top-of-book bid price.
 
         Returns
         -------
@@ -3474,7 +3474,7 @@ cdef class QuoteTick(Data):
     @property
     def ask_price(self) -> Price:
         """
-        Return the top of book ask price.
+        Return the top-of-book ask price.
 
         Returns
         -------
@@ -3486,7 +3486,7 @@ cdef class QuoteTick(Data):
     @property
     def bid_size(self) -> Quantity:
         """
-        Return the top of book bid size.
+        Return the top-of-book bid size.
 
         Returns
         -------
@@ -3498,7 +3498,7 @@ cdef class QuoteTick(Data):
     @property
     def ask_size(self) -> Quantity:
         """
-        Return the top of book ask size.
+        Return the top-of-book ask size.
 
         Returns
         -------
@@ -3728,17 +3728,17 @@ cdef class QuoteTick(Data):
         instrument_id : InstrumentId
             The quotes instrument ID.
         bid_price_raw : int64_t
-            The raw top of book bid price (as a scaled fixed precision integer).
+            The raw top-of-book bid price (as a scaled fixed precision integer).
         ask_price_raw : int64_t
-            The raw top of book ask price (as a scaled fixed precision integer).
+            The raw top-of-book ask price (as a scaled fixed precision integer).
         bid_price_prec : uint8_t
             The bid price precision.
         ask_price_prec : uint8_t
             The ask price precision.
         bid_size_raw : uint64_t
-            The raw top of book bid size (as a scaled fixed precision integer).
+            The raw top-of-book bid size (as a scaled fixed precision integer).
         ask_size_raw : uint64_t
-            The raw top of book ask size (as a scaled fixed precision integer).
+            The raw top-of-book ask size (as a scaled fixed precision integer).
         bid_size_prec : uint8_t
             The bid size precision.
         ask_size_prec : uint8_t
