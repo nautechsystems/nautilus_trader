@@ -386,6 +386,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             instrument = await self.instrument_provider.find_with_contract_id(
                 position.contract.conId,
             )
+            if instrument is None:
+                self._log.error(
+                    f"Cannot generate report: instrument not found for contract ID {position.contract.conId}",
+                )
+                continue
+
             avg_px = instrument.make_price(
                 position.avg_cost / instrument.multiplier,
             ).as_decimal()
