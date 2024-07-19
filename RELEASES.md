@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Refactor order submission error handling for Interactive Brokers (#1783), thanks @rsmb7z
 - Improved live reconciliation robustness (will now generate inferred orders necessary to align external position state)
 - Improved tests for Interactive Brokers (#1776), thanks @mylesgamez
+- Added documentation for option greeks custom data example (#1788), thanks @faysou
 - Upgrade `tokio` to 1.38.1
 - Upgrade `datafusion` to 40.0.0
 
@@ -15,8 +16,8 @@ Released on TBD (UTC).
 - Rust `OrderBook` API now takes data by reference instead of by value
 
 ### Fixes
-- Fixed `LiveExecutionEngine` handling of adapter client execution report causing `None` mass status
-- Fixed `InteractiveBrokersExecutionClient` handling of instruments not found when generating execution reports
+- Fixed `LiveExecutionEngine` handling of adapter client execution report causing `None` mass status (#1789), thanks for reporting @faysou
+- Fixed `InteractiveBrokersExecutionClient` handling of instruments not found when generating execution reports (#1789), thanks for reporting @faysou
 
 ---
 
