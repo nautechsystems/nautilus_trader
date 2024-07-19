@@ -17,6 +17,7 @@
 
 use std::{collections::HashMap, ops::Deref};
 
+use chrono::{DateTime, Utc};
 use nautilus_core::{
     correctness::{check_positive_u64, check_predicate_true, check_valid_string},
     nanos::UnixNanos,
@@ -35,6 +36,11 @@ use crate::{
 /// # Notes
 /// An active timer is one which has not expired (`timer.is_expired == False`).
 pub trait Clock {
+    /// Return the current date time in UTC.
+    fn utc_now(&self) -> DateTime<Utc> {
+        DateTime::from_timestamp_nanos(self.timestamp_ns().as_i64())
+    }
+
     /// Return the current UNIX timestamp in nanoseconds (ns).
     fn timestamp_ns(&self) -> UnixNanos;
 
