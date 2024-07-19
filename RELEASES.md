@@ -15,7 +15,8 @@ Released on TBD (UTC).
 - Rust `OrderBook` API now takes data by reference instead of by value
 
 ### Fixes
-None
+- Fixed `LiveExecutionEngine` handling of adapter client execution report causing `None` mass status
+- Fixed `InteractiveBrokersExecutionClient` handling of instruments not found when generating execution reports
 
 ---
 

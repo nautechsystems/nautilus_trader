@@ -498,6 +498,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             instrument = await self.instrument_provider.find_with_contract_id(
                 position.contract.conId,
             )
+            if instrument is None:
+                self._log.error(
+                    f"Cannot generate report: instrument not found for contract ID {position.contract.conId}",
+                )
+                continue
+
             if not self._cache.instrument(instrument.id):
                 self._handle_data(instrument)
 
