@@ -474,6 +474,12 @@ class LiveExecutionEngine(ExecutionEngine):
 
         # Reconcile each mass status with the execution engine
         for mass_status in mass_status_all:
+            if mass_status is None:
+                self._log.warning(
+                    "No execution mass status available for reconciliation "
+                    "(likely due to an adapter client error when generating reports)",
+                )
+                continue
             result = self._reconcile_mass_status(mass_status)
             results.append(result)
 
