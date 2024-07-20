@@ -124,8 +124,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         The clock for the client.
     instrument_provider : InteractiveBrokersInstrumentProvider
         The instrument provider.
-    ibg_client_id : int
-        Client ID used to connect TWS/Gateway.
     config : InteractiveBrokersExecClientConfig, optional
         The configuration for the instance.
     name : str, optional
@@ -142,13 +140,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         cache: Cache,
         clock: LiveClock,
         instrument_provider: InteractiveBrokersInstrumentProvider,
-        ibg_client_id: int,
         config: InteractiveBrokersExecClientConfig,
         name: str | None = None,
     ) -> None:
         super().__init__(
             loop=loop,
-            # client_id=ClientId(f"{IB_VENUE.value}-{ibg_client_id:03d}"), # TODO: Fix account_id.get_id()
             client_id=ClientId(name or f"{IB_VENUE.value}"),
             venue=IB_VENUE,
             oms_type=OmsType.NETTING,
