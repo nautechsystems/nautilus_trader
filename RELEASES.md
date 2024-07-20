@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added options on futures support for Interactive Brokers (#1795), thanks @rsmb7z
 - Implemented `MessageBus` v2 in Rust (#1786), thanks @twitu
 - Implemented `DataEngine` v2 in Rust (#1785), thanks @twitu
 - Refactor order submission error handling for Interactive Brokers (#1783), thanks @rsmb7z
@@ -18,6 +19,7 @@ Released on TBD (UTC).
 ### Fixes
 - Fixed `LiveExecutionEngine` handling of adapter client execution report causing `None` mass status (#1789), thanks for reporting @faysou
 - Fixed `InteractiveBrokersExecutionClient` handling of instruments not found when generating execution reports (#1789), thanks for reporting @faysou
+- Fixed Bybit parsing of trade and quote ticks for websocket messages (#1794), thanks @davidsblom
 
 ---
 
