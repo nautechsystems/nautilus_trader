@@ -68,6 +68,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
 
 class BybitDataClient(LiveMarketDataClient):
@@ -672,10 +673,10 @@ class BybitDataClient(LiveMarketDataClient):
                 ask_price = Price(float(msg.data.ask1Price), instrument.price_precision)
 
             if msg.data.bid1Size is not None:
-                bid_size = Price(float(msg.data.bid1Size), instrument.size_precision)
+                bid_size = Quantity(float(msg.data.bid1Size), instrument.size_precision)
 
             if msg.data.ask1Size is not None:
-                ask_size = Price(float(msg.data.ask1Size), instrument.size_precision)
+                ask_size = Quantity(float(msg.data.ask1Size), instrument.size_precision)
 
             quote = QuoteTick(
                 instrument_id=instrument_id,
