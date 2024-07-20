@@ -18,7 +18,7 @@ Instrument providers do as their name suggests - instantiating Nautilus
 
 The use cases for the instruments available from an `InstrumentProvider` are either:
 - Used standalone to discover the instruments available for an integration, using these for research or backtesting purposes
-- Used in a `sandbox` or `live` [environment context](/docs/latest/concepts/architecture.md#environment-contexts) for consumption by actors/strategies
+- Used in a `sandbox` or `live` [environment context](/concepts/architecture.md#environment-contexts) for consumption by actors/strategies
 
 ### Research and backtesting
 
