@@ -50,10 +50,15 @@ from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerSpot
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerSpotMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTrade
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTradeMsg
+from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 
 
 class TestBybitWsDecoders:
@@ -406,6 +411,40 @@ class TestBybitWsDecoders:
         assert result.topic == "publicTrade.BTCUSDT"
         assert result.type == "snapshot"
         assert result.ts == 1672304486868
+
+    def test_ws_trade_msg_parse_to_trade_tick(self):
+        # Prepare
+        item = pkgutil.get_data(
+            "tests.integration_tests.adapters.bybit.resources.ws_messages.public",
+            "ws_trade.json",
+        )
+        assert item is not None
+        decoder = msgspec.json.Decoder(BybitWsTradeMsg)
+        instrument_id = InstrumentId(Symbol("BTCUSDT-LINEAR"), Venue("BYBIT"))
+        expected_result = TradeTick(
+            instrument_id=instrument_id,
+            price=Price(16578.50, 3),
+            size=Quantity(0.001, 4),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("20f43950-d8dd-5b31-9112-a178eb6023af"),
+            ts_event=1672304486864999936,
+            ts_init=1672304486864999937,
+        )
+
+        # Act
+        result = (
+            decoder.decode(item)
+            .data[0]
+            .parse_to_trade_tick(
+                instrument_id=instrument_id,
+                price_precision=3,
+                size_precision=4,
+                ts_init=1672304486864999937,
+            )
+        )
+
+        # Assert
+        assert result == expected_result
 
     def test_ws_private_execution(self):
         item = pkgutil.get_data(
