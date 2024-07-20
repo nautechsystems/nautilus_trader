@@ -23,14 +23,10 @@ use std::ops::Add;
 
 use chrono::{DateTime, TimeDelta, Utc};
 use nautilus_common::{clock::Clock, timer::TimeEvent};
-use nautilus_core::{
-    correctness,
-    datetime::{millis_to_nanos, secs_to_nanos},
-    nanos::UnixNanos,
-};
+use nautilus_core::{correctness, nanos::UnixNanos};
 use nautilus_model::{
     data::{
-        bar::{Bar, BarType},
+        bar::{get_bar_interval, get_bar_interval_ns, Bar, BarType},
         quote::QuoteTick,
         trade::TradeTick,
     },
@@ -212,7 +208,7 @@ pub struct BarAggregatorCore {
 }
 
 impl BarAggregatorCore {
-    /// Creates a new [`BarAggregator`] instance.
+    /// Creates a new [`BarAggregatorCore`] instance.
     ///
     /// # Panics
     ///
@@ -424,30 +420,6 @@ impl BarAggregator for ValueBarAggregator {
     }
 }
 
-// TODO: Probably move this somewhere else
-fn get_interval(bar_type: &BarType) -> TimeDelta {
-    match bar_type.spec.aggregation {
-        BarAggregation::Millisecond => TimeDelta::milliseconds(bar_type.spec.step as i64),
-        BarAggregation::Second => TimeDelta::seconds(bar_type.spec.step as i64),
-        BarAggregation::Minute => TimeDelta::minutes(bar_type.spec.step as i64),
-        BarAggregation::Hour => TimeDelta::hours(bar_type.spec.step as i64),
-        BarAggregation::Day => TimeDelta::days(bar_type.spec.step as i64),
-        _ => panic!("Aggregation not time based"),
-    }
-}
-
-// TODO: Probably move this somewhere else
-fn get_interval_ns(bar_type: &BarType) -> u64 {
-    match bar_type.spec.aggregation {
-        BarAggregation::Millisecond => millis_to_nanos(bar_type.spec.step as f64),
-        BarAggregation::Second => secs_to_nanos(bar_type.spec.step as f64),
-        BarAggregation::Minute => secs_to_nanos(bar_type.spec.step as f64) * 60,
-        BarAggregation::Hour => secs_to_nanos(bar_type.spec.step as f64) * 60 * 60,
-        BarAggregation::Day => secs_to_nanos(bar_type.spec.step as f64) * 60 * 60 * 24,
-        _ => panic!("Aggregation not time based"),
-    }
-}
-
 pub struct TimeBarAggregator<C>
 where
     C: Clock,
@@ -471,7 +443,7 @@ impl<C> TimeBarAggregator<C>
 where
     C: Clock,
 {
-    /// Creates a new [`VolumeBarAggregator`] instance.
+    /// Creates a new [`TimeBarAggregator`] instance.
     ///
     /// # Panics
     ///
@@ -501,8 +473,8 @@ where
             stored_close_ns: UnixNanos::default(),
             cached_update: None,
             timer_name: bar_type.to_string(),
-            interval: get_interval(&bar_type),
-            interval_ns: UnixNanos::default(),
+            interval: get_bar_interval(&bar_type),
+            interval_ns: get_bar_interval_ns(&bar_type),
             next_close_ns: UnixNanos::default(),
         }
     }
