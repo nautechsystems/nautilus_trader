@@ -167,13 +167,13 @@ dev = ["freezegun (>=1.0,<2.0)", "pytest (>=6.0)", "pytest-cov"]
 
 [[package]]
 name = "betfair-parser"
-version = "0.12.0"
+version = "0.13.0"
 description = "A betfair parser"
 optional = true
 python-versions = "<4.0,>=3.9"
 files = [
-    {file = "betfair_parser-0.12.0-py3-none-any.whl", hash = "sha256:a2cf327647beb95dc40ee770c411ed91c67bdfb3ae7ed1714f1096375c2b055c"},
-    {file = "betfair_parser-0.12.0.tar.gz", hash = "sha256:452680e8d670a114745f298543b53ffd92e7b3fb71255454dc14c6ca980d7362"},
+    {file = "betfair_parser-0.13.0-py3-none-any.whl", hash = "sha256:7447278f39108213811dd9837b07ccfab944b0b4e8adeb8e8d0bffdc0e3594d0"},
+    {file = "betfair_parser-0.13.0.tar.gz", hash = "sha256:840651b30004e80377379ae09feb6cdd769a4c5566a5866342399e344c9aeba4"},
 ]
 
 [package.dependencies]
@@ -2350,4 +2350,4 @@ ib = ["async-timeout", "defusedxml", "nautilus_ibapi"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<3.13"
-content-hash = "b9ceac175eb5e9e6e821bde138bcbc6da3a84962e90046a8df720fb8a408abd8"
+content-hash = "8cc064e8f9c17da1d466afa960d97d66a995d6e5d26a4787fa153c72078612a7"
