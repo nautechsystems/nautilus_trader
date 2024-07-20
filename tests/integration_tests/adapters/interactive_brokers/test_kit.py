@@ -136,7 +136,7 @@ class IBTestContractStubs:
         nextOptionType="",
         nextOptionPartial=False,
         notes="",
-    ) -> Contract:
+    ) -> ContractDetails:
         return set_attributes(ContractDetails(), locals())
 
     @staticmethod
@@ -272,6 +272,82 @@ class IBTestContractStubs:
             "secIdList": [],
             "realExpirationDate": "20231120",
             "lastTradeTime": "14:30:00",
+            "stockType": "",
+            "minSize": 1.0,
+            "sizeIncrement": 1.0,
+            "suggestedSizeIncrement": 1.0,
+            "cusip": "",
+            "ratings": "",
+            "descAppend": "",
+            "bondType": "",
+            "couponType": "",
+            "callable": False,
+            "putable": False,
+            "coupon": 0,
+            "convertible": False,
+            "maturity": "",
+            "issueDate": "",
+            "nextOptionDate": "",
+            "nextOptionType": "",
+            "nextOptionPartial": False,
+            "notes": "",
+        }
+        return IBTestContractStubs.create_contract_details(**params)
+
+    @staticmethod
+    def es_future_option_contract() -> Contract:
+        params = {
+            "secType": "FOP",
+            "conId": 715834345,
+            "symbol": "ES",
+            "lastTradeDateOrContractMonth": "20240722",
+            "strike": 5655.0,
+            "right": "C",
+            "multiplier": "50",
+            "exchange": "CME",
+            "primaryExchange": "",
+            "currency": "USD",
+            "localSymbol": "E4AN4 C5655",
+            "tradingClass": "E4A",
+            "includeExpired": False,
+            "secIdType": "",
+            "secId": "",
+            "description": "",
+            "issuerId": "",
+            "comboLegsDescrip": "",
+            "comboLegs": [],
+            "deltaNeutralContract": None,
+        }
+        return IBTestContractStubs.create_contract(**params)
+
+    @classmethod
+    def es_future_option_contract_details(cls) -> ContractDetails:
+        params = {
+            "contract": cls.es_future_option_contract(),
+            "marketName": "E4A",
+            "minTick": 0.05,
+            "orderTypes": "ACTIVETIM,AD,ADJUST,ALERT,ALLOC,AVGCOST,BASKET,COND,CONDORDER,DAY,DEACT,DEACTDIS,DEACTEOD,GAT,GTC,GTD,GTT,HID,IOC,LIT,LMT,LTH,MIT,MKT,MTL,NGCOMB,NONALGO,OCA,SCALE,SCALERST,SNAPMID,SNAPMKT,SNAPREL,STP,STPLMT,TRAIL,TRAILLIT,TRAILLMT,TRAILMIT,VOLAT,WHATIF",  # noqa: E501
+            "validExchanges": "CME",
+            "priceMagnifier": 1,
+            "underConId": 568550526,
+            "longName": "E-mini S&P 500",
+            "contractMonth": "202407",
+            "industry": "",
+            "category": "",
+            "subcategory": "",
+            "timeZoneId": "US/Central",
+            "tradingHours": "20240720:CLOSED;20240721:1700-20240722:1500",
+            "liquidHours": "20240720:CLOSED;20240721:CLOSED;20240722:0830-20240722:1500",
+            "evRule": "",
+            "evMultiplier": 0,
+            "mdSizeMultiplier": 1,
+            "aggGroup": 2147483647,
+            "underSymbol": "ESU4",
+            "underSecType": "FUT",
+            "marketRuleIds": "3541",
+            "secIdList": [],
+            "realExpirationDate": "20240722",
+            "lastTradeTime": "23:00:00",
             "stockType": "",
             "minSize": 1.0,
             "sizeIncrement": 1.0,
