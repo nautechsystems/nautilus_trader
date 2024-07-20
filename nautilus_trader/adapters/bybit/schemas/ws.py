@@ -553,12 +553,14 @@ class BybitWsTrade(msgspec.Struct):
     def parse_to_trade_tick(
         self,
         instrument_id: InstrumentId,
+        price_precision: int,
+        size_precision: int,
         ts_init: int,
     ) -> TradeTick:
         return TradeTick(
             instrument_id=instrument_id,
-            price=Price.from_str(self.p),
-            size=Quantity.from_str(self.v),
+            price=Price(float(self.p), price_precision),
+            size=Quantity(float(self.v), size_precision),
             aggressor_side=AggressorSide.SELLER if self.S == "Sell" else AggressorSide.BUYER,
             trade_id=TradeId(str(self.i)),
             ts_event=millis_to_nanos(self.T),
