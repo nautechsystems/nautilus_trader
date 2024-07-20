@@ -703,7 +703,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         self,
         *,
         req_id: int,
-        tick_type: str,
+        tick_type: int,
         time: int,
         price: float,
         size: Decimal,

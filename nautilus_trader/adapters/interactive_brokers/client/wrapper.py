@@ -830,15 +830,12 @@ class InteractiveBrokersEWrapper(EWrapper):
         self.logAnswer(current_fn_name(), vars())
 
     def verifyCompleted(self, isSuccessful: bool, errorText: str) -> None:
-
         self.logAnswer(current_fn_name(), vars())
 
     def verifyAndAuthMessageAPI(self, apiData: str, xyzChallange: str) -> None:
-
         self.logAnswer(current_fn_name(), vars())
 
     def verifyAndAuthCompleted(self, isSuccessful: bool, errorText: str) -> None:
-
         self.logAnswer(current_fn_name(), vars())
 
     def displayGroupList(self, reqId: int, groups: str) -> None:
