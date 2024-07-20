@@ -198,12 +198,12 @@ impl BarBuilder {
     }
 }
 
-/// Provides a means of aggregating specified bars and sending to a registered handler.
+/// Provides a means of aggregating specified bar types and sending to a registered handler.
 pub struct BarAggregatorCore {
+    bar_type: BarType,
     builder: BarBuilder,
     handler: fn(Bar),
     await_partial: bool,
-    bar_type: BarType,
 }
 
 impl BarAggregatorCore {
@@ -219,10 +219,10 @@ impl BarAggregatorCore {
         await_partial: bool,
     ) -> Self {
         Self {
+            bar_type,
             builder: BarBuilder::new(instrument, bar_type),
             handler,
             await_partial,
-            bar_type,
         }
     }
 
@@ -250,7 +250,7 @@ impl BarAggregatorCore {
     }
 }
 
-/// Provides a means of building tick bars from quote and trade ticks.
+/// Provides a means of building tick bars aggregated from quote and trade ticks.
 ///
 /// When received tick count reaches the step threshold of the bar
 /// specification, then a bar is created and sent to the handler.
@@ -291,7 +291,7 @@ impl BarAggregator for TickBarAggregator {
     }
 }
 
-/// Provides a means of building volume bars from quote and trade ticks.
+/// Provides a means of building volume bars aggregated from quote and trade ticks.
 pub struct VolumeBarAggregator {
     core: BarAggregatorCore,
 }
@@ -349,7 +349,7 @@ impl BarAggregator for VolumeBarAggregator {
     }
 }
 
-/// Provides a means of building value bars from ticks.
+/// Provides a means of building value bars aggregated from quote and trade ticks.
 ///
 /// When received value reaches the step threshold of the bar
 /// specification, then a bar is created and sent to the handler.
@@ -419,6 +419,9 @@ impl BarAggregator for ValueBarAggregator {
     }
 }
 
+/// Provides a means of building time bars aggregated from quote and trade ticks.
+///
+/// At each aggregation time interval, a bar is created and sent to the handler.
 pub struct TimeBarAggregator<C>
 where
     C: Clock,
@@ -475,10 +478,8 @@ where
         }
     }
 
-    fn start(&mut self) -> anyhow::Result<()>
-    where
-        C: Clock,
-    {
+    /// Starts the time bar aggregator.
+    pub fn start(&mut self) -> anyhow::Result<()> {
         let now = self.clock.utc_now();
         let start_time = get_time_bar_start(now, &self.bar_type());
         let start_time_ns = UnixNanos::from(start_time.timestamp_nanos_opt().unwrap() as u64);
@@ -500,6 +501,7 @@ where
         Ok(())
     }
 
+    /// Stops the time bar aggregator.
     pub fn stop(&mut self) {
         self.clock.cancel_timer(&self.timer_name);
     }
