@@ -21,6 +21,7 @@ import pytest
 
 # fmt: off
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
+from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
 from nautilus_trader.adapters.interactive_brokers.parsing.data import bar_spec_to_bar_size
 from nautilus_trader.adapters.interactive_brokers.parsing.data import timedelta_to_duration_str
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_CASH
@@ -39,8 +40,11 @@ from nautilus_trader.adapters.interactive_brokers.parsing.instruments import _ti
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import expiry_timestring_to_datetime
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import ib_contract_to_instrument_id
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import instrument_id_to_ib_contract
+from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments import OptionsContract
+from tests.integration_tests.adapters.interactive_brokers.test_kit import IBTestContractStubs
 
 
 # fmt: on
@@ -382,3 +386,17 @@ def test_expiry_timestring_to_datetime(expiry: str, expected: pd.Timestamp):
     result = expiry_timestring_to_datetime(expiry=expiry)
     # Act, Assert
     assert result == expected
+
+
+def test_parse_instrument_future_option():
+    # Arrange
+    contract_details = IBTestContractStubs.es_future_option_contract_details()
+    contract_details.contract = IBContract(**contract_details.contract.__dict__)
+    contract_details = IBContractDetails(**contract_details.__dict__)
+
+    # Act
+    instrument = parse_instrument(contract_details)
+
+    # Assert
+    assert instrument.id.value == "E4AN24C5655.CME"
+    assert isinstance(instrument, OptionsContract), "instrument is not a OptionContract"
