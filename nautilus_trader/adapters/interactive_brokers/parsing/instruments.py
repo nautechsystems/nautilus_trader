@@ -126,6 +126,7 @@ def sec_type_to_asset_class(sec_type: str) -> AssetClass:
         "CASH": "FX",
         "BOND": "DEBT",
         "CMDTY": "COMMODITY",
+        "FUT": "INDEX",
     }
     return asset_class_from_str(mapping.get(sec_type, sec_type))
 
@@ -151,7 +152,7 @@ def parse_instrument(
         return parse_index_contract(details=contract_details, instrument_id=instrument_id)
     elif security_type in ("FUT", "CONTFUT"):
         return parse_futures_contract(details=contract_details, instrument_id=instrument_id)
-    elif security_type == "OPT":
+    elif security_type in ("OPT", "FOP"):
         return parse_options_contract(details=contract_details, instrument_id=instrument_id)
     elif security_type == "CASH":
         return parse_forex_contract(details=contract_details, instrument_id=instrument_id)
