@@ -22,7 +22,7 @@ use std::{
     str::FromStr,
 };
 
-use chrono::TimeDelta;
+use chrono::{DateTime, Datelike, TimeDelta, Timelike, Utc};
 use derive_builder::Builder;
 use indexmap::IndexMap;
 use nautilus_core::{nanos::UnixNanos, serialization::Serializable};
@@ -61,6 +61,45 @@ pub fn get_bar_interval_ns(bar_type: &BarType) -> UnixNanos {
         .num_nanoseconds()
         .expect("Invalid bar interval") as u64;
     UnixNanos::from(interval_ns)
+}
+
+/// Returns the time bar start as a timezone-aware `DateTime<Utc>`.
+pub fn get_time_bar_start(now: DateTime<Utc>, bar_type: &BarType) -> DateTime<Utc> {
+    let step = bar_type.spec.step;
+
+    match bar_type.spec.aggregation {
+        BarAggregation::Millisecond => {
+            let diff_milliseconds = now.timestamp_subsec_millis() as usize % step;
+            now - TimeDelta::milliseconds(diff_milliseconds as i64)
+        }
+        BarAggregation::Second => {
+            let diff_seconds = now.timestamp() % step as i64;
+            now - TimeDelta::seconds(diff_seconds)
+        }
+        BarAggregation::Minute => {
+            let diff_minutes = now.time().minute() as usize % step;
+            now - TimeDelta::minutes(diff_minutes as i64)
+                - TimeDelta::seconds(now.time().second() as i64)
+        }
+        BarAggregation::Hour => {
+            let diff_hours = now.time().hour() as usize % step;
+            let diff_days = if diff_hours == 0 { 0 } else { (step / 24) - 1 };
+            now - TimeDelta::days(diff_days as i64)
+                - TimeDelta::hours(diff_hours as i64)
+                - TimeDelta::minutes(now.minute() as i64)
+                - TimeDelta::seconds(now.second() as i64)
+        }
+        BarAggregation::Day => {
+            now - TimeDelta::days(now.day() as i64 % step as i64)
+                - TimeDelta::hours(now.hour() as i64)
+                - TimeDelta::minutes(now.minute() as i64)
+                - TimeDelta::seconds(now.second() as i64)
+        }
+        _ => panic!(
+            "Aggregation type {} not supported for time bars",
+            bar_type.spec.aggregation
+        ),
+    }
 }
 
 /// Represents a bar aggregation specification including a step, aggregation
@@ -338,6 +377,7 @@ impl GetTsInit for Bar {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use chrono::TimeZone;
     use rstest::rstest;
 
     use super::*;
@@ -398,6 +438,57 @@ mod tests {
 
         let interval_ns = get_bar_interval_ns(&bar_type);
         assert_eq!(interval_ns, expected);
+    }
+
+    #[rstest]
+    #[case::millisecond(
+    Utc.timestamp_opt(1658349296, 123_000_000).unwrap(), // 2024-07-21 12:34:56.123 UTC
+    BarAggregation::Millisecond,
+    10,
+    Utc.timestamp_opt(1658349296, 120_000_000).unwrap(),  // 2024-07-21 12:34:56.120 UTC
+)]
+    #[case::second(
+    Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 56).unwrap(),
+    BarAggregation::Second,
+    5,
+    Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 55).unwrap()
+)]
+    #[case::minute(
+    Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 56).unwrap(),
+    BarAggregation::Minute,
+    1,
+    Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 0).unwrap()
+)]
+    #[case::hour(
+    Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 56).unwrap(),
+    BarAggregation::Hour,
+    1,
+    Utc.with_ymd_and_hms(2024, 7, 21, 12, 0, 0).unwrap()
+)]
+    #[case::day(
+    Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 56).unwrap(),
+    BarAggregation::Day,
+    1,
+    Utc.with_ymd_and_hms(2024, 7, 21, 0, 0, 0).unwrap()
+)]
+    fn test_get_time_bar_start(
+        #[case] now: DateTime<Utc>,
+        #[case] aggregation: BarAggregation,
+        #[case] step: usize,
+        #[case] expected: DateTime<Utc>,
+    ) {
+        let bar_type = BarType {
+            instrument_id: InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+            spec: BarSpecification {
+                step,
+                aggregation,
+                price_type: PriceType::Last,
+            },
+            aggregation_source: AggregationSource::Internal,
+        };
+
+        let start_time = get_time_bar_start(now, &bar_type);
+        assert_eq!(start_time, expected);
     }
 
     #[rstest]

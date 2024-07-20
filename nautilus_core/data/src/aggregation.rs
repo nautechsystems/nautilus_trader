@@ -21,16 +21,15 @@
 
 use std::ops::Add;
 
-use chrono::{DateTime, TimeDelta, Utc};
+use chrono::TimeDelta;
 use nautilus_common::{clock::Clock, timer::TimeEvent};
 use nautilus_core::{correctness, nanos::UnixNanos};
 use nautilus_model::{
     data::{
-        bar::{get_bar_interval, get_bar_interval_ns, Bar, BarType},
+        bar::{get_bar_interval, get_bar_interval_ns, get_time_bar_start, Bar, BarType},
         quote::QuoteTick,
         trade::TradeTick,
     },
-    enums::BarAggregation,
     instruments::any::InstrumentAny,
     types::{fixed::FIXED_SCALAR, price::Price, quantity::Quantity},
 };
@@ -459,9 +458,6 @@ where
         timestamp_on_close: bool,
         interval_type: &str, // TODO: Make this an enum
     ) -> Self {
-        let start_time = Self::get_start_time(&clock, &bar_type);
-        let start_time_ns = UnixNanos::from(start_time.timestamp_nanos_opt().unwrap() as u64);
-
         Self {
             core: BarAggregatorCore::new(instrument, bar_type, handler, await_partial),
             clock,
@@ -469,7 +465,7 @@ where
             timestamp_on_close,
             is_left_open: false,
             build_on_next_tick: false,
-            stored_open_ns: start_time_ns,
+            stored_open_ns: UnixNanos::default(),
             stored_close_ns: UnixNanos::default(),
             cached_update: None,
             timer_name: bar_type.to_string(),
@@ -483,9 +479,10 @@ where
     where
         C: Clock,
     {
-        let start_time_ns = Self::get_start_time(&self.clock, &self.core.bar_type)
-            .timestamp_nanos_opt()
-            .unwrap();
+        let now = self.clock.utc_now();
+        let start_time = get_time_bar_start(now, &self.bar_type());
+        let start_time_ns = UnixNanos::from(start_time.timestamp_nanos_opt().unwrap() as u64);
+
         // let callback = SafeTimeEventCallback {
         //     callback: Box::new(move |event| self.build_bar(event)),
         // };
@@ -494,7 +491,7 @@ where
         self.clock.set_timer_ns(
             &self.timer_name,
             self.interval_ns.as_u64(),
-            UnixNanos::from(start_time_ns as u64),
+            start_time_ns,
             None,
             None, // TODO: Implement Rust callback handlers properly (see above commented code)
         )?;
@@ -505,47 +502,6 @@ where
 
     pub fn stop(&mut self) {
         self.clock.cancel_timer(&self.timer_name);
-    }
-
-    fn get_start_time(clock: &C, bar_type: &BarType) -> DateTime<Utc>
-    where
-        C: Clock,
-    {
-        let now = clock.utc_now();
-        let step = bar_type.spec.step;
-
-        match bar_type.spec.aggregation {
-            BarAggregation::Millisecond => {
-                let diff_microseconds = now.timestamp_subsec_micros() as usize % (step * 1000);
-                let diff_seconds = if diff_microseconds == 0 {
-                    0
-                } else {
-                    (step * 1000) as i64 - 1
-                };
-                now - TimeDelta::seconds(diff_seconds)
-                    - TimeDelta::microseconds(i64::from(now.timestamp_subsec_micros()))
-            }
-            BarAggregation::Second => {
-                let diff_seconds = now.timestamp() % step as i64;
-                now - TimeDelta::seconds(diff_seconds)
-            }
-            BarAggregation::Minute => {
-                let diff_seconds = now.timestamp() % (step * 60) as i64;
-                now - TimeDelta::seconds(diff_seconds)
-            }
-            BarAggregation::Hour => {
-                let diff_seconds = now.timestamp() % (step * 60 * 60) as i64;
-                now - TimeDelta::seconds(diff_seconds)
-            }
-            BarAggregation::Day => {
-                let diff_seconds = now.timestamp() % (step * 60 * 60 * 24) as i64;
-                now - TimeDelta::seconds(diff_seconds)
-            }
-            _ => panic!(
-                "Aggregation type {} not supported for time bars",
-                bar_type.spec.aggregation
-            ),
-        }
     }
 
     fn build_bar(&mut self, event: TimeEvent) {
