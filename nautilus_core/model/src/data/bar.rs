@@ -388,10 +388,15 @@ mod tests {
 
     #[rstest]
     #[case(BarAggregation::Millisecond, 1, TimeDelta::milliseconds(1))]
+    #[case(BarAggregation::Millisecond, 10, TimeDelta::milliseconds(10))]
     #[case(BarAggregation::Second, 1, TimeDelta::seconds(1))]
+    #[case(BarAggregation::Second, 15, TimeDelta::seconds(15))]
     #[case(BarAggregation::Minute, 1, TimeDelta::minutes(1))]
+    #[case(BarAggregation::Minute, 60, TimeDelta::minutes(60))]
     #[case(BarAggregation::Hour, 1, TimeDelta::hours(1))]
+    #[case(BarAggregation::Hour, 4, TimeDelta::hours(4))]
     #[case(BarAggregation::Day, 1, TimeDelta::days(1))]
+    #[case(BarAggregation::Day, 2, TimeDelta::days(2))]
     #[should_panic(expected = "Aggregation not time based")]
     #[case(BarAggregation::Tick, 1, TimeDelta::zero())]
     fn test_get_bar_interval(
@@ -415,10 +420,15 @@ mod tests {
 
     #[rstest]
     #[case(BarAggregation::Millisecond, 1, UnixNanos::from(1_000_000))]
+    #[case(BarAggregation::Millisecond, 10, UnixNanos::from(10_000_000))]
     #[case(BarAggregation::Second, 1, UnixNanos::from(1_000_000_000))]
+    #[case(BarAggregation::Second, 10, UnixNanos::from(10_000_000_000))]
     #[case(BarAggregation::Minute, 1, UnixNanos::from(60_000_000_000))]
+    #[case(BarAggregation::Minute, 60, UnixNanos::from(3_600_000_000_000))]
     #[case(BarAggregation::Hour, 1, UnixNanos::from(3_600_000_000_000))]
+    #[case(BarAggregation::Hour, 4, UnixNanos::from(14_400_000_000_000))]
     #[case(BarAggregation::Day, 1, UnixNanos::from(86_400_000_000_000))]
+    #[case(BarAggregation::Day, 2, UnixNanos::from(172_800_000_000_000))]
     #[should_panic(expected = "Aggregation not time based")]
     #[case(BarAggregation::Tick, 1, UnixNanos::from(0))]
     fn test_get_bar_interval_ns(
@@ -444,8 +454,27 @@ mod tests {
     #[case::millisecond(
     Utc.timestamp_opt(1658349296, 123_000_000).unwrap(), // 2024-07-21 12:34:56.123 UTC
     BarAggregation::Millisecond,
+    1,
+    Utc.timestamp_opt(1658349296, 123_000_000).unwrap(),  // 2024-07-21 12:34:56.123 UTC
+)]
+    #[rstest]
+    #[case::millisecond(
+    Utc.timestamp_opt(1658349296, 123_000_000).unwrap(), // 2024-07-21 12:34:56.123 UTC
+    BarAggregation::Millisecond,
     10,
     Utc.timestamp_opt(1658349296, 120_000_000).unwrap(),  // 2024-07-21 12:34:56.120 UTC
+)]
+    #[case::second(
+    Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 56).unwrap(),
+    BarAggregation::Millisecond,
+    1000,
+    Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 56).unwrap()
+)]
+    #[case::second(
+    Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 56).unwrap(),
+    BarAggregation::Second,
+    1,
+    Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 56).unwrap()
 )]
     #[case::second(
     Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 56).unwrap(),
@@ -453,16 +482,40 @@ mod tests {
     5,
     Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 55).unwrap()
 )]
+    #[case::second(
+    Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 56).unwrap(),
+    BarAggregation::Second,
+    60,
+    Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 0).unwrap()
+)]
     #[case::minute(
     Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 56).unwrap(),
     BarAggregation::Minute,
     1,
     Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 0).unwrap()
 )]
+    #[case::minute(
+    Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 56).unwrap(),
+    BarAggregation::Minute,
+    5,
+    Utc.with_ymd_and_hms(2024, 7, 21, 12, 30, 0).unwrap()
+)]
+    #[case::minute(
+    Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 56).unwrap(),
+    BarAggregation::Minute,
+    60,
+    Utc.with_ymd_and_hms(2024, 7, 21, 12, 0, 0).unwrap()
+)]
     #[case::hour(
     Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 56).unwrap(),
     BarAggregation::Hour,
     1,
+    Utc.with_ymd_and_hms(2024, 7, 21, 12, 0, 0).unwrap()
+)]
+    #[case::hour(
+    Utc.with_ymd_and_hms(2024, 7, 21, 12, 34, 56).unwrap(),
+    BarAggregation::Hour,
+    2,
     Utc.with_ymd_and_hms(2024, 7, 21, 12, 0, 0).unwrap()
 )]
     #[case::day(
