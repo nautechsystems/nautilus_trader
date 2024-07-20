@@ -490,38 +490,6 @@ class BybitWsTickerOptionMsg(msgspec.Struct):
 ################################################################################
 
 
-class BybitWsTradeSpot(msgspec.Struct):
-    # The timestamp (ms) that the order is filled
-    T: int
-    # Symbol name
-    s: str
-    # Side of taker. Buy,Sell
-    S: str
-    # Trade size
-    v: str
-    # Trade price
-    p: str
-    # Trade id
-    i: str
-    # Whether is a block trade or not
-    BT: bool
-
-    def parse_to_trade_tick(
-        self,
-        instrument_id: InstrumentId,
-        ts_init: int,
-    ) -> TradeTick:
-        return TradeTick(
-            instrument_id=instrument_id,
-            price=Price.from_str(self.p),
-            size=Quantity.from_str(self.v),
-            aggressor_side=AggressorSide.SELLER if self.S == "Sell" else AggressorSide.BUYER,
-            trade_id=TradeId(str(self.i)),
-            ts_event=millis_to_nanos(self.T),
-            ts_init=ts_init,
-        )
-
-
 class BybitWsTrade(msgspec.Struct):
     # The timestamp (ms) that the order is filled
     T: int
