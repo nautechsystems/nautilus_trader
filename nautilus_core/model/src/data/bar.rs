@@ -22,6 +22,7 @@ use std::{
     str::FromStr,
 };
 
+use chrono::TimeDelta;
 use derive_builder::Builder;
 use indexmap::IndexMap;
 use nautilus_core::{nanos::UnixNanos, serialization::Serializable};
@@ -33,6 +34,34 @@ use crate::{
     identifiers::InstrumentId,
     types::{price::Price, quantity::Quantity},
 };
+
+/// Returns the bar interval as a `TimeDelta`.
+///
+/// # Panics
+///
+/// Panics if the aggregation method of the given `bar_type` is not time based.
+pub fn get_bar_interval(bar_type: &BarType) -> TimeDelta {
+    match bar_type.spec.aggregation {
+        BarAggregation::Millisecond => TimeDelta::milliseconds(bar_type.spec.step as i64),
+        BarAggregation::Second => TimeDelta::seconds(bar_type.spec.step as i64),
+        BarAggregation::Minute => TimeDelta::minutes(bar_type.spec.step as i64),
+        BarAggregation::Hour => TimeDelta::hours(bar_type.spec.step as i64),
+        BarAggregation::Day => TimeDelta::days(bar_type.spec.step as i64),
+        _ => panic!("Aggregation not time based"),
+    }
+}
+
+/// Returns the bar interval as a `TimeDelta`.
+///
+/// # Panics
+///
+/// Panics if the aggregation method of the given `bar_type` is not time based.
+pub fn get_bar_interval_ns(bar_type: &BarType) -> UnixNanos {
+    let interval_ns = get_bar_interval(bar_type)
+        .num_nanoseconds()
+        .expect("Invalid bar interval") as u64;
+    UnixNanos::from(interval_ns)
+}
 
 /// Represents a bar aggregation specification including a step, aggregation
 /// method/rule and price type.
@@ -316,6 +345,60 @@ mod tests {
         enums::BarAggregation,
         identifiers::{Symbol, Venue},
     };
+
+    #[rstest]
+    #[case(BarAggregation::Millisecond, 1, TimeDelta::milliseconds(1))]
+    #[case(BarAggregation::Second, 1, TimeDelta::seconds(1))]
+    #[case(BarAggregation::Minute, 1, TimeDelta::minutes(1))]
+    #[case(BarAggregation::Hour, 1, TimeDelta::hours(1))]
+    #[case(BarAggregation::Day, 1, TimeDelta::days(1))]
+    #[should_panic(expected = "Aggregation not time based")]
+    #[case(BarAggregation::Tick, 1, TimeDelta::zero())]
+    fn test_get_bar_interval(
+        #[case] aggregation: BarAggregation,
+        #[case] step: usize,
+        #[case] expected: TimeDelta,
+    ) {
+        let bar_type = BarType {
+            instrument_id: InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+            spec: BarSpecification {
+                step,
+                aggregation,
+                price_type: PriceType::Last,
+            },
+            aggregation_source: AggregationSource::Internal,
+        };
+
+        let interval = get_bar_interval(&bar_type);
+        assert_eq!(interval, expected);
+    }
+
+    #[rstest]
+    #[case(BarAggregation::Millisecond, 1, UnixNanos::from(1_000_000))]
+    #[case(BarAggregation::Second, 1, UnixNanos::from(1_000_000_000))]
+    #[case(BarAggregation::Minute, 1, UnixNanos::from(60_000_000_000))]
+    #[case(BarAggregation::Hour, 1, UnixNanos::from(3_600_000_000_000))]
+    #[case(BarAggregation::Day, 1, UnixNanos::from(86_400_000_000_000))]
+    #[should_panic(expected = "Aggregation not time based")]
+    #[case(BarAggregation::Tick, 1, UnixNanos::from(0))]
+    fn test_get_bar_interval_ns(
+        #[case] aggregation: BarAggregation,
+        #[case] step: usize,
+        #[case] expected: UnixNanos,
+    ) {
+        let bar_type = BarType {
+            instrument_id: InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+            spec: BarSpecification {
+                step,
+                aggregation,
+                price_type: PriceType::Last,
+            },
+            aggregation_source: AggregationSource::Internal,
+        };
+
+        let interval_ns = get_bar_interval_ns(&bar_type);
+        assert_eq!(interval_ns, expected);
+    }
 
     #[rstest]
     fn test_bar_spec_string_reprs() {
