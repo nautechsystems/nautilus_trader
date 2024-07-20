@@ -36,27 +36,27 @@ use crate::{
 /// # Notes
 /// An active timer is one which has not expired (`timer.is_expired == False`).
 pub trait Clock {
-    /// Return the current date time in UTC.
+    /// Returns the current date and time as a timezone-aware `DateTime<UTC>`.
     fn utc_now(&self) -> DateTime<Utc> {
         DateTime::from_timestamp_nanos(self.timestamp_ns().as_i64())
     }
 
-    /// Return the current UNIX timestamp in nanoseconds (ns).
+    /// Returns the current UNIX timestamp in nanoseconds (ns).
     fn timestamp_ns(&self) -> UnixNanos;
 
-    /// Return the current UNIX timestamp in microseconds (μs).
+    /// Returns the current UNIX timestamp in microseconds (μs).
     fn timestamp_us(&self) -> u64;
 
-    /// Return the current UNIX timestamp in milliseconds (ms).
+    /// Returns the current UNIX timestamp in milliseconds (ms).
     fn timestamp_ms(&self) -> u64;
 
-    /// Return the current UNIX time in seconds.
+    /// Returns the current UNIX time in seconds.
     fn timestamp(&self) -> f64;
 
-    /// Return the names of active timers in the clock.
+    /// Returns the names of active timers in the clock.
     fn timer_names(&self) -> Vec<&str>;
 
-    /// Return the count of active timers in the clock.
+    /// Returns the count of active timers in the clock.
     fn timer_count(&self) -> usize;
 
     /// Register a default event handler for the clock. If a `Timer`
