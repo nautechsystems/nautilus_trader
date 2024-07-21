@@ -19,13 +19,11 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-pub mod backtest;
-pub mod config;
-pub mod live;
+pub mod runner;
 
 use std::{
     cell::RefCell,
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     marker::PhantomData,
     ops::Deref,
     rc::Rc,
@@ -34,14 +32,15 @@ use std::{
 
 use log;
 use nautilus_common::{
+    actor::Actor,
     cache::Cache,
     clock::Clock,
     component::{Disposed, PreInitialized, Ready, Running, Starting, State, Stopped, Stopping},
     enums::ComponentState,
     logging::{CMD, RECV, RES},
-    messages::data::{DataCommand, DataRequest, DataResponse},
+    messages::data::{DataEngineRequest, DataRequest, DataResponse, SubscriptionCommand},
 };
-use nautilus_core::correctness;
+use nautilus_core::{correctness, uuid::UUID4};
 use nautilus_model::{
     data::{
         bar::{Bar, BarType},
@@ -56,7 +55,7 @@ use nautilus_model::{
     instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
 };
 
-use crate::client::DataClientCore;
+use crate::client::DataClientAdaptor;
 
 pub struct DataEngineConfig {
     pub debug: bool,
@@ -67,18 +66,45 @@ pub struct DataEngineConfig {
     pub buffer_deltas: bool,
 }
 
+#[derive(Clone, Default)]
+pub struct DataRequestQueue {
+    req_queue: Rc<RefCell<VecDeque<DataEngineRequest>>>,
+}
+
+impl DataRequestQueue {
+    pub fn send_data_request(&self, req: DataRequest) {
+        self.req_queue
+            .as_ref()
+            .borrow_mut()
+            .push_back(DataEngineRequest::DataRequest(req));
+    }
+
+    pub fn send_subs_request(&self, req: SubscriptionCommand) {
+        self.req_queue
+            .as_ref()
+            .borrow_mut()
+            .push_back(DataEngineRequest::SubscriptionCommand(req));
+    }
+
+    pub fn next(&self) -> Option<DataEngineRequest> {
+        self.req_queue.as_ref().borrow_mut().pop_front()
+    }
+}
+
 pub struct DataEngine<State = PreInitialized> {
     state: PhantomData<State>,
     clock: Box<dyn Clock>,
     cache: Rc<RefCell<Cache>>,
-    clients: HashMap<ClientId, DataClientCore>,
-    default_client: Option<DataClientCore>,
+    clients: HashMap<ClientId, DataClientAdaptor>,
+    actors: HashMap<UUID4, Box<dyn Actor>>,
+    default_client: Option<DataClientAdaptor>,
     routing_map: HashMap<Venue, ClientId>,
     // order_book_intervals: HashMap<(InstrumentId, usize), Vec<fn(&OrderBook)>>,  // TODO
     // bar_aggregators:  // TODO
     synthetic_quote_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     synthetic_trade_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     buffered_deltas_map: HashMap<InstrumentId, Vec<OrderBookDelta>>,
+    pub req_queue: DataRequestQueue,
     config: DataEngineConfig,
 }
 
@@ -90,11 +116,13 @@ impl DataEngine {
             clock,
             cache,
             clients: HashMap::new(),
+            actors: HashMap::new(),
             default_client: None,
             routing_map: HashMap::new(),
             synthetic_quote_feeds: HashMap::new(),
             synthetic_trade_feeds: HashMap::new(),
             buffered_deltas_map: HashMap::new(),
+            req_queue: DataRequestQueue::default(),
             config,
         }
     }
@@ -107,11 +135,13 @@ impl<S: State> DataEngine<S> {
             clock: self.clock,
             cache: self.cache,
             clients: self.clients,
+            actors: self.actors,
             default_client: self.default_client,
             routing_map: self.routing_map,
             synthetic_quote_feeds: self.synthetic_quote_feeds,
             synthetic_trade_feeds: self.synthetic_trade_feeds,
             buffered_deltas_map: self.buffered_deltas_map,
+            req_queue: self.req_queue,
             config: self.config,
         }
     }
@@ -140,7 +170,7 @@ impl<S: State> DataEngine<S> {
 
     fn collect_subscriptions<F, T>(&self, get_subs: F) -> Vec<T>
     where
-        F: Fn(&DataClientCore) -> &HashSet<T>,
+        F: Fn(&DataClientAdaptor) -> &HashSet<T>,
         T: Clone,
     {
         let mut subs = Vec::new();
@@ -205,7 +235,7 @@ impl DataEngine<PreInitialized> {
     // pub fn register_catalog(&mut self, catalog: ParquetDataCatalog) {}  TODO: Implement catalog
 
     /// Register the given data `client` with the engine.
-    pub fn register_client(&mut self, client: DataClientCore, routing: Option<Venue>) {
+    pub fn register_client(&mut self, client: DataClientAdaptor, routing: Option<Venue>) {
         if let Some(routing) = routing {
             self.routing_map.insert(routing, client.client_id());
             log::info!("Set client {} routing for {routing}", client.client_id());
@@ -222,7 +252,7 @@ impl DataEngine<PreInitialized> {
     /// # Warnings
     ///
     /// Any existing default routing client will be overwritten.
-    pub fn register_default_client(&mut self, client: DataClientCore) {
+    pub fn register_default_client(&mut self, client: DataClientAdaptor) {
         log::info!("Registered default client {}", client.client_id());
         self.default_client = Some(client);
     }
@@ -250,33 +280,25 @@ impl DataEngine<PreInitialized> {
 impl DataEngine<Ready> {
     #[must_use]
     pub fn start(self) -> DataEngine<Starting> {
-        for client in self.clients.values() {
-            client.start();
-        }
+        self.clients.values().for_each(|client| client.start());
         self.transition()
     }
 
     #[must_use]
     pub fn stop(self) -> DataEngine<Stopping> {
-        for client in self.clients.values() {
-            client.stop();
-        }
+        self.clients.values().for_each(|client| client.stop());
         self.transition()
     }
 
     #[must_use]
     pub fn reset(self) -> Self {
-        for client in self.clients.values() {
-            client.reset();
-        }
+        self.clients.values().for_each(|client| client.reset());
         self.transition()
     }
 
     #[must_use]
     pub fn dispose(mut self) -> DataEngine<Disposed> {
-        for client in self.clients.values() {
-            client.dispose();
-        }
+        self.clients.values().for_each(|client| client.dispose());
         self.clock.cancel_timers();
         self.transition()
     }
@@ -314,7 +336,7 @@ impl DataEngine<Running> {
         }
     }
 
-    pub fn execute(&mut self, command: DataCommand) {
+    pub fn execute(&mut self, command: SubscriptionCommand) {
         log::debug!("{}", format!("{RECV}{CMD} commmand")); // TODO: Display for command
 
         // Determine the client ID
@@ -398,7 +420,12 @@ impl DataEngine<Running> {
 
     // TODO: Fix all handlers to not use msgbus
     fn handle_instrument(&self, instrument: InstrumentAny) {
-        if let Err(e) = self.cache.borrow_mut().add_instrument(instrument.clone()) {
+        if let Err(e) = self
+            .cache
+            .as_ref()
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+        {
             log::error!("Error on cache insert: {e}");
         }
 
@@ -438,7 +465,7 @@ impl DataEngine<Running> {
     }
 
     fn handle_quote(&self, quote: QuoteTick) {
-        if let Err(e) = self.cache.borrow_mut().add_quote(quote) {
+        if let Err(e) = self.cache.as_ref().borrow_mut().add_quote(quote) {
             log::error!("Error on cache insert: {e}");
         }
 
@@ -451,7 +478,7 @@ impl DataEngine<Running> {
     }
 
     fn handle_trade(&self, trade: TradeTick) {
-        if let Err(e) = self.cache.borrow_mut().add_trade(trade) {
+        if let Err(e) = self.cache.as_ref().borrow_mut().add_trade(trade) {
             log::error!("Error on cache insert: {e}");
         }
 
@@ -464,7 +491,7 @@ impl DataEngine<Running> {
     }
 
     fn handle_bar(&self, bar: Bar) {
-        if let Err(e) = self.cache.borrow_mut().add_bar(bar) {
+        if let Err(e) = self.cache.as_ref().borrow_mut().add_bar(bar) {
             log::error!("Error on cache insert: {e}");
         }
 
@@ -478,26 +505,31 @@ impl DataEngine<Running> {
     fn handle_instruments(&self, instruments: Arc<Vec<InstrumentAny>>) {
         // TODO improve by adding bulk update methods to cache and database
         for instrument in instruments.iter() {
-            if let Err(e) = self.cache.borrow_mut().add_instrument(instrument.clone()) {
+            if let Err(e) = self
+                .cache
+                .as_ref()
+                .borrow_mut()
+                .add_instrument(instrument.clone())
+            {
                 log::error!("Error on cache insert: {e}");
             }
         }
     }
 
     fn handle_quotes(&self, quotes: Arc<Vec<QuoteTick>>) {
-        if let Err(e) = self.cache.borrow_mut().add_quotes(&quotes) {
+        if let Err(e) = self.cache.as_ref().borrow_mut().add_quotes(&quotes) {
             log::error!("Error on cache insert: {e}");
         }
     }
 
     fn handle_trades(&self, trades: Arc<Vec<TradeTick>>) {
-        if let Err(e) = self.cache.borrow_mut().add_trades(&trades) {
+        if let Err(e) = self.cache.as_ref().borrow_mut().add_trades(&trades) {
             log::error!("Error on cache insert: {e}");
         }
     }
 
     fn handle_bars(&self, bars: Arc<Vec<Bar>>) {
-        if let Err(e) = self.cache.borrow_mut().add_bars(&bars) {
+        if let Err(e) = self.cache.as_ref().borrow_mut().add_bars(&bars) {
             log::error!("Error on cache insert: {e}");
         }
     }
@@ -507,7 +539,12 @@ impl DataEngine<Running> {
     fn update_order_book(&self, data: &Data) {
         // Only apply data if there is a book being managed,
         // as it may be being managed manually.
-        if let Some(book) = self.cache.borrow_mut().order_book(data.instrument_id()) {
+        if let Some(book) = self
+            .cache
+            .as_ref()
+            .borrow_mut()
+            .order_book(data.instrument_id())
+        {
             match data {
                 Data::Delta(delta) => book.apply_delta(delta),
                 Data::Deltas(deltas) => book.apply_deltas(deltas),

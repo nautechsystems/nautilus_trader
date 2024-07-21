@@ -31,7 +31,7 @@ pub struct DataRequest {
     pub ts_init: UnixNanos,
 }
 
-pub type DataResponsePayload = Arc<dyn Any + Send + Sync>;
+pub type Payload = Arc<dyn Any + Send + Sync>;
 
 pub struct DataResponse {
     pub response_id: UUID4,
@@ -39,7 +39,7 @@ pub struct DataResponse {
     pub client_id: ClientId,
     pub venue: Venue,
     pub data_type: DataType,
-    pub data: DataResponsePayload,
+    pub data: Payload,
     pub ts_init: UnixNanos,
 }
 
@@ -66,16 +66,21 @@ impl DataResponse {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum DataCommandAction {
+pub enum Action {
     Subscribe,
     Unsubscribe,
 }
 
-pub struct DataCommand {
+pub struct SubscriptionCommand {
     pub client_id: ClientId,
     pub venue: Venue,
     pub data_type: DataType,
-    pub action: DataCommandAction,
+    pub action: Action,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+}
+
+pub enum DataEngineRequest {
+    DataRequest(DataRequest),
+    SubscriptionCommand(SubscriptionCommand),
 }

@@ -20,19 +20,16 @@
 #![allow(unused_variables)]
 
 use std::{
-    cell::RefCell,
     collections::HashSet,
     ops::{Deref, DerefMut},
-    rc::Rc,
     sync::Arc,
 };
 
 use indexmap::IndexMap;
 use nautilus_common::{
-    cache::Cache,
     clock::Clock,
     messages::data::{
-        DataCommand, DataCommandAction, DataRequest, DataResponse, DataResponsePayload,
+        SubscriptionCommand, Action, DataRequest, DataResponse, Payload,
     },
 };
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
@@ -44,7 +41,6 @@ use nautilus_model::{
         DataType,
     },
     enums::BookType,
-    ffi::identifiers::instrument_id,
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::any::InstrumentAny,
 };
@@ -102,14 +98,14 @@ pub trait DataClient {
     // -- DATA REQUEST HANDLERS ---------------------------------------------------------------------------
 
     fn request_instruments(
-        &mut self,
+        &self,
         correlation_id: UUID4,
         venue: Venue,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
     ) -> Vec<InstrumentAny>;
     fn request_instrument(
-        &mut self,
+        &self,
         correlation_id: UUID4,
         instrument_id: InstrumentId,
         start: Option<UnixNanos>,
@@ -117,13 +113,13 @@ pub trait DataClient {
     ) -> InstrumentAny;
     // TODO: figure out where to call this and it's return type
     fn request_order_book_snapshot(
-        &mut self,
+        &self,
         correlation_id: UUID4,
         instrument_id: InstrumentId,
         depth: Option<usize>,
-    ) -> DataResponsePayload;
+    ) -> Payload;
     fn request_quote_ticks(
-        &mut self,
+        &self,
         correlation_id: UUID4,
         instrument_id: InstrumentId,
         start: Option<UnixNanos>,
@@ -131,7 +127,7 @@ pub trait DataClient {
         limit: Option<usize>,
     ) -> Vec<QuoteTick>;
     fn request_trade_ticks(
-        &mut self,
+        &self,
         correlation_id: UUID4,
         instrument_id: InstrumentId,
         start: Option<UnixNanos>,
@@ -139,7 +135,7 @@ pub trait DataClient {
         limit: Option<usize>,
     ) -> Vec<TradeTick>;
     fn request_bars(
-        &mut self,
+        &self,
         correlation_id: UUID4,
         bar_type: BarType,
         start: Option<UnixNanos>,
@@ -148,12 +144,11 @@ pub trait DataClient {
     ) -> Vec<Bar>;
 }
 
-pub struct DataClientCore {
+pub struct DataClientAdaptor {
     pub client_id: ClientId,
     pub venue: Venue,
     client: Box<dyn DataClient>,
     clock: Box<dyn Clock>,
-    cache: Rc<RefCell<Cache>>,
     pub subscriptions_generic: HashSet<DataType>,
     pub subscriptions_order_book_delta: HashSet<InstrumentId>,
     pub subscriptions_order_book_snapshot: HashSet<InstrumentId>,
@@ -167,7 +162,7 @@ pub struct DataClientCore {
     pub subscriptions_instrument_venue: HashSet<Venue>,
 }
 
-impl Deref for DataClientCore {
+impl Deref for DataClientAdaptor {
     type Target = Box<dyn DataClient>;
 
     fn deref(&self) -> &Self::Target {
@@ -175,22 +170,22 @@ impl Deref for DataClientCore {
     }
 }
 
-impl DerefMut for DataClientCore {
+impl DerefMut for DataClientAdaptor {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.client
     }
 }
 
-impl DataClientCore {
-    pub fn execute(&mut self, command: DataCommand) {
+impl DataClientAdaptor {
+    pub fn execute(&mut self, command: SubscriptionCommand) {
         match command.action {
-            DataCommandAction::Subscribe => self.execute_subscribe_command(command),
-            DataCommandAction::Unsubscribe => self.execute_unsubscribe_command(command),
+            Action::Subscribe => self.execute_subscribe_command(command),
+            Action::Unsubscribe => self.execute_unsubscribe_command(command),
         }
     }
 
     #[inline]
-    fn execute_subscribe_command(&mut self, command: DataCommand) {
+    fn execute_subscribe_command(&mut self, command: SubscriptionCommand) {
         match command.data_type.type_name() {
             stringify!(InstrumentAny) => Self::subscribe_instrument(self, command),
             stringify!(OrderBookDelta) => Self::subscribe_order_book_deltas(self, command),
@@ -205,7 +200,7 @@ impl DataClientCore {
     }
 
     #[inline]
-    fn execute_unsubscribe_command(&mut self, command: DataCommand) {
+    fn execute_unsubscribe_command(&mut self, command: SubscriptionCommand) {
         match command.data_type.type_name() {
             stringify!(InstrumentAny) => Self::unsubscribe_instrument(self, command),
             stringify!(OrderBookDelta) => Self::unsubscribe_order_book_deltas(self, command),
@@ -219,7 +214,7 @@ impl DataClientCore {
         }
     }
 
-    fn subscribe_instrument(&mut self, command: DataCommand) {
+    fn subscribe_instrument(&mut self, command: SubscriptionCommand) {
         let instrument_id = command.data_type.parse_instrument_id_from_metadata();
         let venue = command.data_type.parse_venue_from_metadata();
 
@@ -246,7 +241,7 @@ impl DataClientCore {
         }
     }
 
-    fn unsubscribe_instrument(&mut self, command: DataCommand) {
+    fn unsubscribe_instrument(&mut self, command: SubscriptionCommand) {
         let instrument_id = command.data_type.parse_instrument_id_from_metadata();
         let venue = command.data_type.parse_venue_from_metadata();
 
@@ -271,7 +266,7 @@ impl DataClientCore {
         }
     }
 
-    fn subscribe_order_book_deltas(&mut self, command: DataCommand) {
+    fn subscribe_order_book_deltas(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
             .parse_instrument_id_from_metadata()
@@ -289,7 +284,7 @@ impl DataClientCore {
         self.subscriptions_order_book_delta.insert(instrument_id);
     }
 
-    fn unsubscribe_order_book_deltas(&mut self, command: DataCommand) {
+    fn unsubscribe_order_book_deltas(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
             .parse_instrument_id_from_metadata()
@@ -304,7 +299,7 @@ impl DataClientCore {
         self.subscriptions_order_book_delta.remove(&instrument_id);
     }
 
-    fn subscribe_snapshots(&mut self, command: DataCommand) {
+    fn subscribe_snapshots(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
             .parse_instrument_id_from_metadata()
@@ -325,7 +320,7 @@ impl DataClientCore {
         self.subscriptions_order_book_snapshot.insert(instrument_id);
     }
 
-    fn unsubscribe_snapshots(&mut self, command: DataCommand) {
+    fn unsubscribe_snapshots(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
             .parse_instrument_id_from_metadata()
@@ -344,7 +339,7 @@ impl DataClientCore {
             .remove(&instrument_id);
     }
 
-    fn subscribe_quote_ticks(&mut self, command: DataCommand) {
+    fn subscribe_quote_ticks(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
             .parse_instrument_id_from_metadata()
@@ -358,7 +353,7 @@ impl DataClientCore {
         self.subscriptions_quote_tick.insert(instrument_id);
     }
 
-    fn unsubscribe_quote_ticks(&mut self, command: DataCommand) {
+    fn unsubscribe_quote_ticks(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
             .parse_instrument_id_from_metadata()
@@ -372,7 +367,7 @@ impl DataClientCore {
         self.subscriptions_quote_tick.remove(&instrument_id);
     }
 
-    fn unsubscribe_trade_ticks(&mut self, command: DataCommand) {
+    fn unsubscribe_trade_ticks(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
             .parse_instrument_id_from_metadata()
@@ -386,7 +381,7 @@ impl DataClientCore {
         self.subscriptions_trade_tick.remove(&instrument_id);
     }
 
-    fn subscribe_trade_ticks(&mut self, command: DataCommand) {
+    fn subscribe_trade_ticks(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
             .parse_instrument_id_from_metadata()
@@ -400,7 +395,7 @@ impl DataClientCore {
         self.subscriptions_trade_tick.insert(instrument_id);
     }
 
-    fn subscribe_bars(&mut self, command: DataCommand) {
+    fn subscribe_bars(&mut self, command: SubscriptionCommand) {
         let bar_type = command.data_type.parse_bar_type_from_metadata();
 
         if !self.subscriptions_bar.contains(&bar_type) {
@@ -411,7 +406,7 @@ impl DataClientCore {
         self.subscriptions_bar.insert(bar_type);
     }
 
-    fn unsubscribe_bars(&mut self, command: DataCommand) {
+    fn unsubscribe_bars(&mut self, command: SubscriptionCommand) {
         let bar_type = command.data_type.parse_bar_type_from_metadata();
 
         if self.subscriptions_bar.contains(&bar_type) {
@@ -422,7 +417,7 @@ impl DataClientCore {
         self.subscriptions_bar.remove(&bar_type);
     }
 
-    pub fn subscribe(&mut self, command: DataCommand) {
+    pub fn subscribe(&mut self, command: SubscriptionCommand) {
         let data_type = command.data_type;
         if !self.subscriptions_generic.contains(&data_type) {
             self.client
@@ -432,7 +427,7 @@ impl DataClientCore {
         self.subscriptions_generic.insert(data_type);
     }
 
-    pub fn unsubscribe(&mut self, command: DataCommand) {
+    pub fn unsubscribe(&mut self, command: SubscriptionCommand) {
         let data_type = command.data_type;
         if self.subscriptions_generic.contains(&data_type) {
             self.client
@@ -444,7 +439,7 @@ impl DataClientCore {
 
     // -- DATA REQUEST HANDLERS IMPLEMENTATION ---------------------------------------------------------------------------
 
-    pub fn request(&mut self, req: DataRequest) -> DataResponse {
+    pub fn request(&self, req: DataRequest) -> DataResponse {
         let instrument_id = req.data_type.parse_instrument_id_from_metadata();
         let venue = req.data_type.parse_venue_from_metadata();
         let start = req.data_type.parse_start_from_metadata();
