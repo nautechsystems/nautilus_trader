@@ -26,6 +26,7 @@ from nautilus_trader.core.rust.model cimport CurrencyType  # type: ignore
 from nautilus_trader.core.rust.model cimport InstrumentClass  # type: ignore
 from nautilus_trader.core.rust.model cimport InstrumentCloseType  # type: ignore
 from nautilus_trader.core.rust.model cimport LiquiditySide  # type: ignore
+from nautilus_trader.core.rust.model cimport MarketStatus  # type: ignore
 from nautilus_trader.core.rust.model cimport MarketStatusAction  # type: ignore
 from nautilus_trader.core.rust.model cimport OmsType  # type: ignore
 from nautilus_trader.core.rust.model cimport OptionKind  # type: ignore

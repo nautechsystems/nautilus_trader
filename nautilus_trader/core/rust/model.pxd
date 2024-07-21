@@ -163,6 +163,20 @@ cdef extern from "../includes/model.h":
         # The order aggressively took liqudity from the market to complete the trade.
         TAKER # = 2,
 
+    # The status of an individual market on a trading venue.
+    cpdef enum MarketStatus:
+        # The instrument is trading.
+        OPEN # = 1,
+        # The instrument is in a pre-open period.
+        CLOSED # = 2,
+        # Trading in the instrument has been paused.
+        PAUSED # = 3,
+        # Trading in the instrument has been halted.
+        # Trading in the instrument has been suspended.
+        SUSPENDED # = 5,
+        # Trading in the instrument is not available.
+        NOT_AVAILABLE # = 6,
+
     # An action affecting the status of an individual market on a trading venue.
     cpdef enum MarketStatusAction:
         # No change.
@@ -1083,6 +1097,15 @@ cdef extern from "../includes/model.h":
     #
     # - Assumes `ptr` is a valid C string pointer.
     LiquiditySide liquidity_side_from_cstr(const char *ptr);
+
+    const char *market_status_to_cstr(MarketStatus value);
+
+    # Returns an enum from a Python string.
+    #
+    # # Safety
+    #
+    # - Assumes `ptr` is a valid C string pointer.
+    MarketStatus market_status_from_cstr(const char *ptr);
 
     const char *market_status_action_to_cstr(MarketStatusAction value);
 

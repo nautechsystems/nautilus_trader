@@ -24,6 +24,7 @@ from nautilus_trader.core.rust.model cimport CurrencyType
 from nautilus_trader.core.rust.model cimport InstrumentClass
 from nautilus_trader.core.rust.model cimport InstrumentCloseType
 from nautilus_trader.core.rust.model cimport LiquiditySide
+from nautilus_trader.core.rust.model cimport MarketStatus
 from nautilus_trader.core.rust.model cimport MarketStatusAction
 from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.rust.model cimport OptionKind
@@ -76,6 +77,9 @@ cpdef str instrument_close_type_to_str(InstrumentCloseType value)
 
 cpdef LiquiditySide liquidity_side_from_str(str value)
 cpdef str liquidity_side_to_str(LiquiditySide value)
+
+cpdef MarketStatus market_status_from_str(str value)
+cpdef str market_status_to_str(MarketStatus value)
 
 cpdef MarketStatusAction market_status_action_from_str(str value)
 cpdef str market_status_action_to_str(MarketStatusAction value)

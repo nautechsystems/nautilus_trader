@@ -27,6 +27,7 @@ from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import InstrumentClass
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.enums import MarketStatusAction
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OptionKind
@@ -66,6 +67,8 @@ from nautilus_trader.model.enums import liquidity_side_from_str
 from nautilus_trader.model.enums import liquidity_side_to_str
 from nautilus_trader.model.enums import market_status_action_from_str
 from nautilus_trader.model.enums import market_status_action_to_str
+from nautilus_trader.model.enums import market_status_from_str
+from nautilus_trader.model.enums import market_status_to_str
 from nautilus_trader.model.enums import oms_type_from_str
 from nautilus_trader.model.enums import oms_type_to_str
 from nautilus_trader.model.enums import option_kind_from_str
@@ -564,6 +567,42 @@ class TestLiquiditySide:
         assert result == expected
 
 
+class TestMarketStatus:
+    @pytest.mark.parametrize(
+        ("enum", "expected"),
+        [
+            [MarketStatus.OPEN, "OPEN"],
+            [MarketStatus.CLOSED, "CLOSED"],
+            [MarketStatus.PAUSED, "PAUSED"],
+            [MarketStatus.SUSPENDED, "SUSPENDED"],
+            [MarketStatus.NOT_AVAILABLE, "NOT_AVAILABLE"],
+        ],
+    )
+    def test_market_status_to_str(self, enum, expected):
+        # Arrange, Act
+        result = market_status_to_str(enum)
+
+        # Assert
+        assert result == expected
+
+    @pytest.mark.parametrize(
+        ("string", "expected"),
+        [
+            ["OPEN", MarketStatus.OPEN],
+            ["CLOSED", MarketStatus.CLOSED],
+            ["PAUSED", MarketStatus.PAUSED],
+            ["SUSPENDED", MarketStatus.SUSPENDED],
+            ["NOT_AVAILABLE", MarketStatus.NOT_AVAILABLE],
+        ],
+    )
+    def test_market_status_from_str(self, string, expected):
+        # Arrange, Act
+        result = market_status_from_str(string)
+
+        # Assert
+        assert result == expected
+
+
 class TestMarketStatusAction:
     @pytest.mark.parametrize(
         ("enum", "expected"),
@@ -614,7 +653,7 @@ class TestMarketStatusAction:
             ["NOT_AVAILABLE_FOR_TRADING", MarketStatusAction.NOT_AVAILABLE_FOR_TRADING],
         ],
     )
-    def test_market_status_from_str(self, string, expected):
+    def test_market_status_action_from_str(self, string, expected):
         # Arrange, Act
         result = market_status_action_from_str(string)
 

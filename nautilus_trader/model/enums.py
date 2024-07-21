@@ -24,6 +24,7 @@ from nautilus_trader.core.rust.model import CurrencyType
 from nautilus_trader.core.rust.model import InstrumentClass
 from nautilus_trader.core.rust.model import InstrumentCloseType
 from nautilus_trader.core.rust.model import LiquiditySide
+from nautilus_trader.core.rust.model import MarketStatus
 from nautilus_trader.core.rust.model import MarketStatusAction
 from nautilus_trader.core.rust.model import OmsType
 from nautilus_trader.core.rust.model import OptionKind
@@ -64,6 +65,8 @@ from nautilus_trader.model.functions import liquidity_side_from_str
 from nautilus_trader.model.functions import liquidity_side_to_str
 from nautilus_trader.model.functions import market_status_action_from_str
 from nautilus_trader.model.functions import market_status_action_to_str
+from nautilus_trader.model.functions import market_status_from_str
+from nautilus_trader.model.functions import market_status_to_str
 from nautilus_trader.model.functions import oms_type_from_str
 from nautilus_trader.model.functions import oms_type_to_str
 from nautilus_trader.model.functions import option_kind_from_str
@@ -103,6 +106,7 @@ __all__ = [
     "CurrencyType",
     "InstrumentCloseType",
     "LiquiditySide",
+    "MarketStatus",
     "MarketStatusAction",
     "OmsType",
     "OptionKind",
@@ -140,6 +144,8 @@ __all__ = [
     "instrument_close_type_from_str",
     "liquidity_side_to_str",
     "liquidity_side_from_str",
+    "market_status_to_str",
+    "market_status_from_str",
     "market_status_action_to_str",
     "market_status_action_from_str",
     "oms_type_to_str",

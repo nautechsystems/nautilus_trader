@@ -305,6 +305,33 @@ typedef enum LiquiditySide {
 } LiquiditySide;
 
 /**
+ * The status of an individual market on a trading venue.
+ */
+typedef enum MarketStatus {
+    /**
+     * The instrument is trading.
+     */
+    OPEN = 1,
+    /**
+     * The instrument is in a pre-open period.
+     */
+    CLOSED = 2,
+    /**
+     * Trading in the instrument has been paused.
+     */
+    PAUSED = 3,
+    /**
+     * Trading in the instrument has been halted.
+     * Trading in the instrument has been suspended.
+     */
+    SUSPENDED = 5,
+    /**
+     * Trading in the instrument is not available.
+     */
+    NOT_AVAILABLE = 6,
+} MarketStatus;
+
+/**
  * An action affecting the status of an individual market on a trading venue.
  */
 typedef enum MarketStatusAction {
@@ -1701,6 +1728,17 @@ const char *liquidity_side_to_cstr(enum LiquiditySide value);
  * - Assumes `ptr` is a valid C string pointer.
  */
 enum LiquiditySide liquidity_side_from_cstr(const char *ptr);
+
+const char *market_status_to_cstr(enum MarketStatus value);
+
+/**
+ * Returns an enum from a Python string.
+ *
+ * # Safety
+ *
+ * - Assumes `ptr` is a valid C string pointer.
+ */
+enum MarketStatus market_status_from_cstr(const char *ptr);
 
 const char *market_status_action_to_cstr(enum MarketStatusAction value);
 
