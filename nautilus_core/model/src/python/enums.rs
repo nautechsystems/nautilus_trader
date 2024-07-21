@@ -979,13 +979,13 @@ impl MarketStatus {
 
     #[classattr]
     #[pyo3(name = "Open")]
-    fn py_none() -> Self {
+    fn py_open() -> Self {
         Self::Open
     }
 
     #[classattr]
     #[pyo3(name = "CLOSED")]
-    fn py_pre_open() -> Self {
+    fn py_closed() -> Self {
         Self::Closed
     }
 
