@@ -69,7 +69,6 @@ from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
-from nautilus_trader.model.data cimport VenueStatus
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -298,22 +297,6 @@ cdef class Actor(Component):
         System method (not intended to be called by user code).
 
         Should be overridden in the actor implementation.
-
-        """
-        # Optionally override in subclass
-
-    cpdef void on_venue_status(self, VenueStatus data):
-        """
-        Actions to be performed when running and receives a venue status update.
-
-        Parameters
-        ----------
-        data : VenueStatus
-            The venue status update received.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
 
         """
         # Optionally override in subclass
@@ -1436,37 +1419,6 @@ cdef class Actor(Component):
 
         self._send_data_cmd(command)
 
-    cpdef void subscribe_venue_status(self, Venue venue, ClientId client_id = None):
-        """
-        Subscribe to status updates for the given venue.
-
-        Parameters
-        ----------
-        venue : Venue
-            The venue to subscribe to.
-        client_id : ClientId, optional
-            The specific client ID for the command.
-            If ``None`` then will be inferred from the venue.
-
-        """
-        Condition.not_none(venue, "venue")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
-
-        self._msgbus.subscribe(
-            topic=f"data.status.{venue.to_str()}",
-            handler=self.handle_venue_status,
-        )
-
-        cdef Subscribe command = Subscribe(
-            client_id=client_id,
-            venue=venue,
-            data_type=DataType(VenueStatus),
-            command_id=UUID4(),
-            ts_init=self._clock.timestamp_ns(),
-        )
-
-        self._send_data_cmd(command)
-
     cpdef void subscribe_instrument_status(self, InstrumentId instrument_id, ClientId client_id = None):
         """
         Subscribe to status updates for the given instrument ID.
@@ -1805,37 +1757,6 @@ cdef class Actor(Component):
         self._send_data_cmd(command)
         self._log.info(f"Unsubscribed from {bar_type} bar data")
 
-    cpdef void unsubscribe_venue_status(self, Venue venue, ClientId client_id = None):
-        """
-        Unsubscribe to status updates for the given venue.
-
-        Parameters
-        ----------
-        venue : Venue
-            The venue to unsubscribe from.
-        client_id : ClientId, optional
-            The specific client ID for the command.
-            If ``None`` then will be inferred from the venue.
-
-        """
-        Condition.not_none(venue, "venue")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
-
-        self._msgbus.unsubscribe(
-            topic=f"data.status.{venue.to_str()}",
-            handler=self.handle_venue_status,
-        )
-
-        cdef Unsubscribe command = Unsubscribe(
-            client_id=client_id,
-            venue=venue,
-            data_type=DataType(VenueStatus),
-            command_id=UUID4(),
-            ts_init=self._clock.timestamp_ns(),
-        )
-
-        self._send_data_cmd(command)
-
     cpdef void unsubscribe_instrument_status(self, InstrumentId instrument_id, ClientId client_id = None):
         """
         Unsubscribe to status updates of the given venue.
@@ -1854,8 +1775,9 @@ cdef class Actor(Component):
 
         self._msgbus.unsubscribe(
             topic=f"data.status.{instrument_id.venue}.{instrument_id.symbol}",
-            handler=self.handle_venue_status,
+            handler=self.handle_instrument_status,
         )
+
         cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
             venue=instrument_id.venue,
@@ -2729,31 +2651,6 @@ cdef class Actor(Component):
             if indicators:
                 self._handle_indicators_for_bar(indicators, bar)
             self.handle_historical_data(bar)
-
-    cpdef void handle_venue_status(self, VenueStatus data):
-        """
-        Handle the given venue status update.
-
-        If state is ``RUNNING`` then passes to `on_venue_status`.
-
-        Parameters
-        ----------
-        data : VenueStatus
-            The status update received.
-
-        Warnings
-        --------
-        System method (not intended to be called by user code).
-
-        """
-        Condition.not_none(data, "data")
-
-        if self._fsm.state == ComponentState.RUNNING:
-            try:
-                self.on_venue_status(data)
-            except Exception as e:
-                self._log.exception(f"Error on handling {repr(data)}", e)
-                raise
 
     cpdef void handle_instrument_status(self, InstrumentStatus data):
         """

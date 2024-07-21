@@ -15,7 +15,6 @@
 
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatus
-from nautilus_trader.model.data import VenueStatus
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import MarketStatus
 from nautilus_trader.model.identifiers import InstrumentId
@@ -29,19 +28,6 @@ AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 
 
 class TestVenue:
-    def test_venue_status(self):
-        # Arrange
-        update = VenueStatus(
-            venue=Venue("BINANCE"),
-            status=MarketStatus.OPEN,
-            ts_event=0,
-            ts_init=0,
-        )
-
-        # Act, Assert
-        assert VenueStatus.from_dict(VenueStatus.to_dict(update)) == update
-        assert repr(update) == "VenueStatus(venue=BINANCE, status=OPEN)"
-
     def test_instrument_status(self):
         # Arrange
         update = InstrumentStatus(

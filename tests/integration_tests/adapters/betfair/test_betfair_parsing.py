@@ -239,9 +239,9 @@ class TestBetfairParsingStreaming:
         ("filename", "num_msgs"),
         [
             ("1.166564490.bz2", 2506),
-            ("1.166811431.bz2", 17855),
-            ("1.180305278.bz2", 15169),
-            ("1.206064380.bz2", 52115),
+            ("1.166811431.bz2", 17852),
+            ("1.180305278.bz2", 15165),
+            ("1.206064380.bz2", 52111),
         ],
     )
     def test_parsing_streaming_file(self, filename, num_msgs):
@@ -271,7 +271,6 @@ class TestBetfairParsingStreaming:
                 "InstrumentStatus": 260,
                 "BetfairStartingPrice": 72,
                 "InstrumentClose": 25,
-                "VenueStatus": 4,
             },
         )
         assert counts == expected

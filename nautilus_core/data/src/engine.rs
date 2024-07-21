@@ -197,11 +197,6 @@ impl<S: State> DataEngine<S> {
     }
 
     #[must_use]
-    pub fn subscribed_venue_status(&self) -> Vec<Venue> {
-        self.collect_subscriptions(|client| client.subscribed_venue_status())
-    }
-
-    #[must_use]
     pub fn subscribed_instrument_status(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| client.subscribed_instrument_status())
     }

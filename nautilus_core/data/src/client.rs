@@ -55,7 +55,6 @@ pub trait DataClient {
     fn subscribed_quote_ticks(&self) -> &HashSet<InstrumentId>;
     fn subscribed_trade_ticks(&self) -> &HashSet<InstrumentId>;
     fn subscribed_bars(&self) -> &HashSet<BarType>;
-    fn subscribed_venue_status(&self) -> &HashSet<Venue>;
     fn subscribed_instrument_status(&self) -> &HashSet<InstrumentId>;
     fn subscribed_instrument_close(&self) -> &HashSet<InstrumentId>;
     fn subscribe(&mut self, data_type: DataType) -> anyhow::Result<()>;
@@ -76,7 +75,6 @@ pub trait DataClient {
     fn subscribe_quote_ticks(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn subscribe_trade_ticks(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn subscribe_bars(&mut self, bar_type: BarType) -> anyhow::Result<()>;
-    fn subscribe_venue_status(&mut self, venue: Venue) -> anyhow::Result<()>;
     fn subscribe_instrument_status(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn subscribe_instrument_close(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn unsubscribe(&mut self, data_type: DataType) -> anyhow::Result<()>;
@@ -90,7 +88,6 @@ pub trait DataClient {
     fn unsubscribe_quote_ticks(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn unsubscribe_trade_ticks(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn unsubscribe_bars(&mut self, bar_type: BarType) -> anyhow::Result<()>;
-    fn unsubscribe_venue_status(&mut self, venue: Venue) -> anyhow::Result<()>;
     fn unsubscribe_instrument_status(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn unsubscribe_instrument_close(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn request(&mut self, correlation_id: UUID4, data_type: DataType);
@@ -153,7 +150,6 @@ pub struct DataClientCore {
     subscriptions_quote_tick: HashSet<InstrumentId>,
     subscriptions_trade_tick: HashSet<InstrumentId>,
     subscriptions_bar: HashSet<BarType>,
-    subscriptions_venue_status: HashSet<Venue>,
     subscriptions_instrument_status: HashSet<InstrumentId>,
     subscriptions_instrument_close: HashSet<InstrumentId>,
     subscriptions_instrument: HashSet<InstrumentId>,
@@ -199,11 +195,6 @@ impl DataClientCore {
     #[must_use]
     pub const fn subscribed_bars(&self) -> &HashSet<BarType> {
         &self.subscriptions_bar
-    }
-
-    #[must_use]
-    pub const fn subscribed_venue_status(&self) -> &HashSet<Venue> {
-        &self.subscriptions_venue_status
     }
 
     #[must_use]
@@ -316,17 +307,6 @@ impl DataClientCore {
             "subscriptions_bar",
         )?;
         self.subscriptions_bar.insert(bar_type);
-        Ok(())
-    }
-
-    pub fn add_subscription_venue_status(&mut self, venue: Venue) -> anyhow::Result<()> {
-        correctness::check_member_not_in_set(
-            &venue,
-            &self.subscriptions_venue_status,
-            "venue",
-            "subscriptions_venue_status",
-        )?;
-        self.subscriptions_venue_status.insert(venue);
         Ok(())
     }
 
@@ -458,17 +438,6 @@ impl DataClientCore {
             "subscriptions_bar",
         )?;
         self.subscriptions_bar.remove(bar_type);
-        Ok(())
-    }
-
-    pub fn remove_subscription_venue_status(&mut self, venue: &Venue) -> anyhow::Result<()> {
-        correctness::check_member_in_set(
-            venue,
-            &self.subscriptions_venue_status,
-            "venue",
-            "subscriptions_venue_status",
-        )?;
-        self.subscriptions_venue_status.remove(venue);
         Ok(())
     }
 
