@@ -23,10 +23,10 @@ use pyo3::{prelude::*, types::PyType, PyTypeInfo};
 use crate::{
     enums::{
         AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
-        BookType, ContingencyType, CurrencyType, HaltReason, InstrumentClass, InstrumentCloseType,
-        LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OptionKind, OrderSide,
-        OrderStatus, OrderType, PositionSide, PriceType, RecordFlag, TimeInForce, TradingState,
-        TrailingOffsetType, TriggerType,
+        BookType, ContingencyType, CurrencyType, InstrumentClass, InstrumentCloseType,
+        LiquiditySide, MarketStatusAction, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
+        PositionSide, PriceType, RecordFlag, TimeInForce, TradingState, TrailingOffsetType,
+        TriggerType,
     },
     python::common::EnumIterator,
 };
@@ -928,99 +928,6 @@ impl LiquiditySide {
 }
 
 #[pymethods]
-impl MarketStatus {
-    #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
-    }
-
-    fn __hash__(&self) -> isize {
-        *self as isize
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(MarketStatus),
-            self.name(),
-            self.value(),
-        )
-    }
-
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
-    #[getter]
-    #[must_use]
-    pub fn name(&self) -> String {
-        self.to_string()
-    }
-
-    #[getter]
-    #[must_use]
-    pub fn value(&self) -> u8 {
-        *self as u8
-    }
-
-    #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
-        EnumIterator::new::<Self>(py)
-    }
-
-    #[classmethod]
-    #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
-        let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(to_pyvalue_err)
-    }
-
-    #[classattr]
-    #[pyo3(name = "PRE_OPEN")]
-    fn py_pre_open() -> Self {
-        Self::PreOpen
-    }
-
-    #[classattr]
-    #[pyo3(name = "OPEN")]
-    fn py_open() -> Self {
-        Self::Open
-    }
-
-    #[classattr]
-    #[pyo3(name = "PAUSE")]
-    fn py_pause() -> Self {
-        Self::Pause
-    }
-
-    #[classattr]
-    #[pyo3(name = "HALT")]
-    fn py_halt() -> Self {
-        Self::Halt
-    }
-
-    #[classattr]
-    #[pyo3(name = "REOPEN")]
-    fn py_reopen() -> Self {
-        Self::Reopen
-    }
-
-    #[classattr]
-    #[pyo3(name = "PRE_CLOSE")]
-    fn py_pre_close() -> Self {
-        Self::PreClose
-    }
-
-    #[classattr]
-    #[pyo3(name = "CLOSED")]
-    fn py_closed() -> Self {
-        Self::Closed
-    }
-}
-
-#[pymethods]
 impl MarketStatusAction {
     #[new]
     fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
@@ -1164,75 +1071,6 @@ impl MarketStatusAction {
     #[pyo3(name = "NOT_AVAILABLE_FOR_TRADING")]
     fn py_not_available_for_trading() -> Self {
         Self::NotAvailableForTrading
-    }
-}
-
-#[pymethods]
-impl HaltReason {
-    #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
-    }
-
-    fn __hash__(&self) -> isize {
-        *self as isize
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "<{}.{}: '{}'>",
-            stringify!(HaltReason),
-            self.name(),
-            self.value(),
-        )
-    }
-
-    fn __str__(&self) -> String {
-        self.to_string()
-    }
-
-    #[getter]
-    #[must_use]
-    pub fn name(&self) -> String {
-        self.to_string()
-    }
-
-    #[getter]
-    #[must_use]
-    pub fn value(&self) -> u8 {
-        *self as u8
-    }
-
-    #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
-        EnumIterator::new::<Self>(py)
-    }
-
-    #[classmethod]
-    #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
-        let tokenized = data_str.to_uppercase();
-        Self::from_str(&tokenized).map_err(to_pyvalue_err)
-    }
-
-    #[classattr]
-    #[pyo3(name = "NOT_HALTED")]
-    fn py_not_halted() -> Self {
-        Self::NotHalted
-    }
-
-    #[classattr]
-    #[pyo3(name = "GENERAL")]
-    fn py_general() -> Self {
-        Self::General
-    }
-
-    #[classattr]
-    #[pyo3(name = "VOLATILITY")]
-    fn py_volatility() -> Self {
-        Self::Volatility
     }
 }
 

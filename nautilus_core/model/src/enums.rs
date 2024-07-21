@@ -529,23 +529,21 @@ pub enum LiquiditySide {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
 )]
 pub enum MarketStatus {
-    /// The market session is in the pre-open.
-    PreOpen = 1,
-    /// The market session is open.
-    Open = 2,
-    /// The market session is paused.
-    Pause = 3,
-    /// The market session is halted.
-    Halt = 4,
-    /// The market session has reopened after a pause or halt.
-    Reopen = 5,
-    /// The market session is in the pre-close.
-    PreClose = 6,
-    /// The market session is closed.
-    Closed = 7,
+    /// The instrument is trading.
+    Open = 1,
+    /// The instrument is in a pre-open period.
+    Closed = 2,
+    /// Trading in the instrument has been paused.
+    Paused = 3,
+    /// Trading in the instrument has been halted.
+    Halted = 4,
+    /// Trading in the instrument has been suspended.
+    Suspended = 5,
+    /// Trading in the instrument is not available.
+    NotAvailable = 6,
 }
 
-/// The status of an individual market on a trading venue.
+/// An action affecting the status of an individual market on a trading venue.
 #[repr(C)]
 #[derive(
     Copy,
@@ -601,38 +599,6 @@ pub enum MarketStatusAction {
     ShortSellRestrictionChange = 14,
     /// The instrument is not available for trading, either trading has closed or been halted.
     NotAvailableForTrading = 15,
-}
-
-/// The reason for a venue or market halt.
-#[repr(C)]
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Display,
-    Hash,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    AsRefStr,
-    FromRepr,
-    EnumIter,
-    EnumString,
-)]
-#[strum(ascii_case_insensitive)]
-#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
-)]
-pub enum HaltReason {
-    /// The venue or market session is not halted.
-    NotHalted = 1,
-    /// Trading halt is imposed for purely regulatory reasons with/without volatility halt.
-    General = 2,
-    /// Trading halt is imposed by the venue to protect against extreme volatility.
-    Volatility = 3,
 }
 
 /// The order management system (OMS) type for a trading venue or trading strategy.

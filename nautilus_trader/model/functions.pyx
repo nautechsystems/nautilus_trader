@@ -33,16 +33,14 @@ from nautilus_trader.core.rust.model cimport contingency_type_from_cstr
 from nautilus_trader.core.rust.model cimport contingency_type_to_cstr
 from nautilus_trader.core.rust.model cimport currency_type_from_cstr
 from nautilus_trader.core.rust.model cimport currency_type_to_cstr
-from nautilus_trader.core.rust.model cimport halt_reason_from_cstr
-from nautilus_trader.core.rust.model cimport halt_reason_to_cstr
 from nautilus_trader.core.rust.model cimport instrument_class_from_cstr
 from nautilus_trader.core.rust.model cimport instrument_class_to_cstr
 from nautilus_trader.core.rust.model cimport instrument_close_type_from_cstr
 from nautilus_trader.core.rust.model cimport instrument_close_type_to_cstr
 from nautilus_trader.core.rust.model cimport liquidity_side_from_cstr
 from nautilus_trader.core.rust.model cimport liquidity_side_to_cstr
-from nautilus_trader.core.rust.model cimport market_status_from_cstr
-from nautilus_trader.core.rust.model cimport market_status_to_cstr
+from nautilus_trader.core.rust.model cimport market_status_action_from_cstr
+from nautilus_trader.core.rust.model cimport market_status_action_to_cstr
 from nautilus_trader.core.rust.model cimport oms_type_from_cstr
 from nautilus_trader.core.rust.model cimport oms_type_to_cstr
 from nautilus_trader.core.rust.model cimport option_kind_from_cstr
@@ -167,20 +165,12 @@ cpdef str liquidity_side_to_str(LiquiditySide value):
     return cstr_to_pystr(liquidity_side_to_cstr(value))
 
 
-cpdef MarketStatus market_status_from_str(str value):
-    return market_status_from_cstr(pystr_to_cstr(value))
+cpdef MarketStatusAction market_status_action_from_str(str value):
+    return market_status_action_from_cstr(pystr_to_cstr(value))
 
 
-cpdef str market_status_to_str(MarketStatus value):
-    return cstr_to_pystr(market_status_to_cstr(value))
-
-
-cpdef HaltReason halt_reason_from_str(str value):
-    return halt_reason_from_cstr(pystr_to_cstr(value))
-
-
-cpdef str halt_reason_to_str(HaltReason value):
-    return cstr_to_pystr(halt_reason_to_cstr(value))
+cpdef str market_status_action_to_str(MarketStatusAction value):
+    return cstr_to_pystr(market_status_action_to_cstr(value))
 
 
 cpdef OmsType oms_type_from_str(str value):

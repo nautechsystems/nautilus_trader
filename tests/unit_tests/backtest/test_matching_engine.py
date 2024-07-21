@@ -24,7 +24,7 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import BookType
-from nautilus_trader.model.enums import MarketStatus
+from nautilus_trader.model.enums import MarketStatusAction
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
@@ -88,10 +88,10 @@ class TestOrderMatchingEngine:
         assert True
 
     def test_process_instrument_status(self) -> None:
-        self.matching_engine.process_status(MarketStatus.CLOSED)
-        self.matching_engine.process_status(MarketStatus.PRE_OPEN)
-        self.matching_engine.process_status(MarketStatus.PAUSE)
-        self.matching_engine.process_status(MarketStatus.OPEN)
+        self.matching_engine.process_status(MarketStatusAction.CLOSE)
+        self.matching_engine.process_status(MarketStatusAction.PRE_OPEN)
+        self.matching_engine.process_status(MarketStatusAction.PAUSE)
+        self.matching_engine.process_status(MarketStatusAction.TRADING)
 
     def test_process_market_on_close_order(self) -> None:
         order: MarketOrder = TestExecStubs.market_order(
@@ -117,13 +117,13 @@ class TestOrderMatchingEngine:
         )
         self.cache.add_order(client_order)
         self.matching_engine.process_order(client_order, self.account_id)
-        self.matching_engine.process_status(MarketStatus.OPEN)
-        self.matching_engine.process_status(MarketStatus.PRE_OPEN)
+        self.matching_engine.process_status(MarketStatusAction.OPEN)
+        self.matching_engine.process_status(MarketStatusAction.PRE_OPEN)
         messages: list[Any] = []
         self.msgbus.register("ExecEngine.process", messages.append)
 
         # Act
-        self.matching_engine.process_status(MarketStatus.PAUSE)
+        self.matching_engine.process_status(MarketStatusAction.PAUSE)
 
         # Assert
         assert self.matching_engine.msgbus.sent_count == 1

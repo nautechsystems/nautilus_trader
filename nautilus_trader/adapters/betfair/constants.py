@@ -18,7 +18,7 @@ from typing import Final
 from betfair_parser.spec.betting import MarketStatus as BetfairMarketStatus
 
 from nautilus_trader.model.enums import BookType
-from nautilus_trader.model.enums import MarketStatus
+from nautilus_trader.model.enums import MarketStatusAction
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 
@@ -31,12 +31,12 @@ BETFAIR_BOOK_TYPE: Final[BookType] = BookType.L2_MBP
 CLOSE_PRICE_WINNER: Final[Price] = Price(1.0, precision=BETFAIR_PRICE_PRECISION)
 CLOSE_PRICE_LOSER: Final[Price] = Price(0.0, precision=BETFAIR_PRICE_PRECISION)
 
-MARKET_STATUS_MAPPING: Final[dict[tuple[MarketStatus, bool], MarketStatus]] = {
-    (BetfairMarketStatus.INACTIVE, False): MarketStatus.CLOSED,
-    (BetfairMarketStatus.OPEN, False): MarketStatus.PRE_OPEN,
-    (BetfairMarketStatus.OPEN, True): MarketStatus.OPEN,
-    (BetfairMarketStatus.SUSPENDED, False): MarketStatus.PAUSE,
-    (BetfairMarketStatus.SUSPENDED, True): MarketStatus.PAUSE,
-    (BetfairMarketStatus.CLOSED, False): MarketStatus.CLOSED,
-    (BetfairMarketStatus.CLOSED, True): MarketStatus.CLOSED,
+MARKET_STATUS_MAPPING: Final[dict[tuple[BetfairMarketStatus, bool], MarketStatusAction]] = {
+    (BetfairMarketStatus.INACTIVE, False): MarketStatusAction.CLOSE,
+    (BetfairMarketStatus.OPEN, False): MarketStatusAction.PRE_OPEN,
+    (BetfairMarketStatus.OPEN, True): MarketStatusAction.TRADING,
+    (BetfairMarketStatus.SUSPENDED, False): MarketStatusAction.PAUSE,
+    (BetfairMarketStatus.SUSPENDED, True): MarketStatusAction.PAUSE,
+    (BetfairMarketStatus.CLOSED, False): MarketStatusAction.CLOSE,
+    (BetfairMarketStatus.CLOSED, True): MarketStatusAction.CLOSE,
 }

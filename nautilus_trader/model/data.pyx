@@ -42,9 +42,8 @@ from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport BookOrder_t
 from nautilus_trader.core.rust.model cimport Data_t
 from nautilus_trader.core.rust.model cimport Data_t_Tag
-from nautilus_trader.core.rust.model cimport HaltReason
 from nautilus_trader.core.rust.model cimport InstrumentCloseType
-from nautilus_trader.core.rust.model cimport MarketStatus
+from nautilus_trader.core.rust.model cimport MarketStatusAction
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.rust.model cimport bar_eq
@@ -120,12 +119,10 @@ from nautilus_trader.model.functions cimport bar_aggregation_from_str
 from nautilus_trader.model.functions cimport bar_aggregation_to_str
 from nautilus_trader.model.functions cimport book_action_from_str
 from nautilus_trader.model.functions cimport book_action_to_str
-from nautilus_trader.model.functions cimport halt_reason_from_str
-from nautilus_trader.model.functions cimport halt_reason_to_str
 from nautilus_trader.model.functions cimport instrument_close_type_from_str
 from nautilus_trader.model.functions cimport instrument_close_type_to_str
-from nautilus_trader.model.functions cimport market_status_from_str
-from nautilus_trader.model.functions cimport market_status_to_str
+from nautilus_trader.model.functions cimport market_status_action_from_str
+from nautilus_trader.model.functions cimport market_status_action_to_str
 from nautilus_trader.model.functions cimport order_side_from_str
 from nautilus_trader.model.functions cimport order_side_to_str
 from nautilus_trader.model.functions cimport price_type_from_str
@@ -3041,42 +3038,46 @@ cdef class InstrumentStatus(Data):
     ----------
     instrument_id : InstrumentId
         The instrument ID.
-    status : MarketStatus
-        The instrument market session status.
+    action : MarketStatusAction
+        The instrument market status action.
     ts_event : uint64_t
         UNIX timestamp (nanoseconds) when the status update event occurred.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
-    trading_session : str, default 'Regular'
-        The name of the trading session.
-    halt_reason : HaltReason, default ``NOT_HALTED``
-        The halt reason (only applicable for ``HALT`` status).
-
-    Raises
-    ------
-    ValueError
-        If `status` is not equal to ``HALT`` and `halt_reason` is other than ``NOT_HALTED``.
+    reason : str, optional
+        Additional details about the cause of the status change.
+    trading_event : str, optional
+        Further information about the status change (if provided).
+    is_trading : bool, optional
+        The state of trading in the instrument.
+    is_quoting : bool, optional
+        The state of quoting in the instrument.
+    is_short_sell_restricted : bool, optional
+        The state of short sell restrictions for the instrument (if applicable).
 
     """
 
     def __init__(
         self,
         InstrumentId instrument_id,
-        MarketStatus status,
+        MarketStatusAction action,
         uint64_t ts_event,
         uint64_t ts_init,
-        str trading_session = "Regular",
-        HaltReason halt_reason = HaltReason.NOT_HALTED,
+        str reason = None,
+        str trading_event = None,
+        is_trading: bool | None = None,
+        is_quoting: bool | None = None,
+        is_short_sell_restricted: bool | None = None,
     ) -> None:
-        if status != MarketStatus.HALT:
-            Condition.equal(halt_reason, HaltReason.NOT_HALTED, "halt_reason", "NO_HALT")
-
         self.instrument_id = instrument_id
-        self.trading_session = trading_session
-        self.status = status
-        self.halt_reason = halt_reason
+        self.action = action
         self.ts_event = ts_event
         self.ts_init = ts_init
+        self.reason = reason
+        self.trading_event = trading_event
+        self._is_trading = is_trading
+        self._is_quoting = is_quoting
+        self._is_short_sell_restricted = is_short_sell_restricted
 
     def __eq__(self, InstrumentStatus other) -> bool:
         return InstrumentStatus.to_dict_c(self) == InstrumentStatus.to_dict_c(other)
@@ -3088,20 +3089,62 @@ cdef class InstrumentStatus(Data):
         return (
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id}, "
-            f"trading_session={self.trading_session}, "
-            f"status={market_status_to_str(self.status)}, "
-            f"halt_reason={halt_reason_to_str(self.halt_reason)}, "
+            f"action={market_status_action_to_str(self.action)}, "
+            f"reason={self.reason}, "
+            f"trading_event={self.trading_event}, "
+            f"is_trading={self.is_trading}, "
+            f"is_quoting={self.is_quoting}, "
+            f"is_short_sell_restricted={self.is_short_sell_restricted}, "
             f"ts_event={self.ts_event})"
         )
+
+    @property
+    def is_trading(self) -> bool | None:
+        """
+        Return the state of trading in the instrument (if known).
+
+        returns
+        -------
+        bool or `None`
+
+        """
+        self._is_trading
+
+    @property
+    def is_quoting(self) -> bool | None:
+        """
+        Return the state of quoting in the instrument (if known).
+
+        returns
+        -------
+        bool or `None`
+
+        """
+        self._is_quoting
+
+    @property
+    def is_short_sell_restricted(self) -> bool | None:
+        """
+        Return the state of short sell restrictions for the instrument (if known and applicable).
+
+        returns
+        -------
+        bool or `None`
+
+        """
+        self._is_short_sell_restricted
 
     @staticmethod
     cdef InstrumentStatus from_dict_c(dict values):
         Condition.not_none(values, "values")
         return InstrumentStatus(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
-            trading_session=values.get("trading_session", "Regular"),
-            status=market_status_from_str(values["status"]),
-            halt_reason=halt_reason_from_str(values.get("halt_reason", "NOT_HALTED")),
+            action=market_status_action_from_str(values["action"]),
+            reason=values["reason"],
+            trading_event=values["trading_event"],
+            is_trading=values["is_trading"],
+            is_quoting=values["is_quoting"],
+            is_short_sell_restricted=values["is_short_sell_restricted"],
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -3112,9 +3155,12 @@ cdef class InstrumentStatus(Data):
         return {
             "type": "InstrumentStatus",
             "instrument_id": obj.instrument_id.to_str(),
-            "trading_session": obj.trading_session,
-            "status": market_status_to_str(obj.status),
-            "halt_reason": halt_reason_to_str(obj.halt_reason),
+            "action": market_status_action_to_str(obj.action),
+            "reason": obj.reason,
+            "trading_event": obj.trading_event,
+            "is_trading": obj.is_trading,
+            "is_quoting": obj.is_quoting,
+            "is_short_sell_restricted": obj.is_short_sell_restricted,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
