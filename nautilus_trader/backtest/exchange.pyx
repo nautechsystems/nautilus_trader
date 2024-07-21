@@ -47,7 +47,6 @@ from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
-from nautilus_trader.model.data cimport VenueStatus
 from nautilus_trader.model.functions cimport account_type_to_str
 from nautilus_trader.model.functions cimport oms_type_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -783,34 +782,14 @@ cdef class SimulatedExchange:
 
         matching_engine.process_bar(bar)
 
-    cpdef void process_venue_status(self, VenueStatus data):
-        """
-        Process the exchange for the given status.
-
-        Parameters
-        ----------
-        data : VenueStatus
-            The status update to process.
-
-        """
-        Condition.not_none(data, "data")
-
-        cdef SimulationModule module
-        for module in self.modules:
-            module.pre_process(data)
-
-        cdef OrderMatchingEngine matching_engine
-        for matching_engine in self._matching_engines.values():
-            matching_engine.process_status(data.status)
-
     cpdef void process_instrument_status(self, InstrumentStatus data):
         """
         Process a specific instrument status.
 
         Parameters
         ----------
-        data : VenueStatus
-            The status update to process.
+        data : InstrumentStatus
+            The instrument status update to process.
 
         """
         Condition.not_none(data, "data")

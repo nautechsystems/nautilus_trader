@@ -26,7 +26,6 @@ from betfair_parser.spec.streaming import RunnerDefinition
 from betfair_parser.spec.streaming import RunnerStatus
 from betfair_parser.spec.streaming.type_definitions import PV
 
-from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_LOSER
 from nautilus_trader.adapters.betfair.constants import CLOSE_PRICE_WINNER
 from nautilus_trader.adapters.betfair.constants import MARKET_STATUS_MAPPING
@@ -48,7 +47,6 @@ from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.data import VenueStatus
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import InstrumentCloseType
@@ -178,15 +176,6 @@ def market_definition_to_instrument_status(
     ts_init: int,
 ) -> list[InstrumentStatus]:
     updates = []
-
-    if market_definition.in_play:
-        venue_status = VenueStatus(
-            venue=BETFAIR_VENUE,
-            status=MarketStatus.OPEN,
-            ts_event=ts_event,
-            ts_init=ts_init,
-        )
-        updates.append(venue_status)
 
     for runner in market_definition.runners:
         instrument_id = betfair_instrument_id(

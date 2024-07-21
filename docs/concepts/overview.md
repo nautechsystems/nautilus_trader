@@ -113,7 +113,6 @@ The following market data types can be requested historically, and also subscrib
 - `Instrument`
 - `InstrumentStatus`
 - `InstrumentClose`
-- `VenueStatus`
 
 The following `PriceType` options can be used for bar aggregations:
 

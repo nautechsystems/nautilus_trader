@@ -10,7 +10,6 @@ a trading domain:
 - `TradeTick`: A single trade/match event between counterparties
 - `Bar`: OHLCV bar data, aggregated using a specific *aggregation method*
 - `Instrument`: General base class for a tradable instrument
-- `VenueStatus`: A venue level status event
 - `InstrumentStatus`: An instrument level status event
 - `InstrumentClose`: An instrument closing price
 

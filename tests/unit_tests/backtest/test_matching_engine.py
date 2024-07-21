@@ -87,7 +87,7 @@ class TestOrderMatchingEngine:
         # Assert
         assert True
 
-    def test_process_venue_status(self) -> None:
+    def test_process_instrument_status(self) -> None:
         self.matching_engine.process_status(MarketStatus.CLOSED)
         self.matching_engine.process_status(MarketStatus.PRE_OPEN)
         self.matching_engine.process_status(MarketStatus.PAUSE)

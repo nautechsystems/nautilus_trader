@@ -37,7 +37,6 @@ from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
-from nautilus_trader.model.data cimport VenueStatus
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -138,7 +137,6 @@ cdef class SimulatedExchange:
     cpdef void process_quote_tick(self, QuoteTick tick)
     cpdef void process_trade_tick(self, TradeTick tick)
     cpdef void process_bar(self, Bar bar)
-    cpdef void process_venue_status(self, VenueStatus data)
     cpdef void process_instrument_status(self, InstrumentStatus data)
     cpdef void process(self, uint64_t ts_now)
     cpdef void reset(self)

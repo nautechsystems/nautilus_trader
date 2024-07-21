@@ -36,7 +36,6 @@ from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.data import VenueStatus
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
@@ -473,18 +472,6 @@ class TestDataStubs:
             asks_counter += 1
 
         return book
-
-    @staticmethod
-    def venue_status(
-        venue: Venue | None = None,
-        status: MarketStatus | None = None,
-    ) -> VenueStatus:
-        return VenueStatus(
-            venue=venue or Venue("BINANCE"),
-            status=status or MarketStatus.OPEN,
-            ts_event=0,
-            ts_init=0,
-        )
 
     @staticmethod
     def instrument_status(

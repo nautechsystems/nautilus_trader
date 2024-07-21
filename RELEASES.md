@@ -15,6 +15,7 @@ Released on TBD (UTC).
 - Upgraded `datafusion` crate to 40.0.0
 
 ### Breaking Changes
+- Removed `VenueStatus` and all associated methods and schemas (redundant with `InstrumentStatus`)
 - Changed `OrderBook` FFI API to take data by reference instead of by value
 
 ### Fixes

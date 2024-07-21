@@ -303,23 +303,6 @@ cdef class OrderBookDepth10(Data):
     cdef object list_to_capsule_c(list items)
 
 
-cdef class VenueStatus(Data):
-    cdef readonly Venue venue
-    """The venue.\n\n:returns: `Venue`"""
-    cdef readonly MarketStatus status
-    """The venue market status.\n\n:returns: `MarketStatus`"""
-    cdef readonly uint64_t ts_event
-    """UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
-    cdef readonly uint64_t ts_init
-    """UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
-
-    @staticmethod
-    cdef VenueStatus from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(VenueStatus obj)
-
-
 cdef class InstrumentStatus(Data):
     cdef readonly InstrumentId instrument_id
     """The instrument ID.\n\n:returns: `InstrumentId`"""
