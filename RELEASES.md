@@ -4,17 +4,18 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added options on futures support for Interactive Brokers (#1795), thanks @rsmb7z
+- Added `MarketStatusAction` enum (will support Databento `status` schema)
+- Added documentation for option greeks custom data example (#1788), thanks @faysou
 - Implemented `MessageBus` v2 in Rust (#1786), thanks @twitu
 - Implemented `DataEngine` v2 in Rust (#1785), thanks @twitu
-- Refactor order submission error handling for Interactive Brokers (#1783), thanks @rsmb7z
+- Refactored order submission error handling for Interactive Brokers (#1783), thanks @rsmb7z
 - Improved live reconciliation robustness (will now generate inferred orders necessary to align external position state)
 - Improved tests for Interactive Brokers (#1776), thanks @mylesgamez
-- Added documentation for option greeks custom data example (#1788), thanks @faysou
-- Upgrade `tokio` to 1.38.1
-- Upgrade `datafusion` to 40.0.0
+- Upgraded `tokio` crate to 1.38.1
+- Upgraded `datafusion` crate to 40.0.0
 
 ### Breaking Changes
-- Rust `OrderBook` API now takes data by reference instead of by value
+- Changed `OrderBook` FFI API to take data by reference instead of by value
 
 ### Fixes
 - Fixed `LiveExecutionEngine` handling of adapter client execution report causing `None` mass status (#1789), thanks for reporting @faysou

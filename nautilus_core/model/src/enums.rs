@@ -545,6 +545,64 @@ pub enum MarketStatus {
     Closed = 7,
 }
 
+/// The status of an individual market on a trading venue.
+#[repr(C)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    Display,
+    Hash,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    AsRefStr,
+    FromRepr,
+    EnumIter,
+    EnumString,
+)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
+)]
+pub enum MarketStatusAction {
+    /// No change.
+    None = 0,
+    /// The instrument is in a pre-open period.
+    PreOpen = 1,
+    /// The instrument is in a pre-cross period.
+    PreCross = 2,
+    /// The instrument is quoting but not trading.
+    Quoting = 3,
+    /// The instrument is in a cross/auction.
+    Cross = 4,
+    /// The instrument is being opened through a trading rotation.
+    Rotation = 5,
+    /// A new price indication is available for the instrument.
+    NewPriceIndication = 6,
+    /// The instrument is trading.
+    Trading = 7,
+    /// Trading in the instrument has been halted.
+    Halt = 8,
+    /// Trading in the instrument has been paused.
+    Pause = 9,
+    /// Trading in the instrument has been suspended.
+    Suspend = 10,
+    /// The instrument is in a pre-close period.
+    PreClose = 11,
+    /// Trading in the instrument has closed.
+    Close = 12,
+    /// The instrument is in a post-close period.
+    PostClose = 13,
+    /// A change in short-selling restrictions.
+    ShortSellRestrictionChange = 14,
+    /// The instrument is not available for trading, either trading has closed or been halted.
+    NotAvailableForTrading = 15,
+}
+
 /// The reason for a venue or market halt.
 #[repr(C)]
 #[derive(
@@ -1123,6 +1181,7 @@ enum_strum_serde!(CurrencyType);
 enum_strum_serde!(InstrumentCloseType);
 enum_strum_serde!(LiquiditySide);
 enum_strum_serde!(MarketStatus);
+enum_strum_serde!(MarketStatusAction);
 enum_strum_serde!(OmsType);
 enum_strum_serde!(OptionKind);
 enum_strum_serde!(OrderSide);
