@@ -27,7 +27,7 @@ from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport LiquiditySide
-from nautilus_trader.core.rust.model cimport MarketStatus
+from nautilus_trader.core.rust.model cimport MarketStatusAction
 from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.execution.matching_core cimport MatchingCore
@@ -104,8 +104,8 @@ cdef class OrderMatchingEngine:
     """The order management system type for the matching engine.\n\n:returns: `OmsType`"""
     cdef readonly AccountType account_type
     """The account type for the matching engine.\n\n:returns: `AccountType`"""
-    cdef readonly MarketStatus market_status
-    """The market status for the matching engine.\n\n:returns: `MarketStatus`"""
+    cdef readonly MarketStatusAction market_status
+    """The market status for the matching engine.\n\n:returns: `MarketStatusAction`"""
     cdef readonly CacheFacade cache
     """The cache for the matching engine.\n\n:returns: `CacheFacade`"""
     cdef readonly MessageBus msgbus
@@ -143,7 +143,7 @@ cdef class OrderMatchingEngine:
     cpdef void process_quote_tick(self, QuoteTick tick)
     cpdef void process_trade_tick(self, TradeTick tick)
     cpdef void process_bar(self, Bar bar)
-    cpdef void process_status(self, MarketStatus status)
+    cpdef void process_status(self, MarketStatusAction status)
     cpdef void process_auction_book(self, OrderBook book)
     cdef void _process_trade_ticks_from_bar(self, Bar bar)
     cdef void _process_quote_ticks_from_bar(self)

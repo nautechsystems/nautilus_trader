@@ -30,7 +30,7 @@ use nautilus_model::{
         bar::{Bar, BarType},
         delta::OrderBookDelta,
     },
-    enums::{AccountType, BookType, MarketStatus, OmsType},
+    enums::{AccountType, BookType, MarketStatusAction, OmsType},
     identifiers::{AccountId, ClientOrderId, InstrumentId, TraderId, Venue},
     instruments::Instrument,
     orderbook::book::OrderBook,
@@ -67,7 +67,7 @@ pub struct OrderMatchingEngine {
     /// The account type for the matching engine.
     pub account_type: AccountType,
     /// The market status for the matching engine.
-    pub market_status: MarketStatus,
+    pub market_status: MarketStatusAction, // TODO: Pending reimplementation
     /// The config for the matching engine.
     pub config: OrderMatchingEngineConfig,
     clock: &'static AtomicTime,
@@ -123,7 +123,7 @@ impl OrderMatchingEngine {
             cache,
             book,
             core,
-            market_status: MarketStatus::Open,
+            market_status: MarketStatusAction::Trading, // TODO: Pending reimplementation
             config,
             target_bid: None,
             target_ask: None,

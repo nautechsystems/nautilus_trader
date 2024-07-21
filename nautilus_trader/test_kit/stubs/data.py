@@ -41,7 +41,7 @@ from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import InstrumentCloseType
-from nautilus_trader.model.enums import MarketStatus
+from nautilus_trader.model.enums import MarketStatusAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import InstrumentId
@@ -476,11 +476,11 @@ class TestDataStubs:
     @staticmethod
     def instrument_status(
         instrument_id: InstrumentId | None = None,
-        status: MarketStatus | None = None,
+        action: MarketStatusAction | None = None,
     ) -> InstrumentStatus:
         return InstrumentStatus(
             instrument_id=instrument_id or InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
-            status=status or MarketStatus.PAUSE,
+            action=action or MarketStatusAction.PAUSE,
             ts_event=0,
             ts_init=0,
         )

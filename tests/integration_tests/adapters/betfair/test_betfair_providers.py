@@ -30,7 +30,7 @@ from nautilus_trader.adapters.betfair.providers import load_markets_metadata
 from nautilus_trader.adapters.betfair.providers import make_instruments
 from nautilus_trader.adapters.betfair.providers import parse_market_catalog
 from nautilus_trader.common.component import LiveClock
-from nautilus_trader.model.enums import MarketStatus
+from nautilus_trader.model.enums import MarketStatusAction
 from tests.integration_tests.adapters.betfair.test_kit import BetfairResponses
 from tests.integration_tests.adapters.betfair.test_kit import BetfairStreaming
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
@@ -118,8 +118,8 @@ class TestBetfairInstrumentProvider:
             results.append(data)
 
         # Assert
-        result = [r.status for r in results[8:16]]
-        expected = [MarketStatus.PRE_OPEN] * 7 + [MarketStatus.CLOSED]
+        result = [r.action for r in results[8:16]]
+        expected = [MarketStatusAction.PRE_OPEN] * 7 + [MarketStatusAction.CLOSE]
         assert result == expected
 
     def test_list_market_catalogue_parsing(self):

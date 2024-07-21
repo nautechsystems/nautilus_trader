@@ -44,7 +44,7 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import InstrumentCloseType
-from nautilus_trader.model.enums import MarketStatus
+from nautilus_trader.model.enums import MarketStatusAction
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.instruments import BettingInstrument
@@ -302,9 +302,9 @@ def test_instrument_opening_events(data_client, parser):
     assert len(messages) == 4
     assert isinstance(messages[0], BettingInstrument)
     assert isinstance(messages[2], InstrumentStatus)
-    assert messages[2].status == MarketStatus.PRE_OPEN
+    assert messages[2].action == MarketStatusAction.PRE_OPEN
     assert isinstance(messages[3], InstrumentStatus)
-    assert messages[3].status == MarketStatus.PRE_OPEN
+    assert messages[3].action == MarketStatusAction.PRE_OPEN
 
 
 def test_instrument_in_play_events(data_client, parser):
@@ -315,22 +315,22 @@ def test_instrument_in_play_events(data_client, parser):
         if isinstance(msg, InstrumentStatus)
     ]
     assert len(events) == 14
-    result = [ev.status for ev in events]
+    result = [ev.action for ev in events]
     expected = [
-        MarketStatus.PRE_OPEN.value,
-        MarketStatus.PRE_OPEN.value,
-        MarketStatus.PRE_OPEN.value,
-        MarketStatus.PRE_OPEN.value,
-        MarketStatus.PRE_OPEN.value,
-        MarketStatus.PRE_OPEN.value,
-        MarketStatus.PAUSE.value,
-        MarketStatus.PAUSE.value,
-        MarketStatus.OPEN.value,
-        MarketStatus.OPEN.value,
-        MarketStatus.PAUSE.value,
-        MarketStatus.PAUSE.value,
-        MarketStatus.CLOSED.value,
-        MarketStatus.CLOSED.value,
+        MarketStatusAction.PRE_OPEN.value,
+        MarketStatusAction.PRE_OPEN.value,
+        MarketStatusAction.PRE_OPEN.value,
+        MarketStatusAction.PRE_OPEN.value,
+        MarketStatusAction.PRE_OPEN.value,
+        MarketStatusAction.PRE_OPEN.value,
+        MarketStatusAction.PAUSE.value,
+        MarketStatusAction.PAUSE.value,
+        MarketStatusAction.TRADING.value,
+        MarketStatusAction.TRADING.value,
+        MarketStatusAction.PAUSE.value,
+        MarketStatusAction.PAUSE.value,
+        MarketStatusAction.CLOSE.value,
+        MarketStatusAction.CLOSE.value,
     ]
     assert result == expected
 
@@ -360,7 +360,7 @@ def test_instrument_closing_events(data_client, parser):
     # Instrument1
     assert isinstance(ins1, BettingInstrument)
     assert isinstance(status1, InstrumentStatus)
-    assert status1.status == MarketStatus.CLOSED
+    assert status1.action == MarketStatusAction.CLOSE
     assert isinstance(close1, InstrumentClose)
     assert close1.close_price == 1.0000
     assert close1.close_type == InstrumentCloseType.CONTRACT_EXPIRED
@@ -369,7 +369,7 @@ def test_instrument_closing_events(data_client, parser):
     assert isinstance(ins2, BettingInstrument)
     assert isinstance(close2, InstrumentClose)
     assert isinstance(status2, InstrumentStatus)
-    assert status2.status == MarketStatus.CLOSED
+    assert status2.action == MarketStatusAction.CLOSE
     assert close2.close_price == 0.0
     assert close2.close_type == InstrumentCloseType.CONTRACT_EXPIRED
 

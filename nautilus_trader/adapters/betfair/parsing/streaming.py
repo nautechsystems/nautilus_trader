@@ -51,7 +51,7 @@ from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import LiquiditySide
-from nautilus_trader.model.enums import MarketStatus
+from nautilus_trader.model.enums import MarketStatusAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -183,9 +183,9 @@ def market_definition_to_instrument_status(
             selection_id=runner.id,
             selection_handicap=runner.handicap,
         )
-        key: tuple[MarketStatus, bool] = (market_definition.status, market_definition.in_play)
+        key: tuple[MarketStatusAction, bool] = (market_definition.status, market_definition.in_play)
         if runner.status in (RunnerStatus.REMOVED, RunnerStatus.REMOVED_VACANT):
-            status = MarketStatus.CLOSED
+            status = MarketStatusAction.CLOSE
         else:
             try:
                 status = MARKET_STATUS_MAPPING[key]
@@ -195,7 +195,7 @@ def market_definition_to_instrument_status(
                 )
         status = InstrumentStatus(
             instrument_id,
-            status=status,
+            action=status,
             ts_event=ts_event,
             ts_init=ts_init,
         )

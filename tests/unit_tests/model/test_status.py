@@ -16,7 +16,7 @@
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.enums import InstrumentCloseType
-from nautilus_trader.model.enums import MarketStatus
+from nautilus_trader.model.enums import MarketStatusAction
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
@@ -32,7 +32,7 @@ class TestVenue:
         # Arrange
         update = InstrumentStatus(
             instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
-            status=MarketStatus.OPEN,
+            action=MarketStatusAction.TRADING,
             ts_event=0,
             ts_init=0,
         )
@@ -41,7 +41,7 @@ class TestVenue:
         assert InstrumentStatus.from_dict(InstrumentStatus.to_dict(update)) == update
         assert (
             repr(update)
-            == "InstrumentStatus(instrument_id=BTCUSDT.BINANCE, trading_session=Regular, status=OPEN, halt_reason=NOT_HALTED, ts_event=0)"
+            == "InstrumentStatus(instrument_id=BTCUSDT.BINANCE, action=TRADING, reason=None, trading_event=None, is_trading=None, is_quoting=None, is_short_sell_restricted=None, ts_event=0)"  # noqa: E501
         )
 
     def test_instrument_close(self):

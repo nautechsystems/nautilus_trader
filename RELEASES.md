@@ -4,8 +4,8 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added options on futures support for Interactive Brokers (#1795), thanks @rsmb7z
-- Added `MarketStatusAction` enum (will support Databento `status` schema)
 - Added documentation for option greeks custom data example (#1788), thanks @faysou
+- Added `MarketStatusAction` enum (support Databento `status` schema)
 - Implemented `MessageBus` v2 in Rust (#1786), thanks @twitu
 - Implemented `DataEngine` v2 in Rust (#1785), thanks @twitu
 - Refactored order submission error handling for Interactive Brokers (#1783), thanks @rsmb7z
@@ -16,6 +16,8 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 - Removed `VenueStatus` and all associated methods and schemas (redundant with `InstrumentStatus`)
+- Changed `InstrumentStatus` params (support Databento `status` schema)
+- Changed `InstrumentStatus` arrow schema
 - Changed `OrderBook` FFI API to take data by reference instead of by value
 
 ### Fixes

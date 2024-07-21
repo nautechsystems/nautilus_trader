@@ -806,7 +806,7 @@ cdef class SimulatedExchange:
             self.add_instrument(instrument)
             matching_engine = self._matching_engines[data.instrument_id]
 
-        matching_engine.process_status(data.status)
+        matching_engine.process_status(data.action)
 
     cpdef void process(self, uint64_t ts_now):
         """

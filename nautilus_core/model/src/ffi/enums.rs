@@ -19,10 +19,9 @@ use nautilus_core::ffi::string::{cstr_to_str, str_to_cstr};
 
 use crate::enums::{
     AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
-    BookType, ContingencyType, CurrencyType, HaltReason, InstrumentClass, InstrumentCloseType,
-    LiquiditySide, MarketStatus, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
-    PositionSide, PriceType, RecordFlag, TimeInForce, TradingState, TrailingOffsetType,
-    TriggerType,
+    BookType, ContingencyType, CurrencyType, InstrumentClass, InstrumentCloseType, LiquiditySide,
+    MarketStatusAction, OmsType, OptionKind, OrderSide, OrderStatus, OrderType, PositionSide,
+    PriceType, RecordFlag, TimeInForce, TradingState, TrailingOffsetType, TriggerType,
 };
 
 #[no_mangle]
@@ -233,7 +232,7 @@ pub unsafe extern "C" fn liquidity_side_from_cstr(ptr: *const c_char) -> Liquidi
 }
 
 #[no_mangle]
-pub extern "C" fn market_status_to_cstr(value: MarketStatus) -> *const c_char {
+pub extern "C" fn market_status_action_to_cstr(value: MarketStatusAction) -> *const c_char {
     str_to_cstr(value.as_ref())
 }
 
@@ -243,27 +242,10 @@ pub extern "C" fn market_status_to_cstr(value: MarketStatus) -> *const c_char {
 ///
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
-pub unsafe extern "C" fn market_status_from_cstr(ptr: *const c_char) -> MarketStatus {
+pub unsafe extern "C" fn market_status_action_from_cstr(ptr: *const c_char) -> MarketStatusAction {
     let value = cstr_to_str(ptr);
-    MarketStatus::from_str(value)
+    MarketStatusAction::from_str(value)
         .unwrap_or_else(|_| panic!("invalid `MarketStatus` enum string value, was '{value}'"))
-}
-
-#[no_mangle]
-pub extern "C" fn halt_reason_to_cstr(value: HaltReason) -> *const c_char {
-    str_to_cstr(value.as_ref())
-}
-
-/// Returns an enum from a Python string.
-///
-/// # Safety
-///
-/// - Assumes `ptr` is a valid C string pointer.
-#[no_mangle]
-pub unsafe extern "C" fn halt_reason_from_cstr(ptr: *const c_char) -> HaltReason {
-    let value = cstr_to_str(ptr);
-    HaltReason::from_str(value)
-        .unwrap_or_else(|_| panic!("invalid `HaltReason` enum string value, was '{value}'"))
 }
 
 #[no_mangle]
