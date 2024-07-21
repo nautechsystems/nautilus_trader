@@ -24,9 +24,9 @@ use crate::{
     enums::{
         AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
         BookType, ContingencyType, CurrencyType, InstrumentClass, InstrumentCloseType,
-        LiquiditySide, MarketStatusAction, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
-        PositionSide, PriceType, RecordFlag, TimeInForce, TradingState, TrailingOffsetType,
-        TriggerType,
+        LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OptionKind, OrderSide,
+        OrderStatus, OrderType, PositionSide, PriceType, RecordFlag, TimeInForce, TradingState,
+        TrailingOffsetType, TriggerType,
     },
     python::common::EnumIterator,
 };
@@ -924,6 +924,94 @@ impl LiquiditySide {
     #[pyo3(name = "TAKER")]
     fn py_taker() -> Self {
         Self::Taker
+    }
+}
+
+#[pymethods]
+impl MarketStatus {
+    #[new]
+    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
+        let t = Self::type_object(py);
+        Self::py_from_str(t, value)
+    }
+
+    fn __hash__(&self) -> isize {
+        *self as isize
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "<{}.{}: '{}'>",
+            stringify!(MarketStatus),
+            self.name(),
+            self.value(),
+        )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn name(&self) -> String {
+        self.to_string()
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn value(&self) -> u8 {
+        *self as u8
+    }
+
+    #[classmethod]
+    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+        EnumIterator::new::<Self>(py)
+    }
+
+    #[classmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
+        let data_str: &str = data.str().and_then(|s| s.extract())?;
+        let tokenized = data_str.to_uppercase();
+        Self::from_str(&tokenized).map_err(to_pyvalue_err)
+    }
+
+    #[classattr]
+    #[pyo3(name = "Open")]
+    fn py_none() -> Self {
+        Self::Open
+    }
+
+    #[classattr]
+    #[pyo3(name = "CLOSED")]
+    fn py_pre_open() -> Self {
+        Self::Closed
+    }
+
+    #[classattr]
+    #[pyo3(name = "PAUSED")]
+    fn py_paused() -> Self {
+        Self::Paused
+    }
+
+    // # TODO: Unfortunately can't use this yet due to Cython (C enum namespacing)
+    // #[classattr]
+    // #[pyo3(name = "HALTED")]
+    // fn py_halted() -> Self {
+    //     Self::Halted
+    // }
+
+    #[classattr]
+    #[pyo3(name = "SUSPENDED")]
+    fn py_suspended() -> Self {
+        Self::Suspended
+    }
+
+    #[classattr]
+    #[pyo3(name = "NOT_AVAILABLE")]
+    fn py_not_available() -> Self {
+        Self::NotAvailable
     }
 }
 

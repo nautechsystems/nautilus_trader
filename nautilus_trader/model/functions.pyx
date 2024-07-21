@@ -41,6 +41,8 @@ from nautilus_trader.core.rust.model cimport liquidity_side_from_cstr
 from nautilus_trader.core.rust.model cimport liquidity_side_to_cstr
 from nautilus_trader.core.rust.model cimport market_status_action_from_cstr
 from nautilus_trader.core.rust.model cimport market_status_action_to_cstr
+from nautilus_trader.core.rust.model cimport market_status_from_cstr
+from nautilus_trader.core.rust.model cimport market_status_to_cstr
 from nautilus_trader.core.rust.model cimport oms_type_from_cstr
 from nautilus_trader.core.rust.model cimport oms_type_to_cstr
 from nautilus_trader.core.rust.model cimport option_kind_from_cstr
@@ -163,6 +165,14 @@ cpdef LiquiditySide liquidity_side_from_str(str value):
 
 cpdef str liquidity_side_to_str(LiquiditySide value):
     return cstr_to_pystr(liquidity_side_to_cstr(value))
+
+
+cpdef MarketStatus market_status_from_str(str value):
+    return market_status_from_cstr(pystr_to_cstr(value))
+
+
+cpdef str market_status_to_str(MarketStatus value):
+    return cstr_to_pystr(market_status_to_cstr(value))
 
 
 cpdef MarketStatusAction market_status_action_from_str(str value):

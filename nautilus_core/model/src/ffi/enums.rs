@@ -20,8 +20,9 @@ use nautilus_core::ffi::string::{cstr_to_str, str_to_cstr};
 use crate::enums::{
     AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
     BookType, ContingencyType, CurrencyType, InstrumentClass, InstrumentCloseType, LiquiditySide,
-    MarketStatusAction, OmsType, OptionKind, OrderSide, OrderStatus, OrderType, PositionSide,
-    PriceType, RecordFlag, TimeInForce, TradingState, TrailingOffsetType, TriggerType,
+    MarketStatus, MarketStatusAction, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
+    PositionSide, PriceType, RecordFlag, TimeInForce, TradingState, TrailingOffsetType,
+    TriggerType,
 };
 
 #[no_mangle]
@@ -232,6 +233,23 @@ pub unsafe extern "C" fn liquidity_side_from_cstr(ptr: *const c_char) -> Liquidi
 }
 
 #[no_mangle]
+pub extern "C" fn market_status_to_cstr(value: MarketStatus) -> *const c_char {
+    str_to_cstr(value.as_ref())
+}
+
+/// Returns an enum from a Python string.
+///
+/// # Safety
+///
+/// - Assumes `ptr` is a valid C string pointer.
+#[no_mangle]
+pub unsafe extern "C" fn market_status_from_cstr(ptr: *const c_char) -> MarketStatus {
+    let value = cstr_to_str(ptr);
+    MarketStatus::from_str(value)
+        .unwrap_or_else(|_| panic!("invalid `MarketStatus` enum string value, was '{value}'"))
+}
+
+#[no_mangle]
 pub extern "C" fn market_status_action_to_cstr(value: MarketStatusAction) -> *const c_char {
     str_to_cstr(value.as_ref())
 }
@@ -245,7 +263,7 @@ pub extern "C" fn market_status_action_to_cstr(value: MarketStatusAction) -> *co
 pub unsafe extern "C" fn market_status_action_from_cstr(ptr: *const c_char) -> MarketStatusAction {
     let value = cstr_to_str(ptr);
     MarketStatusAction::from_str(value)
-        .unwrap_or_else(|_| panic!("invalid `MarketStatus` enum string value, was '{value}'"))
+        .unwrap_or_else(|_| panic!("invalid `MarketStatusAction` enum string value, was '{value}'"))
 }
 
 #[no_mangle]

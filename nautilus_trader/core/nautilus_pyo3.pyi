@@ -748,6 +748,13 @@ class LiquiditySide(Enum):
     TAKER = "TAKER"
     NO_LIQUIDITY_SIDE = "NO_LIQUIDITY_SIDE"
 
+class MarketStatus(Enum):
+    OPEN = "OPEN"
+    CLOSED = "CLOSED"
+    PAUSED = "PAUSED"
+    SUSPENDED = "SUSPENDED"
+    NOT_AVAILABLE = "NOT_AVAILABLE"
+
 class MarketStatusAction(Enum):
     NONE = "NONE"
     PRE_OPEN = "PRE_OPEN"

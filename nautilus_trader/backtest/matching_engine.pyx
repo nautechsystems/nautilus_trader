@@ -39,6 +39,8 @@ from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport LiquiditySide
+from nautilus_trader.core.rust.model cimport MarketStatus
+from nautilus_trader.core.rust.model cimport MarketStatusAction
 from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderStatus
@@ -184,7 +186,7 @@ cdef class OrderMatchingEngine:
         self.book_type = book_type
         self.oms_type = oms_type
         self.account_type = account_type
-        self.market_status = MarketStatusAction.TRADING
+        self.market_status = MarketStatus.OPEN
 
         self._instrument_has_expiration = instrument.instrument_class in EXPIRING_INSTRUMENT_TYPES
         self._bar_execution = bar_execution
@@ -529,26 +531,24 @@ cdef class OrderMatchingEngine:
             The status action to process.
 
         """
-        self.market_status = status
-
-        # TODO: Reimplement
-        # if (self.market_status, status) == (MarketStatusAction.CLOSED, MarketStatus.OPEN):
-        #     self.market_status = status
-        # elif (self.market_status, status) == (MarketStatus.CLOSED, MarketStatus.PRE_OPEN):
-        #     # Nothing to do on pre-market open.
-        #     self.market_status = status
-        # elif (self.market_status, status) == (MarketStatus.PRE_OPEN, MarketStatus.PAUSE):
+        # # TODO: Reimplement
+        if (self.market_status, status) == (MarketStatus.CLOSED, MarketStatusAction.TRADING):
+            self.market_status = MarketStatus.OPEN
+        elif (self.market_status, status) == (MarketStatus.CLOSED, MarketStatusAction.PRE_OPEN):
+            # Nothing to do on pre-market open.
+            self.market_status = MarketStatus.OPEN
+        # elif (self.market_status, status) == (MarketStatus.PRE_OPEN, MarketStatusAction.PAUSE):
         #     # Opening auction period, run auction match on pre-open auction orderbook
         #     self.process_auction_book(self._opening_auction_book)
         #     self.market_status = status
-        # elif (self.market_status, status) == (MarketStatus.PAUSE, MarketStatus.OPEN):
+        # elif (self.market_status, status) == (MarketStatus.PAUSE, MarketStatusAction.OPEN):
         #     # Normal market open
         #     self.market_status = status
-        # elif (self.market_status, status) == (MarketStatus.OPEN, MarketStatus.PAUSE):
+        # elif (self.market_status, status) == (MarketStatus.OPEN, MarketStatusAction.PAUSE):
         #     # Closing auction period, run auction match on closing auction orderbook
         #     self.process_auction_book(self._closing_auction_book)
         #     self.market_status = status
-        # elif (self.market_status, status) == (MarketStatus.PAUSE, MarketStatus.CLOSED):
+        # elif (self.market_status, status) == (MarketStatus.PAUSE, MarketStatusAction.CLOSED):
         #     # Market closed - nothing to do for now
         #     # TODO - should we implement some sort of closing price message here?
         #     self.market_status = status
