@@ -21,6 +21,7 @@ pub mod deltas;
 pub mod depth;
 pub mod order;
 pub mod quote;
+pub mod status;
 #[cfg(feature = "stubs")]
 pub mod stubs;
 pub mod trade;

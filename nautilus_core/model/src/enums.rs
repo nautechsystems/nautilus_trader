@@ -601,6 +601,31 @@ pub enum MarketStatusAction {
     NotAvailableForTrading = 15,
 }
 
+/// Convert the given `value` to an [`OrderSide`].
+impl FromU8 for MarketStatusAction {
+    fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            0 => Some(Self::None),
+            1 => Some(Self::PreOpen),
+            2 => Some(Self::PreCross),
+            3 => Some(Self::Quoting),
+            4 => Some(Self::Cross),
+            5 => Some(Self::Rotation),
+            6 => Some(Self::NewPriceIndication),
+            7 => Some(Self::Trading),
+            8 => Some(Self::Halt),
+            9 => Some(Self::Pause),
+            10 => Some(Self::Suspend),
+            11 => Some(Self::PreClose),
+            12 => Some(Self::Close),
+            13 => Some(Self::PostClose),
+            14 => Some(Self::ShortSellRestrictionChange),
+            15 => Some(Self::NotAvailableForTrading),
+            _ => None,
+        }
+    }
+}
+
 /// The order management system (OMS) type for a trading venue or trading strategy.
 #[repr(C)]
 #[derive(
