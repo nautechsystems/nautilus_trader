@@ -18,8 +18,6 @@ from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.enums import MarketStatusAction
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
@@ -31,23 +29,26 @@ class TestVenue:
     def test_instrument_status(self):
         # Arrange
         update = InstrumentStatus(
-            instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
+            instrument_id=InstrumentId.from_str("MSFT.XNAS"),
             action=MarketStatusAction.TRADING,
             ts_event=0,
             ts_init=0,
+            is_trading=True,
+            is_quoting=True,
+            is_short_sell_restricted=False,
         )
 
         # Act, Assert
         assert InstrumentStatus.from_dict(InstrumentStatus.to_dict(update)) == update
         assert (
             repr(update)
-            == "InstrumentStatus(instrument_id=BTCUSDT.BINANCE, action=TRADING, reason=None, trading_event=None, is_trading=None, is_quoting=None, is_short_sell_restricted=None, ts_event=0)"  # noqa: E501
+            == "InstrumentStatus(instrument_id=MSFT.XNAS, action=TRADING, reason=None, trading_event=None, is_trading=True, is_quoting=True, is_short_sell_restricted=False, ts_event=0)"  # noqa: E501
         )
 
     def test_instrument_close(self):
         # Arrange
         update = InstrumentClose(
-            instrument_id=InstrumentId(Symbol("BTCUSDT"), Venue("BINANCE")),
+            instrument_id=InstrumentId.from_str("BTCUSDT.BINANCE"),
             close_price=Price(100.0, precision=0),
             close_type=InstrumentCloseType.CONTRACT_EXPIRED,
             ts_event=0,

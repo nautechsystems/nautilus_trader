@@ -661,6 +661,40 @@ class TradeTick:
     @classmethod
     def from_dict(cls, values: dict[str, str]) -> TradeTick: ...
 
+class InstrumentStatus:
+    def __init__(
+        self,
+        instrument_id: InstrumentId,
+        action: MarketStatusAction,
+        ts_event: int,
+        ts_init: int,
+        reason: str | None,
+        trading_event: str | None,
+        is_trading: bool | None,
+        is_quoting: bool | None,
+        is_short_sell_restricted: bool | None,
+    ) -> None: ...
+    @property
+    def instrument_id(self) -> InstrumentId: ...
+    @property
+    def action(self) -> MarketStatusAction: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+    @property
+    def reason(self) -> str | None: ...
+    @property
+    def trading_event(self) -> str | None: ...
+    @property
+    def is_trading(self) -> bool | None: ...
+    @property
+    def is_quoting(self) -> bool | None: ...
+    @property
+    def is_short_sell_restricted(self) -> bool | None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> InstrumentStatus: ...
+
 ### Enums
 
 class AccountType(Enum):

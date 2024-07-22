@@ -3037,11 +3037,11 @@ cdef class InstrumentStatus(Data):
     Parameters
     ----------
     instrument_id : InstrumentId
-        The instrument ID.
+        The instrument ID for the status change.
     action : MarketStatusAction
         The instrument market status action.
     ts_event : uint64_t
-        UNIX timestamp (nanoseconds) when the status update event occurred.
+        UNIX timestamp (nanoseconds) when the status event occurred.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
     reason : str, optional
@@ -3108,7 +3108,7 @@ cdef class InstrumentStatus(Data):
         bool or `None`
 
         """
-        self._is_trading
+        return self._is_trading
 
     @property
     def is_quoting(self) -> bool | None:
@@ -3120,7 +3120,7 @@ cdef class InstrumentStatus(Data):
         bool or `None`
 
         """
-        self._is_quoting
+        return self._is_quoting
 
     @property
     def is_short_sell_restricted(self) -> bool | None:
@@ -3132,7 +3132,7 @@ cdef class InstrumentStatus(Data):
         bool or `None`
 
         """
-        self._is_short_sell_restricted
+        return self._is_short_sell_restricted
 
     @staticmethod
     cdef InstrumentStatus from_dict_c(dict values):
