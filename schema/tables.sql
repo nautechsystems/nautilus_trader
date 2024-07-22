@@ -8,7 +8,7 @@ CREATE TYPE INSTRUMENT_CLASS AS ENUM ('Spot', 'Swap', 'Future', 'FutureSpread', 
 CREATE TYPE BAR_AGGREGATION AS ENUM ('Tick', 'TickImbalance', 'TickRuns', 'Volume', 'VolumeImbalance', 'VolumeRuns', 'Value', 'ValueImbalance', 'ValueRuns', 'Millisecond', 'Second', 'Minute', 'Hour', 'Day', 'Week', 'Month');
 CREATE TYPE BOOK_ACTION AS ENUM ('Add', 'Update', 'Delete','Clear');
 CREATE TYPE ORDER_STATUS AS ENUM ('Initialized', 'Denied', 'Emulated', 'Released', 'Submitted', 'Accepted', 'Rejected', 'Canceled', 'Expired', 'Triggered', 'PendingUpdate', 'PendingCancel', 'PartiallyFilled', 'Filled');
-
+CREATE TYPE CURRENCY_TYPE AS ENUM('CRYPTO', 'FIAT', 'COMMODITY_BACKED');
 
 ------------------- TABLES -------------------
 
@@ -40,7 +40,7 @@ CREATE TABLE IF NOT EXISTS "currency" (
     precision INTEGER,
     iso4217 INTEGER,
     name TEXT,
-    currency_type TEXT
+    currency_type CURRENCY_TYPE
 );
 
 CREATE TABLE IF NOT EXISTS "instrument" (

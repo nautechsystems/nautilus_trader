@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 pub mod accounts;
+pub mod enums;
 pub mod general;
 pub mod instruments;
 pub mod orders;
