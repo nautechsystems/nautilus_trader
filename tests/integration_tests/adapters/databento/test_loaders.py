@@ -696,6 +696,27 @@ def test_load_bars(
     assert bar.ts_init == ts_init
 
 
+def test_load_status() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "status.dbn.zst"
+
+    # Act
+    data = loader.from_dbn_file(path, as_legacy_cython=False)
+
+    # Assert
+    assert len(data) == 4
+    assert isinstance(data[0], nautilus_pyo3.InstrumentStatus)
+    assert data[0].action == nautilus_pyo3.MarketStatusAction.TRADING
+    assert data[0].ts_event == 1609110000000000000
+    assert data[0].ts_init == 1609113600000000000
+    assert data[0].reason == "Scheduled"
+    assert data[0].trading_event is None
+    assert data[0].is_trading
+    assert data[0].is_quoting
+    assert data[0].is_short_sell_restricted is None
+
+
 def test_load_imbalance() -> None:
     # Arrange
     loader = DatabentoDataLoader()

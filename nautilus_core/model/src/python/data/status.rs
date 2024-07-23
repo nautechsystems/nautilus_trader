@@ -34,7 +34,7 @@ use ustr::Ustr;
 use super::data_to_pycapsule;
 use crate::{
     data::{status::InstrumentStatus, Data},
-    enums::{FromU8, MarketStatusAction, PriceType},
+    enums::{FromU16, FromU8, MarketStatusAction, PriceType},
     identifiers::InstrumentId,
     python::common::PY_MODULE_MODEL,
     types::{price::Price, quantity::Quantity},
@@ -48,8 +48,8 @@ impl InstrumentStatus {
         let instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
 
         let action_obj: &PyAny = obj.getattr("action")?.extract()?;
-        let action_u8: u8 = action_obj.getattr("value")?.extract()?;
-        let action = MarketStatusAction::from_u8(action_u8).unwrap();
+        let action_u16: u16 = action_obj.getattr("value")?.extract()?;
+        let action = MarketStatusAction::from_u16(action_u16).unwrap();
 
         let ts_event: u64 = obj.getattr("ts_event")?.extract()?;
         let ts_init: u64 = obj.getattr("ts_init")?.extract()?;

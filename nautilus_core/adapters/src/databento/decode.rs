@@ -28,12 +28,13 @@ use nautilus_model::{
         depth::{OrderBookDepth10, DEPTH10_LEN},
         order::BookOrder,
         quote::QuoteTick,
+        status::InstrumentStatus,
         trade::TradeTick,
         Data,
     },
     enums::{
-        AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction, FromU8,
-        InstrumentClass, OptionKind, OrderSide, PriceType,
+        AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction, FromU16, FromU8,
+        InstrumentClass, MarketStatusAction, OptionKind, OrderSide, PriceType,
     },
     identifiers::{InstrumentId, TradeId},
     instruments::{
@@ -75,6 +76,15 @@ const BAR_CLOSE_ADJUSTMENT_1S: u64 = NANOSECONDS_IN_SECOND;
 const BAR_CLOSE_ADJUSTMENT_1M: u64 = NANOSECONDS_IN_SECOND * 60;
 const BAR_CLOSE_ADJUSTMENT_1H: u64 = NANOSECONDS_IN_SECOND * 60 * 60;
 const BAR_CLOSE_ADJUSTMENT_1D: u64 = NANOSECONDS_IN_SECOND * 60 * 60 * 24;
+
+#[must_use]
+pub const fn parse_ynblank_as_opt_bool(c: c_char) -> Option<bool> {
+    match c as u8 as char {
+        'Y' => Some(true),
+        'N' => Some(false),
+        _ => None,
+    }
+}
 
 #[must_use]
 pub const fn parse_order_side(c: c_char) -> OrderSide {
@@ -145,6 +155,61 @@ pub fn parse_cfi_iso10926(
     }
 
     Ok((asset_class, instrument_class))
+}
+
+pub fn parse_status_reason(value: u16) -> anyhow::Result<Option<Ustr>> {
+    let value_str = match value {
+        0 => return Ok(None),
+        1 => "Scheduled",
+        2 => "Surveillance intervention",
+        3 => "Market event",
+        4 => "Instrument activation",
+        5 => "Instrument expiration",
+        6 => "Recovery in process",
+        10 => "Regulatory",
+        11 => "Administrative",
+        12 => "Non-compliance",
+        13 => "Filings not current",
+        14 => "SEC trading suspension",
+        15 => "New issue",
+        16 => "Issue available",
+        17 => "Issues reviewed",
+        18 => "Filing requirements satisfied",
+        30 => "News pending",
+        31 => "News released",
+        32 => "News and resumption times",
+        33 => "News not forthcoming",
+        40 => "Order imbalance",
+        50 => "LULD pause",
+        60 => "Operational",
+        70 => "Additional information requested",
+        80 => "Merger effective",
+        90 => "ETF",
+        100 => "Corporate action",
+        110 => "New Security offering",
+        120 => "Market wide halt level 1",
+        121 => "Market wide halt level 2",
+        122 => "Market wide halt level 3",
+        123 => "Market wide halt carryover",
+        124 => "Market wide halt resumption",
+        130 => "Quotation not available",
+        _ => anyhow::bail!("Invalid `StatusMsg` reason, was '{value}'"),
+    };
+
+    Ok(Some(Ustr::from(value_str)))
+}
+
+pub fn parse_status_trading_event(value: u16) -> anyhow::Result<Option<Ustr>> {
+    let value_str = match value {
+        0 => return Ok(None),
+        1 => "No cancel",
+        2 => "Change trading session",
+        3 => "Implied matching on",
+        4 => "Implied matching off",
+        _ => anyhow::bail!("Invalid `StatusMsg` trading_event, was '{value}'"),
+    };
+
+    Ok(Some(Ustr::from(value_str)))
 }
 
 pub fn decode_price(value: i64, precision: u8) -> anyhow::Result<Price> {
@@ -676,6 +741,26 @@ pub fn decode_ohlcv_msg(
     );
 
     Ok(bar)
+}
+
+pub fn decode_status_msg(
+    msg: &dbn::StatusMsg,
+    instrument_id: InstrumentId,
+    ts_init: UnixNanos,
+) -> anyhow::Result<InstrumentStatus> {
+    let status = InstrumentStatus::new(
+        instrument_id,
+        MarketStatusAction::from_u16(msg.action).expect("Invalid `MarketStatusAction`"),
+        msg.hd.ts_event.into(),
+        ts_init,
+        parse_status_reason(msg.reason)?,
+        parse_status_trading_event(msg.trading_event)?,
+        parse_ynblank_as_opt_bool(msg.is_trading),
+        parse_ynblank_as_opt_bool(msg.is_quoting),
+        parse_ynblank_as_opt_bool(msg.is_short_sell_restricted),
+    );
+
+    Ok(status)
 }
 
 pub fn decode_record(
@@ -1267,6 +1352,28 @@ mod tests {
         let result = decode_instrument_def_msg_v1(msg, instrument_id, 0.into());
 
         assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_decode_status_msg() {
+        let path = PathBuf::from(format!("{TEST_DATA_PATH}/test_data.status.dbn.zst"));
+        let mut dbn_stream = Decoder::from_zstd_file(path)
+            .unwrap()
+            .decode_stream::<dbn::StatusMsg>();
+        let msg = dbn_stream.next().unwrap().unwrap();
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let status = decode_status_msg(msg, instrument_id, 0.into()).unwrap();
+
+        assert_eq!(status.instrument_id, instrument_id);
+        assert_eq!(status.action, MarketStatusAction::Trading);
+        assert_eq!(status.ts_event, msg.hd.ts_event);
+        assert_eq!(status.ts_init, 0);
+        assert_eq!(status.reason, Some(Ustr::from("Scheduled")));
+        assert_eq!(status.trading_event, None);
+        assert_eq!(status.is_trading, Some(true));
+        assert_eq!(status.is_quoting, Some(true));
+        assert_eq!(status.is_short_sell_restricted, None);
     }
 
     #[rstest]
