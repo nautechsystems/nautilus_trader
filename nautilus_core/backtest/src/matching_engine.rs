@@ -32,7 +32,7 @@ use nautilus_model::{
     },
     enums::{AccountType, BookType, MarketStatus, OmsType},
     identifiers::{AccountId, ClientOrderId, InstrumentId, TraderId, Venue},
-    instruments::Instrument,
+    instruments::any::InstrumentAny,
     orderbook::book::OrderBook,
     orders::{
         any::{PassiveOrderAny, StopOrderAny},
@@ -57,7 +57,7 @@ pub struct OrderMatchingEngine {
     /// The venue for the matching engine.
     pub venue: Venue,
     /// The instrument for the matching engine.
-    pub instrument: Box<dyn Instrument>,
+    pub instrument: InstrumentAny,
     /// The instruments raw integer ID for the venue.
     pub raw_id: u32,
     /// The order book type for the matching engine.
@@ -93,7 +93,7 @@ impl OrderMatchingEngine {
     /// Creates a new [`OrderMatchingEngine`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        instrument: Box<dyn Instrument>,
+        instrument: InstrumentAny,
         raw_id: u32,
         book_type: BookType,
         oms_type: OmsType,
@@ -112,7 +112,7 @@ impl OrderMatchingEngine {
             None, // TBD (will be a function on the engine)
         );
         Self {
-            venue: instrument.venue(),
+            venue: instrument.id().venue,
             instrument,
             raw_id,
             book_type,
