@@ -170,6 +170,9 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig, frozen=True):
     market_data_type : bool, default REALTIME
         Set which IBMarketDataTypeEnum to be used by InteractiveBrokersClient.
         Configure `IBMarketDataTypeEnum.DELAYED_FROZEN` to use with account without data subscription.
+    quote_ticks_ignore_size : bool
+        If True, will Omit updates that reflect only changes in size, and not price.
+        Applicable to `subscribe_quote_ticks`.
     dockerized_gateway : DockerizedIBGatewayConfig, Optional
         The client's gateway container configuration.
 
@@ -184,6 +187,7 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig, frozen=True):
     ibg_client_id: int = 1
     use_regular_trading_hours: bool = True
     market_data_type: IBMarketDataTypeEnum = IBMarketDataTypeEnum.REALTIME
+    quote_ticks_ignore_size: bool = True
     dockerized_gateway: DockerizedIBGatewayConfig | None = None
 
 
