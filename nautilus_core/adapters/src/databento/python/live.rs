@@ -77,6 +77,10 @@ impl DatabentoLiveClient {
                         instrument_any_to_pyobject(py, data).expect("Error creating instrument");
                     call_python(py, &callback, py_obj)
                 }),
+                LiveMessage::Status(data) => Python::with_gil(|py| {
+                    let py_obj = data.into_py(py);
+                    call_python(py, &callback_pyo3, py_obj)
+                }),
                 LiveMessage::Imbalance(data) => Python::with_gil(|py| {
                     let py_obj = data.into_py(py);
                     call_python(py, &callback_pyo3, py_obj)

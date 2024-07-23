@@ -250,6 +250,10 @@ class DatabentoDataLoader:
                     return data
                 else:
                     return self._pyo3_loader.load_bars(str(path), pyo3_instrument_id)
+            case DatabentoSchema.STATUS.value:
+                if as_legacy_cython:
+                    raise NotImplementedError  # TODO: Implement .from_pyo3()
+                return self._pyo3_loader.load_status(str(path), pyo3_instrument_id)
             case DatabentoSchema.IMBALANCE.value:
                 if as_legacy_cython:
                     raise ValueError(

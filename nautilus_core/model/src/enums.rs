@@ -28,6 +28,12 @@ pub trait FromU8 {
         Self: Sized;
 }
 
+pub trait FromU16 {
+    fn from_u16(value: u16) -> Option<Self>
+    where
+        Self: Sized;
+}
+
 /// An account type provided by a trading venue or broker.
 #[repr(C)]
 #[derive(
@@ -602,8 +608,8 @@ pub enum MarketStatusAction {
 }
 
 /// Convert the given `value` to an [`OrderSide`].
-impl FromU8 for MarketStatusAction {
-    fn from_u8(value: u8) -> Option<Self> {
+impl FromU16 for MarketStatusAction {
+    fn from_u16(value: u16) -> Option<Self> {
         match value {
             0 => Some(Self::None),
             1 => Some(Self::PreOpen),

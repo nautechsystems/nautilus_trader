@@ -29,6 +29,7 @@ use nautilus_model::{
     data::{
         delta::OrderBookDelta,
         deltas::{OrderBookDeltas, OrderBookDeltas_API},
+        status::InstrumentStatus,
         Data,
     },
     enums::RecordFlag,
@@ -42,7 +43,7 @@ use tokio::{
 use tracing::{debug, error, info, trace};
 
 use super::{
-    decode::{decode_imbalance_msg, decode_statistics_msg},
+    decode::{decode_imbalance_msg, decode_statistics_msg, decode_status_msg},
     types::{DatabentoImbalance, DatabentoStatistics},
 };
 use crate::databento::{
@@ -62,6 +63,7 @@ pub enum LiveCommand {
 pub enum LiveMessage {
     Data(Data),
     Instrument(InstrumentAny),
+    Status(InstrumentStatus),
     Imbalance(DatabentoImbalance),
     Statistics(DatabentoStatistics),
     Error(anyhow::Error),
@@ -214,6 +216,16 @@ impl DatabentoFeedHandler {
             } else if let Some(msg) = record.get::<dbn::InstrumentDefMsg>() {
                 let data = handle_instrument_def_msg(msg, &self.publisher_venue_map, clock)?;
                 self.send_msg(LiveMessage::Instrument(data)).await;
+            } else if let Some(msg) = record.get::<dbn::StatusMsg>() {
+                let data = handle_status_msg(
+                    msg,
+                    &record,
+                    &symbol_map,
+                    &self.publisher_venue_map,
+                    &mut instrument_id_map,
+                    clock,
+                )?;
+                self.send_msg(LiveMessage::Status(data)).await;
             } else if let Some(msg) = record.get::<dbn::ImbalanceMsg>() {
                 let data = handle_imbalance_msg(
                     msg,
@@ -384,6 +396,21 @@ fn handle_instrument_def_msg(
     let ts_init = clock.get_time_ns();
 
     decode_instrument_def_msg(msg, instrument_id, ts_init)
+}
+
+fn handle_status_msg(
+    msg: &dbn::StatusMsg,
+    record: &dbn::RecordRef,
+    symbol_map: &PitSymbolMap,
+    publisher_venue_map: &IndexMap<PublisherId, Venue>,
+    instrument_id_map: &mut HashMap<u32, InstrumentId>,
+    clock: &AtomicTime,
+) -> anyhow::Result<InstrumentStatus> {
+    let instrument_id =
+        update_instrument_id_map(record, symbol_map, publisher_venue_map, instrument_id_map);
+    let ts_init = clock.get_time_ns();
+
+    decode_status_msg(msg, instrument_id, ts_init)
 }
 
 fn handle_imbalance_msg(

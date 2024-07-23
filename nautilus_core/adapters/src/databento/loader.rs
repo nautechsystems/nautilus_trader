@@ -23,7 +23,7 @@ use dbn::{
 use fallible_streaming_iterator::FallibleStreamingIterator;
 use indexmap::IndexMap;
 use nautilus_model::{
-    data::Data,
+    data::{status::InstrumentStatus, Data},
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::any::InstrumentAny,
     types::currency::Currency,
@@ -33,7 +33,7 @@ use ustr::Ustr;
 use super::{
     decode::{
         decode_imbalance_msg, decode_instrument_def_msg_v1, decode_record, decode_statistics_msg,
-        raw_ptr_to_ustr,
+        decode_status_msg, raw_ptr_to_ustr,
     },
     symbology::decode_nautilus_instrument_id,
     types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, Dataset, PublisherId},
@@ -223,6 +223,46 @@ impl DatabentoDataLoader {
                         None,
                         include_trades,
                     ) {
+                        Ok(data) => Some(Ok(data)),
+                        Err(e) => Some(Err(e)),
+                    }
+                }
+                None => None,
+            }
+        }))
+    }
+
+    pub fn read_status_records<T>(
+        &self,
+        path: PathBuf,
+        instrument_id: Option<InstrumentId>,
+    ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<InstrumentStatus>> + '_>
+    where
+        T: dbn::Record + dbn::HasRType + 'static,
+    {
+        let decoder = Decoder::from_zstd_file(path)?;
+        let metadata = decoder.metadata().clone();
+        let mut dbn_stream = decoder.decode_stream::<T>();
+
+        Ok(std::iter::from_fn(move || {
+            if let Err(e) = dbn_stream.advance() {
+                return Some(Err(e.into()));
+            }
+            match dbn_stream.get() {
+                Some(rec) => {
+                    let record = dbn::RecordRef::from(rec);
+                    let instrument_id = match &instrument_id {
+                        Some(id) => *id, // Copy
+                        None => decode_nautilus_instrument_id(
+                            &record,
+                            &metadata,
+                            &self.publisher_venue_map,
+                        )
+                        .unwrap(), // TODO: Panic on error for now
+                    };
+
+                    let msg = record.get::<dbn::StatusMsg>().expect("Invalid `StatusMsg`");
+                    match decode_status_msg(msg, instrument_id, msg.ts_recv.into()) {
                         Ok(data) => Some(Ok(data)),
                         Err(e) => Some(Err(e)),
                     }

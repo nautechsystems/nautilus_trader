@@ -20,7 +20,7 @@ use nautilus_core::{ffi::cvec::CVec, python::to_pyvalue_err};
 use nautilus_model::{
     data::{
         bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick,
-        trade::TradeTick, Data,
+        status::InstrumentStatus, trade::TradeTick, Data,
     },
     identifiers::{InstrumentId, Venue},
     python::instruments::instrument_any_to_pyobject,
@@ -352,6 +352,28 @@ impl DatabentoDataLoader {
             .map_err(to_pyvalue_err)?;
 
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "load_status")]
+    fn py_load_status(
+        &self,
+        path: String,
+        instrument_id: Option<InstrumentId>,
+    ) -> PyResult<Vec<InstrumentStatus>> {
+        let path_buf = PathBuf::from(path);
+        let iter = self
+            .read_status_records::<dbn::StatusMsg>(path_buf, instrument_id)
+            .map_err(to_pyvalue_err)?;
+
+        let mut data = Vec::new();
+        for result in iter {
+            match result {
+                Ok(item) => data.push(item),
+                Err(e) => return Err(to_pyvalue_err(e)),
+            }
+        }
+
+        Ok(data)
     }
 
     #[pyo3(name = "load_imbalance")]
