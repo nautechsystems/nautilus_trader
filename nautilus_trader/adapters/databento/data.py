@@ -43,6 +43,7 @@ from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
@@ -956,7 +957,9 @@ class DatabentoDataClient(LiveMarketDataClient):
         record: object,
     ) -> None:
         # TODO: Improve the efficiency of this
-        if isinstance(record, DatabentoImbalance):
+        if isinstance(record, nautilus_pyo3.InstrumentStatus):
+            data = InstrumentStatus.from_pyo3(record)
+        elif isinstance(record, DatabentoImbalance):
             instrument_id = InstrumentId.from_str(record.instrument_id.value)
             data = DataType(DatabentoImbalance, metadata={"instrument_id": instrument_id})
         elif isinstance(record, DatabentoStatistics):

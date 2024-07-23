@@ -3194,6 +3194,76 @@ cdef class InstrumentStatus(Data):
         """
         return InstrumentStatus.to_dict_c(obj)
 
+    @staticmethod
+    def from_pyo3_list(list pyo3_status_list) -> list[QuoteTick]:
+        """
+        Return legacy Cython instrument status converted from the given pyo3 Rust objects.
+
+        Parameters
+        ----------
+        pyo3_status_list : list[nautilus_pyo3.InstrumentStatus]
+            The pyo3 Rust instrument status list to convert from.
+
+        Returns
+        -------
+        list[InstrumentStatus]
+
+        """
+        cdef list[InstrumentStatus] output = []
+
+        for pyo3_status in pyo3_status_list:
+            output.append(InstrumentStatus.from_pyo3(pyo3_status))
+
+        return output
+
+    @staticmethod
+    def from_pyo3(pyo3_status) -> InstrumentStatus:
+        """
+        Return a legacy Cython quote tick converted from the given pyo3 Rust object.
+
+        Parameters
+        ----------
+        pyo3_status : nautilus_pyo3.InstrumentStatus
+            The pyo3 Rust instrument status to convert from.
+
+        Returns
+        -------
+        InstrumentStatus
+
+        """
+        return InstrumentStatus(
+            instrument_id=InstrumentId.from_str(pyo3_status.instrument_id.value),
+            action=pyo3_status.action.value,
+            ts_event=pyo3_status.ts_event,
+            ts_init=pyo3_status.ts_init,
+            reason=pyo3_status.reason,
+            trading_event=pyo3_status.trading_event,
+            is_trading=pyo3_status.is_trading,
+            is_quoting=pyo3_status.is_quoting,
+            is_short_sell_restricted=pyo3_status.is_short_sell_restricted,
+        )
+
+    def to_pyo3(self) -> nautilus_pyo3.InstrumentStatus:
+        """
+        Return a pyo3 object from this legacy Cython instance.
+
+        Returns
+        -------
+        nautilus_pyo3.InstrumentStatus
+
+        """
+        return nautilus_pyo3.InstrumentStatus(
+            nautilus_pyo3.InstrumentId.from_str(self.instrument_id.value),
+            nautilus_pyo3.MarketStatusAction(market_status_action_to_str(self.action)),
+            self.ts_event,
+            self.ts_init,
+            self.reason,
+            self.trading_event,
+            self.is_trading,
+            self.is_quoting,
+            self.is_short_sell_restricted,
+        )
+
 
 cdef class InstrumentClose(Data):
     """

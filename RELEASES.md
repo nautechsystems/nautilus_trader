@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added Databento Status schema support for loading and live trading
 - Added options on futures support for Interactive Brokers (#1795), thanks @rsmb7z
 - Added documentation for option greeks custom data example (#1788), thanks @faysou
 - Added `MarketStatusAction` enum (support Databento `status` schema)

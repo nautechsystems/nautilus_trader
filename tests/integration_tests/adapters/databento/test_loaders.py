@@ -20,6 +20,7 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
@@ -28,6 +29,7 @@ from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import InstrumentClass
+from nautilus_trader.model.enums import MarketStatusAction
 from nautilus_trader.model.enums import OptionKind
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import InstrumentId
@@ -697,6 +699,27 @@ def test_load_bars(
 
 
 def test_load_status() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "status.dbn.zst"
+
+    # Act
+    data = loader.from_dbn_file(path, as_legacy_cython=True)
+
+    # Assert
+    assert len(data) == 4
+    assert isinstance(data[0], InstrumentStatus)
+    assert data[0].action == MarketStatusAction.TRADING
+    assert data[0].ts_event == 1609110000000000000
+    assert data[0].ts_init == 1609113600000000000
+    assert data[0].reason == "Scheduled"
+    assert data[0].trading_event is None
+    assert data[0].is_trading
+    assert data[0].is_quoting
+    assert data[0].is_short_sell_restricted is None
+
+
+def test_load_status_pyo3() -> None:
     # Arrange
     loader = DatabentoDataLoader()
     path = DATABENTO_TEST_DATA_DIR / "status.dbn.zst"
