@@ -28,6 +28,12 @@ pub trait FromU8 {
         Self: Sized;
 }
 
+pub trait FromU16 {
+    fn from_u16(value: u16) -> Option<Self>
+    where
+        Self: Sized;
+}
+
 /// An account type provided by a trading venue or broker.
 #[repr(C)]
 #[derive(
@@ -529,23 +535,21 @@ pub enum LiquiditySide {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
 )]
 pub enum MarketStatus {
-    /// The market session is in the pre-open.
-    PreOpen = 1,
-    /// The market session is open.
-    Open = 2,
-    /// The market session is paused.
-    Pause = 3,
-    /// The market session is halted.
-    Halt = 4,
-    /// The market session has reopened after a pause or halt.
-    Reopen = 5,
-    /// The market session is in the pre-close.
-    PreClose = 6,
-    /// The market session is closed.
-    Closed = 7,
+    /// The instrument is trading.
+    Open = 1,
+    /// The instrument is in a pre-open period.
+    Closed = 2,
+    /// Trading in the instrument has been paused.
+    Paused = 3,
+    /// Trading in the instrument has been halted.
+    // Halted = 4,  # TODO: Unfortunately can't use this yet due to Cython (C enum namespacing)
+    /// Trading in the instrument has been suspended.
+    Suspended = 5,
+    /// Trading in the instrument is not available.
+    NotAvailable = 6,
 }
 
-/// The reason for a venue or market halt.
+/// An action affecting the status of an individual market on a trading venue.
 #[repr(C)]
 #[derive(
     Copy,
@@ -568,13 +572,64 @@ pub enum MarketStatus {
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
 )]
-pub enum HaltReason {
-    /// The venue or market session is not halted.
-    NotHalted = 1,
-    /// Trading halt is imposed for purely regulatory reasons with/without volatility halt.
-    General = 2,
-    /// Trading halt is imposed by the venue to protect against extreme volatility.
-    Volatility = 3,
+pub enum MarketStatusAction {
+    /// No change.
+    None = 0,
+    /// The instrument is in a pre-open period.
+    PreOpen = 1,
+    /// The instrument is in a pre-cross period.
+    PreCross = 2,
+    /// The instrument is quoting but not trading.
+    Quoting = 3,
+    /// The instrument is in a cross/auction.
+    Cross = 4,
+    /// The instrument is being opened through a trading rotation.
+    Rotation = 5,
+    /// A new price indication is available for the instrument.
+    NewPriceIndication = 6,
+    /// The instrument is trading.
+    Trading = 7,
+    /// Trading in the instrument has been halted.
+    Halt = 8,
+    /// Trading in the instrument has been paused.
+    Pause = 9,
+    /// Trading in the instrument has been suspended.
+    Suspend = 10,
+    /// The instrument is in a pre-close period.
+    PreClose = 11,
+    /// Trading in the instrument has closed.
+    Close = 12,
+    /// The instrument is in a post-close period.
+    PostClose = 13,
+    /// A change in short-selling restrictions.
+    ShortSellRestrictionChange = 14,
+    /// The instrument is not available for trading, either trading has closed or been halted.
+    NotAvailableForTrading = 15,
+}
+
+/// Convert the given `value` to an [`OrderSide`].
+impl FromU16 for MarketStatusAction {
+    fn from_u16(value: u16) -> Option<Self> {
+        match value {
+            0 => Some(Self::None),
+            1 => Some(Self::PreOpen),
+            2 => Some(Self::PreCross),
+            3 => Some(Self::Quoting),
+            4 => Some(Self::Cross),
+            5 => Some(Self::Rotation),
+            6 => Some(Self::NewPriceIndication),
+            7 => Some(Self::Trading),
+            8 => Some(Self::Halt),
+            9 => Some(Self::Pause),
+            10 => Some(Self::Suspend),
+            11 => Some(Self::PreClose),
+            12 => Some(Self::Close),
+            13 => Some(Self::PostClose),
+            14 => Some(Self::ShortSellRestrictionChange),
+            15 => Some(Self::NotAvailableForTrading),
+            _ => None,
+        }
+    }
 }
 
 /// The order management system (OMS) type for a trading venue or trading strategy.
@@ -684,7 +739,7 @@ impl OrderSide {
         match &self {
             Self::Buy => OrderSideSpecified::Buy,
             Self::Sell => OrderSideSpecified::Sell,
-            _ => panic!("Order invariant failed: side must be 'Buy' or 'Sell'"),
+            _ => panic!("Order invariant failed: side must be `Buy` or `Sell`"),
         }
     }
 }
@@ -1123,6 +1178,7 @@ enum_strum_serde!(CurrencyType);
 enum_strum_serde!(InstrumentCloseType);
 enum_strum_serde!(LiquiditySide);
 enum_strum_serde!(MarketStatus);
+enum_strum_serde!(MarketStatusAction);
 enum_strum_serde!(OmsType);
 enum_strum_serde!(OptionKind);
 enum_strum_serde!(OrderSide);

@@ -28,6 +28,9 @@ from nautilus_trader.core.nautilus_pyo3 import WebSocketClient
 from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
 
 
+MAX_ARGS_PER_SUBSCRIPTION_REQUEST = 10
+
+
 class BybitWebsocketClient:
     """
     Provides a `Bybit` streaming WebSocket client.
@@ -298,5 +301,14 @@ class BybitWebsocketClient:
             self._log.error("Cannot subscribe all: not connected")
             return
 
-        sub = {"op": "subscribe", "args": self._subscriptions}
-        await self._client.send(msgspec.json.encode(sub))
+        self._log.info("Resubscribe to all data streams")
+
+        # You can input up to 10 args for each subscription request sent to one connection
+        subscription_lists = [
+            self._subscriptions[i : i + MAX_ARGS_PER_SUBSCRIPTION_REQUEST]
+            for i in range(0, len(self._subscriptions), MAX_ARGS_PER_SUBSCRIPTION_REQUEST)
+        ]
+
+        for subscriptions in subscription_lists:
+            sub = {"op": "subscribe", "args": subscriptions}
+            await self._client.send(msgspec.json.encode(sub))

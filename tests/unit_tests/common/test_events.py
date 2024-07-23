@@ -71,7 +71,7 @@ class TestCommonEvents:
 
         # Act
         pickled = pickle.dumps(event)
-        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle is safe here)
 
         # Assert
         assert event == unpickled

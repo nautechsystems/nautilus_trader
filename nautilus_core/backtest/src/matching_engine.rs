@@ -19,7 +19,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
 use log::{debug, info};
 use nautilus_common::{cache::Cache, msgbus::MessageBus};
@@ -32,7 +32,7 @@ use nautilus_model::{
     },
     enums::{AccountType, BookType, MarketStatus, OmsType},
     identifiers::{AccountId, ClientOrderId, InstrumentId, TraderId, Venue},
-    instruments::Instrument,
+    instruments::any::InstrumentAny,
     orderbook::book::OrderBook,
     orders::{
         any::{PassiveOrderAny, StopOrderAny},
@@ -57,7 +57,7 @@ pub struct OrderMatchingEngine {
     /// The venue for the matching engine.
     pub venue: Venue,
     /// The instrument for the matching engine.
-    pub instrument: Box<dyn Instrument>,
+    pub instrument: InstrumentAny,
     /// The instruments raw integer ID for the venue.
     pub raw_id: u32,
     /// The order book type for the matching engine.
@@ -71,8 +71,8 @@ pub struct OrderMatchingEngine {
     /// The config for the matching engine.
     pub config: OrderMatchingEngineConfig,
     clock: &'static AtomicTime,
-    msgbus: &'static MessageBus,
-    cache: &'static Cache,
+    msgbus: Rc<MessageBus>,
+    cache: Rc<Cache>,
     book: OrderBook,
     core: OrderMatchingCore,
     target_bid: Option<Price>,
@@ -93,14 +93,14 @@ impl OrderMatchingEngine {
     /// Creates a new [`OrderMatchingEngine`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        instrument: Box<dyn Instrument>,
+        instrument: InstrumentAny,
         raw_id: u32,
         book_type: BookType,
         oms_type: OmsType,
         account_type: AccountType,
         clock: &'static AtomicTime,
-        msgbus: &'static MessageBus,
-        cache: &'static Cache,
+        msgbus: Rc<MessageBus>,
+        cache: Rc<Cache>,
         config: OrderMatchingEngineConfig,
     ) -> Self {
         let book = OrderBook::new(book_type, instrument.id());
@@ -112,7 +112,7 @@ impl OrderMatchingEngine {
             None, // TBD (will be a function on the engine)
         );
         Self {
-            venue: instrument.venue(),
+            venue: instrument.id().venue,
             instrument,
             raw_id,
             book_type,
@@ -188,7 +188,7 @@ impl OrderMatchingEngine {
     // -- DATA PROCESSING -----------------------------------------------------
 
     /// Process the venues market for the given order book delta.
-    pub fn process_order_book_delta(&mut self, delta: OrderBookDelta) {
+    pub fn process_order_book_delta(&mut self, delta: &OrderBookDelta) {
         debug!("Processing {delta}");
 
         self.book.apply_delta(delta);

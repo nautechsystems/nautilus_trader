@@ -81,7 +81,6 @@ from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
-from nautilus_trader.model.data cimport VenueStatus
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -132,7 +131,7 @@ cdef class DataEngine(Component):
         self._routing_map: dict[Venue, DataClient] = {}
         self._default_client: DataClient | None = None
         self._catalog: ParquetDataCatalog | None = None
-        self._order_book_intervals: dict[(InstrumentId, int), list[Callable[[Bar], None]]] = {}
+        self._order_book_intervals: dict[(InstrumentId, int), list[Callable[[OrderBook], None]]] = {}
         self._bar_aggregators: dict[BarType, BarAggregator] = {}
         self._synthetic_quote_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
         self._synthetic_trade_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
@@ -297,7 +296,7 @@ cdef class DataEngine(Component):
 
     cpdef void register_venue_routing(self, DataClient client, Venue venue):
         """
-        Register the given client to route orders to the given venue.
+        Register the given client to route messages to the given venue.
 
         Any existing client in the routing map for the given venue will be
         overwritten.
@@ -305,8 +304,8 @@ cdef class DataEngine(Component):
         Parameters
         ----------
         venue : Venue
-            The venue to route orders to.
-        client : ExecutionClient
+            The venue to route messages to.
+        client : DataClient
             The client for the venue routing.
 
         """
@@ -318,7 +317,7 @@ cdef class DataEngine(Component):
 
         self._routing_map[venue] = client
 
-        self._log.info(f"Registered ExecutionClient-{client} for routing to {venue}")
+        self._log.info(f"Registered DataClient-{client} for routing to {venue}")
 
     cpdef void deregister_client(self, DataClient client):
         """
@@ -670,11 +669,6 @@ cdef class DataEngine(Component):
                 command.data_type.metadata.get("bar_type"),
                 command.data_type.metadata.get("await_partial"),
             )
-        elif command.data_type.type == VenueStatus:
-            self._handle_subscribe_venue_status(
-                client,
-                command.data_type.metadata.get("instrument_id"),
-            )
         elif command.data_type.type == InstrumentStatus:
             self._handle_subscribe_instrument_status(
                 client,
@@ -1006,17 +1000,6 @@ cdef class DataEngine(Component):
                 f"has not implemented {data_type} subscriptions",
             )
             return
-
-    cpdef void _handle_subscribe_venue_status(
-        self,
-        MarketDataClient client,
-        Venue venue,
-    ):
-        Condition.not_none(client, "client")
-        Condition.not_none(venue, "venue")
-
-        if venue not in client.subscribed_venue_status():
-            client.subscribe_venue_status(venue)
 
     cpdef void _handle_subscribe_instrument_status(
         self,
@@ -1371,8 +1354,6 @@ cdef class DataEngine(Component):
             self._handle_bar(data)
         elif isinstance(data, Instrument):
             self._handle_instrument(data)
-        elif isinstance(data, VenueStatus):
-            self._handle_venue_status(data)
         elif isinstance(data, InstrumentStatus):
             self._handle_instrument_status(data)
         elif isinstance(data, InstrumentClose):
@@ -1542,9 +1523,6 @@ cdef class DataEngine(Component):
             self._cache.add_bar(bar)
 
         self._msgbus.publish_c(topic=f"data.bars.{bar_type}", msg=bar)
-
-    cpdef void _handle_venue_status(self, VenueStatus data):
-        self._msgbus.publish_c(topic=f"data.status.{data.venue}", msg=data)
 
     cpdef void _handle_instrument_status(self, InstrumentStatus data):
         self._msgbus.publish_c(topic=f"data.status.{data.instrument_id.venue}.{data.instrument_id.symbol}", msg=data)

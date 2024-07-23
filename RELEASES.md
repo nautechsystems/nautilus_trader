@@ -1,3 +1,33 @@
+# NautilusTrader 1.197.0 Beta
+
+Released on TBD (UTC).
+
+### Enhancements
+- Added Databento Status schema support for loading and live trading
+- Added options on futures support for Interactive Brokers (#1795), thanks @rsmb7z
+- Added documentation for option greeks custom data example (#1788), thanks @faysou
+- Added `MarketStatusAction` enum (support Databento `status` schema)
+- Implemented `MessageBus` v2 in Rust (#1786), thanks @twitu
+- Implemented `DataEngine` v2 in Rust (#1785), thanks @twitu
+- Refactored order submission error handling for Interactive Brokers (#1783), thanks @rsmb7z
+- Improved live reconciliation robustness (will now generate inferred orders necessary to align external position state)
+- Improved tests for Interactive Brokers (#1776), thanks @mylesgamez
+- Upgraded `tokio` crate to 1.38.1
+- Upgraded `datafusion` crate to 40.0.0
+
+### Breaking Changes
+- Removed `VenueStatus` and all associated methods and schemas (redundant with `InstrumentStatus`)
+- Changed `InstrumentStatus` params (support Databento `status` schema)
+- Changed `InstrumentStatus` arrow schema
+- Changed `OrderBook` FFI API to take data by reference instead of by value
+
+### Fixes
+- Fixed `LiveExecutionEngine` handling of adapter client execution report causing `None` mass status (#1789), thanks for reporting @faysou
+- Fixed `InteractiveBrokersExecutionClient` handling of instruments not found when generating execution reports (#1789), thanks for reporting @faysou
+- Fixed Bybit parsing of trade and quote ticks for websocket messages (#1794), thanks @davidsblom
+
+---
+
 # NautilusTrader 1.196.0 Beta
 
 Released on 5th July 2024 (UTC).
@@ -45,14 +75,14 @@ Released on 5th July 2024 (UTC).
 - Fixed msgspec encoding and decoding of `Environment` enum for `NautilusKernelConfig`
 - Fixed `OrderMatchingEngine` processing by book type for quotes and deltas (#1754), thanks @davidsblom
 - Fixed `DatabentoDataLoader.from_dbn_file` for `OrderBookDelta`s when `as_legacy_cython=False`
-- Fixed `DatabentoDataLoader` OHLCV bar schema loading (incorrectly accounting for display factor0, thanks for reporting @faysou
+- Fixed `DatabentoDataLoader` OHLCV bar schema loading (incorrectly accounting for display factor), thanks for reporting @faysou
 - Fixed `DatabentoDataLoader` multiplier and round lot size decoding, thanks for reporting @faysou
 - Fixed Binance order report generation `active_symbols` type miss matching (#1729), thanks @DevRoss
 - Fixed Binance trade data websocket schemas (Binance no longer publish `b` buyer and `a` seller order IDs)
 - Fixed `BinanceFuturesInstrumentProvider` parsing of min notional, thanks for the report @AnthonyVince
 - Fixed `BinanceSpotInstrumentProvider` parsing of min and max notional
 - Fixed Bybit order book deltas subscriptions for `INVERSE` product type
-- Fixed `Cache` documentation for `get` (was the same as add), thanks for reporting @faysou
+- Fixed `Cache` documentation for `get` (was the same as `add`), thanks for reporting @faysou
 
 ---
 

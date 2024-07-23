@@ -15,15 +15,17 @@
 
 use std::{
     collections::{HashMap, VecDeque},
+    fmt,
     sync::mpsc::{channel, Receiver, Sender, TryRecvError},
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
 
-use nautilus_common::msgbus::{core::CLOSE_TOPIC, database::MessageBusDatabaseAdapter, BusMessage};
+use nautilus_common::msgbus::{database::MessageBusDatabaseAdapter, CLOSE_TOPIC};
 use nautilus_core::{time::duration_since_unix_epoch, uuid::UUID4};
 use nautilus_model::identifiers::TraderId;
 use redis::*;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::{debug, error};
 
@@ -32,6 +34,26 @@ use crate::redis::{create_redis_connection, get_buffer_interval, get_stream_name
 const XTRIM: &str = "XTRIM";
 const MINID: &str = "MINID";
 const TRIM_BUFFER_SECONDS: u64 = 60;
+
+/// Represents a bus message including a topic and payload.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct BusMessage {
+    /// The topic to publish on.
+    pub topic: String,
+    /// The serialized payload for the message.
+    pub payload: Vec<u8>,
+}
+
+impl fmt::Display for BusMessage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "[{}] {}",
+            self.topic,
+            String::from_utf8_lossy(&self.payload)
+        )
+    }
+}
 
 #[cfg_attr(
     feature = "python",

@@ -21,6 +21,7 @@ pub mod deltas;
 pub mod depth;
 pub mod order;
 pub mod quote;
+pub mod status;
 pub mod trade;
 
 #[cfg(feature = "ffi")]

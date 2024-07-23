@@ -284,7 +284,6 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             cache=cache,
             clock=clock,
             instrument_provider=provider,
-            ibg_client_id=config.ibg_client_id,
             config=config,
             name=name,
         )

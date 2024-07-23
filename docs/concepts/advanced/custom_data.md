@@ -100,3 +100,95 @@ def on_data(self, data: Data) -> None:
     if isinstance(data, MyDataPoint):
         # Do something with the data
 ```
+
+## Option Greeks example
+
+This example demonstrates how to create a custom data type for option Greeks, specifically the delta.
+By following these steps, you can create custom data types, subscribe to them, publish them, and store 
+them in the `Cache` for efficient retrieval.
+
+```python
+import msgspec
+from nautilus_trader.core.data import Data, DataType
+from nautilus_trader.serialization.base import register_serializable_type
+
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.core.datetime import dt_to_unix_nanos, unix_nanos_to_dt, format_iso8601
+
+
+def unix_nanos_to_str(unix_nanos):
+    return format_iso8601(unix_nanos_to_dt(unix_nanos))
+
+
+class GreeksData(Data):
+    def __init__(self, instrument_id: InstrumentId, ts_event: int, ts_init: int, delta: float):
+        self.instrument_id = instrument_id
+        self._ts_event = ts_event
+        self._ts_init = ts_init
+
+        self.delta = delta
+
+    def __repr__(self):
+        return (f"GreeksData(instrument_id={self.instrument_id}, ts_event={unix_nanos_to_str(self._ts_event)}, ts_init={unix_nanos_to_str(self._ts_init)}, delta={self.delta:.2f})")
+
+    @property
+    def ts_event(self):
+        return self._ts_event
+
+    @property
+    def ts_init(self):
+        return self._ts_init
+
+    def to_dict(self):
+        return {
+            "instrument_id": self.instrument_id.value,
+            "ts_event": self._ts_event,
+            "ts_init": self._ts_init,
+
+            "delta": self.delta
+        }
+
+    def to_bytes(self):
+        return msgspec.msgpack.encode(self.to_dict())
+
+    @classmethod
+    def from_dict(cls, data: dict):
+        return GreeksData(InstrumentId.from_str(data["instrument_id"]), data["ts_event"], data["ts_init"], data["delta"])
+
+    @classmethod
+    def from_bytes(cls, data: bytes):
+        return cls.from_dict(msgspec.msgpack.decode(data))
+```
+
+### Publishing and receiving data
+
+Here is an example of publishing and receiving data using the `MessageBus` from an actor (which includes strategies):
+
+```python
+register_serializable_type(GreeksData, GreeksData.to_dict, GreeksData.from_dict)
+
+def publish_greeks(self, greeks_data: GreeksData):
+    self.publish_data(DataType(GreeksData), greeks_data)
+
+def subscribe_to_greeks(self):
+    self.subscribe_data(DataType(GreeksData))
+
+def on_data(self, data):
+    if isinstance(GreeksData):
+        print("Data", data)
+```
+
+### Writing and reading data
+
+Here is an example of writing and reading data using the `Cache` from an actor (which includes strategies):
+
+```python
+def greeks_key(instrument_id: InstrumentId):
+    return f"{instrument_id}_GREEKS"
+
+def cache_greeks(self, instrument_id: InstrumentId, greeks_data: GreeksData):
+    self.cache.add(greeks_key(instrument_id), greeks_data.to_bytes())
+
+def greeks_from_cache(self, instrument_id: InstrumentId):
+    return GreeksData.from_bytes(self.cache.get(greeks_key(instrument_id)))
+```

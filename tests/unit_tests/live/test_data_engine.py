@@ -34,6 +34,7 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.test_kit.functions import ensure_all_tasks_completed
+from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
@@ -118,10 +119,9 @@ class TestLiveDataEngine:
         # Act
         self.engine.execute(subscribe)
         self.engine.execute(subscribe)
-        await asyncio.sleep(0.1)
 
         # Assert
-        assert self.engine.cmd_qsize() == 1
+        await eventually(lambda: self.engine.cmd_qsize() == 1)
         assert self.engine.command_count == 0
 
     @pytest.mark.asyncio
@@ -161,10 +161,9 @@ class TestLiveDataEngine:
         # Act
         self.engine.request(request)
         self.engine.request(request)
-        await asyncio.sleep(0.1)
 
         # Assert
-        assert self.engine.req_qsize() == 1
+        await eventually(lambda: self.engine.req_qsize() == 1)
         assert self.engine.command_count == 0
 
     @pytest.mark.asyncio
@@ -196,10 +195,9 @@ class TestLiveDataEngine:
         # Act
         self.engine.response(response)
         self.engine.response(response)  # Add over max size
-        await asyncio.sleep(0.1)
 
         # Assert
-        assert self.engine.res_qsize() == 1
+        await eventually(lambda: self.engine.res_qsize() == 1)
         assert self.engine.command_count == 0
 
     @pytest.mark.asyncio
@@ -223,20 +221,18 @@ class TestLiveDataEngine:
         # Act
         self.engine.process(data)
         self.engine.process(data)  # Add over max size
-        await asyncio.sleep(0.1)
 
         # Assert
-        assert self.engine.data_qsize() == 1
+        await eventually(lambda: self.engine.data_qsize() == 1)
         assert self.engine.data_count == 0
 
     @pytest.mark.asyncio
     async def test_start(self):
         # Arrange, Act
         self.engine.start()
-        await asyncio.sleep(0.1)
 
         # Assert
-        assert self.engine.is_running
+        await eventually(lambda: self.engine.is_running)
 
         # Tear Down
         self.engine.stop()
@@ -274,11 +270,10 @@ class TestLiveDataEngine:
 
         # Act
         self.engine.execute(subscribe)
-        await asyncio.sleep(0.1)
 
         # Assert
-        assert self.engine.cmd_qsize() == 0
-        assert self.engine.command_count == 1
+        await eventually(lambda: self.engine.cmd_qsize() == 0)
+        await eventually(lambda: self.engine.command_count == 1)
 
         # Tear Down
         self.engine.stop()
@@ -308,11 +303,10 @@ class TestLiveDataEngine:
 
         # Act
         self.engine.request(request)
-        await asyncio.sleep(0.1)
 
         # Assert
-        assert self.engine.req_qsize() == 0
-        assert self.engine.request_count == 1
+        await eventually(lambda: self.engine.req_qsize() == 0)
+        await eventually(lambda: self.engine.request_count == 1)
 
         # Tear Down
         self.engine.stop()
@@ -334,11 +328,10 @@ class TestLiveDataEngine:
 
         # Act
         self.engine.response(response)
-        await asyncio.sleep(0.1)
 
         # Assert
-        assert self.engine.res_qsize() == 0
-        assert self.engine.response_count == 1
+        await eventually(lambda: self.engine.res_qsize() == 0)
+        await eventually(lambda: self.engine.response_count == 1)
 
         # Tear Down
         self.engine.stop()
@@ -353,11 +346,10 @@ class TestLiveDataEngine:
 
         # Act
         self.engine.process(tick)
-        await asyncio.sleep(0.1)
 
         # Assert
-        assert self.engine.data_qsize() == 0
-        assert self.engine.data_count == 1
+        await eventually(lambda: self.engine.data_qsize() == 0)
+        await eventually(lambda: self.engine.data_count == 1)
 
         # Tear Down
         self.engine.stop()

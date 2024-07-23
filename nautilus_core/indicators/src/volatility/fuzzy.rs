@@ -19,9 +19,72 @@ use std::{
 };
 
 use nautilus_model::data::bar::Bar;
+use strum::Display;
 
-use super::fuzzy_enums::{CandleBodySize, CandleDirection, CandleSize, CandleWickSize};
 use crate::{indicator::Indicator, momentum::bb::fast_std_with_mean};
+
+#[repr(C)]
+#[derive(Debug, Display, Clone, PartialEq, Eq, Copy)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+)]
+pub enum CandleBodySize {
+    None = 0,
+    Small = 1,
+    Medium = 2,
+    Large = 3,
+    Trend = 4,
+}
+
+#[repr(C)]
+#[derive(Debug, Display, Clone, PartialEq, Eq, Copy)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+)]
+pub enum CandleDirection {
+    Bull = 1,
+    None = 0,
+    Bear = -1,
+}
+
+#[repr(C)]
+#[derive(Debug, Display, Clone, PartialEq, Eq, Copy)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+)]
+pub enum CandleSize {
+    None = 0,
+    VerySmall = 1,
+    Small = 2,
+    Medium = 3,
+    Large = 4,
+    VeryLarge = 5,
+    ExtremelyLarge = 6,
+}
+
+#[repr(C)]
+#[derive(Debug, Display, Clone, PartialEq, Eq, Copy)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
+)]
+pub enum CandleWickSize {
+    None = 0,
+    Small = 1,
+    Medium = 2,
+    Large = 3,
+}
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -406,10 +469,8 @@ impl FuzzyCandlesticks {
 mod tests {
     use rstest::rstest;
 
-    use crate::{
-        stubs::fuzzy_candlesticks_10,
-        volatility::{fuzzy_candlesticks::FuzzyCandlesticks, fuzzy_enums::*},
-    };
+    use super::*;
+    use crate::{stubs::fuzzy_candlesticks_10, volatility::fuzzy::FuzzyCandlesticks};
 
     #[rstest]
     fn test_psl_initialized(fuzzy_candlesticks_10: FuzzyCandlesticks) {

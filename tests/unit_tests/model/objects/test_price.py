@@ -673,4 +673,4 @@ class TestPrice:
         pickled = pickle.dumps(price)
 
         # Assert
-        assert pickle.loads(pickled) == price  # noqa (testing pickle)
+        assert pickle.loads(pickled) == price  # noqa: S301 (testing pickle)

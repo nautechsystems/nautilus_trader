@@ -229,7 +229,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         [option_details] = (
             await self._client.get_contract_details(
                 IBContract(
-                    secType="OPT",
+                    secType=("FOP" if underlying.secType == "FUT" else "OPT"),
                     symbol=underlying.symbol,
                     lastTradeDateOrContractMonth=last_trading_date,
                     exchange=exchange or "SMART",

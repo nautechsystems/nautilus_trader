@@ -76,8 +76,8 @@ To facilitate this, nearly all configuration and domain objects can be serialize
 
 ## Common core
 
-The common system core is utilized by all node environment contexts (`backtest`, `sandbox`, and `live`).
-User-defined Actor, Strategy and ExecAlgorithm components are managed consistently across these environment contexts.
+The common system core is utilized by all node [environment contexts](/concepts/architecture.md#environment-contexts) (`backtest`, `sandbox`, and `live`).
+User-defined `Actor`, `Strategy` and `ExecAlgorithm` components are managed consistently across these environment contexts.
 
 ## Backtesting
 
@@ -94,19 +94,16 @@ The platform supports both demo/paper trading accounts and real accounts. High p
 asynchronously on a single [event loop](https://docs.python.org/3/library/asyncio-eventloop.html), 
 with the potential to further boost performance by leveraging the [uvloop](https://github.com/MagicStack/uvloop) implementation (available for Linux and macOS).
 
-:::tip
-Python 3.11 offers improved run-time performance, while Python 3.12 additionally offers improved asyncio performance.
-:::
-
 ## Domain model
 
 The platform features a comprehensive trading domain model that includes various value types such as 
 `Price` and `Quantity`, as well as more complex entities such as `Order` and `Position` objects, 
 which are used to aggregate multiple events to determine state.
 
-### Data Types
+### Data types
 
 The following market data types can be requested historically, and also subscribed to as live streams when available from a venue / data provider, and implemented in an integrations adapter.
+
 - `OrderBookDelta` (L1/L2/L3)
 - `OrderBookDeltas` (container type)
 - `OrderBookDepth10` (fixed depth of 10 levels per side)
@@ -116,15 +113,18 @@ The following market data types can be requested historically, and also subscrib
 - `Instrument`
 - `InstrumentStatus`
 - `InstrumentClose`
-- `VenueStatus`
 
-The following PriceType options can be used for bar aggregations;
+The following `PriceType` options can be used for bar aggregations:
+
 - `BID`
 - `ASK`
 - `MID`
 - `LAST`
 
-The following BarAggregation options are possible;
+### Bar aggregations
+
+The following `BarAggregation` methods are available:
+
 - `MILLISECOND`
 - `SECOND`
 - `MINUTE`
@@ -147,7 +147,7 @@ This enables maximum flexibility and now allows alternative bars to be aggregate
 
 ### Account Types
 
-The following account types are available for both live and backtest environments;
+The following account types are available for both live and backtest environments:
 
 - `Cash` single-currency (base currency)
 - `Cash` multi-currency
@@ -157,7 +157,7 @@ The following account types are available for both live and backtest environment
 
 ### Order Types
 
-The following order types are available (when possible on a venue);
+The following order types are available (when possible on a venue):
 
 - `MARKET`
 - `LIMIT`

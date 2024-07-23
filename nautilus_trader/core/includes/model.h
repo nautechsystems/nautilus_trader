@@ -223,24 +223,6 @@ typedef enum CurrencyType {
 } CurrencyType;
 
 /**
- * The reason for a venue or market halt.
- */
-typedef enum HaltReason {
-    /**
-     * The venue or market session is not halted.
-     */
-    NOT_HALTED = 1,
-    /**
-     * Trading halt is imposed for purely regulatory reasons with/without volatility halt.
-     */
-    GENERAL = 2,
-    /**
-     * Trading halt is imposed by the venue to protect against extreme volatility.
-     */
-    VOLATILITY = 3,
-} HaltReason;
-
-/**
  * The instrument class.
  */
 typedef enum InstrumentClass {
@@ -327,34 +309,97 @@ typedef enum LiquiditySide {
  */
 typedef enum MarketStatus {
     /**
-     * The market session is in the pre-open.
+     * The instrument is trading.
+     */
+    OPEN = 1,
+    /**
+     * The instrument is in a pre-open period.
+     */
+    CLOSED = 2,
+    /**
+     * Trading in the instrument has been paused.
+     */
+    PAUSED = 3,
+    /**
+     * Trading in the instrument has been halted.
+     * Trading in the instrument has been suspended.
+     */
+    SUSPENDED = 5,
+    /**
+     * Trading in the instrument is not available.
+     */
+    NOT_AVAILABLE = 6,
+} MarketStatus;
+
+/**
+ * An action affecting the status of an individual market on a trading venue.
+ */
+typedef enum MarketStatusAction {
+    /**
+     * No change.
+     */
+    NONE = 0,
+    /**
+     * The instrument is in a pre-open period.
      */
     PRE_OPEN = 1,
     /**
-     * The market session is open.
+     * The instrument is in a pre-cross period.
      */
-    OPEN = 2,
+    PRE_CROSS = 2,
     /**
-     * The market session is paused.
+     * The instrument is quoting but not trading.
      */
-    PAUSE = 3,
+    QUOTING = 3,
     /**
-     * The market session is halted.
+     * The instrument is in a cross/auction.
      */
-    HALT = 4,
+    CROSS = 4,
     /**
-     * The market session has reopened after a pause or halt.
+     * The instrument is being opened through a trading rotation.
      */
-    REOPEN = 5,
+    ROTATION = 5,
     /**
-     * The market session is in the pre-close.
+     * A new price indication is available for the instrument.
      */
-    PRE_CLOSE = 6,
+    NEW_PRICE_INDICATION = 6,
     /**
-     * The market session is closed.
+     * The instrument is trading.
      */
-    CLOSED = 7,
-} MarketStatus;
+    TRADING = 7,
+    /**
+     * Trading in the instrument has been halted.
+     */
+    HALT = 8,
+    /**
+     * Trading in the instrument has been paused.
+     */
+    PAUSE = 9,
+    /**
+     * Trading in the instrument has been suspended.
+     */
+    SUSPEND = 10,
+    /**
+     * The instrument is in a pre-close period.
+     */
+    PRE_CLOSE = 11,
+    /**
+     * Trading in the instrument has closed.
+     */
+    CLOSE = 12,
+    /**
+     * The instrument is in a post-close period.
+     */
+    POST_CLOSE = 13,
+    /**
+     * A change in short-selling restrictions.
+     */
+    SHORT_SELL_RESTRICTION_CHANGE = 14,
+    /**
+     * The instrument is not available for trading, either trading has closed or been halted.
+     */
+    NOT_AVAILABLE_FOR_TRADING = 15,
+} MarketStatusAction;
 
 /**
  * The order management system (OMS) type for a trading venue or trading strategy.
@@ -929,19 +974,19 @@ typedef struct QuoteTick_t {
      */
     struct InstrumentId_t instrument_id;
     /**
-     * The top of book bid price.
+     * The top-of-book bid price.
      */
     struct Price_t bid_price;
     /**
-     * The top of book ask price.
+     * The top-of-book ask price.
      */
     struct Price_t ask_price;
     /**
-     * The top of book bid size.
+     * The top-of-book bid size.
      */
     struct Quantity_t bid_size;
     /**
-     * The top of book ask size.
+     * The top-of-book ask size.
      */
     struct Quantity_t ask_size;
     /**
@@ -1695,7 +1740,7 @@ const char *market_status_to_cstr(enum MarketStatus value);
  */
 enum MarketStatus market_status_from_cstr(const char *ptr);
 
-const char *halt_reason_to_cstr(enum HaltReason value);
+const char *market_status_action_to_cstr(enum MarketStatusAction value);
 
 /**
  * Returns an enum from a Python string.
@@ -1704,7 +1749,7 @@ const char *halt_reason_to_cstr(enum HaltReason value);
  *
  * - Assumes `ptr` is a valid C string pointer.
  */
-enum HaltReason halt_reason_from_cstr(const char *ptr);
+enum MarketStatusAction market_status_action_from_cstr(const char *ptr);
 
 const char *oms_type_to_cstr(enum OmsType value);
 
@@ -2185,11 +2230,11 @@ void orderbook_clear_bids(struct OrderBook_API *book, uint64_t sequence, uint64_
 
 void orderbook_clear_asks(struct OrderBook_API *book, uint64_t sequence, uint64_t ts_event);
 
-void orderbook_apply_delta(struct OrderBook_API *book, struct OrderBookDelta_t delta);
+void orderbook_apply_delta(struct OrderBook_API *book, const struct OrderBookDelta_t *delta);
 
 void orderbook_apply_deltas(struct OrderBook_API *book, const struct OrderBookDeltas_API *deltas);
 
-void orderbook_apply_depth(struct OrderBook_API *book, struct OrderBookDepth10_t depth);
+void orderbook_apply_depth(struct OrderBook_API *book, const struct OrderBookDepth10_t *depth);
 
 CVec orderbook_bids(struct OrderBook_API *book);
 

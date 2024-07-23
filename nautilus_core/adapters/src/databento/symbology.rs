@@ -51,6 +51,8 @@ pub fn get_nautilus_instrument_id_for_record(
         (msg.hd.instrument_id, msg.ts_recv)
     } else if let Some(msg) = record.get::<dbn::OhlcvMsg>() {
         (msg.hd.instrument_id, msg.hd.ts_event)
+    } else if let Some(msg) = record.get::<dbn::StatusMsg>() {
+        (msg.hd.instrument_id, msg.ts_recv)
     } else if let Some(msg) = record.get::<dbn::ImbalanceMsg>() {
         (msg.hd.instrument_id, msg.ts_recv)
     } else if let Some(msg) = record.get::<dbn::StatMsg>() {

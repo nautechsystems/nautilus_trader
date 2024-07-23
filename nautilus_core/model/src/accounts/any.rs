@@ -60,7 +60,7 @@ impl AccountAny {
 
     pub fn from_events(events: Vec<AccountState>) -> anyhow::Result<Self> {
         if events.is_empty() {
-            anyhow::bail!("No order events provided to create AccountAny");
+            anyhow::bail!("No order events provided to create `AccountAny`");
         }
 
         let init_event = events.first().unwrap();

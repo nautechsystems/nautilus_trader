@@ -83,7 +83,7 @@ from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AccountType
-from nautilus_trader.model.enums import MarketStatus
+from nautilus_trader.model.enums import MarketStatusAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderStatus as NautilusOrderStatus
 from nautilus_trader.model.enums import TimeInForce
@@ -134,7 +134,7 @@ class TestBetfairParsingStreaming:
         result = [
             upd
             for upd in updates
-            if isinstance(upd, InstrumentStatus) and upd.status == MarketStatus.PRE_OPEN
+            if isinstance(upd, InstrumentStatus) and upd.action == MarketStatusAction.PRE_OPEN
         ]
         assert len(result) == 17
 
@@ -239,9 +239,9 @@ class TestBetfairParsingStreaming:
         ("filename", "num_msgs"),
         [
             ("1.166564490.bz2", 2506),
-            ("1.166811431.bz2", 17855),
-            ("1.180305278.bz2", 15169),
-            ("1.206064380.bz2", 52115),
+            ("1.166811431.bz2", 17852),
+            ("1.180305278.bz2", 15165),
+            ("1.206064380.bz2", 52111),
         ],
     )
     def test_parsing_streaming_file(self, filename, num_msgs):
@@ -271,7 +271,6 @@ class TestBetfairParsingStreaming:
                 "InstrumentStatus": 260,
                 "BetfairStartingPrice": 72,
                 "InstrumentClose": 25,
-                "VenueStatus": 4,
             },
         )
         assert counts == expected

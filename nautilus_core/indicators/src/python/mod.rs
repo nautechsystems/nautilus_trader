@@ -27,7 +27,8 @@ pub mod volatility;
 
 #[pymodule]
 pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    // average
+    // Average
+    m.add_class::<crate::average::MovingAverageType>()?;
     m.add_class::<crate::average::ema::ExponentialMovingAverage>()?;
     m.add_class::<crate::average::sma::SimpleMovingAverage>()?;
     m.add_class::<crate::average::ama::AdaptiveMovingAverage>()?;
@@ -37,12 +38,16 @@ pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::average::vidya::VariableIndexDynamicAverage>()?;
     m.add_class::<crate::average::vwap::VolumeWeightedAveragePrice>()?;
     m.add_class::<crate::average::lr::LinearRegression>()?;
-    // book
+    m.add_class::<crate::average::wma::WeightedMovingAverage>()?;
+
+    // Book
     m.add_class::<crate::book::imbalance::BookImbalanceRatio>()?;
-    // ratio
+
+    // Ratio
     m.add_class::<crate::ratio::efficiency_ratio::EfficiencyRatio>()?;
     m.add_class::<crate::ratio::spread_analyzer::SpreadAnalyzer>()?;
-    // momentum
+
+    // Momentum
     m.add_class::<crate::momentum::rsi::RelativeStrengthIndex>()?;
     m.add_class::<crate::momentum::aroon::AroonOscillator>()?;
     m.add_class::<crate::momentum::bias::Bias>()?;
@@ -60,13 +65,14 @@ pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::momentum::roc::RateOfChange>()?;
     m.add_class::<crate::momentum::macd::MovingAverageConvergenceDivergence>()?;
     m.add_class::<crate::momentum::obv::OnBalanceVolume>()?;
-    // volatility
+
+    // Volatility
     m.add_class::<crate::volatility::atr::AverageTrueRange>()?;
     m.add_class::<crate::volatility::vr::VolatilityRatio>()?;
     m.add_class::<crate::volatility::dc::DonchianChannel>()?;
     m.add_class::<crate::volatility::rvi::RelativeVolatilityIndex>()?;
     m.add_class::<crate::volatility::kc::KeltnerChannel>()?;
-    m.add_class::<crate::volatility::fuzzy_candlesticks::FuzzyCandlesticks>()?;
+    m.add_class::<crate::volatility::fuzzy::FuzzyCandlesticks>()?;
     m.add_class::<crate::volatility::kp::KeltnerPosition>()?;
     Ok(())
 }

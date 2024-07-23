@@ -4,11 +4,11 @@ Explore the foundational concepts of NautilusTrader through the following guides
 
 ## [Overview](overview.md)
 
-The **Overview** guide covers the main use cases for the platform.
+The overview guide covers the main features and use cases for the platform.
 
 ## [Architecture](architecture.md)
 
-The **Architecture** guide dives deep into the foundational principles, structures, and designs that underpin
+The architecture guide dives deep into the foundational principles, structures, and designs that underpin
 the platform. Whether you're a developer, system architect, or just curious about the inner workings 
 of NautilusTrader.
 
@@ -19,11 +19,11 @@ trading strategies. The **Strategies** guide covers how to implement trading str
 
 ## [Instruments](instruments.md)
 
-The `Instrument` base class represents the core specification for any tradable asset/contract.
+The instrument definitions provide the specification for any tradable asset/contract.
 
 ## [Orders](orders.md)
 
-The **Orders** guide provides more details about the available order types for the platform, along with
+The orders guide provides more details about the available order types for the platform, along with
 the execution instructions supported for each.
 
 ## [Execution](execution.md)
@@ -32,15 +32,21 @@ NautilusTrader can handle trade execution and order management for multiple stra
 simultaneously (per instance). Several interacting components are involved in execution, making it 
 crucial to understand the possible flows of execution messages (commands and events).
 
+## [Data](data.md)
+
+The NautilusTrader platform defines a range of built-in data types crafted specifically to represent 
+a trading domain
+
 ## [Backtesting](backtesting.md)
 
 Backtesting with NautilusTrader is a methodical simulation process that replicates trading
 activities using a specific system implementation.
 
-## [Data](data.md)
+## [Live trading](live.md)
 
-The NautilusTrader platform defines a range of built-in data types crafted specifically to represent 
-a trading domain
+Live trading in NautilusTrader enables traders to deploy their backtested strategies in real-time 
+without any code changes. This seamless transition ensures consistency and reliability, though there 
+key differences between backtesting and live trading.
 
 ## [Adapters](adapters.md)
 

@@ -251,6 +251,79 @@ impl QuoteTick {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(QuoteTick))
     }
 
+    #[staticmethod]
+    #[pyo3(name = "get_metadata")]
+    fn py_get_metadata(
+        instrument_id: &InstrumentId,
+        price_precision: u8,
+        size_precision: u8,
+    ) -> PyResult<HashMap<String, String>> {
+        Ok(Self::get_metadata(
+            instrument_id,
+            price_precision,
+            size_precision,
+        ))
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "get_fields")]
+    fn py_get_fields(py: Python<'_>) -> PyResult<&PyDict> {
+        let py_dict = PyDict::new(py);
+        for (k, v) in Self::get_fields() {
+            py_dict.set_item(k, v)?;
+        }
+
+        Ok(py_dict)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_raw")]
+    #[allow(clippy::too_many_arguments)]
+    fn py_from_raw(
+        _py: Python<'_>,
+        instrument_id: InstrumentId,
+        bid_price_raw: i64,
+        ask_price_raw: i64,
+        bid_price_prec: u8,
+        ask_price_prec: u8,
+        bid_size_raw: u64,
+        ask_size_raw: u64,
+        bid_size_prec: u8,
+        ask_size_prec: u8,
+        ts_event: u64,
+        ts_init: u64,
+    ) -> PyResult<Self> {
+        Self::new(
+            instrument_id,
+            Price::from_raw(bid_price_raw, bid_price_prec).map_err(to_pyvalue_err)?,
+            Price::from_raw(ask_price_raw, ask_price_prec).map_err(to_pyvalue_err)?,
+            Quantity::from_raw(bid_size_raw, bid_size_prec).map_err(to_pyvalue_err)?,
+            Quantity::from_raw(ask_size_raw, ask_size_prec).map_err(to_pyvalue_err)?,
+            ts_event.into(),
+            ts_init.into(),
+        )
+        .map_err(to_pyvalue_err)
+    }
+
+    /// Returns a new object from the given dictionary representation.
+    #[staticmethod]
+    #[pyo3(name = "from_dict")]
+    fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
+        from_dict_pyo3(py, values)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_json")]
+    fn py_from_json(data: Vec<u8>) -> PyResult<Self> {
+        Self::from_json_bytes(data).map_err(to_pyvalue_err)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_msgpack")]
+    fn py_from_msgpack(data: Vec<u8>) -> PyResult<Self> {
+        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
+    }
+
     #[pyo3(name = "extract_price")]
     fn py_extract_price(&self, price_type: PriceType) -> PyResult<Price> {
         Ok(self.extract_price(price_type))
@@ -292,79 +365,6 @@ impl QuoteTick {
             .call_method("loads", (json_str,), None)?
             .extract()?;
         Ok(py_dict)
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "from_raw")]
-    #[allow(clippy::too_many_arguments)]
-    fn py_from_raw(
-        _py: Python<'_>,
-        instrument_id: InstrumentId,
-        bid_price_raw: i64,
-        ask_price_raw: i64,
-        bid_price_prec: u8,
-        ask_price_prec: u8,
-        bid_size_raw: u64,
-        ask_size_raw: u64,
-        bid_size_prec: u8,
-        ask_size_prec: u8,
-        ts_event: u64,
-        ts_init: u64,
-    ) -> PyResult<Self> {
-        Self::new(
-            instrument_id,
-            Price::from_raw(bid_price_raw, bid_price_prec).map_err(to_pyvalue_err)?,
-            Price::from_raw(ask_price_raw, ask_price_prec).map_err(to_pyvalue_err)?,
-            Quantity::from_raw(bid_size_raw, bid_size_prec).map_err(to_pyvalue_err)?,
-            Quantity::from_raw(ask_size_raw, ask_size_prec).map_err(to_pyvalue_err)?,
-            ts_event.into(),
-            ts_init.into(),
-        )
-        .map_err(to_pyvalue_err)
-    }
-
-    /// Return a new object from the given dictionary representation.
-    #[staticmethod]
-    #[pyo3(name = "from_dict")]
-    fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-        from_dict_pyo3(py, values)
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "get_metadata")]
-    fn py_get_metadata(
-        instrument_id: &InstrumentId,
-        price_precision: u8,
-        size_precision: u8,
-    ) -> PyResult<HashMap<String, String>> {
-        Ok(Self::get_metadata(
-            instrument_id,
-            price_precision,
-            size_precision,
-        ))
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "get_fields")]
-    fn py_get_fields(py: Python<'_>) -> PyResult<&PyDict> {
-        let py_dict = PyDict::new(py);
-        for (k, v) in Self::get_fields() {
-            py_dict.set_item(k, v)?;
-        }
-
-        Ok(py_dict)
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "from_json")]
-    fn py_from_json(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_json_bytes(data).map_err(to_pyvalue_err)
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "from_msgpack")]
-    fn py_from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
     }
 
     /// Return JSON encoded bytes representation of the object.

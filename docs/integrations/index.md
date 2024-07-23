@@ -1,8 +1,9 @@
 # Integrations
 
-NautilusTrader is designed in a modular way to work with *adapters* which provide
-connectivity to trading venues and data providers - converting their raw API
-into a unified interface. The following integrations are currently supported:
+NautilusTrader is modularly designed to work with _adapters_, enabling connectivity to trading venues 
+and data providers by converting their raw APIs into a unified interface.
+
+The following integrations are currently supported:
 
 | Name                                                      | ID                    | Type                    | Status                                                  | Docs                                                                |
 | :-------------------------------------------------------- | :-------------------- | :---------------------- | :------------------------------------------------------ | :------------------------------------------------------------------ |
@@ -19,9 +20,9 @@ into a unified interface. The following integrations are currently supported:
 
 ### Status
 
-- `building` - Under construction and likely not in a usable state
-- `beta` - Completed to a minimally working state and in a 'beta' testing phase
-- `stable` - Stabilized feature set and API, the integration has been tested by both developers and users to a reasonable level (some bugs may still remain)
+- `building`: Under construction and likely not in a usable state
+- `beta`: Completed to a minimally working state and in a 'beta' testing phase
+- `stable`: Stabilized feature set and API, the integration has been tested by both developers and users to a reasonable level (some bugs may still remain)
 
 ## Implementation goals
 
