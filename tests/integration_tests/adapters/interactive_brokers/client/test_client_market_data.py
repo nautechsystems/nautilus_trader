@@ -89,10 +89,11 @@ async def test_subscribe_ticks(ib_client):
     instrument_id = IBTestContractStubs.aapl_instrument().id
     contract = IBTestContractStubs.aapl_equity_ib_contract()
     tick_type = "BidAsk"
+    ignore_size = True
     ib_client._eclient.reqTickByTickData = Mock()
 
     # Act
-    await ib_client.subscribe_ticks(instrument_id, contract, tick_type)
+    await ib_client.subscribe_ticks(instrument_id, contract, tick_type, ignore_size)
 
     # Assert
     ib_client._eclient.reqTickByTickData.assert_called_once_with(
@@ -111,9 +112,10 @@ async def test_unsubscribe_ticks(ib_client):
     instrument_id = IBTestContractStubs.aapl_instrument().id
     contract = IBTestContractStubs.aapl_equity_ib_contract()
     tick_type = "BidAsk"
+    ignore_size = True
     ib_client._eclient.reqTickByTickData = Mock()
     ib_client._eclient.cancelTickByTickData = Mock()
-    await ib_client.subscribe_ticks(instrument_id, contract, tick_type)
+    await ib_client.subscribe_ticks(instrument_id, contract, tick_type, ignore_size)
 
     # Act
     await ib_client.unsubscribe_ticks(instrument_id, tick_type)
