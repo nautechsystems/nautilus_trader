@@ -26,9 +26,12 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use bytes::Bytes;
 use database::CacheDatabaseAdapter;
 use log::{debug, error, info, warn};
-use nautilus_core::correctness::{check_key_not_in_map, check_slice_not_empty, check_valid_string};
+use nautilus_core::correctness::{
+    check_key_not_in_map, check_predicate_false, check_slice_not_empty, check_valid_string,
+};
 use nautilus_model::{
     accounts::any::AccountAny,
     data::{
@@ -181,7 +184,7 @@ pub struct Cache {
     config: CacheConfig,
     index: CacheIndex,
     database: Option<Box<dyn CacheDatabaseAdapter>>,
-    general: HashMap<String, Vec<u8>>,
+    general: HashMap<String, Bytes>,
     quotes: HashMap<InstrumentId, VecDeque<QuoteTick>>,
     trades: HashMap<InstrumentId, VecDeque<TradeTick>>,
     books: HashMap<InstrumentId, OrderBook>,
@@ -193,7 +196,7 @@ pub struct Cache {
     orders: HashMap<ClientOrderId, OrderAny>,
     order_lists: HashMap<OrderListId, OrderList>,
     positions: HashMap<PositionId, Position>,
-    position_snapshots: HashMap<PositionId, Vec<u8>>,
+    position_snapshots: HashMap<PositionId, Bytes>,
 }
 
 impl Default for Cache {
@@ -961,9 +964,9 @@ impl Cache {
     ///
     /// The cache is agnostic to what the bytes actually represent (and how it may be serialized),
     /// which provides maximum flexibility.
-    pub fn add(&mut self, key: &str, value: Vec<u8>) -> anyhow::Result<()> {
+    pub fn add(&mut self, key: &str, value: Bytes) -> anyhow::Result<()> {
         check_valid_string(key, stringify!(key))?;
-        check_slice_not_empty(value.as_slice(), stringify!(value))?;
+        check_predicate_false(value.is_empty(), stringify!(value))?;
 
         debug!("Adding general {key}");
         self.general.insert(key.to_string(), value.clone());
@@ -2321,10 +2324,10 @@ impl Cache {
     // -- GENERAL ---------------------------------------------------------------------------------
 
     /// Gets a reference to the general object value for the given `key` (if found).
-    pub fn get(&self, key: &str) -> anyhow::Result<Option<&[u8]>> {
+    pub fn get(&self, key: &str) -> anyhow::Result<Option<&Bytes>> {
         check_valid_string(key, stringify!(key))?;
 
-        Ok(self.general.get(key).map(std::vec::Vec::as_slice))
+        Ok(self.general.get(key))
     }
 
     // -- DATA QUERIES ----------------------------------------------------------------------------
@@ -2572,6 +2575,7 @@ impl Cache {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use bytes::Bytes;
     use nautilus_model::{
         accounts::any::AccountAny,
         data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
@@ -2891,10 +2895,10 @@ mod tests {
     #[rstest]
     fn test_add_general_when_value(mut cache: Cache) {
         let key = "A";
-        let value = vec![0_u8];
+        let value = Bytes::from_static(&[0_u8]);
         cache.add(key, value.clone()).unwrap();
         let result = cache.get(key).unwrap();
-        assert_eq!(result, Some(&value.as_slice()).copied());
+        assert_eq!(result, Some(&value));
     }
 
     #[rstest]

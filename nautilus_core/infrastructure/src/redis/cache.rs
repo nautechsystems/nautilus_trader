@@ -21,6 +21,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use bytes::Bytes;
 use nautilus_common::{cache::database::CacheDatabaseAdapter, enums::SerializationEncoding};
 use nautilus_core::{correctness::check_slice_not_empty, nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
@@ -94,13 +95,13 @@ pub struct DatabaseCommand {
     /// The primary key for the operation.
     pub key: Option<String>,
     /// The data payload for the operation.
-    pub payload: Option<Vec<Vec<u8>>>,
+    pub payload: Option<Vec<Bytes>>,
 }
 
 impl DatabaseCommand {
     /// Creates a new [`DatabaseCommand`] instance.
     #[must_use]
-    pub fn new(op_type: DatabaseOperation, key: String, payload: Option<Vec<Vec<u8>>>) -> Self {
+    pub fn new(op_type: DatabaseOperation, key: String, payload: Option<Vec<Bytes>>) -> Self {
         Self {
             op_type,
             key: Some(key),
@@ -194,7 +195,7 @@ impl RedisCacheDatabase {
         }
     }
 
-    pub fn read(&mut self, key: &str) -> anyhow::Result<Vec<Vec<u8>>> {
+    pub fn read(&mut self, key: &str) -> anyhow::Result<Vec<Bytes>> {
         let collection = get_collection_key(key)?;
         let key = format!("{}{DELIMITER}{}", self.trader_key, key);
 
@@ -213,7 +214,7 @@ impl RedisCacheDatabase {
         }
     }
 
-    pub fn insert(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> anyhow::Result<()> {
+    pub fn insert(&mut self, key: String, payload: Option<Vec<Bytes>>) -> anyhow::Result<()> {
         let op = DatabaseCommand::new(DatabaseOperation::Insert, key, payload);
         match self.tx.send(op) {
             Ok(_) => Ok(()),
@@ -221,7 +222,7 @@ impl RedisCacheDatabase {
         }
     }
 
-    pub fn update(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> anyhow::Result<()> {
+    pub fn update(&mut self, key: String, payload: Option<Vec<Bytes>>) -> anyhow::Result<()> {
         let op = DatabaseCommand::new(DatabaseOperation::Update, key, payload);
         match self.tx.send(op) {
             Ok(_) => Ok(()),
@@ -229,7 +230,7 @@ impl RedisCacheDatabase {
         }
     }
 
-    pub fn delete(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> anyhow::Result<()> {
+    pub fn delete(&mut self, key: String, payload: Option<Vec<Bytes>>) -> anyhow::Result<()> {
         let op = DatabaseCommand::new(DatabaseOperation::Delete, key, payload);
         match self.tx.send(op) {
             Ok(_) => Ok(()),
@@ -299,49 +300,26 @@ fn drain_buffer(conn: &mut Connection, trader_key: &str, buffer: &mut VecDeque<D
 
         match msg.op_type {
             DatabaseOperation::Insert => {
-                if msg.payload.is_none() {
+                if let Some(payload) = msg.payload {
+                    if let Err(e) = insert(&mut pipe, collection, &key, payload) {
+                        error!("{e}");
+                    }
+                } else {
                     error!("Null `payload` for `insert`");
-                    continue; // Continue to next message
-                };
-
-                let payload = msg
-                    .payload
-                    .as_ref()
-                    .unwrap()
-                    .iter()
-                    .map(|v| v.as_slice())
-                    .collect::<Vec<&[u8]>>();
-
-                if let Err(e) = insert(&mut pipe, collection, &key, payload) {
-                    error!("{e}");
                 }
             }
             DatabaseOperation::Update => {
-                if msg.payload.is_none() {
+                if let Some(payload) = msg.payload {
+                    if let Err(e) = update(&mut pipe, collection, &key, payload) {
+                        error!("{e}");
+                    }
+                } else {
                     error!("Null `payload` for `update`");
-                    continue; // Continue to next message
                 };
-
-                let payload = msg
-                    .payload
-                    .as_ref()
-                    .unwrap()
-                    .iter()
-                    .map(|v| v.as_slice())
-                    .collect::<Vec<&[u8]>>();
-
-                if let Err(e) = update(&mut pipe, collection, &key, payload) {
-                    error!("{e}");
-                }
             }
             DatabaseOperation::Delete => {
                 // `payload` can be `None` for a delete operation
-                let payload = msg
-                    .payload
-                    .as_ref()
-                    .map(|v| v.iter().map(|v| v.as_slice()).collect::<Vec<&[u8]>>());
-
-                if let Err(e) = delete(&mut pipe, collection, &key, payload) {
+                if let Err(e) = delete(&mut pipe, collection, &key, msg.payload) {
                     error!("{e}");
                 }
             }
@@ -354,7 +332,7 @@ fn drain_buffer(conn: &mut Connection, trader_key: &str, buffer: &mut VecDeque<D
     }
 }
 
-fn read_index(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Vec<u8>>> {
+fn read_index(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Bytes>> {
     let index_key = get_index_key(key)?;
     match index_key {
         INDEX_ORDER_IDS => read_set(conn, key),
@@ -372,29 +350,29 @@ fn read_index(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Vec<u8>>> 
     }
 }
 
-fn read_string(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Vec<u8>>> {
+fn read_string(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Bytes>> {
     let result: Vec<u8> = conn.get(key)?;
 
     if result.is_empty() {
         Ok(vec![])
     } else {
-        Ok(vec![result])
+        Ok(vec![Bytes::from(result)])
     }
 }
 
-fn read_set(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Vec<u8>>> {
-    let result: Vec<Vec<u8>> = conn.smembers(key)?;
+fn read_set(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Bytes>> {
+    let result: Vec<Bytes> = conn.smembers(key)?;
     Ok(result)
 }
 
-fn read_hset(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Vec<u8>>> {
+fn read_hset(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Bytes>> {
     let result: HashMap<String, String> = conn.hgetall(key)?;
     let json = serde_json::to_string(&result)?;
-    Ok(vec![json.into_bytes()])
+    Ok(vec![Bytes::from(json.into_bytes())])
 }
 
-fn read_list(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Vec<u8>>> {
-    let result: Vec<Vec<u8>> = conn.lrange(key, 0, -1)?;
+fn read_list(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Bytes>> {
+    let result: Vec<Bytes> = conn.lrange(key, 0, -1)?;
     Ok(result)
 }
 
@@ -402,105 +380,105 @@ fn insert(
     pipe: &mut Pipeline,
     collection: &str,
     key: &str,
-    value: Vec<&[u8]>,
+    value: Vec<Bytes>,
 ) -> anyhow::Result<()> {
     check_slice_not_empty(value.as_slice(), stringify!(value))?;
 
     match collection {
         INDEX => insert_index(pipe, key, &value),
         GENERAL => {
-            insert_string(pipe, key, value[0]);
+            insert_string(pipe, key, value[0].as_ref());
             Ok(())
         }
         CURRENCIES => {
-            insert_string(pipe, key, value[0]);
+            insert_string(pipe, key, value[0].as_ref());
             Ok(())
         }
         INSTRUMENTS => {
-            insert_string(pipe, key, value[0]);
+            insert_string(pipe, key, value[0].as_ref());
             Ok(())
         }
         SYNTHETICS => {
-            insert_string(pipe, key, value[0]);
+            insert_string(pipe, key, value[0].as_ref());
             Ok(())
         }
         ACCOUNTS => {
-            insert_list(pipe, key, value[0]);
+            insert_list(pipe, key, value[0].as_ref());
             Ok(())
         }
         ORDERS => {
-            insert_list(pipe, key, value[0]);
+            insert_list(pipe, key, value[0].as_ref());
             Ok(())
         }
         POSITIONS => {
-            insert_list(pipe, key, value[0]);
+            insert_list(pipe, key, value[0].as_ref());
             Ok(())
         }
         ACTORS => {
-            insert_string(pipe, key, value[0]);
+            insert_string(pipe, key, value[0].as_ref());
             Ok(())
         }
         STRATEGIES => {
-            insert_string(pipe, key, value[0]);
+            insert_string(pipe, key, value[0].as_ref());
             Ok(())
         }
         SNAPSHOTS => {
-            insert_list(pipe, key, value[0]);
+            insert_list(pipe, key, value[0].as_ref());
             Ok(())
         }
         HEALTH => {
-            insert_string(pipe, key, value[0]);
+            insert_string(pipe, key, value[0].as_ref());
             Ok(())
         }
         _ => anyhow::bail!("Unsupported operation: `insert` for collection '{collection}'"),
     }
 }
 
-fn insert_index(pipe: &mut Pipeline, key: &str, value: &[&[u8]]) -> anyhow::Result<()> {
+fn insert_index(pipe: &mut Pipeline, key: &str, value: &[Bytes]) -> anyhow::Result<()> {
     let index_key = get_index_key(key)?;
     match index_key {
         INDEX_ORDER_IDS => {
-            insert_set(pipe, key, value[0]);
+            insert_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_ORDER_POSITION => {
-            insert_hset(pipe, key, value[0], value[1]);
+            insert_hset(pipe, key, value[0].as_ref(), value[1].as_ref());
             Ok(())
         }
         INDEX_ORDER_CLIENT => {
-            insert_hset(pipe, key, value[0], value[1]);
+            insert_hset(pipe, key, value[0].as_ref(), value[1].as_ref());
             Ok(())
         }
         INDEX_ORDERS => {
-            insert_set(pipe, key, value[0]);
+            insert_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_ORDERS_OPEN => {
-            insert_set(pipe, key, value[0]);
+            insert_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_ORDERS_CLOSED => {
-            insert_set(pipe, key, value[0]);
+            insert_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_ORDERS_EMULATED => {
-            insert_set(pipe, key, value[0]);
+            insert_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_ORDERS_INFLIGHT => {
-            insert_set(pipe, key, value[0]);
+            insert_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_POSITIONS => {
-            insert_set(pipe, key, value[0]);
+            insert_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_POSITIONS_OPEN => {
-            insert_set(pipe, key, value[0]);
+            insert_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_POSITIONS_CLOSED => {
-            insert_set(pipe, key, value[0]);
+            insert_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         _ => anyhow::bail!("Index unknown '{index_key}' on insert"),
@@ -527,21 +505,21 @@ fn update(
     pipe: &mut Pipeline,
     collection: &str,
     key: &str,
-    value: Vec<&[u8]>,
+    value: Vec<Bytes>,
 ) -> anyhow::Result<()> {
     check_slice_not_empty(value.as_slice(), stringify!(value))?;
 
     match collection {
         ACCOUNTS => {
-            update_list(pipe, key, value[0]);
+            update_list(pipe, key, value[0].as_ref());
             Ok(())
         }
         ORDERS => {
-            update_list(pipe, key, value[0]);
+            update_list(pipe, key, value[0].as_ref());
             Ok(())
         }
         POSITIONS => {
-            update_list(pipe, key, value[0]);
+            update_list(pipe, key, value[0].as_ref());
             Ok(())
         }
         _ => anyhow::bail!("Unsupported operation: `update` for collection '{collection}'"),
@@ -556,7 +534,7 @@ fn delete(
     pipe: &mut Pipeline,
     collection: &str,
     key: &str,
-    value: Option<Vec<&[u8]>>,
+    value: Option<Vec<Bytes>>,
 ) -> anyhow::Result<()> {
     match collection {
         INDEX => remove_index(pipe, key, value),
@@ -572,33 +550,33 @@ fn delete(
     }
 }
 
-fn remove_index(pipe: &mut Pipeline, key: &str, value: Option<Vec<&[u8]>>) -> anyhow::Result<()> {
+fn remove_index(pipe: &mut Pipeline, key: &str, value: Option<Vec<Bytes>>) -> anyhow::Result<()> {
     let value = value.ok_or_else(|| anyhow::anyhow!("Empty `payload` for `delete` '{key}'"))?;
     let index_key = get_index_key(key)?;
 
     match index_key {
         INDEX_ORDERS_OPEN => {
-            remove_from_set(pipe, key, value[0]);
+            remove_from_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_ORDERS_CLOSED => {
-            remove_from_set(pipe, key, value[0]);
+            remove_from_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_ORDERS_EMULATED => {
-            remove_from_set(pipe, key, value[0]);
+            remove_from_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_ORDERS_INFLIGHT => {
-            remove_from_set(pipe, key, value[0]);
+            remove_from_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_POSITIONS_OPEN => {
-            remove_from_set(pipe, key, value[0]);
+            remove_from_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_POSITIONS_CLOSED => {
-            remove_from_set(pipe, key, value[0]);
+            remove_from_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         _ => anyhow::bail!("Unsupported index operation: remove from '{index_key}'"),
@@ -692,7 +670,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         self.database.flushdb()
     }
 
-    fn load(&mut self) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+    fn load(&mut self) -> anyhow::Result<HashMap<String, Bytes>> {
         // self.database.load()
         Ok(HashMap::new()) // TODO
     }
@@ -839,10 +817,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         todo!()
     }
 
-    fn load_actor(
-        &mut self,
-        component_id: &ComponentId,
-    ) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+    fn load_actor(&mut self, component_id: &ComponentId) -> anyhow::Result<HashMap<String, Bytes>> {
         todo!()
     }
 
@@ -853,7 +828,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     fn load_strategy(
         &mut self,
         strategy_id: &StrategyId,
-    ) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+    ) -> anyhow::Result<HashMap<String, Bytes>> {
         todo!()
     }
 
@@ -861,7 +836,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         todo!()
     }
 
-    fn add(&mut self, key: String, value: Vec<u8>) -> anyhow::Result<()> {
+    fn add(&mut self, key: String, value: Bytes) -> anyhow::Result<()> {
         todo!()
     }
 

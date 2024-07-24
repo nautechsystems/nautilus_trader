@@ -18,6 +18,7 @@
 mod serial_tests {
     use std::{collections::HashSet, time::Duration};
 
+    use bytes::Bytes;
     use nautilus_common::{
         cache::database::CacheDatabaseAdapter,
         testing::{wait_until, wait_until_async},
@@ -47,7 +48,7 @@ mod serial_tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_general_object_adds_to_cache() {
         let mut pg_cache = get_pg_cache_database().await.unwrap();
-        let test_id_value = String::from("test_value").into_bytes();
+        let test_id_value = Bytes::from("test_value");
         pg_cache
             .add(String::from("test_id"), test_id_value.clone())
             .unwrap();

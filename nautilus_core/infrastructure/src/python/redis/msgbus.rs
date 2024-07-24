@@ -15,6 +15,7 @@
 
 use std::collections::HashMap;
 
+use bytes::Bytes;
 use nautilus_common::msgbus::database::MessageBusDatabaseAdapter;
 use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
@@ -40,7 +41,8 @@ impl RedisMessageBusDatabase {
 
     #[pyo3(name = "publish")]
     fn py_publish(&self, topic: String, payload: Vec<u8>) -> PyResult<()> {
-        self.publish(topic, payload).map_err(to_pyruntime_err)
+        self.publish(topic, Bytes::from(payload))
+            .map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "close")]

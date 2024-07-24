@@ -15,6 +15,7 @@
 
 use std::collections::HashMap;
 
+use bytes::Bytes;
 use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
     uuid::UUID4,
@@ -64,7 +65,7 @@ impl RedisCacheDatabase {
             Ok(result) => {
                 let vec_py_bytes = result
                     .into_iter()
-                    .map(|r| PyBytes::new(py, &r).into())
+                    .map(|r| PyBytes::new(py, &r.as_ref()).into())
                     .collect::<Vec<PyObject>>();
                 Ok(vec_py_bytes)
             }
@@ -74,6 +75,7 @@ impl RedisCacheDatabase {
 
     #[pyo3(name = "insert")]
     fn py_insert(&mut self, key: String, payload: Vec<Vec<u8>>) -> PyResult<()> {
+        let payload: Vec<Bytes> = payload.into_iter().map(Bytes::from).collect();
         match self.insert(key, Some(payload)) {
             Ok(_) => Ok(()),
             Err(e) => Err(to_pyvalue_err(e)),
@@ -82,6 +84,7 @@ impl RedisCacheDatabase {
 
     #[pyo3(name = "update")]
     fn py_update(&mut self, key: String, payload: Vec<Vec<u8>>) -> PyResult<()> {
+        let payload: Vec<Bytes> = payload.into_iter().map(Bytes::from).collect();
         match self.insert(key, Some(payload)) {
             Ok(_) => Ok(()),
             Err(e) => Err(to_pyvalue_err(e)),
@@ -90,6 +93,8 @@ impl RedisCacheDatabase {
 
     #[pyo3(name = "delete")]
     fn py_delete(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> PyResult<()> {
+        let payload: Option<Vec<Bytes>> =
+            payload.map(|vec| vec.into_iter().map(Bytes::from).collect());
         match self.delete(key, payload) {
             Ok(_) => Ok(()),
             Err(e) => Err(to_pyvalue_err(e)),

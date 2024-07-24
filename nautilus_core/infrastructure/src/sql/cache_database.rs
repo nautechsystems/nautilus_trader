@@ -18,6 +18,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use bytes::Bytes;
 use log::error;
 use nautilus_common::cache::database::CacheDatabaseAdapter;
 use nautilus_core::nanos::UnixNanos;
@@ -301,7 +302,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn load(&mut self) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+    fn load(&mut self) -> anyhow::Result<HashMap<String, Bytes>> {
         todo!()
     }
 
@@ -500,10 +501,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn load_actor(
-        &mut self,
-        component_id: &ComponentId,
-    ) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+    fn load_actor(&mut self, component_id: &ComponentId) -> anyhow::Result<HashMap<String, Bytes>> {
         todo!()
     }
 
@@ -514,7 +512,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     fn load_strategy(
         &mut self,
         strategy_id: &StrategyId,
-    ) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+    ) -> anyhow::Result<HashMap<String, Bytes>> {
         todo!()
     }
 
@@ -522,8 +520,8 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn add(&mut self, key: String, value: Vec<u8>) -> anyhow::Result<()> {
-        let query = DatabaseQuery::Add(key, value);
+    fn add(&mut self, key: String, value: Bytes) -> anyhow::Result<()> {
+        let query = DatabaseQuery::Add(key, value.into());
         self.tx.send(query).map_err(|err| {
             anyhow::anyhow!("Failed to send query to database message handler: {err}")
         })

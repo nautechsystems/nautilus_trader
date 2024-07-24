@@ -15,6 +15,7 @@ nautilus-common = { path = "../common", features = ["python"] }
 nautilus-core = { path = "../core" , features = ["python"] }
 nautilus-model = { path = "../model" , features = ["python", "stubs"] }
 anyhow = { workspace = true }
+bytes = { workspace = true }
 derive_builder = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 log = { workspace = true }  # Required until Cython gone
