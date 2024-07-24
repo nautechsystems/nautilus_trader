@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Added options on futures support for Interactive Brokers (#1795), thanks @rsmb7z
 - Added documentation for option greeks custom data example (#1788), thanks @faysou
 - Added `MarketStatusAction` enum (support Databento `status` schema)
+- Added `ignore_quote_tick_size_updates` config option for Interactive Brokers (#1799), thanks @sunlei
 - Implemented `MessageBus` v2 in Rust (#1786), thanks @twitu
 - Implemented `DataEngine` v2 in Rust (#1785), thanks @twitu
 - Implemented `FillModel` in Rust (#1801), thanks @filipmacek
