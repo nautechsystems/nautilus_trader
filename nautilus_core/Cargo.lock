@@ -2574,6 +2574,8 @@ dependencies = [
  "nautilus-execution",
  "nautilus-model",
  "pyo3",
+ "rand",
+ "rand_chacha",
  "rstest",
  "tempfile",
  "ustr",
