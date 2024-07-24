@@ -43,7 +43,7 @@ impl FillModel {
             Some(seed) => ChaChaRng::seed_from_u64(seed),
             None => ChaChaRng::from_entropy(),
         };
-        Ok(FillModel {
+        Ok(Self {
             prob_fill_on_limit,
             prob_fill_on_stop,
             prob_slippage,
