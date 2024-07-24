@@ -72,7 +72,7 @@ The following Databento schemas are supported by NautilusTrader:
 | DEFINITION       | `Instrument` (various types)      |
 | IMBALANCE        | `DatabentoImbalance`              |
 | STATISTICS       | `DatabentoStatistics`             |
-| STATUS           | Not yet available                 |
+| STATUS           | `InstrumentStatus`                |
 
 ## Instrument IDs and symbology
 

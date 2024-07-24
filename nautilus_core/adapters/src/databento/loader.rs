@@ -54,6 +54,7 @@ use super::{
 ///  - DEFINITION -> `Instrument`
 ///  - IMBALANCE -> `DatabentoImbalance`
 ///  - STATISTICS -> `DatabentoStatistics`
+///  - STATUS -> `InstrumentStatus`
 ///
 /// # References
 /// <https://databento.com/docs/knowledge-base/new-users/dbn-encoding>
