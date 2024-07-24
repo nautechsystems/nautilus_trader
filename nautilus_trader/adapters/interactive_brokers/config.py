@@ -167,7 +167,7 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig, frozen=True):
         If True, will request data for Regular Trading Hours only.
         Only applies to bar data - will have no effect on trade or tick data feeds.
         Usually used for 'STK' security type. Check with InteractiveBrokers for RTH Info.
-    market_data_type : bool, default REALTIME
+    market_data_type : IBMarketDataTypeEnum, default REALTIME
         Set which IBMarketDataTypeEnum to be used by InteractiveBrokersClient.
         Configure `IBMarketDataTypeEnum.DELAYED_FROZEN` to use with account without data subscription.
     ignore_quote_tick_size_updates : bool
