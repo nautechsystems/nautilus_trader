@@ -3838,6 +3838,14 @@ class DatabentoHistoricalClient:
         end: int | None = None,
         limit: int | None = None,
     ) -> list[DatabentoStatistics]: ...
+    async def get_range_status(
+        self,
+        dataset: str,
+        symbols: list[str],
+        start: int,
+        end: int | None = None,
+        limit: int | None = None,
+    ) -> list[InstrumentStatus]: ...
 
 class DatabentoLiveClient:
     def __init__(

@@ -19,7 +19,6 @@ from collections.abc import Coroutine
 from typing import Any
 
 import pandas as pd
-import pytz
 
 from nautilus_trader.adapters.databento.common import databento_schema_from_nautilus_bar_type
 from nautilus_trader.adapters.databento.config import DatabentoDataClientConfig
@@ -328,9 +327,11 @@ class DatabentoDataClient(LiveMarketDataClient):
         try:
             self._log.info(f"Requesting dataset range for {dataset}...", LogColor.BLUE)
             response = await self._http_client.get_dataset_range(dataset)
+            start_str = response["start"].replace("+00:00:00", "")
+            end_str = response["end"].replace("+00:00:00", "")
 
-            available_start = pd.Timestamp(response["start"], tz=pytz.utc)
-            available_end = pd.Timestamp(response["end"], tz=pytz.utc)
+            available_start = pd.to_datetime(start_str, utc=True)
+            available_end = pd.to_datetime(end_str, utc=True)
 
             self._dataset_ranges[dataset] = (available_start, available_end)
 
@@ -645,6 +646,19 @@ class DatabentoDataClient(LiveMarketDataClient):
         except asyncio.CancelledError:
             self._log.warning("`_subscribe_bars` was canceled while still pending")
 
+    async def _subscribe_instrument_status(self, instrument_id: InstrumentId) -> None:
+        try:
+            dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+
+            live_client = self._get_live_client(dataset)
+            live_client.subscribe(
+                schema=DatabentoSchema.STATUS.value,
+                symbols=[instrument_id.symbol.value],
+            )
+            await self._check_live_client_started(dataset, live_client)
+        except asyncio.CancelledError:
+            self._log.warning("`_subscribe_bars` was canceled while still pending")
+
     async def _unsubscribe(self, data_type: DataType) -> None:
         raise NotImplementedError(
             f"Cannot unsubscribe from {data_type}, unsubscribing not supported by Databento.",
@@ -691,15 +705,56 @@ class DatabentoDataClient(LiveMarketDataClient):
             "unsubscribing not supported by Databento.",
         )
 
+    async def _unsubscribe_instrument_status(self, instrument_id: InstrumentId) -> None:
+        raise NotImplementedError(
+            f"Cannot unsubscribe from {instrument_id} instrument status, "
+            "unsubscribing not supported by Databento.",
+        )
+
     async def _request(self, data_type: DataType, correlation_id: UUID4) -> None:
-        if data_type.type == DatabentoImbalance:
+        if data_type.type == InstrumentStatus:
+            await self._request_instrument_status(data_type, correlation_id)
+        elif data_type.type == DatabentoImbalance:
             await self._request_imbalance(data_type, correlation_id)
         elif data_type.type == DatabentoStatistics:
             await self._request_statistics(data_type, correlation_id)
+
         else:
             raise NotImplementedError(
                 f"Cannot request {data_type.type} (not implemented).",
             )
+
+    async def _request_instrument_status(self, data_type: DataType, correlation_id: UUID4) -> None:
+        instrument_id: InstrumentId = data_type.metadata["instrument_id"]
+        start = data_type.metadata.get("start")
+        end = data_type.metadata.get("end")
+
+        dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
+        _, available_end = await self._get_dataset_range(dataset)
+
+        start = start or available_end - pd.Timedelta(days=2)
+        end = end or available_end
+
+        self._log.info(
+            f"Requesting {instrument_id} instrument status: "
+            f"dataset={dataset}, start={start}, end={end}",
+            LogColor.BLUE,
+        )
+
+        pyo3_status_list = await self._http_client.get_range_status(
+            dataset=dataset,
+            symbols=[instrument_id.symbol.value],
+            start=start.value,
+            end=end.value,
+        )
+
+        status = InstrumentStatus.from_pyo3_list(pyo3_status_list)
+
+        self._handle_data_response(
+            data_type=data_type,
+            data=status,
+            correlation_id=correlation_id,
+        )
 
     async def _request_imbalance(self, data_type: DataType, correlation_id: UUID4) -> None:
         instrument_id: InstrumentId = data_type.metadata["instrument_id"]
@@ -896,8 +951,8 @@ class DatabentoDataClient(LiveMarketDataClient):
         pyo3_trades = await self._http_client.get_range_trades(
             dataset=dataset,
             symbols=[instrument_id.symbol.value],
-            start=(start or available_end - pd.Timedelta(days=1)).value,
-            end=(end or available_end).value,
+            start=start.value,
+            end=end.value,
         )
 
         trades = TradeTick.from_pyo3_list(pyo3_trades)
@@ -939,8 +994,8 @@ class DatabentoDataClient(LiveMarketDataClient):
             aggregation=nautilus_pyo3.BarAggregation(
                 bar_aggregation_to_str(bar_type.spec.aggregation),
             ),
-            start=(start or available_end - pd.Timedelta(days=1)).value,
-            end=(end or available_end).value,
+            start=start.value,
+            end=end.value,
         )
 
         bars = Bar.from_pyo3_list(pyo3_bars)
