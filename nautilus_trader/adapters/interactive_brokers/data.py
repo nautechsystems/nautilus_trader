@@ -100,7 +100,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         self._handle_revised_bars = config.handle_revised_bars
         self._use_regular_trading_hours = config.use_regular_trading_hours
         self._market_data_type = config.market_data_type
-        self._quote_ticks_ignore_size = config.quote_ticks_ignore_size
+        self._ignore_quote_tick_size_updates = config.ignore_quote_tick_size_updates
 
     @property
     def instrument_provider(self) -> InteractiveBrokersInstrumentProvider:
@@ -172,7 +172,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             instrument_id=instrument_id,
             contract=IBContract(**instrument.info["contract"]),
             tick_type="BidAsk",
-            ignore_size=self._quote_ticks_ignore_size,
+            ignore_size=self._ignore_quote_tick_size_updates,
         )
 
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
@@ -192,7 +192,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             instrument_id=instrument_id,
             contract=IBContract(**instrument.info["contract"]),
             tick_type="AllLast",
-            ignore_size=self._quote_ticks_ignore_size,
+            ignore_size=self._ignore_quote_tick_size_updates,
         )
 
     async def _subscribe_bars(self, bar_type: BarType) -> None:
