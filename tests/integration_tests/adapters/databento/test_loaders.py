@@ -773,7 +773,7 @@ def test_load_statistics() -> None:
 
 
 @pytest.mark.skip("development_only")
-def test_load_instruments() -> None:
+def test_load_instruments_pyo3_large() -> None:
     # Arrange
     loader = DatabentoDataLoader()
     path = DATABENTO_TEST_DATA_DIR / "temp" / "glbx-mdp3-20240101.definition.dbn.zst"
@@ -788,7 +788,7 @@ def test_load_instruments() -> None:
 
 
 @pytest.mark.skip("development_only")
-def test_load_order_book_deltas_pyo3_spy_large() -> None:
+def test_load_order_book_deltas_spy_large() -> None:
     # Arrange
     loader = DatabentoDataLoader()
     path = DATABENTO_TEST_DATA_DIR / "temp" / "spy-xnas-mbo-20231127.dbn.zst"
@@ -801,3 +801,17 @@ def test_load_order_book_deltas_pyo3_spy_large() -> None:
     assert len(data) == 6_197_580  # No trades for now
     assert isinstance(data[0], nautilus_pyo3.OrderBookDelta)
     assert isinstance(data[1], nautilus_pyo3.OrderBookDelta)
+
+
+@pytest.mark.skip("development_only")
+def test_load_status_pyo3_large() -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    path = DATABENTO_TEST_DATA_DIR / "temp" / "glbx-mdp3-20240718.status.dbn.zst"
+
+    # Act (conversion to Cython objects creates significant overhead)
+    instrument_id = InstrumentId.from_str("SPY.XNAS")
+    data = loader.from_dbn_file(path, instrument_id=instrument_id, as_legacy_cython=False)
+
+    # Assert
+    assert len(data) == 4_673_675
