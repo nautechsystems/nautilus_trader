@@ -45,6 +45,7 @@ class DatabentoDataLoader:
      - DEFINITION -> `Instrument`
      - IMBALANCE -> `DatabentoImbalance`
      - STATISTICS -> `DatabentoStatistics`
+     - STATUS -> `InstrumentStatus`
 
     References
     ----------
