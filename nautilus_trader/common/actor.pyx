@@ -1789,7 +1789,6 @@ cdef class Actor(Component):
         self._send_data_cmd(command)
         self._log.info(f"Unsubscribed from {instrument_id} InstrumentStatus")
 
-
     cpdef void publish_data(self, DataType data_type, Data data):
         """
         Publish the given data to the message bus.
