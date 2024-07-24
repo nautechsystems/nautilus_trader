@@ -55,15 +55,28 @@ pub fn check_predicate_false(predicate: bool, fail_msg: &str) -> anyhow::Result<
 /// - If `s` consists solely of whitespace characters.
 /// - If `s` contains one or more non-ASCII characters.
 pub fn check_valid_string(s: &str, param: &str) -> anyhow::Result<()> {
+    // Ensure string is only traversed once
     if s.is_empty() {
-        anyhow::bail!("{FAILED} invalid string for '{param}', was empty")
-    } else if s.chars().all(char::is_whitespace) {
-        anyhow::bail!("{FAILED} invalid string for '{param}', was all whitespace",)
-    } else if !s.is_ascii() {
-        anyhow::bail!("{FAILED} invalid string for '{param}' contained a non-ASCII char, was '{s}'",)
-    } else {
-        Ok(())
+        anyhow::bail!("{FAILED} invalid string for '{param}', was empty");
     }
+
+    let mut has_non_whitespace = false;
+    for c in s.chars() {
+        if !c.is_whitespace() {
+            has_non_whitespace = true;
+        }
+        if !c.is_ascii() {
+            anyhow::bail!(
+                "{FAILED} invalid string for '{param}' contained a non-ASCII char, was '{s}'"
+            );
+        }
+    }
+
+    if !has_non_whitespace {
+        anyhow::bail!("{FAILED} invalid string for '{param}', was all whitespace");
+    }
+
+    Ok(())
 }
 
 /// Checks the string `s` if Some, contains only ASCII characters and has semantic meaning.
