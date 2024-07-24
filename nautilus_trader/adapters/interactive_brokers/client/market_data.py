@@ -165,6 +165,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         instrument_id: InstrumentId,
         contract: IBContract,
         tick_type: str,
+        ignore_size: bool,
     ) -> None:
         """
         Subscribe to tick data for a specified instrument.
@@ -177,6 +178,9 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             The contract details for the instrument.
         tick_type : str
             The type of tick data to subscribe to.
+        ignore_size : bool
+            Omit updates that reflect only changes in size, and not price.
+            Applicable to Bid_Ask data requests.
 
         """
         name = (str(instrument_id), tick_type)
@@ -187,7 +191,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             contract,
             tick_type,
             0,
-            True,
+            ignore_size,
         )
 
     async def unsubscribe_ticks(self, instrument_id: InstrumentId, tick_type: str) -> None:
