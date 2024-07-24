@@ -13,10 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::str::FromStr;
-
-use nautilus_model::{enums::CurrencyType, types::currency::Currency};
+use nautilus_model::types::currency::Currency;
 use sqlx::{postgres::PgRow, FromRow, Row};
+
+use crate::sql::models::enums::CurrencyTypeModel;
 
 pub struct CurrencyModel(pub Currency);
 
@@ -26,16 +26,13 @@ impl<'r> FromRow<'r, PgRow> for CurrencyModel {
         let precision = row.try_get::<i32, _>("precision")?;
         let iso4217 = row.try_get::<i32, _>("iso4217")?;
         let name = row.try_get::<String, _>("name")?;
-        let currency_type = row
-            .try_get::<String, _>("currency_type")
-            .map(|res| CurrencyType::from_str(res.as_str()).unwrap())?;
-
+        let currency_type_model = row.try_get::<CurrencyTypeModel, _>("currency_type")?;
         let currency = Currency::new(
             id.as_str(),
             precision as u8,
             iso4217 as u16,
             name.as_str(),
-            currency_type,
+            currency_type_model.0,
         )
         .unwrap();
         Ok(CurrencyModel(currency))

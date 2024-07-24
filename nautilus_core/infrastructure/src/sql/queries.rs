@@ -32,8 +32,8 @@ use nautilus_model::{
 use sqlx::{PgPool, Row};
 
 use crate::sql::models::{
-    accounts::AccountEventModel, general::GeneralRow, instruments::InstrumentAnyModel,
-    orders::OrderEventAnyModel, types::CurrencyModel,
+    accounts::AccountEventModel, enums::CurrencyTypeModel, general::GeneralRow,
+    instruments::InstrumentAnyModel, orders::OrderEventAnyModel, types::CurrencyModel,
 };
 
 pub struct DatabaseQueries;
@@ -65,13 +65,13 @@ impl DatabaseQueries {
 
     pub async fn add_currency(pool: &PgPool, currency: Currency) -> anyhow::Result<()> {
         sqlx::query(
-            "INSERT INTO currency (id, precision, iso4217, name, currency_type) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING"
+            "INSERT INTO currency (id, precision, iso4217, name, currency_type) VALUES ($1, $2, $3, $4, $5::currency_type) ON CONFLICT (id) DO NOTHING"
         )
             .bind(currency.code.as_str())
             .bind(currency.precision as i32)
             .bind(currency.iso4217 as i32)
             .bind(currency.name.as_str())
-            .bind(currency.currency_type.to_string())
+            .bind(CurrencyTypeModel(currency.currency_type))
             .execute(pool)
             .await
             .map(|_| ())
