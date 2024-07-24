@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.accounting.error import AccountBalanceNegative
@@ -195,8 +197,8 @@ cdef class AccountsManager:
                 ts_event=ts_event,
             )
 
-        cdef double total_locked = 0.0
-        cdef double base_xrate  = 0.0
+        total_locked = Decimal(0)
+        base_xrate  = Decimal(0)
 
         cdef Currency currency = instrument.get_settlement_currency()
         cdef:
@@ -214,10 +216,10 @@ cdef class AccountsManager:
                 order.side,
                 order.quantity,
                 order.price if order.has_price_c() else order.trigger_price,
-            ).as_f64_c()
+            ).as_decimal()
 
             if account.base_currency is not None:
-                if base_xrate == 0.0:
+                if base_xrate == 0:
                     # Cache base currency and xrate
                     currency = account.base_currency
                     base_xrate = self._calculate_xrate_to_base(
@@ -226,7 +228,7 @@ cdef class AccountsManager:
                         side=order.side,
                     )
 
-                    if base_xrate == 0.0:
+                    if base_xrate == 0:
                         self._log.debug(
                             f"Cannot calculate balance locked: "
                             f"insufficient data for "
@@ -283,13 +285,12 @@ cdef class AccountsManager:
         Condition.not_none(instrument, "instrument")
         Condition.not_none(orders_open, "orders_open")
 
-        cdef double total_margin_init = 0.0
-        cdef double base_xrate = 0.0
+        total_margin_init = Decimal(0)
+        base_xrate = Decimal(0)
 
         cdef Currency currency = instrument.get_settlement_currency()
-        cdef:
-            Order order
-            double margin_init
+
+        cdef Order order
         for order in orders_open:
             assert order.instrument_id == instrument.id, f"order not for instrument {instrument}"
 
@@ -302,10 +303,10 @@ cdef class AccountsManager:
                 instrument,
                 order.quantity,
                 order.price if order.has_price_c() else order.trigger_price,
-            ).as_f64_c()
+            ).as_decimal()
 
             if account.base_currency is not None:
-                if base_xrate == 0.0:
+                if base_xrate == 0:
                     # Cache base currency and xrate
                     currency = account.base_currency
                     base_xrate = self._calculate_xrate_to_base(
@@ -314,7 +315,7 @@ cdef class AccountsManager:
                         side=order.side,
                     )
 
-                    if base_xrate == 0.0:
+                    if base_xrate == 0:
                         self._log.debug(
                             f"Cannot calculate initial (order) margin: "
                             f"insufficient data for "
@@ -329,7 +330,7 @@ cdef class AccountsManager:
             total_margin_init += margin_init
 
         cdef Money margin_init_money = Money(total_margin_init, currency)
-        if total_margin_init == 0.0:
+        if total_margin_init == 0:
             account.clear_margin_init(instrument.id)
         else:
             account.update_margin_init(instrument.id, margin_init_money)
@@ -373,13 +374,12 @@ cdef class AccountsManager:
         Condition.not_none(instrument, "instrument")
         Condition.not_none(positions_open, "positions_open")
 
-        cdef double total_margin_maint = 0.0
-        cdef double base_xrate = 0.0
+        total_margin_maint = Decimal(0)
+        base_xrate = Decimal(0)
 
         cdef Currency currency = instrument.get_settlement_currency()
-        cdef:
-            Position position
-            double margin_maint
+
+        cdef Position position
         for position in positions_open:
             assert position.instrument_id == instrument.id
 
@@ -392,11 +392,11 @@ cdef class AccountsManager:
                 instrument,
                 position.side,
                 position.quantity,
-                instrument.make_price(position.avg_px_open),  # TODO: Temporary pending refactor
-            ).as_f64_c()
+                instrument.make_price(position.avg_px_open),
+            ).as_decimal()
 
             if account.base_currency is not None:
-                if base_xrate == 0.0:
+                if base_xrate == 0:
                     # Cache base currency and xrate
                     currency = account.base_currency
                     base_xrate = self._calculate_xrate_to_base(
@@ -405,7 +405,7 @@ cdef class AccountsManager:
                         side=position.entry,
                     )
 
-                    if base_xrate == 0.0:
+                    if base_xrate == 0:
                         self._log.debug(
                             f"Cannot calculate maintenance (position) margin: "
                             f"insufficient data for "
@@ -420,7 +420,7 @@ cdef class AccountsManager:
             total_margin_maint += margin_maint
 
         cdef Money margin_maint_money = Money(total_margin_maint, currency)
-        if total_margin_maint == 0.0:
+        if total_margin_maint == 0:
             account.clear_margin_maint(instrument.id)
         else:
             account.update_margin_maint(instrument.id, margin_maint_money)
@@ -440,15 +440,15 @@ cdef class AccountsManager:
     ):
         cdef Money commission = fill.commission
         cdef list balances = []
-        cdef double xrate
+
         if commission.currency != account.base_currency:
-            xrate = self._cache.get_xrate(
+            xrate = Decimal(self._cache.get_xrate(
                 venue=fill.instrument_id.venue,
                 from_currency=fill.commission.currency,
                 to_currency=account.base_currency,
                 price_type=PriceType.BID if fill.order_side is OrderSide.SELL else PriceType.ASK,
-            )
-            if xrate == 0.0:
+            ))
+            if xrate == 0:
                 self._log.error(
                     f"Cannot calculate account state: "
                     f"insufficient data for "
@@ -457,16 +457,16 @@ cdef class AccountsManager:
                 return  # Cannot calculate
 
             # Convert to account base currency
-            commission = Money(commission.as_f64_c() * xrate, account.base_currency)
+            commission = Money(commission.as_decimal() * xrate, account.base_currency)
 
         if pnl.currency != account.base_currency:
-            xrate = self._cache.get_xrate(
+            xrate = Decimal(self._cache.get_xrate(
                 venue=fill.instrument_id.venue,
                 from_currency=pnl.currency,
                 to_currency=account.base_currency,
                 price_type=PriceType.BID if fill.order_side is OrderSide.SELL else PriceType.ASK,
-            )
-            if xrate == 0.0:
+            ))
+            if xrate == 0:
                 self._log.error(
                     f"Cannot calculate account state: "
                     f"insufficient data for "
@@ -475,7 +475,7 @@ cdef class AccountsManager:
                 return  # Cannot calculate
 
             # Convert to account base currency
-            pnl = Money(pnl.as_f64_c() * xrate, account.base_currency)
+            pnl = Money(pnl * xrate, account.base_currency)
 
         pnl = pnl.sub(commission)
         if pnl._mem.raw == 0:
@@ -509,10 +509,9 @@ cdef class AccountsManager:
         cdef Money commission = fill.commission
         cdef AccountBalance balance = None
         cdef AccountBalance new_balance = None
+
         cdef:
             Money pnl
-            double new_total
-            double new_free
             Money total
             Money free
         for pnl in pnls:
@@ -532,8 +531,9 @@ cdef class AccountsManager:
                             locked=Money(0, commission.currency),
                             free=Money(0, commission.currency),
                         )
-                balance.total = Money(balance.total.as_f64_c() - commission.as_f64_c(), commission.currency)
-                balance.free = Money(balance.free.as_f64_c() - commission.as_f64_c(), commission.currency)
+                commission_dec = commission.as_decimal()
+                balance.total = Money(balance.total.as_decimal() - commission_dec, commission.currency)
+                balance.free = Money(balance.free.as_decimal() - commission_dec, commission.currency)
                 balances.append(balance)
             else:
                 pnl = pnl.sub(commission)
@@ -555,16 +555,16 @@ cdef class AccountsManager:
                     free=pnl,
                 )
             else:
-                new_total = balance.total.as_f64_c() + pnl.as_f64_c()
-                new_free = balance.free.as_f64_c() + pnl.as_f64_c()
+                new_total = balance.total.as_decimal() + pnl.as_decimal()
+                new_free = balance.free.as_decimal() + pnl.as_decimal()
                 total = Money(new_total, pnl.currency)
                 free = Money(new_free, pnl.currency)
-                if new_total < 0.0:
+                if new_total < 0:
                     raise AccountBalanceNegative(
                         balance=total.as_decimal(),
                         currency=pnl.currency,
                     )
-                if new_free < 0.0:
+                if new_free < 0:
                     raise AccountMarginExceeded(
                         balance=total.as_decimal(),
                         margin=balance.locked.as_decimal(),
@@ -591,10 +591,11 @@ cdef class AccountsManager:
                 )
                 return
 
+            commission_dec = commission.as_decimal()
             new_balance = AccountBalance(
-                total=Money(balance.total.as_f64_c() - commission.as_f64_c(), currency),
+                total=Money(balance.total.as_decimal() - commission_dec, currency),
                 locked=balance.locked,
-                free=Money(balance.free.as_f64_c() - commission.as_f64_c(), currency),
+                free=Money(balance.free.as_decimal() - commission_dec, currency),
             )
             balances.append(new_balance)
 
@@ -620,18 +621,18 @@ cdef class AccountsManager:
             ts_init=self._clock.timestamp_ns(),
         )
 
-    cdef double _calculate_xrate_to_base(
+    cdef object _calculate_xrate_to_base(
         self,
         Account account,
         Instrument instrument,
         OrderSide side,
     ):
         if account.base_currency is None:
-            return 1.0  # No conversion needed
-        else:
-            return self._cache.get_xrate(
-                venue=instrument.id.venue,
-                from_currency=instrument.get_settlement_currency(),
-                to_currency=account.base_currency,
-                price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,
-            )
+            return Decimal(1)  # No conversion needed
+
+        return Decimal(self._cache.get_xrate(
+            venue=instrument.id.venue,
+            from_currency=instrument.get_settlement_currency(),
+            to_currency=account.base_currency,
+            price_type=PriceType.BID if side == OrderSide.BUY else PriceType.ASK,
+        ))
