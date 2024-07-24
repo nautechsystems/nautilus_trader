@@ -21,6 +21,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use bytes::Bytes;
 use nautilus_common::msgbus::{database::MessageBusDatabaseAdapter, CLOSE_TOPIC};
 use nautilus_core::{time::duration_since_unix_epoch, uuid::UUID4};
 use nautilus_model::identifiers::TraderId;
@@ -41,7 +42,7 @@ pub struct BusMessage {
     /// The topic to publish on.
     pub topic: String,
     /// The serialized payload for the message.
-    pub payload: Vec<u8>,
+    pub payload: Bytes,
 }
 
 impl fmt::Display for BusMessage {
@@ -89,9 +90,14 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
         })
     }
 
-    fn publish(&self, topic: String, payload: Vec<u8>) -> anyhow::Result<()> {
+    fn publish(&self, topic: String, payload: Bytes) -> anyhow::Result<()> {
         let msg = BusMessage { topic, payload };
-        self.tx.send(msg).map_err(anyhow::Error::new)
+        if let Err(e) = self.tx.send(msg) {
+            // This will occur when the Python task blindly attempts
+            // to publish to a closed channel.
+            debug!("Failed to send message: {}", e);
+        }
+        Ok(())
     }
 
     fn close(&mut self) -> anyhow::Result<()> {
@@ -99,7 +105,7 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
 
         let msg = BusMessage {
             topic: CLOSE_TOPIC.to_string(),
-            payload: vec![],
+            payload: Bytes::new(), // Empty
         };
         self.tx.send(msg).map_err(anyhow::Error::new)?;
 
@@ -197,7 +203,7 @@ fn drain_buffer(
 
     for msg in buffer.drain(..) {
         let key = format!("{stream_name}{}", &msg.topic);
-        let items: Vec<(&str, &Vec<u8>)> = vec![("payload", &msg.payload)];
+        let items: Vec<(&str, &[u8])> = vec![("payload", msg.payload.as_ref())];
         pipe.xadd(&key, "*", &items);
 
         if autotrim_duration.is_none() {

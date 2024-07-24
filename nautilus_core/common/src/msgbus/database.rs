@@ -15,6 +15,7 @@
 
 use std::collections::HashMap;
 
+use bytes::Bytes;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::TraderId;
 
@@ -32,6 +33,6 @@ pub trait MessageBusDatabaseAdapter {
         instance_id: UUID4,
         config: HashMap<String, serde_json::Value>,
     ) -> anyhow::Result<Self::DatabaseType>;
-    fn publish(&self, topic: String, payload: Vec<u8>) -> anyhow::Result<()>;
+    fn publish(&self, topic: String, payload: Bytes) -> anyhow::Result<()>;
     fn close(&mut self) -> anyhow::Result<()>;
 }

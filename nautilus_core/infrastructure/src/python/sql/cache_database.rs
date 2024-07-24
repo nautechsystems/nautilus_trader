@@ -15,6 +15,7 @@
 
 use std::collections::HashMap;
 
+use bytes::Bytes;
 use nautilus_common::{cache::database::CacheDatabaseAdapter, runtime::get_runtime};
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
@@ -72,7 +73,7 @@ impl PostgresCacheDatabase {
 
     #[pyo3(name = "add")]
     fn py_add(mut slf: PyRefMut<'_, Self>, key: String, value: Vec<u8>) -> PyResult<()> {
-        slf.add(key, value).map_err(to_pyruntime_err)
+        slf.add(key, Bytes::from(value)).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "add_currency")]
