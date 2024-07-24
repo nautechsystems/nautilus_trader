@@ -26,6 +26,7 @@ Released on TBD (UTC).
 - Changed `OrderBook` FFI API to take data by reference instead of by value
 
 ### Fixes
+- Fixed rounding errors in accounting calculations for large values (using `decimal.Decimal` internally)
 - Fixed `LiveExecutionEngine` handling of adapter client execution report causing `None` mass status (#1789), thanks for reporting @faysou
 - Fixed `InteractiveBrokersExecutionClient` handling of instruments not found when generating execution reports (#1789), thanks for reporting @faysou
 - Fixed Bybit parsing of trade and quote ticks for websocket messages (#1794), thanks @davidsblom

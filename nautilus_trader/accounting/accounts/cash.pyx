@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from libc.math cimport fmin
+from decimal import Decimal
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport AccountType
@@ -153,18 +153,18 @@ cdef class CashAccount(Account):
             print("Cannot recalculate balance when no current balance")
             return
 
-        cdef double total_locked = 0.0
+        total_locked = Decimal(0)
 
         cdef Money locked
         for locked in self._balances_locked.values():
             if locked.currency != currency:
                 continue
-            total_locked += locked.as_f64_c()
+            total_locked += locked.as_decimal()
 
         cdef AccountBalance new_balance = AccountBalance(
             current_balance.total,
             Money(total_locked, currency),
-            Money(current_balance.total.as_f64_c() - total_locked, currency),
+            Money(current_balance.total.as_decimal() - total_locked, currency),
         )
 
         self._balances[currency] = new_balance
@@ -211,17 +211,16 @@ cdef class CashAccount(Account):
         Condition.not_none(last_qty, "last_qty")
         Condition.not_equal(liquidity_side, LiquiditySide.NO_LIQUIDITY_SIDE, "liquidity_side", "NO_LIQUIDITY_SIDE")
 
-        cdef double notional = instrument.notional_value(
+        notional = instrument.notional_value(
             quantity=last_qty,
             price=last_px,
             use_quote_for_inverse=use_quote_for_inverse,
-        ).as_f64_c()
+        ).as_decimal()
 
-        cdef double commission
         if liquidity_side == LiquiditySide.MAKER:
-            commission = notional * float(instrument.maker_fee)
+            commission = notional * instrument.maker_fee
         elif liquidity_side == LiquiditySide.TAKER:
-            commission = notional * float(instrument.taker_fee)
+            commission = notional * instrument.taker_fee
         else:
             raise ValueError(
                 f"invalid LiquiditySide, was {liquidity_side_to_str(liquidity_side)}"
@@ -271,25 +270,24 @@ cdef class CashAccount(Account):
         cdef Currency quote_currency = instrument.quote_currency
         cdef Currency base_currency = instrument.get_base_currency() or instrument.quote_currency
 
-        cdef double notional
         # Determine notional value
         if side == OrderSide.BUY:
             notional = instrument.notional_value(
                 quantity=quantity,
                 price=price,
                 use_quote_for_inverse=use_quote_for_inverse,
-            ).as_f64_c()
+            ).as_decimal()
         elif side == OrderSide.SELL:
             if base_currency is not None:
-                notional = quantity.as_f64_c()
+                notional = quantity.as_decimal()
             else:
                 return None  # No balance to lock
         else:  # pragma: no cover (design-time error)
             raise RuntimeError(f"invalid `OrderSide`, was {side}")  # pragma: no cover (design-time error)
 
         # Add expected commission
-        cdef double locked = notional
-        locked += (notional * float(instrument.taker_fee) * 2.0)
+        locked = notional
+        locked += notional * instrument.taker_fee * Decimal(2)
 
         # Handle inverse
         if instrument.is_inverse and not use_quote_for_inverse:
@@ -335,13 +333,13 @@ cdef class CashAccount(Account):
         cdef Currency quote_currency = instrument.quote_currency
         cdef Currency base_currency = instrument.get_base_currency()
 
-        cdef double fill_px = fill.last_px.as_f64_c()
-        cdef double fill_qty = fill.last_qty.as_f64_c()
-        cdef double last_qty = fill_qty
+        fill_px = fill.last_px.as_decimal()
+        fill_qty = fill.last_qty.as_decimal()
+        last_qty = fill_qty
 
         if position is not None and position.quantity._mem.raw != 0 and position.entry != fill.order_side:
             # Only book open quantity towards realized PnL
-            fill_qty = fmin(fill_qty, position.quantity.as_f64_c())
+            fill_qty = min(fill_qty, position.quantity.as_decimal())
 
         # Below we are using the original `last_qty` to adjust the base currency,
         # this is to avoid a desync in account balance vs filled quantities later.

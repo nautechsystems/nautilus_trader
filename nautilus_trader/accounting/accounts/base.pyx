@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 from nautilus_trader.accounting.error import AccountBalanceNegative
 
 from nautilus_trader.core.correctness cimport Condition
@@ -437,8 +439,8 @@ cdef class Account:
             return  # Nothing to update
 
         cdef Currency currency = commission.currency
-        cdef double total_commissions = self._commissions.get(currency, 0.0)
-        self._commissions[currency] = Money(total_commissions + commission.as_f64_c(), currency)
+        total_commissions = self._commissions.get(currency, Decimal(0))
+        self._commissions[currency] = Money(total_commissions + commission.as_decimal(), currency)
 
 # -- CALCULATIONS ---------------------------------------------------------------------------------
 
