@@ -32,6 +32,6 @@ class DatabentoSchema(Enum):
     OHLCV_1D = "ohlcv-1d"
     OHLCV_EOD = "ohlcv-eod"
     DEFINITION = "definition"
+    IMBALANCE = "imbalance"
     STATISTICS = "statistics"
     STATUS = "status"
-    IMBALANCE = "imbalance"

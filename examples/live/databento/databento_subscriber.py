@@ -154,8 +154,18 @@ class DataSubscriber(Strategy):
 
             self.subscribe_quote_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
             self.subscribe_trade_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
+            self.subscribe_instrument_status(instrument_id, client_id=DATABENTO_CLIENT_ID)
             # self.request_quote_ticks(instrument_id)
             # self.request_trade_ticks(instrument_id)
+
+            # from nautilus_trader.model.data import DataType
+            # from nautilus_trader.model.data import InstrumentStatus
+            #
+            # status_data_type = DataType(
+            #     type=InstrumentStatus,
+            #     metadata={"instrument_id": instrument_id},
+            # )
+            # self.request_data(status_data_type, client_id=DATABENTO_CLIENT_ID)
 
             # from nautilus_trader.model.data import BarType
             # self.request_bars(BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL"))
