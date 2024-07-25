@@ -79,6 +79,7 @@ pub fn test_position_long(audusd_sim: CurrencyPair) -> Position {
         None,
         None,
         None,
+        None,
     );
     Position::new(&audusd_sim, filled.into()).unwrap()
 }
@@ -99,6 +100,7 @@ pub fn test_position_short(audusd_sim: CurrencyPair) -> Position {
         None,
         None,
         Some(Price::from("22000.0")),
+        None,
         None,
         None,
         None,

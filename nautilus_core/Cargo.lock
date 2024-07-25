@@ -2581,6 +2581,7 @@ dependencies = [
  "rand",
  "rand_chacha",
  "rstest",
+ "rust_decimal",
  "tempfile",
  "ustr",
 ]

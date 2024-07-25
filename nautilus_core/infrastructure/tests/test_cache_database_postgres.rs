@@ -292,6 +292,7 @@ mod serial_tests {
             Some(Quantity::from("1.0")),
             None,
             None,
+            None,
             Some(AccountId::new("SIM-001").unwrap()),
         );
         market_order.apply(filled).unwrap();
