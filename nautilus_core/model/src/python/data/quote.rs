@@ -329,9 +329,9 @@ impl QuoteTick {
         Ok(self.extract_price(price_type))
     }
 
-    #[pyo3(name = "extract_volume")]
-    fn py_extract_volume(&self, price_type: PriceType) -> PyResult<Quantity> {
-        Ok(self.extract_volume(price_type))
+    #[pyo3(name = "extract_size")]
+    fn py_extract_size(&self, price_type: PriceType) -> PyResult<Quantity> {
+        Ok(self.extract_size(price_type))
     }
 
     /// Creates a `PyCapsule` containing a raw pointer to a `Data::Quote` object.
@@ -349,7 +349,6 @@ impl QuoteTick {
     ///
     /// The function will panic if the `PyCapsule` creation fails, which can occur if the
     /// `Data::Quote` object cannot be converted into a raw pointer.
-    ///
     #[pyo3(name = "as_pycapsule")]
     fn py_as_pycapsule(&self, py: Python<'_>) -> PyObject {
         data_to_pycapsule(py, Data::Quote(*self))

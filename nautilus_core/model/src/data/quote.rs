@@ -136,7 +136,7 @@ impl QuoteTick {
     }
 
     #[must_use]
-    pub fn extract_volume(&self, price_type: PriceType) -> Quantity {
+    pub fn extract_size(&self, price_type: PriceType) -> Quantity {
         match price_type {
             PriceType::Bid => self.bid_size,
             PriceType::Ask => self.ask_size,
