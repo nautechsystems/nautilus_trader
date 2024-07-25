@@ -2852,6 +2852,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         order.apply(filled).unwrap();
         cache.update_order(&order).unwrap();
@@ -2948,6 +2949,7 @@ mod tests {
             &audusd_sim,
             None,
             Some(PositionId::new("P-123456").unwrap()),
+            None,
             None,
             None,
             None,

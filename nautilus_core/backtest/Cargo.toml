@@ -19,6 +19,7 @@ anyhow = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 ustr = { workspace = true }
+rust_decimal = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { version = "0.3.1"}
 

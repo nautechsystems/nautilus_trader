@@ -589,6 +589,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         let fill2 = TestOrderEventStubs::order_filled(
             &order2,
@@ -596,6 +597,7 @@ mod tests {
             Some(TradeId::new("1").unwrap()),
             None,
             Some(Price::from("1.00002")),
+            None,
             None,
             None,
             None,
@@ -621,6 +623,7 @@ mod tests {
             None,
             None,
             Some(Price::from("1.00001")),
+            None,
             None,
             None,
             None,
@@ -692,6 +695,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         let last_price = Price::from_str("1.00050").unwrap();
         let position = Position::new(&audusd_sim, fill.into()).unwrap();
@@ -757,6 +761,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         let last_price = Price::from_str("1.00048").unwrap();
         let position = Position::new(&audusd_sim, fill.into()).unwrap();
@@ -814,6 +819,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         let fill2 = TestOrderEventStubs::order_filled(
             &order,
@@ -822,6 +828,7 @@ mod tests {
             None,
             Some(Price::from("1.00002")),
             Some(Quantity::from(50_000)),
+            None,
             None,
             None,
             None,
@@ -876,6 +883,7 @@ mod tests {
             Some(TradeId::new("1").unwrap()),
             Some(PositionId::new("P-1").unwrap()),
             Some(Price::from("1.00001")),
+            None,
             None,
             None,
             Some(UnixNanos::from(1_000_000_000)),
@@ -971,6 +979,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         let mut position = Position::new(&audusd_sim, fill1.into()).unwrap();
         // create closing from order from different venue but same strategy
@@ -984,6 +993,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         let fill3 = TestOrderEventStubs::order_filled(
             &order2,
@@ -992,6 +1002,7 @@ mod tests {
             Some(PositionId::new("P-19700101-000000-001-001-1").unwrap()),
             Some(Price::from("1.00003")),
             Some(Quantity::from(50_000)),
+            None,
             None,
             None,
             None,
@@ -1063,6 +1074,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         let mut position = Position::new(&audusd_sim, fill1.into()).unwrap();
         let fill2 = TestOrderEventStubs::order_filled(
@@ -1071,6 +1083,7 @@ mod tests {
             Some(TradeId::new("2").unwrap()),
             Some(PositionId::new("P-19700101-000000-001-001-1").unwrap()),
             Some(Price::from("1.0")),
+            None,
             None,
             None,
             None,
@@ -1150,6 +1163,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         let fill2 = TestOrderEventStubs::order_filled(
             &order2,
@@ -1161,6 +1175,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         let fill3 = TestOrderEventStubs::order_filled(
             &order3,
@@ -1168,6 +1183,7 @@ mod tests {
             Some(TradeId::new("3").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("1.0001")),
+            None,
             None,
             None,
             None,
@@ -1235,6 +1251,7 @@ mod tests {
             Some(PositionId::new("P-123456").unwrap()),
             Some(price1),
             None,
+            None,
             Some(commission1),
             None,
             None,
@@ -1256,6 +1273,7 @@ mod tests {
             Some(TradeId::new("2").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(price2),
+            None,
             None,
             Some(commission2),
             None,
@@ -1285,6 +1303,7 @@ mod tests {
             Some(PositionId::new("P-123456").unwrap()),
             Some(price3),
             None,
+            None,
             Some(commission3),
             None,
             None,
@@ -1304,6 +1323,7 @@ mod tests {
             Some(TradeId::new("4").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(price4),
+            None,
             None,
             Some(commission4),
             None,
@@ -1329,6 +1349,7 @@ mod tests {
             Some(TradeId::new("5").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(price5),
+            None,
             None,
             Some(commission5),
             None,
@@ -1358,6 +1379,7 @@ mod tests {
             Some(TradeId::new("5").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("1.00001")),
+            None,
             None,
             Some(commission1),
             Some(UnixNanos::from(1_000_000_000)),
@@ -1479,6 +1501,7 @@ mod tests {
             Some(PositionId::from("P-19700101-000000-001-001-1")),
             Some(Price::from("10000.0")),
             None,
+            None,
             Some(commission1),
             None,
             None,
@@ -1499,6 +1522,7 @@ mod tests {
             Some(TradeId::from("2")),
             Some(PositionId::from("P-19700101-000000-001-001-1")),
             Some(Price::from("9999.0")),
+            None,
             None,
             Some(commission2),
             None,
@@ -1528,6 +1552,7 @@ mod tests {
             Some(PositionId::from("P-19700101-000000-001-001-1")),
             Some(Price::from("10001.0")),
             None,
+            None,
             Some(commission3),
             None,
             None,
@@ -1556,6 +1581,7 @@ mod tests {
             Some(PositionId::from("P-19700101-000000-001-001-1")),
             Some(Price::from("10003.0")),
             None,
+            None,
             Some(commission4),
             None,
             None,
@@ -1583,6 +1609,7 @@ mod tests {
             Some(TradeId::from("5")),
             Some(PositionId::from("P-19700101-000000-001-001-1")),
             Some(Price::from("10005.0")),
+            None,
             None,
             Some(commission5),
             None,
@@ -1623,6 +1650,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         let position = Position::new(&btcusdt, fill.into()).unwrap();
         let result = position.calculate_pnl(10500.0, 10500.0, Quantity::from("100000.0"));
@@ -1647,6 +1675,7 @@ mod tests {
             None,
             Some(PositionId::from("P-123456")),
             Some(Price::from("10500.0")),
+            None,
             None,
             Some(commission),
             None,
@@ -1686,6 +1715,7 @@ mod tests {
             Some(PositionId::from("P-123456")),
             Some(Price::from("10500.0")),
             None,
+            None,
             Some(commission),
             None,
             None,
@@ -1724,6 +1754,7 @@ mod tests {
             Some(PositionId::from("P-123456")),
             Some(Price::from("10500.0")),
             None,
+            None,
             Some(commission),
             None,
             None,
@@ -1761,6 +1792,7 @@ mod tests {
             None,
             Some(PositionId::from("P-123456")),
             Some(Price::from("10500.0")),
+            None,
             None,
             Some(commission),
             None,
@@ -1805,6 +1837,7 @@ mod tests {
             Some(PositionId::from("P-123456")),
             Some(Price::from("10000.0")),
             None,
+            None,
             Some(commission),
             None,
             None,
@@ -1846,6 +1879,7 @@ mod tests {
             None,
             Some(PositionId::from("P-123456")),
             Some(Price::from("375.95")),
+            None,
             None,
             Some(commission),
             None,
@@ -1890,6 +1924,7 @@ mod tests {
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("10500.00")),
             None,
+            None,
             Some(commission1),
             None,
             None,
@@ -1903,6 +1938,7 @@ mod tests {
             Some(TradeId::new("2").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("10500.00")),
+            None,
             None,
             Some(commission2),
             None,
@@ -1941,6 +1977,7 @@ mod tests {
             Some(TradeId::new("1").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("10505.60")),
+            None,
             None,
             Some(commission),
             None,
@@ -1983,6 +2020,7 @@ mod tests {
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("10500.00")),
             None,
+            None,
             Some(commission),
             None,
             None,
@@ -2018,6 +2056,7 @@ mod tests {
             Some(TradeId::new("1").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("15500.00")),
+            None,
             None,
             Some(commission),
             None,
@@ -2056,6 +2095,7 @@ mod tests {
             &audusd_sim,
             None,
             Some(PositionId::from("P-123456")),
+            None,
             None,
             None,
             Some(commission),
