@@ -190,7 +190,7 @@ mod tests {
     fn test_json_serialization(stub_trade_tick_ethusdt_buyer: TradeTick) {
         let trade = stub_trade_tick_ethusdt_buyer;
         let serialized = trade.as_json_bytes().unwrap();
-        let deserialized = TradeTick::from_json_bytes(serialized).unwrap();
+        let deserialized = TradeTick::from_json_bytes(serialized.as_ref()).unwrap();
         assert_eq!(deserialized, trade);
     }
 
@@ -198,7 +198,7 @@ mod tests {
     fn test_msgpack_serialization(stub_trade_tick_ethusdt_buyer: TradeTick) {
         let trade = stub_trade_tick_ethusdt_buyer;
         let serialized = trade.as_msgpack_bytes().unwrap();
-        let deserialized = TradeTick::from_msgpack_bytes(serialized).unwrap();
+        let deserialized = TradeTick::from_msgpack_bytes(serialized.as_ref()).unwrap();
         assert_eq!(deserialized, trade);
     }
 }

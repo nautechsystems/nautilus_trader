@@ -17,6 +17,7 @@
 
 use std::fmt;
 
+use bytes::Bytes;
 use serde::{
     de::{Unexpected, Visitor},
     Deserializer,
@@ -28,23 +29,23 @@ use serde::{Deserialize, Serialize};
 /// Represents types which are serializable for JSON and `MsgPack` specifications.
 pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
     /// Deserialize an object from JSON encoded bytes.
-    fn from_json_bytes(data: Vec<u8>) -> Result<Self, serde_json::Error> {
-        serde_json::from_slice(&data)
+    fn from_json_bytes(data: &[u8]) -> Result<Self, serde_json::Error> {
+        serde_json::from_slice(data)
     }
 
     /// Deserialize an object from `MsgPack` encoded bytes.
-    fn from_msgpack_bytes(data: Vec<u8>) -> Result<Self, rmp_serde::decode::Error> {
-        rmp_serde::from_slice(&data)
+    fn from_msgpack_bytes(data: &[u8]) -> Result<Self, rmp_serde::decode::Error> {
+        rmp_serde::from_slice(data)
     }
 
     /// Serialize an object to JSON encoded bytes.
-    fn as_json_bytes(&self) -> Result<Vec<u8>, serde_json::Error> {
-        serde_json::to_vec(self)
+    fn as_json_bytes(&self) -> Result<Bytes, serde_json::Error> {
+        serde_json::to_vec(self).map(Bytes::from)
     }
 
     /// Serialize an object to `MsgPack` encoded bytes.
-    fn as_msgpack_bytes(&self) -> Result<Vec<u8>, rmp_serde::encode::Error> {
-        rmp_serde::to_vec_named(self)
+    fn as_msgpack_bytes(&self) -> Result<Bytes, rmp_serde::encode::Error> {
+        rmp_serde::to_vec_named(self).map(Bytes::from)
     }
 }
 
