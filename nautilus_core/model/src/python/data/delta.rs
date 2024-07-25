@@ -247,7 +247,6 @@ impl OrderBookDelta {
     ///
     /// The function will panic if the `PyCapsule` creation fails, which can occur if the
     /// `Data::Delta` object cannot be converted into a raw pointer.
-    ///
     #[pyo3(name = "as_pycapsule")]
     fn py_as_pycapsule(&self, py: Python<'_>) -> PyObject {
         data_to_pycapsule(py, Data::Delta(*self))

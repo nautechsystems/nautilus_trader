@@ -21,6 +21,7 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 - Removed `VenueStatus` and all associated methods and schemas (redundant with `InstrumentStatus`)
+- Renamed `QuoteTick.extract_volume(...)` to `.extract_size(...)` (more accurate terminology)
 - Changed `InstrumentStatus` params (support Databento `status` schema)
 - Changed `InstrumentStatus` arrow schema
 - Changed `OrderBook` FFI API to take data by reference instead of by value

@@ -398,7 +398,7 @@ cdef class QuoteTick(Data):
     cdef dict to_dict_c(QuoteTick obj)
 
     cpdef Price extract_price(self, PriceType price_type)
-    cpdef Quantity extract_volume(self, PriceType price_type)
+    cpdef Quantity extract_size(self, PriceType price_type)
 
 
 cdef class TradeTick(Data):

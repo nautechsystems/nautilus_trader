@@ -42,7 +42,7 @@ pub trait BarAggregator {
     fn handle_quote_tick(&mut self, quote: QuoteTick) {
         self.update(
             quote.extract_price(self.bar_type().spec.price_type),
-            quote.extract_volume(self.bar_type().spec.price_type),
+            quote.extract_size(self.bar_type().spec.price_type),
             quote.ts_event,
         );
     }

@@ -3956,9 +3956,9 @@ cdef class QuoteTick(Data):
         else:
             raise ValueError(f"Cannot extract with PriceType {price_type_to_str(price_type)}")
 
-    cpdef Quantity extract_volume(self, PriceType price_type):
+    cpdef Quantity extract_size(self, PriceType price_type):
         """
-        Extract the volume for the given price type.
+        Extract the size for the given price type.
 
         Parameters
         ----------
