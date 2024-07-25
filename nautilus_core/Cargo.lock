@@ -2636,6 +2636,7 @@ name = "nautilus-core"
 version = "0.27.0"
 dependencies = [
  "anyhow",
+ "bytes",
  "cbindgen",
  "chrono",
  "criterion",

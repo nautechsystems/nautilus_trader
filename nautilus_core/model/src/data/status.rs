@@ -133,14 +133,14 @@ mod tests {
     #[rstest]
     fn test_json_serialization(stub_instrument_status: InstrumentStatus) {
         let serialized = stub_instrument_status.as_json_bytes().unwrap();
-        let deserialized = InstrumentStatus::from_json_bytes(serialized).unwrap();
+        let deserialized = InstrumentStatus::from_json_bytes(serialized.as_ref()).unwrap();
         assert_eq!(deserialized, stub_instrument_status);
     }
 
     #[rstest]
     fn test_msgpack_serialization(stub_instrument_status: InstrumentStatus) {
         let serialized = stub_instrument_status.as_msgpack_bytes().unwrap();
-        let deserialized = InstrumentStatus::from_msgpack_bytes(serialized).unwrap();
+        let deserialized = InstrumentStatus::from_msgpack_bytes(serialized.as_ref()).unwrap();
         assert_eq!(deserialized, stub_instrument_status);
     }
 }

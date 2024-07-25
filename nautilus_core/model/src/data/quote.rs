@@ -226,7 +226,7 @@ mod tests {
     fn test_json_serialization(quote_tick_ethusdt_binance: QuoteTick) {
         let tick = quote_tick_ethusdt_binance;
         let serialized = tick.as_json_bytes().unwrap();
-        let deserialized = QuoteTick::from_json_bytes(serialized).unwrap();
+        let deserialized = QuoteTick::from_json_bytes(serialized.as_ref()).unwrap();
         assert_eq!(deserialized, tick);
     }
 
@@ -234,7 +234,7 @@ mod tests {
     fn test_msgpack_serialization(quote_tick_ethusdt_binance: QuoteTick) {
         let tick = quote_tick_ethusdt_binance;
         let serialized = tick.as_msgpack_bytes().unwrap();
-        let deserialized = QuoteTick::from_msgpack_bytes(serialized).unwrap();
+        let deserialized = QuoteTick::from_msgpack_bytes(serialized.as_ref()).unwrap();
         assert_eq!(deserialized, tick);
     }
 }

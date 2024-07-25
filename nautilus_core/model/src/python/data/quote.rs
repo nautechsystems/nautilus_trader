@@ -315,13 +315,13 @@ impl QuoteTick {
     #[staticmethod]
     #[pyo3(name = "from_json")]
     fn py_from_json(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_json_bytes(data).map_err(to_pyvalue_err)
+        Self::from_json_bytes(&data).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
     #[pyo3(name = "from_msgpack")]
     fn py_from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
+        Self::from_msgpack_bytes(&data).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "extract_price")]
@@ -394,10 +394,10 @@ mod tests {
     #[rstest]
     fn test_as_dict(quote_tick_ethusdt_binance: QuoteTick) {
         pyo3::prepare_freethreaded_python();
-        let tick = quote_tick_ethusdt_binance;
+        let quote = quote_tick_ethusdt_binance;
 
         Python::with_gil(|py| {
-            let dict_string = tick.py_as_dict(py).unwrap().to_string();
+            let dict_string = quote.py_as_dict(py).unwrap().to_string();
             let expected_string = r"{'type': 'QuoteTick', 'instrument_id': 'ETHUSDT-PERP.BINANCE', 'bid_price': '10000.0000', 'ask_price': '10001.0000', 'bid_size': '1.00000000', 'ask_size': '1.00000000', 'ts_event': 0, 'ts_init': 1}";
             assert_eq!(dict_string, expected_string);
         });
@@ -406,24 +406,24 @@ mod tests {
     #[rstest]
     fn test_from_dict(quote_tick_ethusdt_binance: QuoteTick) {
         pyo3::prepare_freethreaded_python();
-        let tick = quote_tick_ethusdt_binance;
+        let quote = quote_tick_ethusdt_binance;
 
         Python::with_gil(|py| {
-            let dict = tick.py_as_dict(py).unwrap();
+            let dict = quote.py_as_dict(py).unwrap();
             let parsed = QuoteTick::py_from_dict(py, dict).unwrap();
-            assert_eq!(parsed, tick);
+            assert_eq!(parsed, quote);
         });
     }
 
     #[rstest]
     fn test_from_pyobject(quote_tick_ethusdt_binance: QuoteTick) {
         pyo3::prepare_freethreaded_python();
-        let tick = quote_tick_ethusdt_binance;
+        let quote = quote_tick_ethusdt_binance;
 
         Python::with_gil(|py| {
-            let tick_pyobject = tick.into_py(py);
+            let tick_pyobject = quote.into_py(py);
             let parsed_tick = QuoteTick::from_pyobject(tick_pyobject.bind(py)).unwrap();
-            assert_eq!(parsed_tick, tick);
+            assert_eq!(parsed_tick, quote);
         });
     }
 }

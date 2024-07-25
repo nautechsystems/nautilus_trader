@@ -274,13 +274,13 @@ impl TradeTick {
     #[staticmethod]
     #[pyo3(name = "from_json")]
     fn py_from_json(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_json_bytes(data).map_err(to_pyvalue_err)
+        Self::from_json_bytes(&data).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
     #[pyo3(name = "from_msgpack")]
     fn py_from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
+        Self::from_msgpack_bytes(&data).map_err(to_pyvalue_err)
     }
 
     /// Creates a `PyCapsule` containing a raw pointer to a `Data::Trade` object.
@@ -343,10 +343,10 @@ mod tests {
     #[rstest]
     fn test_as_dict(stub_trade_tick_ethusdt_buyer: TradeTick) {
         pyo3::prepare_freethreaded_python();
-        let tick = stub_trade_tick_ethusdt_buyer;
+        let trade = stub_trade_tick_ethusdt_buyer;
 
         Python::with_gil(|py| {
-            let dict_string = tick.py_as_dict(py).unwrap().to_string();
+            let dict_string = trade.py_as_dict(py).unwrap().to_string();
             let expected_string = r"{'type': 'TradeTick', 'instrument_id': 'ETHUSDT-PERP.BINANCE', 'price': '10000.0000', 'size': '1.00000000', 'aggressor_side': 'BUYER', 'trade_id': '123456789', 'ts_event': 0, 'ts_init': 1}";
             assert_eq!(dict_string, expected_string);
         });
@@ -355,24 +355,24 @@ mod tests {
     #[rstest]
     fn test_from_dict(stub_trade_tick_ethusdt_buyer: TradeTick) {
         pyo3::prepare_freethreaded_python();
-        let tick = stub_trade_tick_ethusdt_buyer;
+        let trade = stub_trade_tick_ethusdt_buyer;
 
         Python::with_gil(|py| {
-            let dict = tick.py_as_dict(py).unwrap();
+            let dict = trade.py_as_dict(py).unwrap();
             let parsed = TradeTick::py_from_dict(py, dict).unwrap();
-            assert_eq!(parsed, tick);
+            assert_eq!(parsed, trade);
         });
     }
 
     #[rstest]
     fn test_from_pyobject(stub_trade_tick_ethusdt_buyer: TradeTick) {
         pyo3::prepare_freethreaded_python();
-        let tick = stub_trade_tick_ethusdt_buyer;
+        let trade = stub_trade_tick_ethusdt_buyer;
 
         Python::with_gil(|py| {
-            let tick_pyobject = tick.into_py(py);
+            let tick_pyobject = trade.into_py(py);
             let parsed_tick = TradeTick::from_pyobject(tick_pyobject.bind(py)).unwrap();
-            assert_eq!(parsed_tick, tick);
+            assert_eq!(parsed_tick, trade);
         });
     }
 }
