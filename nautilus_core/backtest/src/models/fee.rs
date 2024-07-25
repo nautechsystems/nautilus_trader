@@ -14,10 +14,12 @@
 // -------------------------------------------------------------------------------------------------
 
 use nautilus_model::{
+    enums::LiquiditySide,
     instruments::any::InstrumentAny,
     orders::any::OrderAny,
     types::{money::Money, price::Price, quantity::Quantity},
 };
+use rust_decimal::prelude::ToPrimitive;
 
 pub trait FeeModel {
     fn get_commission(
@@ -26,7 +28,7 @@ pub trait FeeModel {
         fill_quantity: Quantity,
         fill_px: Price,
         instrument: &InstrumentAny,
-    ) -> Money;
+    ) -> anyhow::Result<Money>;
 }
 
 #[derive(Debug, Clone)]
@@ -57,11 +59,35 @@ impl FeeModel for FixedFeeModel {
         _fill_quantity: Quantity,
         _fill_px: Price,
         _instrument: &InstrumentAny,
-    ) -> Money {
+    ) -> anyhow::Result<Money> {
         if !self.change_commission_once || order.filled_qty().is_zero() {
-            self.commission
+            Ok(self.commission)
         } else {
-            self.zero_commission
+            Ok(self.zero_commission)
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct MakerTakerFeeModel;
+
+impl FeeModel for MakerTakerFeeModel {
+    fn get_commission(
+        &self,
+        order: &OrderAny,
+        fill_quantity: Quantity,
+        fill_px: Price,
+        instrument: &InstrumentAny,
+    ) -> anyhow::Result<Money> {
+        let notional = instrument.calculate_notional_value(fill_quantity, fill_px, Some(false));
+        let commission = match order.liquidity_side() {
+            Some(LiquiditySide::Maker) => notional * instrument.maker_fee().to_f64().unwrap(),
+            Some(LiquiditySide::Taker) => notional * instrument.taker_fee().to_f64().unwrap(),
+            Some(LiquiditySide::NoLiquiditySide) | None => anyhow::bail!("Liquidity side not set."),
+        };
+        match instrument.is_inverse() {
+            true => Ok(Money::new(commission, instrument.base_currency().unwrap())?),
+            false => Ok(Money::new(commission, instrument.quote_currency())?),
         }
     }
 }
@@ -69,14 +95,15 @@ impl FeeModel for FixedFeeModel {
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        enums::OrderSide,
+        enums::{LiquiditySide, OrderSide},
         instruments::{any::InstrumentAny, stubs::audusd_sim},
         orders::stubs::{TestOrderEventStubs, TestOrderStubs},
         types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
     };
     use rstest::rstest;
+    use rust_decimal::prelude::ToPrimitive;
 
-    use crate::models::fee::{FeeModel, FixedFeeModel};
+    use crate::models::fee::{FeeModel, FixedFeeModel, MakerTakerFeeModel};
 
     #[rstest]
     fn test_fixed_model_single_fill() {
@@ -91,12 +118,14 @@ mod tests {
             None,
         );
         let accepted_order = TestOrderStubs::make_accepted_order(&market_order);
-        let commission = fee_model.get_commission(
-            &accepted_order,
-            Quantity::from(100_000),
-            Price::from("1.0"),
-            &aud_usd,
-        );
+        let commission = fee_model
+            .get_commission(
+                &accepted_order,
+                Quantity::from(100_000),
+                Price::from("1.0"),
+                &aud_usd,
+            )
+            .unwrap();
         assert_eq!(commission, expected_commission);
     }
 
@@ -122,12 +151,14 @@ mod tests {
             None,
         );
         let mut accepted_order = TestOrderStubs::make_accepted_order(&market_order);
-        let commission_first_fill = fee_model.get_commission(
-            &accepted_order,
-            Quantity::from(50_000),
-            Price::from("1.0"),
-            &aud_usd,
-        );
+        let commission_first_fill = fee_model
+            .get_commission(
+                &accepted_order,
+                Quantity::from(50_000),
+                Price::from("1.0"),
+                &aud_usd,
+            )
+            .unwrap();
         let fill = TestOrderEventStubs::order_filled(
             &accepted_order,
             &aud_usd,
@@ -138,15 +169,76 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         accepted_order.apply(fill).unwrap();
-        let commission_next_fill = fee_model.get_commission(
-            &accepted_order,
-            Quantity::from(50_000),
-            Price::from("1.0"),
-            &aud_usd,
-        );
+        let commission_next_fill = fee_model
+            .get_commission(
+                &accepted_order,
+                Quantity::from(50_000),
+                Price::from("1.0"),
+                &aud_usd,
+            )
+            .unwrap();
         assert_eq!(commission_first_fill, expected_first_fill);
         assert_eq!(commission_next_fill, expected_next_fill);
+    }
+
+    #[rstest]
+    fn test_maker_taker_fee_model_maker_commission() {
+        let fee_model = MakerTakerFeeModel;
+        let aud_usd = InstrumentAny::CurrencyPair(audusd_sim());
+        let maker_fee = aud_usd.maker_fee().to_f64().unwrap();
+        let price = Price::from("1.0");
+        let limit_order = TestOrderStubs::limit_order(
+            aud_usd.id(),
+            OrderSide::Sell,
+            price,
+            Quantity::from(100_000),
+            None,
+            None,
+        );
+        let order_filled =
+            TestOrderStubs::make_filled_order(&limit_order, &aud_usd, LiquiditySide::Maker);
+        let expected_commission_amount =
+            order_filled.quantity().as_f64() * price.as_f64() * maker_fee;
+        let commission = fee_model
+            .get_commission(
+                &order_filled,
+                Quantity::from(100_000),
+                Price::from("1.0"),
+                &aud_usd,
+            )
+            .unwrap();
+        assert_eq!(commission.as_f64(), expected_commission_amount);
+    }
+
+    #[rstest]
+    fn test_maker_taker_fee_model_taker_commission() {
+        let fee_model = MakerTakerFeeModel;
+        let aud_usd = InstrumentAny::CurrencyPair(audusd_sim());
+        let maker_fee = aud_usd.taker_fee().to_f64().unwrap();
+        let price = Price::from("1.0");
+        let limit_order = TestOrderStubs::limit_order(
+            aud_usd.id(),
+            OrderSide::Sell,
+            price,
+            Quantity::from(100_000),
+            None,
+            None,
+        );
+        let order_filled =
+            TestOrderStubs::make_filled_order(&limit_order, &aud_usd, LiquiditySide::Taker);
+        let expected_commission_amount =
+            order_filled.quantity().as_f64() * price.as_f64() * maker_fee;
+        let commission = fee_model
+            .get_commission(
+                &order_filled,
+                Quantity::from(100_000),
+                Price::from("1.0"),
+                &aud_usd,
+            )
+            .unwrap();
+        assert_eq!(commission.as_f64(), expected_commission_amount);
     }
 }
