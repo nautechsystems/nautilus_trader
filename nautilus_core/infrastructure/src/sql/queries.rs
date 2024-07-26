@@ -32,8 +32,12 @@ use nautilus_model::{
 use sqlx::{PgPool, Row};
 
 use crate::sql::models::{
-    accounts::AccountEventModel, enums::CurrencyTypeModel, general::GeneralRow,
-    instruments::InstrumentAnyModel, orders::OrderEventAnyModel, types::CurrencyModel,
+    accounts::AccountEventModel,
+    enums::{AssetClassModel, CurrencyTypeModel},
+    general::GeneralRow,
+    instruments::InstrumentAnyModel,
+    orders::OrderEventAnyModel,
+    types::CurrencyModel,
 };
 
 pub struct DatabaseQueries;
@@ -114,7 +118,7 @@ impl DatabaseQueries {
                 multiplier, option_kind, is_inverse, strike_price, activation_ns, expiration_ns, price_precision, size_precision,
                 price_increment, size_increment, maker_fee, taker_fee, margin_init, margin_maint, lot_size, max_quantity, min_quantity, max_notional,
                 min_notional, max_price, min_price, ts_init, ts_event, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::asset_class, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON CONFLICT (id)
             DO UPDATE
             SET
@@ -131,7 +135,7 @@ impl DatabaseQueries {
             .bind(instrument.quote_currency().code.as_str())
             .bind(instrument.settlement_currency().code.as_str())
             .bind(instrument.isin().map(|x| x.to_string()))
-            .bind(instrument.asset_class().to_string())
+            .bind(AssetClassModel(instrument.asset_class()))
             .bind(instrument.exchange().map(|x| x.to_string()))
             .bind(instrument.multiplier().to_string())
             .bind(instrument.option_kind().map(|x| x.to_string()))
