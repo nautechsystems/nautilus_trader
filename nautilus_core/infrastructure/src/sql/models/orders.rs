@@ -17,10 +17,7 @@ use std::{collections::HashMap, str::FromStr};
 
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
-    enums::{
-        ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TrailingOffsetType,
-        TriggerType,
-    },
+    enums::{ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType},
     events::order::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
         OrderEventAny, OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected,
@@ -35,6 +32,8 @@ use nautilus_model::{
 };
 use sqlx::{postgres::PgRow, FromRow, Row};
 use ustr::Ustr;
+
+use crate::sql::models::enums::TrailingOffsetTypeModel;
 
 pub struct OrderEventAnyModel(pub OrderEventAny);
 pub struct OrderAcceptedModel(pub OrderAccepted);
@@ -168,9 +167,9 @@ impl<'r> FromRow<'r, PgRow> for OrderInitializedModel {
             .ok()
             .and_then(|x| x.map(Price::from));
         let trailing_offset_type = row
-            .try_get::<Option<&str>, _>("trailing_offset_type")
+            .try_get::<Option<TrailingOffsetTypeModel>, _>("trailing_offset_type")
             .ok()
-            .and_then(|x| x.map(|x| TrailingOffsetType::from_str(x).unwrap()));
+            .and_then(|x| x.map(|x| x.0));
         let expire_time = row
             .try_get::<Option<&str>, _>("expire_time")
             .ok()

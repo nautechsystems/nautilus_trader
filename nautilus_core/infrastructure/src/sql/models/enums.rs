@@ -15,7 +15,7 @@
 
 use std::str::FromStr;
 
-use nautilus_model::enums::{AssetClass, CurrencyType};
+use nautilus_model::enums::{AssetClass, CurrencyType, TrailingOffsetType};
 use sqlx::{
     database::{HasArguments, HasValueRef},
     encode::IsNull,
@@ -88,6 +88,44 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for AssetClassModel {
 impl sqlx::Type<sqlx::Postgres> for AssetClassModel {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         PgTypeInfo::with_name("asset_class")
+    }
+
+    fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
+        *ty == Self::type_info() || <&str as Type<sqlx::Postgres>>::compatible(ty)
+    }
+}
+
+pub struct TrailingOffsetTypeModel(pub TrailingOffsetType);
+
+impl sqlx::Encode<'_, sqlx::Postgres> for TrailingOffsetTypeModel {
+    fn encode_by_ref(&self, buf: &mut <Postgres as HasArguments<'_>>::ArgumentBuffer) -> IsNull {
+        let trailing_offset_type_str = match self.0 {
+            TrailingOffsetType::NoTrailingOffset => "NO_TRAILING_OFFSET",
+            TrailingOffsetType::Price => "PRICE",
+            TrailingOffsetType::BasisPoints => "BASIS_POINTS",
+            TrailingOffsetType::Ticks => "TICKS",
+            TrailingOffsetType::PriceTier => "PRICE_TIER",
+        };
+        <&str as sqlx::Encode<sqlx::Postgres>>::encode(trailing_offset_type_str, buf)
+    }
+}
+
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for TrailingOffsetTypeModel {
+    fn decode(value: <Postgres as HasValueRef<'r>>::ValueRef) -> Result<Self, BoxDynError> {
+        let trailing_offset_type_str: &str = <&str as Decode<sqlx::Postgres>>::decode(value)?;
+        let trailing_offset_type =
+            TrailingOffsetType::from_str(trailing_offset_type_str).map_err(|_| {
+                sqlx::Error::Decode(
+                    format!("Invalid trailing offset type: {}", trailing_offset_type_str).into(),
+                )
+            })?;
+        Ok(TrailingOffsetTypeModel(trailing_offset_type))
+    }
+}
+
+impl sqlx::Type<sqlx::Postgres> for TrailingOffsetTypeModel {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        PgTypeInfo::with_name("trailing_offset_type")
     }
 
     fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
