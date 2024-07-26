@@ -33,7 +33,7 @@ use sqlx::{PgPool, Row};
 
 use crate::sql::models::{
     accounts::AccountEventModel,
-    enums::{AssetClassModel, CurrencyTypeModel},
+    enums::{AssetClassModel, CurrencyTypeModel, TrailingOffsetTypeModel},
     general::GeneralRow,
     instruments::InstrumentAnyModel,
     orders::OrderEventAnyModel,
@@ -317,7 +317,7 @@ impl DatabaseQueries {
                 exec_algorithm_id, exec_spawn_id, venue_order_id, account_id, position_id, commission, ts_event, ts_init, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-                $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                $21, $22, $23, $24::trailing_offset_type, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             ON CONFLICT (id)
             DO UPDATE
@@ -355,7 +355,7 @@ impl DatabaseQueries {
             .bind(order_event.trigger_type().map(|x| x.to_string()))
             .bind(order_event.limit_offset().map(|x| x.to_string()))
             .bind(order_event.trailing_offset().map(|x| x.to_string()))
-            .bind(order_event.trailing_offset_type().map(|x| format!("{:?}", x)))
+            .bind(order_event.trailing_offset_type().map(TrailingOffsetTypeModel))
             .bind(order_event.expire_time().map(|x| x.to_string()))
             .bind(order_event.display_qty().map(|x| x.to_string()))
             .bind(order_event.emulation_trigger().map(|x| x.to_string()))
