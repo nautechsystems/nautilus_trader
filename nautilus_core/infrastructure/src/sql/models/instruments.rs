@@ -21,7 +21,7 @@ use std::str::FromStr;
 
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
-    enums::{AssetClass, OptionKind},
+    enums::OptionKind,
     identifiers::{InstrumentId, Symbol},
     instruments::{
         any::InstrumentAny, crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual,
@@ -34,6 +34,8 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use sqlx::{postgres::PgRow, FromRow, Row};
 use ustr::Ustr;
+
+use crate::sql::models::enums::AssetClassModel;
 
 pub struct InstrumentAnyModel(pub InstrumentAny);
 pub struct CryptoFutureModel(pub CryptoFuture);
@@ -485,8 +487,8 @@ impl<'r> FromRow<'r, PgRow> for FuturesContractModel {
             .try_get::<String, _>("raw_symbol")
             .map(|res| Symbol::new(res.as_str()).unwrap())?;
         let asset_class = row
-            .try_get::<String, _>("asset_class")
-            .map(|res| AssetClass::from_str(res.as_str()).unwrap())?;
+            .try_get::<AssetClassModel, _>("asset_class")
+            .map(|res| res.0)?;
         let exchange = row
             .try_get::<Option<String>, _>("exchange")
             .map(|res| res.map(|s| Ustr::from(s.as_str())))?;
@@ -583,8 +585,8 @@ impl<'r> FromRow<'r, PgRow> for OptionsContractModel {
             .try_get::<String, _>("raw_symbol")
             .map(|res| Symbol::new(res.as_str()).unwrap())?;
         let asset_class = row
-            .try_get::<String, _>("asset_class")
-            .map(|res| AssetClass::from_str(res.as_str()).unwrap())?;
+            .try_get::<AssetClassModel, _>("asset_class")
+            .map(|res| res.0)?;
         let exchange = row
             .try_get::<Option<String>, _>("exchange")
             .map(|res| res.map(|s| Ustr::from(s.as_str())))?;
