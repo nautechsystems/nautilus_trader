@@ -576,12 +576,11 @@ cdef class AccountsManager:
                         f"balance to deduct a {commission.to_formatted_str()} commission from"
                     )
                     return
-                else:
-                    balance = AccountBalance(
-                        total=Money(0, commission.currency),
-                        locked=Money(0, commission.currency),
-                        free=Money(0, commission.currency),
-                    )
+                balance = AccountBalance(
+                    total=Money(0, commission.currency),
+                    locked=Money(0, commission.currency),
+                    free=Money(0, commission.currency),
+                )
             commission_dec = commission.as_decimal()
             balance.total = Money(balance.total.as_decimal() - commission_dec, commission.currency)
             balance.free = Money(balance.free.as_decimal() - commission_dec, commission.currency)
