@@ -2,83 +2,52 @@ use std::{
     cell::RefCell,
     collections::{HashMap, VecDeque},
     rc::Rc,
+    sync::Arc,
 };
 
 use nautilus_common::{
     actor::Actor,
     messages::data::{
+        DataClientResponse,
         DataEngineRequest::{DataRequest, SubscriptionCommand},
         DataResponse,
     },
+    msgbus::{self, MessageBus},
 };
 use nautilus_core::uuid::UUID4;
-use nautilus_model::identifiers::ClientId;
+use nautilus_model::{data::Data, identifiers::ClientId};
+use tokio::{
+    sync::mpsc::{self, UnboundedReceiver},
+    task::JoinHandle,
+};
 
 use crate::client::DataClientAdaptor;
 
-use super::DataRequestQueue;
-
 pub struct LiveRunner;
 
+impl LiveRunner {}
+
 impl LiveRunner {
-    pub fn run(
-        req_queue: DataRequestQueue,
-        clients: &HashMap<ClientId, DataClientAdaptor>,
-        actors: &HashMap<UUID4, Box<dyn Actor>>,
-    ) {
-        let (resp_tx, resp_rx) = tokio::sync::mpsc::unbounded_channel::<DataResponse>();
-
-        while let Some(req) = req_queue.next() {
-            match req {
-                DataRequest(req) => {
-                    let client = clients.get(&req.client_id);
-                    // TODO: restructure data request and response fields
-                    // so that appropriate field is used to lookup actor
-                    let actor = actors.get(&req.correlation_id);
-                    match (client, actor) {
-                        (Some(client), Some(actor)) => {
-                            let resp = client.request(req);
-                            actor.handle(resp)
-                        }
-                        _ => {
-                            // TODO: log error
-                        }
-                    }
+    pub fn run(msgbus: MessageBus, resp_rx: &mut UnboundedReceiver<DataClientResponse>) {
+        while let Some(resp) = resp_rx.blocking_recv() {
+            match resp {
+                DataClientResponse::DataResponse(data_resp) => {
+                    // TODO: respond
                 }
-                SubscriptionCommand(req) => todo!(),
-            }
-        }
-    }
-}
-
-pub struct BacktestRunner {
-    resp_queue: Rc<RefCell<VecDeque<DataResponse>>>,
-}
-
-impl BacktestRunner {
-    pub fn run(
-        req_queue: DataRequestQueue,
-        clients: &HashMap<ClientId, DataClientAdaptor>,
-        actors: &HashMap<UUID4, Box<dyn Actor>>,
-    ) {
-        while let Some(req) = req_queue.next() {
-            match req {
-                DataRequest(req) => {
-                    let client = clients.get(&req.client_id);
-                    // TODO: restructure data request and response fields
-                    // so that appropriate field is used to lookup actor
-                    let actor = actors.get(&req.correlation_id);
-                    match (client, actor) {
-                        (Some(client), Some(actor)) => {
-                            let resp = client.request(req);
-                            actor.handle(resp)
-                        }
-                        _ => {
-                            // TODO: log error
-                        }
+                DataClientResponse::Data(data) => {
+                    // TODO: calculate endpoint from response
+                    // TODO: handle logic for each data type before publishing on message bus
+                    match data {
+                        Data::Delta(data) => todo!(),
+                        Data::Deltas(_) => todo!(),
+                        Data::Depth10(_) => todo!(),
+                        Data::Quote(_) => todo!(),
+                        Data::Trade(_) => todo!(),
+                        Data::Bar(_) => todo!(),
                     }
+                    let endpoint = "TODO";
+                    msgbus.publish(endpoint, &Box::new(data));
                 }
-                SubscriptionCommand(req) => todo!(),
             }
         }
     }

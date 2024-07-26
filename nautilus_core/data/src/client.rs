@@ -28,9 +28,7 @@ use std::{
 use indexmap::IndexMap;
 use nautilus_common::{
     clock::Clock,
-    messages::data::{
-        SubscriptionCommand, Action, DataRequest, DataResponse, Payload,
-    },
+    messages::data::{Action, DataRequest, DataResponse, Payload, SubscriptionCommand},
 };
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
@@ -38,14 +36,14 @@ use nautilus_model::{
         bar::{Bar, BarType},
         quote::QuoteTick,
         trade::TradeTick,
-        DataType,
+        Data, DataType,
     },
     enums::BookType,
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::any::InstrumentAny,
 };
 
-pub trait DataClient {
+pub trait LiveDataClient {
     // -- GETTERS ---------------------------------------------------------------------------
     fn client_id(&self) -> ClientId;
     fn venue(&self) -> Option<Venue>;
@@ -55,6 +53,10 @@ pub trait DataClient {
     fn dispose(&self);
     fn is_connected(&self) -> bool;
     fn is_disconnected(&self) -> bool;
+
+    // A [`LiveDataClient`] must have two channels to send back data and data responses
+    fn get_response_data_channel(&self) -> tokio::sync::mpsc::UnboundedSender<DataResponse>;
+    fn get_subscriber_data_channel(&self) -> tokio::sync::mpsc::UnboundedSender<Data>;
 
     // -- COMMAND HANDLERS ---------------------------------------------------------------------------
 
@@ -147,7 +149,7 @@ pub trait DataClient {
 pub struct DataClientAdaptor {
     pub client_id: ClientId,
     pub venue: Venue,
-    client: Box<dyn DataClient>,
+    client: Box<dyn LiveDataClient>,
     clock: Box<dyn Clock>,
     pub subscriptions_generic: HashSet<DataType>,
     pub subscriptions_order_book_delta: HashSet<InstrumentId>,
@@ -163,7 +165,7 @@ pub struct DataClientAdaptor {
 }
 
 impl Deref for DataClientAdaptor {
-    type Target = Box<dyn DataClient>;
+    type Target = Box<dyn LiveDataClient>;
 
     fn deref(&self) -> &Self::Target {
         &self.client
@@ -438,6 +440,12 @@ impl DataClientAdaptor {
     }
 
     // -- DATA REQUEST HANDLERS IMPLEMENTATION ---------------------------------------------------------------------------
+
+    /// TODO: New clients implement a request pattern
+    /// that does not return a DataResponse directly
+    /// it internally uses a queue/channel to send
+    /// back response
+    pub fn through_request(&self, req: DataRequest) {}
 
     pub fn request(&self, req: DataRequest) -> DataResponse {
         let instrument_id = req.data_type.parse_instrument_id_from_metadata();

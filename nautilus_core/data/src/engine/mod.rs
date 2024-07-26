@@ -66,31 +66,6 @@ pub struct DataEngineConfig {
     pub buffer_deltas: bool,
 }
 
-#[derive(Clone, Default)]
-pub struct DataRequestQueue {
-    req_queue: Rc<RefCell<VecDeque<DataEngineRequest>>>,
-}
-
-impl DataRequestQueue {
-    pub fn send_data_request(&self, req: DataRequest) {
-        self.req_queue
-            .as_ref()
-            .borrow_mut()
-            .push_back(DataEngineRequest::DataRequest(req));
-    }
-
-    pub fn send_subs_request(&self, req: SubscriptionCommand) {
-        self.req_queue
-            .as_ref()
-            .borrow_mut()
-            .push_back(DataEngineRequest::SubscriptionCommand(req));
-    }
-
-    pub fn next(&self) -> Option<DataEngineRequest> {
-        self.req_queue.as_ref().borrow_mut().pop_front()
-    }
-}
-
 pub struct DataEngine<State = PreInitialized> {
     state: PhantomData<State>,
     clock: Box<dyn Clock>,
@@ -104,7 +79,6 @@ pub struct DataEngine<State = PreInitialized> {
     synthetic_quote_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     synthetic_trade_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     buffered_deltas_map: HashMap<InstrumentId, Vec<OrderBookDelta>>,
-    pub req_queue: DataRequestQueue,
     config: DataEngineConfig,
 }
 
@@ -122,7 +96,6 @@ impl DataEngine {
             synthetic_quote_feeds: HashMap::new(),
             synthetic_trade_feeds: HashMap::new(),
             buffered_deltas_map: HashMap::new(),
-            req_queue: DataRequestQueue::default(),
             config,
         }
     }
@@ -141,7 +114,6 @@ impl<S: State> DataEngine<S> {
             synthetic_quote_feeds: self.synthetic_quote_feeds,
             synthetic_trade_feeds: self.synthetic_trade_feeds,
             buffered_deltas_map: self.buffered_deltas_map,
-            req_queue: self.req_queue,
             config: self.config,
         }
     }

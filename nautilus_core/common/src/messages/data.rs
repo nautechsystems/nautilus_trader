@@ -17,7 +17,7 @@ use std::{any::Any, sync::Arc};
 
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
-    data::DataType,
+    data::{Data, DataType},
     identifiers::{ClientId, Venue},
 };
 
@@ -83,4 +83,9 @@ pub struct SubscriptionCommand {
 pub enum DataEngineRequest {
     DataRequest(DataRequest),
     SubscriptionCommand(SubscriptionCommand),
+}
+
+pub enum DataClientResponse {
+    DataResponse(DataResponse),
+    Data(Data),
 }
