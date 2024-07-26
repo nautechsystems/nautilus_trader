@@ -9,6 +9,7 @@ CREATE TYPE BAR_AGGREGATION AS ENUM ('Tick', 'TickImbalance', 'TickRuns', 'Volum
 CREATE TYPE BOOK_ACTION AS ENUM ('Add', 'Update', 'Delete','Clear');
 CREATE TYPE ORDER_STATUS AS ENUM ('Initialized', 'Denied', 'Emulated', 'Released', 'Submitted', 'Accepted', 'Rejected', 'Canceled', 'Expired', 'Triggered', 'PendingUpdate', 'PendingCancel', 'PartiallyFilled', 'Filled');
 CREATE TYPE CURRENCY_TYPE AS ENUM('CRYPTO', 'FIAT', 'COMMODITY_BACKED');
+CREATE TYPE TRAILING_OFFSET_TYPE AS ENUM('NO_TRAILING_OFFSET', 'PRICE', 'BASIS_POINTS', 'TICKS', 'PRICE_TIER');
 
 ------------------- TABLES -------------------
 
@@ -122,7 +123,7 @@ CREATE TABLE IF NOT EXISTS "order_event" (
     trigger_type TEXT,
     limit_offset TEXT,
     trailing_offset TEXT,
-    trailing_offset_type TEXT,
+    trailing_offset_type TRAILING_OFFSET_TYPE,
     expire_time TEXT,
     display_qty TEXT,
     emulation_trigger TEXT,
