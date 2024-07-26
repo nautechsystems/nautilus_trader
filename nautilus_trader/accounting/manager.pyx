@@ -509,38 +509,23 @@ cdef class AccountsManager:
         cdef Money commission = fill.commission
         cdef AccountBalance balance = None
         cdef AccountBalance new_balance = None
+        cdef bint apply_commission = commission._mem.raw != 0
 
         cdef:
             Money pnl
             Money total
             Money free
         for pnl in pnls:
-            currency = pnl.currency
-            if commission.currency != currency and commission._mem.raw != 0:
-                balance = account.balance(commission.currency)
-                if balance is None:
-                    if commission._mem.raw > 0:
-                        self._log.error(
-                            f"Cannot complete transaction: no {commission.currency} "
-                            f"balance to deduct a {commission.to_formatted_str()} commission from"
-                        )
-                        return
-                    else:
-                        balance = AccountBalance(
-                            total=Money(0, commission.currency),
-                            locked=Money(0, commission.currency),
-                            free=Money(0, commission.currency),
-                        )
-                commission_dec = commission.as_decimal()
-                balance.total = Money(balance.total.as_decimal() - commission_dec, commission.currency)
-                balance.free = Money(balance.free.as_decimal() - commission_dec, commission.currency)
-                balances.append(balance)
-            else:
+            if apply_commission and pnl.currency == commission.currency:
+                # Deduct the commission from the realized PnL (the commission may also be negative)
                 pnl = pnl.sub(commission)
+                # Ensure we only apply commission once
+                apply_commission = False
 
-            if not balances and pnl._mem.raw == 0:
-                return  # No adjustment
+            if pnl._mem.raw == 0:
+                continue  # No adjustment
 
+            currency = pnl.currency
             balance = account.balance(currency)
             if balance is None:
                 if pnl._mem.raw < 0:
@@ -580,24 +565,27 @@ cdef class AccountsManager:
 
             balances.append(new_balance)
 
-        # TODO: Refactor and consolidate
-        if not pnls and commission._mem.raw != 0:
+        if apply_commission:
+            # We still need to apply the commission
             currency = commission.currency
-            balance = account.balance(currency)
+            balance = account.balance(commission.currency)
             if balance is None:
-                self._log.error(
-                    "Cannot calculate account state: "
-                    f"no cached balances for {currency}"
-                )
-                return
-
+                if commission._mem.raw > 0:
+                    self._log.error(
+                        f"Cannot complete transaction: no {commission.currency} "
+                        f"balance to deduct a {commission.to_formatted_str()} commission from"
+                    )
+                    return
+                else:
+                    balance = AccountBalance(
+                        total=Money(0, commission.currency),
+                        locked=Money(0, commission.currency),
+                        free=Money(0, commission.currency),
+                    )
             commission_dec = commission.as_decimal()
-            new_balance = AccountBalance(
-                total=Money(balance.total.as_decimal() - commission_dec, currency),
-                locked=balance.locked,
-                free=Money(balance.free.as_decimal() - commission_dec, currency),
-            )
-            balances.append(new_balance)
+            balance.total = Money(balance.total.as_decimal() - commission_dec, commission.currency)
+            balance.free = Money(balance.free.as_decimal() - commission_dec, commission.currency)
+            balances.append(balance)
 
         if not balances:
             return  # No adjustment

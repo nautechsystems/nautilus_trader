@@ -28,6 +28,7 @@ Released on TBD (UTC).
 
 ### Fixes
 - Fixed rounding errors in accounting calculations for large values (using `decimal.Decimal` internally)
+- Fixed multi-currency account commission handling with multiple PnL currencies (#1805), thanks for reporting @dpmabo
 - Fixed `LiveExecutionEngine` handling of adapter client execution report causing `None` mass status (#1789), thanks for reporting @faysou
 - Fixed `InteractiveBrokersExecutionClient` handling of instruments not found when generating execution reports (#1789), thanks for reporting @faysou
 - Fixed Bybit parsing of trade and quote ticks for websocket messages (#1794), thanks @davidsblom
