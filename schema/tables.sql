@@ -3,7 +3,7 @@
 CREATE TYPE ACCOUNT_TYPE AS ENUM ('Cash', 'Margin', 'Betting');
 CREATE TYPE AGGREGATION_SOURCE AS ENUM ('External', 'Internal');
 CREATE TYPE AGGRESSOR_SIDE AS ENUM ('NoAggressor', 'Buyer', 'Seller');
-CREATE TYPE ASSET_CLASS AS ENUM ('Fx', 'Equity', 'Commodity', 'Debt', 'Index', 'Cryptocurrency', 'Alternative');
+CREATE TYPE ASSET_CLASS AS ENUM ('FX', 'EQUITY', 'COMMODITY', 'DEBT', 'INDEX', 'CRYPTOCURRENCY', 'ALTERNATIVE');
 CREATE TYPE INSTRUMENT_CLASS AS ENUM ('Spot', 'Swap', 'Future', 'FutureSpread', 'Forward', 'Cfg', 'Bond', 'Option', 'OptionSpread', 'Warrant', 'SportsBetting');
 CREATE TYPE BAR_AGGREGATION AS ENUM ('Tick', 'TickImbalance', 'TickRuns', 'Volume', 'VolumeImbalance', 'VolumeRuns', 'Value', 'ValueImbalance', 'ValueRuns', 'Millisecond', 'Second', 'Minute', 'Hour', 'Day', 'Week', 'Month');
 CREATE TYPE BOOK_ACTION AS ENUM ('Add', 'Update', 'Delete','Clear');
@@ -52,7 +52,7 @@ CREATE TABLE IF NOT EXISTS "instrument" (
     quote_currency TEXT REFERENCES currency(id),
     settlement_currency TEXT REFERENCES currency(id),
     isin TEXT,
-    asset_class TEXT,
+    asset_class ASSET_CLASS,
     exchange TEXT,
     multiplier TEXT,
     option_kind TEXT,

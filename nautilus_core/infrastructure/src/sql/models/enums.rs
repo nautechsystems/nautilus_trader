@@ -15,7 +15,7 @@
 
 use std::str::FromStr;
 
-use nautilus_model::enums::CurrencyType;
+use nautilus_model::enums::{AssetClass, CurrencyType};
 use sqlx::{
     database::{HasArguments, HasValueRef},
     encode::IsNull,
@@ -51,6 +51,43 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for CurrencyTypeModel {
 impl sqlx::Type<sqlx::Postgres> for CurrencyTypeModel {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         PgTypeInfo::with_name("currency_type")
+    }
+
+    fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
+        *ty == Self::type_info() || <&str as Type<sqlx::Postgres>>::compatible(ty)
+    }
+}
+
+pub struct AssetClassModel(pub AssetClass);
+
+impl sqlx::Encode<'_, sqlx::Postgres> for AssetClassModel {
+    fn encode_by_ref(&self, buf: &mut <Postgres as HasArguments<'_>>::ArgumentBuffer) -> IsNull {
+        let asset_type_str = match self.0 {
+            AssetClass::FX => "FX",
+            AssetClass::Equity => "EQUITY",
+            AssetClass::Commodity => "COMMODITY",
+            AssetClass::Debt => "DEBT",
+            AssetClass::Index => "INDEX",
+            AssetClass::Cryptocurrency => "CRYPTOCURRENCY",
+            AssetClass::Alternative => "ALTERNATIVE",
+        };
+        <&str as sqlx::Encode<sqlx::Postgres>>::encode(asset_type_str, buf)
+    }
+}
+
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for AssetClassModel {
+    fn decode(value: <Postgres as HasValueRef<'r>>::ValueRef) -> Result<Self, BoxDynError> {
+        let asset_class_str: &str = <&str as Decode<sqlx::Postgres>>::decode(value)?;
+        let asset_class = AssetClass::from_str(asset_class_str).map_err(|_| {
+            sqlx::Error::Decode(format!("Invalid asset class: {}", asset_class_str).into())
+        })?;
+        Ok(AssetClassModel(asset_class))
+    }
+}
+
+impl sqlx::Type<sqlx::Postgres> for AssetClassModel {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        PgTypeInfo::with_name("asset_class")
     }
 
     fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
