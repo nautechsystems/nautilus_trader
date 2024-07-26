@@ -12,7 +12,8 @@ Released on TBD (UTC).
 - Implemented `DataEngine` v2 in Rust (#1785), thanks @twitu
 - Implemented `FillModel` in Rust (#1801), thanks @filipmacek
 - Implemented `FixedFeeModel` in Rust (#1802), thanks @filipmacek
-- Implemented Postgres native enum mapping for `CurrencyType` in Rust (#1797), thanks @filipmacek
+- Implemented `MakerTakerFeeModel` in Rust (#1803), thanks @filipmacek
+- Implemented Postgres native enum mappings in Rust (#1797, #1806), thanks @filipmacek
 - Refactored order submission error handling for Interactive Brokers (#1783), thanks @rsmb7z
 - Improved live reconciliation robustness (will now generate inferred orders necessary to align external position state)
 - Improved tests for Interactive Brokers (#1776), thanks @mylesgamez
