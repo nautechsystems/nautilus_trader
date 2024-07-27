@@ -108,6 +108,8 @@ pub trait CacheDatabaseAdapter {
 
     fn add_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()>;
 
+    fn load_trades(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<TradeTick>>;
+
     fn add_bar(&mut self, bar: &Bar) -> anyhow::Result<()>;
 
     fn index_venue_order_id(
