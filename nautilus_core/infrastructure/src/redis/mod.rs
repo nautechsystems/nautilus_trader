@@ -154,26 +154,39 @@ pub fn get_buffer_interval(config: &HashMap<String, Value>) -> Duration {
     Duration::from_millis(buffer_interval_ms.unwrap_or(0))
 }
 
-/// Parse the stream name from the given identifiers and config.
-pub fn get_stream_name(
+/// Parse the external stream keys from the given config.
+pub fn get_external_stream_keys(config: &HashMap<String, Value>) -> Vec<String> {
+    config
+        .get("external_streams")
+        .and_then(|external_streams| external_streams.as_array())
+        .map_or(Vec::new(), |streams| {
+            streams
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+}
+
+/// Parse the stream key from the given identifiers and config.
+pub fn get_stream_key(
     trader_id: TraderId,
     instance_id: UUID4,
     config: &HashMap<String, Value>,
 ) -> String {
-    let mut stream_name = String::new();
+    let mut stream_key = String::new();
 
     if let Some(json!(true)) = config.get("use_trader_prefix") {
-        stream_name.push_str("trader-");
+        stream_key.push_str("trader-");
     }
 
     if let Some(json!(true)) = config.get("use_trader_id") {
-        stream_name.push_str(trader_id.as_str());
-        stream_name.push(REDIS_DELIMITER);
+        stream_key.push_str(trader_id.as_str());
+        stream_key.push(REDIS_DELIMITER);
     }
 
     if let Some(json!(true)) = config.get("use_instance_id") {
-        stream_name.push_str(&format!("{instance_id}"));
-        stream_name.push(REDIS_DELIMITER);
+        stream_key.push_str(&format!("{instance_id}"));
+        stream_key.push(REDIS_DELIMITER);
     }
 
     let stream_prefix = config
@@ -181,8 +194,8 @@ pub fn get_stream_name(
         .expect("Invalid configuration: no `streams_prefix` key found")
         .as_str()
         .expect("Invalid configuration: `streams_prefix` is not a string");
-    stream_name.push_str(stream_prefix);
-    stream_name
+    stream_key.push_str(stream_prefix);
+    stream_key
 }
 
 /// Parse the Redis database version with the given connection.
@@ -336,7 +349,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_get_stream_name_with_trader_prefix_and_instance_id() {
+    fn test_get_stream_key_with_trader_prefix_and_instance_id() {
         let trader_id = TraderId::from("tester-123");
         let instance_id = UUID4::new();
         let mut config = HashMap::new();
@@ -345,7 +358,7 @@ mod tests {
         config.insert("use_instance_id".to_string(), json!(true));
         config.insert("streams_prefix".to_string(), json!("streams"));
 
-        let key = get_stream_name(trader_id, instance_id, &config);
+        let key = get_stream_key(trader_id, instance_id, &config);
         assert_eq!(key, format!("trader-tester-123:{instance_id}:streams"));
     }
 
@@ -359,7 +372,7 @@ mod tests {
         config.insert("use_instance_id".to_string(), json!(false));
         config.insert("streams_prefix".to_string(), json!("streams"));
 
-        let key = get_stream_name(trader_id, instance_id, &config);
+        let key = get_stream_key(trader_id, instance_id, &config);
         assert_eq!(key, format!("streams"));
     }
 }

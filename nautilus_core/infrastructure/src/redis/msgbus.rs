@@ -16,7 +16,11 @@
 use std::{
     collections::{HashMap, VecDeque},
     fmt,
-    sync::mpsc::TryRecvError,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc::TryRecvError,
+        Arc,
+    },
     thread::{self},
     time::{Duration, Instant},
 };
@@ -29,10 +33,12 @@ use nautilus_model::identifiers::TraderId;
 use redis::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use streams::StreamReadOptions;
 use tracing::{debug, error};
 
+use super::get_external_stream_keys;
 use crate::redis::{
-    create_redis_connection, get_buffer_interval, get_database_config, get_stream_name,
+    create_redis_connection, get_buffer_interval, get_database_config, get_stream_key,
 };
 
 const XTRIM: &str = "XTRIM";
@@ -78,6 +84,7 @@ pub struct RedisMessageBusDatabase {
     pub_handle: Option<std::thread::JoinHandle<anyhow::Result<()>>>,
     stream_rx: Option<tokio::sync::mpsc::Receiver<BusMessage>>,
     stream_handle: Option<std::thread::JoinHandle<anyhow::Result<()>>>,
+    stream_signal: Arc<AtomicBool>,
 }
 
 impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
@@ -99,9 +106,12 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
                 .expect("Error spawning '{MSGBUS_PUBLISH}' thread"),
         );
 
-        // Conditionally create stream thread and channel
-        let config_clone = config.clone();
-        let (stream_rx, stream_handle) = if true {
+        // Conditionally create stream thread and channel if external streams configured
+        let external_streams = get_external_stream_keys(&config);
+        let stream_signal = Arc::new(AtomicBool::new(false));
+        let (stream_rx, stream_handle) = if !external_streams.is_empty() {
+            let config_clone = config.clone();
+            let stream_signal_clone = stream_signal.clone();
             let (stream_tx, stream_rx) = tokio::sync::mpsc::channel::<BusMessage>(100_000);
             (
                 Some(stream_rx),
@@ -109,7 +119,12 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
                     std::thread::Builder::new()
                         .name(MSGBUS_STREAM.to_string())
                         .spawn(move || {
-                            stream_messages(stream_tx, trader_id, instance_id, config_clone)
+                            stream_messages(
+                                stream_tx,
+                                config_clone,
+                                external_streams,
+                                stream_signal_clone,
+                            )
                         })
                         .expect("Error spawning '{MSGBUS_STREAM}' thread"),
                 ),
@@ -125,6 +140,7 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
             pub_handle,
             stream_rx,
             stream_handle,
+            stream_signal,
         })
     }
 
@@ -155,6 +171,8 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
                 error!("Error joining '{MSGBUS_PUBLISH}' thread: {:?}", e);
             }
         };
+
+        self.stream_signal.store(true, Ordering::SeqCst);
 
         if let Some(handle) = self.stream_handle.take() {
             debug!("Joining '{MSGBUS_STREAM}' thread");
@@ -197,7 +215,7 @@ pub fn publish_messages(
 
     let db_config = get_database_config(&config)?;
     let mut con = create_redis_connection(MSGBUS_PUBLISH, &db_config)?;
-    let stream_name = get_stream_name(trader_id, instance_id, &config);
+    let stream_key = get_stream_key(trader_id, instance_id, &config);
 
     // Autotrimming
     let autotrim_mins = config
@@ -221,7 +239,7 @@ pub fn publish_messages(
         if last_drain.elapsed() >= buffer_interval && !buffer.is_empty() {
             drain_buffer(
                 &mut con,
-                &stream_name,
+                &stream_key,
                 autotrim_duration,
                 &mut last_trim_index,
                 &mut buffer,
@@ -248,7 +266,7 @@ pub fn publish_messages(
     if !buffer.is_empty() {
         drain_buffer(
             &mut con,
-            &stream_name,
+            &stream_key,
             autotrim_duration,
             &mut last_trim_index,
             &mut buffer,
@@ -260,7 +278,7 @@ pub fn publish_messages(
 
 fn drain_buffer(
     conn: &mut Connection,
-    stream_name: &str,
+    stream_key: &str,
     autotrim_duration: Option<Duration>,
     last_trim_index: &mut HashMap<String, usize>,
     buffer: &mut VecDeque<BusMessage>,
@@ -273,14 +291,14 @@ fn drain_buffer(
             ("topic", msg.topic.as_ref()),
             ("payload", msg.payload.as_ref()),
         ];
-        pipe.xadd(stream_name, "*", &items);
+        pipe.xadd(stream_key, "*", &items);
 
         if autotrim_duration.is_none() {
             continue; // Nothing else to do
         }
 
         // Autotrim stream
-        let last_trim_ms = last_trim_index.entry(stream_name.to_string()).or_insert(0); // Remove clone
+        let last_trim_ms = last_trim_index.entry(stream_key.to_string()).or_insert(0); // Remove clone
         let unix_duration_now = duration_since_unix_epoch();
         let trim_buffer = Duration::from_secs(TRIM_BUFFER_SECONDS);
 
@@ -289,16 +307,16 @@ fn drain_buffer(
             let min_timestamp_ms =
                 (unix_duration_now - autotrim_duration.unwrap()).as_millis() as usize;
             let result: Result<(), redis::RedisError> = redis::cmd(XTRIM)
-                .arg(stream_name)
+                .arg(stream_key)
                 .arg(MINID)
                 .arg(min_timestamp_ms)
                 .query(conn);
 
             if let Err(e) = result {
-                error!("Error trimming stream '{stream_name}': {e}");
+                error!("Error trimming stream '{stream_key}': {e}");
             } else {
                 last_trim_index.insert(
-                    stream_name.to_string(),
+                    stream_key.to_string(),
                     unix_duration_now.as_millis() as usize,
                 );
             }
@@ -311,21 +329,33 @@ fn drain_buffer(
 #[allow(clippy::type_complexity)]
 pub fn stream_messages(
     tx: tokio::sync::mpsc::Sender<BusMessage>,
-    trader_id: TraderId,
-    instance_id: UUID4,
     config: HashMap<String, Value>,
+    stream_keys: Vec<String>,
+    stream_signal: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
     debug!("Starting Redis message streaming");
 
     let db_config = get_database_config(&config)?;
     let mut con = create_redis_connection(MSGBUS_PUBLISH, &db_config)?;
-    let stream_name = get_stream_name(trader_id, instance_id, &config);
+    let stream_keys = &stream_keys
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<&str>>();
     let mut last_id = "0".to_string();
+    let opts = StreamReadOptions::default().block(100);
 
     loop {
-        let result: Result<RedisStreamBulk, _> = con.xread(&[&stream_name], &[&last_id]);
+        if stream_signal.load(Ordering::SeqCst) {
+            break;
+        }
+        let result: Result<RedisStreamBulk, _> =
+            con.xread_options(&[&stream_keys], &[&last_id], &opts);
         match result {
             Ok(stream_bulk) => {
+                if stream_bulk.is_empty() {
+                    // Timeout occurred: no messages received
+                    continue;
+                }
                 for entry in stream_bulk.iter() {
                     for (_stream_key, stream_msgs) in entry.iter() {
                         for stream_msg in stream_msgs.iter() {
@@ -335,7 +365,7 @@ pub fn stream_messages(
                                     Ok(msg) => {
                                         if tx.blocking_send(msg).is_err() {
                                             debug!("Receiver dropped");
-                                            return Ok(());
+                                            break;
                                         }
                                     }
                                     Err(e) => {
@@ -353,6 +383,7 @@ pub fn stream_messages(
             }
         }
     }
+    Ok(())
 }
 
 fn decode_bus_message(stream_msg: &redis::Value) -> anyhow::Result<BusMessage> {
@@ -386,17 +417,17 @@ fn decode_bus_message(stream_msg: &redis::Value) -> anyhow::Result<BusMessage> {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
+#[cfg(target_os = "linux")] // Run Redis tests on Linux platforms only
 #[cfg(test)]
 mod tests {
     use std::thread;
 
     use redis::Commands;
+    use rstest::*;
     use serde_json::json;
 
-    use crate::redis::flush_redis;
-
     use super::*;
-    use rstest::*;
+    use crate::redis::flush_redis;
 
     #[fixture]
     fn redis_connection() -> redis::Connection {
@@ -422,12 +453,15 @@ mod tests {
         config.insert("use_trader_prefix".to_string(), json!(true));
         config.insert("use_trader_id".to_string(), json!(true));
 
-        let stream_name = get_stream_name(trader_id, instance_id, &config);
+        let stream_key = get_stream_key(trader_id, instance_id, &config);
+        let external_streams = vec![stream_key.clone()];
+        let stream_signal = Arc::new(AtomicBool::new(false));
+        let stream_signal_clone = stream_signal.clone();
 
-        // Prepare test data
+        // Publish test message
         let _: () = con
             .xadd(
-                stream_name,
+                stream_key,
                 "*",
                 &[("topic", "topic1"), ("payload", "data1")],
             )
@@ -435,7 +469,7 @@ mod tests {
 
         // Start the message streaming in a separate thread
         thread::spawn(move || {
-            stream_messages(tx, trader_id, instance_id, config).unwrap();
+            stream_messages(tx, config, external_streams, stream_signal_clone).unwrap();
         });
 
         // Receive and verify the message
@@ -443,6 +477,8 @@ mod tests {
         assert_eq!(msg.topic, "topic1");
         assert_eq!(msg.payload, Bytes::from("data1"));
 
+        // Shutdown and cleanup
+        rx.close();
         flush_redis(&mut con).unwrap()
     }
 }

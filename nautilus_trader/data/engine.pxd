@@ -46,6 +46,7 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class DataEngine(Component):
     cdef readonly Cache _cache
     cdef readonly DataClient _default_client
+    cdef readonly set[ClientId] _external_clients
     cdef readonly object _catalog
 
     cdef readonly dict[ClientId, DataClient] _clients

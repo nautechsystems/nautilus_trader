@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from nautilus_trader.common.config import NautilusConfig
+from nautilus_trader.model.identifiers import ClientId
 
 
 class DataEngineConfig(NautilusConfig, frozen=True):
@@ -24,6 +25,9 @@ class DataEngineConfig(NautilusConfig, frozen=True):
 
     Parameters
     ----------
+    external_clients : list[ClientId], optional
+        The client IDs declared for external stream processing.
+        The data engine will not attempt to send data commands to these client IDs.
     time_bars_build_with_no_updates : bool, default True
         If time bar aggregators will build and emit bars with no new market updates.
     time_bars_timestamp_on_close : bool, default True
@@ -42,6 +46,7 @@ class DataEngineConfig(NautilusConfig, frozen=True):
 
     """
 
+    external_clients: list[ClientId] | None = None
     time_bars_build_with_no_updates: bool = True
     time_bars_timestamp_on_close: bool = True
     time_bars_interval_type: str = "left-open"
