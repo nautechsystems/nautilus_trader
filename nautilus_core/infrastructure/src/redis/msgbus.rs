@@ -15,7 +15,6 @@
 
 use std::{
     collections::{HashMap, VecDeque},
-    fmt,
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc::TryRecvError,
@@ -27,11 +26,13 @@ use std::{
 
 use bytes::Bytes;
 use futures::stream::Stream;
-use nautilus_common::msgbus::{database::MessageBusDatabaseAdapter, CLOSE_TOPIC};
+use nautilus_common::msgbus::{
+    database::{BusMessage, MessageBusDatabaseAdapter},
+    CLOSE_TOPIC,
+};
 use nautilus_core::{time::duration_since_unix_epoch, uuid::UUID4};
 use nautilus_model::identifiers::TraderId;
 use redis::*;
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use streams::StreamReadOptions;
 use tracing::{debug, error};
@@ -48,30 +49,6 @@ const MSGBUS_STREAM: &str = "msgbus-stream";
 const TRIM_BUFFER_SECONDS: u64 = 60;
 
 type RedisStreamBulk = Vec<HashMap<String, Vec<HashMap<String, redis::Value>>>>;
-
-/// Represents a bus message including a topic and payload.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.infrastructure")
-)]
-pub struct BusMessage {
-    /// The topic to publish on.
-    pub topic: String,
-    /// The serialized payload for the message.
-    pub payload: Bytes,
-}
-
-impl fmt::Display for BusMessage {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "[{}] {}",
-            self.topic,
-            String::from_utf8_lossy(&self.payload)
-        )
-    }
-}
 
 #[cfg_attr(
     feature = "python",

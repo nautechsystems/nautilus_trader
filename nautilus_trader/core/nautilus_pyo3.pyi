@@ -2457,6 +2457,12 @@ def update_book_with_trade_tick(book: OrderBook, trade: TradeTick) -> None: ...
 # Infrastructure
 ###################################################################################################
 
+class BusMessage:
+    @property
+    def topic(self) -> str: ...
+    @property
+    def payload(self) -> bytes: ...
+
 class RedisMessageBusDatabase:
     def __init__(
         self,
