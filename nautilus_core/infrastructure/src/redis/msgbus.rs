@@ -389,10 +389,23 @@ mod tests {
     use redis::Commands;
     use serde_json::json;
 
-    use super::*;
+    use crate::redis::flush_redis;
 
+    use super::*;
+    use rstest::*;
+
+    #[fixture]
+    fn redis_connection() -> redis::Connection {
+        let db_config = json!({"type": "redis"});
+        let mut con = create_redis_connection(MSGBUS_STREAM, &db_config).unwrap();
+        flush_redis(&mut con).unwrap();
+        con
+    }
+
+    #[rstest]
     #[tokio::test]
-    async fn test_stream_messages() {
+    async fn test_stream_messages(redis_connection: redis::Connection) {
+        let mut con = redis_connection;
         let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
 
         let trader_id = TraderId::from("tester-001");
@@ -405,7 +418,6 @@ mod tests {
         config.insert("use_trader_prefix".to_string(), json!(true));
         config.insert("use_trader_id".to_string(), json!(true));
 
-        let mut con = create_redis_connection(MSGBUS_STREAM, &db_config).unwrap();
         let stream_name = get_stream_name(trader_id, instance_id, &config);
 
         // Prepare test data
@@ -427,7 +439,6 @@ mod tests {
         assert_eq!(msg.topic, "topic1");
         assert_eq!(msg.payload, Bytes::from("data1"));
 
-        // Flush Redis database
-        let _: () = redis::cmd("FLUSHDB").exec(&mut con).unwrap();
+        flush_redis(&mut con).unwrap()
     }
 }
