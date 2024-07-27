@@ -15,7 +15,7 @@
 
 use std::str::FromStr;
 
-use nautilus_model::enums::{AssetClass, CurrencyType, TrailingOffsetType};
+use nautilus_model::enums::{AggressorSide, AssetClass, CurrencyType, TrailingOffsetType};
 use sqlx::{
     database::{HasArguments, HasValueRef},
     encode::IsNull,
@@ -126,6 +126,39 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for TrailingOffsetTypeModel {
 impl sqlx::Type<sqlx::Postgres> for TrailingOffsetTypeModel {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         PgTypeInfo::with_name("trailing_offset_type")
+    }
+
+    fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
+        *ty == Self::type_info() || <&str as Type<sqlx::Postgres>>::compatible(ty)
+    }
+}
+
+pub struct AggressorSideModel(pub AggressorSide);
+
+impl sqlx::Encode<'_, sqlx::Postgres> for AggressorSideModel {
+    fn encode_by_ref(&self, buf: &mut <Postgres as HasArguments<'_>>::ArgumentBuffer) -> IsNull {
+        let aggressor_side_str = match self.0 {
+            AggressorSide::NoAggressor => "NO_AGGRESSOR",
+            AggressorSide::Buyer => "BUYER",
+            AggressorSide::Seller => "SELLER",
+        };
+        <&str as sqlx::Encode<sqlx::Postgres>>::encode(aggressor_side_str, buf)
+    }
+}
+
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for AggressorSideModel {
+    fn decode(value: <Postgres as HasValueRef<'r>>::ValueRef) -> Result<Self, BoxDynError> {
+        let aggressor_side_str: &str = <&str as Decode<sqlx::Postgres>>::decode(value)?;
+        let aggressor_side = AggressorSide::from_str(aggressor_side_str).map_err(|_| {
+            sqlx::Error::Decode(format!("Invalid aggressor side: {}", aggressor_side_str).into())
+        })?;
+        Ok(AggressorSideModel(aggressor_side))
+    }
+}
+
+impl sqlx::Type<sqlx::Postgres> for AggressorSideModel {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        PgTypeInfo::with_name("aggressor_side")
     }
 
     fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {

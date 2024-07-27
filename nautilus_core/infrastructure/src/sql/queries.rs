@@ -17,6 +17,7 @@ use std::collections::HashMap;
 
 use nautilus_model::{
     accounts::{any::AccountAny, base::Account},
+    data::trade::TradeTick,
     events::{
         account::state::AccountState,
         order::{OrderEvent, OrderEventAny},
@@ -33,7 +34,8 @@ use sqlx::{PgPool, Row};
 
 use crate::sql::models::{
     accounts::AccountEventModel,
-    enums::{AssetClassModel, CurrencyTypeModel, TrailingOffsetTypeModel},
+    data::TradeTickModel,
+    enums::{AggressorSideModel, AssetClassModel, CurrencyTypeModel, TrailingOffsetTypeModel},
     general::GeneralRow,
     instruments::InstrumentAnyModel,
     orders::OrderEventAnyModel,
@@ -559,5 +561,46 @@ impl DatabaseQueries {
             }
         }
         Ok(accounts)
+    }
+
+    pub async fn add_trade(pool: &PgPool, trade: &TradeTick) -> anyhow::Result<()> {
+        sqlx::query(r#"
+            INSERT INTO "trade" (
+                instrument_id, price, quantity, aggressor_side, venue_trade_id,
+                ts_event, ts_init, created_at, updated_at
+            ) VALUES (
+                $1, $2, $3, $4::aggressor_side, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            ON CONFLICT (id)
+            DO UPDATE
+            SET
+                instrument_id = $1, price = $2, quantity = $3, aggressor_side = $4, venue_trade_id = $5,
+                ts_event = $6, ts_init = $7, updated_at = CURRENT_TIMESTAMP
+        "#)
+            .bind(trade.instrument_id.to_string())
+            .bind(trade.price.to_string())
+            .bind(trade.size.to_string())
+            .bind(AggressorSideModel(trade.aggressor_side))
+            .bind(trade.trade_id.to_string())
+            .bind(trade.ts_event.to_string())
+            .bind(trade.ts_init.to_string())
+            .execute(pool)
+            .await
+            .map(|_| ())
+            .map_err(|err| anyhow::anyhow!("Failed to insert into trade table: {err}"))
+    }
+
+    pub async fn load_trades(
+        pool: &PgPool,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Vec<TradeTick>> {
+        sqlx::query_as::<_, TradeTickModel>(
+            r#"SELECT * FROM "trade" WHERE instrument_id = $1 ORDER BY ts_event ASC"#,
+        )
+        .bind(instrument_id.to_string())
+        .fetch_all(pool)
+        .await
+        .map(|rows| rows.into_iter().map(|row| row.0).collect())
+        .map_err(|err| anyhow::anyhow!("Failed to load trades: {err}"))
     }
 }
