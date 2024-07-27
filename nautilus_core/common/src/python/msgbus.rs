@@ -19,7 +19,22 @@ use pyo3::{pymethods, PyObject, PyRef, PyRefMut};
 use ustr::Ustr;
 
 use super::handler::PythonMessageHandler;
-use crate::msgbus::{MessageBus, ShareableMessageHandler};
+use crate::msgbus::{database::BusMessage, MessageBus, ShareableMessageHandler};
+
+#[pymethods]
+impl BusMessage {
+    #[getter]
+    #[pyo3(name = "topic")]
+    fn py_close(&mut self) -> String {
+        self.topic.clone()
+    }
+
+    #[getter]
+    #[pyo3(name = "payload")]
+    fn py_payload(&mut self) -> &[u8] {
+        self.payload.as_ref()
+    }
+}
 
 #[pymethods]
 impl MessageBus {

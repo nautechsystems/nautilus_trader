@@ -26,24 +26,7 @@ use nautilus_model::identifiers::TraderId;
 use pyo3::{prelude::*, types::PyBytes};
 use tracing::error;
 
-use crate::redis::msgbus::{BusMessage, RedisMessageBusDatabase};
-
-#[pymethods]
-impl BusMessage {
-    /// The topic to publish on.
-    #[getter]
-    #[pyo3(name = "topic")]
-    fn py_close(&mut self) -> String {
-        self.topic.clone()
-    }
-
-    /// The serialized payload for the message.
-    #[getter]
-    #[pyo3(name = "payload")]
-    fn py_payload(&mut self) -> &[u8] {
-        self.payload.as_ref()
-    }
-}
+use crate::redis::msgbus::RedisMessageBusDatabase;
 
 #[pymethods]
 impl RedisMessageBusDatabase {
