@@ -30,27 +30,28 @@ use tracing::{debug, info};
 const REDIS_MIN_VERSION: &str = "6.2.0";
 const REDIS_DELIMITER: char = ':';
 
-pub fn get_redis_url(database_config: &serde_json::Value) -> (String, String) {
-    let host = database_config
+/// Parse a Redis connection url from the given database config.
+pub fn get_redis_url(db_config: &serde_json::Value) -> (String, String) {
+    let host = db_config
         .get("host")
         .and_then(|v| v.as_str())
         .unwrap_or("127.0.0.1");
-    let port = database_config
+    let port = db_config
         .get("port")
         .and_then(|v| {
             v.as_u64()
                 .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
         })
         .unwrap_or(6379);
-    let username = database_config
+    let username = db_config
         .get("username")
         .and_then(|v| v.as_str())
         .unwrap_or_default();
-    let password = database_config
+    let password = db_config
         .get("password")
         .and_then(|v| v.as_str())
         .unwrap_or_default();
-    let use_ssl = database_config
+    let use_ssl = db_config
         .get("ssl")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
@@ -92,6 +93,7 @@ pub fn get_redis_url(database_config: &serde_json::Value) -> (String, String) {
     (url, redacted_url)
 }
 
+/// Create a new Redis database connection from the given database config.
 pub fn create_redis_connection(
     con_name: &str,
     db_config: &serde_json::Value,
@@ -120,6 +122,12 @@ pub fn create_redis_connection(
     Ok(con)
 }
 
+/// Flush the Redis database for the given connection.
+pub fn flush_redis(con: &mut redis::Connection) -> anyhow::Result<(), RedisError> {
+    redis::cmd("FLUSHDB").exec(con)
+}
+
+/// Parse the database configuration from the given config.
 pub fn get_database_config(
     config: &HashMap<String, serde_json::Value>,
 ) -> anyhow::Result<serde_json::Value> {
@@ -129,14 +137,16 @@ pub fn get_database_config(
         .clone())
 }
 
-pub fn get_timeout_duration(database_config: &serde_json::Value, default: u64) -> Duration {
-    let timeout_seconds = database_config
+/// Parse the timeout duration the given database config.
+pub fn get_timeout_duration(db_config: &serde_json::Value, default: u64) -> Duration {
+    let timeout_seconds = db_config
         .get("timeout")
         .and_then(|v| v.as_u64())
         .unwrap_or(default);
     Duration::from_secs(timeout_seconds)
 }
 
+/// Parse the buffer interval from the given config.
 pub fn get_buffer_interval(config: &HashMap<String, Value>) -> Duration {
     let buffer_interval_ms = config
         .get("buffer_interval_ms")
@@ -144,7 +154,8 @@ pub fn get_buffer_interval(config: &HashMap<String, Value>) -> Duration {
     Duration::from_millis(buffer_interval_ms.unwrap_or(0))
 }
 
-fn get_stream_name(
+/// Parse the stream name from the given identifiers and config.
+pub fn get_stream_name(
     trader_id: TraderId,
     instance_id: UUID4,
     config: &HashMap<String, Value>,
@@ -174,6 +185,7 @@ fn get_stream_name(
     stream_name
 }
 
+/// Parse the Redis database version with the given connection.
 pub fn get_redis_version(conn: &mut Connection) -> anyhow::Result<String> {
     let info: String = redis::cmd("INFO").query(conn)?;
     parse_redis_version(&info)
