@@ -267,6 +267,29 @@ mod tests {
     }
 
     #[rstest]
+    fn test_get_database_config_valid() {
+        let mut config = HashMap::new();
+        let db_config = json!({
+            "type": "redis",
+            "host": "localhost",
+            "port": 6379,
+        });
+        config.insert("database".to_string(), db_config.clone());
+
+        let result = get_database_config(&config).unwrap();
+        assert_eq!(result, db_config);
+    }
+
+    #[rstest]
+    fn test_get_database_config_missing() {
+        let config = HashMap::new();
+
+        let result = get_database_config(&config);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "No database config");
+    }
+
+    #[rstest]
     fn test_get_timeout_duration_default() {
         let db = json!({});
 
