@@ -16,12 +16,13 @@
 use std::{
     collections::{HashMap, VecDeque},
     fmt,
-    sync::mpsc::{channel, Receiver, Sender, TryRecvError},
-    thread::{self, JoinHandle},
+    sync::mpsc::TryRecvError,
+    thread::{self},
     time::{Duration, Instant},
 };
 
 use bytes::Bytes;
+use futures::stream::Stream;
 use nautilus_common::msgbus::{database::MessageBusDatabaseAdapter, CLOSE_TOPIC};
 use nautilus_core::{time::duration_since_unix_epoch, uuid::UUID4};
 use nautilus_model::identifiers::TraderId;
@@ -30,17 +31,21 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tracing::{debug, error};
 
-use crate::redis::{create_redis_connection, get_buffer_interval, get_stream_name};
+use crate::redis::{
+    create_redis_connection, get_buffer_interval, get_database_config, get_stream_name,
+};
 
 const XTRIM: &str = "XTRIM";
 const MINID: &str = "MINID";
+const MSGBUS_PUBLISH: &str = "msgbus-publish";
+const MSGBUS_STREAM: &str = "msgbus-stream";
 const TRIM_BUFFER_SECONDS: u64 = 60;
 
 /// Represents a bus message including a topic and payload.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BusMessage {
     /// The topic to publish on.
-    pub topic: String,
+    pub topic: Bytes,
     /// The serialized payload for the message.
     pub payload: Bytes,
 }
@@ -50,7 +55,7 @@ impl fmt::Display for BusMessage {
         write!(
             f,
             "[{}] {}",
-            self.topic,
+            String::from_utf8_lossy(&self.topic),
             String::from_utf8_lossy(&self.payload)
         )
     }
@@ -62,8 +67,11 @@ impl fmt::Display for BusMessage {
 )]
 pub struct RedisMessageBusDatabase {
     pub trader_id: TraderId,
-    tx: Sender<BusMessage>,
-    handle: Option<JoinHandle<anyhow::Result<()>>>,
+    pub instance_id: UUID4,
+    pub_tx: std::sync::mpsc::Sender<BusMessage>,
+    pub_handle: Option<std::thread::JoinHandle<anyhow::Result<()>>>,
+    stream_rx: Option<tokio::sync::mpsc::Receiver<BusMessage>>,
+    stream_handle: Option<std::thread::JoinHandle<anyhow::Result<()>>>,
 }
 
 impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
@@ -75,26 +83,50 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
         config: HashMap<String, serde_json::Value>,
     ) -> anyhow::Result<Self> {
         let config_clone = config.clone();
-        let (tx, rx) = channel::<BusMessage>();
-        let handle = Some(
+        let (pub_tx, pub_rx) = std::sync::mpsc::channel::<BusMessage>();
+
+        // Create publish thread and channel
+        let pub_handle = Some(
             thread::Builder::new()
-                .name("msgbus".to_string())
-                .spawn(move || handle_messages(rx, trader_id, instance_id, config_clone))
-                .expect("Error spawning `msgbus` thread"),
+                .name(MSGBUS_PUBLISH.to_string())
+                .spawn(move || publish_messages(pub_rx, trader_id, instance_id, config_clone))
+                .expect("Error spawning '{MSGBUS_PUBLISH}' thread"),
         );
+
+        // Conditionally create stream thread and channel
+        let config_clone = config.clone();
+        let (stream_rx, stream_handle) = if true {
+            let (stream_tx, stream_rx) = tokio::sync::mpsc::channel::<BusMessage>(100_000);
+            (
+                Some(stream_rx),
+                Some(
+                    std::thread::Builder::new()
+                        .name(MSGBUS_STREAM.to_string())
+                        .spawn(move || {
+                            stream_messages(stream_tx, trader_id, instance_id, config_clone)
+                        })
+                        .expect("Error spawning '{MSGBUS_STREAM}' thread"),
+                ),
+            )
+        } else {
+            (None, None)
+        };
 
         Ok(Self {
             trader_id,
-            tx,
-            handle,
+            instance_id,
+            pub_tx,
+            pub_handle,
+            stream_rx,
+            stream_handle,
         })
     }
 
-    fn publish(&self, topic: String, payload: Bytes) -> anyhow::Result<()> {
+    fn publish(&self, topic: Bytes, payload: Bytes) -> anyhow::Result<()> {
         let msg = BusMessage { topic, payload };
-        if let Err(e) = self.tx.send(msg) {
-            // This will occur when the Python task blindly attempts
-            // to publish to a closed channel.
+        if let Err(e) = self.pub_tx.send(msg) {
+            // This will occur for now when the Python task
+            // blindly attempts to publish to a closed channel.
             debug!("Failed to send message: {}", e);
         }
         Ok(())
@@ -104,32 +136,61 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
         debug!("Closing message bus database adapter");
 
         let msg = BusMessage {
-            topic: CLOSE_TOPIC.to_string(),
+            topic: Bytes::from(CLOSE_TOPIC.to_string()),
             payload: Bytes::new(), // Empty
         };
-        self.tx.send(msg).map_err(anyhow::Error::new)?;
+        if let Err(e) = self.pub_tx.send(msg) {
+            error!("Failed to send close message: {:?}", e);
+        };
 
-        if let Some(handle) = self.handle.take() {
-            debug!("Joining `msgbus` thread");
-            handle.join().map_err(|e| anyhow::anyhow!("{:?}", e))?
-        } else {
-            Err(anyhow::anyhow!("message bus database already shutdown"))
+        if let Some(handle) = self.pub_handle.take() {
+            debug!("Joining '{MSGBUS_PUBLISH}' thread");
+            if let Err(e) = handle.join().map_err(|e| anyhow::anyhow!("{:?}", e)) {
+                error!("Error joining '{MSGBUS_PUBLISH}' thread: {:?}", e);
+            }
+        };
+
+        if let Some(handle) = self.stream_handle.take() {
+            debug!("Joining '{MSGBUS_STREAM}' thread");
+            if let Err(e) = handle.join().map_err(|e| anyhow::anyhow!("{:?}", e)) {
+                error!("Error joining '{MSGBUS_STREAM}' thread: {:?}", e);
+            }
+        };
+
+        Ok(())
+    }
+}
+
+impl RedisMessageBusDatabase {
+    pub fn get_stream_receiver(
+        &mut self,
+    ) -> anyhow::Result<tokio::sync::mpsc::Receiver<BusMessage>> {
+        self.stream_rx
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("Stream receiver already taken"))
+    }
+
+    pub fn stream(
+        mut stream_rx: tokio::sync::mpsc::Receiver<BusMessage>,
+    ) -> impl Stream<Item = BusMessage> + 'static {
+        async_stream::stream! {
+            while let Some(msg) = stream_rx.recv().await {
+                yield msg;
+            }
         }
     }
 }
 
-pub fn handle_messages(
-    rx: Receiver<BusMessage>,
+pub fn publish_messages(
+    rx: std::sync::mpsc::Receiver<BusMessage>,
     trader_id: TraderId,
     instance_id: UUID4,
     config: HashMap<String, Value>,
 ) -> anyhow::Result<()> {
-    let database_config = config
-        .get("database")
-        .ok_or(anyhow::anyhow!("No database config"))?;
-    debug!("Creating msgbus redis connection");
-    let mut conn = create_redis_connection(&database_config.clone())?;
+    debug!("Starting Redis message publishing");
 
+    let db_config = get_database_config(&config)?;
+    let mut con = create_redis_connection(MSGBUS_PUBLISH, &db_config)?;
     let stream_name = get_stream_name(trader_id, instance_id, &config);
 
     // Autotrimming
@@ -153,7 +214,7 @@ pub fn handle_messages(
     loop {
         if last_drain.elapsed() >= buffer_interval && !buffer.is_empty() {
             drain_buffer(
-                &mut conn,
+                &mut con,
                 &stream_name,
                 autotrim_duration,
                 &mut last_trim_index,
@@ -180,7 +241,7 @@ pub fn handle_messages(
     // Drain any remaining messages
     if !buffer.is_empty() {
         drain_buffer(
-            &mut conn,
+            &mut con,
             &stream_name,
             autotrim_duration,
             &mut last_trim_index,
@@ -202,16 +263,18 @@ fn drain_buffer(
     pipe.atomic();
 
     for msg in buffer.drain(..) {
-        let key = format!("{stream_name}{}", &msg.topic);
-        let items: Vec<(&str, &[u8])> = vec![("payload", msg.payload.as_ref())];
-        pipe.xadd(&key, "*", &items);
+        let items: Vec<(&str, &[u8])> = vec![
+            ("topic", msg.topic.as_ref()),
+            ("payload", msg.payload.as_ref()),
+        ];
+        pipe.xadd(stream_name, "*", &items);
 
         if autotrim_duration.is_none() {
             continue; // Nothing else to do
         }
 
         // Autotrim stream
-        let last_trim_ms = last_trim_index.entry(key.clone()).or_insert(0); // Remove clone
+        let last_trim_ms = last_trim_index.entry(stream_name.to_string()).or_insert(0); // Remove clone
         let unix_duration_now = duration_since_unix_epoch();
         let trim_buffer = Duration::from_secs(TRIM_BUFFER_SECONDS);
 
@@ -220,18 +283,146 @@ fn drain_buffer(
             let min_timestamp_ms =
                 (unix_duration_now - autotrim_duration.unwrap()).as_millis() as usize;
             let result: Result<(), redis::RedisError> = redis::cmd(XTRIM)
-                .arg(&key)
+                .arg(stream_name)
                 .arg(MINID)
                 .arg(min_timestamp_ms)
                 .query(conn);
 
             if let Err(e) = result {
-                error!("Error trimming stream '{key}': {e}");
+                error!("Error trimming stream '{stream_name}': {e}");
             } else {
-                last_trim_index.insert(key, unix_duration_now.as_millis() as usize);
+                last_trim_index.insert(
+                    stream_name.to_string(),
+                    unix_duration_now.as_millis() as usize,
+                );
             }
         }
     }
 
     pipe.query::<()>(conn).map_err(anyhow::Error::from)
+}
+
+#[allow(clippy::type_complexity)]
+pub fn stream_messages(
+    tx: tokio::sync::mpsc::Sender<BusMessage>,
+    trader_id: TraderId,
+    instance_id: UUID4,
+    config: HashMap<String, Value>,
+) -> anyhow::Result<()> {
+    debug!("Starting Redis message streaming");
+
+    let db_config = get_database_config(&config)?;
+    let mut con = create_redis_connection(MSGBUS_PUBLISH, &db_config)?;
+    let stream_name = get_stream_name(trader_id, instance_id, &config);
+    let mut last_id = "0".to_string();
+
+    loop {
+        let result: Result<Vec<HashMap<String, Vec<HashMap<String, redis::Value>>>>, _> =
+            con.xread(&[&stream_name], &[&last_id]);
+        match result {
+            Ok(stream_bulk) => {
+                for entry in stream_bulk.iter() {
+                    for (_stream_key, stream_msgs) in entry.iter() {
+                        for stream_msg in stream_msgs.iter() {
+                            for (id, array) in stream_msg {
+                                last_id.clone_from(id);
+
+                                if let redis::Value::Array(array) = array {
+                                    if array.len() < 4 {
+                                        error!("Invalid stream message format: {:?}", array);
+                                        continue;
+                                    }
+
+                                    let topic = match &array[1] {
+                                        redis::Value::BulkString(bytes) => {
+                                            Bytes::copy_from_slice(bytes)
+                                        }
+                                        _ => {
+                                            error!("Invalid topic format: {:?}", array);
+                                            continue;
+                                        }
+                                    };
+
+                                    let payload = match &array[3] {
+                                        redis::Value::BulkString(bytes) => {
+                                            Bytes::copy_from_slice(bytes)
+                                        }
+                                        _ => {
+                                            error!("Invalid payload format: {:?}", array);
+                                            continue;
+                                        }
+                                    };
+
+                                    let msg = BusMessage { topic, payload };
+
+                                    if tx.blocking_send(msg).is_err() {
+                                        debug!("Receiver closed channel");
+                                        return Ok(());
+                                    }
+                                } else {
+                                    error!("Invalid stream message format: {:?}", array);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                return Err(anyhow::anyhow!("Error reading from Redis stream: {:?}", e));
+            }
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use std::thread;
+
+    use redis::Commands;
+    use serde_json::json;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_stream_messages() {
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
+
+        let trader_id = TraderId::from("tester-001");
+        let instance_id = UUID4::new();
+
+        let mut config = HashMap::new();
+        let db_config = json!({"type": "redis"});
+        config.insert("database".to_string(), db_config.clone());
+        config.insert("streams_prefix".to_string(), json!("stream"));
+        config.insert("use_trader_prefix".to_string(), json!(true));
+        config.insert("use_trader_id".to_string(), json!(true));
+
+        let mut con = create_redis_connection(MSGBUS_STREAM, &db_config).unwrap();
+        let stream_name = get_stream_name(trader_id, instance_id, &config);
+
+        // Prepare test data
+        let _: () = con
+            .xadd(
+                stream_name,
+                "*",
+                &[("topic", "topic1"), ("payload", "data1")],
+            )
+            .unwrap();
+
+        // Start the message streaming in a separate thread
+        thread::spawn(move || {
+            stream_messages(tx, trader_id, instance_id, config).unwrap();
+        });
+
+        // Receive and verify the message
+        let msg = rx.recv().await.unwrap();
+        assert_eq!(msg.topic, "topic1");
+        assert_eq!(msg.payload, Bytes::from("data1"));
+
+        // Flush Redis database
+        let _: () = redis::cmd("FLUSHDB").exec(&mut con).unwrap();
+    }
 }

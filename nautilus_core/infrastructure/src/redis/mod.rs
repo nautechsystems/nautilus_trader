@@ -92,28 +92,41 @@ pub fn get_redis_url(database_config: &serde_json::Value) -> (String, String) {
     (url, redacted_url)
 }
 
-pub fn create_redis_connection(database_config: &serde_json::Value) -> anyhow::Result<Connection> {
-    let (redis_url, redacted_url) = get_redis_url(database_config);
+pub fn create_redis_connection(
+    con_name: &str,
+    db_config: &serde_json::Value,
+) -> anyhow::Result<redis::Connection> {
+    debug!("Creating {con_name} redis connection");
+    let (redis_url, redacted_url) = get_redis_url(db_config);
     debug!("Connecting to {redacted_url}");
     let default_timeout = 20;
-    let timeout = get_timeout_duration(database_config, default_timeout);
+    let timeout = get_timeout_duration(db_config, default_timeout);
     let client = redis::Client::open(redis_url)?;
-    let mut conn = client.get_connection_with_timeout(timeout)?;
+    let mut con = client.get_connection_with_timeout(timeout)?;
 
-    let redis_version = get_redis_version(&mut conn)?;
-    let conn_msg = format!("Connected to redis v{redis_version}");
+    let redis_version = get_redis_version(&mut con)?;
+    let con_msg = format!("Connected to redis v{redis_version}");
     let version = Version::parse(&redis_version)?;
     let min_version = Version::parse(REDIS_MIN_VERSION)?;
 
     if version >= min_version {
-        info!(conn_msg);
+        info!(con_msg);
     } else {
         // TODO: Using `log` error here so that the message is displayed regardless of whether
         // the logging config has pyo3 enabled. Later we can standardize this to `tracing`.
-        log::error!("{conn_msg}, but minimum supported verson {REDIS_MIN_VERSION}");
+        log::error!("{con_msg}, but minimum supported verson {REDIS_MIN_VERSION}");
     };
 
-    Ok(conn)
+    Ok(con)
+}
+
+pub fn get_database_config(
+    config: &HashMap<String, serde_json::Value>,
+) -> anyhow::Result<serde_json::Value> {
+    Ok(config
+        .get("database")
+        .ok_or(anyhow::anyhow!("No database config"))?
+        .clone())
 }
 
 pub fn get_timeout_duration(database_config: &serde_json::Value, default: u64) -> Duration {
@@ -158,7 +171,6 @@ fn get_stream_name(
         .as_str()
         .expect("Invalid configuration: `streams_prefix` is not a string");
     stream_name.push_str(stream_prefix);
-    stream_name.push(REDIS_DELIMITER);
     stream_name
 }
 
@@ -180,6 +192,9 @@ fn parse_redis_version(info: &str) -> anyhow::Result<String> {
     Err(anyhow::anyhow!("Redis version not found in info"))
 }
 
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -253,9 +268,9 @@ mod tests {
 
     #[rstest]
     fn test_get_timeout_duration_default() {
-        let database_config = json!({});
+        let db = json!({});
 
-        let timeout_duration = get_timeout_duration(&database_config, 20);
+        let timeout_duration = get_timeout_duration(&db, 20);
         assert_eq!(timeout_duration, Duration::from_secs(20));
     }
 
@@ -296,7 +311,7 @@ mod tests {
         config.insert("streams_prefix".to_string(), json!("streams"));
 
         let key = get_stream_name(trader_id, instance_id, &config);
-        assert_eq!(key, format!("trader-tester-123:{instance_id}:streams:"));
+        assert_eq!(key, format!("trader-tester-123:{instance_id}:streams"));
     }
 
     #[rstest]
@@ -310,6 +325,6 @@ mod tests {
         config.insert("streams_prefix".to_string(), json!("streams"));
 
         let key = get_stream_name(trader_id, instance_id, &config);
-        assert_eq!(key, format!("streams:"));
+        assert_eq!(key, format!("streams"));
     }
 }
