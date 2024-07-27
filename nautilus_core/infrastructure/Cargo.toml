@@ -30,16 +30,14 @@ tokio = { workspace = true }
 tracing = {workspace = true }
 ustr = { workspace = true }
 redis = { version = "0.26.0", features = [
-    "cluster",
-    "cluster-async",
-    "sentinel",
-    "streams",
     "connection-manager",
     "keep-alive",
-    "tls-rustls",
-    "tls-rustls-webpki-roots",
+    "sentinel",
+    "streams",
     "tokio-comp",
     "tokio-rustls-comp",
+    "tls-rustls",
+    "tls-rustls-webpki-roots",
 ], optional = true }
 sqlx = { version = "0.7.4", features = [
     "sqlite",
