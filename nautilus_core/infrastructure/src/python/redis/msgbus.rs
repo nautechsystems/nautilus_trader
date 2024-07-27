@@ -13,18 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use bytes::Bytes;
+use futures::{pin_mut, stream::StreamExt};
 use nautilus_common::msgbus::database::MessageBusDatabaseAdapter;
 use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
     uuid::UUID4,
 };
 use nautilus_model::identifiers::TraderId;
-use pyo3::prelude::*;
+use pyo3::{prelude::*, types::PyBytes};
+use tracing::error;
 
-use crate::redis::msgbus::RedisMessageBusDatabase;
+use crate::redis::msgbus::{BusMessage, RedisMessageBusDatabase};
 
 #[pymethods]
 impl RedisMessageBusDatabase {
@@ -41,12 +43,43 @@ impl RedisMessageBusDatabase {
 
     #[pyo3(name = "publish")]
     fn py_publish(&self, topic: String, payload: Vec<u8>) -> PyResult<()> {
-        self.publish(topic, Bytes::from(payload))
-            .map_err(to_pyruntime_err)
+        self.publish(
+            Bytes::copy_from_slice(topic.as_bytes()),
+            Bytes::from(payload),
+        )
+        .map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "stream")]
+    fn py_stream<'py>(
+        &mut self,
+        callback: PyObject,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let stream_rx = self.get_stream_receiver().map_err(to_pyruntime_err)?;
+        let stream = RedisMessageBusDatabase::stream(stream_rx);
+        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+            pin_mut!(stream);
+            while let Some(msg) = stream.next().await {
+                Python::with_gil(|py| {
+                    let data = PyBytes::new_bound(py, msg.payload.as_ref()).into_py(py);
+                    call_python(py, &callback, data);
+                })
+            }
+            Ok(())
+        })
     }
 
     #[pyo3(name = "close")]
     fn py_close(&mut self) -> PyResult<()> {
         self.close().map_err(to_pyruntime_err)
     }
+}
+
+fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) -> PyResult<()> {
+    callback.call1(py, (py_obj,)).map_err(|e| {
+        error!("Error calling Python: {e}");
+        e
+    })?;
+    Ok(())
 }

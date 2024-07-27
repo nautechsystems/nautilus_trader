@@ -38,11 +38,16 @@ use nautilus_model::{
     types::currency::Currency,
 };
 use redis::{Commands, Connection, Pipeline};
-use serde_json::{json, Value};
+use serde_json::json;
 use tracing::{debug, error};
 use ustr::Ustr;
 
+use super::get_database_config;
 use crate::redis::{create_redis_connection, get_buffer_interval};
+
+// Thread and connection name constants
+const CACHE_READ: &str = "cache-read";
+const CACHE_WRITE: &str = "cache-write";
 
 // Error constants
 const FAILED_TX_CHANNEL: &str = "Failed to send to channel";
@@ -127,7 +132,7 @@ impl DatabaseCommand {
 pub struct RedisCacheDatabase {
     pub trader_id: TraderId,
     trader_key: String,
-    conn: Connection,
+    con: Connection,
     tx: Sender<DatabaseCommand>,
     handle: Option<JoinHandle<()>>,
 }
@@ -139,27 +144,24 @@ impl RedisCacheDatabase {
         instance_id: UUID4,
         config: HashMap<String, serde_json::Value>,
     ) -> anyhow::Result<RedisCacheDatabase> {
-        let database_config = config
-            .get("database")
-            .ok_or(anyhow::anyhow!("No database config"))?;
-        debug!("Creating cache-read redis connection");
-        let conn = create_redis_connection(&database_config.clone())?;
+        let database_config = get_database_config(&config)?;
+        let con = create_redis_connection(CACHE_READ, &database_config)?;
 
         let (tx, rx) = channel::<DatabaseCommand>();
         let trader_key = get_trader_key(trader_id, instance_id, &config);
         let trader_key_clone = trader_key.clone();
 
         let handle = thread::Builder::new()
-            .name("cache".to_string())
+            .name(CACHE_WRITE.to_string())
             .spawn(move || {
-                Self::handle_messages(rx, trader_key_clone, config);
+                Self::process_commands(rx, trader_key_clone, config);
             })
-            .expect("Error spawning `cache` thread");
+            .expect("Error spawning '{CACHE_WRITE}' thread");
 
         Ok(RedisCacheDatabase {
             trader_id,
             trader_key,
-            conn,
+            con,
             tx,
             handle: Some(handle),
         })
@@ -172,7 +174,7 @@ impl RedisCacheDatabase {
             .map_err(anyhow::Error::new)?;
 
         if let Some(handle) = self.handle.take() {
-            debug!("Joining `cache` thread");
+            debug!("Joining '{CACHE_WRITE}' thread");
             handle.join().map_err(|e| anyhow::anyhow!("{:?}", e))
         } else {
             Err(anyhow::anyhow!("Cache database already shutdown"))
@@ -180,7 +182,7 @@ impl RedisCacheDatabase {
     }
 
     pub fn flushdb(&mut self) -> anyhow::Result<()> {
-        match redis::cmd(FLUSHDB).query::<()>(&mut self.conn) {
+        match redis::cmd(FLUSHDB).query::<()>(&mut self.con) {
             Ok(_) => Ok(()),
             Err(e) => Err(e.into()),
         }
@@ -189,7 +191,7 @@ impl RedisCacheDatabase {
     pub fn keys(&mut self, pattern: &str) -> anyhow::Result<Vec<String>> {
         let pattern = format!("{}{DELIMITER}{}", self.trader_key, pattern);
         debug!("Querying keys: {pattern}");
-        match self.conn.keys(pattern) {
+        match self.con.keys(pattern) {
             Ok(keys) => Ok(keys),
             Err(e) => Err(e.into()),
         }
@@ -200,16 +202,16 @@ impl RedisCacheDatabase {
         let key = format!("{}{DELIMITER}{}", self.trader_key, key);
 
         match collection {
-            INDEX => read_index(&mut self.conn, &key),
-            GENERAL => read_string(&mut self.conn, &key),
-            CURRENCIES => read_string(&mut self.conn, &key),
-            INSTRUMENTS => read_string(&mut self.conn, &key),
-            SYNTHETICS => read_string(&mut self.conn, &key),
-            ACCOUNTS => read_list(&mut self.conn, &key),
-            ORDERS => read_list(&mut self.conn, &key),
-            POSITIONS => read_list(&mut self.conn, &key),
-            ACTORS => read_string(&mut self.conn, &key),
-            STRATEGIES => read_string(&mut self.conn, &key),
+            INDEX => read_index(&mut self.con, &key),
+            GENERAL => read_string(&mut self.con, &key),
+            CURRENCIES => read_string(&mut self.con, &key),
+            INSTRUMENTS => read_string(&mut self.con, &key),
+            SYNTHETICS => read_string(&mut self.con, &key),
+            ACCOUNTS => read_list(&mut self.con, &key),
+            ORDERS => read_list(&mut self.con, &key),
+            POSITIONS => read_list(&mut self.con, &key),
+            ACTORS => read_string(&mut self.con, &key),
+            STRATEGIES => read_string(&mut self.con, &key),
             _ => anyhow::bail!("Unsupported operation: `read` for collection '{collection}'"),
         }
     }
@@ -238,15 +240,13 @@ impl RedisCacheDatabase {
         }
     }
 
-    fn handle_messages(
+    fn process_commands(
         rx: Receiver<DatabaseCommand>,
         trader_key: String,
         config: HashMap<String, serde_json::Value>,
     ) {
-        let empty = Value::Object(serde_json::Map::new());
-        let database_config = config.get("database").unwrap_or(&empty);
-        debug!("Creating cache-write redis connection");
-        let mut conn = create_redis_connection(&database_config.clone()).unwrap();
+        let database_config = get_database_config(&config).unwrap();
+        let mut con = create_redis_connection(CACHE_WRITE, &database_config).unwrap();
 
         // Buffering
         let mut buffer: VecDeque<DatabaseCommand> = VecDeque::new();
@@ -256,7 +256,7 @@ impl RedisCacheDatabase {
 
         loop {
             if last_drain.elapsed() >= buffer_interval && !buffer.is_empty() {
-                drain_buffer(&mut conn, &trader_key, &mut buffer);
+                drain_buffer(&mut con, &trader_key, &mut buffer);
                 last_drain = Instant::now();
             } else {
                 // Continue to receive and handle messages until channel is hung up
@@ -277,7 +277,7 @@ impl RedisCacheDatabase {
 
         // Drain any remaining messages
         if !buffer.is_empty() {
-            drain_buffer(&mut conn, &trader_key, &mut buffer);
+            drain_buffer(&mut con, &trader_key, &mut buffer);
         }
     }
 }
