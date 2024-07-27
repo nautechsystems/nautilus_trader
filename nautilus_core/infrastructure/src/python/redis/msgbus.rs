@@ -29,6 +29,23 @@ use tracing::error;
 use crate::redis::msgbus::{BusMessage, RedisMessageBusDatabase};
 
 #[pymethods]
+impl BusMessage {
+    /// The topic to publish on.
+    #[getter]
+    #[pyo3(name = "topic")]
+    fn py_close(&mut self) -> String {
+        self.topic.clone()
+    }
+
+    /// The serialized payload for the message.
+    #[getter]
+    #[pyo3(name = "payload")]
+    fn py_payload(&mut self) -> &[u8] {
+        self.payload.as_ref()
+    }
+}
+
+#[pymethods]
 impl RedisMessageBusDatabase {
     #[new]
     fn py_new(trader_id: TraderId, instance_id: UUID4, config_json: Vec<u8>) -> PyResult<Self> {
@@ -43,11 +60,8 @@ impl RedisMessageBusDatabase {
 
     #[pyo3(name = "publish")]
     fn py_publish(&self, topic: String, payload: Vec<u8>) -> PyResult<()> {
-        self.publish(
-            Bytes::copy_from_slice(topic.as_bytes()),
-            Bytes::from(payload),
-        )
-        .map_err(to_pyruntime_err)
+        self.publish(topic, Bytes::from(payload))
+            .map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "stream")]
@@ -62,8 +76,7 @@ impl RedisMessageBusDatabase {
             pin_mut!(stream);
             while let Some(msg) = stream.next().await {
                 Python::with_gil(|py| {
-                    let data = PyBytes::new_bound(py, msg.payload.as_ref()).into_py(py);
-                    call_python(py, &callback, data);
+                    call_python(py, &callback, msg.into_py(py));
                 })
             }
             Ok(())

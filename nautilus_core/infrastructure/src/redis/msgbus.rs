@@ -43,9 +43,13 @@ const TRIM_BUFFER_SECONDS: u64 = 60;
 
 /// Represents a bus message including a topic and payload.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.infrastructure")
+)]
 pub struct BusMessage {
     /// The topic to publish on.
-    pub topic: Bytes,
+    pub topic: String,
     /// The serialized payload for the message.
     pub payload: Bytes,
 }
@@ -55,7 +59,7 @@ impl fmt::Display for BusMessage {
         write!(
             f,
             "[{}] {}",
-            String::from_utf8_lossy(&self.topic),
+            self.topic,
             String::from_utf8_lossy(&self.payload)
         )
     }
@@ -122,7 +126,7 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
         })
     }
 
-    fn publish(&self, topic: Bytes, payload: Bytes) -> anyhow::Result<()> {
+    fn publish(&self, topic: String, payload: Bytes) -> anyhow::Result<()> {
         let msg = BusMessage { topic, payload };
         if let Err(e) = self.pub_tx.send(msg) {
             // This will occur for now when the Python task
@@ -136,7 +140,7 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
         debug!("Closing message bus database adapter");
 
         let msg = BusMessage {
-            topic: Bytes::from(CLOSE_TOPIC.to_string()),
+            topic: CLOSE_TOPIC.to_string(),
             payload: Bytes::new(), // Empty
         };
         if let Err(e) = self.pub_tx.send(msg) {
@@ -335,7 +339,8 @@ pub fn stream_messages(
 
                                     let topic = match &array[1] {
                                         redis::Value::BulkString(bytes) => {
-                                            Bytes::copy_from_slice(bytes)
+                                            String::from_utf8(bytes.clone())
+                                                .expect("Error parsing topic")
                                         }
                                         _ => {
                                             error!("Invalid topic format: {:?}", array);
