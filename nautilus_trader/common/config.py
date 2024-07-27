@@ -324,6 +324,9 @@ class MessageBusConfig(NautilusConfig, frozen=True):
         The prefix for externally published stream names (must have a `database` config).
         If `use_trader_id` and `use_instance_id` are *both* false, then it becomes possible for
         many traders to be configured to write to the same streams.
+    external_streams : list[str], optional
+        The external stream keys the message bus will listen to for publishing
+        deserialized message payloads internally.
     types_filter : list[type], optional
         A list of serializable types **not** to publish externally.
 
@@ -338,6 +341,7 @@ class MessageBusConfig(NautilusConfig, frozen=True):
     use_trader_id: bool = True
     use_instance_id: bool = False
     streams_prefix: str = "streams"
+    external_streams: list[str] | None = None
     types_filter: list[type] | None = None
 
 

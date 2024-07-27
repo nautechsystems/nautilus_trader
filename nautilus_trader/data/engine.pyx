@@ -130,6 +130,7 @@ cdef class DataEngine(Component):
         self._clients: dict[ClientId, DataClient] = {}
         self._routing_map: dict[Venue, DataClient] = {}
         self._default_client: DataClient | None = None
+        self._external_clients: set[ClientId] = set()
         self._catalog: ParquetDataCatalog | None = None
         self._order_book_intervals: dict[(InstrumentId, int), list[Callable[[OrderBook], None]]] = {}
         self._bar_aggregators: dict[BarType, BarAggregator] = {}
@@ -146,6 +147,9 @@ cdef class DataEngine(Component):
         self._time_bars_interval_type = config.time_bars_interval_type
         self._validate_data_sequence = config.validate_data_sequence
         self._buffer_deltas = config.buffer_deltas
+
+        if config.external_clients:
+            self._external_clients = set(config.external_clients)
 
         # Counters
         self.command_count = 0
@@ -612,6 +616,12 @@ cdef class DataEngine(Component):
         if self.debug:
             self._log.debug(f"{RECV}{CMD} {command}")
         self.command_count += 1
+
+        if command.client_id in self._external_clients:
+            self._log.debug(
+                f"{command.client_id} declared as external client - disregarding subscription command",
+            )
+            return
 
         cdef Venue venue = command.venue
         cdef DataClient client = self._clients.get(command.client_id)
