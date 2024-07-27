@@ -214,7 +214,7 @@ fn parse_redis_version(info: &str) -> anyhow::Result<String> {
             return Ok(version.trim().to_string());
         }
     }
-    Err(anyhow::anyhow!("Redis version not found in info"))
+    Err(anyhow::anyhow!("redis version not found in info"))
 }
 
 ////////////////////////////////////////////////////////////////////////////////
