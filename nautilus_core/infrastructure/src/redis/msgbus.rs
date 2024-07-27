@@ -134,6 +134,8 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
     fn close(&mut self) -> anyhow::Result<()> {
         debug!("Closing message bus database adapter");
 
+        self.stream_signal.store(true, Ordering::Relaxed);
+
         let msg = BusMessage {
             topic: CLOSE_TOPIC.to_string(),
             payload: Bytes::new(), // Empty
@@ -148,8 +150,6 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
                 error!("Error joining '{MSGBUS_PUBLISH}' thread: {:?}", e);
             }
         };
-
-        self.stream_signal.store(true, Ordering::SeqCst);
 
         if let Some(handle) = self.stream_handle.take() {
             debug!("Joining '{MSGBUS_STREAM}' thread");
@@ -310,7 +310,7 @@ pub fn stream_messages(
     stream_keys: Vec<String>,
     stream_signal: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
-    debug!("Starting Redis message streaming");
+    debug!("Starting message streaming");
 
     let db_config = get_database_config(&config)?;
     let mut con = create_redis_connection(MSGBUS_PUBLISH, &db_config)?;
@@ -321,8 +321,9 @@ pub fn stream_messages(
     let mut last_id = "0".to_string();
     let opts = StreamReadOptions::default().block(100);
 
-    loop {
-        if stream_signal.load(Ordering::SeqCst) {
+    'outer: loop {
+        if stream_signal.load(Ordering::Relaxed) {
+            debug!("Terminate signal received");
             break;
         }
         let result: Result<RedisStreamBulk, _> =
@@ -337,12 +338,13 @@ pub fn stream_messages(
                     for (_stream_key, stream_msgs) in entry.iter() {
                         for stream_msg in stream_msgs.iter() {
                             for (id, array) in stream_msg {
-                                last_id.clone_from(id);
+                                last_id.clear();
+                                last_id.push_str(id);
                                 match decode_bus_message(array) {
                                     Ok(msg) => {
                                         if tx.blocking_send(msg).is_err() {
-                                            debug!("Receiver dropped");
-                                            break;
+                                            debug!("Channel closed");
+                                            break 'outer; // End streaming
                                         }
                                     }
                                     Err(e) => {
@@ -356,10 +358,11 @@ pub fn stream_messages(
                 }
             }
             Err(e) => {
-                return Err(anyhow::anyhow!("Error reading from Redis stream: {:?}", e));
+                return Err(anyhow::anyhow!("Error reading from stream: {:?}", e));
             }
         }
     }
+    debug!("Completed message streaming");
     Ok(())
 }
 
@@ -394,11 +397,97 @@ fn decode_bus_message(stream_msg: &redis::Value) -> anyhow::Result<BusMessage> {
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
-#[cfg(target_os = "linux")] // Run Redis tests on Linux platforms only
 #[cfg(test)]
 mod tests {
+    use redis::Value;
+    use rstest::*;
+
+    use super::*;
+
+    #[rstest]
+    fn test_decode_bus_message_valid() {
+        let stream_msg = Value::Array(vec![
+            Value::BulkString(b"0".to_vec()),
+            Value::BulkString(b"topic1".to_vec()),
+            Value::BulkString(b"unused".to_vec()),
+            Value::BulkString(b"data1".to_vec()),
+        ]);
+
+        let result = decode_bus_message(&stream_msg);
+        assert!(result.is_ok());
+        let msg = result.unwrap();
+        assert_eq!(msg.topic, "topic1");
+        assert_eq!(msg.payload, Bytes::from("data1"));
+    }
+
+    #[rstest]
+    fn test_decode_bus_message_missing_fields() {
+        let stream_msg = Value::Array(vec![
+            Value::BulkString(b"0".to_vec()),
+            Value::BulkString(b"topic1".to_vec()),
+        ]);
+
+        let result = decode_bus_message(&stream_msg);
+        assert!(result.is_err());
+        assert_eq!(
+            format!("{}", result.unwrap_err()),
+            "Invalid stream message format: [bulk-string('\"0\"'), bulk-string('\"topic1\"')]"
+        );
+    }
+
+    #[rstest]
+    fn test_decode_bus_message_invalid_topic_format() {
+        let stream_msg = Value::Array(vec![
+            Value::BulkString(b"0".to_vec()),
+            Value::Int(42), // Invalid topic format
+            Value::BulkString(b"unused".to_vec()),
+            Value::BulkString(b"data1".to_vec()),
+        ]);
+
+        let result = decode_bus_message(&stream_msg);
+        assert!(result.is_err());
+        assert_eq!(
+            format!("{}", result.unwrap_err()),
+            "Invalid topic format: [bulk-string('\"0\"'), int(42), bulk-string('\"unused\"'), bulk-string('\"data1\"')]"
+        );
+    }
+
+    #[rstest]
+    fn test_decode_bus_message_invalid_payload_format() {
+        let stream_msg = Value::Array(vec![
+            Value::BulkString(b"0".to_vec()),
+            Value::BulkString(b"topic1".to_vec()),
+            Value::BulkString(b"unused".to_vec()),
+            Value::Int(42), // Invalid payload format
+        ]);
+
+        let result = decode_bus_message(&stream_msg);
+        assert!(result.is_err());
+        assert_eq!(
+            format!("{}", result.unwrap_err()),
+            "Invalid payload format: [bulk-string('\"0\"'), bulk-string('\"topic1\"'), bulk-string('\"unused\"'), int(42)]"
+        );
+    }
+
+    #[rstest]
+    fn test_decode_bus_message_invalid_stream_msg_format() {
+        let stream_msg = Value::BulkString(b"not an array".to_vec());
+
+        let result = decode_bus_message(&stream_msg);
+        assert!(result.is_err());
+        assert_eq!(
+            format!("{}", result.unwrap_err()),
+            "Invalid stream message format: bulk-string('\"not an array\"')"
+        );
+    }
+}
+
+#[cfg(target_os = "linux")] // Run Redis tests on Linux platforms only
+#[cfg(test)]
+mod serial_tests {
     use std::thread;
 
+    use nautilus_common::testing::wait_until;
     use redis::Commands;
     use rstest::*;
     use serde_json::json;
@@ -414,23 +503,100 @@ mod tests {
         con
     }
 
-    #[rstest]
-    #[tokio::test]
-    async fn test_stream_messages(redis_connection: redis::Connection) {
-        let mut con = redis_connection;
-        let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
-
-        let trader_id = TraderId::from("tester-001");
-        let instance_id = UUID4::new();
-
+    #[fixture]
+    fn msgbus_config() -> HashMap<String, Value> {
         let mut config = HashMap::new();
         let db_config = json!({"type": "redis"});
         config.insert("database".to_string(), db_config.clone());
         config.insert("streams_prefix".to_string(), json!("stream"));
         config.insert("use_trader_prefix".to_string(), json!(true));
         config.insert("use_trader_id".to_string(), json!(true));
+        config
+    }
 
-        let stream_key = get_stream_key(trader_id, instance_id, &config);
+    #[rstest]
+    #[tokio::test]
+    async fn test_stream_messages_terminate_signal(
+        redis_connection: redis::Connection,
+        msgbus_config: HashMap<String, Value>,
+    ) {
+        let mut con = redis_connection;
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
+
+        let trader_id = TraderId::from("tester-001");
+        let instance_id = UUID4::new();
+
+        let stream_key = get_stream_key(trader_id, instance_id, &msgbus_config);
+        let external_streams = vec![stream_key.clone()];
+        let stream_signal = Arc::new(AtomicBool::new(false));
+        let stream_signal_clone = stream_signal.clone();
+
+        // Start the message streaming in a separate thread
+        let handle = thread::spawn(move || {
+            stream_messages(tx, msgbus_config, external_streams, stream_signal_clone).unwrap();
+        });
+
+        stream_signal.store(true, Ordering::Relaxed);
+        let _ = rx.recv().await; // Wait for the tx to close
+
+        // Shutdown and cleanup
+        rx.close();
+        handle.join().unwrap();
+        flush_redis(&mut con).unwrap()
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_stream_messages_when_receiver_closed(
+        redis_connection: redis::Connection,
+        msgbus_config: HashMap<String, Value>,
+    ) {
+        let mut con = redis_connection;
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
+
+        let trader_id = TraderId::from("tester-001");
+        let instance_id = UUID4::new();
+
+        let stream_key = get_stream_key(trader_id, instance_id, &msgbus_config);
+        let external_streams = vec![stream_key.clone()];
+        let stream_signal = Arc::new(AtomicBool::new(false));
+        let stream_signal_clone = stream_signal.clone();
+
+        // Publish test message
+        let _: () = con
+            .xadd(
+                stream_key,
+                "*",
+                &[("topic", "topic1"), ("payload", "data1")],
+            )
+            .unwrap();
+
+        // Immediately close channel
+        rx.close();
+
+        // Start the message streaming in a separate thread
+        let handle = thread::spawn(move || {
+            stream_messages(tx, msgbus_config, external_streams, stream_signal_clone).unwrap();
+        });
+
+        // Shutdown and cleanup
+        handle.join().unwrap();
+        flush_redis(&mut con).unwrap()
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_stream_messages(
+        redis_connection: redis::Connection,
+        msgbus_config: HashMap<String, Value>,
+    ) {
+        let mut con = redis_connection;
+        let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
+
+        let trader_id = TraderId::from("tester-001");
+        let instance_id = UUID4::new();
+
+        let stream_key = get_stream_key(trader_id, instance_id, &msgbus_config);
         let external_streams = vec![stream_key.clone()];
         let stream_signal = Arc::new(AtomicBool::new(false));
         let stream_signal_clone = stream_signal.clone();
@@ -445,8 +611,8 @@ mod tests {
             .unwrap();
 
         // Start the message streaming in a separate thread
-        thread::spawn(move || {
-            stream_messages(tx, config, external_streams, stream_signal_clone).unwrap();
+        let handle = thread::spawn(move || {
+            stream_messages(tx, msgbus_config, external_streams, stream_signal_clone).unwrap();
         });
 
         // Receive and verify the message
@@ -456,6 +622,76 @@ mod tests {
 
         // Shutdown and cleanup
         rx.close();
+        stream_signal.store(true, Ordering::Relaxed);
+        handle.join().unwrap();
         flush_redis(&mut con).unwrap()
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_publish_messages(
+        redis_connection: redis::Connection,
+        msgbus_config: HashMap<String, Value>,
+    ) {
+        let mut con = redis_connection;
+        let (tx, rx) = std::sync::mpsc::channel::<BusMessage>();
+
+        let trader_id = TraderId::from("tester-001");
+        let instance_id = UUID4::new();
+        let stream_key = get_stream_key(trader_id, instance_id, &msgbus_config);
+
+        // Start the publish_messages function in a separate thread
+        let handle = thread::spawn(move || {
+            publish_messages(rx, trader_id, instance_id, msgbus_config).unwrap();
+        });
+
+        // Send a test message
+        let msg = BusMessage {
+            topic: "test_topic".to_string(),
+            payload: Bytes::from("test_payload"),
+        };
+        tx.send(msg).unwrap();
+
+        // Wait until the message is published to Redis
+        wait_until(
+            || {
+                let messages: RedisStreamBulk = con.xread(&[&stream_key], &["0"]).unwrap();
+                !messages.is_empty()
+            },
+            Duration::from_secs(2),
+        );
+
+        // Verify the message was published to Redis
+        let messages: RedisStreamBulk = con.xread(&[&stream_key], &["0"]).unwrap();
+        assert_eq!(messages.len(), 1);
+        let stream_msgs = messages[0].get(&stream_key).unwrap();
+        let stream_msg_array = &stream_msgs[0].values().next().unwrap();
+        let decoded_message = decode_bus_message(stream_msg_array).unwrap();
+        assert_eq!(decoded_message.topic, "test_topic");
+        assert_eq!(decoded_message.payload, Bytes::from("test_payload"));
+
+        // Close publishing thread
+        let msg = BusMessage {
+            topic: CLOSE_TOPIC.to_string(),
+            payload: Bytes::new(), // Empty
+        };
+        tx.send(msg).unwrap();
+
+        // Shutdown and cleanup
+        handle.join().unwrap();
+        flush_redis(&mut con).unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_close() {
+        let trader_id = TraderId::from("tester-001");
+        let instance_id = UUID4::new();
+        let config = HashMap::new();
+
+        let mut db = RedisMessageBusDatabase::new(trader_id, instance_id, config).unwrap();
+
+        // Close the message bus database (test should not hang)
+        db.close().unwrap();
     }
 }
