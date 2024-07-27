@@ -41,6 +41,8 @@ const MSGBUS_PUBLISH: &str = "msgbus-publish";
 const MSGBUS_STREAM: &str = "msgbus-stream";
 const TRIM_BUFFER_SECONDS: u64 = 60;
 
+type RedisStreamBulk = Vec<HashMap<String, Vec<HashMap<String, redis::Value>>>>;
+
 /// Represents a bus message including a topic and payload.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
@@ -321,8 +323,7 @@ pub fn stream_messages(
     let mut last_id = "0".to_string();
 
     loop {
-        let result: Result<Vec<HashMap<String, Vec<HashMap<String, redis::Value>>>>, _> =
-            con.xread(&[&stream_name], &[&last_id]);
+        let result: Result<RedisStreamBulk, _> = con.xread(&[&stream_name], &[&last_id]);
         match result {
             Ok(stream_bulk) => {
                 for entry in stream_bulk.iter() {
@@ -330,42 +331,17 @@ pub fn stream_messages(
                         for stream_msg in stream_msgs.iter() {
                             for (id, array) in stream_msg {
                                 last_id.clone_from(id);
-
-                                if let redis::Value::Array(array) = array {
-                                    if array.len() < 4 {
-                                        error!("Invalid stream message format: {:?}", array);
+                                match decode_bus_message(array) {
+                                    Ok(msg) => {
+                                        if tx.blocking_send(msg).is_err() {
+                                            debug!("Receiver dropped");
+                                            return Ok(());
+                                        }
+                                    }
+                                    Err(e) => {
+                                        error!("{:?}", e);
                                         continue;
                                     }
-
-                                    let topic = match &array[1] {
-                                        redis::Value::BulkString(bytes) => {
-                                            String::from_utf8(bytes.clone())
-                                                .expect("Error parsing topic")
-                                        }
-                                        _ => {
-                                            error!("Invalid topic format: {:?}", array);
-                                            continue;
-                                        }
-                                    };
-
-                                    let payload = match &array[3] {
-                                        redis::Value::BulkString(bytes) => {
-                                            Bytes::copy_from_slice(bytes)
-                                        }
-                                        _ => {
-                                            error!("Invalid payload format: {:?}", array);
-                                            continue;
-                                        }
-                                    };
-
-                                    let msg = BusMessage { topic, payload };
-
-                                    if tx.blocking_send(msg).is_err() {
-                                        debug!("Receiver closed channel");
-                                        return Ok(());
-                                    }
-                                } else {
-                                    error!("Invalid stream message format: {:?}", array);
                                 }
                             }
                         }
@@ -376,6 +352,34 @@ pub fn stream_messages(
                 return Err(anyhow::anyhow!("Error reading from Redis stream: {:?}", e));
             }
         }
+    }
+}
+
+fn decode_bus_message(stream_msg: &redis::Value) -> anyhow::Result<BusMessage> {
+    if let redis::Value::Array(stream_msg) = stream_msg {
+        if stream_msg.len() < 4 {
+            anyhow::bail!("Invalid stream message format: {:?}", stream_msg);
+        }
+
+        let topic = match &stream_msg[1] {
+            redis::Value::BulkString(bytes) => {
+                String::from_utf8(bytes.clone()).expect("Error parsing topic")
+            }
+            _ => {
+                anyhow::bail!("Invalid topic format: {:?}", stream_msg);
+            }
+        };
+
+        let payload = match &stream_msg[3] {
+            redis::Value::BulkString(bytes) => Bytes::copy_from_slice(bytes),
+            _ => {
+                anyhow::bail!("Invalid payload format: {:?}", stream_msg);
+            }
+        };
+
+        Ok(BusMessage { topic, payload })
+    } else {
+        anyhow::bail!("Invalid stream message format: {:?}", stream_msg)
     }
 }
 
