@@ -69,6 +69,7 @@ pub enum DatabaseQuery {
     AddInstrument(InstrumentAny),
     AddOrder(OrderAny, bool),
     AddAccount(AccountAny, bool),
+    AddTrade(TradeTick),
 }
 
 fn get_buffer_interval() -> Duration {
@@ -191,6 +192,9 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
                         .unwrap()
                 }
             },
+            DatabaseQuery::AddTrade(trade) => {
+                DatabaseQueries::add_trade(pool, &trade).await.unwrap();
+            }
         }
     }
 }
@@ -574,7 +578,32 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn add_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
-        todo!()
+        let query = DatabaseQuery::AddTrade(trade.to_owned());
+        self.tx.send(query).map_err(|err| {
+            anyhow::anyhow!("Failed to send query add_trade to database message handler: {err}")
+        })
+    }
+
+    fn load_trades(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<TradeTick>> {
+        let pool = self.pool.clone();
+        let instrument_id = instrument_id.to_owned();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_trades(&pool, &instrument_id).await;
+            match result {
+                Ok(trades) => {
+                    let _ = tx.send(trades);
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to load trades for instrument {}: {:?}",
+                        instrument_id, e
+                    );
+                    let _ = tx.send(Vec::new());
+                }
+            }
+        });
+        Ok(rx.recv().unwrap())
     }
 
     fn add_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {

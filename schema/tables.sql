@@ -2,7 +2,7 @@
 
 CREATE TYPE ACCOUNT_TYPE AS ENUM ('Cash', 'Margin', 'Betting');
 CREATE TYPE AGGREGATION_SOURCE AS ENUM ('External', 'Internal');
-CREATE TYPE AGGRESSOR_SIDE AS ENUM ('NoAggressor', 'Buyer', 'Seller');
+CREATE TYPE AGGRESSOR_SIDE AS ENUM ('NO_AGGRESSOR','BUYER','SELLER');
 CREATE TYPE ASSET_CLASS AS ENUM ('FX', 'EQUITY', 'COMMODITY', 'DEBT', 'INDEX', 'CRYPTOCURRENCY', 'ALTERNATIVE');
 CREATE TYPE INSTRUMENT_CLASS AS ENUM ('Spot', 'Swap', 'Future', 'FutureSpread', 'Forward', 'Cfg', 'Bond', 'Option', 'OptionSpread', 'Warrant', 'SportsBetting');
 CREATE TYPE BAR_AGGREGATION AS ENUM ('Tick', 'TickImbalance', 'TickRuns', 'Volume', 'VolumeImbalance', 'VolumeRuns', 'Value', 'ValueImbalance', 'ValueRuns', 'Millisecond', 'Second', 'Minute', 'Hour', 'Day', 'Week', 'Month');
@@ -154,6 +154,19 @@ CREATE TABLE IF NOT EXISTS "account_event"(
     balances JSONB,
     margins JSONB,
     is_reported BOOLEAN DEFAULT FALSE,
+    ts_event TEXT NOT NULL,
+    ts_init TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "trade" (
+    id BIGSERIAL PRIMARY KEY NOT NULL,
+    instrument_id TEXT REFERENCES instrument(id) ON DELETE CASCADE,
+    price TEXT NOT NULL,
+    quantity TEXT NOT NULL,
+    aggressor_side AGGRESSOR_SIDE,
+    venue_trade_id TEXT,
     ts_event TEXT NOT NULL,
     ts_init TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
