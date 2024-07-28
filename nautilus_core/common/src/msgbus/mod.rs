@@ -28,14 +28,18 @@ use std::{
 use indexmap::IndexMap;
 use log::error;
 use nautilus_core::uuid::UUID4;
-use nautilus_model::identifiers::TraderId;
+use nautilus_model::{data::Data, identifiers::TraderId};
 use ustr::Ustr;
+
+use crate::{actor::Actor, messages::data::DataResponse};
 
 pub const CLOSE_TOPIC: &str = "CLOSE";
 
 pub trait MessageHandler {
     fn id(&self) -> Ustr;
     fn handle(&self, message: &dyn Any);
+    fn handle_response(&self, resp: DataResponse);
+    fn handle_data(&self, resp: &Data);
 }
 
 #[derive(Clone)]
@@ -349,7 +353,7 @@ impl MessageBus {
         })
     }
 
-    /// Sends a message to an endpoint.
+    /// Send a message to an endpoint.
     pub fn send(&self, endpoint: &str, message: &dyn Any) {
         if let Some(handler) = self.get_endpoint(&Ustr::from(endpoint)) {
             handler.0.handle(message);
@@ -363,6 +367,26 @@ impl MessageBus {
 
         for sub in matching_subs {
             sub.handler.0.handle(message);
+        }
+    }
+}
+
+/// Data specific functions
+impl MessageBus {
+    /// Send a [`DataResponse`] to an endpoint that must be an actor
+    pub fn send_response(&self, endpoint: &str, message: DataResponse) {
+        if let Some(handler) = self.get_endpoint(&Ustr::from(endpoint)) {
+            handler.0.handle_response(message);
+        }
+    }
+
+    /// Publish [`Data`] to a topic.
+    pub fn publish_data(&self, topic: &str, message: Data) {
+        let topic = Ustr::from(topic);
+        let matching_subs = self.matching_subscriptions(&topic);
+
+        for sub in matching_subs {
+            sub.handler.0.handle_data(&message);
         }
     }
 }
@@ -428,6 +452,10 @@ mod tests {
         fn handle(&self, message: &dyn Any) {
             (self.callback)(message.downcast_ref::<Message>().unwrap().clone());
         }
+
+        fn handle_response(&self, resp: DataResponse) {}
+
+        fn handle_data(&self, resp: &Data) {}
     }
 
     fn stub_shareable_handler(id: Ustr) -> ShareableMessageHandler {

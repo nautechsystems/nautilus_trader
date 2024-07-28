@@ -51,4 +51,23 @@ impl MessageHandler for PythonMessageHandler {
     fn id(&self) -> Ustr {
         self.id
     }
+
+    fn handle_response(&self, resp: crate::messages::data::DataResponse) {
+        // TODO: convert message to PyObject
+        let py_event = ();
+        let result =
+            pyo3::Python::with_gil(|py| self.handler.call_method1(py, "handle", (py_event,)));
+        if let Err(err) = result {
+            eprintln!("Error calling handle method: {:?}", err);
+        }
+    }
+
+    fn handle_data(&self, resp: &nautilus_model::data::Data) {
+        let py_event = ();
+        let result =
+            pyo3::Python::with_gil(|py| self.handler.call_method1(py, "handle", (py_event,)));
+        if let Err(err) = result {
+            eprintln!("Error calling handle method: {:?}", err);
+        }
+    }
 }
