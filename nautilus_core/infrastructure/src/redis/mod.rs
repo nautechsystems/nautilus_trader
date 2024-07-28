@@ -154,19 +154,6 @@ pub fn get_buffer_interval(config: &HashMap<String, Value>) -> Duration {
     Duration::from_millis(buffer_interval_ms.unwrap_or(0))
 }
 
-/// Parse the external stream keys from the given config.
-pub fn get_external_stream_keys(config: &HashMap<String, Value>) -> Vec<String> {
-    config
-        .get("external_streams")
-        .and_then(|external_streams| external_streams.as_array())
-        .map_or(Vec::new(), |streams| {
-            streams
-                .iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect()
-        })
-}
-
 /// Parse the stream key from the given identifiers and config.
 pub fn get_stream_key(
     trader_id: TraderId,
@@ -196,6 +183,27 @@ pub fn get_stream_key(
         .expect("Invalid configuration: `streams_prefix` is not a string");
     stream_key.push_str(stream_prefix);
     stream_key
+}
+
+/// Parse the `stream_per_topic` setting from the given config.
+pub fn get_stream_per_topic(config: &HashMap<String, Value>) -> bool {
+    config
+        .get("stream_per_topic")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true)
+}
+
+/// Parse the external stream keys from the given config.
+pub fn get_external_stream_keys(config: &HashMap<String, Value>) -> Vec<String> {
+    config
+        .get("external_streams")
+        .and_then(|external_streams| external_streams.as_array())
+        .map_or(Vec::new(), |streams| {
+            streams
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
 }
 
 /// Parse the Redis database version with the given connection.
@@ -363,7 +371,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_get_stream_name_without_trader_prefix_or_instance_id() {
+    fn test_get_stream_key_without_trader_prefix_or_instance_id() {
         let trader_id = TraderId::from("tester-123");
         let instance_id = UUID4::new();
         let mut config = HashMap::new();
@@ -374,5 +382,29 @@ mod tests {
 
         let key = get_stream_key(trader_id, instance_id, &config);
         assert_eq!(key, format!("streams"));
+    }
+
+    #[rstest]
+    #[case(json!({}), true)]
+    #[case(json!({"stream_per_topic": null}), true)]
+    #[case(json!({"stream_per_topic": true}), true)]
+    #[case(json!({"stream_per_topic": false}), false)]
+    fn test_get_stream_per_topic(#[case] input: serde_json::Value, #[case] expected: bool) {
+        let config: HashMap<String, Value> = serde_json::from_value(input).unwrap();
+        assert_eq!(get_stream_per_topic(&config), expected);
+    }
+
+    #[rstest]
+    #[case(json!({}), Vec::new())]
+    #[case(json!({"external_streams": null}), Vec::new())]
+    #[case(json!({"external_streams": []}), Vec::new())]
+    #[case(json!({"external_streams": ["stream1", "stream2", "stream3"]}), vec!["stream1".to_string(), "stream2".to_string(), "stream3".to_string()])]
+    #[case(json!({"external_streams": ["stream1"]}), vec!["stream1".to_string()])]
+    fn test_get_external_stream_keys(
+        #[case] input: serde_json::Value,
+        #[case] expected: Vec<String>,
+    ) {
+        let config: HashMap<String, Value> = serde_json::from_value(input).unwrap();
+        assert_eq!(get_external_stream_keys(&config), expected);
     }
 }
