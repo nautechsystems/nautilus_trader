@@ -40,6 +40,7 @@ use tracing::{debug, error};
 use super::get_external_stream_keys;
 use crate::redis::{
     create_redis_connection, get_buffer_interval, get_database_config, get_stream_key,
+    get_stream_per_topic,
 };
 
 const XTRIM: &str = "XTRIM";
@@ -193,6 +194,7 @@ pub fn publish_messages(
     let db_config = get_database_config(&config)?;
     let mut con = create_redis_connection(MSGBUS_PUBLISH, &db_config)?;
     let stream_key = get_stream_key(trader_id, instance_id, &config);
+    let stream_per_topic = get_stream_per_topic(&config);
 
     // Autotrimming
     let autotrim_mins = config
@@ -217,6 +219,7 @@ pub fn publish_messages(
             drain_buffer(
                 &mut con,
                 &stream_key,
+                stream_per_topic,
                 autotrim_duration,
                 &mut last_trim_index,
                 &mut buffer,
@@ -244,6 +247,7 @@ pub fn publish_messages(
         drain_buffer(
             &mut con,
             &stream_key,
+            stream_per_topic,
             autotrim_duration,
             &mut last_trim_index,
             &mut buffer,
@@ -256,6 +260,7 @@ pub fn publish_messages(
 fn drain_buffer(
     conn: &mut Connection,
     stream_key: &str,
+    stream_per_topic: bool,
     autotrim_duration: Option<Duration>,
     last_trim_index: &mut HashMap<String, usize>,
     buffer: &mut VecDeque<BusMessage>,
@@ -268,14 +273,18 @@ fn drain_buffer(
             ("topic", msg.topic.as_ref()),
             ("payload", msg.payload.as_ref()),
         ];
-        pipe.xadd(stream_key, "*", &items);
+        let stream_key = match stream_per_topic {
+            true => format!("{stream_key}:{}", &msg.topic),
+            false => stream_key.to_string(),
+        };
+        pipe.xadd(&stream_key, "*", &items);
 
         if autotrim_duration.is_none() {
             continue; // Nothing else to do
         }
 
         // Autotrim stream
-        let last_trim_ms = last_trim_index.entry(stream_key.to_string()).or_insert(0); // Remove clone
+        let last_trim_ms = last_trim_index.entry(stream_key.clone()).or_insert(0); // Remove clone
         let unix_duration_now = duration_since_unix_epoch();
         let trim_buffer = Duration::from_secs(TRIM_BUFFER_SECONDS);
 
@@ -284,7 +293,7 @@ fn drain_buffer(
             let min_timestamp_ms =
                 (unix_duration_now - autotrim_duration.unwrap()).as_millis() as usize;
             let result: Result<(), redis::RedisError> = redis::cmd(XTRIM)
-                .arg(stream_key)
+                .arg(stream_key.clone())
                 .arg(MINID)
                 .arg(min_timestamp_ms)
                 .query(conn);
@@ -505,12 +514,16 @@ mod serial_tests {
 
     #[fixture]
     fn msgbus_config() -> HashMap<String, Value> {
-        let mut config = HashMap::new();
-        let db_config = json!({"type": "redis"});
-        config.insert("database".to_string(), db_config.clone());
-        config.insert("streams_prefix".to_string(), json!("stream"));
-        config.insert("use_trader_prefix".to_string(), json!(true));
-        config.insert("use_trader_id".to_string(), json!(true));
+        let config: HashMap<String, Value> = serde_json::from_value(json!({
+            "database": {
+                "type": "redis"
+            },
+            "streams_prefix": "stream",
+            "stream_per_topic": false,
+            "use_trader_prefix": true,
+            "use_trader_id": true
+        }))
+        .expect("Failed to create configuration");
         config
     }
 

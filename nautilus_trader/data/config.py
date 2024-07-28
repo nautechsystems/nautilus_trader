@@ -25,9 +25,6 @@ class DataEngineConfig(NautilusConfig, frozen=True):
 
     Parameters
     ----------
-    external_clients : list[ClientId], optional
-        The client IDs declared for external stream processing.
-        The data engine will not attempt to send data commands to these client IDs.
     time_bars_build_with_no_updates : bool, default True
         If time bar aggregators will build and emit bars with no new market updates.
     time_bars_timestamp_on_close : bool, default True
@@ -41,15 +38,18 @@ class DataEngineConfig(NautilusConfig, frozen=True):
         If data objects timestamp sequencing will be validated and handled.
     buffer_deltas : bool, default False
         If order book deltas should be buffered until the F_LAST flag is set for a delta.
+    external_clients : list[ClientId], optional
+        The client IDs declared for external stream processing.
+        The data engine will not attempt to send data commands to these client IDs.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
 
     """
 
-    external_clients: list[ClientId] | None = None
     time_bars_build_with_no_updates: bool = True
     time_bars_timestamp_on_close: bool = True
     time_bars_interval_type: str = "left-open"
     validate_data_sequence: bool = False
     buffer_deltas: bool = False
+    external_clients: list[ClientId] | None = None
     debug: bool = False
