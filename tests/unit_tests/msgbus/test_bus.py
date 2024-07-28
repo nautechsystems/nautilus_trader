@@ -195,6 +195,19 @@ class TestMessageBus:
         assert self.msgbus.has_subscribers()
         assert self.msgbus.has_subscribers(pattern="system")
 
+    def test_num_subscribers(self):
+        # Arrange, Act
+        self.msgbus.subscribe(topic="*", handler=[].append)
+        self.msgbus.subscribe(topic="system", handler=[].append)
+
+        # Assert
+        assert self.msgbus.num_subscribers() == 2
+        assert self.msgbus.num_subscribers(pattern="system") == 1
+
+    def test_num_subscribers_without_subscribers_returns_zero(self):
+        # Assert
+        assert self.msgbus.num_subscribers() == 0
+
     def test_subscribe_when_handler_already_subscribed_does_not_add_subscription(self):
         # Arrange
         handler = [].append
