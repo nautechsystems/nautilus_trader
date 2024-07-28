@@ -2135,7 +2135,7 @@ cdef class MessageBus:
 
         Returns
         -------
-        bool
+        int
 
         """
         return len(self.subscriptions(pattern))
