@@ -864,6 +864,10 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         anyhow::bail!("Saving market data for Redis cache adapter not supported")
     }
 
+    fn load_quotes(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<QuoteTick>> {
+        anyhow::bail!("Loading quote data for Redis cache adapter not supported")
+    }
+
     fn add_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
         anyhow::bail!("Saving market data for Redis cache adapter not supported")
     }
