@@ -1083,11 +1083,19 @@ cdef class DataEngine(Component):
             self._log.error("Cannot unsubscribe from synthetic instrument `OrderBookDelta` data")
             return
 
-        if not self._msgbus.has_subscribers(
-            f"data.book.deltas"
-            f".{instrument_id.venue}"
-            f".{instrument_id.symbol}",
-        ):
+        cdef str topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol}"
+
+        cdef int num_subscribers = self._msgbus.num_subscribers(pattern=topic)
+        cdef bint is_internal_book_subscriber = self._msgbus.is_subscribed(topic=topic, handler=self._update_order_book)
+
+        # Remove the subscription for the internal order book if it is the last subscription
+        if num_subscribers == 1 and is_internal_book_subscriber:
+            self._msgbus.unsubscribe(
+                topic=topic,
+                handler=self._update_order_book,
+            )
+
+        if not self._msgbus.has_subscribers(topic):
             if instrument_id in client.subscribed_order_book_deltas():
                 client.unsubscribe_order_book_deltas(instrument_id)
 

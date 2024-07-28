@@ -284,6 +284,7 @@ cdef class MessageBus:
     cpdef bint is_subscribed(self, str topic, handler)
     cpdef bint is_pending_request(self, UUID4 request_id)
     cpdef bint is_streaming_type(self, type cls)
+    cpdef int num_subscribers(self, str pattern=*)
 
     cpdef void dispose(self)
     cpdef void register(self, str endpoint, handler)
