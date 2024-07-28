@@ -17,7 +17,7 @@ use std::collections::HashMap;
 
 use nautilus_model::{
     accounts::{any::AccountAny, base::Account},
-    data::{quote::QuoteTick, trade::TradeTick},
+    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     events::{
         account::state::AccountState,
         order::{OrderEvent, OrderEventAny},
@@ -34,8 +34,11 @@ use sqlx::{PgPool, Row};
 
 use crate::sql::models::{
     accounts::AccountEventModel,
-    data::{QuoteTickModel, TradeTickModel},
-    enums::{AggressorSideModel, AssetClassModel, CurrencyTypeModel, TrailingOffsetTypeModel},
+    data::{BarModel, QuoteTickModel, TradeTickModel},
+    enums::{
+        AggregationSourceModel, AggressorSideModel, AssetClassModel, BarAggregationModel,
+        CurrencyTypeModel, PriceTypeModel, TrailingOffsetTypeModel,
+    },
     general::GeneralRow,
     instruments::InstrumentAnyModel,
     orders::OrderEventAnyModel,
@@ -642,5 +645,48 @@ impl DatabaseQueries {
         .await
         .map(|rows| rows.into_iter().map(|row| row.0).collect())
         .map_err(|err| anyhow::anyhow!("Failed to load quotes: {err}"))
+    }
+
+    pub async fn add_bar(pool: &PgPool, bar: &Bar) -> anyhow::Result<()> {
+        println!("Adding bar: {:?}", bar);
+        sqlx::query(r#"
+            INSERT INTO "bar" (
+                instrument_id, step, bar_aggregation, price_type, aggregation_source, open, high, low, close, volume, ts_event, ts_init, created_at, updated_at
+            ) VALUES (
+                $1, $2, $3::bar_aggregation, $4::price_type, $5::aggregation_source, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            ON CONFLICT (id)
+            DO UPDATE
+            SET
+                instrument_id = $1, step = $2, bar_aggregation = $3::bar_aggregation, price_type = $4::price_type, aggregation_source = $5::aggregation_source,
+                open = $6, high = $7, low = $8, close = $9, volume = $10, ts_event = $11, ts_init = $12, updated_at = CURRENT_TIMESTAMP
+        "#)
+            .bind(bar.bar_type.instrument_id.to_string())
+            .bind(bar.bar_type.spec.step as i32)
+            .bind(BarAggregationModel(bar.bar_type.spec.aggregation))
+            .bind(PriceTypeModel(bar.bar_type.spec.price_type))
+            .bind(AggregationSourceModel(bar.bar_type.aggregation_source))
+            .bind(bar.open.to_string())
+            .bind(bar.high.to_string())
+            .bind(bar.low.to_string())
+            .bind(bar.close.to_string())
+            .bind(bar.volume.to_string())
+            .bind(bar.ts_event.to_string())
+            .bind(bar.ts_init.to_string())
+            .execute(pool)
+            .await
+            .map(|_| ())
+            .map_err(|err| anyhow::anyhow!("Failed to insert into bar table: {err}"))
+    }
+
+    pub async fn load_bars(pool: &PgPool, instrument_id: InstrumentId) -> anyhow::Result<Vec<Bar>> {
+        sqlx::query_as::<_, BarModel>(
+            r#"SELECT * FROM "bar" WHERE instrument_id = $1 ORDER BY ts_event ASC"#,
+        )
+        .bind(instrument_id.to_string())
+        .fetch_all(pool)
+        .await
+        .map(|rows| rows.into_iter().map(|row| row.0).collect())
+        .map_err(|err| anyhow::anyhow!("Failed to load bars: {err}"))
     }
 }

@@ -299,7 +299,6 @@ pub struct Bar {
 
 impl Bar {
     /// Creates a new [`Bar`] instance.
-    #[must_use]
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         bar_type: BarType,
@@ -310,8 +309,8 @@ impl Bar {
         volume: Quantity,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> Self {
-        Self {
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
             bar_type,
             open,
             high,
@@ -320,7 +319,7 @@ impl Bar {
             volume,
             ts_event,
             ts_init,
-        }
+        })
     }
 
     /// Returns the metadata for the type, for use with serialization formats.

@@ -27,7 +27,7 @@ mod serial_tests {
     use nautilus_infrastructure::sql::cache_database::get_pg_cache_database;
     use nautilus_model::{
         accounts::{any::AccountAny, cash::CashAccount},
-        data::stubs::{quote_tick_ethusdt_binance, stub_trade_tick_ethusdt_buyer},
+        data::stubs::{quote_tick_ethusdt_binance, stub_bar, stub_trade_tick_ethusdt_buyer},
         enums::{CurrencyType, OrderSide, OrderStatus},
         events::account::stubs::cash_account_state_million_usd,
         identifiers::{
@@ -36,7 +36,7 @@ mod serial_tests {
         instruments::{
             any::InstrumentAny,
             stubs::{
-                crypto_future_btcusdt, crypto_perpetual_ethusdt, currency_pair_ethusdt,
+                audusd_sim, crypto_future_btcusdt, crypto_perpetual_ethusdt, currency_pair_ethusdt,
                 equity_aapl, futures_contract_es, options_contract_appl,
             },
             Instrument,
@@ -407,5 +407,33 @@ mod serial_tests {
         let quotes = pg_cache.load_quotes(&instrument.id()).unwrap();
         assert_eq!(quotes.len(), 1);
         assert_eq!(quotes[0], quote_tick);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_postgres_cache_database_add_bar() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        // add target instrument and currencies
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_instrument(&instrument).unwrap();
+        // add bar
+        let bar = stub_bar();
+        pg_cache.add_bar(&bar).unwrap();
+        wait_until(
+            || {
+                pg_cache
+                    .load_instrument(&instrument.id())
+                    .unwrap()
+                    .is_some()
+                    && !pg_cache.load_bars(&instrument.id()).unwrap().is_empty()
+            },
+            Duration::from_secs(2),
+        );
+        let bars = pg_cache.load_bars(&instrument.id()).unwrap();
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0], bar);
     }
 }
