@@ -27,7 +27,7 @@ mod serial_tests {
     use nautilus_infrastructure::sql::cache_database::get_pg_cache_database;
     use nautilus_model::{
         accounts::{any::AccountAny, cash::CashAccount},
-        data::stubs::stub_trade_tick_ethusdt_buyer,
+        data::stubs::{quote_tick_ethusdt_binance, stub_trade_tick_ethusdt_buyer},
         enums::{CurrencyType, OrderSide, OrderStatus},
         events::account::stubs::cash_account_state_million_usd,
         identifiers::{
@@ -379,5 +379,33 @@ mod serial_tests {
         let trades = pg_cache.load_trades(&instrument.id()).unwrap();
         assert_eq!(trades.len(), 1);
         assert_eq!(trades[0], trade_tick);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_postgres_cache_database_add_quote_tick() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        // add target instrument and currencies
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_instrument(&instrument).unwrap();
+        // add quote tick
+        let quote_tick = quote_tick_ethusdt_binance();
+        pg_cache.add_quote(&quote_tick).unwrap();
+        wait_until(
+            || {
+                pg_cache
+                    .load_instrument(&instrument.id())
+                    .unwrap()
+                    .is_some()
+                    && !pg_cache.load_quotes(&instrument.id()).unwrap().is_empty()
+            },
+            Duration::from_secs(2),
+        );
+        let quotes = pg_cache.load_quotes(&instrument.id()).unwrap();
+        assert_eq!(quotes.len(), 1);
+        assert_eq!(quotes[0], quote_tick);
     }
 }

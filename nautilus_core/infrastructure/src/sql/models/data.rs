@@ -17,7 +17,7 @@ use std::str::FromStr;
 
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
-    data::trade::TradeTick,
+    data::{quote::QuoteTick, trade::TradeTick},
     identifiers::{InstrumentId, TradeId},
     types::{price::Price, quantity::Quantity},
 };
@@ -26,6 +26,7 @@ use sqlx::{postgres::PgRow, Error, FromRow, Row};
 use crate::sql::models::enums::AggressorSideModel;
 
 pub struct TradeTickModel(pub TradeTick);
+pub struct QuoteTickModel(pub QuoteTick);
 
 impl<'r> FromRow<'r, PgRow> for TradeTickModel {
     fn from_row(row: &'r PgRow) -> Result<Self, Error> {
@@ -60,5 +61,42 @@ impl<'r> FromRow<'r, PgRow> for TradeTickModel {
             ts_init,
         );
         Ok(TradeTickModel(trade))
+    }
+}
+
+impl<'r> FromRow<'r, PgRow> for QuoteTickModel {
+    fn from_row(row: &'r PgRow) -> Result<Self, Error> {
+        let instrument_id = row
+            .try_get::<&str, _>("instrument_id")
+            .map(|x| InstrumentId::from_str(x).unwrap())?;
+        let bid_price = row
+            .try_get::<&str, _>("bid_price")
+            .map(|x| Price::from_str(x).unwrap())?;
+        let ask_price = row
+            .try_get::<&str, _>("ask_price")
+            .map(|x| Price::from_str(x).unwrap())?;
+        let bid_size = row
+            .try_get::<&str, _>("bid_size")
+            .map(|x| Quantity::from_str(x).unwrap())?;
+        let ask_size = row
+            .try_get::<&str, _>("ask_size")
+            .map(|x| Quantity::from_str(x).unwrap())?;
+        let ts_event = row
+            .try_get::<String, _>("ts_event")
+            .map(|res| UnixNanos::from(res.as_str()))?;
+        let ts_init = row
+            .try_get::<String, _>("ts_init")
+            .map(|res| UnixNanos::from(res.as_str()))?;
+        let quote = QuoteTick::new(
+            instrument_id,
+            bid_price,
+            ask_price,
+            bid_size,
+            ask_size,
+            ts_event,
+            ts_init,
+        )
+        .unwrap();
+        Ok(QuoteTickModel(quote))
     }
 }

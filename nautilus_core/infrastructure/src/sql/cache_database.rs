@@ -70,6 +70,7 @@ pub enum DatabaseQuery {
     AddOrder(OrderAny, bool),
     AddAccount(AccountAny, bool),
     AddTrade(TradeTick),
+    AddQuote(QuoteTick),
 }
 
 fn get_buffer_interval() -> Duration {
@@ -194,6 +195,9 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
             },
             DatabaseQuery::AddTrade(trade) => {
                 DatabaseQueries::add_trade(pool, &trade).await.unwrap();
+            }
+            DatabaseQuery::AddQuote(quote) => {
+                DatabaseQueries::add_quote(pool, &quote).await.unwrap();
             }
         }
     }
@@ -574,7 +578,32 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn add_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
-        todo!()
+        let query = DatabaseQuery::AddQuote(quote.to_owned());
+        self.tx.send(query).map_err(|err| {
+            anyhow::anyhow!("Failed to send query add_quote to database message handler: {err}")
+        })
+    }
+
+    fn load_quotes(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<QuoteTick>> {
+        let pool = self.pool.clone();
+        let instrument_id = instrument_id.to_owned();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_quotes(&pool, instrument_id).await;
+            match result {
+                Ok(quotes) => {
+                    let _ = tx.send(quotes);
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to load quotes for instrument {}: {:?}",
+                        instrument_id, e
+                    );
+                    let _ = tx.send(Vec::new());
+                }
+            }
+        });
+        Ok(rx.recv().unwrap())
     }
 
     fn add_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
