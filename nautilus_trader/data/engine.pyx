@@ -1085,8 +1085,11 @@ cdef class DataEngine(Component):
 
         cdef str topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol}"
 
-        cdef int num_subscribers = self._msgbus.num_subscribers(pattern=topic)
-        cdef bint is_internal_book_subscriber = self._msgbus.is_subscribed(topic=topic, handler=self._update_order_book)
+        cdef int num_subscribers = len(self._msgbus.subscriptions(pattern=topic))
+        cdef bint is_internal_book_subscriber = self._msgbus.is_subscribed(
+            topic=topic,
+            handler=self._update_order_book,
+        )
 
         # Remove the subscription for the internal order book if it is the last subscription
         if num_subscribers == 1 and is_internal_book_subscriber:

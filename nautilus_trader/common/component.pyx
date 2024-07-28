@@ -2123,23 +2123,6 @@ cdef class MessageBus:
         """
         return len(self.subscriptions(pattern)) > 0
 
-    cpdef int num_subscribers(self, str pattern = None):
-        """
-        Return the number of subscribers for the give topic `pattern`.
-
-        Parameters
-        ----------
-        pattern : str, optional
-            The topic filter. May include wildcard characters `*` and `?`.
-            If ``None`` then query is for **all** topics.
-
-        Returns
-        -------
-        int
-
-        """
-        return len(self.subscriptions(pattern))
-
     cpdef bint is_subscribed(self, str topic, handler: Callable[[Any], None]):
         """
         Return if topic and handler is subscribed to the message bus.

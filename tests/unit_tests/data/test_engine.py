@@ -817,51 +817,7 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.subscribed_order_book_deltas() == [ETHUSDT_BINANCE.id]
 
-    def test_execute_unsubscribe_order_book_stream_then_removes_handler(self):
-        # Arrange
-        self.data_engine.register_client(self.binance_client)
-        self.binance_client.start()
-
-        subscribe = Subscribe(
-            client_id=ClientId(BINANCE.value),
-            venue=BINANCE,
-            data_type=DataType(
-                OrderBook,
-                metadata={
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "book_type": 2,
-                    "depth": 25,
-                    "interval_ms": 1000,
-                    "managed": True,
-                },
-            ),
-            command_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
-        )
-
-        self.data_engine.execute(subscribe)
-
-        unsubscribe = Unsubscribe(
-            client_id=ClientId(BINANCE.value),
-            venue=BINANCE,
-            data_type=DataType(
-                OrderBook,
-                metadata={
-                    "instrument_id": ETHUSDT_BINANCE.id,
-                    "interval_ms": 1000,
-                },
-            ),
-            command_id=UUID4(),
-            ts_init=self.clock.timestamp_ns(),
-        )
-
-        # Act
-        self.data_engine.execute(unsubscribe)
-
-        # Assert
-        assert self.data_engine.subscribed_order_book_snapshots() == []
-
-    def test_execute_unsubscribe_order_book_data_then_removes_handler(self):
+    def test_execute_unsubscribe_order_book_deltas_then_removes_handler(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
         self.binance_client.start()
@@ -905,7 +861,7 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.subscribed_order_book_snapshots() == []
 
-    def test_execute_unsubscribe_order_book_interval_then_removes_handler(self):
+    def test_execute_unsubscribe_order_book_at_interval_then_removes_handler(self):
         # Arrange
         self.data_engine.register_client(self.binance_client)
         self.binance_client.start()
