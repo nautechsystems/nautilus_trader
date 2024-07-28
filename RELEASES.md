@@ -17,7 +17,7 @@ Released on TBD (UTC).
 - Refactored order submission error handling for Interactive Brokers (#1783), thanks @rsmb7z
 - Improved live reconciliation robustness (will now generate inferred orders necessary to align external position state)
 - Improved tests for Interactive Brokers (#1776), thanks @mylesgamez
-- Upgraded `tokio` crate to 1.39.1
+- Upgraded `tokio` crate to 1.39.2
 - Upgraded `datafusion` crate to 40.0.0
 
 ### Breaking Changes
