@@ -15,7 +15,7 @@
 
 //! A common `Indicator` trait.
 
-use std::{fmt, fmt::Debug};
+use std::fmt::Debug;
 
 use nautilus_model::{
     data::{
@@ -73,14 +73,14 @@ pub trait MovingAverage: Indicator {
 }
 
 impl Debug for dyn Indicator + Send {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         // Implement custom formatting for the Indicator trait object
         write!(f, "Indicator {{ ... }}")
     }
 }
 
 impl Debug for dyn MovingAverage + Send {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         // Implement custom formatting for the Indicator trait object
         write!(f, "MovingAverage()")
     }

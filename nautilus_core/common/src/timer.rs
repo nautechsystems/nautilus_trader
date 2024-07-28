@@ -18,7 +18,7 @@
 use std::{
     cmp::Ordering,
     ffi::c_char,
-    fmt::{Display, Formatter},
+    fmt::Display,
     num::NonZeroU64,
     sync::{
         atomic::{self, AtomicBool, AtomicU64},
@@ -75,7 +75,7 @@ impl TimeEvent {
 }
 
 impl Display for TimeEvent {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "TimeEvent(name={}, event_id={}, ts_event={}, ts_init={})",

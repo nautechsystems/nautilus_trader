@@ -15,7 +15,8 @@
 
 use std::{
     collections::HashMap,
-    env, fmt,
+    env,
+    fmt::Display,
     str::FromStr,
     sync::{
         atomic::Ordering,
@@ -181,8 +182,8 @@ pub struct LogLine {
     pub message: String,
 }
 
-impl fmt::Display for LogLine {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for LogLine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[{}] {}: {}", self.level, self.component, self.message)
     }
 }
