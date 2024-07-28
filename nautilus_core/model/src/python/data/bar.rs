@@ -170,7 +170,8 @@ impl Bar {
             volume,
             ts_event.into(),
             ts_init.into(),
-        ))
+        )
+        .unwrap())
     }
 }
 
@@ -187,8 +188,8 @@ impl Bar {
         volume: Quantity,
         ts_event: u64,
         ts_init: u64,
-    ) -> Self {
-        Self::new(
+    ) -> PyResult<Self> {
+        Ok(Self::new(
             bar_type,
             open,
             high,
@@ -198,6 +199,7 @@ impl Bar {
             ts_event.into(),
             ts_init.into(),
         )
+        .unwrap())
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

@@ -199,7 +199,8 @@ impl BarBuilder {
             self.volume,
             ts_event,
             ts_init,
-        );
+        )
+        .unwrap();
 
         self.last_close = self.close;
         self.reset();
@@ -628,7 +629,8 @@ mod tests {
             Quantity::new(1.0, 0).unwrap(),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
-        );
+        )
+        .unwrap();
 
         builder.set_partial(partial_bar);
         let bar = builder.build_now();
@@ -661,7 +663,8 @@ mod tests {
             Quantity::new(1.0, 0).unwrap(),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(1_000_000_000),
-        );
+        )
+        .unwrap();
 
         let partial_bar2 = Bar::new(
             bar_type,
@@ -672,7 +675,8 @@ mod tests {
             Quantity::new(2.0, 0).unwrap(),
             UnixNanos::from(3_000_000_000),
             UnixNanos::from(3_000_000_000),
-        );
+        )
+        .unwrap();
 
         builder.set_partial(partial_bar1);
         builder.set_partial(partial_bar2);

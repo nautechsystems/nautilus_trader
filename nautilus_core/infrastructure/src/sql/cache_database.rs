@@ -71,6 +71,7 @@ pub enum DatabaseQuery {
     AddAccount(AccountAny, bool),
     AddTrade(TradeTick),
     AddQuote(QuoteTick),
+    AddBar(Bar),
 }
 
 fn get_buffer_interval() -> Duration {
@@ -198,6 +199,9 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
             }
             DatabaseQuery::AddQuote(quote) => {
                 DatabaseQueries::add_quote(pool, &quote).await.unwrap();
+            }
+            DatabaseQuery::AddBar(bar) => {
+                DatabaseQueries::add_bar(pool, &bar).await.unwrap();
             }
         }
     }
@@ -636,7 +640,32 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn add_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
-        todo!()
+        let query = DatabaseQuery::AddBar(bar.to_owned());
+        self.tx.send(query).map_err(|err| {
+            anyhow::anyhow!("Failed to send query add_bar to database message handler: {err}")
+        })
+    }
+
+    fn load_bars(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<Bar>> {
+        let pool = self.pool.clone();
+        let instrument_id = instrument_id.to_owned();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_bars(&pool, instrument_id).await;
+            match result {
+                Ok(bars) => {
+                    let _ = tx.send(bars);
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to load bars for instrument {}: {:?}",
+                        instrument_id, e
+                    );
+                    let _ = tx.send(Vec::new());
+                }
+            }
+        });
+        Ok(rx.recv().unwrap())
     }
 
     fn index_venue_order_id(

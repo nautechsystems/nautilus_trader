@@ -114,6 +114,8 @@ pub trait CacheDatabaseAdapter {
 
     fn add_bar(&mut self, bar: &Bar) -> anyhow::Result<()>;
 
+    fn load_bars(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<Bar>>;
+
     fn index_venue_order_id(
         &mut self,
         client_order_id: ClientOrderId,

@@ -880,6 +880,10 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         anyhow::bail!("Saving market data for Redis cache adapter not supported")
     }
 
+    fn load_bars(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<Bar>> {
+        anyhow::bail!("Loading market data for Redis cache adapter not supported")
+    }
+
     fn index_venue_order_id(
         &mut self,
         client_order_id: ClientOrderId,

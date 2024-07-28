@@ -15,7 +15,10 @@
 
 use std::str::FromStr;
 
-use nautilus_model::enums::{AggressorSide, AssetClass, CurrencyType, TrailingOffsetType};
+use nautilus_model::enums::{
+    AggregationSource, AggressorSide, AssetClass, BarAggregation, CurrencyType, PriceType,
+    TrailingOffsetType,
+};
 use sqlx::{
     database::{HasArguments, HasValueRef},
     encode::IsNull,
@@ -159,6 +162,121 @@ impl<'r> sqlx::Decode<'r, sqlx::Postgres> for AggressorSideModel {
 impl sqlx::Type<sqlx::Postgres> for AggressorSideModel {
     fn type_info() -> sqlx::postgres::PgTypeInfo {
         PgTypeInfo::with_name("aggressor_side")
+    }
+
+    fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
+        *ty == Self::type_info() || <&str as Type<sqlx::Postgres>>::compatible(ty)
+    }
+}
+
+pub struct AggregationSourceModel(pub AggregationSource);
+
+impl sqlx::Encode<'_, sqlx::Postgres> for AggregationSourceModel {
+    fn encode_by_ref(&self, buf: &mut <Postgres as HasArguments<'_>>::ArgumentBuffer) -> IsNull {
+        let aggregation_source_str = match self.0 {
+            AggregationSource::Internal => "INTERNAL",
+            AggregationSource::External => "EXTERNAL",
+        };
+        <&str as sqlx::Encode<sqlx::Postgres>>::encode(aggregation_source_str, buf)
+    }
+}
+
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for AggregationSourceModel {
+    fn decode(value: <Postgres as HasValueRef<'r>>::ValueRef) -> Result<Self, BoxDynError> {
+        let aggregation_source_str: &str = <&str as Decode<sqlx::Postgres>>::decode(value)?;
+        let aggregation_source =
+            AggregationSource::from_str(aggregation_source_str).map_err(|_| {
+                sqlx::Error::Decode(
+                    format!("Invalid aggregation source: {}", aggregation_source_str).into(),
+                )
+            })?;
+        Ok(AggregationSourceModel(aggregation_source))
+    }
+}
+
+impl sqlx::Type<sqlx::Postgres> for AggregationSourceModel {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        PgTypeInfo::with_name("aggregation_source")
+    }
+
+    fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
+        *ty == Self::type_info() || <&str as Type<sqlx::Postgres>>::compatible(ty)
+    }
+}
+
+pub struct BarAggregationModel(pub BarAggregation);
+
+impl sqlx::Encode<'_, sqlx::Postgres> for BarAggregationModel {
+    fn encode_by_ref(&self, buf: &mut <Postgres as HasArguments<'_>>::ArgumentBuffer) -> IsNull {
+        let bar_aggregation_str = match self.0 {
+            BarAggregation::Tick => "TICK",
+            BarAggregation::TickImbalance => "TICK_IMBALANCE",
+            BarAggregation::TickRuns => "TICK_RUNS",
+            BarAggregation::Volume => "VOLUME",
+            BarAggregation::VolumeImbalance => "VOLUME_IMBALANCE",
+            BarAggregation::VolumeRuns => "VOLUME_RUNS",
+            BarAggregation::Value => "VALUE",
+            BarAggregation::ValueImbalance => "VALUE_IMBALANCE",
+            BarAggregation::ValueRuns => "VALUE_RUNS",
+            BarAggregation::Millisecond => "TIME",
+            BarAggregation::Second => "SECOND",
+            BarAggregation::Minute => "MINUTE",
+            BarAggregation::Hour => "HOUR",
+            BarAggregation::Day => "DAY",
+            BarAggregation::Week => "WEEK",
+            BarAggregation::Month => "MONTH",
+        };
+        <&str as sqlx::Encode<sqlx::Postgres>>::encode(bar_aggregation_str, buf)
+    }
+}
+
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for BarAggregationModel {
+    fn decode(value: <Postgres as HasValueRef<'r>>::ValueRef) -> Result<Self, BoxDynError> {
+        let bar_aggregation_str: &str = <&str as Decode<sqlx::Postgres>>::decode(value)?;
+        let bar_aggregation = BarAggregation::from_str(bar_aggregation_str).map_err(|_| {
+            sqlx::Error::Decode(format!("Invalid bar aggregation: {}", bar_aggregation_str).into())
+        })?;
+        Ok(BarAggregationModel(bar_aggregation))
+    }
+}
+
+impl sqlx::Type<sqlx::Postgres> for BarAggregationModel {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        PgTypeInfo::with_name("bar_aggregation")
+    }
+
+    fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {
+        *ty == Self::type_info() || <&str as Type<sqlx::Postgres>>::compatible(ty)
+    }
+}
+
+pub struct PriceTypeModel(pub PriceType);
+
+impl sqlx::Encode<'_, sqlx::Postgres> for PriceTypeModel {
+    fn encode_by_ref(&self, buf: &mut <Postgres as HasArguments<'_>>::ArgumentBuffer) -> IsNull {
+        let price_type_str = match self.0 {
+            PriceType::Bid => "BID",
+            PriceType::Ask => "ASK",
+            PriceType::Mid => "MID",
+            PriceType::Last => "LAST",
+        };
+        <&str as sqlx::Encode<sqlx::Postgres>>::encode(price_type_str, buf)
+    }
+}
+
+impl<'r> sqlx::Decode<'r, sqlx::Postgres> for PriceTypeModel {
+    fn decode(value: <Postgres as HasValueRef<'r>>::ValueRef) -> Result<Self, BoxDynError> {
+        let price_type_str: &str = <&str as Decode<sqlx::Postgres>>::decode(value)?;
+        let price_type = PriceType::from_str(price_type_str).map_err(|_| {
+            sqlx::Error::Decode(format!("Invalid price type: {}", price_type_str).into())
+        })?;
+        Ok(PriceTypeModel(price_type))
+    }
+}
+
+impl sqlx::Type<sqlx::Postgres> for PriceTypeModel {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        PgTypeInfo::with_name("price_type")
     }
 
     fn compatible(ty: &sqlx::postgres::PgTypeInfo) -> bool {

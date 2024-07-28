@@ -325,7 +325,7 @@ pub fn stub_trade_tick_ethusdt_buyer() -> TradeTick {
 #[fixture]
 pub fn stub_bar() -> Bar {
     let instrument_id = InstrumentId {
-        symbol: Symbol::new("AUDUSD").unwrap(),
+        symbol: Symbol::new("AUD/USD").unwrap(),
         venue: Venue::new("SIM").unwrap(),
     };
     let bar_spec = BarSpecification {
