@@ -618,6 +618,7 @@ cdef class DataEngine(Component):
         self.command_count += 1
 
         if command.client_id in self._external_clients:
+            self._msgbus.add_streaming_type(command.data_type.type)
             self._log.debug(
                 f"{command.client_id} declared as external client - disregarding subscription command",
             )

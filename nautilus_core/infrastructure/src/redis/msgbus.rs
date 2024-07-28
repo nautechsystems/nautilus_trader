@@ -30,7 +30,10 @@ use nautilus_common::msgbus::{
     database::{BusMessage, DatabaseConfig, MessageBusConfig, MessageBusDatabaseAdapter},
     CLOSE_TOPIC,
 };
-use nautilus_core::{time::duration_since_unix_epoch, uuid::UUID4};
+use nautilus_core::{
+    time::{duration_since_unix_epoch, get_atomic_clock_realtime},
+    uuid::UUID4,
+};
 use nautilus_model::identifiers::TraderId;
 use redis::*;
 use streams::StreamReadOptions;
@@ -313,13 +316,18 @@ pub fn stream_messages(
     stream_signal: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
     debug!("Starting message streaming");
-    let mut con = create_redis_connection(MSGBUS_PUBLISH, config)?;
+    let mut con = create_redis_connection(MSGBUS_STREAM, config)?;
 
     let stream_keys = &stream_keys
         .iter()
         .map(String::as_str)
         .collect::<Vec<&str>>();
-    let mut last_id = "0".to_string();
+
+    // Start streaming from current timestamp
+    let clock = get_atomic_clock_realtime();
+    let timestamp_ms = clock.get_time_ms();
+    let mut last_id = timestamp_ms.to_string();
+
     let opts = StreamReadOptions::default().block(100);
 
     'outer: loop {
@@ -555,11 +563,16 @@ mod serial_tests {
         let stream_signal = Arc::new(AtomicBool::new(false));
         let stream_signal_clone = stream_signal.clone();
 
+        // Use a message ID in the future, as streaming begins
+        // around the timestamp the thread is spawned.
+        let clock = get_atomic_clock_realtime();
+        let future_id = (clock.get_time_ms() + 1_000_000).to_string();
+
         // Publish test message
         let _: () = con
             .xadd(
                 stream_key,
-                "*",
+                future_id,
                 &[("topic", "topic1"), ("payload", "data1")],
             )
             .unwrap();
@@ -599,11 +612,16 @@ mod serial_tests {
         let stream_signal = Arc::new(AtomicBool::new(false));
         let stream_signal_clone = stream_signal.clone();
 
+        // Use a message ID in the future, as streaming begins
+        // around the timestamp the thread is spawned.
+        let clock = get_atomic_clock_realtime();
+        let future_id = (clock.get_time_ms() + 1_000_000).to_string();
+
         // Publish test message
         let _: () = con
             .xadd(
                 stream_key,
-                "*",
+                future_id,
                 &[("topic", "topic1"), ("payload", "data1")],
             )
             .unwrap();
