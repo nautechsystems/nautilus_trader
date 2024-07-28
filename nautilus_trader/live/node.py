@@ -22,6 +22,7 @@ from nautilus_trader.cache.base import CacheFacade
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import TradingNodeConfig
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.factories import LiveDataClientFactory
@@ -89,6 +90,7 @@ class TradingNode:
         self.kernel.logger.info(f"{self._has_msgbus_backing=}", LogColor.BLUE)
 
         # Async tasks
+        self._task_streaming: asyncio.Future | None = None
         self._task_heartbeats: asyncio.Task | None = None
         self._task_position_snapshots: asyncio.Task | None = None
 
@@ -275,6 +277,23 @@ class TradingNode:
         except RuntimeError as e:
             self.kernel.logger.exception("Error on run", e)
 
+    def publish_bus_message(self, bus_msg: nautilus_pyo3.BusMessage) -> None:
+        """
+        Publish bus message on the internal message bus.
+
+        Note the message will not be published externally.
+
+        Parameters
+        ----------
+        bus_msg : nautilus_pyo3.BusMessage
+            The bus message to publish.
+
+        """
+        msg = self.kernel.msgbus_serializer.deserialize(bus_msg.payload)
+        if not self.kernel.msgbus.is_streaming_type(type(msg)):
+            return  # Type has not been registered for message streaming
+        self.kernel.msgbus.publish(bus_msg.topic, msg, external_pub=False)
+
     async def run_async(self) -> None:
         """
         Start and run the trading node asynchronously.
@@ -306,6 +325,11 @@ class TradingNode:
                 self.kernel.exec_engine.get_evt_queue_task(),
             ]
 
+            if self._config.message_bus and self._config.message_bus.external_streams:
+                self.kernel.logger.info("Starting task: external message streaming", LogColor.BLUE)
+                self._task_streaming = asyncio.ensure_future(
+                    self.kernel.msgbus_database.stream(self.publish_bus_message),
+                )
             if self._config.heartbeat_interval:
                 self._task_heartbeats = asyncio.create_task(
                     self.maintain_heartbeat(self._config.heartbeat_interval),
@@ -413,13 +437,18 @@ class TradingNode:
         If save strategy is configured, then strategy states will be saved.
 
         """
+        if self._task_streaming:
+            self.kernel.logger.info("Cancelling `task_streaming`")
+            self._task_streaming.cancel()
+            self._task_streaming = None
+
         if self._task_heartbeats:
-            self.kernel.logger.info("Cancelling `task_heartbeats` task")
+            self.kernel.logger.info("Cancelling `task_heartbeats`")
             self._task_heartbeats.cancel()
             self._task_heartbeats = None
 
         if self._task_position_snapshots:
-            self.kernel.logger.info("Cancelling `task_position_snapshots` task")
+            self.kernel.logger.info("Cancelling `task_position_snapshots`")
             self._task_position_snapshots.cancel()
             self._task_position_snapshots = None
 
