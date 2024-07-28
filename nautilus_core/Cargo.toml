@@ -44,7 +44,7 @@ rust_decimal = "1.35.0"
 rust_decimal_macros = "1.35.0"
 semver = "1.0.23"
 serde = { version = "1.0.203", features = ["derive"] }
-serde_json = "1.0.120"
+serde_json = "1.0.121"
 strum = { version = "0.26.3", features = ["derive"] }
 thiserror = "1.0.63"
 thousands = "0.2.0"
