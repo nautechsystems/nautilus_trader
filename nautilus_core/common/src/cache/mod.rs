@@ -50,14 +50,32 @@ use nautilus_model::{
     position::Position,
     types::{currency::Currency, price::Price, quantity::Quantity},
 };
+use serde::{Deserialize, Serialize};
 use ustr::Ustr;
 
-use crate::enums::SerializationEncoding;
+use crate::{enums::SerializationEncoding, msgbus::database::DatabaseConfig};
 
 /// Configuration for `Cache` instances.
+///
+/// # Parameters
+///
+/// - `database`: The configuration for the cache backing database.
+/// - `encoding`: The encoding for database operations, controls the type of serializer used. Options are `"msgpack"` and `"json"`. Default is `"msgpack"`.
+/// - `timestamps_as_iso8601`: If timestamps should be persisted as ISO 8601 strings. If `false`, they will be persisted as UNIX nanoseconds. Default is `false`.
+/// - `buffer_interval_ms`: The buffer interval (milliseconds) between pipelined/batched transactions. The recommended range is [10, 1000] milliseconds, with a good compromise being 100 milliseconds.
+/// - `use_trader_prefix`: If a 'trader-' prefix is used for keys. Default is `true`.
+/// - `use_instance_id`: If the trader's instance ID is used for keys. Default is `false`.
+/// - `flush_on_start`: If the database should be flushed on start. Default is `false`.
+/// - `drop_instruments_on_reset`: If instrument data should be dropped from the cache's memory on reset. Default is `true`.
+/// - `tick_capacity`: The maximum length for internal tick deques. Default is `10_000`.
+/// - `bar_capacity`: The maximum length for internal bar deques. Default is `10_000`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct CacheConfig {
+    pub database: Option<DatabaseConfig>,
     pub encoding: SerializationEncoding,
     pub timestamps_as_iso8601: bool,
+    pub buffer_interval_ms: Option<usize>,
     pub use_trader_prefix: bool,
     pub use_instance_id: bool,
     pub flush_on_start: bool,
@@ -67,13 +85,33 @@ pub struct CacheConfig {
     pub save_market_data: bool,
 }
 
+impl Default for CacheConfig {
+    fn default() -> Self {
+        CacheConfig {
+            database: None,
+            encoding: SerializationEncoding::MsgPack,
+            timestamps_as_iso8601: false,
+            buffer_interval_ms: None,
+            use_trader_prefix: true,
+            use_instance_id: false,
+            flush_on_start: false,
+            drop_instruments_on_reset: true,
+            tick_capacity: 10_000,
+            bar_capacity: 10_000,
+            save_market_data: false,
+        }
+    }
+}
+
 impl CacheConfig {
     /// Creates a new [`CacheConfig`] instance.
     #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub const fn new(
+        database: Option<DatabaseConfig>,
         encoding: SerializationEncoding,
         timestamps_as_iso8601: bool,
+        buffer_interval_ms: Option<usize>,
         use_trader_prefix: bool,
         use_instance_id: bool,
         flush_on_start: bool,
@@ -83,8 +121,10 @@ impl CacheConfig {
         save_market_data: bool,
     ) -> Self {
         Self {
+            database,
             encoding,
             timestamps_as_iso8601,
+            buffer_interval_ms,
             use_trader_prefix,
             use_instance_id,
             flush_on_start,
@@ -93,23 +133,6 @@ impl CacheConfig {
             bar_capacity,
             save_market_data,
         }
-    }
-}
-
-impl Default for CacheConfig {
-    /// Creates a new default [`CacheConfig`] instance.
-    fn default() -> Self {
-        Self::new(
-            SerializationEncoding::MsgPack,
-            false,
-            true,
-            false,
-            false,
-            true,
-            10_000,
-            10_000,
-            false,
-        )
     }
 }
 

@@ -320,7 +320,7 @@ class MessageBusConfig(NautilusConfig, frozen=True):
         If the traders ID is used for stream names.
     use_instance_id : bool, default False
         If the traders instance ID is used for stream names.
-    streams_prefix : str, default 'streams'
+    streams_prefix : str, default 'stream'
         The prefix for externally published stream names (must have a `database` config).
         If `use_trader_id` and `use_instance_id` are *both* false, then it becomes possible for
         many traders to be configured to write to the same streams.
@@ -343,7 +343,7 @@ class MessageBusConfig(NautilusConfig, frozen=True):
     use_trader_prefix: bool = True
     use_trader_id: bool = True
     use_instance_id: bool = False
-    streams_prefix: str = "streams"
+    streams_prefix: str = "stream"
     stream_per_topic: bool = True
     external_streams: list[str] | None = None
     types_filter: list[type] | None = None

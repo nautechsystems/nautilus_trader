@@ -27,24 +27,18 @@ use std::{
 use bytes::Bytes;
 use futures::stream::Stream;
 use nautilus_common::msgbus::{
-    database::{BusMessage, MessageBusDatabaseAdapter},
+    database::{BusMessage, DatabaseConfig, MessageBusConfig, MessageBusDatabaseAdapter},
     CLOSE_TOPIC,
 };
 use nautilus_core::{time::duration_since_unix_epoch, uuid::UUID4};
 use nautilus_model::identifiers::TraderId;
 use redis::*;
-use serde_json::Value;
 use streams::StreamReadOptions;
 use tracing::{debug, error};
 
-use super::get_external_stream_keys;
-use crate::redis::{
-    create_redis_connection, get_buffer_interval, get_database_config, get_stream_key,
-    get_stream_per_topic,
-};
+use super::{REDIS_MINID, REDIS_XTRIM};
+use crate::redis::{create_redis_connection, get_stream_key};
 
-const XTRIM: &str = "XTRIM";
-const MINID: &str = "MINID";
 const MSGBUS_PUBLISH: &str = "msgbus-publish";
 const MSGBUS_STREAM: &str = "msgbus-stream";
 const TRIM_BUFFER_SECONDS: u64 = 60;
@@ -71,24 +65,28 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
     fn new(
         trader_id: TraderId,
         instance_id: UUID4,
-        config: HashMap<String, serde_json::Value>,
+        config: MessageBusConfig,
     ) -> anyhow::Result<Self> {
         let config_clone = config.clone();
+        let db_config = config
+            .database
+            .clone()
+            .ok_or_else(|| anyhow::anyhow!("No database config"))?;
+
         let (pub_tx, pub_rx) = std::sync::mpsc::channel::<BusMessage>();
 
         // Create publish thread and channel
         let pub_handle = Some(
-            thread::Builder::new()
+            std::thread::Builder::new()
                 .name(MSGBUS_PUBLISH.to_string())
                 .spawn(move || publish_messages(pub_rx, trader_id, instance_id, config_clone))
                 .expect("Error spawning '{MSGBUS_PUBLISH}' thread"),
         );
 
         // Conditionally create stream thread and channel if external streams configured
-        let external_streams = get_external_stream_keys(&config);
+        let external_streams = config.external_streams.clone().unwrap_or_default();
         let stream_signal = Arc::new(AtomicBool::new(false));
         let (stream_rx, stream_handle) = if !external_streams.is_empty() {
-            let config_clone = config.clone();
             let stream_signal_clone = stream_signal.clone();
             let (stream_tx, stream_rx) = tokio::sync::mpsc::channel::<BusMessage>(100_000);
             (
@@ -99,7 +97,7 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
                         .spawn(move || {
                             stream_messages(
                                 stream_tx,
-                                config_clone,
+                                db_config,
                                 external_streams,
                                 stream_signal_clone,
                             )
@@ -143,22 +141,21 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
         };
         if let Err(e) = self.pub_tx.send(msg) {
             error!("Failed to send close message: {:?}", e);
-        };
+        }
 
         if let Some(handle) = self.pub_handle.take() {
             debug!("Joining '{MSGBUS_PUBLISH}' thread");
             if let Err(e) = handle.join().map_err(|e| anyhow::anyhow!("{:?}", e)) {
                 error!("Error joining '{MSGBUS_PUBLISH}' thread: {:?}", e);
             }
-        };
+        }
 
         if let Some(handle) = self.stream_handle.take() {
             debug!("Joining '{MSGBUS_STREAM}' thread");
             if let Err(e) = handle.join().map_err(|e| anyhow::anyhow!("{:?}", e)) {
                 error!("Error joining '{MSGBUS_STREAM}' thread: {:?}", e);
             }
-        };
-
+        }
         Ok(())
     }
 }
@@ -187,39 +184,35 @@ pub fn publish_messages(
     rx: std::sync::mpsc::Receiver<BusMessage>,
     trader_id: TraderId,
     instance_id: UUID4,
-    config: HashMap<String, Value>,
+    config: MessageBusConfig,
 ) -> anyhow::Result<()> {
-    debug!("Starting Redis message publishing");
-
-    let db_config = get_database_config(&config)?;
-    let mut con = create_redis_connection(MSGBUS_PUBLISH, &db_config)?;
+    debug!("Starting message publishing");
+    let db_config = config
+        .database
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("No database config"))?;
+    let mut con = create_redis_connection(MSGBUS_PUBLISH, db_config.clone())?;
     let stream_key = get_stream_key(trader_id, instance_id, &config);
-    let stream_per_topic = get_stream_per_topic(&config);
 
     // Autotrimming
-    let autotrim_mins = config
-        .get("autotrim_mins")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0) as usize;
-    let autotrim_duration = if autotrim_mins > 0 {
-        Some(Duration::from_secs(autotrim_mins as u64 * 60))
-    } else {
-        None
-    };
+    let autotrim_duration = config
+        .autotrim_mins
+        .filter(|&mins| mins > 0)
+        .map(|mins| Duration::from_secs(mins as u64 * 60));
     let mut last_trim_index: HashMap<String, usize> = HashMap::new();
 
     // Buffering
     let mut buffer: VecDeque<BusMessage> = VecDeque::new();
     let mut last_drain = Instant::now();
     let recv_interval = Duration::from_millis(1);
-    let buffer_interval = get_buffer_interval(&config);
+    let buffer_interval = Duration::from_millis(config.buffer_interval_ms.unwrap_or(0) as u64);
 
     loop {
         if last_drain.elapsed() >= buffer_interval && !buffer.is_empty() {
             drain_buffer(
                 &mut con,
                 &stream_key,
-                stream_per_topic,
+                config.stream_per_topic,
                 autotrim_duration,
                 &mut last_trim_index,
                 &mut buffer,
@@ -247,7 +240,7 @@ pub fn publish_messages(
         drain_buffer(
             &mut con,
             &stream_key,
-            stream_per_topic,
+            config.stream_per_topic,
             autotrim_duration,
             &mut last_trim_index,
             &mut buffer,
@@ -292,9 +285,9 @@ fn drain_buffer(
         if *last_trim_ms < (unix_duration_now - trim_buffer).as_millis() as usize {
             let min_timestamp_ms =
                 (unix_duration_now - autotrim_duration.unwrap()).as_millis() as usize;
-            let result: Result<(), redis::RedisError> = redis::cmd(XTRIM)
+            let result: Result<(), redis::RedisError> = redis::cmd(REDIS_XTRIM)
                 .arg(stream_key.clone())
-                .arg(MINID)
+                .arg(REDIS_MINID)
                 .arg(min_timestamp_ms)
                 .query(conn);
 
@@ -315,14 +308,13 @@ fn drain_buffer(
 #[allow(clippy::type_complexity)]
 pub fn stream_messages(
     tx: tokio::sync::mpsc::Sender<BusMessage>,
-    config: HashMap<String, Value>,
+    config: DatabaseConfig,
     stream_keys: Vec<String>,
     stream_signal: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
     debug!("Starting message streaming");
+    let mut con = create_redis_connection(MSGBUS_PUBLISH, config)?;
 
-    let db_config = get_database_config(&config)?;
-    let mut con = create_redis_connection(MSGBUS_PUBLISH, &db_config)?;
     let stream_keys = &stream_keys
         .iter()
         .map(String::as_str)
@@ -332,7 +324,7 @@ pub fn stream_messages(
 
     'outer: loop {
         if stream_signal.load(Ordering::Relaxed) {
-            debug!("Terminate signal received");
+            debug!("Received terminate signal");
             break;
         }
         let result: Result<RedisStreamBulk, _> =
@@ -499,54 +491,43 @@ mod serial_tests {
     use nautilus_common::testing::wait_until;
     use redis::Commands;
     use rstest::*;
-    use serde_json::json;
 
     use super::*;
     use crate::redis::flush_redis;
 
     #[fixture]
     fn redis_connection() -> redis::Connection {
-        let db_config = json!({"type": "redis"});
-        let mut con = create_redis_connection(MSGBUS_STREAM, &db_config).unwrap();
+        let config = DatabaseConfig::default();
+        let mut con = create_redis_connection(MSGBUS_STREAM, config).unwrap();
         flush_redis(&mut con).unwrap();
         con
     }
 
-    #[fixture]
-    fn msgbus_config() -> HashMap<String, Value> {
-        let config: HashMap<String, Value> = serde_json::from_value(json!({
-            "database": {
-                "type": "redis"
-            },
-            "streams_prefix": "stream",
-            "stream_per_topic": false,
-            "use_trader_prefix": true,
-            "use_trader_id": true
-        }))
-        .expect("Failed to create configuration");
-        config
-    }
-
     #[rstest]
     #[tokio::test]
-    async fn test_stream_messages_terminate_signal(
-        redis_connection: redis::Connection,
-        msgbus_config: HashMap<String, Value>,
-    ) {
+    async fn test_stream_messages_terminate_signal(redis_connection: redis::Connection) {
         let mut con = redis_connection;
         let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
 
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
+        let mut config = MessageBusConfig::default();
+        config.database = Some(DatabaseConfig::default());
 
-        let stream_key = get_stream_key(trader_id, instance_id, &msgbus_config);
+        let stream_key = get_stream_key(trader_id, instance_id, &config);
         let external_streams = vec![stream_key.clone()];
         let stream_signal = Arc::new(AtomicBool::new(false));
         let stream_signal_clone = stream_signal.clone();
 
         // Start the message streaming in a separate thread
         let handle = thread::spawn(move || {
-            stream_messages(tx, msgbus_config, external_streams, stream_signal_clone).unwrap();
+            stream_messages(
+                tx,
+                DatabaseConfig::default(),
+                external_streams,
+                stream_signal_clone,
+            )
+            .unwrap();
         });
 
         stream_signal.store(true, Ordering::Relaxed);
@@ -560,17 +541,16 @@ mod serial_tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_stream_messages_when_receiver_closed(
-        redis_connection: redis::Connection,
-        msgbus_config: HashMap<String, Value>,
-    ) {
+    async fn test_stream_messages_when_receiver_closed(redis_connection: redis::Connection) {
         let mut con = redis_connection;
         let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
 
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
+        let mut config = MessageBusConfig::default();
+        config.database = Some(DatabaseConfig::default());
 
-        let stream_key = get_stream_key(trader_id, instance_id, &msgbus_config);
+        let stream_key = get_stream_key(trader_id, instance_id, &config);
         let external_streams = vec![stream_key.clone()];
         let stream_signal = Arc::new(AtomicBool::new(false));
         let stream_signal_clone = stream_signal.clone();
@@ -589,7 +569,13 @@ mod serial_tests {
 
         // Start the message streaming in a separate thread
         let handle = thread::spawn(move || {
-            stream_messages(tx, msgbus_config, external_streams, stream_signal_clone).unwrap();
+            stream_messages(
+                tx,
+                DatabaseConfig::default(),
+                external_streams,
+                stream_signal_clone,
+            )
+            .unwrap();
         });
 
         // Shutdown and cleanup
@@ -599,17 +585,16 @@ mod serial_tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_stream_messages(
-        redis_connection: redis::Connection,
-        msgbus_config: HashMap<String, Value>,
-    ) {
+    async fn test_stream_messages(redis_connection: redis::Connection) {
         let mut con = redis_connection;
         let (tx, mut rx) = tokio::sync::mpsc::channel::<BusMessage>(100);
 
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
+        let mut config = MessageBusConfig::default();
+        config.database = Some(DatabaseConfig::default());
 
-        let stream_key = get_stream_key(trader_id, instance_id, &msgbus_config);
+        let stream_key = get_stream_key(trader_id, instance_id, &config);
         let external_streams = vec![stream_key.clone()];
         let stream_signal = Arc::new(AtomicBool::new(false));
         let stream_signal_clone = stream_signal.clone();
@@ -625,7 +610,13 @@ mod serial_tests {
 
         // Start the message streaming in a separate thread
         let handle = thread::spawn(move || {
-            stream_messages(tx, msgbus_config, external_streams, stream_signal_clone).unwrap();
+            stream_messages(
+                tx,
+                DatabaseConfig::default(),
+                external_streams,
+                stream_signal_clone,
+            )
+            .unwrap();
         });
 
         // Receive and verify the message
@@ -642,20 +633,20 @@ mod serial_tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_publish_messages(
-        redis_connection: redis::Connection,
-        msgbus_config: HashMap<String, Value>,
-    ) {
+    async fn test_publish_messages(redis_connection: redis::Connection) {
         let mut con = redis_connection;
         let (tx, rx) = std::sync::mpsc::channel::<BusMessage>();
 
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
-        let stream_key = get_stream_key(trader_id, instance_id, &msgbus_config);
+        let mut config = MessageBusConfig::default();
+        config.database = Some(DatabaseConfig::default());
+        config.stream_per_topic = false;
+        let stream_key = get_stream_key(trader_id, instance_id, &config);
 
         // Start the publish_messages function in a separate thread
         let handle = thread::spawn(move || {
-            publish_messages(rx, trader_id, instance_id, msgbus_config).unwrap();
+            publish_messages(rx, trader_id, instance_id, config).unwrap();
         });
 
         // Send a test message
@@ -700,7 +691,8 @@ mod serial_tests {
     async fn test_close() {
         let trader_id = TraderId::from("tester-001");
         let instance_id = UUID4::new();
-        let config = HashMap::new();
+        let mut config = MessageBusConfig::default();
+        config.database = Some(DatabaseConfig::default());
 
         let mut db = RedisMessageBusDatabase::new(trader_id, instance_id, config).unwrap();
 

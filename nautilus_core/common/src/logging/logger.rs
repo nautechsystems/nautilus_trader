@@ -21,7 +21,7 @@ use std::{
         atomic::Ordering,
         mpsc::{channel, Receiver, SendError, Sender},
     },
-    thread::{self, JoinHandle},
+    thread::JoinHandle,
 };
 
 use indexmap::IndexMap;
@@ -333,7 +333,7 @@ impl Logger {
         match set_boxed_logger(Box::new(logger)) {
             Ok(()) => {
                 handle = Some(
-                    thread::Builder::new()
+                    std::thread::Builder::new()
                         .name("logging".to_string())
                         .spawn(move || {
                             Self::handle_messages(

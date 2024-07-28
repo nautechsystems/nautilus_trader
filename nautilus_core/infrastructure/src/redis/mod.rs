@@ -18,43 +18,28 @@
 pub mod cache;
 pub mod msgbus;
 
-use std::{collections::HashMap, time::Duration};
+use std::time::Duration;
 
+use nautilus_common::msgbus::database::{DatabaseConfig, MessageBusConfig};
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::TraderId;
 use redis::*;
 use semver::Version;
-use serde_json::{json, Value};
 use tracing::{debug, info};
 
 const REDIS_MIN_VERSION: &str = "6.2.0";
 const REDIS_DELIMITER: char = ':';
+const REDIS_XTRIM: &str = "XTRIM";
+const REDIS_MINID: &str = "MINID";
+const REDIS_FLUSHDB: &str = "FLUSHDB";
 
 /// Parse a Redis connection url from the given database config.
-pub fn get_redis_url(db_config: &serde_json::Value) -> (String, String) {
-    let host = db_config
-        .get("host")
-        .and_then(|v| v.as_str())
-        .unwrap_or("127.0.0.1");
-    let port = db_config
-        .get("port")
-        .and_then(|v| {
-            v.as_u64()
-                .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
-        })
-        .unwrap_or(6379);
-    let username = db_config
-        .get("username")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default();
-    let password = db_config
-        .get("password")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default();
-    let use_ssl = db_config
-        .get("ssl")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
+pub fn get_redis_url(config: DatabaseConfig) -> (String, String) {
+    let host = config.host.unwrap_or("127.0.0.1".to_string());
+    let port = config.port.unwrap_or(6379);
+    let username = config.username.unwrap_or("".to_string());
+    let password = config.password.unwrap_or("".to_string());
+    let use_ssl = config.ssl;
 
     let redacted_password = if password.len() > 4 {
         format!("{}...{}", &password[..2], &password[password.len() - 2..],)
@@ -96,13 +81,12 @@ pub fn get_redis_url(db_config: &serde_json::Value) -> (String, String) {
 /// Create a new Redis database connection from the given database config.
 pub fn create_redis_connection(
     con_name: &str,
-    db_config: &serde_json::Value,
+    config: DatabaseConfig,
 ) -> anyhow::Result<redis::Connection> {
     debug!("Creating {con_name} redis connection");
-    let (redis_url, redacted_url) = get_redis_url(db_config);
+    let (redis_url, redacted_url) = get_redis_url(config.clone());
     debug!("Connecting to {redacted_url}");
-    let default_timeout = 20;
-    let timeout = get_timeout_duration(db_config, default_timeout);
+    let timeout = Duration::from_secs(config.timeout as u64);
     let client = redis::Client::open(redis_url)?;
     let mut con = client.get_connection_with_timeout(timeout)?;
 
@@ -124,86 +108,33 @@ pub fn create_redis_connection(
 
 /// Flush the Redis database for the given connection.
 pub fn flush_redis(con: &mut redis::Connection) -> anyhow::Result<(), RedisError> {
-    redis::cmd("FLUSHDB").exec(con)
-}
-
-/// Parse the database configuration from the given config.
-pub fn get_database_config(
-    config: &HashMap<String, serde_json::Value>,
-) -> anyhow::Result<serde_json::Value> {
-    Ok(config
-        .get("database")
-        .ok_or(anyhow::anyhow!("No database config"))?
-        .clone())
-}
-
-/// Parse the timeout duration the given database config.
-pub fn get_timeout_duration(db_config: &serde_json::Value, default: u64) -> Duration {
-    let timeout_seconds = db_config
-        .get("timeout")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(default);
-    Duration::from_secs(timeout_seconds)
-}
-
-/// Parse the buffer interval from the given config.
-pub fn get_buffer_interval(config: &HashMap<String, Value>) -> Duration {
-    let buffer_interval_ms = config
-        .get("buffer_interval_ms")
-        .map(|v| v.as_u64().unwrap_or(0));
-    Duration::from_millis(buffer_interval_ms.unwrap_or(0))
+    redis::cmd(REDIS_FLUSHDB).exec(con)
 }
 
 /// Parse the stream key from the given identifiers and config.
 pub fn get_stream_key(
     trader_id: TraderId,
     instance_id: UUID4,
-    config: &HashMap<String, Value>,
+    config: &MessageBusConfig,
 ) -> String {
     let mut stream_key = String::new();
 
-    if let Some(json!(true)) = config.get("use_trader_prefix") {
+    if config.use_trader_prefix {
         stream_key.push_str("trader-");
     }
 
-    if let Some(json!(true)) = config.get("use_trader_id") {
+    if config.use_trader_id {
         stream_key.push_str(trader_id.as_str());
         stream_key.push(REDIS_DELIMITER);
     }
 
-    if let Some(json!(true)) = config.get("use_instance_id") {
+    if config.use_instance_id {
         stream_key.push_str(&format!("{instance_id}"));
         stream_key.push(REDIS_DELIMITER);
     }
 
-    let stream_prefix = config
-        .get("streams_prefix")
-        .expect("Invalid configuration: no `streams_prefix` key found")
-        .as_str()
-        .expect("Invalid configuration: `streams_prefix` is not a string");
-    stream_key.push_str(stream_prefix);
+    stream_key.push_str(&config.streams_prefix);
     stream_key
-}
-
-/// Parse the `stream_per_topic` setting from the given config.
-pub fn get_stream_per_topic(config: &HashMap<String, Value>) -> bool {
-    config
-        .get("stream_per_topic")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true)
-}
-
-/// Parse the external stream keys from the given config.
-pub fn get_external_stream_keys(config: &HashMap<String, Value>) -> Vec<String> {
-    config
-        .get("external_streams")
-        .and_then(|external_streams| external_streams.as_array())
-        .map_or(Vec::new(), |streams| {
-            streams
-                .iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect()
-        })
 }
 
 /// Parse the Redis database version with the given connection.
@@ -230,8 +161,6 @@ fn parse_redis_version(info: &str) -> anyhow::Result<String> {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use rstest::rstest;
     use serde_json::json;
 
@@ -239,172 +168,90 @@ mod tests {
 
     #[rstest]
     fn test_get_redis_url_default_values() {
-        let config = json!({});
-        let (url, redacted_url) = get_redis_url(&config);
+        let config: DatabaseConfig = serde_json::from_value(json!({})).unwrap();
+        let (url, redacted_url) = get_redis_url(config);
         assert_eq!(url, "redis://127.0.0.1:6379");
         assert_eq!(redacted_url, "redis://127.0.0.1:6379");
     }
 
     #[rstest]
     fn test_get_redis_url_full_config_with_ssl() {
-        let config = json!({
+        let config_json = json!({
             "host": "example.com",
             "port": 6380,
             "username": "user",
             "password": "pass",
             "ssl": true,
         });
-        let (url, redacted_url) = get_redis_url(&config);
+        let config: DatabaseConfig = serde_json::from_value(config_json).unwrap();
+        let (url, redacted_url) = get_redis_url(config);
         assert_eq!(url, "rediss://user:pass@example.com:6380");
         assert_eq!(redacted_url, "rediss://user:pass@example.com:6380");
     }
 
     #[rstest]
     fn test_get_redis_url_full_config_without_ssl() {
-        let config = json!({
+        let config_json = json!({
             "host": "example.com",
             "port": 6380,
             "username": "username",
             "password": "password",
             "ssl": false,
         });
-        let (url, redacted_url) = get_redis_url(&config);
+        let config: DatabaseConfig = serde_json::from_value(config_json).unwrap();
+        let (url, redacted_url) = get_redis_url(config);
         assert_eq!(url, "redis://username:password@example.com:6380");
         assert_eq!(redacted_url, "redis://username:pa...rd@example.com:6380");
     }
 
     #[rstest]
     fn test_get_redis_url_missing_username_and_password() {
-        let config = json!({
+        let config_json = json!({
             "host": "example.com",
             "port": 6380,
             "ssl": false,
         });
-        let (url, redacted_url) = get_redis_url(&config);
+        let config: DatabaseConfig = serde_json::from_value(config_json).unwrap();
+        let (url, redacted_url) = get_redis_url(config);
         assert_eq!(url, "redis://example.com:6380");
         assert_eq!(redacted_url, "redis://example.com:6380");
     }
 
     #[rstest]
     fn test_get_redis_url_ssl_default_false() {
-        let config = json!({
+        let config_json = json!({
             "host": "example.com",
             "port": 6380,
             "username": "username",
             "password": "password",
             // "ssl" is intentionally omitted to test default behavior
         });
-        let (url, redacted_url) = get_redis_url(&config);
+        let config: DatabaseConfig = serde_json::from_value(config_json).unwrap();
+        let (url, redacted_url) = get_redis_url(config);
         assert_eq!(url, "redis://username:password@example.com:6380");
         assert_eq!(redacted_url, "redis://username:pa...rd@example.com:6380");
-    }
-
-    #[rstest]
-    fn test_get_database_config_valid() {
-        let mut config = HashMap::new();
-        let db_config = json!({
-            "type": "redis",
-            "host": "localhost",
-            "port": 6379,
-        });
-        config.insert("database".to_string(), db_config.clone());
-
-        let result = get_database_config(&config).unwrap();
-        assert_eq!(result, db_config);
-    }
-
-    #[rstest]
-    fn test_get_database_config_missing() {
-        let config = HashMap::new();
-
-        let result = get_database_config(&config);
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().to_string(), "No database config");
-    }
-
-    #[rstest]
-    fn test_get_timeout_duration_default() {
-        let db = json!({});
-
-        let timeout_duration = get_timeout_duration(&db, 20);
-        assert_eq!(timeout_duration, Duration::from_secs(20));
-    }
-
-    #[rstest]
-    fn test_get_timeout_duration() {
-        let mut database_config = HashMap::new();
-        database_config.insert("timeout".to_string(), json!(2));
-
-        let timeout_duration = get_timeout_duration(&json!(database_config), 20);
-        assert_eq!(timeout_duration, Duration::from_secs(2));
-    }
-
-    #[rstest]
-    fn test_get_buffer_interval_default() {
-        let config = HashMap::new();
-
-        let buffer_interval = get_buffer_interval(&config);
-        assert_eq!(buffer_interval, Duration::from_millis(0));
-    }
-
-    #[rstest]
-    fn test_get_buffer_interval() {
-        let mut config = HashMap::new();
-        config.insert("buffer_interval_ms".to_string(), json!(100));
-
-        let buffer_interval = get_buffer_interval(&config);
-        assert_eq!(buffer_interval, Duration::from_millis(100));
     }
 
     #[rstest]
     fn test_get_stream_key_with_trader_prefix_and_instance_id() {
         let trader_id = TraderId::from("tester-123");
         let instance_id = UUID4::new();
-        let mut config = HashMap::new();
-        config.insert("use_trader_prefix".to_string(), json!(true));
-        config.insert("use_trader_id".to_string(), json!(true));
-        config.insert("use_instance_id".to_string(), json!(true));
-        config.insert("streams_prefix".to_string(), json!("streams"));
+        let mut config = MessageBusConfig::default();
+        config.use_instance_id = true;
 
         let key = get_stream_key(trader_id, instance_id, &config);
-        assert_eq!(key, format!("trader-tester-123:{instance_id}:streams"));
+        assert_eq!(key, format!("trader-tester-123:{instance_id}:stream"));
     }
 
     #[rstest]
     fn test_get_stream_key_without_trader_prefix_or_instance_id() {
         let trader_id = TraderId::from("tester-123");
         let instance_id = UUID4::new();
-        let mut config = HashMap::new();
-        config.insert("use_trader_prefix".to_string(), json!(false));
-        config.insert("use_trader_id".to_string(), json!(false));
-        config.insert("use_instance_id".to_string(), json!(false));
-        config.insert("streams_prefix".to_string(), json!("streams"));
+        let mut config = MessageBusConfig::default();
+        config.use_trader_prefix = false;
+        config.use_trader_id = false;
 
         let key = get_stream_key(trader_id, instance_id, &config);
-        assert_eq!(key, format!("streams"));
-    }
-
-    #[rstest]
-    #[case(json!({}), true)]
-    #[case(json!({"stream_per_topic": null}), true)]
-    #[case(json!({"stream_per_topic": true}), true)]
-    #[case(json!({"stream_per_topic": false}), false)]
-    fn test_get_stream_per_topic(#[case] input: serde_json::Value, #[case] expected: bool) {
-        let config: HashMap<String, Value> = serde_json::from_value(input).unwrap();
-        assert_eq!(get_stream_per_topic(&config), expected);
-    }
-
-    #[rstest]
-    #[case(json!({}), Vec::new())]
-    #[case(json!({"external_streams": null}), Vec::new())]
-    #[case(json!({"external_streams": []}), Vec::new())]
-    #[case(json!({"external_streams": ["stream1", "stream2", "stream3"]}), vec!["stream1".to_string(), "stream2".to_string(), "stream3".to_string()])]
-    #[case(json!({"external_streams": ["stream1"]}), vec!["stream1".to_string()])]
-    fn test_get_external_stream_keys(
-        #[case] input: serde_json::Value,
-        #[case] expected: Vec<String>,
-    ) {
-        let config: HashMap<String, Value> = serde_json::from_value(input).unwrap();
-        assert_eq!(get_external_stream_keys(&config), expected);
+        assert_eq!(key, format!("stream"));
     }
 }
