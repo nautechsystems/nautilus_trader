@@ -63,11 +63,10 @@ config_node = TradingNodeConfig(
     ),
     # message_bus=MessageBusConfig(
     #     database=DatabaseConfig(timeout=2),
-    #     encoding="json",
     #     timestamps_as_iso8601=True,
-    #     streams_prefix="quoters",
     #     use_instance_id=False,
     #     # types_filter=[QuoteTick],
+    #     stream_per_topic=False,
     #     external_streams=["bybit"],
     #     autotrim_mins=30,
     # ),

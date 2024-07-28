@@ -22,7 +22,10 @@ use std::{
 };
 
 use bytes::Bytes;
-use nautilus_common::{cache::database::CacheDatabaseAdapter, enums::SerializationEncoding};
+use nautilus_common::{
+    cache::{database::CacheDatabaseAdapter, CacheConfig},
+    enums::SerializationEncoding,
+};
 use nautilus_core::{correctness::check_slice_not_empty, nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     accounts::any::AccountAny,
@@ -38,12 +41,11 @@ use nautilus_model::{
     types::currency::Currency,
 };
 use redis::{Commands, Connection, Pipeline};
-use serde_json::json;
 use tracing::{debug, error};
 use ustr::Ustr;
 
-use super::get_database_config;
-use crate::redis::{create_redis_connection, get_buffer_interval};
+use super::{REDIS_DELIMITER, REDIS_FLUSHDB};
+use crate::redis::create_redis_connection;
 
 // Thread and connection name constants
 const CACHE_READ: &str = "cache-read";
@@ -51,10 +53,6 @@ const CACHE_WRITE: &str = "cache-write";
 
 // Error constants
 const FAILED_TX_CHANNEL: &str = "Failed to send to channel";
-
-// Redis constants
-const FLUSHDB: &str = "FLUSHDB";
-const DELIMITER: char = ':';
 
 // Collection keys
 const INDEX: &str = "index";
@@ -142,19 +140,22 @@ impl RedisCacheDatabase {
     pub fn new(
         trader_id: TraderId,
         instance_id: UUID4,
-        config: HashMap<String, serde_json::Value>,
+        config: CacheConfig,
     ) -> anyhow::Result<RedisCacheDatabase> {
-        let database_config = get_database_config(&config)?;
-        let con = create_redis_connection(CACHE_READ, &database_config)?;
+        let db_config = config
+            .database
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No database config"))?;
+        let con = create_redis_connection(CACHE_READ, db_config.clone())?;
 
         let (tx, rx) = channel::<DatabaseCommand>();
         let trader_key = get_trader_key(trader_id, instance_id, &config);
         let trader_key_clone = trader_key.clone();
 
-        let handle = thread::Builder::new()
+        let handle = std::thread::Builder::new()
             .name(CACHE_WRITE.to_string())
             .spawn(move || {
-                Self::process_commands(rx, trader_key_clone, config);
+                Self::process_commands(rx, trader_key_clone, config.clone());
             })
             .expect("Error spawning '{CACHE_WRITE}' thread");
 
@@ -182,14 +183,14 @@ impl RedisCacheDatabase {
     }
 
     pub fn flushdb(&mut self) -> anyhow::Result<()> {
-        match redis::cmd(FLUSHDB).query::<()>(&mut self.con) {
+        match redis::cmd(REDIS_FLUSHDB).query::<()>(&mut self.con) {
             Ok(_) => Ok(()),
             Err(e) => Err(e.into()),
         }
     }
 
     pub fn keys(&mut self, pattern: &str) -> anyhow::Result<Vec<String>> {
-        let pattern = format!("{}{DELIMITER}{}", self.trader_key, pattern);
+        let pattern = format!("{}{REDIS_DELIMITER}{}", self.trader_key, pattern);
         debug!("Querying keys: {pattern}");
         match self.con.keys(pattern) {
             Ok(keys) => Ok(keys),
@@ -199,7 +200,7 @@ impl RedisCacheDatabase {
 
     pub fn read(&mut self, key: &str) -> anyhow::Result<Vec<Bytes>> {
         let collection = get_collection_key(key)?;
-        let key = format!("{}{DELIMITER}{}", self.trader_key, key);
+        let key = format!("{}{REDIS_DELIMITER}{}", self.trader_key, key);
 
         match collection {
             INDEX => read_index(&mut self.con, &key),
@@ -240,19 +241,14 @@ impl RedisCacheDatabase {
         }
     }
 
-    fn process_commands(
-        rx: Receiver<DatabaseCommand>,
-        trader_key: String,
-        config: HashMap<String, serde_json::Value>,
-    ) {
-        let database_config = get_database_config(&config).unwrap();
-        let mut con = create_redis_connection(CACHE_WRITE, &database_config).unwrap();
+    fn process_commands(rx: Receiver<DatabaseCommand>, trader_key: String, config: CacheConfig) {
+        let mut con = create_redis_connection(CACHE_WRITE, config.database.unwrap()).unwrap();
 
         // Buffering
         let mut buffer: VecDeque<DatabaseCommand> = VecDeque::new();
         let mut last_drain = Instant::now();
         let recv_interval = Duration::from_millis(1);
-        let buffer_interval = get_buffer_interval(&config);
+        let buffer_interval = Duration::from_millis(config.buffer_interval_ms.unwrap_or(0) as u64);
 
         loop {
             if last_drain.elapsed() >= buffer_interval && !buffer.is_empty() {
@@ -296,7 +292,7 @@ fn drain_buffer(conn: &mut Connection, trader_key: &str, buffer: &mut VecDeque<D
             }
         };
 
-        let key = format!("{trader_key}{DELIMITER}{}", &key);
+        let key = format!("{trader_key}{REDIS_DELIMITER}{}", &key);
 
         match msg.op_type {
             DatabaseOperation::Insert => {
@@ -591,21 +587,17 @@ fn delete_string(pipe: &mut Pipeline, key: &str) {
     pipe.del(key);
 }
 
-fn get_trader_key(
-    trader_id: TraderId,
-    instance_id: UUID4,
-    config: &HashMap<String, serde_json::Value>,
-) -> String {
+fn get_trader_key(trader_id: TraderId, instance_id: UUID4, config: &CacheConfig) -> String {
     let mut key = String::new();
 
-    if let Some(json!(true)) = config.get("use_trader_prefix") {
+    if config.use_trader_prefix {
         key.push_str("trader-");
     }
 
     key.push_str(trader_id.as_str());
 
-    if let Some(json!(true)) = config.get("use_instance_id") {
-        key.push(DELIMITER);
+    if config.use_instance_id {
+        key.push(REDIS_DELIMITER);
         key.push_str(&format!("{instance_id}"));
     }
 
@@ -613,18 +605,18 @@ fn get_trader_key(
 }
 
 fn get_collection_key(key: &str) -> anyhow::Result<&str> {
-    key.split_once(DELIMITER)
+    key.split_once(REDIS_DELIMITER)
         .map(|(collection, _)| collection)
         .ok_or_else(|| {
-            anyhow::anyhow!("Invalid `key`, missing a '{DELIMITER}' delimiter, was {key}")
+            anyhow::anyhow!("Invalid `key`, missing a '{REDIS_DELIMITER}' delimiter, was {key}")
         })
 }
 
 fn get_index_key(key: &str) -> anyhow::Result<&str> {
-    key.split_once(DELIMITER)
+    key.split_once(REDIS_DELIMITER)
         .map(|(_, index_key)| index_key)
         .ok_or_else(|| {
-            anyhow::anyhow!("Invalid `key`, missing a '{DELIMITER}' delimiter, was {key}")
+            anyhow::anyhow!("Invalid `key`, missing a '{REDIS_DELIMITER}' delimiter, was {key}")
         })
 }
 
@@ -938,10 +930,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use rstest::rstest;
-    use serde_json::json;
 
     use super::*;
 
@@ -949,9 +938,8 @@ mod tests {
     fn test_get_trader_key_with_prefix_and_instance_id() {
         let trader_id = TraderId::from("tester-123");
         let instance_id = UUID4::new();
-        let mut config = HashMap::new();
-        config.insert("use_trader_prefix".to_string(), json!(true));
-        config.insert("use_instance_id".to_string(), json!(true));
+        let mut config = CacheConfig::default();
+        config.use_instance_id = true;
 
         let key = get_trader_key(trader_id, instance_id, &config);
         assert!(key.starts_with("trader-tester-123:"));

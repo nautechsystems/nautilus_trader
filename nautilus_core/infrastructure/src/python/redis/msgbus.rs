@@ -32,13 +32,8 @@ use crate::redis::msgbus::RedisMessageBusDatabase;
 impl RedisMessageBusDatabase {
     #[new]
     fn py_new(trader_id: TraderId, instance_id: UUID4, config_json: Vec<u8>) -> PyResult<Self> {
-        let config: HashMap<String, serde_json::Value> =
-            serde_json::from_slice(&config_json).map_err(to_pyvalue_err)?;
-
-        match Self::new(trader_id, instance_id, config) {
-            Ok(cache) => Ok(cache),
-            Err(e) => Err(to_pyruntime_err(e.to_string())),
-        }
+        let config = serde_json::from_slice(&config_json).map_err(to_pyvalue_err)?;
+        Self::new(trader_id, instance_id, config).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "publish")]
