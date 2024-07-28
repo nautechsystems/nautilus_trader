@@ -17,16 +17,23 @@ use std::str::FromStr;
 
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
-    data::{quote::QuoteTick, trade::TradeTick},
+    data::{
+        bar::{Bar, BarSpecification, BarType},
+        quote::QuoteTick,
+        trade::TradeTick,
+    },
     identifiers::{InstrumentId, TradeId},
     types::{price::Price, quantity::Quantity},
 };
 use sqlx::{postgres::PgRow, Error, FromRow, Row};
 
-use crate::sql::models::enums::AggressorSideModel;
+use crate::sql::models::enums::{
+    AggregationSourceModel, AggressorSideModel, BarAggregationModel, PriceTypeModel,
+};
 
 pub struct TradeTickModel(pub TradeTick);
 pub struct QuoteTickModel(pub QuoteTick);
+pub struct BarModel(pub Bar);
 
 impl<'r> FromRow<'r, PgRow> for TradeTickModel {
     fn from_row(row: &'r PgRow) -> Result<Self, Error> {
@@ -98,5 +105,51 @@ impl<'r> FromRow<'r, PgRow> for QuoteTickModel {
         )
         .unwrap();
         Ok(QuoteTickModel(quote))
+    }
+}
+
+impl<'r> FromRow<'r, PgRow> for BarModel {
+    fn from_row(row: &'r PgRow) -> Result<Self, Error> {
+        let instrument_id = row
+            .try_get::<&str, _>("instrument_id")
+            .map(|x| InstrumentId::from_str(x).unwrap())?;
+        let step = row.try_get::<i32, _>("step")?;
+        let price_type = row
+            .try_get::<PriceTypeModel, _>("price_type")
+            .map(|x| x.0)?;
+        let bar_aggregation = row
+            .try_get::<BarAggregationModel, _>("bar_aggregation")
+            .map(|x| x.0)?;
+        let aggregation_source = row
+            .try_get::<AggregationSourceModel, _>("aggregation_source")
+            .map(|x| x.0)?;
+        let bar_type = BarType::new(
+            instrument_id,
+            BarSpecification::new(step as usize, bar_aggregation, price_type),
+            aggregation_source,
+        );
+        let open = row
+            .try_get::<&str, _>("open")
+            .map(|x| Price::from_str(x).unwrap())?;
+        let high = row
+            .try_get::<&str, _>("high")
+            .map(|x| Price::from_str(x).unwrap())?;
+        let low = row
+            .try_get::<&str, _>("low")
+            .map(|x| Price::from_str(x).unwrap())?;
+        let close = row
+            .try_get::<&str, _>("close")
+            .map(|x| Price::from_str(x).unwrap())?;
+        let volume = row
+            .try_get::<&str, _>("volume")
+            .map(|x| Quantity::from_str(x).unwrap())?;
+        let ts_event = row
+            .try_get::<String, _>("ts_event")
+            .map(|res| UnixNanos::from(res.as_str()))?;
+        let ts_init = row
+            .try_get::<String, _>("ts_init")
+            .map(|res| UnixNanos::from(res.as_str()))?;
+        let bar = Bar::new(bar_type, open, high, low, close, volume, ts_event, ts_init).unwrap();
+        Ok(BarModel(bar))
     }
 }

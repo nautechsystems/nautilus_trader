@@ -738,7 +738,7 @@ pub fn decode_ohlcv_msg(
         Quantity::from_raw(msg.volume * FIXED_SCALAR as u64, 0)?,
         ts_event,
         ts_init,
-    );
+    )?;
 
     Ok(bar)
 }
