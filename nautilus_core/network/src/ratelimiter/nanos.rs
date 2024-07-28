@@ -16,7 +16,7 @@
 //! A time-keeping abstraction (nanoseconds) that works for storing in an atomic integer.
 
 use std::{
-    fmt,
+    fmt::Debug,
     ops::{Add, Div, Mul},
     prelude::v1::*,
     time::Duration,
@@ -56,8 +56,8 @@ impl From<Duration> for Nanos {
     }
 }
 
-impl fmt::Debug for Nanos {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
+impl Debug for Nanos {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
         let d = Duration::from_nanos(self.0);
         write!(f, "Nanos({d:?})")
     }

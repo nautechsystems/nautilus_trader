@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Display;
+
 use bytes::Bytes;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::TraderId;
@@ -33,7 +35,7 @@ pub struct BusMessage {
     pub payload: Bytes,
 }
 
-impl std::fmt::Display for BusMessage {
+impl Display for BusMessage {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,

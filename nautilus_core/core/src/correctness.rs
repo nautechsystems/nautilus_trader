@@ -26,6 +26,7 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    fmt::Debug,
     hash::Hash,
 };
 
@@ -102,7 +103,7 @@ pub fn check_string_contains(s: &str, pat: &str, param: &str) -> anyhow::Result<
 }
 
 /// Checks the values are equal.
-pub fn check_equal<T: PartialEq + std::fmt::Debug>(
+pub fn check_equal<T: PartialEq + Debug>(
     lhs: T,
     rhs: T,
     lhs_param: &str,
@@ -426,7 +427,7 @@ mod tests {
     #[case(10i32, 20i32, "left", "right", false)]
     #[case("hello", "hello", "left", "right", true)]
     #[case("hello", "world", "left", "right", false)]
-    fn test_check_equal<T: PartialEq + std::fmt::Debug>(
+    fn test_check_equal<T: PartialEq + Debug>(
         #[case] lhs: T,
         #[case] rhs: T,
         #[case] lhs_param: &str,

@@ -20,7 +20,7 @@ pub mod database;
 use std::{
     any::Any,
     collections::HashMap,
-    fmt::{self, Debug},
+    fmt::Debug,
     hash::{Hash, Hasher},
     rc::Rc,
 };
@@ -92,7 +92,7 @@ impl Subscription {
 }
 
 impl Debug for Subscription {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "Subscription {{ topic: {}, handler: {}, priority: {} }}",

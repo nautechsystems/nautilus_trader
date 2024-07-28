@@ -15,8 +15,6 @@
 
 //! Common serialization traits and functions.
 
-use std::fmt;
-
 use bytes::Bytes;
 use serde::{
     de::{Unexpected, Visitor},
@@ -52,7 +50,7 @@ pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
 impl<'de> Visitor<'de> for BoolVisitor {
     type Value = u8;
 
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+    fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         formatter.write_str("a boolean as u8")
     }
 
