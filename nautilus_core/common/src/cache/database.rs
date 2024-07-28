@@ -106,6 +106,8 @@ pub trait CacheDatabaseAdapter {
 
     fn add_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()>;
 
+    fn load_quotes(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<QuoteTick>>;
+
     fn add_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()>;
 
     fn load_trades(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<TradeTick>>;
