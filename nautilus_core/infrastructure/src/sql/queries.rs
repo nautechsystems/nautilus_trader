@@ -17,6 +17,7 @@ use std::collections::HashMap;
 
 use nautilus_model::{
     accounts::{any::AccountAny, base::Account},
+    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     events::{
         account::state::AccountState,
         order::{OrderEvent, OrderEventAny},
@@ -32,8 +33,16 @@ use nautilus_model::{
 use sqlx::{PgPool, Row};
 
 use crate::sql::models::{
-    accounts::AccountEventModel, general::GeneralRow, instruments::InstrumentAnyModel,
-    orders::OrderEventAnyModel, types::CurrencyModel,
+    accounts::AccountEventModel,
+    data::{BarModel, QuoteTickModel, TradeTickModel},
+    enums::{
+        AggregationSourceModel, AggressorSideModel, AssetClassModel, BarAggregationModel,
+        CurrencyTypeModel, PriceTypeModel, TrailingOffsetTypeModel,
+    },
+    general::GeneralRow,
+    instruments::InstrumentAnyModel,
+    orders::OrderEventAnyModel,
+    types::CurrencyModel,
 };
 
 pub struct DatabaseQueries;
@@ -65,13 +74,13 @@ impl DatabaseQueries {
 
     pub async fn add_currency(pool: &PgPool, currency: Currency) -> anyhow::Result<()> {
         sqlx::query(
-            "INSERT INTO currency (id, precision, iso4217, name, currency_type) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO NOTHING"
+            "INSERT INTO currency (id, precision, iso4217, name, currency_type) VALUES ($1, $2, $3, $4, $5::currency_type) ON CONFLICT (id) DO NOTHING"
         )
             .bind(currency.code.as_str())
             .bind(currency.precision as i32)
             .bind(currency.iso4217 as i32)
             .bind(currency.name.as_str())
-            .bind(currency.currency_type.to_string())
+            .bind(CurrencyTypeModel(currency.currency_type))
             .execute(pool)
             .await
             .map(|_| ())
@@ -114,7 +123,7 @@ impl DatabaseQueries {
                 multiplier, option_kind, is_inverse, strike_price, activation_ns, expiration_ns, price_precision, size_precision,
                 price_increment, size_increment, maker_fee, taker_fee, margin_init, margin_maint, lot_size, max_quantity, min_quantity, max_notional,
                 min_notional, max_price, min_price, ts_init, ts_event, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::asset_class, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             ON CONFLICT (id)
             DO UPDATE
             SET
@@ -131,7 +140,7 @@ impl DatabaseQueries {
             .bind(instrument.quote_currency().code.as_str())
             .bind(instrument.settlement_currency().code.as_str())
             .bind(instrument.isin().map(|x| x.to_string()))
-            .bind(instrument.asset_class().to_string())
+            .bind(AssetClassModel(instrument.asset_class()))
             .bind(instrument.exchange().map(|x| x.to_string()))
             .bind(instrument.multiplier().to_string())
             .bind(instrument.option_kind().map(|x| x.to_string()))
@@ -313,7 +322,7 @@ impl DatabaseQueries {
                 exec_algorithm_id, exec_spawn_id, venue_order_id, account_id, position_id, commission, ts_event, ts_init, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-                $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                $21, $22, $23, $24::trailing_offset_type, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             ON CONFLICT (id)
             DO UPDATE
@@ -351,7 +360,7 @@ impl DatabaseQueries {
             .bind(order_event.trigger_type().map(|x| x.to_string()))
             .bind(order_event.limit_offset().map(|x| x.to_string()))
             .bind(order_event.trailing_offset().map(|x| x.to_string()))
-            .bind(order_event.trailing_offset_type().map(|x| format!("{:?}", x)))
+            .bind(order_event.trailing_offset_type().map(TrailingOffsetTypeModel))
             .bind(order_event.expire_time().map(|x| x.to_string()))
             .bind(order_event.display_qty().map(|x| x.to_string()))
             .bind(order_event.emulation_trigger().map(|x| x.to_string()))
@@ -555,5 +564,129 @@ impl DatabaseQueries {
             }
         }
         Ok(accounts)
+    }
+
+    pub async fn add_trade(pool: &PgPool, trade: &TradeTick) -> anyhow::Result<()> {
+        sqlx::query(r#"
+            INSERT INTO "trade" (
+                instrument_id, price, quantity, aggressor_side, venue_trade_id,
+                ts_event, ts_init, created_at, updated_at
+            ) VALUES (
+                $1, $2, $3, $4::aggressor_side, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            ON CONFLICT (id)
+            DO UPDATE
+            SET
+                instrument_id = $1, price = $2, quantity = $3, aggressor_side = $4, venue_trade_id = $5,
+                ts_event = $6, ts_init = $7, updated_at = CURRENT_TIMESTAMP
+        "#)
+            .bind(trade.instrument_id.to_string())
+            .bind(trade.price.to_string())
+            .bind(trade.size.to_string())
+            .bind(AggressorSideModel(trade.aggressor_side))
+            .bind(trade.trade_id.to_string())
+            .bind(trade.ts_event.to_string())
+            .bind(trade.ts_init.to_string())
+            .execute(pool)
+            .await
+            .map(|_| ())
+            .map_err(|err| anyhow::anyhow!("Failed to insert into trade table: {err}"))
+    }
+
+    pub async fn load_trades(
+        pool: &PgPool,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Vec<TradeTick>> {
+        sqlx::query_as::<_, TradeTickModel>(
+            r#"SELECT * FROM "trade" WHERE instrument_id = $1 ORDER BY ts_event ASC"#,
+        )
+        .bind(instrument_id.to_string())
+        .fetch_all(pool)
+        .await
+        .map(|rows| rows.into_iter().map(|row| row.0).collect())
+        .map_err(|err| anyhow::anyhow!("Failed to load trades: {err}"))
+    }
+
+    pub async fn add_quote(pool: &PgPool, quote: &QuoteTick) -> anyhow::Result<()> {
+        sqlx::query(r#"
+            INSERT INTO "quote" (
+                instrument_id, bid_price, ask_price, bid_size, ask_size, ts_event, ts_init, created_at, updated_at
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            ON CONFLICT (id)
+            DO UPDATE
+            SET
+                instrument_id = $1, bid_price = $2, ask_price = $3, bid_size = $4, ask_size = $5,
+                ts_event = $6, ts_init = $7, updated_at = CURRENT_TIMESTAMP
+        "#)
+            .bind(quote.instrument_id.to_string())
+            .bind(quote.bid_price.to_string())
+            .bind(quote.ask_price.to_string())
+            .bind(quote.bid_size.to_string())
+            .bind(quote.ask_size.to_string())
+            .bind(quote.ts_event.to_string())
+            .bind(quote.ts_init.to_string())
+            .execute(pool)
+            .await
+            .map(|_| ())
+            .map_err(|err| anyhow::anyhow!("Failed to insert into quote table: {err}"))
+    }
+
+    pub async fn load_quotes(
+        pool: &PgPool,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<Vec<QuoteTick>> {
+        sqlx::query_as::<_, QuoteTickModel>(
+            r#"SELECT * FROM "quote" WHERE instrument_id = $1 ORDER BY ts_event ASC"#,
+        )
+        .bind(instrument_id.to_string())
+        .fetch_all(pool)
+        .await
+        .map(|rows| rows.into_iter().map(|row| row.0).collect())
+        .map_err(|err| anyhow::anyhow!("Failed to load quotes: {err}"))
+    }
+
+    pub async fn add_bar(pool: &PgPool, bar: &Bar) -> anyhow::Result<()> {
+        println!("Adding bar: {:?}", bar);
+        sqlx::query(r#"
+            INSERT INTO "bar" (
+                instrument_id, step, bar_aggregation, price_type, aggregation_source, open, high, low, close, volume, ts_event, ts_init, created_at, updated_at
+            ) VALUES (
+                $1, $2, $3::bar_aggregation, $4::price_type, $5::aggregation_source, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            ON CONFLICT (id)
+            DO UPDATE
+            SET
+                instrument_id = $1, step = $2, bar_aggregation = $3::bar_aggregation, price_type = $4::price_type, aggregation_source = $5::aggregation_source,
+                open = $6, high = $7, low = $8, close = $9, volume = $10, ts_event = $11, ts_init = $12, updated_at = CURRENT_TIMESTAMP
+        "#)
+            .bind(bar.bar_type.instrument_id.to_string())
+            .bind(bar.bar_type.spec.step as i32)
+            .bind(BarAggregationModel(bar.bar_type.spec.aggregation))
+            .bind(PriceTypeModel(bar.bar_type.spec.price_type))
+            .bind(AggregationSourceModel(bar.bar_type.aggregation_source))
+            .bind(bar.open.to_string())
+            .bind(bar.high.to_string())
+            .bind(bar.low.to_string())
+            .bind(bar.close.to_string())
+            .bind(bar.volume.to_string())
+            .bind(bar.ts_event.to_string())
+            .bind(bar.ts_init.to_string())
+            .execute(pool)
+            .await
+            .map(|_| ())
+            .map_err(|err| anyhow::anyhow!("Failed to insert into bar table: {err}"))
+    }
+
+    pub async fn load_bars(pool: &PgPool, instrument_id: InstrumentId) -> anyhow::Result<Vec<Bar>> {
+        sqlx::query_as::<_, BarModel>(
+            r#"SELECT * FROM "bar" WHERE instrument_id = $1 ORDER BY ts_event ASC"#,
+        )
+        .bind(instrument_id.to_string())
+        .fetch_all(pool)
+        .await
+        .map(|rows| rows.into_iter().map(|row| row.0).collect())
+        .map_err(|err| anyhow::anyhow!("Failed to load bars: {err}"))
     }
 }

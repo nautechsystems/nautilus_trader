@@ -46,7 +46,7 @@ when making design and architectural decisions, roughly in order of 'weighting'.
 
 The NautilusTrader codebase is actually both a framework for composing trading
 systems, and a set of default system implementations which can operate in various 
-environment contexts.
+[environment contexts](/concepts/architecture.md#environment-contexts).
 
 ![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/architecture-overview.png?raw=true "architecture")
 
@@ -121,7 +121,7 @@ for each of these subpackages from the left nav menu.
 
 - `backtest`: Backtesting componentry as well as a backtest engine and node implementations
 - `live`: Live engine and client implementations as well as a node for live trading
-- `system`: The core system kernel common between `backtest`, `sandbox`, `live` environment contexts
+- `system`: The core system kernel common between `backtest`, `sandbox`, `live` [environment contexts](/concepts/architecture.md#environment-contexts) 
 
 ## Code structure
 

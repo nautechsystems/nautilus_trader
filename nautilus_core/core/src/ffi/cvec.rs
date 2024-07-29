@@ -13,11 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    ffi::c_void,
-    fmt::{Display, Formatter},
-    ptr::null,
-};
+use std::{ffi::c_void, fmt::Display, ptr::null};
 
 /// `CVec` is a C compatible struct that stores an opaque pointer to a block of
 /// memory, it's length and the capacity of the vector it was allocated from.
@@ -78,7 +74,7 @@ impl<T> From<Vec<T>> for CVec {
 }
 
 impl Display for CVec {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "CVec {{ ptr: {:?}, len: {}, cap: {} }}",

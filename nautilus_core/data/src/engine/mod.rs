@@ -51,7 +51,7 @@ use nautilus_model::{
         trade::TradeTick,
         Data, DataType,
     },
-    identifiers::{ClientId, InstrumentId, Venue},
+    identifiers::{ClientId, InstrumentId},
     instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
 };
 
@@ -188,11 +188,6 @@ impl<S: State> DataEngine<S> {
     #[must_use]
     pub fn subscribed_bars(&self) -> Vec<BarType> {
         self.collect_subscriptions(|client| &client.subscriptions_bar)
-    }
-
-    #[must_use]
-    pub fn subscribed_venue_status(&self) -> Vec<Venue> {
-        self.collect_subscriptions(|client| &client.subscriptions_venue_status)
     }
 
     #[must_use]

@@ -19,18 +19,38 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::{ops::Add, sync::Arc};
+use std::ops::Add;
 
+use chrono::TimeDelta;
+use nautilus_common::{clock::Clock, timer::TimeEvent};
 use nautilus_core::{correctness, nanos::UnixNanos};
 use nautilus_model::{
     data::{
-        bar::{Bar, BarType},
+        bar::{get_bar_interval, get_bar_interval_ns, get_time_bar_start, Bar, BarType},
         quote::QuoteTick,
         trade::TradeTick,
     },
+    enums::AggregationSource,
     instruments::any::InstrumentAny,
     types::{fixed::FIXED_SCALAR, price::Price, quantity::Quantity},
 };
+
+pub trait BarAggregator {
+    fn bar_type(&self) -> BarType;
+    fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos);
+    /// Update the aggregator with the given quote.
+    fn handle_quote_tick(&mut self, quote: QuoteTick) {
+        self.update(
+            quote.extract_price(self.bar_type().spec.price_type),
+            quote.extract_size(self.bar_type().spec.price_type),
+            quote.ts_event,
+        );
+    }
+    /// Update the aggregator with the given trade.
+    fn handle_trade_tick(&mut self, trade: TradeTick) {
+        self.update(trade.price, trade.size, trade.ts_event);
+    }
+}
 
 /// Provides a generic bar builder for aggregation.
 pub struct BarBuilder {
@@ -53,7 +73,8 @@ impl BarBuilder {
     ///
     /// # Panics
     ///
-    /// Panics if the `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// Panics if `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// Panics if `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     #[must_use]
     pub fn new(instrument: &InstrumentAny, bar_type: BarType) -> Self {
         correctness::check_equal(
@@ -61,6 +82,13 @@ impl BarBuilder {
             bar_type.instrument_id,
             "instrument.id",
             "bar_type.instrument_id",
+        )
+        .unwrap();
+        correctness::check_equal(
+            bar_type.aggregation_source,
+            AggregationSource::Internal,
+            "bar_type.aggregation_source",
+            "AggregationSource::Internal",
         )
         .unwrap();
 
@@ -171,7 +199,8 @@ impl BarBuilder {
             self.volume,
             ts_event,
             ts_init,
-        );
+        )
+        .unwrap();
 
         self.last_close = self.close;
         self.reset();
@@ -179,54 +208,37 @@ impl BarBuilder {
     }
 }
 
-/// Provides a means of aggregating specified bars and sending to a registered handler.
-pub struct BarAggregator {
-    builder: BarBuilder,
-    handler: Arc<dyn Fn(Bar) + Send + Sync>,
-    await_partial: bool,
+/// Provides a means of aggregating specified bar types and sending to a registered handler.
+pub struct BarAggregatorCore {
     bar_type: BarType,
+    builder: BarBuilder,
+    handler: fn(Bar),
+    await_partial: bool,
 }
 
-impl BarAggregator {
-    /// Creates a new [`BarAggregator`] instance.
+impl BarAggregatorCore {
+    /// Creates a new [`BarAggregatorCore`] instance.
     ///
     /// # Panics
     ///
-    /// Panics if the `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// Panics if `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// Panics if `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     pub fn new(
         instrument: &InstrumentAny,
         bar_type: BarType,
-        handler: Arc<dyn Fn(Bar) + Send + Sync>,
+        handler: fn(Bar),
         await_partial: bool,
     ) -> Self {
         Self {
+            bar_type,
             builder: BarBuilder::new(instrument, bar_type),
             handler,
             await_partial,
-            bar_type,
         }
     }
 
     pub fn set_await_partial(&mut self, value: bool) {
         self.await_partial = value;
-    }
-
-    /// Update the aggregator with the given quote.
-    pub fn handle_quote_tick(&mut self, quote: QuoteTick) {
-        if !self.await_partial {
-            self.apply_update(
-                quote.extract_price(self.bar_type.spec.price_type),
-                quote.extract_volume(self.bar_type.spec.price_type),
-                quote.ts_event,
-            );
-        }
-    }
-
-    /// Update the aggregator with the given trade.
-    pub fn handle_trade_tick(&mut self, trade: TradeTick) {
-        if !self.await_partial {
-            self.apply_update(trade.price, trade.size, trade.ts_event);
-        }
     }
 
     /// Set the initial values for a partially completed bar.
@@ -249,12 +261,12 @@ impl BarAggregator {
     }
 }
 
-/// Provides a means of building tick bars from quote and trade ticks.
+/// Provides a means of building tick bars aggregated from quote and trade ticks.
 ///
 /// When received tick count reaches the step threshold of the bar
 /// specification, then a bar is created and sent to the handler.
 pub struct TickBarAggregator {
-    aggregator: BarAggregator,
+    core: BarAggregatorCore,
 }
 
 impl TickBarAggregator {
@@ -262,30 +274,38 @@ impl TickBarAggregator {
     ///
     /// # Panics
     ///
-    /// Panics if the `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// Panics if `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// Panics if `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     pub fn new(
         instrument: &InstrumentAny,
         bar_type: BarType,
-        handler: Arc<dyn Fn(Bar) + Send + Sync>,
+        handler: fn(Bar),
+        await_partial: bool,
     ) -> Self {
         Self {
-            aggregator: BarAggregator::new(instrument, bar_type, handler, false),
-        }
-    }
-
-    /// Apply the given update to the aggregator.
-    pub fn apply_update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
-        self.aggregator.apply_update(price, size, ts_event);
-
-        if self.aggregator.builder.count >= self.aggregator.bar_type.spec.step {
-            self.aggregator.build_now_and_send();
+            core: BarAggregatorCore::new(instrument, bar_type, handler, await_partial),
         }
     }
 }
 
-/// Provides a means of building volume bars from quote and trade ticks.
+impl BarAggregator for TickBarAggregator {
+    fn bar_type(&self) -> BarType {
+        self.core.bar_type
+    }
+
+    /// Apply the given update to the aggregator.
+    fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
+        self.core.apply_update(price, size, ts_event);
+
+        if self.core.builder.count >= self.core.bar_type.spec.step {
+            self.core.build_now_and_send();
+        }
+    }
+}
+
+/// Provides a means of building volume bars aggregated from quote and trade ticks.
 pub struct VolumeBarAggregator {
-    aggregator: BarAggregator,
+    core: BarAggregatorCore,
 }
 
 impl VolumeBarAggregator {
@@ -293,27 +313,35 @@ impl VolumeBarAggregator {
     ///
     /// # Panics
     ///
-    /// Panics if the `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// Panics if `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// Panics if `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     pub fn new(
         instrument: &InstrumentAny,
         bar_type: BarType,
-        handler: Arc<dyn Fn(Bar) + Send + Sync>,
+        handler: fn(Bar),
+        await_partial: bool,
     ) -> Self {
         Self {
-            aggregator: BarAggregator::new(instrument, bar_type, handler, false),
+            core: BarAggregatorCore::new(instrument, bar_type, handler, await_partial),
         }
+    }
+}
+
+impl BarAggregator for VolumeBarAggregator {
+    fn bar_type(&self) -> BarType {
+        self.core.bar_type
     }
 
     /// Apply the given update to the aggregator.
     #[allow(unused_assignments)] // Temp for development
-    fn apply_update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
+    fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
         let mut raw_size_update = size.raw;
-        let raw_step = (self.aggregator.bar_type.spec.step as f64 * FIXED_SCALAR) as u64;
+        let raw_step = (self.core.bar_type.spec.step as f64 * FIXED_SCALAR) as u64;
         let mut raw_size_diff = 0;
 
         while raw_size_update > 0 {
-            if self.aggregator.builder.volume.raw + raw_size_update < raw_step {
-                self.aggregator.apply_update(
+            if self.core.builder.volume.raw + raw_size_update < raw_step {
+                self.core.apply_update(
                     price,
                     Quantity::from_raw(raw_size_update, size.precision).unwrap(),
                     ts_event,
@@ -321,25 +349,25 @@ impl VolumeBarAggregator {
                 break;
             }
 
-            raw_size_diff = raw_step - self.aggregator.builder.volume.raw;
-            self.aggregator.apply_update(
+            raw_size_diff = raw_step - self.core.builder.volume.raw;
+            self.core.apply_update(
                 price,
                 Quantity::from_raw(raw_size_update, size.precision).unwrap(),
                 ts_event,
             );
 
-            self.aggregator.build_now_and_send();
+            self.core.build_now_and_send();
             raw_size_update -= raw_size_diff;
         }
     }
 }
 
-/// Provides a means of building value bars from ticks.
+/// Provides a means of building value bars aggregated from quote and trade ticks.
 ///
 /// When received value reaches the step threshold of the bar
 /// specification, then a bar is created and sent to the handler.
 pub struct ValueBarAggregator {
-    aggregator: BarAggregator,
+    core: BarAggregatorCore,
     cum_value: f64,
 }
 
@@ -348,14 +376,16 @@ impl ValueBarAggregator {
     ///
     /// # Panics
     ///
-    /// Panics if the `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// Panics if `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// Panics if `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     pub fn new(
         instrument: &InstrumentAny,
         bar_type: BarType,
-        handler: Arc<dyn Fn(Bar) + Send + Sync>,
+        handler: fn(Bar),
+        await_partial: bool,
     ) -> Self {
         Self {
-            aggregator: BarAggregator::new(instrument, bar_type, handler, false),
+            core: BarAggregatorCore::new(instrument, bar_type, handler, await_partial),
             cum_value: 0.0,
         }
     }
@@ -365,16 +395,22 @@ impl ValueBarAggregator {
     pub const fn get_cumulative_value(&self) -> f64 {
         self.cum_value
     }
+}
+
+impl BarAggregator for ValueBarAggregator {
+    fn bar_type(&self) -> BarType {
+        self.core.bar_type
+    }
 
     /// Apply the given update to the aggregator.
-    pub fn apply_update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
+    fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
         let mut size_update = size.as_f64();
 
         while size_update > 0.0 {
             let value_update = price.as_f64() * size_update;
-            if self.cum_value + value_update < self.aggregator.bar_type.spec.step as f64 {
+            if self.cum_value + value_update < self.core.bar_type.spec.step as f64 {
                 self.cum_value += value_update;
-                self.aggregator.apply_update(
+                self.core.apply_update(
                     price,
                     Quantity::new(size_update, size.precision).unwrap(),
                     ts_event,
@@ -382,217 +418,174 @@ impl ValueBarAggregator {
                 break;
             }
 
-            let value_diff = self.aggregator.bar_type.spec.step as f64 - self.cum_value;
+            let value_diff = self.core.bar_type.spec.step as f64 - self.cum_value;
             let size_diff = size_update * (value_diff / value_update);
-            self.aggregator.apply_update(
+            self.core.apply_update(
                 price,
                 Quantity::new(size_diff, size.precision).unwrap(),
                 ts_event,
             );
 
-            self.aggregator.build_now_and_send();
+            self.core.build_now_and_send();
             self.cum_value = 0.0;
             size_update -= size_diff;
         }
     }
 }
 
-// pub struct TimeBarAggregator {
-//     aggregator: BarAggregator,
-//     clock: Arc<dyn Clock>,
-//     build_on_next_tick: bool,
-//     stored_open_ns: u64,
-//     stored_close_ns: u64,
-//     cached_update: Option<(Price, Quantity, u64)>,
-//     timer_name: String,
-//     build_with_no_updates: bool,
-//     timestamp_on_close: bool,
-//     is_left_open: bool,
-//     interval: Duration,
-//     interval_ns: u64,
-//     next_close_ns: u64,
-// }
-//
-// impl TimeBarAggregator {
-//     pub fn new(
-//         instrument: &InstrumentAny,
-//         bar_type: BarType,
-//         handler: Arc<dyn Fn(Bar) + Send + Sync>,
-//         clock: Arc<dyn Clock>,
-//         build_with_no_updates: bool,
-//         timestamp_on_close: bool,
-//         interval_type: &str,
-//     ) -> Self {
-//         let mut aggregator = BarAggregator::new(instrument, bar_type.clone(), handler, false);
-//         let interval = Self::get_interval(&bar_type);
-//         let interval_ns = Self::get_interval_ns(&bar_type);
-//
-//         let mut instance = Self {
-//             aggregator,
-//             clock,
-//             build_on_next_tick: false,
-//             stored_open_ns: UnixNanos::from(Self::get_start_time(&clock, &bar_type)),
-//             stored_close_ns: 0,
-//             cached_update: None,
-//             timer_name: bar_type.to_string(),
-//             build_with_no_updates,
-//             timestamp_on_close,
-//             is_left_open: interval_type == "left-open",
-//             interval,
-//             interval_ns,
-//             next_close_ns: 0,
-//         };
-//
-//         instance.set_build_timer();
-//         instance.next_close_ns = instance.clock.next_time_ns(&instance.timer_name);
-//         instance
-//     }
-//
-//     fn get_start_time(clock: &Arc<dyn Clock>, bar_type: &BarType) -> DateTime<Utc> {
-//         let now = clock.utc_now();
-//         let step = bar_type.spec.step;
-//
-//         match bar_type.spec.aggregation {
-//             BarAggregation::Millisecond => {
-//                 let diff_microseconds = now.timestamp_subsec_micros() % (step * 1000);
-//                 let diff_seconds = if diff_microseconds == 0 {
-//                     0
-//                 } else {
-//                     (step * 1000) as i64 - 1
-//                 };
-//                 now - Duration::from_seconds(diff_seconds)
-//                     - Duration::from_micros(now.timestamp_subsec_micros() as i64)
-//             }
-//             BarAggregation::Second => {
-//                 let diff_seconds = now.timestamp() % step as i64;
-//                 let diff_minutes = if diff_seconds == 0 {
-//                     0
-//                 } else {
-//                     (step / 60) as i64 - 1
-//                 };
-//                 now - Duration::from_mins(diff_minutes) - Duration::from_secs(diff_seconds)
-//             }
-//             BarAggregation::Minute => {
-//                 let diff_minutes = now.minute() % step;
-//                 let diff_hours = if diff_minutes == 0 {
-//                     0
-//                 } else {
-//                     (step / 60) - 1
-//                 };
-//                 now - Duration::hours(diff_hours as i64)
-//                     - Duration::minutes(diff_minutes as i64)
-//                     - Duration::seconds(now.second() as i64)
-//             }
-//             BarAggregation::Hour => {
-//                 let diff_hours = now.hour() % step;
-//                 let diff_days = if diff_hours == 0 { 0 } else { (step / 24) - 1 };
-//                 now - Duration::from_days(diff_days as i64)
-//                     - Duration::hours(diff_hours as i64)
-//                     - Duration::minutes(now.minute() as i64)
-//                     - Duration::seconds(now.second() as i64)
-//             }
-//             BarAggregation::Day => {
-//                 now - Duration::days(now.day() as i64 % step as i64)
-//                     - Duration::hours(now.hour() as i64)
-//                     - Duration::minutes(now.minute() as i64)
-//                     - Duration::seconds(now.second() as i64)
-//             }
-//             _ => panic!("Aggregation type not supported for time bars"),
-//         }
-//     }
-//
-//     fn get_interval(bar_type: &BarType) -> Duration {
-//         match bar_type.spec.aggregation {
-//             BarAggregation::Millisecond => Duration::from_millis(bar_type.spec.step as u64),
-//             BarAggregation::Second => Duration::from_secs(bar_type.spec.step as u64),
-//             BarAggregation::Minute => Duration::from_secs((bar_type.spec.step * 60) as u64),
-//             BarAggregation::Hour => Duration::from_secs((bar_type.spec.step * 60 * 60) as u64),
-//             BarAggregation::Day => Duration::from_secs((bar_type.spec.step * 60 * 60 * 24) as u64),
-//             _ => panic!("Aggregation not time based"),
-//         }
-//     }
-//
-//     fn get_interval_ns(bar_type: &BarType) -> u64 {
-//         match bar_type.spec.aggregation {
-//             BarAggregation::Millisecond => millis_to_nanos(bar_type.spec.step),
-//             BarAggregation::Second => secs_to_nanos(bar_type.spec.step),
-//             BarAggregation::Minute => secs_to_nanos(bar_type.spec.step) * 60,
-//             BarAggregation::Hour => secs_to_nanos(bar_type.spec.step) * 60 * 60,
-//             BarAggregation::Day => secs_to_nanos(bar_type.spec.step) * 60 * 60 * 24,
-//             _ => panic!("Aggregation not time based"),
-//         }
-//     }
-//
-//     fn set_build_timer(&mut self) {
-//         self.clock.set_timer_ns(
-//             &self.timer_name,
-//             self.interval,
-//             Self::get_start_time(&self.clock, &self.aggregator.bar_type),
-//             None,
-//             Box::new(move |event| self.build_bar(event)),
-//         );
-//
-//         log::debug!("Started timer {}", self.timer_name);
-//     }
-//
-//     fn apply_update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
-//         self.aggregator.apply_update(price, size, ts_event);
-//         if self.build_on_next_tick {
-//             let ts_init = ts_event;
-//
-//             let ts_event = if self.is_left_open {
-//                 if self.timestamp_on_close {
-//                     self.stored_close_ns
-//                 } else {
-//                     self.stored_open_ns
-//                 }
-//             } else {
-//                 self.stored_open_ns
-//             };
-//
-//             self.aggregator.build_and_send(ts_event, ts_init);
-//             self.build_on_next_tick = false;
-//             self.stored_close_ns = 0;
-//         }
-//     }
-//
-//     fn build_bar(&mut self, event: TimeEvent) {
-//         if !self.aggregator.builder.initialized {
-//             self.build_on_next_tick = true;
-//             self.stored_close_ns = self.next_close_ns;
-//             return;
-//         }
-//
-//         if !self.build_with_no_updates && self.aggregator.builder.count == 0 {
-//             return;
-//         }
-//
-//         let ts_init = event.ts_event;
-//         let ts_event = if self.is_left_open {
-//             if self.timestamp_on_close {
-//                 event.ts_event
-//             } else {
-//                 self.stored_open_ns
-//             }
-//         } else {
-//             self.stored_open_ns
-//         };
-//
-//         self.aggregator.build_and_send(ts_event, ts_init);
-//         self.stored_open_ns = event.ts_event;
-//         self.next_close_ns = self.clock.next_time_ns(&self.timer_name);
-//     }
-//
-//     pub fn stop(&self) {
-//         self.clock.cancel_timer(&self.timer_name);
-//     }
-// }
+/// Provides a means of building time bars aggregated from quote and trade ticks.
+///
+/// At each aggregation time interval, a bar is created and sent to the handler.
+pub struct TimeBarAggregator<C>
+where
+    C: Clock,
+{
+    core: BarAggregatorCore,
+    clock: C,
+    build_with_no_updates: bool,
+    timestamp_on_close: bool,
+    is_left_open: bool,
+    build_on_next_tick: bool,
+    stored_open_ns: UnixNanos,
+    stored_close_ns: UnixNanos,
+    cached_update: Option<(Price, Quantity, u64)>,
+    timer_name: String,
+    interval: TimeDelta,
+    interval_ns: UnixNanos,
+    next_close_ns: UnixNanos,
+}
+
+impl<C> TimeBarAggregator<C>
+where
+    C: Clock,
+{
+    /// Creates a new [`TimeBarAggregator`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// Panics if `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        instrument: &InstrumentAny,
+        bar_type: BarType,
+        handler: fn(Bar),
+        await_partial: bool,
+        clock: C,
+        build_with_no_updates: bool,
+        timestamp_on_close: bool,
+        interval_type: &str, // TODO: Make this an enum
+    ) -> Self {
+        Self {
+            core: BarAggregatorCore::new(instrument, bar_type, handler, await_partial),
+            clock,
+            build_with_no_updates,
+            timestamp_on_close,
+            is_left_open: false,
+            build_on_next_tick: false,
+            stored_open_ns: UnixNanos::default(),
+            stored_close_ns: UnixNanos::default(),
+            cached_update: None,
+            timer_name: bar_type.to_string(),
+            interval: get_bar_interval(&bar_type),
+            interval_ns: get_bar_interval_ns(&bar_type),
+            next_close_ns: UnixNanos::default(),
+        }
+    }
+
+    /// Starts the time bar aggregator.
+    pub fn start(&mut self) -> anyhow::Result<()> {
+        let now = self.clock.utc_now();
+        let start_time = get_time_bar_start(now, &self.bar_type());
+        let start_time_ns = UnixNanos::from(start_time.timestamp_nanos_opt().unwrap() as u64);
+
+        // let callback = SafeTimeEventCallback {
+        //     callback: Box::new(move |event| self.build_bar(event)),
+        // };
+        // let handler = EventHandler { }
+
+        self.clock.set_timer_ns(
+            &self.timer_name,
+            self.interval_ns.as_u64(),
+            start_time_ns,
+            None,
+            None, // TODO: Implement Rust callback handlers properly (see above commented code)
+        )?;
+
+        log::debug!("Started timer {}", self.timer_name);
+        Ok(())
+    }
+
+    /// Stops the time bar aggregator.
+    pub fn stop(&mut self) {
+        self.clock.cancel_timer(&self.timer_name);
+    }
+
+    fn build_bar(&mut self, event: TimeEvent) {
+        if !self.core.builder.initialized {
+            self.build_on_next_tick = true;
+            self.stored_close_ns = self.next_close_ns;
+            return;
+        }
+
+        if !self.build_with_no_updates && self.core.builder.count == 0 {
+            return;
+        }
+
+        let ts_init = event.ts_event;
+        let ts_event = if self.is_left_open {
+            if self.timestamp_on_close {
+                event.ts_event
+            } else {
+                self.stored_open_ns
+            }
+        } else {
+            self.stored_open_ns
+        };
+
+        self.core.build_and_send(ts_event, ts_init);
+        self.stored_open_ns = event.ts_event;
+        self.next_close_ns = self.clock.next_time_ns(&self.timer_name);
+    }
+}
+
+impl<C> BarAggregator for TimeBarAggregator<C>
+where
+    C: Clock,
+{
+    fn bar_type(&self) -> BarType {
+        self.core.bar_type
+    }
+
+    fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
+        self.core.apply_update(price, size, ts_event);
+        if self.build_on_next_tick {
+            let ts_init = ts_event;
+
+            let ts_event = if self.is_left_open {
+                if self.timestamp_on_close {
+                    self.stored_close_ns
+                } else {
+                    self.stored_open_ns
+                }
+            } else {
+                self.stored_open_ns
+            };
+
+            self.core.build_and_send(ts_event, ts_init);
+            self.build_on_next_tick = false;
+            self.stored_close_ns = UnixNanos::default();
+        }
+    }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::panic::AssertUnwindSafe;
+
     use nautilus_model::{
         data::bar::{BarSpecification, BarType},
         enums::{AggregationSource, BarAggregation, PriceType},
@@ -636,7 +629,8 @@ mod tests {
             Quantity::new(1.0, 0).unwrap(),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(2_000_000_000),
-        );
+        )
+        .unwrap();
 
         builder.set_partial(partial_bar);
         let bar = builder.build_now();
@@ -669,7 +663,8 @@ mod tests {
             Quantity::new(1.0, 0).unwrap(),
             UnixNanos::from(1_000_000_000),
             UnixNanos::from(1_000_000_000),
-        );
+        )
+        .unwrap();
 
         let partial_bar2 = Bar::new(
             bar_type,
@@ -680,7 +675,8 @@ mod tests {
             Quantity::new(2.0, 0).unwrap(),
             UnixNanos::from(3_000_000_000),
             UnixNanos::from(3_000_000_000),
-        );
+        )
+        .unwrap();
 
         builder.set_partial(partial_bar1);
         builder.set_partial(partial_bar2);
@@ -776,14 +772,13 @@ mod tests {
             BarSpecification::new(3, BarAggregation::Tick, PriceType::Last),
             AggregationSource::Internal,
         );
-        let builder = BarBuilder::new(&instrument, bar_type);
+        let mut builder = BarBuilder::new(&instrument, bar_type);
 
-        // TODO: WIP
-        // let result = std::panic::catch_unwind(|| {
-        //     builder.build_now();
-        // });
-        //
-        // assert!(result.is_err());
+        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
+            builder.build_now();
+        }));
+
+        assert!(result.is_err());
     }
 
     #[rstest]
@@ -891,6 +886,7 @@ mod tests {
     //     let handler_guard = handler.lock().unwrap();
     //     assert_eq!(handler_guard.len(), 0);
     // }
+
     //
     // #[rstest]
     // fn test_tick_bar_aggregator_handle_trade_tick_when_count_below_threshold_updates(

@@ -78,6 +78,7 @@ impl TestOrderEventStubs {
         position_id: Option<PositionId>,
         last_px: Option<Price>,
         last_qty: Option<Quantity>,
+        liquidity_side: Option<LiquiditySide>,
         commission: Option<Money>,
         ts_filled_ns: Option<UnixNanos>,
         account_id: Option<AccountId>,
@@ -89,7 +90,7 @@ impl TestOrderEventStubs {
         let trade_id = trade_id.unwrap_or(
             TradeId::new(order.client_order_id().as_str().replace('O', "E").as_str()).unwrap(),
         );
-        let liquidity_side = order.liquidity_side().unwrap_or(LiquiditySide::Maker);
+        let liquidity_side = liquidity_side.unwrap_or(LiquiditySide::Maker);
         let event = UUID4::new();
         let position_id = position_id
             .or_else(|| order.position_id())
@@ -239,5 +240,41 @@ impl TestOrderStubs {
         )
         .unwrap();
         OrderAny::StopMarket(order)
+    }
+
+    pub fn make_accepted_order(order: &OrderAny) -> OrderAny {
+        let mut new_order = order.clone();
+        let submitted_event =
+            TestOrderEventStubs::order_submitted(&new_order, AccountId::from("SIM-001"));
+        let accepted_event = TestOrderEventStubs::order_accepted(
+            &new_order,
+            AccountId::from("SIM-001"),
+            VenueOrderId::from("V-001"),
+        );
+        new_order.apply(submitted_event).unwrap();
+        new_order.apply(accepted_event).unwrap();
+        new_order
+    }
+
+    pub fn make_filled_order(
+        order: &OrderAny,
+        instrument: &InstrumentAny,
+        liquidity_side: LiquiditySide,
+    ) -> OrderAny {
+        let mut accepted_order = TestOrderStubs::make_accepted_order(order);
+        let fill = TestOrderEventStubs::order_filled(
+            &accepted_order,
+            instrument,
+            None,
+            None,
+            None,
+            None,
+            Some(liquidity_side),
+            None,
+            None,
+            None,
+        );
+        accepted_order.apply(fill).unwrap();
+        accepted_order
     }
 }

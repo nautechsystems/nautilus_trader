@@ -239,46 +239,6 @@ impl TradeTick {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(TradeTick))
     }
 
-    /// Creates a `PyCapsule` containing a raw pointer to a `Data::Trade` object.
-    ///
-    /// This function takes the current object (assumed to be of a type that can be represented as
-    /// `Data::Trade`), and encapsulates a raw pointer to it within a `PyCapsule`.
-    ///
-    /// # Safety
-    ///
-    /// This function is safe as long as the following conditions are met:
-    /// - The `Data::Trade` object pointed to by the capsule must remain valid for the lifetime of the capsule.
-    /// - The consumer of the capsule must ensure proper handling to avoid dereferencing a dangling pointer.
-    ///
-    /// # Panics
-    ///
-    /// The function will panic if the `PyCapsule` creation fails, which can occur if the
-    /// `Data::Trade` object cannot be converted into a raw pointer.
-    ///
-    #[pyo3(name = "as_pycapsule")]
-    fn py_as_pycapsule(&self, py: Python<'_>) -> PyObject {
-        data_to_pycapsule(py, Data::Trade(*self))
-    }
-
-    /// Return a dictionary representation of the object.
-    #[pyo3(name = "as_dict")]
-    fn py_as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
-        // Serialize object to JSON bytes
-        let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
-        // Parse JSON into a Python dictionary
-        let py_dict: Py<PyDict> = PyModule::import(py, "json")?
-            .call_method("loads", (json_str,), None)?
-            .extract()?;
-        Ok(py_dict)
-    }
-
-    /// Return a new object from the given dictionary representation.
-    #[staticmethod]
-    #[pyo3(name = "from_dict")]
-    fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-        from_dict_pyo3(py, values)
-    }
-
     #[staticmethod]
     #[pyo3(name = "get_metadata")]
     fn py_get_metadata(
@@ -304,16 +264,55 @@ impl TradeTick {
         Ok(py_dict)
     }
 
+    /// Returns a new object from the given dictionary representation.
+    #[staticmethod]
+    #[pyo3(name = "from_dict")]
+    fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
+        from_dict_pyo3(py, values)
+    }
+
     #[staticmethod]
     #[pyo3(name = "from_json")]
     fn py_from_json(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_json_bytes(data).map_err(to_pyvalue_err)
+        Self::from_json_bytes(&data).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
     #[pyo3(name = "from_msgpack")]
     fn py_from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
+        Self::from_msgpack_bytes(&data).map_err(to_pyvalue_err)
+    }
+
+    /// Creates a `PyCapsule` containing a raw pointer to a `Data::Trade` object.
+    ///
+    /// This function takes the current object (assumed to be of a type that can be represented as
+    /// `Data::Trade`), and encapsulates a raw pointer to it within a `PyCapsule`.
+    ///
+    /// # Safety
+    ///
+    /// This function is safe as long as the following conditions are met:
+    /// - The `Data::Trade` object pointed to by the capsule must remain valid for the lifetime of the capsule.
+    /// - The consumer of the capsule must ensure proper handling to avoid dereferencing a dangling pointer.
+    ///
+    /// # Panics
+    ///
+    /// The function will panic if the `PyCapsule` creation fails, which can occur if the
+    /// `Data::Trade` object cannot be converted into a raw pointer.
+    #[pyo3(name = "as_pycapsule")]
+    fn py_as_pycapsule(&self, py: Python<'_>) -> PyObject {
+        data_to_pycapsule(py, Data::Trade(*self))
+    }
+
+    /// Return a dictionary representation of the object.
+    #[pyo3(name = "as_dict")]
+    fn py_as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        // Serialize object to JSON bytes
+        let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
+        // Parse JSON into a Python dictionary
+        let py_dict: Py<PyDict> = PyModule::import(py, "json")?
+            .call_method("loads", (json_str,), None)?
+            .extract()?;
+        Ok(py_dict)
     }
 
     /// Return JSON encoded bytes representation of the object.
@@ -344,10 +343,10 @@ mod tests {
     #[rstest]
     fn test_as_dict(stub_trade_tick_ethusdt_buyer: TradeTick) {
         pyo3::prepare_freethreaded_python();
-        let tick = stub_trade_tick_ethusdt_buyer;
+        let trade = stub_trade_tick_ethusdt_buyer;
 
         Python::with_gil(|py| {
-            let dict_string = tick.py_as_dict(py).unwrap().to_string();
+            let dict_string = trade.py_as_dict(py).unwrap().to_string();
             let expected_string = r"{'type': 'TradeTick', 'instrument_id': 'ETHUSDT-PERP.BINANCE', 'price': '10000.0000', 'size': '1.00000000', 'aggressor_side': 'BUYER', 'trade_id': '123456789', 'ts_event': 0, 'ts_init': 1}";
             assert_eq!(dict_string, expected_string);
         });
@@ -356,24 +355,24 @@ mod tests {
     #[rstest]
     fn test_from_dict(stub_trade_tick_ethusdt_buyer: TradeTick) {
         pyo3::prepare_freethreaded_python();
-        let tick = stub_trade_tick_ethusdt_buyer;
+        let trade = stub_trade_tick_ethusdt_buyer;
 
         Python::with_gil(|py| {
-            let dict = tick.py_as_dict(py).unwrap();
+            let dict = trade.py_as_dict(py).unwrap();
             let parsed = TradeTick::py_from_dict(py, dict).unwrap();
-            assert_eq!(parsed, tick);
+            assert_eq!(parsed, trade);
         });
     }
 
     #[rstest]
     fn test_from_pyobject(stub_trade_tick_ethusdt_buyer: TradeTick) {
         pyo3::prepare_freethreaded_python();
-        let tick = stub_trade_tick_ethusdt_buyer;
+        let trade = stub_trade_tick_ethusdt_buyer;
 
         Python::with_gil(|py| {
-            let tick_pyobject = tick.into_py(py);
+            let tick_pyobject = trade.into_py(py);
             let parsed_tick = TradeTick::from_pyobject(tick_pyobject.bind(py)).unwrap();
-            assert_eq!(parsed_tick, tick);
+            assert_eq!(parsed_tick, trade);
         });
     }
 }

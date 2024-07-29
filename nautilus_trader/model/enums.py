@@ -21,11 +21,11 @@ from nautilus_trader.core.rust.model import BookAction
 from nautilus_trader.core.rust.model import BookType
 from nautilus_trader.core.rust.model import ContingencyType
 from nautilus_trader.core.rust.model import CurrencyType
-from nautilus_trader.core.rust.model import HaltReason
 from nautilus_trader.core.rust.model import InstrumentClass
 from nautilus_trader.core.rust.model import InstrumentCloseType
 from nautilus_trader.core.rust.model import LiquiditySide
 from nautilus_trader.core.rust.model import MarketStatus
+from nautilus_trader.core.rust.model import MarketStatusAction
 from nautilus_trader.core.rust.model import OmsType
 from nautilus_trader.core.rust.model import OptionKind
 from nautilus_trader.core.rust.model import OrderSide
@@ -57,14 +57,14 @@ from nautilus_trader.model.functions import contingency_type_from_str
 from nautilus_trader.model.functions import contingency_type_to_str
 from nautilus_trader.model.functions import currency_type_from_str
 from nautilus_trader.model.functions import currency_type_to_str
-from nautilus_trader.model.functions import halt_reason_from_str
-from nautilus_trader.model.functions import halt_reason_to_str
 from nautilus_trader.model.functions import instrument_class_from_str
 from nautilus_trader.model.functions import instrument_class_to_str
 from nautilus_trader.model.functions import instrument_close_type_from_str
 from nautilus_trader.model.functions import instrument_close_type_to_str
 from nautilus_trader.model.functions import liquidity_side_from_str
 from nautilus_trader.model.functions import liquidity_side_to_str
+from nautilus_trader.model.functions import market_status_action_from_str
+from nautilus_trader.model.functions import market_status_action_to_str
 from nautilus_trader.model.functions import market_status_from_str
 from nautilus_trader.model.functions import market_status_to_str
 from nautilus_trader.model.functions import oms_type_from_str
@@ -104,10 +104,10 @@ __all__ = [
     "BookType",
     "ContingencyType",
     "CurrencyType",
-    "HaltReason",
     "InstrumentCloseType",
     "LiquiditySide",
     "MarketStatus",
+    "MarketStatusAction",
     "OmsType",
     "OptionKind",
     "OrderSide",
@@ -140,14 +140,14 @@ __all__ = [
     "contingency_type_from_str",
     "currency_type_to_str",
     "currency_type_from_str",
-    "halt_reason_to_str",
-    "halt_reason_from_str",
     "instrument_close_type_to_str",
     "instrument_close_type_from_str",
     "liquidity_side_to_str",
     "liquidity_side_from_str",
     "market_status_to_str",
     "market_status_from_str",
+    "market_status_action_to_str",
+    "market_status_action_from_str",
     "oms_type_to_str",
     "oms_type_from_str",
     "option_kind_to_str",

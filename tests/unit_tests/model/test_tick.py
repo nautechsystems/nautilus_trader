@@ -85,7 +85,7 @@ class TestQuoteTick:
         assert result2 == Price.from_str("1.000005")
         assert result3 == Price.from_str("1.00000")
 
-    def test_extract_volume_with_various_price_types_returns_expected_values(self):
+    def test_extract_size_with_various_price_types_returns_expected_values(self):
         # Arrange
         quote = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
@@ -98,9 +98,9 @@ class TestQuoteTick:
         )
 
         # Act
-        result1 = quote.extract_volume(PriceType.ASK)
-        result2 = quote.extract_volume(PriceType.MID)
-        result3 = quote.extract_volume(PriceType.BID)
+        result1 = quote.extract_size(PriceType.ASK)
+        result2 = quote.extract_size(PriceType.MID)
+        result3 = quote.extract_size(PriceType.BID)
 
         # Assert
         assert result1 == Quantity.from_int(800_000)

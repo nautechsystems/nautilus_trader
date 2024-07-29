@@ -483,6 +483,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             Some(AccountId::from("SIM-001")),
         );
         let position = Position::new(&audusd_sim, fill.clone().into()).unwrap();
@@ -514,6 +515,7 @@ mod tests {
             None,
             None,
             None,
+            None,
             Some(AccountId::from("SIM-001")),
         );
         let position = Position::new(&btcusdt, fill1.clone().into()).unwrap();
@@ -537,6 +539,7 @@ mod tests {
             None,
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("45500.00")),
+            None,
             None,
             None,
             None,

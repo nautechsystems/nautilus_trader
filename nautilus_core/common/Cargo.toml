@@ -14,6 +14,7 @@ crate-type = ["rlib", "staticlib"]
 nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model", features = ["stubs"] }
 anyhow = { workspace = true }
+bytes = { workspace = true }
 chrono = { workspace = true }
 indexmap = { workspace = true }
 itertools = { workspace = true }

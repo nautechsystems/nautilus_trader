@@ -279,7 +279,7 @@ cdef class BarAggregator:
         if not self._await_partial:
             self._apply_update(
                 price=tick.extract_price(self.bar_type.spec.price_type),
-                size=tick.extract_volume(self.bar_type.spec.price_type),
+                size=tick.extract_size(self.bar_type.spec.price_type),
                 ts_event=tick.ts_event,
             )
 

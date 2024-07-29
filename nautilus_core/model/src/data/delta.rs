@@ -243,7 +243,7 @@ mod tests {
     fn test_json_serialization(stub_delta: OrderBookDelta) {
         let delta = stub_delta;
         let serialized = delta.as_json_bytes().unwrap();
-        let deserialized = OrderBookDelta::from_json_bytes(serialized).unwrap();
+        let deserialized = OrderBookDelta::from_json_bytes(serialized.as_ref()).unwrap();
         assert_eq!(deserialized, delta);
     }
 
@@ -251,7 +251,7 @@ mod tests {
     fn test_msgpack_serialization(stub_delta: OrderBookDelta) {
         let delta = stub_delta;
         let serialized = delta.as_msgpack_bytes().unwrap();
-        let deserialized = OrderBookDelta::from_msgpack_bytes(serialized).unwrap();
+        let deserialized = OrderBookDelta::from_msgpack_bytes(serialized.as_ref()).unwrap();
         assert_eq!(deserialized, delta);
     }
 }

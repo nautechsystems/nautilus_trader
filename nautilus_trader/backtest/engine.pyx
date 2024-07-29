@@ -85,7 +85,6 @@ from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
-from nautilus_trader.model.data cimport VenueStatus
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -1105,9 +1104,6 @@ cdef class BacktestEngine:
                 elif isinstance(data, Bar):
                     venue = self._venues[data.bar_type.instrument_id.venue]
                     venue.process_bar(data)
-                elif isinstance(data, VenueStatus):
-                    venue = self._venues[data.venue]
-                    venue.process_venue_status(data)
                 elif isinstance(data, InstrumentStatus):
                     venue = self._venues[data.instrument_id.venue]
                     venue.process_instrument_status(data)

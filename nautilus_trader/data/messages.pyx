@@ -66,7 +66,12 @@ cdef class DataCommand(Command):
         self.data_type = data_type
 
     def __str__(self) -> str:
-        return f"{type(self).__name__}({self.data_type})"
+        return (
+            f"{type(self).__name__}("
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"data_type={self.data_type})"
+        )
 
     def __repr__(self) -> str:
         return (
@@ -207,7 +212,12 @@ cdef class DataRequest(Request):
         self.data_type = data_type
 
     def __str__(self) -> str:
-        return f"{type(self).__name__}({self.data_type})"
+        return (
+            f"{type(self).__name__}("
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"data_type={self.data_type})"
+        )
 
     def __repr__(self) -> str:
         return (
@@ -271,7 +281,12 @@ cdef class DataResponse(Response):
         self.data = data
 
     def __str__(self) -> str:
-        return f"{type(self).__name__}({self.data_type})"
+        return (
+            f"{type(self).__name__}("
+            f"client_id={self.client_id}, "
+            f"venue={self.venue}, "
+            f"data_type={self.data_type})"
+        )
 
     def __repr__(self) -> str:
         return (

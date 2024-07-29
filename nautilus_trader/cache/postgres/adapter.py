@@ -24,8 +24,11 @@ from nautilus_trader.cache.postgres.transformers import transform_instrument_fro
 from nautilus_trader.cache.postgres.transformers import transform_instrument_to_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_order_from_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_order_to_pyo3
+from nautilus_trader.cache.postgres.transformers import transform_trade_tick_from_pyo3
+from nautilus_trader.cache.postgres.transformers import transform_trade_tick_to_pyo3
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import PostgresCacheDatabase
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
@@ -111,3 +114,12 @@ class CachePostgresAdapter(CacheDatabaseFacade):
     def update_account(self, account: Account):
         account_pyo3 = transform_account_to_pyo3(account)
         self._backing.update_account(account_pyo3)
+
+    def add_trade(self, trade: TradeTick):
+        trade_pyo3 = transform_trade_tick_to_pyo3(trade)
+        self._backing.add_trade(trade_pyo3)
+
+    def load_trades(self, instrument_id: InstrumentId) -> list[TradeTick]:
+        instrument_id_pyo3 = nautilus_pyo3.InstrumentId.from_str(str(instrument_id))
+        trades = self._backing.load_trades(instrument_id_pyo3)
+        return [transform_trade_tick_from_pyo3(trade) for trade in trades]

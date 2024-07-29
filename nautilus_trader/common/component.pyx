@@ -2054,6 +2054,7 @@ cdef class MessageBus:
         self._publishable_types = tuple(_EXTERNAL_PUBLISHABLE_TYPES)
         if types_filter is not None:
             self._publishable_types = tuple(o for o in _EXTERNAL_PUBLISHABLE_TYPES if o not in types_filter)
+        self._streaming_types = set()
         self._resolved = False
 
         # Counters
@@ -2169,6 +2170,18 @@ cdef class MessageBus:
 
         return request_id in self._correlation_index
 
+    cpdef bint is_streaming_type(self, type cls):
+        """
+        Return whether the given type has been registered for external message streaming.
+
+        Returns
+        -------
+        bool
+            True if registered, else False.
+
+        """
+        return cls in self._streaming_types
+
     cpdef void dispose(self):
         """
         Dispose of the message bus which will close the internal channel and thread.
@@ -2241,6 +2254,18 @@ cdef class MessageBus:
         del self._endpoints[endpoint]
 
         self._log.debug(f"Removed endpoint '{endpoint}' {handler}")
+
+    cpdef void add_streaming_type(self, type cls):
+        """
+        Register the given type for external->internal message bus streaming.
+
+        Parameters
+        ----------
+        type : cls
+            The type to add for streaming.
+
+        """
+        self._streaming_types.add(cls)
 
     cpdef void send(self, str endpoint, msg: Any):
         """
@@ -2445,7 +2470,7 @@ cdef class MessageBus:
 
         self._log.debug(f"Removed {sub}")
 
-    cpdef void publish(self, str topic, msg: Any):
+    cpdef void publish(self, str topic, msg: Any, bint external_pub = True):
         """
         Publish the given message for the given `topic`.
 
@@ -2458,13 +2483,15 @@ cdef class MessageBus:
             The topic to publish on.
         msg : object
             The message to publish.
+        external_pub : bool, default True
+            If the message should also be published externally.
 
         """
-        self.publish_c(topic, msg)
+        self.publish_c(topic, msg, external_pub)
 
     @cython.boundscheck(False)
     @cython.wraparound(False)
-    cdef void publish_c(self, str topic, msg: Any):
+    cdef void publish_c(self, str topic, msg: Any, bint external_pub = True):
         Condition.not_none(topic, "topic")
         Condition.not_none(msg, "msg")
 
@@ -2486,7 +2513,7 @@ cdef class MessageBus:
 
         # Publish externally (if configured)
         cdef bytes payload_bytes
-        if self._database is not None and self.serializer is not None:
+        if external_pub and self._database is not None and self.serializer is not None:
             if isinstance(msg, self._publishable_types):
                 if isinstance(msg, bytes):
                     payload_bytes = msg

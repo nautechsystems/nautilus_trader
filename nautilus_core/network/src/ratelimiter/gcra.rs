@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cmp, fmt, time::Duration};
+use std::{cmp, fmt::Display, time::Duration};
 
 use super::{clock, nanos::Nanos, quota::Quota, StateStore};
 
@@ -109,8 +109,8 @@ impl<P: clock::Reference> NotUntil<P> {
     }
 }
 
-impl<P: clock::Reference> fmt::Display for NotUntil<P> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+impl<P: clock::Reference> Display for NotUntil<P> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> Result<(), std::fmt::Error> {
         write!(f, "rate-limited until {:?}", self.start + self.state.tat)
     }
 }

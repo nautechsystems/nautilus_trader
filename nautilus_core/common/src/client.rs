@@ -79,7 +79,6 @@ pub trait LiveDataClient {
     fn subscribe_quote_ticks(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn subscribe_trade_ticks(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn subscribe_bars(&mut self, bar_type: BarType) -> anyhow::Result<()>;
-    fn subscribe_venue_status(&mut self, venue: Venue) -> anyhow::Result<()>;
     fn subscribe_instrument_status(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn subscribe_instrument_close(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn unsubscribe(&mut self, data_type: DataType) -> anyhow::Result<()>;
@@ -93,7 +92,6 @@ pub trait LiveDataClient {
     fn unsubscribe_quote_ticks(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn unsubscribe_trade_ticks(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn unsubscribe_bars(&mut self, bar_type: BarType) -> anyhow::Result<()>;
-    fn unsubscribe_venue_status(&mut self, venue: Venue) -> anyhow::Result<()>;
     fn unsubscribe_instrument_status(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
     fn unsubscribe_instrument_close(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
 
@@ -158,7 +156,6 @@ pub struct DataClientAdaptor {
     pub subscriptions_quote_tick: HashSet<InstrumentId>,
     pub subscriptions_trade_tick: HashSet<InstrumentId>,
     pub subscriptions_bar: HashSet<BarType>,
-    pub subscriptions_venue_status: HashSet<Venue>,
     pub subscriptions_instrument_status: HashSet<InstrumentId>,
     pub subscriptions_instrument_close: HashSet<InstrumentId>,
     pub subscriptions_instrument: HashSet<InstrumentId>,

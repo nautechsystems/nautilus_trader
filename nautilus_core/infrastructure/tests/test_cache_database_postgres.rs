@@ -18,6 +18,7 @@
 mod serial_tests {
     use std::{collections::HashSet, time::Duration};
 
+    use bytes::Bytes;
     use nautilus_common::{
         cache::database::CacheDatabaseAdapter,
         testing::{wait_until, wait_until_async},
@@ -26,6 +27,7 @@ mod serial_tests {
     use nautilus_infrastructure::sql::cache_database::get_pg_cache_database;
     use nautilus_model::{
         accounts::{any::AccountAny, cash::CashAccount},
+        data::stubs::{quote_tick_ethusdt_binance, stub_bar, stub_trade_tick_ethusdt_buyer},
         enums::{CurrencyType, OrderSide, OrderStatus},
         events::account::stubs::cash_account_state_million_usd,
         identifiers::{
@@ -34,7 +36,7 @@ mod serial_tests {
         instruments::{
             any::InstrumentAny,
             stubs::{
-                crypto_future_btcusdt, crypto_perpetual_ethusdt, currency_pair_ethusdt,
+                audusd_sim, crypto_future_btcusdt, crypto_perpetual_ethusdt, currency_pair_ethusdt,
                 equity_aapl, futures_contract_es, options_contract_appl,
             },
             Instrument,
@@ -47,7 +49,7 @@ mod serial_tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_general_object_adds_to_cache() {
         let mut pg_cache = get_pg_cache_database().await.unwrap();
-        let test_id_value = String::from("test_value").into_bytes();
+        let test_id_value = Bytes::from("test_value");
         pg_cache
             .add(String::from("test_id"), test_id_value.clone())
             .unwrap();
@@ -291,6 +293,7 @@ mod serial_tests {
             Some(Quantity::from("1.0")),
             None,
             None,
+            None,
             Some(AccountId::new("SIM-001").unwrap()),
         );
         market_order.apply(filled).unwrap();
@@ -348,5 +351,89 @@ mod serial_tests {
         );
         let account_result = pg_cache.load_account(&account.id()).unwrap();
         entirely_equal(account_result.unwrap(), account);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_postgres_cache_database_add_trade_tick() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        // add target instrument and currencies
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_instrument(&instrument).unwrap();
+        // add trade tick
+        let trade_tick = stub_trade_tick_ethusdt_buyer();
+        pg_cache.add_trade(&trade_tick).unwrap();
+        wait_until(
+            || {
+                pg_cache
+                    .load_instrument(&instrument.id())
+                    .unwrap()
+                    .is_some()
+                    && !pg_cache.load_trades(&instrument.id()).unwrap().is_empty()
+            },
+            Duration::from_secs(2),
+        );
+        let trades = pg_cache.load_trades(&instrument.id()).unwrap();
+        assert_eq!(trades.len(), 1);
+        assert_eq!(trades[0], trade_tick);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_postgres_cache_database_add_quote_tick() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        // add target instrument and currencies
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_instrument(&instrument).unwrap();
+        // add quote tick
+        let quote_tick = quote_tick_ethusdt_binance();
+        pg_cache.add_quote(&quote_tick).unwrap();
+        wait_until(
+            || {
+                pg_cache
+                    .load_instrument(&instrument.id())
+                    .unwrap()
+                    .is_some()
+                    && !pg_cache.load_quotes(&instrument.id()).unwrap().is_empty()
+            },
+            Duration::from_secs(2),
+        );
+        let quotes = pg_cache.load_quotes(&instrument.id()).unwrap();
+        assert_eq!(quotes.len(), 1);
+        assert_eq!(quotes[0], quote_tick);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_postgres_cache_database_add_bar() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        // add target instrument and currencies
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_instrument(&instrument).unwrap();
+        // add bar
+        let bar = stub_bar();
+        pg_cache.add_bar(&bar).unwrap();
+        wait_until(
+            || {
+                pg_cache
+                    .load_instrument(&instrument.id())
+                    .unwrap()
+                    .is_some()
+                    && !pg_cache.load_bars(&instrument.id()).unwrap().is_empty()
+            },
+            Duration::from_secs(2),
+        );
+        let bars = pg_cache.load_bars(&instrument.id()).unwrap();
+        assert_eq!(bars.len(), 1);
+        assert_eq!(bars[0], bar);
     }
 }

@@ -21,6 +21,7 @@
 
 use std::collections::HashMap;
 
+use bytes::Bytes;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     accounts::any::AccountAny,
@@ -42,7 +43,7 @@ pub trait CacheDatabaseAdapter {
 
     fn flush(&mut self) -> anyhow::Result<()>;
 
-    fn load(&mut self) -> anyhow::Result<HashMap<String, Vec<u8>>>;
+    fn load(&mut self) -> anyhow::Result<HashMap<String, Bytes>>;
 
     fn load_currencies(&mut self) -> anyhow::Result<HashMap<Ustr, Currency>>;
 
@@ -78,21 +79,16 @@ pub trait CacheDatabaseAdapter {
 
     fn load_position(&mut self, position_id: &PositionId) -> anyhow::Result<Position>;
 
-    fn load_actor(
-        &mut self,
-        component_id: &ComponentId,
-    ) -> anyhow::Result<HashMap<String, Vec<u8>>>;
+    fn load_actor(&mut self, component_id: &ComponentId) -> anyhow::Result<HashMap<String, Bytes>>;
 
     fn delete_actor(&mut self, component_id: &ComponentId) -> anyhow::Result<()>;
 
-    fn load_strategy(
-        &mut self,
-        strategy_id: &StrategyId,
-    ) -> anyhow::Result<HashMap<String, Vec<u8>>>;
+    fn load_strategy(&mut self, strategy_id: &StrategyId)
+        -> anyhow::Result<HashMap<String, Bytes>>;
 
     fn delete_strategy(&mut self, component_id: &StrategyId) -> anyhow::Result<()>;
 
-    fn add(&mut self, key: String, value: Vec<u8>) -> anyhow::Result<()>;
+    fn add(&mut self, key: String, value: Bytes) -> anyhow::Result<()>;
 
     fn add_currency(&mut self, currency: &Currency) -> anyhow::Result<()>;
 
@@ -110,9 +106,15 @@ pub trait CacheDatabaseAdapter {
 
     fn add_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()>;
 
+    fn load_quotes(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<QuoteTick>>;
+
     fn add_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()>;
 
+    fn load_trades(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<TradeTick>>;
+
     fn add_bar(&mut self, bar: &Bar) -> anyhow::Result<()>;
+
+    fn load_bars(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<Bar>>;
 
     fn index_venue_order_id(
         &mut self,

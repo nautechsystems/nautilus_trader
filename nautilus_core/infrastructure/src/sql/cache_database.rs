@@ -18,6 +18,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use bytes::Bytes;
 use log::error;
 use nautilus_common::cache::database::CacheDatabaseAdapter;
 use nautilus_core::nanos::UnixNanos;
@@ -68,6 +69,9 @@ pub enum DatabaseQuery {
     AddInstrument(InstrumentAny),
     AddOrder(OrderAny, bool),
     AddAccount(AccountAny, bool),
+    AddTrade(TradeTick),
+    AddQuote(QuoteTick),
+    AddBar(Bar),
 }
 
 fn get_buffer_interval() -> Duration {
@@ -190,6 +194,15 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
                         .unwrap()
                 }
             },
+            DatabaseQuery::AddTrade(trade) => {
+                DatabaseQueries::add_trade(pool, &trade).await.unwrap();
+            }
+            DatabaseQuery::AddQuote(quote) => {
+                DatabaseQueries::add_quote(pool, &quote).await.unwrap();
+            }
+            DatabaseQuery::AddBar(bar) => {
+                DatabaseQueries::add_bar(pool, &bar).await.unwrap();
+            }
         }
     }
 }
@@ -301,7 +314,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn load(&mut self) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+    fn load(&mut self) -> anyhow::Result<HashMap<String, Bytes>> {
         todo!()
     }
 
@@ -500,10 +513,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn load_actor(
-        &mut self,
-        component_id: &ComponentId,
-    ) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+    fn load_actor(&mut self, component_id: &ComponentId) -> anyhow::Result<HashMap<String, Bytes>> {
         todo!()
     }
 
@@ -514,7 +524,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     fn load_strategy(
         &mut self,
         strategy_id: &StrategyId,
-    ) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+    ) -> anyhow::Result<HashMap<String, Bytes>> {
         todo!()
     }
 
@@ -522,8 +532,8 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn add(&mut self, key: String, value: Vec<u8>) -> anyhow::Result<()> {
-        let query = DatabaseQuery::Add(key, value);
+    fn add(&mut self, key: String, value: Bytes) -> anyhow::Result<()> {
+        let query = DatabaseQuery::Add(key, value.into());
         self.tx.send(query).map_err(|err| {
             anyhow::anyhow!("Failed to send query to database message handler: {err}")
         })
@@ -572,15 +582,90 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn add_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
-        todo!()
+        let query = DatabaseQuery::AddQuote(quote.to_owned());
+        self.tx.send(query).map_err(|err| {
+            anyhow::anyhow!("Failed to send query add_quote to database message handler: {err}")
+        })
+    }
+
+    fn load_quotes(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<QuoteTick>> {
+        let pool = self.pool.clone();
+        let instrument_id = instrument_id.to_owned();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_quotes(&pool, instrument_id).await;
+            match result {
+                Ok(quotes) => {
+                    let _ = tx.send(quotes);
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to load quotes for instrument {}: {:?}",
+                        instrument_id, e
+                    );
+                    let _ = tx.send(Vec::new());
+                }
+            }
+        });
+        Ok(rx.recv().unwrap())
     }
 
     fn add_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
-        todo!()
+        let query = DatabaseQuery::AddTrade(trade.to_owned());
+        self.tx.send(query).map_err(|err| {
+            anyhow::anyhow!("Failed to send query add_trade to database message handler: {err}")
+        })
+    }
+
+    fn load_trades(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<TradeTick>> {
+        let pool = self.pool.clone();
+        let instrument_id = instrument_id.to_owned();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_trades(&pool, &instrument_id).await;
+            match result {
+                Ok(trades) => {
+                    let _ = tx.send(trades);
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to load trades for instrument {}: {:?}",
+                        instrument_id, e
+                    );
+                    let _ = tx.send(Vec::new());
+                }
+            }
+        });
+        Ok(rx.recv().unwrap())
     }
 
     fn add_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
-        todo!()
+        let query = DatabaseQuery::AddBar(bar.to_owned());
+        self.tx.send(query).map_err(|err| {
+            anyhow::anyhow!("Failed to send query add_bar to database message handler: {err}")
+        })
+    }
+
+    fn load_bars(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<Bar>> {
+        let pool = self.pool.clone();
+        let instrument_id = instrument_id.to_owned();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_bars(&pool, instrument_id).await;
+            match result {
+                Ok(bars) => {
+                    let _ = tx.send(bars);
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to load bars for instrument {}: {:?}",
+                        instrument_id, e
+                    );
+                    let _ = tx.send(Vec::new());
+                }
+            }
+        });
+        Ok(rx.recv().unwrap())
     }
 
     fn index_venue_order_id(

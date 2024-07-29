@@ -4,7 +4,7 @@ The heart of the NautilusTrader user experience is in writing and working with
 trading strategies. Defining a trading strategy is achieved by inheriting the `Strategy` class, 
 and implementing the methods required by the users trading strategy logic.
 
-Strategies can be added to Nautilus systems with any [environment context](/docs/latest/concepts/architecture.md#environment-contexts) and will start sending commands and receiving
+Strategies can be added to Nautilus systems with any [environment context](/concepts/architecture.md#environment-contexts) and will start sending commands and receiving
 events based on their logic as soon as the system starts.
 
 Using the basic building blocks of data ingest, event handling, and order management (which we will discuss
@@ -98,7 +98,6 @@ from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatus
-from nautilus_trader.model.data import VenueStatus
 from nautilus_trader.model.instruments import Instrument
 
 def on_order_book_deltas(self, deltas: OrderBookDeltas) -> None:
@@ -106,7 +105,6 @@ def on_order_book(self, order_book: OrderBook) -> None:
 def on_quote_tick(self, tick: QuoteTick) -> None:
 def on_trade_tick(self, tick: TradeTick) -> None:
 def on_bar(self, bar: Bar) -> None:
-def on_venue_status(self, data: VenueStatus) -> None:
 def on_instrument(self, instrument: Instrument) -> None:
 def on_instrument_status(self, data: InstrumentStatus) -> None:
 def on_instrument_close(self, data: InstrumentClose) -> None:

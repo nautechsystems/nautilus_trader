@@ -17,7 +17,7 @@
 
 #[cfg(not(feature = "python"))]
 use std::ffi::c_char;
-use std::{fmt, sync::Arc};
+use std::{fmt::Debug, sync::Arc};
 
 #[cfg(not(feature = "python"))]
 use nautilus_core::message::Message;
@@ -74,8 +74,8 @@ impl PartialEq for MessageHandler {
     }
 }
 
-impl fmt::Debug for MessageHandler {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl Debug for MessageHandler {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(MessageHandler))
             .field("handler_id", &self.handler_id)
             .finish()

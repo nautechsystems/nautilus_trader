@@ -28,6 +28,7 @@ from nautilus_trader.core.rust.model cimport AccountType
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport MarketStatus
+from nautilus_trader.core.rust.model cimport MarketStatusAction
 from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.execution.matching_core cimport MatchingCore
@@ -143,7 +144,7 @@ cdef class OrderMatchingEngine:
     cpdef void process_quote_tick(self, QuoteTick tick)
     cpdef void process_trade_tick(self, TradeTick tick)
     cpdef void process_bar(self, Bar bar)
-    cpdef void process_status(self, MarketStatus status)
+    cpdef void process_status(self, MarketStatusAction status)
     cpdef void process_auction_book(self, OrderBook book)
     cdef void _process_trade_ticks_from_bar(self, Bar bar)
     cdef void _process_quote_ticks_from_bar(self)

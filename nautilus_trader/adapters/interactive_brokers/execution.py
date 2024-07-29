@@ -124,8 +124,6 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         The clock for the client.
     instrument_provider : InteractiveBrokersInstrumentProvider
         The instrument provider.
-    ibg_client_id : int
-        Client ID used to connect TWS/Gateway.
     config : InteractiveBrokersExecClientConfig, optional
         The configuration for the instance.
     name : str, optional
@@ -142,13 +140,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         cache: Cache,
         clock: LiveClock,
         instrument_provider: InteractiveBrokersInstrumentProvider,
-        ibg_client_id: int,
         config: InteractiveBrokersExecClientConfig,
         name: str | None = None,
     ) -> None:
         super().__init__(
             loop=loop,
-            # client_id=ClientId(f"{IB_VENUE.value}-{ibg_client_id:03d}"), # TODO: Fix account_id.get_id()
             client_id=ClientId(name or f"{IB_VENUE.value}"),
             venue=IB_VENUE,
             oms_type=OmsType.NETTING,
@@ -386,6 +382,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             instrument = await self.instrument_provider.find_with_contract_id(
                 position.contract.conId,
             )
+            if instrument is None:
+                self._log.error(
+                    f"Cannot generate report: instrument not found for contract ID {position.contract.conId}",
+                )
+                continue
+
             avg_px = instrument.make_price(
                 position.avg_cost / instrument.multiplier,
             ).as_decimal()
@@ -492,6 +494,12 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             instrument = await self.instrument_provider.find_with_contract_id(
                 position.contract.conId,
             )
+            if instrument is None:
+                self._log.error(
+                    f"Cannot generate report: instrument not found for contract ID {position.contract.conId}",
+                )
+                continue
+
             if not self._cache.instrument(instrument.id):
                 self._handle_data(instrument)
 

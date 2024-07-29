@@ -21,6 +21,7 @@ from nautilus_trader.adapters.databento.enums import DatabentoSchema
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.nautilus_pyo3 import drop_cvec_pycapsule
+from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import capsule_to_list
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
@@ -44,6 +45,7 @@ class DatabentoDataLoader:
      - DEFINITION -> `Instrument`
      - IMBALANCE -> `DatabentoImbalance`
      - STATISTICS -> `DatabentoStatistics`
+     - STATUS -> `InstrumentStatus`
 
     References
     ----------
@@ -250,6 +252,11 @@ class DatabentoDataLoader:
                     return data
                 else:
                     return self._pyo3_loader.load_bars(str(path), pyo3_instrument_id)
+            case DatabentoSchema.STATUS.value:
+                data = self._pyo3_loader.load_status(str(path), pyo3_instrument_id)  # type: ignore
+                if as_legacy_cython:
+                    return InstrumentStatus.from_pyo3_list(data)
+                return data
             case DatabentoSchema.IMBALANCE.value:
                 if as_legacy_cython:
                     raise ValueError(

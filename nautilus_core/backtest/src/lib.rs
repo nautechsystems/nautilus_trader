@@ -29,3 +29,4 @@
 
 pub mod engine;
 pub mod matching_engine;
+pub mod models;

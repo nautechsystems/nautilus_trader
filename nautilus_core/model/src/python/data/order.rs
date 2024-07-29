@@ -112,7 +112,7 @@ impl BookOrder {
         Ok(py_dict)
     }
 
-    /// Return a new object from the given dictionary representation.
+    /// Returns a new object from the given dictionary representation.
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     pub fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
@@ -122,13 +122,13 @@ impl BookOrder {
     #[staticmethod]
     #[pyo3(name = "from_json")]
     fn py_from_json(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_json_bytes(data).map_err(to_pyvalue_err)
+        Self::from_json_bytes(&data).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
     #[pyo3(name = "from_msgpack")]
     fn py_from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
+        Self::from_msgpack_bytes(&data).map_err(to_pyvalue_err)
     }
 
     /// Return JSON encoded bytes representation of the object.

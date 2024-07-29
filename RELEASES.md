@@ -3,18 +3,37 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added Databento Status schema support for loading and live trading
+- Added options on futures support for Interactive Brokers (#1795), thanks @rsmb7z
+- Added documentation for option greeks custom data example (#1788), thanks @faysou
+- Added `MarketStatusAction` enum (support Databento `status` schema)
+- Added `ignore_quote_tick_size_updates` config option for Interactive Brokers (#1799), thanks @sunlei
 - Implemented `MessageBus` v2 in Rust (#1786), thanks @twitu
 - Implemented `DataEngine` v2 in Rust (#1785), thanks @twitu
-- Refactor order submission error handling for Interactive Brokers (#1783), thanks @rsmb7z
+- Implemented `FillModel` in Rust (#1801), thanks @filipmacek
+- Implemented `FixedFeeModel` in Rust (#1802), thanks @filipmacek
+- Implemented `MakerTakerFeeModel` in Rust (#1803), thanks @filipmacek
+- Implemented Postgres native enum mappings in Rust (#1797, #1806), thanks @filipmacek
+- Refactored order submission error handling for Interactive Brokers (#1783), thanks @rsmb7z
 - Improved live reconciliation robustness (will now generate inferred orders necessary to align external position state)
 - Improved tests for Interactive Brokers (#1776), thanks @mylesgamez
-- Upgrade `datafusion` to 40.0.0
+- Upgraded `tokio` crate to 1.39.2
+- Upgraded `datafusion` crate to 40.0.0
 
 ### Breaking Changes
-- Rust `OrderBook` API now takes data by reference instead of by value
+- Removed `VenueStatus` and all associated methods and schemas (redundant with `InstrumentStatus`)
+- Renamed `QuoteTick.extract_volume(...)` to `.extract_size(...)` (more accurate terminology)
+- Changed `InstrumentStatus` params (support Databento `status` schema)
+- Changed `InstrumentStatus` arrow schema
+- Changed `OrderBook` FFI API to take data by reference instead of by value
 
 ### Fixes
-None
+- Fixed rounding errors in accounting calculations for large values (using `decimal.Decimal` internally)
+- Fixed multi-currency account commission handling with multiple PnL currencies (#1805), thanks for reporting @dpmabo
+- Fixed `DataEngine` unsubscribing from order book deltas (#1814), thanks @davidsblom
+- Fixed `LiveExecutionEngine` handling of adapter client execution report causing `None` mass status (#1789), thanks for reporting @faysou
+- Fixed `InteractiveBrokersExecutionClient` handling of instruments not found when generating execution reports (#1789), thanks for reporting @faysou
+- Fixed Bybit parsing of trade and quote ticks for websocket messages (#1794), thanks @davidsblom
 
 ---
 

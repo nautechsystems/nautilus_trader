@@ -18,7 +18,7 @@ members = [
 ]
 
 [workspace.package]
-rust-version = "1.79.0"
+rust-version = "1.80.0"
 version = "0.27.0"
 edition = "2021"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
@@ -27,6 +27,7 @@ documentation = "https://nautilustrader.io/docs"
 
 [workspace.dependencies]
 anyhow = "1.0.86"
+bytes = { version = "1.6.1", features = ["serde"] }
 chrono = "0.4.38"
 derive_builder = "0.20.0"
 futures = "0.3.30"
@@ -43,12 +44,12 @@ rust_decimal = "1.35.0"
 rust_decimal_macros = "1.35.0"
 semver = "1.0.23"
 serde = { version = "1.0.203", features = ["derive"] }
-serde_json = "1.0.120"
+serde_json = "1.0.121"
 strum = { version = "0.26.3", features = ["derive"] }
-thiserror = "1.0.62"
+thiserror = "1.0.63"
 thousands = "0.2.0"
 tracing = "0.1.40"
-tokio = { version = "1.38.0", features = ["full"] }
+tokio = { version = "1.39.2", features = ["full"] }
 ustr = { version = "1.0.0", features = ["serde"] }
 uuid = { version = "1.10.0", features = ["v4"] }
 

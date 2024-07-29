@@ -27,9 +27,8 @@ use std::{
 
 use log::debug;
 use nautilus_common::{
-    cache::Cache, generators::position_id::PositionIdGenerator, msgbus::MessageBus,
+    cache::Cache, clock::Clock, generators::position_id::PositionIdGenerator, msgbus::MessageBus,
 };
-use nautilus_core::time::AtomicTime;
 use nautilus_model::{
     enums::{OmsType, OrderSide},
     events::order::{filled::OrderFilled, OrderEventAny},
@@ -53,8 +52,11 @@ pub struct ExecutionEngineConfig {
     pub debug: bool,
 }
 
-pub struct ExecutionEngine {
-    clock: &'static AtomicTime,
+pub struct ExecutionEngine<C>
+where
+    C: Clock,
+{
+    clock: C,
     cache: Rc<RefCell<Cache>>,
     msgbus: Rc<RefCell<MessageBus>>,
     clients: HashMap<ClientId, ExecutionClient>,
@@ -66,7 +68,10 @@ pub struct ExecutionEngine {
     config: ExecutionEngineConfig,
 }
 
-impl ExecutionEngine {
+impl<C> ExecutionEngine<C>
+where
+    C: Clock,
+{
     #[must_use]
     pub fn position_id_count(&self, strategy_id: StrategyId) -> u64 {
         todo!();

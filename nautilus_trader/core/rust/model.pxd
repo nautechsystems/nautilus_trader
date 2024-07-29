@@ -122,15 +122,6 @@ cdef extern from "../includes/model.h":
         # A type of currency that is based on the value of an underlying commodity.
         COMMODITY_BACKED # = 3,
 
-    # The reason for a venue or market halt.
-    cpdef enum HaltReason:
-        # The venue or market session is not halted.
-        NOT_HALTED # = 1,
-        # Trading halt is imposed for purely regulatory reasons with/without volatility halt.
-        GENERAL # = 2,
-        # Trading halt is imposed by the venue to protect against extreme volatility.
-        VOLATILITY # = 3,
-
     # The instrument class.
     cpdef enum InstrumentClass:
         # A spot market instrument class. The current market price of an instrument that is bought or sold for immediate delivery and payment.
@@ -174,20 +165,52 @@ cdef extern from "../includes/model.h":
 
     # The status of an individual market on a trading venue.
     cpdef enum MarketStatus:
-        # The market session is in the pre-open.
+        # The instrument is trading.
+        OPEN # = 1,
+        # The instrument is in a pre-open period.
+        CLOSED # = 2,
+        # Trading in the instrument has been paused.
+        PAUSED # = 3,
+        # Trading in the instrument has been halted.
+        # Trading in the instrument has been suspended.
+        SUSPENDED # = 5,
+        # Trading in the instrument is not available.
+        NOT_AVAILABLE # = 6,
+
+    # An action affecting the status of an individual market on a trading venue.
+    cpdef enum MarketStatusAction:
+        # No change.
+        NONE # = 0,
+        # The instrument is in a pre-open period.
         PRE_OPEN # = 1,
-        # The market session is open.
-        OPEN # = 2,
-        # The market session is paused.
-        PAUSE # = 3,
-        # The market session is halted.
-        HALT # = 4,
-        # The market session has reopened after a pause or halt.
-        REOPEN # = 5,
-        # The market session is in the pre-close.
-        PRE_CLOSE # = 6,
-        # The market session is closed.
-        CLOSED # = 7,
+        # The instrument is in a pre-cross period.
+        PRE_CROSS # = 2,
+        # The instrument is quoting but not trading.
+        QUOTING # = 3,
+        # The instrument is in a cross/auction.
+        CROSS # = 4,
+        # The instrument is being opened through a trading rotation.
+        ROTATION # = 5,
+        # A new price indication is available for the instrument.
+        NEW_PRICE_INDICATION # = 6,
+        # The instrument is trading.
+        TRADING # = 7,
+        # Trading in the instrument has been halted.
+        HALT # = 8,
+        # Trading in the instrument has been paused.
+        PAUSE # = 9,
+        # Trading in the instrument has been suspended.
+        SUSPEND # = 10,
+        # The instrument is in a pre-close period.
+        PRE_CLOSE # = 11,
+        # Trading in the instrument has closed.
+        CLOSE # = 12,
+        # The instrument is in a post-close period.
+        POST_CLOSE # = 13,
+        # A change in short-selling restrictions.
+        SHORT_SELL_RESTRICTION_CHANGE # = 14,
+        # The instrument is not available for trading, either trading has closed or been halted.
+        NOT_AVAILABLE_FOR_TRADING # = 15,
 
     # The order management system (OMS) type for a trading venue or trading strategy.
     cpdef enum OmsType:
@@ -510,13 +533,13 @@ cdef extern from "../includes/model.h":
     cdef struct QuoteTick_t:
         # The quotes instrument ID.
         InstrumentId_t instrument_id;
-        # The top of book bid price.
+        # The top-of-book bid price.
         Price_t bid_price;
-        # The top of book ask price.
+        # The top-of-book ask price.
         Price_t ask_price;
-        # The top of book bid size.
+        # The top-of-book bid size.
         Quantity_t bid_size;
-        # The top of book ask size.
+        # The top-of-book ask size.
         Quantity_t ask_size;
         # UNIX timestamp (nanoseconds) when the quote event occurred.
         uint64_t ts_event;
@@ -1084,14 +1107,14 @@ cdef extern from "../includes/model.h":
     # - Assumes `ptr` is a valid C string pointer.
     MarketStatus market_status_from_cstr(const char *ptr);
 
-    const char *halt_reason_to_cstr(HaltReason value);
+    const char *market_status_action_to_cstr(MarketStatusAction value);
 
     # Returns an enum from a Python string.
     #
     # # Safety
     #
     # - Assumes `ptr` is a valid C string pointer.
-    HaltReason halt_reason_from_cstr(const char *ptr);
+    MarketStatusAction market_status_action_from_cstr(const char *ptr);
 
     const char *oms_type_to_cstr(OmsType value);
 

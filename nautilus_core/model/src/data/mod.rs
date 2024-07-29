@@ -21,11 +21,13 @@ pub mod deltas;
 pub mod depth;
 pub mod order;
 pub mod quote;
+pub mod status;
 #[cfg(feature = "stubs")]
 pub mod stubs;
 pub mod trade;
 
 use std::{
+    fmt::{Debug, Display},
     hash::{Hash, Hasher},
     str::FromStr,
 };
@@ -279,13 +281,13 @@ impl Hash for DataType {
     }
 }
 
-impl std::fmt::Display for DataType {
+impl Display for DataType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.topic)
     }
 }
 
-impl std::fmt::Debug for DataType {
+impl Debug for DataType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
