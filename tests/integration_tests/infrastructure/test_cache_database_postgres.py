@@ -22,10 +22,13 @@ import pytest
 from nautilus_trader.cache.postgres.adapter import CachePostgresAdapter
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
+from nautilus_trader.core.nautilus_pyo3 import AggressorSide
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Currency
@@ -481,3 +484,38 @@ class TestCachePostgresAdapter:
 
         # Assert
         assert self.database.load_account(account.id) == account
+
+    ################################################################################
+    # Market data
+    ################################################################################
+    @pytest.mark.asyncio
+    async def test_add_and_load_trades(self):
+        # add target instruments and currencies
+        instrument = TestInstrumentProvider.ethusdt_perp_binance()
+        self.database.add_currency(instrument.base_currency)
+        self.database.add_currency(instrument.quote_currency)
+        self.database.add_instrument(instrument)
+
+        trade = TradeTick(
+            instrument_id=instrument.id,
+            price=Price.from_str("1500.00"),
+            size=Quantity.from_int(10),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("123456789"),
+            ts_event=1,
+            ts_init=2,
+        )
+        self.database.add_trade(trade)
+
+        await eventually(lambda: len(self.database.load_trades(instrument.id)) > 0)
+
+        trades = self.database.load_trades(instrument.id)
+        assert len(trades) == 1
+        target_trade = trades[0]
+        assert target_trade.instrument_id == trade.instrument_id
+        assert target_trade.price == trade.price
+        assert target_trade.size == trade.size
+        assert target_trade.aggressor_side == trade.aggressor_side
+        assert target_trade.trade_id == trade.trade_id
+        assert target_trade.ts_event == trade.ts_event
+        assert target_trade.ts_init == trade.ts_init
