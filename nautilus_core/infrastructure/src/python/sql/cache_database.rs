@@ -19,6 +19,7 @@ use bytes::Bytes;
 use nautilus_common::{cache::database::CacheDatabaseAdapter, runtime::get_runtime};
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
+    data::trade::TradeTick,
     identifiers::{AccountId, ClientOrderId, InstrumentId},
     python::{
         account::{convert_account_any_to_pyobject, convert_pyobject_to_account_any},
@@ -199,6 +200,31 @@ impl PostgresCacheDatabase {
     ) -> PyResult<()> {
         let order_any = convert_pyobject_to_account_any(py, order)?;
         slf.update_account(&order_any).map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "add_trade")]
+    fn py_add_trade(mut slf: PyRefMut<'_, Self>, trade: PyObject, py: Python<'_>) -> PyResult<()> {
+        let trade = trade.extract::<TradeTick>(py)?;
+        slf.add_trade(&trade).map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "load_trades")]
+    fn py_load_trades(
+        slf: PyRef<'_, Self>,
+        instrument_id: InstrumentId,
+        py: Python<'_>,
+    ) -> PyResult<Vec<PyObject>> {
+        get_runtime().block_on(async {
+            let result = DatabaseQueries::load_trades(&slf.pool, &instrument_id)
+                .await
+                .unwrap();
+            let mut trades = Vec::new();
+            for trade in result {
+                let py_object = trade.into_py(py);
+                trades.push(py_object);
+            }
+            Ok(trades)
+        })
     }
 
     #[pyo3(name = "flush_db")]
