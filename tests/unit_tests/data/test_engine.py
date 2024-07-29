@@ -570,6 +570,11 @@ class TestDataEngine:
 
         self.data_engine.execute(subscribe)
 
+        assert self.binance_client.subscribed_instruments() == [
+            BTCUSDT_BINANCE.id,
+            ETHUSDT_BINANCE.id,
+        ]
+
         unsubscribe = Unsubscribe(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
@@ -583,6 +588,7 @@ class TestDataEngine:
 
         # Assert
         assert self.data_engine.subscribed_instruments() == []
+        assert self.binance_client.subscribed_instruments() == []
 
     def test_execute_subscribe_instrument_then_adds_handler(self):
         # Arrange
@@ -638,6 +644,8 @@ class TestDataEngine:
 
         self.data_engine.execute(subscribe)
 
+        assert self.binance_client.subscribed_instruments() == [ETHUSDT_BINANCE.id]
+
         unsubscribe = Unsubscribe(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
@@ -651,6 +659,7 @@ class TestDataEngine:
 
         # Assert
         assert self.data_engine.subscribed_instruments() == []
+        assert self.binance_client.subscribed_instruments() == []
 
     def test_execute_unsubscribe_synthetic_instrument_logs_error(self):
         # Arrange
@@ -841,6 +850,8 @@ class TestDataEngine:
 
         self.data_engine.execute(subscribe)
 
+        assert self.binance_client.subscribed_order_book_deltas() == [ETHUSDT_BINANCE.id]
+
         unsubscribe = Unsubscribe(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
@@ -860,6 +871,7 @@ class TestDataEngine:
 
         # Assert
         assert self.data_engine.subscribed_order_book_snapshots() == []
+        assert self.binance_client.subscribed_order_book_deltas() == []
 
     def test_execute_unsubscribe_order_book_at_interval_then_removes_handler(self):
         # Arrange
@@ -885,6 +897,9 @@ class TestDataEngine:
 
         self.data_engine.execute(subscribe)
 
+        assert self.binance_client.subscribed_order_book_snapshots() == []
+        assert self.binance_client.subscribed_order_book_deltas() == [ETHUSDT_BINANCE.id]
+
         unsubscribe = Unsubscribe(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
@@ -904,6 +919,8 @@ class TestDataEngine:
 
         # Assert
         assert self.data_engine.subscribed_order_book_snapshots() == []
+        assert self.binance_client.subscribed_order_book_snapshots() == []
+        assert self.binance_client.subscribed_order_book_deltas() == []
 
     def test_order_book_snapshots_when_book_not_updated_does_not_send_(self):
         # Arrange
@@ -1297,6 +1314,8 @@ class TestDataEngine:
 
         self.data_engine.execute(subscribe)
 
+        assert self.binance_client.subscribed_quote_ticks() == [ETHUSDT_BINANCE.id]
+
         unsubscribe = Unsubscribe(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
@@ -1310,6 +1329,7 @@ class TestDataEngine:
 
         # Assert
         assert self.data_engine.subscribed_quote_ticks() == []
+        assert self.binance_client.subscribed_quote_ticks() == []
 
     def test_process_quote_tick_when_subscriber_then_sends_to_registered_handler(self):
         # Arrange
@@ -1415,6 +1435,8 @@ class TestDataEngine:
 
         self.data_engine.execute(subscribe)
 
+        assert self.binance_client.subscribed_trade_ticks() == [ETHUSDT_BINANCE.id]
+
         unsubscribe = Unsubscribe(
             client_id=ClientId(BINANCE.value),
             venue=BINANCE,
@@ -1428,6 +1450,7 @@ class TestDataEngine:
 
         # Assert
         assert self.data_engine.subscribed_trade_ticks() == []
+        assert self.binance_client.subscribed_trade_ticks() == []
 
     def test_subscribe_synthetic_quote_ticks_then_subscribes(self):
         # Arrange
@@ -1716,6 +1739,8 @@ class TestDataEngine:
 
         self.data_engine.execute(subscribe)
 
+        assert self.binance_client.subscribed_bars() == [bar_type]
+
         self.msgbus.unsubscribe(topic=f"data.bars.{bar_type}", handler=handler.append)
         unsubscribe = Unsubscribe(
             client_id=ClientId(BINANCE.value),
@@ -1731,6 +1756,7 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.command_count == 2
         assert self.data_engine.subscribed_bars() == []
+        assert self.binance_client.subscribed_bars() == []
 
     def test_process_bar_when_subscriber_then_sends_to_registered_handler(self):
         # Arrange
