@@ -289,10 +289,6 @@ impl DataEngine<Running> {
         self.transition()
     }
 
-    pub fn run(self) -> DataEngine<Stopping> {
-        self.transition()
-    }
-
     pub fn process(&self, data: Data) {
         match data {
             Data::Delta(delta) => self.handle_delta(delta),
