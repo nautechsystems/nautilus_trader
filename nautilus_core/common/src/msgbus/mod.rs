@@ -27,7 +27,7 @@ use std::{
 
 use indexmap::IndexMap;
 use log::error;
-use nautilus_core::{correctness, uuid::UUID4};
+use nautilus_core::uuid::UUID4;
 use nautilus_model::{
     data::Data,
     identifiers::{ClientId, TraderId, Venue},
@@ -35,7 +35,6 @@ use nautilus_model::{
 use ustr::Ustr;
 
 use crate::{
-    actor::Actor,
     client::DataClientAdaptor,
     messages::data::{DataRequest, DataResponse, SubscriptionCommand},
 };
@@ -516,9 +515,9 @@ mod tests {
             (self.callback)(message.downcast_ref::<Message>().unwrap().clone());
         }
 
-        fn handle_response(&self, resp: DataResponse) {}
+        fn handle_response(&self, _resp: DataResponse) {}
 
-        fn handle_data(&self, resp: &Data) {}
+        fn handle_data(&self, _resp: &Data) {}
     }
 
     fn stub_shareable_handler(id: Ustr) -> ShareableMessageHandler {
