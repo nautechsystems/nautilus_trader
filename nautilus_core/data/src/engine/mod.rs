@@ -23,7 +23,7 @@ pub mod runner;
 
 use std::{
     cell::RefCell,
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashMap, HashSet},
     marker::PhantomData,
     ops::Deref,
     rc::Rc,
@@ -32,17 +32,15 @@ use std::{
 
 use log;
 use nautilus_common::{
-    actor::Actor,
     cache::Cache,
     client::DataClientAdaptor,
     clock::Clock,
     component::{Disposed, PreInitialized, Ready, Running, Starting, State, Stopped, Stopping},
     enums::ComponentState,
-    logging::{CMD, RECV, RES},
-    messages::data::{DataEngineRequest, DataRequest, DataResponse, SubscriptionCommand},
-    msgbus::{MessageBus, MessageHandler},
+    logging::{RECV, RES},
+    messages::data::DataResponse,
+    msgbus::MessageBus,
 };
-use nautilus_core::{correctness, uuid::UUID4};
 use nautilus_model::{
     data::{
         bar::{Bar, BarType},

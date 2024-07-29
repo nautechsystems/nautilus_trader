@@ -81,6 +81,8 @@ pub enum DataEngineRequest {
     SubscriptionCommand(SubscriptionCommand),
 }
 
+// TODO: Refine this to reduce disparity between enum sizes
+#[allow(clippy::large_enum_variant)]
 pub enum DataClientResponse {
     DataResponse(DataResponse),
     Data(Data),

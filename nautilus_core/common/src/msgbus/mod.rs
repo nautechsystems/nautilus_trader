@@ -297,8 +297,7 @@ impl MessageBus {
             None => self
                 .routing_map
                 .get(&venue)
-                .map(|client_id: &ClientId| self.clients.get(client_id))
-                .flatten(),
+                .and_then(|client_id: &ClientId| self.clients.get(client_id)),
         }
     }
 
