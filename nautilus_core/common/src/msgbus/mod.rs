@@ -27,11 +27,18 @@ use std::{
 
 use indexmap::IndexMap;
 use log::error;
-use nautilus_core::uuid::UUID4;
-use nautilus_model::{data::Data, identifiers::TraderId};
+use nautilus_core::{correctness, uuid::UUID4};
+use nautilus_model::{
+    data::Data,
+    identifiers::{ClientId, TraderId, Venue},
+};
 use ustr::Ustr;
 
-use crate::{actor::Actor, messages::data::DataResponse};
+use crate::{
+    actor::Actor,
+    client::DataClientAdaptor,
+    messages::data::{DataRequest, DataResponse, SubscriptionCommand},
+};
 
 pub const CLOSE_TOPIC: &str = "CLOSE";
 
@@ -166,17 +173,23 @@ pub struct MessageBus {
     pub name: String,
     /// If the message bus is backed by a database.
     pub has_backing: bool,
-    /// mapping from topic to the corresponding handler
+    /// Mapping from topic to the corresponding handler
     /// a topic can be a string with wildcards
     /// * '?' - any character
     /// * '*' - any number of any characters
     subscriptions: IndexMap<Subscription, Vec<Ustr>>,
-    /// maps a pattern to all the handlers registered for it
+    /// Maps a pattern to all the handlers registered for it
     /// this is updated whenever a new subscription is created.
     patterns: IndexMap<Ustr, Vec<Subscription>>,
-    /// handles a message or a request destined for a specific endpoint.
+    /// Handles a message or a request destined for a specific endpoint.
     endpoints: IndexMap<Ustr, ShareableMessageHandler>,
+    /// Handles data and subscriptions requests for a specific data client
+    pub clients: IndexMap<ClientId, DataClientAdaptor>,
+    routing_map: HashMap<Venue, ClientId>,
 }
+
+/// Message bus is not meant to be passed between threads
+unsafe impl Send for MessageBus {}
 
 impl MessageBus {
     /// Creates a new [`MessageBus`] instance.
@@ -194,6 +207,8 @@ impl MessageBus {
             subscriptions: IndexMap::new(),
             patterns: IndexMap::new(),
             endpoints: IndexMap::new(),
+            clients: IndexMap::new(),
+            routing_map: HashMap::new(),
             has_backing: false,
         }
     }
@@ -253,6 +268,39 @@ impl MessageBus {
     pub const fn close(&self) -> anyhow::Result<()> {
         // TODO: Integrate the backing database
         Ok(())
+    }
+
+    /// Registers a new [`DataClientAdaptor`]
+    pub fn register_client(&mut self, client: DataClientAdaptor, routing: Option<Venue>) {
+        if let Some(routing) = routing {
+            self.routing_map.insert(routing, client.client_id());
+            log::info!("Set client {} routing for {routing}", client.client_id());
+        }
+
+        log::info!("Registered client {}", client.client_id());
+        self.clients.insert(client.client_id, client);
+    }
+
+    /// Deregisters a [`DataClientAdaptor`]
+    pub fn deregister_client(&mut self, client_id: &ClientId) {
+        // TODO: We could return a `Result` but then this is part of system wiring and instead of
+        // propagating results all over the place it may be cleaner to just immediately fail
+        // for these sorts of design-time errors?
+        // correctness::check_key_in_map(&client_id, &self.clients, "client_id", "clients").unwrap();
+
+        self.clients.shift_remove(client_id);
+        log::info!("Deregistered client {client_id}");
+    }
+
+    fn get_client(&self, client_id: &ClientId, venue: Venue) -> Option<&DataClientAdaptor> {
+        match self.clients.get(client_id) {
+            Some(client) => Some(client),
+            None => self
+                .routing_map
+                .get(&venue)
+                .map(|client_id: &ClientId| self.clients.get(client_id))
+                .flatten(),
+        }
     }
 
     /// Registers the given `handler` for the `endpoint` address.
@@ -373,9 +421,24 @@ impl MessageBus {
 
 /// Data specific functions
 impl MessageBus {
+    /// Send a [`DataRequest`] to an endpoint that must be a [`DataClient`] implementation
+    pub fn send_data_request(&self, message: DataRequest) {
+        // TODO: log error
+        if let Some(client) = self.get_client(&message.client_id, message.venue) {
+            client.request(message);
+        }
+    }
+
+    /// Send a [`SubscriptionCommand`] to an endpoint that must be a [`DataClient`] implementation
+    pub fn send_subscription_command(&self, message: SubscriptionCommand) {
+        if let Some(client) = self.get_client(&message.client_id, message.venue) {
+            client.through_execute(message);
+        }
+    }
+
     /// Send a [`DataResponse`] to an endpoint that must be an actor
-    pub fn send_response(&self, endpoint: &str, message: DataResponse) {
-        if let Some(handler) = self.get_endpoint(&Ustr::from(endpoint)) {
+    pub fn send_response(&self, message: DataResponse) {
+        if let Some(handler) = self.get_endpoint(&message.client_id.inner()) {
             handler.0.handle_response(message);
         }
     }

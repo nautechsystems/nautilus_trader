@@ -34,11 +34,13 @@ use log;
 use nautilus_common::{
     actor::Actor,
     cache::Cache,
+    client::DataClientAdaptor,
     clock::Clock,
     component::{Disposed, PreInitialized, Ready, Running, Starting, State, Stopped, Stopping},
     enums::ComponentState,
     logging::{CMD, RECV, RES},
     messages::data::{DataEngineRequest, DataRequest, DataResponse, SubscriptionCommand},
+    msgbus::{MessageBus, MessageHandler},
 };
 use nautilus_core::{correctness, uuid::UUID4};
 use nautilus_model::{
@@ -55,8 +57,6 @@ use nautilus_model::{
     instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
 };
 
-use crate::client::DataClientAdaptor;
-
 pub struct DataEngineConfig {
     pub debug: bool,
     pub time_bars_build_with_no_updates: bool,
@@ -70,33 +70,34 @@ pub struct DataEngine<State = PreInitialized> {
     state: PhantomData<State>,
     clock: Box<dyn Clock>,
     cache: Rc<RefCell<Cache>>,
-    clients: HashMap<ClientId, DataClientAdaptor>,
-    actors: HashMap<UUID4, Box<dyn Actor>>,
     default_client: Option<DataClientAdaptor>,
-    routing_map: HashMap<Venue, ClientId>,
     // order_book_intervals: HashMap<(InstrumentId, usize), Vec<fn(&OrderBook)>>,  // TODO
     // bar_aggregators:  // TODO
     synthetic_quote_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     synthetic_trade_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     buffered_deltas_map: HashMap<InstrumentId, Vec<OrderBookDelta>>,
     config: DataEngineConfig,
+    msgbus: MessageBus,
 }
 
 impl DataEngine {
     #[must_use]
-    pub fn new(clock: Box<dyn Clock>, cache: Rc<RefCell<Cache>>, config: DataEngineConfig) -> Self {
+    pub fn new(
+        clock: Box<dyn Clock>,
+        cache: Rc<RefCell<Cache>>,
+        config: DataEngineConfig,
+        msgbus: MessageBus,
+    ) -> Self {
         Self {
             state: PhantomData::<PreInitialized>,
             clock,
             cache,
-            clients: HashMap::new(),
-            actors: HashMap::new(),
             default_client: None,
-            routing_map: HashMap::new(),
             synthetic_quote_feeds: HashMap::new(),
             synthetic_trade_feeds: HashMap::new(),
             buffered_deltas_map: HashMap::new(),
             config,
+            msgbus,
         }
     }
 }
@@ -107,14 +108,12 @@ impl<S: State> DataEngine<S> {
             state: PhantomData,
             clock: self.clock,
             cache: self.cache,
-            clients: self.clients,
-            actors: self.actors,
             default_client: self.default_client,
-            routing_map: self.routing_map,
             synthetic_quote_feeds: self.synthetic_quote_feeds,
             synthetic_trade_feeds: self.synthetic_trade_feeds,
             buffered_deltas_map: self.buffered_deltas_map,
             config: self.config,
+            msgbus: self.msgbus,
         }
     }
 
@@ -125,17 +124,23 @@ impl<S: State> DataEngine<S> {
 
     #[must_use]
     pub fn check_connected(&self) -> bool {
-        self.clients.values().all(|client| client.is_connected())
+        self.msgbus
+            .clients
+            .values()
+            .all(|client| client.is_connected())
     }
 
     #[must_use]
     pub fn check_disconnected(&self) -> bool {
-        self.clients.values().all(|client| !client.is_connected())
+        self.msgbus
+            .clients
+            .values()
+            .all(|client| !client.is_connected())
     }
 
     #[must_use]
     pub fn registed_clients(&self) -> Vec<ClientId> {
-        self.clients.keys().copied().collect()
+        self.msgbus.clients.keys().copied().collect()
     }
 
     // -- SUBSCRIPTIONS ---------------------------------------------------------------------------
@@ -146,7 +151,7 @@ impl<S: State> DataEngine<S> {
         T: Clone,
     {
         let mut subs = Vec::new();
-        for client in self.clients.values() {
+        for client in self.msgbus.clients.values() {
             subs.extend(get_subs(client).iter().cloned());
         }
         subs
@@ -206,17 +211,6 @@ impl<S: State> DataEngine<S> {
 impl DataEngine<PreInitialized> {
     // pub fn register_catalog(&mut self, catalog: ParquetDataCatalog) {}  TODO: Implement catalog
 
-    /// Register the given data `client` with the engine.
-    pub fn register_client(&mut self, client: DataClientAdaptor, routing: Option<Venue>) {
-        if let Some(routing) = routing {
-            self.routing_map.insert(routing, client.client_id());
-            log::info!("Set client {} routing for {routing}", client.client_id());
-        }
-
-        log::info!("Registered client {}", client.client_id());
-        self.clients.insert(client.client_id(), client);
-    }
-
     /// Register the given data `client` with the engine as the default routing client.
     ///
     /// When a specific venue routing cannot be found, this client will receive messages.
@@ -224,24 +218,10 @@ impl DataEngine<PreInitialized> {
     /// # Warnings
     ///
     /// Any existing default routing client will be overwritten.
+    /// TODO: change this to suit message bus behaviour
     pub fn register_default_client(&mut self, client: DataClientAdaptor) {
         log::info!("Registered default client {}", client.client_id());
         self.default_client = Some(client);
-    }
-
-    /// Deregister the data client with the given `client_id` from the engine.
-    ///
-    /// # Panics
-    ///
-    /// If a client with `client_id` has not already been registered.
-    pub fn deregister_client(&mut self, client_id: ClientId) {
-        // TODO: We could return a `Result` but then this is part of system wiring and instead of
-        // propagating results all over the place it may be cleaner to just immediately fail
-        // for these sorts of design-time errors?
-        correctness::check_key_in_map(&client_id, &self.clients, "client_id", "clients").unwrap();
-
-        self.clients.remove(&client_id);
-        log::info!("Deregistered client {client_id}");
     }
 
     fn initialize(self) -> DataEngine<Ready> {
@@ -252,25 +232,37 @@ impl DataEngine<PreInitialized> {
 impl DataEngine<Ready> {
     #[must_use]
     pub fn start(self) -> DataEngine<Starting> {
-        self.clients.values().for_each(|client| client.start());
+        self.msgbus
+            .clients
+            .values()
+            .for_each(|client| client.start());
         self.transition()
     }
 
     #[must_use]
     pub fn stop(self) -> DataEngine<Stopping> {
-        self.clients.values().for_each(|client| client.stop());
+        self.msgbus
+            .clients
+            .values()
+            .for_each(|client| client.stop());
         self.transition()
     }
 
     #[must_use]
     pub fn reset(self) -> Self {
-        self.clients.values().for_each(|client| client.reset());
+        self.msgbus
+            .clients
+            .values()
+            .for_each(|client| client.reset());
         self.transition()
     }
 
     #[must_use]
     pub fn dispose(mut self) -> DataEngine<Disposed> {
-        self.clients.values().for_each(|client| client.dispose());
+        self.msgbus
+            .clients
+            .values()
+            .for_each(|client| client.dispose());
         self.clock.cancel_timers();
         self.transition()
     }
@@ -297,6 +289,10 @@ impl DataEngine<Running> {
         self.transition()
     }
 
+    pub fn run(self) -> DataEngine<Stopping> {
+        self.transition()
+    }
+
     pub fn process(&self, data: Data) {
         match data {
             Data::Delta(delta) => self.handle_delta(delta),
@@ -305,56 +301,6 @@ impl DataEngine<Running> {
             Data::Quote(quote) => self.handle_quote(quote),
             Data::Trade(trade) => self.handle_trade(trade),
             Data::Bar(bar) => self.handle_bar(bar),
-        }
-    }
-
-    pub fn execute(&mut self, command: SubscriptionCommand) {
-        log::debug!("{}", format!("{RECV}{CMD} commmand")); // TODO: Display for command
-
-        // Determine the client ID
-        let client_id = if self.clients.contains_key(&command.client_id) {
-            Some(command.client_id)
-        } else {
-            self.routing_map.get(&command.venue).copied()
-        };
-
-        if let Some(client) = client_id
-            .map(|client_id| self.clients.get_mut(&client_id))
-            .flatten()
-        {
-            client.execute(command)
-        } else {
-            log::error!(
-                "Cannot execute command: no data client configured for {} or `client_id` {}",
-                command.venue,
-                command.client_id
-            );
-        }
-    }
-
-    pub fn request(&mut self, request: DataRequest) {
-        log::debug!("{}", format!("{RECV}{RES} response")); // TODO: Display for response
-
-        // Determine the client ID
-        let client_id = if self.clients.contains_key(&request.client_id) {
-            Some(request.client_id)
-        } else {
-            self.routing_map.get(&request.venue).copied()
-        };
-
-        if let Some(client) = client_id
-            .map(|client_id| self.clients.get_mut(&client_id))
-            .flatten()
-        {
-            let response = client.request(request);
-            // TODO: add response to cache
-            // or should client do that??
-        } else {
-            log::error!(
-                "Cannot execute request: no data client configured for {} or `client_id` {}",
-                request.venue,
-                request.client_id
-            );
         }
     }
 

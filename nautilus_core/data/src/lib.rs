@@ -28,5 +28,4 @@
 //! - `python`: Enables Python bindings from `pyo3`
 
 pub mod aggregation;
-pub mod client;
 pub mod engine;

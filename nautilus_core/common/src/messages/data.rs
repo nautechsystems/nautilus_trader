@@ -23,7 +23,6 @@ use nautilus_model::{
 
 // TOOD: redesign data messages for a tighter model
 pub struct DataRequest {
-    pub request_id: UUID4,
     pub correlation_id: UUID4,
     pub client_id: ClientId,
     pub venue: Venue,
@@ -34,18 +33,16 @@ pub struct DataRequest {
 pub type Payload = Arc<dyn Any + Send + Sync>;
 
 pub struct DataResponse {
-    pub response_id: UUID4,
     pub correlation_id: UUID4,
     pub client_id: ClientId,
     pub venue: Venue,
     pub data_type: DataType,
-    pub data: Payload,
     pub ts_init: UnixNanos,
+    pub data: Payload,
 }
 
 impl DataResponse {
     pub fn new<T: Any + Send + Sync>(
-        response_id: UUID4,
         correlation_id: UUID4,
         client_id: ClientId,
         venue: Venue,
@@ -54,7 +51,6 @@ impl DataResponse {
         ts_init: UnixNanos,
     ) -> Self {
         Self {
-            response_id,
             correlation_id,
             client_id,
             venue,

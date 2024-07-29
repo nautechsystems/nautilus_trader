@@ -17,18 +17,22 @@ use nautilus_common::{
 use nautilus_core::uuid::UUID4;
 use nautilus_model::{data::Data, identifiers::ClientId};
 use tokio::{
-    sync::mpsc::{self, UnboundedReceiver},
+    sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
     task::JoinHandle,
 };
 
-use crate::client::DataClientAdaptor;
-
-pub struct LiveRunner;
+pub enum Runner {
+    Live(LiveRunner),
+}
+pub struct LiveRunner {
+    resp_tx: UnboundedSender<DataClientResponse>,
+    resp_rx: UnboundedReceiver<DataClientResponse>,
+}
 
 impl LiveRunner {}
 
 impl LiveRunner {
-    pub fn run(msgbus: MessageBus, resp_rx: &mut UnboundedReceiver<DataClientResponse>) {
+    pub fn run(msgbus: &MessageBus, resp_rx: &mut UnboundedReceiver<DataClientResponse>) {
         while let Some(resp) = resp_rx.blocking_recv() {
             match resp {
                 DataClientResponse::DataResponse(data_resp) => {

@@ -25,11 +25,11 @@ use std::{
     sync::Arc,
 };
 
-use indexmap::IndexMap;
-use nautilus_common::{
+use crate::{
     clock::Clock,
     messages::data::{Action, DataRequest, DataResponse, Payload, SubscriptionCommand},
 };
+use indexmap::IndexMap;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     data::{
@@ -99,6 +99,7 @@ pub trait LiveDataClient {
 
     // -- DATA REQUEST HANDLERS ---------------------------------------------------------------------------
 
+    fn request_data(&self, request: DataRequest);
     fn request_instruments(
         &self,
         correlation_id: UUID4,
@@ -179,6 +180,9 @@ impl DerefMut for DataClientAdaptor {
 }
 
 impl DataClientAdaptor {
+    /// TODO: Decide whether to use mut references for subscription commands
+    pub fn through_execute(&self, command: SubscriptionCommand) {}
+
     pub fn execute(&mut self, command: SubscriptionCommand) {
         match command.action {
             Action::Subscribe => self.execute_subscribe_command(command),
@@ -445,7 +449,9 @@ impl DataClientAdaptor {
     /// that does not return a DataResponse directly
     /// it internally uses a queue/channel to send
     /// back response
-    pub fn through_request(&self, req: DataRequest) {}
+    pub fn through_request(&self, req: DataRequest) {
+        self.client.request_data(req)
+    }
 
     pub fn request(&self, req: DataRequest) -> DataResponse {
         let instrument_id = req.data_type.parse_instrument_id_from_metadata();
@@ -459,14 +465,17 @@ impl DataClientAdaptor {
                 (None, Some(venue)) => {
                     let instruments =
                         self.client
-                            .request_instruments(req.request_id, venue, start, end);
-                    self.handle_instruments(venue, instruments, req.request_id)
+                            .request_instruments(req.correlation_id, venue, start, end);
+                    self.handle_instruments(venue, instruments, req.correlation_id)
                 }
                 (Some(instrument_id), None) => {
-                    let instrument =
-                        self.client
-                            .request_instrument(req.request_id, instrument_id, start, end);
-                    self.handle_instrument(instrument, req.request_id)
+                    let instrument = self.client.request_instrument(
+                        req.correlation_id,
+                        instrument_id,
+                        start,
+                        end,
+                    );
+                    self.handle_instrument(instrument, req.correlation_id)
                 }
                 _ => {
                     todo!()
@@ -476,32 +485,32 @@ impl DataClientAdaptor {
                 let instrument_id =
                     instrument_id.expect("Error on request: no 'instrument_id' found in metadata");
                 let quotes = self.client.request_quote_ticks(
-                    req.request_id,
+                    req.correlation_id,
                     instrument_id,
                     start,
                     end,
                     limit,
                 );
-                self.handle_quote_ticks(&instrument_id, quotes, req.request_id)
+                self.handle_quote_ticks(&instrument_id, quotes, req.correlation_id)
             }
             stringify!(TradeTick) => {
                 let instrument_id =
                     instrument_id.expect("Error on request: no 'instrument_id' found in metadata");
                 let trades = self.client.request_trade_ticks(
-                    req.request_id,
+                    req.correlation_id,
                     instrument_id,
                     start,
                     end,
                     limit,
                 );
-                self.handle_trade_ticks(&instrument_id, trades, req.request_id)
+                self.handle_trade_ticks(&instrument_id, trades, req.correlation_id)
             }
             stringify!(Bar) => {
                 let bar_type = req.data_type.parse_bar_type_from_metadata();
-                let bars = self
-                    .client
-                    .request_bars(req.request_id, bar_type, start, end, limit);
-                self.handle_bars(&bar_type, bars, req.request_id)
+                let bars =
+                    self.client
+                        .request_bars(req.correlation_id, bar_type, start, end, limit);
+                self.handle_bars(&bar_type, bars, req.correlation_id)
             }
             _ => {
                 todo!()
@@ -520,7 +529,6 @@ impl DataClientAdaptor {
         let data = Arc::new(instrument);
 
         DataResponse::new(
-            UUID4::new(),
             correlation_id,
             self.client_id,
             instrument_id.venue,
@@ -541,7 +549,6 @@ impl DataClientAdaptor {
         let data = Arc::new(instruments);
 
         DataResponse::new(
-            UUID4::new(),
             correlation_id,
             self.client_id,
             venue,
@@ -562,7 +569,6 @@ impl DataClientAdaptor {
         let data = Arc::new(quotes);
 
         DataResponse::new(
-            UUID4::new(),
             correlation_id,
             self.client_id,
             instrument_id.venue,
@@ -583,7 +589,6 @@ impl DataClientAdaptor {
         let data = Arc::new(trades);
 
         DataResponse::new(
-            UUID4::new(),
             correlation_id,
             self.client_id,
             instrument_id.venue,
@@ -604,7 +609,6 @@ impl DataClientAdaptor {
         let data = Arc::new(bars);
 
         DataResponse::new(
-            UUID4::new(),
             correlation_id,
             self.client_id,
             bar_type.instrument_id.venue,
