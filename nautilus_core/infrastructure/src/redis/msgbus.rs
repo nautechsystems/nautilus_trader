@@ -323,6 +323,8 @@ pub fn stream_messages(
         .map(String::as_str)
         .collect::<Vec<&str>>();
 
+    debug!("Listening to streams: [{}]", stream_keys.join(", "));
+
     // Start streaming from current timestamp
     let clock = get_atomic_clock_realtime();
     let timestamp_ms = clock.get_time_ms();

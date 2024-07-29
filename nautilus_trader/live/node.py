@@ -326,7 +326,9 @@ class TradingNode:
             ]
 
             if self._config.message_bus and self._config.message_bus.external_streams:
+                streams = self._config.message_bus.external_streams
                 self.kernel.logger.info("Starting task: external message streaming", LogColor.BLUE)
+                self.kernel.logger.info(f"Listening to streams: {streams}", LogColor.BLUE)
                 self._task_streaming = asyncio.ensure_future(
                     self.kernel.msgbus_database.stream(self.publish_bus_message),
                 )
