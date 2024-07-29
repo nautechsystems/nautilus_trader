@@ -328,8 +328,8 @@ class MessageBusConfig(NautilusConfig, frozen=True):
         If True, messages will be written to separate streams per topic.
         If False, all messages will be written to the same stream.
     external_streams : list[str], optional
-        The external stream keys the message bus will listen to for publishing
-        deserialized message payloads internally.
+        The external stream keys the node will listen to for publishing deserialized message
+        payloads on the internal message bus.
     types_filter : list[type], optional
         A list of serializable types **not** to publish externally.
 
