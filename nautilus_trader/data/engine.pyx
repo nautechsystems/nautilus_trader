@@ -1116,11 +1116,36 @@ cdef class DataEngine(Component):
             self._log.error("Cannot unsubscribe from synthetic instrument `OrderBook` data")
             return
 
-        if not self._msgbus.has_subscribers(
-            f"data.book.snapshots"
-            f".{instrument_id.venue}"
-            f".{instrument_id.symbol}",
-        ):
+        # Setup topics
+        cdef str deltas_topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol}"
+        cdef str depth_topic = f"data.book.depth.{instrument_id.venue}.{instrument_id.symbol}"
+        cdef str snapshots_topic = f"data.book.snapshots.{instrument_id.venue}.{instrument_id.symbol}"
+
+        # Check the deltas and the depth subscription
+        cdef list[str] topics = [deltas_topic, depth_topic]
+
+        cdef int num_subscribers = 0
+        cdef bint is_internal_book_subscriber = False
+
+        for topic in topics:
+            num_subscribers = len(self._msgbus.subscriptions(pattern=topic))
+            is_internal_book_subscriber = self._msgbus.is_subscribed(
+                topic=topic,
+                handler=self._update_order_book,
+            )
+
+            # Remove the subscription for the internal order book if it is the last subscription
+            if num_subscribers == 1 and is_internal_book_subscriber:
+                self._msgbus.unsubscribe(
+                    topic=topic,
+                    handler=self._update_order_book,
+                )
+
+        if not self._msgbus.has_subscribers(deltas_topic):
+            if instrument_id in client.subscribed_order_book_deltas():
+                client.unsubscribe_order_book_deltas(instrument_id)
+
+        if not self._msgbus.has_subscribers(snapshots_topic):
             if instrument_id in client.subscribed_order_book_snapshots():
                 client.unsubscribe_order_book_snapshots(instrument_id)
 
