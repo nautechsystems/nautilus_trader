@@ -28,7 +28,4 @@
 //! - `python`: Enables Python bindings from `pyo3`
 
 pub mod aggregation;
-pub mod client;
 pub mod engine;
-#[allow(dead_code)]
-pub mod live;
