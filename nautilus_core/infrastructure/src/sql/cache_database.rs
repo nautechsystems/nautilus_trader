@@ -593,7 +593,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         let instrument_id = instrument_id.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
         tokio::spawn(async move {
-            let result = DatabaseQueries::load_quotes(&pool, instrument_id).await;
+            let result = DatabaseQueries::load_quotes(&pool, &instrument_id).await;
             match result {
                 Ok(quotes) => {
                     let _ = tx.send(quotes);

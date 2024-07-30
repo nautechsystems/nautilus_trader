@@ -24,6 +24,7 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.core.nautilus_pyo3 import AggressorSide
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OrderSide
@@ -519,3 +520,35 @@ class TestCachePostgresAdapter:
         assert target_trade.trade_id == trade.trade_id
         assert target_trade.ts_event == trade.ts_event
         assert target_trade.ts_init == trade.ts_init
+
+    @pytest.mark.asyncio
+    async def test_add_and_load_quotes(self):
+        # add target instruments and currencies
+        instrument = TestInstrumentProvider.ethusdt_perp_binance()
+        self.database.add_currency(instrument.base_currency)
+        self.database.add_currency(instrument.quote_currency)
+        self.database.add_instrument(instrument)
+
+        quote = QuoteTick(
+            instrument_id=instrument.id,
+            bid_price=Price.from_str("1400.00"),
+            ask_price=Price.from_str("1400.50"),
+            bid_size=Quantity.from_int(4),
+            ask_size=Quantity.from_int(5),
+            ts_event=1,
+            ts_init=1,
+        )
+        self.database.add_quote(quote)
+
+        await eventually(lambda: len(self.database.load_quotes(instrument.id)) > 0)
+
+        quotes = self.database.load_quotes(instrument.id)
+        assert len(quotes) == 1
+        target_quote = quotes[0]
+        assert target_quote.instrument_id == quote.instrument_id
+        assert target_quote.bid_price == quote.bid_price
+        assert target_quote.bid_size == quote.bid_size
+        assert target_quote.ask_price == quote.ask_price
+        assert target_quote.ask_size == quote.ask_size
+        assert target_quote.ts_event == quote.ts_event
+        assert target_quote.ts_init == quote.ts_init
