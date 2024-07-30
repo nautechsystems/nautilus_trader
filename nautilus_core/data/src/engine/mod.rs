@@ -33,7 +33,7 @@ use std::{
 use log;
 use nautilus_common::{
     cache::Cache,
-    client::DataClientAdaptor,
+    client::DataClientAdapter,
     clock::Clock,
     component::{Disposed, PreInitialized, Ready, Running, Starting, State, Stopped, Stopping},
     enums::ComponentState,
@@ -68,7 +68,7 @@ pub struct DataEngine<State = PreInitialized> {
     state: PhantomData<State>,
     clock: Box<dyn Clock>,
     cache: Rc<RefCell<Cache>>,
-    default_client: Option<DataClientAdaptor>,
+    default_client: Option<DataClientAdapter>,
     // order_book_intervals: HashMap<(InstrumentId, usize), Vec<fn(&OrderBook)>>,  // TODO
     // bar_aggregators:  // TODO
     synthetic_quote_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
@@ -145,7 +145,7 @@ impl<S: State> DataEngine<S> {
 
     fn collect_subscriptions<F, T>(&self, get_subs: F) -> Vec<T>
     where
-        F: Fn(&DataClientAdaptor) -> &HashSet<T>,
+        F: Fn(&DataClientAdapter) -> &HashSet<T>,
         T: Clone,
     {
         let mut subs = Vec::new();
@@ -212,7 +212,7 @@ impl DataEngine<PreInitialized> {
     ///
     /// Any existing default routing client will be overwritten.
     /// TODO: change this to suit message bus behaviour
-    pub fn register_default_client(&mut self, client: DataClientAdaptor) {
+    pub fn register_default_client(&mut self, client: DataClientAdapter) {
         log::info!("Registered default client {}", client.client_id());
         self.default_client = Some(client);
     }
