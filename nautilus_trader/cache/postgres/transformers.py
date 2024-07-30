@@ -17,6 +17,7 @@ from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.accounting.accounts.cash import CashAccount
 from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.events import OrderAccepted
@@ -324,3 +325,8 @@ def transform_trade_tick_to_pyo3(trade: TradeTick):
 
 def transform_trade_tick_from_pyo3(trade_pyo3):
     return TradeTick.from_pyo3(trade_pyo3)
+
+
+def transform_quote_tick_to_pyp3(quote: QuoteTick):
+    quote_tick_dict = QuoteTick.to_dict(quote)
+    return nautilus_pyo3.QuoteTick.from_dict(quote_tick_dict)

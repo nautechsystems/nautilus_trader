@@ -635,7 +635,7 @@ impl DatabaseQueries {
 
     pub async fn load_quotes(
         pool: &PgPool,
-        instrument_id: InstrumentId,
+        instrument_id: &InstrumentId,
     ) -> anyhow::Result<Vec<QuoteTick>> {
         sqlx::query_as::<_, QuoteTickModel>(
             r#"SELECT * FROM "quote" WHERE instrument_id = $1 ORDER BY ts_event ASC"#,

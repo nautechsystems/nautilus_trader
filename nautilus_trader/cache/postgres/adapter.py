@@ -24,10 +24,12 @@ from nautilus_trader.cache.postgres.transformers import transform_instrument_fro
 from nautilus_trader.cache.postgres.transformers import transform_instrument_to_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_order_from_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_order_to_pyo3
+from nautilus_trader.cache.postgres.transformers import transform_quote_tick_to_pyp3
 from nautilus_trader.cache.postgres.transformers import transform_trade_tick_from_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_trade_tick_to_pyo3
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import PostgresCacheDatabase
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
@@ -123,3 +125,12 @@ class CachePostgresAdapter(CacheDatabaseFacade):
         instrument_id_pyo3 = nautilus_pyo3.InstrumentId.from_str(str(instrument_id))
         trades = self._backing.load_trades(instrument_id_pyo3)
         return [transform_trade_tick_from_pyo3(trade) for trade in trades]
+
+    def add_quote(self, quote: QuoteTick):
+        quote_pyo3 = transform_quote_tick_to_pyp3(quote)
+        self._backing.add_quote(quote_pyo3)
+
+    def load_quotes(self, instrument_id: InstrumentId) -> list[QuoteTick]:
+        instrument_id_pyo3 = nautilus_pyo3.InstrumentId.from_str(str(instrument_id))
+        quotes = self._backing.load_quotes(instrument_id_pyo3)
+        return [QuoteTick.from_pyo3(quote_pyo3) for quote_pyo3 in quotes]
