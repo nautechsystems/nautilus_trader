@@ -19,7 +19,7 @@ use bytes::Bytes;
 use nautilus_common::{cache::database::CacheDatabaseAdapter, runtime::get_runtime};
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
-    data::trade::TradeTick,
+    data::{quote::QuoteTick, trade::TradeTick},
     identifiers::{AccountId, ClientOrderId, InstrumentId},
     python::{
         account::{convert_account_any_to_pyobject, convert_pyobject_to_account_any},
@@ -224,6 +224,31 @@ impl PostgresCacheDatabase {
                 trades.push(py_object);
             }
             Ok(trades)
+        })
+    }
+
+    #[pyo3(name = "add_quote")]
+    fn py_add_quote(mut slf: PyRefMut<'_, Self>, quote: PyObject, py: Python<'_>) -> PyResult<()> {
+        let quote = quote.extract::<QuoteTick>(py)?;
+        slf.add_quote(&quote).map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "load_quotes")]
+    fn py_load_quotes(
+        slf: PyRef<'_, Self>,
+        instrument_id: InstrumentId,
+        py: Python<'_>,
+    ) -> PyResult<Vec<PyObject>> {
+        get_runtime().block_on(async {
+            let result = DatabaseQueries::load_quotes(&slf.pool, &instrument_id)
+                .await
+                .unwrap();
+            let mut quotes = Vec::new();
+            for quote in result {
+                let py_object = quote.into_py(py);
+                quotes.push(py_object);
+            }
+            Ok(quotes)
         })
     }
 
