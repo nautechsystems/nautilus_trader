@@ -35,7 +35,7 @@ use nautilus_model::{
 use ustr::Ustr;
 
 use crate::{
-    client::DataClientAdaptor,
+    client::DataClientAdapter,
     messages::data::{DataRequest, DataResponse, SubscriptionCommand},
 };
 
@@ -68,7 +68,7 @@ unsafe impl Send for ShareableMessageHandler {}
 #[derive(Clone)]
 pub struct Subscription {
     pub handler: ShareableMessageHandler,
-    /// Store a copy of the handler id for faster equality checks
+    /// Store a copy of the handler ID for faster equality checks.
     pub handler_id: Ustr,
     pub topic: Ustr,
     /// The priority for the subscription determines the ordering of
@@ -183,7 +183,7 @@ pub struct MessageBus {
     /// Handles a message or a request destined for a specific endpoint.
     endpoints: IndexMap<Ustr, ShareableMessageHandler>,
     /// Handles data and subscriptions requests for a specific data client
-    pub clients: IndexMap<ClientId, DataClientAdaptor>,
+    pub clients: IndexMap<ClientId, DataClientAdapter>,
     routing_map: HashMap<Venue, ClientId>,
 }
 
@@ -270,7 +270,7 @@ impl MessageBus {
     }
 
     /// Registers a new [`DataClientAdaptor`]
-    pub fn register_client(&mut self, client: DataClientAdaptor, routing: Option<Venue>) {
+    pub fn register_client(&mut self, client: DataClientAdapter, routing: Option<Venue>) {
         if let Some(routing) = routing {
             self.routing_map.insert(routing, client.client_id());
             log::info!("Set client {} routing for {routing}", client.client_id());
@@ -291,7 +291,7 @@ impl MessageBus {
         log::info!("Deregistered client {client_id}");
     }
 
-    fn get_client(&self, client_id: &ClientId, venue: Venue) -> Option<&DataClientAdaptor> {
+    fn get_client(&self, client_id: &ClientId, venue: Venue) -> Option<&DataClientAdapter> {
         match self.clients.get(client_id) {
             Some(client) => Some(client),
             None => self
@@ -399,7 +399,7 @@ impl MessageBus {
         })
     }
 
-    /// Send a message to an endpoint.
+    /// Sends a message to an endpoint.
     pub fn send(&self, endpoint: &str, message: &dyn Any) {
         if let Some(handler) = self.get_endpoint(&Ustr::from(endpoint)) {
             handler.0.handle(message);

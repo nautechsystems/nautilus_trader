@@ -145,7 +145,7 @@ pub trait LiveDataClient {
     ) -> Vec<Bar>;
 }
 
-pub struct DataClientAdaptor {
+pub struct DataClientAdapter {
     pub client_id: ClientId,
     pub venue: Venue,
     client: Box<dyn LiveDataClient>,
@@ -162,7 +162,7 @@ pub struct DataClientAdaptor {
     pub subscriptions_instrument_venue: HashSet<Venue>,
 }
 
-impl Deref for DataClientAdaptor {
+impl Deref for DataClientAdapter {
     type Target = Box<dyn LiveDataClient>;
 
     fn deref(&self) -> &Self::Target {
@@ -170,13 +170,13 @@ impl Deref for DataClientAdaptor {
     }
 }
 
-impl DerefMut for DataClientAdaptor {
+impl DerefMut for DataClientAdapter {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.client
     }
 }
 
-impl DataClientAdaptor {
+impl DataClientAdapter {
     /// TODO: Decide whether to use mut references for subscription commands
     pub fn through_execute(&self, command: SubscriptionCommand) {}
 
