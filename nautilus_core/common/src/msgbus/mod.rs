@@ -16,6 +16,7 @@
 //! A common in-memory `MessageBus` for loosely coupled message passing patterns.
 
 pub mod database;
+pub mod stubs;
 
 use std::{
     any::Any,
@@ -41,11 +42,12 @@ use crate::{
 
 pub const CLOSE_TOPIC: &str = "CLOSE";
 
-pub trait MessageHandler {
+pub trait MessageHandler: Any {
     fn id(&self) -> Ustr;
     fn handle(&self, message: &dyn Any);
     fn handle_response(&self, resp: DataResponse);
     fn handle_data(&self, resp: &Data);
+    fn as_any(&self) -> &dyn Any;
 }
 
 #[derive(Clone)]
@@ -489,43 +491,17 @@ pub fn is_matching(topic: &Ustr, pattern: &Ustr) -> bool {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
 
-    use nautilus_core::{message::Message, uuid::UUID4};
+    use nautilus_core::uuid::UUID4;
     use rstest::*;
 
     use super::*;
+    use crate::msgbus::stubs::{
+        get_call_check_shareable_handler, get_stub_shareable_handler, CallCheckMessageHandler,
+    };
 
     fn stub_msgbus() -> MessageBus {
         MessageBus::new(TraderId::from("trader-001"), UUID4::new(), None, None)
-    }
-
-    struct StubMessageHandler {
-        id: Ustr,
-        callback: Arc<dyn Fn(Message) + Send>,
-    }
-
-    impl MessageHandler for StubMessageHandler {
-        fn id(&self) -> Ustr {
-            self.id
-        }
-
-        fn handle(&self, message: &dyn Any) {
-            (self.callback)(message.downcast_ref::<Message>().unwrap().clone());
-        }
-
-        fn handle_response(&self, _resp: DataResponse) {}
-
-        fn handle_data(&self, _resp: &Data) {}
-    }
-
-    fn stub_shareable_handler(id: Ustr) -> ShareableMessageHandler {
-        ShareableMessageHandler(Rc::new(StubMessageHandler {
-            id,
-            callback: Arc::new(|m: Message| {
-                format!("{m:?}");
-            }),
-        }))
     }
 
     #[rstest]
@@ -557,7 +533,7 @@ mod tests {
         let msgbus = stub_msgbus();
 
         let handler_id = Ustr::from("1");
-        let handler = stub_shareable_handler(handler_id);
+        let handler = get_stub_shareable_handler(handler_id);
 
         assert!(!msgbus.is_subscribed("my-topic", handler));
     }
@@ -575,7 +551,7 @@ mod tests {
         let endpoint = "MyEndpoint";
 
         let handler_id = Ustr::from("1");
-        let handler = stub_shareable_handler(handler_id);
+        let handler = get_stub_shareable_handler(handler_id);
 
         msgbus.register(endpoint, handler);
 
@@ -584,12 +560,45 @@ mod tests {
     }
 
     #[rstest]
+    fn test_endpoint_send() {
+        let mut msgbus = stub_msgbus();
+        let endpoint = "MyEndpoint";
+
+        let handler_id = Ustr::from("1");
+        let handler = get_call_check_shareable_handler(handler_id);
+
+        msgbus.register(endpoint, handler.clone());
+        assert!(msgbus.get_endpoint(&Ustr::from(endpoint)).is_some());
+
+        // check if the handler called variable is false
+        assert!(!handler
+            .0
+            .as_ref()
+            .as_any()
+            .downcast_ref::<CallCheckMessageHandler>()
+            .unwrap()
+            .was_called());
+
+        // Send a message to the endpoint
+        msgbus.send(endpoint, &"Test Message");
+
+        // Check if the handler was called
+        assert!(handler
+            .0
+            .as_ref()
+            .as_any()
+            .downcast_ref::<CallCheckMessageHandler>()
+            .unwrap()
+            .was_called());
+    }
+
+    #[rstest]
     fn test_deregsiter_endpoint() {
         let mut msgbus = stub_msgbus();
         let endpoint = "MyEndpoint";
 
         let handler_id = Ustr::from("1");
-        let handler = stub_shareable_handler(handler_id);
+        let handler = get_stub_shareable_handler(handler_id);
 
         msgbus.register(endpoint, handler);
         msgbus.deregister(endpoint);
@@ -603,7 +612,7 @@ mod tests {
         let topic = "my-topic";
 
         let handler_id = Ustr::from("1");
-        let handler = stub_shareable_handler(handler_id);
+        let handler = get_stub_shareable_handler(handler_id);
 
         msgbus.subscribe(topic, handler, Some(1));
 
@@ -617,7 +626,7 @@ mod tests {
         let topic = "my-topic";
 
         let handler_id = Ustr::from("1");
-        let handler = stub_shareable_handler(handler_id);
+        let handler = get_stub_shareable_handler(handler_id);
 
         msgbus.subscribe(topic, handler.clone(), None);
         msgbus.unsubscribe(topic, handler);
@@ -632,16 +641,16 @@ mod tests {
         let topic = "my-topic";
 
         let handler_id1 = Ustr::from("1");
-        let handler1 = stub_shareable_handler(handler_id1);
+        let handler1 = get_stub_shareable_handler(handler_id1);
 
         let handler_id2 = Ustr::from("2");
-        let handler2 = stub_shareable_handler(handler_id2);
+        let handler2 = get_stub_shareable_handler(handler_id2);
 
         let handler_id3 = Ustr::from("3");
-        let handler3 = stub_shareable_handler(handler_id3);
+        let handler3 = get_stub_shareable_handler(handler_id3);
 
         let handler_id4 = Ustr::from("4");
-        let handler4 = stub_shareable_handler(handler_id4);
+        let handler4 = get_stub_shareable_handler(handler_id4);
 
         msgbus.subscribe(topic, handler1, None);
         msgbus.subscribe(topic, handler2, None);
