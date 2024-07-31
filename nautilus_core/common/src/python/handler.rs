@@ -74,4 +74,8 @@ impl MessageHandler for PythonMessageHandler {
             eprintln!("Error calling handle method: {:?}", err);
         }
     }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
