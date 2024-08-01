@@ -87,7 +87,7 @@ pub struct CacheConfig {
 
 impl Default for CacheConfig {
     fn default() -> Self {
-        CacheConfig {
+        Self {
             database: None,
             encoding: SerializationEncoding::MsgPack,
             timestamps_as_iso8601: false,

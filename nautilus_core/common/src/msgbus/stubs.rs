@@ -55,6 +55,7 @@ impl MessageHandler for StubMessageHandler {
     }
 }
 
+#[must_use]
 pub fn get_stub_shareable_handler(id: Ustr) -> ShareableMessageHandler {
     ShareableMessageHandler(Rc::new(StubMessageHandler {
         id,
@@ -71,6 +72,7 @@ pub struct CallCheckMessageHandler {
 }
 
 impl CallCheckMessageHandler {
+    #[must_use]
     pub fn was_called(&self) -> bool {
         self.called.load(Ordering::SeqCst)
     }
@@ -94,6 +96,7 @@ impl MessageHandler for CallCheckMessageHandler {
     }
 }
 
+#[must_use]
 pub fn get_call_check_shareable_handler(id: Ustr) -> ShareableMessageHandler {
     ShareableMessageHandler(Rc::new(CallCheckMessageHandler {
         id,

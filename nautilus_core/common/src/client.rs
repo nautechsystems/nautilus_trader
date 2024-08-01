@@ -25,10 +25,6 @@ use std::{
     sync::Arc,
 };
 
-use crate::{
-    clock::Clock,
-    messages::data::{Action, DataRequest, DataResponse, Payload, SubscriptionCommand},
-};
 use indexmap::IndexMap;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
@@ -41,6 +37,11 @@ use nautilus_model::{
     enums::BookType,
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::any::InstrumentAny,
+};
+
+use crate::{
+    clock::Clock,
+    messages::data::{Action, DataRequest, DataResponse, Payload, SubscriptionCommand},
 };
 
 pub trait LiveDataClient {
@@ -193,7 +194,7 @@ impl DataClientAdapter {
             stringify!(InstrumentAny) => Self::subscribe_instrument(self, command),
             stringify!(OrderBookDelta) => Self::subscribe_order_book_deltas(self, command),
             stringify!(OrderBookDeltas) | stringify!(OrderBookDepth10) => {
-                Self::subscribe_snapshots(self, command)
+                Self::subscribe_snapshots(self, command);
             }
             stringify!(QuoteTick) => Self::subscribe_quote_ticks(self, command),
             stringify!(TradeTick) => Self::subscribe_trade_ticks(self, command),
@@ -208,7 +209,7 @@ impl DataClientAdapter {
             stringify!(InstrumentAny) => Self::unsubscribe_instrument(self, command),
             stringify!(OrderBookDelta) => Self::unsubscribe_order_book_deltas(self, command),
             stringify!(OrderBookDeltas) | stringify!(OrderBookDepth10) => {
-                Self::unsubscribe_snapshots(self, command)
+                Self::unsubscribe_snapshots(self, command);
             }
             stringify!(QuoteTick) => Self::unsubscribe_quote_ticks(self, command),
             stringify!(TradeTick) => Self::unsubscribe_trade_ticks(self, command),
@@ -443,13 +444,14 @@ impl DataClientAdapter {
     // -- DATA REQUEST HANDLERS IMPLEMENTATION ---------------------------------------------------------------------------
 
     /// TODO: New clients implement a request pattern
-    /// that does not return a DataResponse directly
+    /// that does not return a `DataResponse` directly
     /// it internally uses a queue/channel to send
     /// back response
     pub fn through_request(&self, req: DataRequest) {
-        self.client.request_data(req)
+        self.client.request_data(req);
     }
 
+    #[must_use]
     pub fn request(&self, req: DataRequest) -> DataResponse {
         let instrument_id = req.data_type.parse_instrument_id_from_metadata();
         let venue = req.data_type.parse_venue_from_metadata();
@@ -515,6 +517,7 @@ impl DataClientAdapter {
         }
     }
 
+    #[must_use]
     pub fn handle_instrument(
         &self,
         instrument: InstrumentAny,
@@ -535,6 +538,7 @@ impl DataClientAdapter {
         )
     }
 
+    #[must_use]
     pub fn handle_instruments(
         &self,
         venue: Venue,
@@ -555,6 +559,7 @@ impl DataClientAdapter {
         )
     }
 
+    #[must_use]
     pub fn handle_quote_ticks(
         &self,
         instrument_id: &InstrumentId,
@@ -575,6 +580,7 @@ impl DataClientAdapter {
         )
     }
 
+    #[must_use]
     pub fn handle_trade_ticks(
         &self,
         instrument_id: &InstrumentId,
@@ -595,6 +601,7 @@ impl DataClientAdapter {
         )
     }
 
+    #[must_use]
     pub fn handle_bars(
         &self,
         bar_type: &BarType,

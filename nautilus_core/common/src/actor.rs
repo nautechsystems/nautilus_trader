@@ -17,7 +17,7 @@ use nautilus_core::uuid::UUID4;
 
 use crate::messages::data::DataResponse;
 
-/// TODO: deprecate for MessageHandler trait which has all the relevant functions
+/// TODO: deprecate for `MessageHandler` trait which has all the relevant functions
 pub trait Actor {
     fn handle(&self, resp: DataResponse); // TODO: Draft
     fn id(&self) -> UUID4;
