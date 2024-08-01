@@ -18,17 +18,19 @@ from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.cache.facade import CacheDatabaseFacade
 from nautilus_trader.cache.postgres.transformers import transform_account_from_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_account_to_pyo3
+from nautilus_trader.cache.postgres.transformers import transform_bar_to_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_currency_from_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_currency_to_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_instrument_from_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_instrument_to_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_order_from_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_order_to_pyo3
-from nautilus_trader.cache.postgres.transformers import transform_quote_tick_to_pyp3
+from nautilus_trader.cache.postgres.transformers import transform_quote_tick_to_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_trade_tick_from_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_trade_tick_to_pyo3
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import PostgresCacheDatabase
+from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import AccountId
@@ -127,10 +129,19 @@ class CachePostgresAdapter(CacheDatabaseFacade):
         return [transform_trade_tick_from_pyo3(trade) for trade in trades]
 
     def add_quote(self, quote: QuoteTick):
-        quote_pyo3 = transform_quote_tick_to_pyp3(quote)
+        quote_pyo3 = transform_quote_tick_to_pyo3(quote)
         self._backing.add_quote(quote_pyo3)
 
     def load_quotes(self, instrument_id: InstrumentId) -> list[QuoteTick]:
         instrument_id_pyo3 = nautilus_pyo3.InstrumentId.from_str(str(instrument_id))
         quotes = self._backing.load_quotes(instrument_id_pyo3)
         return [QuoteTick.from_pyo3(quote_pyo3) for quote_pyo3 in quotes]
+
+    def add_bar(self, bar: Bar):
+        bar_pyo3 = transform_bar_to_pyo3(bar)
+        self._backing.add_bar(bar_pyo3)
+
+    def load_bars(self, instrument_id: InstrumentId):
+        instrument_id_pyo3 = nautilus_pyo3.InstrumentId.from_str(str(instrument_id))
+        bars = self._backing.load_bars(instrument_id_pyo3)
+        return [Bar.from_pyo3(bar_pyo3) for bar_pyo3 in bars]

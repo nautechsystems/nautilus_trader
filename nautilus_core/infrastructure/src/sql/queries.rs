@@ -679,7 +679,10 @@ impl DatabaseQueries {
             .map_err(|err| anyhow::anyhow!("Failed to insert into bar table: {err}"))
     }
 
-    pub async fn load_bars(pool: &PgPool, instrument_id: InstrumentId) -> anyhow::Result<Vec<Bar>> {
+    pub async fn load_bars(
+        pool: &PgPool,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Vec<Bar>> {
         sqlx::query_as::<_, BarModel>(
             r#"SELECT * FROM "bar" WHERE instrument_id = $1 ORDER BY ts_event ASC"#,
         )
