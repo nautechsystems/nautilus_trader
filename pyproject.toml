@@ -53,7 +53,7 @@ generate-setup-file = false
 python = ">=3.10,<3.13"
 cython = "==3.0.10"  # Build dependency (pinned for stability)
 numpy = "==1.26.4"  # Build dependency (pinned below v2 for now)
-setuptools = ">=71" # Build dependency
+setuptools = ">=72" # Build dependency
 toml = "^0.10.2"  # Build dependency
 click = "^8.1.7"
 fsspec = "==2023.6.0"  # Pinned due breaking changes
@@ -81,7 +81,7 @@ optional = true
 [tool.poetry.group.dev.dependencies]
 black = "^24.4.2"
 docformatter = "^1.7.5"
-mypy = "^1.11.0"
+mypy = "^1.11.1"
 pandas-stubs = "^2.2.2"
 pre-commit = "^3.8.0"
 ruff = "^0.5.5"

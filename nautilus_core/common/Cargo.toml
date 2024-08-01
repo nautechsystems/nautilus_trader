@@ -27,7 +27,7 @@ rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
-sysinfo = "0.30.12"
+sysinfo = "0.30.13"
 tokio = { workspace = true }
 # Disable default feature "tracing-log" since it interferes with custom logging
 tracing-subscriber = { version = "0.3.18", default-features = false, features = ["smallvec", "fmt", "ansi", "std", "env-filter"] }
