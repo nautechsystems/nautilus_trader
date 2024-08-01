@@ -421,22 +421,22 @@ impl MessageBus {
 
 /// Data specific functions
 impl MessageBus {
-    /// Send a [`DataRequest`] to an endpoint that must be a [`DataClient`] implementation
+    /// Send a [`DataRequest`] to an endpoint that must be a [`DataClient`] implementation.
     pub fn send_data_request(&self, message: DataRequest) {
         // TODO: log error
         if let Some(client) = self.get_client(&message.client_id, message.venue) {
-            client.request(message);
+            let _ = client.request(message);
         }
     }
 
-    /// Send a [`SubscriptionCommand`] to an endpoint that must be a [`DataClient`] implementation
+    /// Send a [`SubscriptionCommand`] to an endpoint that must be a [`DataClient`] implementation.
     pub fn send_subscription_command(&self, message: SubscriptionCommand) {
         if let Some(client) = self.get_client(&message.client_id, message.venue) {
             client.through_execute(message);
         }
     }
 
-    /// Send a [`DataResponse`] to an endpoint that must be an actor
+    /// Send a [`DataResponse`] to an endpoint that must be an actor.
     pub fn send_response(&self, message: DataResponse) {
         if let Some(handler) = self.get_endpoint(&message.client_id.inner()) {
             handler.0.handle_response(message);
