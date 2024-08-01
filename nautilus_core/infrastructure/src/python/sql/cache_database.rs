@@ -19,7 +19,7 @@ use bytes::Bytes;
 use nautilus_common::{cache::database::CacheDatabaseAdapter, runtime::get_runtime};
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
-    data::{quote::QuoteTick, trade::TradeTick},
+    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     identifiers::{AccountId, ClientOrderId, InstrumentId},
     python::{
         account::{convert_account_any_to_pyobject, convert_pyobject_to_account_any},
@@ -249,6 +249,31 @@ impl PostgresCacheDatabase {
                 quotes.push(py_object);
             }
             Ok(quotes)
+        })
+    }
+
+    #[pyo3(name = "add_bar")]
+    fn py_add_bar(mut slf: PyRefMut<'_, Self>, bar: PyObject, py: Python<'_>) -> PyResult<()> {
+        let bar = bar.extract::<Bar>(py)?;
+        slf.add_bar(&bar).map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "load_bars")]
+    fn py_load_bars(
+        slf: PyRef<'_, Self>,
+        instrument_id: InstrumentId,
+        py: Python<'_>,
+    ) -> PyResult<Vec<PyObject>> {
+        get_runtime().block_on(async {
+            let result = DatabaseQueries::load_bars(&slf.pool, &instrument_id)
+                .await
+                .unwrap();
+            let mut bars = Vec::new();
+            for bar in result {
+                let py_object = bar.into_py(py);
+                bars.push(py_object);
+            }
+            Ok(bars)
         })
     }
 
