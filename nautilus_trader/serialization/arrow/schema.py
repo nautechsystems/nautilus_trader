@@ -27,7 +27,6 @@ from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.data import VenueStatus
 from nautilus_trader.model.events import OrderAccepted
 from nautilus_trader.model.events import OrderCanceled
 from nautilus_trader.model.events import OrderCancelRejected
@@ -75,15 +74,6 @@ NAUTILUS_ARROW_SCHEMA = {
             for k, v in nautilus_pyo3.Bar.get_fields().items()
         ],
     ),
-    VenueStatus: pa.schema(
-        {
-            "venue": pa.dictionary(pa.int16(), pa.string()),
-            "status": pa.dictionary(pa.int8(), pa.string()),
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-        },
-        metadata={"type": "InstrumentStatus"},
-    ),
     InstrumentClose: pa.schema(
         {
             "instrument_id": pa.dictionary(pa.int64(), pa.string()),
@@ -97,9 +87,12 @@ NAUTILUS_ARROW_SCHEMA = {
     InstrumentStatus: pa.schema(
         {
             "instrument_id": pa.dictionary(pa.int64(), pa.string()),
-            "status": pa.dictionary(pa.int8(), pa.string()),
-            "trading_session": pa.string(),
-            "halt_reason": pa.dictionary(pa.int8(), pa.string()),
+            "action": pa.dictionary(pa.int8(), pa.string()),
+            "reason": pa.string(),
+            "trading_event": pa.string(),
+            "is_trading": pa.bool_(),
+            "is_quoting": pa.bool_(),
+            "is_short_sell_restricted": pa.bool_(),
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
         },

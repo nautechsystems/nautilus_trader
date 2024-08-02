@@ -19,7 +19,9 @@
 
 pub mod clock;
 pub mod enums;
+pub mod handler;
 pub mod logging;
+pub mod msgbus;
 pub mod timer;
 pub mod versioning;
 
@@ -28,6 +30,9 @@ use pyo3::prelude::*;
 /// Loaded as nautilus_pyo3.common
 #[pymodule]
 pub fn common(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_class::<crate::msgbus::MessageBus>()?;
+    m.add_class::<crate::msgbus::database::BusMessage>()?;
+    m.add_class::<crate::python::handler::PythonMessageHandler>()?;
     m.add_class::<crate::enums::ComponentState>()?;
     m.add_class::<crate::enums::ComponentTrigger>()?;
     m.add_class::<crate::enums::LogColor>()?;

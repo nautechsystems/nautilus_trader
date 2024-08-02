@@ -25,7 +25,7 @@ use nautilus_core::{
     time::{get_atomic_clock_realtime, AtomicTime},
 };
 use nautilus_model::{
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick, Data},
+    data::{bar::Bar, quote::QuoteTick, status::InstrumentStatus, trade::TradeTick, Data},
     enums::BarAggregation,
     identifiers::{InstrumentId, Symbol, Venue},
     python::instruments::instrument_any_to_pyobject,
@@ -43,7 +43,7 @@ use crate::databento::{
     common::get_date_time_range,
     decode::{
         decode_imbalance_msg, decode_instrument_def_msg, decode_record, decode_statistics_msg,
-        raw_ptr_to_ustr,
+        decode_status_msg, raw_ptr_to_ustr,
     },
     symbology::{check_consistent_symbology, decode_nautilus_instrument_id, infer_symbology_type},
     types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, PublisherId},
@@ -506,6 +506,63 @@ impl DatabentoHistoricalClient {
                         .map_err(to_pyvalue_err)?;
 
                 result.push(statistics);
+            }
+
+            Python::with_gil(|py| Ok(result.into_py(py)))
+        })
+    }
+
+    #[pyo3(name = "get_range_status")]
+    #[allow(clippy::too_many_arguments)]
+    fn py_get_range_status<'py>(
+        &self,
+        py: Python<'py>,
+        dataset: String,
+        symbols: Vec<String>,
+        start: u64,
+        end: Option<u64>,
+        limit: Option<u64>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let client = self.inner.clone();
+
+        let stype_in = infer_symbology_type(symbols.first().unwrap());
+        let symbols: Vec<&str> = symbols.iter().map(|s| s.as_str()).collect();
+        check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
+        let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
+        let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
+        let params = GetRangeParams::builder()
+            .dataset(dataset)
+            .date_time_range(time_range)
+            .symbols(symbols)
+            .stype_in(SType::from_str(&stype_in).map_err(to_pyvalue_err)?)
+            .schema(dbn::Schema::Status)
+            .limit(limit.and_then(NonZeroU64::new))
+            .build();
+
+        let publisher_venue_map = self.publisher_venue_map.clone();
+        let ts_init = self.clock.get_time_ns();
+
+        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+            let mut client = client.lock().await; // TODO: Use a client pool
+            let mut decoder = client
+                .timeseries()
+                .get_range(&params)
+                .await
+                .map_err(to_pyvalue_err)?;
+
+            let metadata = decoder.metadata().clone();
+            let mut result: Vec<InstrumentStatus> = Vec::new();
+
+            while let Ok(Some(msg)) = decoder.decode_record::<dbn::StatusMsg>().await {
+                let record = dbn::RecordRef::from(msg);
+                let instrument_id =
+                    decode_nautilus_instrument_id(&record, &metadata, &publisher_venue_map)
+                        .map_err(to_pyvalue_err)?;
+
+                let status =
+                    decode_status_msg(msg, instrument_id, ts_init).map_err(to_pyvalue_err)?;
+
+                result.push(status);
             }
 
             Python::with_gil(|py| Ok(result.into_py(py)))

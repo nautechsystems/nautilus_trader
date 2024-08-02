@@ -15,13 +15,14 @@
 
 use std::{
     collections::HashMap,
-    env, fmt,
+    env,
+    fmt::Display,
     str::FromStr,
     sync::{
         atomic::Ordering,
         mpsc::{channel, Receiver, SendError, Sender},
     },
-    thread::{self, JoinHandle},
+    thread::JoinHandle,
 };
 
 use indexmap::IndexMap;
@@ -181,8 +182,8 @@ pub struct LogLine {
     pub message: String,
 }
 
-impl fmt::Display for LogLine {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for LogLine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "[{}] {}: {}", self.level, self.component, self.message)
     }
 }
@@ -333,7 +334,7 @@ impl Logger {
         match set_boxed_logger(Box::new(logger)) {
             Ok(()) => {
                 handle = Some(
-                    thread::Builder::new()
+                    std::thread::Builder::new()
                         .name("logging".to_string())
                         .spawn(move || {
                             Self::handle_messages(

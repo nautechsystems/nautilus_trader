@@ -151,18 +151,18 @@ pub extern "C" fn orderbook_clear_asks(book: &mut OrderBook_API, sequence: u64, 
 }
 
 #[no_mangle]
-pub extern "C" fn orderbook_apply_delta(book: &mut OrderBook_API, delta: OrderBookDelta) {
+pub extern "C" fn orderbook_apply_delta(book: &mut OrderBook_API, delta: &OrderBookDelta) {
     book.apply_delta(delta);
 }
 
 #[no_mangle]
 pub extern "C" fn orderbook_apply_deltas(book: &mut OrderBook_API, deltas: &OrderBookDeltas_API) {
     // Clone will actually copy the contents of the `deltas` vec
-    book.apply_deltas(deltas.deref().clone());
+    book.apply_deltas(deltas.deref());
 }
 
 #[no_mangle]
-pub extern "C" fn orderbook_apply_depth(book: &mut OrderBook_API, depth: OrderBookDepth10) {
+pub extern "C" fn orderbook_apply_depth(book: &mut OrderBook_API, depth: &OrderBookDepth10) {
     book.apply_depth(depth);
 }
 

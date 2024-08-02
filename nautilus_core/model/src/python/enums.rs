@@ -23,10 +23,10 @@ use pyo3::{prelude::*, types::PyType, PyTypeInfo};
 use crate::{
     enums::{
         AccountType, AggregationSource, AggressorSide, AssetClass, BarAggregation, BookAction,
-        BookType, ContingencyType, CurrencyType, HaltReason, InstrumentClass, InstrumentCloseType,
-        LiquiditySide, MarketStatus, OmsType, OptionKind, OrderSide, OrderStatus, OrderType,
-        PositionSide, PriceType, RecordFlag, TimeInForce, TradingState, TrailingOffsetType,
-        TriggerType,
+        BookType, ContingencyType, CurrencyType, InstrumentClass, InstrumentCloseType,
+        LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OptionKind, OrderSide,
+        OrderStatus, OrderType, PositionSide, PriceType, RecordFlag, TimeInForce, TradingState,
+        TrailingOffsetType, TriggerType,
     },
     python::common::EnumIterator,
 };
@@ -978,39 +978,9 @@ impl MarketStatus {
     }
 
     #[classattr]
-    #[pyo3(name = "PRE_OPEN")]
-    fn py_pre_open() -> Self {
-        Self::PreOpen
-    }
-
-    #[classattr]
-    #[pyo3(name = "OPEN")]
+    #[pyo3(name = "Open")]
     fn py_open() -> Self {
         Self::Open
-    }
-
-    #[classattr]
-    #[pyo3(name = "PAUSE")]
-    fn py_pause() -> Self {
-        Self::Pause
-    }
-
-    #[classattr]
-    #[pyo3(name = "HALT")]
-    fn py_halt() -> Self {
-        Self::Halt
-    }
-
-    #[classattr]
-    #[pyo3(name = "REOPEN")]
-    fn py_reopen() -> Self {
-        Self::Reopen
-    }
-
-    #[classattr]
-    #[pyo3(name = "PRE_CLOSE")]
-    fn py_pre_close() -> Self {
-        Self::PreClose
     }
 
     #[classattr]
@@ -1018,10 +988,35 @@ impl MarketStatus {
     fn py_closed() -> Self {
         Self::Closed
     }
+
+    #[classattr]
+    #[pyo3(name = "PAUSED")]
+    fn py_paused() -> Self {
+        Self::Paused
+    }
+
+    // # TODO: Unfortunately can't use this yet due to Cython (C enum namespacing)
+    // #[classattr]
+    // #[pyo3(name = "HALTED")]
+    // fn py_halted() -> Self {
+    //     Self::Halted
+    // }
+
+    #[classattr]
+    #[pyo3(name = "SUSPENDED")]
+    fn py_suspended() -> Self {
+        Self::Suspended
+    }
+
+    #[classattr]
+    #[pyo3(name = "NOT_AVAILABLE")]
+    fn py_not_available() -> Self {
+        Self::NotAvailable
+    }
 }
 
 #[pymethods]
-impl HaltReason {
+impl MarketStatusAction {
     #[new]
     fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
         let t = Self::type_object(py);
@@ -1035,7 +1030,7 @@ impl HaltReason {
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
-            stringify!(HaltReason),
+            stringify!(MarketStatus),
             self.name(),
             self.value(),
         )
@@ -1071,21 +1066,99 @@ impl HaltReason {
     }
 
     #[classattr]
-    #[pyo3(name = "NOT_HALTED")]
-    fn py_not_halted() -> Self {
-        Self::NotHalted
+    #[pyo3(name = "NONE")]
+    fn py_none() -> Self {
+        Self::None
     }
 
     #[classattr]
-    #[pyo3(name = "GENERAL")]
-    fn py_general() -> Self {
-        Self::General
+    #[pyo3(name = "PRE_OPEN")]
+    fn py_pre_open() -> Self {
+        Self::PreOpen
     }
 
     #[classattr]
-    #[pyo3(name = "VOLATILITY")]
-    fn py_volatility() -> Self {
-        Self::Volatility
+    #[pyo3(name = "PRE_CROSS")]
+    fn py_pre_cross() -> Self {
+        Self::Pause
+    }
+
+    #[classattr]
+    #[pyo3(name = "QUOTING")]
+    fn py_quoting() -> Self {
+        Self::Quoting
+    }
+
+    #[classattr]
+    #[pyo3(name = "CROSS")]
+    fn py_cross() -> Self {
+        Self::Cross
+    }
+
+    #[classattr]
+    #[pyo3(name = "ROTATION")]
+    fn py_rotation() -> Self {
+        Self::Rotation
+    }
+
+    #[classattr]
+    #[pyo3(name = "NEW_PRICE_INDICATION")]
+    fn py_new_price_indication() -> Self {
+        Self::NewPriceIndication
+    }
+
+    #[classattr]
+    #[pyo3(name = "TRADING")]
+    fn py_trading() -> Self {
+        Self::Trading
+    }
+
+    #[classattr]
+    #[pyo3(name = "HALT")]
+    fn py_halt() -> Self {
+        Self::Halt
+    }
+
+    #[classattr]
+    #[pyo3(name = "PAUSE")]
+    fn py_pause() -> Self {
+        Self::Pause
+    }
+
+    #[classattr]
+    #[pyo3(name = "SUSPEND")]
+    fn py_suspend() -> Self {
+        Self::Suspend
+    }
+
+    #[classattr]
+    #[pyo3(name = "PRE_CLOSE")]
+    fn py_pre_close() -> Self {
+        Self::PreClose
+    }
+
+    #[classattr]
+    #[pyo3(name = "CLOSE")]
+    fn py_close() -> Self {
+        Self::Close
+    }
+
+    #[classattr]
+    #[pyo3(name = "POST_CLOSE")]
+    fn py_post_close() -> Self {
+        Self::PostClose
+    }
+
+    #[classattr]
+    #[pyo3(name = "SHORT_SELL_RESTRICTION_CHANGE")]
+    fn py_short_sell_restriction() -> Self {
+        Self::ShortSellRestrictionChange
+    }
+
+    #[classattr]
+    #[pyo3(name = "NOT_AVAILABLE_FOR_TRADING")]
+    fn py_not_available_for_trading() -> Self {
+        Self::NotAvailableForTrading
     }
 }
 

@@ -49,7 +49,6 @@ config_node = TradingNodeConfig(
     ),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
-        reconciliation_lookback_mins=1440,
     ),
     cache=CacheConfig(
         # database=DatabaseConfig(),

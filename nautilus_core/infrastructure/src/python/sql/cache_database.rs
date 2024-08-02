@@ -15,9 +15,11 @@
 
 use std::collections::HashMap;
 
+use bytes::Bytes;
 use nautilus_common::{cache::database::CacheDatabaseAdapter, runtime::get_runtime};
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
+    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     identifiers::{AccountId, ClientOrderId, InstrumentId},
     python::{
         account::{convert_account_any_to_pyobject, convert_pyobject_to_account_any},
@@ -72,7 +74,7 @@ impl PostgresCacheDatabase {
 
     #[pyo3(name = "add")]
     fn py_add(mut slf: PyRefMut<'_, Self>, key: String, value: Vec<u8>) -> PyResult<()> {
-        slf.add(key, value).map_err(to_pyruntime_err)
+        slf.add(key, Bytes::from(value)).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "add_currency")]
@@ -198,6 +200,81 @@ impl PostgresCacheDatabase {
     ) -> PyResult<()> {
         let order_any = convert_pyobject_to_account_any(py, order)?;
         slf.update_account(&order_any).map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "add_trade")]
+    fn py_add_trade(mut slf: PyRefMut<'_, Self>, trade: PyObject, py: Python<'_>) -> PyResult<()> {
+        let trade = trade.extract::<TradeTick>(py)?;
+        slf.add_trade(&trade).map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "load_trades")]
+    fn py_load_trades(
+        slf: PyRef<'_, Self>,
+        instrument_id: InstrumentId,
+        py: Python<'_>,
+    ) -> PyResult<Vec<PyObject>> {
+        get_runtime().block_on(async {
+            let result = DatabaseQueries::load_trades(&slf.pool, &instrument_id)
+                .await
+                .unwrap();
+            let mut trades = Vec::new();
+            for trade in result {
+                let py_object = trade.into_py(py);
+                trades.push(py_object);
+            }
+            Ok(trades)
+        })
+    }
+
+    #[pyo3(name = "add_quote")]
+    fn py_add_quote(mut slf: PyRefMut<'_, Self>, quote: PyObject, py: Python<'_>) -> PyResult<()> {
+        let quote = quote.extract::<QuoteTick>(py)?;
+        slf.add_quote(&quote).map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "load_quotes")]
+    fn py_load_quotes(
+        slf: PyRef<'_, Self>,
+        instrument_id: InstrumentId,
+        py: Python<'_>,
+    ) -> PyResult<Vec<PyObject>> {
+        get_runtime().block_on(async {
+            let result = DatabaseQueries::load_quotes(&slf.pool, &instrument_id)
+                .await
+                .unwrap();
+            let mut quotes = Vec::new();
+            for quote in result {
+                let py_object = quote.into_py(py);
+                quotes.push(py_object);
+            }
+            Ok(quotes)
+        })
+    }
+
+    #[pyo3(name = "add_bar")]
+    fn py_add_bar(mut slf: PyRefMut<'_, Self>, bar: PyObject, py: Python<'_>) -> PyResult<()> {
+        let bar = bar.extract::<Bar>(py)?;
+        slf.add_bar(&bar).map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "load_bars")]
+    fn py_load_bars(
+        slf: PyRef<'_, Self>,
+        instrument_id: InstrumentId,
+        py: Python<'_>,
+    ) -> PyResult<Vec<PyObject>> {
+        get_runtime().block_on(async {
+            let result = DatabaseQueries::load_bars(&slf.pool, &instrument_id)
+                .await
+                .unwrap();
+            let mut bars = Vec::new();
+            for bar in result {
+                let py_object = bar.into_py(py);
+                bars.push(py_object);
+            }
+            Ok(bars)
+        })
     }
 
     #[pyo3(name = "flush_db")]

@@ -35,7 +35,7 @@ AUDUSD_SIM_ID = InstrumentId.from_str("AUD/USD.SIM")
 class TestQuoteTick:
     def test_pickling_instrument_id_round_trip(self):
         pickled = pickle.dumps(AUDUSD_SIM_ID)
-        unpickled = pickle.loads(pickled)  # noqa
+        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle safe here)
 
         assert unpickled == AUDUSD_SIM_ID
 
@@ -86,7 +86,7 @@ class TestQuoteTick:
         assert result2 == Price.from_str("1.000005")
         assert result3 == Price.from_str("1.00000")
 
-    def test_extract_volume_with_various_price_types_returns_expected_values(self):
+    def test_extract_size_with_various_price_types_returns_expected_values(self):
         # Arrange
         tick = QuoteTick(
             instrument_id=AUDUSD_SIM_ID,
@@ -99,9 +99,9 @@ class TestQuoteTick:
         )
 
         # Act
-        result1 = tick.extract_volume(PriceType.ASK)
-        result2 = tick.extract_volume(PriceType.MID)
-        result3 = tick.extract_volume(PriceType.BID)
+        result1 = tick.extract_size(PriceType.ASK)
+        result2 = tick.extract_size(PriceType.MID)
+        result3 = tick.extract_size(PriceType.BID)
 
         # Assert
         assert result1 == Quantity.from_int(800_000)
@@ -193,7 +193,7 @@ class TestQuoteTick:
 
         # Act
         pickled = pickle.dumps(tick)
-        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle is safe here)
 
         # Assert
         assert tick == unpickled
@@ -282,7 +282,7 @@ class TestTradeTick:
 
         # Act
         pickled = pickle.dumps(tick)
-        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle is safe here)
 
         # Assert
         assert unpickled == tick

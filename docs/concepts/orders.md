@@ -71,13 +71,13 @@ summary of the different execution instructions available.
 The orders time in force is an instruction to specify how long the order will remain open
 or active, before any remaining quantity is canceled.
 
-- `GTC` (Good 'til Canceled) - The order remains in force until canceled by the trader or the exchange
-- `IOC` (Immediate or Cancel / Fill **and** Kill) - The order will execute immediately with any portion of the order quantity which cannot be executed being canceled
-- `FOK` (Fill **or** Kill) - The order will execute immediately, and in full, or not at all
-- `GTD` (Good 'til Date) - The order remains in force until reaching the specified expiration date and time
-- `DAY` (Good for session/day) - The order remains in force until the end of the current trading session
-- `AT_THE_OPEN` (OPG) - The order is only in force at the trading session open
-- `AT_THE_CLOSE` - The order is only in force at the trading session close
+- `GTC` (Good 'til Canceled): The order remains in force until canceled by the trader or the exchange
+- `IOC` (Immediate or Cancel / Fill **and** Kill): The order will execute immediately with any portion of the order quantity which cannot be executed being canceled
+- `FOK` (Fill **or** Kill): The order will execute immediately, and in full, or not at all
+- `GTD` (Good 'til Date): The order remains in force until reaching the specified expiration date and time
+- `DAY` (Good for session/day): The order remains in force until the end of the current trading session
+- `AT_THE_OPEN` (OPG): The order is only in force at the trading session open
+- `AT_THE_CLOSE`: The order is only in force at the trading session close
 
 ### Expire time
 
@@ -110,26 +110,26 @@ Specifying a display quantity of zero is also equivalent to setting an order as 
 Also known as [trigger method](https://guides.interactivebrokers.com/tws/usersguidebook/configuretws/modify_the_stop_trigger_method.htm) 
 which is applicable to conditional trigger orders, specifying the method of triggering the stop price.
 
-- `DEFAULT` - The default trigger type for the exchange (typically `LAST` or `BID_ASK`)
-- `LAST` - The trigger price will be based on the last traded price
-- `BID_ASK` - The trigger price will be based on the `BID` for buy orders and `ASK` for sell orders
-- `DOUBLE_LAST` - The trigger price will be based on the last two consecutive `LAST` prices
-- `DOUBLE_BID_ASK` - The trigger price will be based on the last two consecutive `BID` or `ASK` prices as applicable
-- `LAST_OR_BID_ASK` - The trigger price will be based on the `LAST` or `BID`/`ASK`
-- `MID_POINT` - The trigger price will be based on the mid-point between the `BID` and `ASK`
-- `MARK` - The trigger price will be based on the exchanges mark price for the instrument
-- `INDEX` - The trigger price will be based on the exchanges index price for the instrument
+- `DEFAULT`: The default trigger type for the exchange (typically `LAST` or `BID_ASK`)
+- `LAST`: The trigger price will be based on the last traded price
+- `BID_ASK`: The trigger price will be based on the `BID` for buy orders and `ASK` for sell orders
+- `DOUBLE_LAST`: The trigger price will be based on the last two consecutive `LAST` prices
+- `DOUBLE_BID_ASK`: The trigger price will be based on the last two consecutive `BID` or `ASK` prices as applicable
+- `LAST_OR_BID_ASK`: The trigger price will be based on the `LAST` or `BID`/`ASK`
+- `MID_POINT`: The trigger price will be based on the mid-point between the `BID` and `ASK`
+- `MARK`: The trigger price will be based on the exchanges mark price for the instrument
+- `INDEX`: The trigger price will be based on the exchanges index price for the instrument
 
 ### Trigger offset type
 
 Applicable to conditional trailing-stop trigger orders, specifies the method of triggering modification
 of the stop price based on the offset from the 'market' (bid, ask or last price as applicable).
 
-- `DEFAULT` - The default offset type for the exchange (typically `PRICE`)
-- `PRICE` - The offset is based on a price difference
-- `BASIS_POINTS` - The offset is based on a price percentage difference expressed in basis points (100bp = 1%)
-- `TICKS` - The offset is based on a number of ticks
-- `PRICE_TIER` - The offset is based on an exchange specific price tier
+- `DEFAULT`: The default offset type for the exchange (typically `PRICE`)
+- `PRICE`: The offset is based on a price difference
+- `BASIS_POINTS`: The offset is based on a price percentage difference expressed in basis points (100bp = 1%)
+- `TICKS`: The offset is based on a number of ticks
+- `PRICE_TIER`: The offset is based on an exchange specific price tier
 
 ### Contingent orders
 
@@ -208,7 +208,7 @@ order: LimitOrder = self.order_factory.limit(
     instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
     order_side=OrderSide.SELL,
     quantity=Quantity.from_int(20),
-    price=Price.from_str("5000.00"),
+    price=Price.from_str("5_000.00"),
     time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
     expire_time=None,  # <-- optional (default None)
     post_only=True,  # <-- optional (default False)
@@ -348,7 +348,7 @@ order: MarketIfTouchedOrder = self.order_factory.market_if_touched(
     instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
     order_side=OrderSide.SELL,
     quantity=Quantity.from_int(10),
-    trigger_price=Price.from_int("10000.00"),
+    trigger_price=Price.from_str("10_000.00"),
     trigger_type=TriggerType.LAST_TRADE,  # <-- optional (default DEFAULT)
     time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
     expire_time=None,  # <-- optional (default None)
@@ -367,7 +367,7 @@ A _Limit-If-Touched_ order is a conditional order which once triggered will imme
 a _Limit_ order at the specified price. 
 
 In the following example we create a _Stop-Limit_ order to BUY 5 BTCUSDT-PERP Perpetual Futures contracts on the
-Binance Futures exchange at a limit price of 30_100 USDT (once the market hits the trigger price of 30_150 USDT), 
+Binance Futures exchange at a limit price of 30,100 USDT (once the market hits the trigger price of 30,150 USDT),
 active until midday 6th June, 2022 (UTC):
 
 ```python
@@ -384,8 +384,8 @@ order: StopLimitOrder = self.order_factory.limit_if_touched(
     instrument_id=InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
     order_side=OrderSide.BUY,
     quantity=Quantity.from_int(5),
-    price=Price.from_str("30100"),
-    trigger_price=Price.from_str("30150"),
+    price=Price.from_str("30_100"),
+    trigger_price=Price.from_str("30_150"),
     trigger_type=TriggerType.LAST_TRADE,  # <-- optional (default DEFAULT)
     time_in_force=TimeInForce.GTD,  # <-- optional (default GTC)
     expire_time=pd.Timestamp("2022-06-06T12:00"),
@@ -406,7 +406,7 @@ a fixed offset away from the defined market price. Once triggered a _Market_ ord
 immediately be placed.
 
 In the following example we create a _Trailing-Stop-Market_ order on the Binance Futures exchange to SELL 10 ETHUSD-PERP COIN_M margined
-Perpetual Futures Contracts activating at a trigger price of 5000 USD, then trailing at an offset of 1% (in basis points) away from the current last traded price:
+Perpetual Futures Contracts activating at a trigger price of 5,000 USD, then trailing at an offset of 1% (in basis points) away from the current last traded price:
 
 ```python
 import pandas as pd
@@ -424,7 +424,7 @@ order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
     instrument_id=InstrumentId.from_str("ETHUSD-PERP.BINANCE"),
     order_side=OrderSide.SELL,
     quantity=Quantity.from_int(10),
-    trigger_price=Price.from_str("5000"),
+    trigger_price=Price.from_str("5_000"),
     trigger_type=TriggerType.LAST_TRADE,  # <-- optional (default DEFAULT)
     trailing_offset=Decimal(100),
     trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
@@ -446,7 +446,7 @@ a fixed offset away from the defined market price. Once triggered a _Limit_ orde
 immediately be placed at the defined price (which is also updated as the market moves until triggered).
 
 In the following example we create a _Trailing-Stop-Limit_ order on the Currenex FX ECN to BUY 1,250,000 AUD using USD 
-at a limit price of 0.72000 USD, activating at 0.71000 USD then trailing at a stop offset of 0.00100 USD 
+at a limit price of 0.71000 USD, activating at 0.72000 USD then trailing at a stop offset of 0.00100 USD
 away from the current ask price, active until further notice:
 
 ```python

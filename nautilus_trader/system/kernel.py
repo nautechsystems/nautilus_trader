@@ -245,9 +245,9 @@ class NautilusKernel:
         # MessageBus database
         ########################################################################
         if not config.message_bus or not config.message_bus.database:
-            msgbus_db = None
+            self._msgbus_db = None
         elif config.message_bus.database.type == "redis":
-            msgbus_db = nautilus_pyo3.RedisMessageBusDatabase(
+            self._msgbus_db = nautilus_pyo3.RedisMessageBusDatabase(
                 trader_id=nautilus_pyo3.TraderId(self._trader_id.value),
                 instance_id=nautilus_pyo3.UUID4(self._instance_id.value),
                 config_json=msgspec.json.encode(config.message_bus),
@@ -286,10 +286,10 @@ class NautilusKernel:
         ########################################################################
         # Core components
         ########################################################################
-        msgbus_serializer = None
+        self._msgbus_serializer = None
         if config.message_bus:
             encoding = config.message_bus.encoding.lower()
-            msgbus_serializer = MsgSpecSerializer(
+            self._msgbus_serializer = MsgSpecSerializer(
                 encoding=msgspec.msgpack if encoding == "msgpack" else msgspec.json,
                 timestamps_as_str=True,  # Hardcoded for now
                 timestamps_as_iso8601=config.message_bus.timestamps_as_iso8601,
@@ -298,8 +298,8 @@ class NautilusKernel:
             trader_id=self._trader_id,
             instance_id=self._instance_id,
             clock=self._clock,
-            serializer=msgbus_serializer,
-            database=msgbus_db,
+            serializer=self._msgbus_serializer,
+            database=self._msgbus_db,
             snapshot_orders=config.snapshot_orders,
             snapshot_positions=config.snapshot_positions,
             config=config.message_bus,
@@ -697,6 +697,30 @@ class NautilusKernel:
 
         """
         return self._msgbus
+
+    @property
+    def msgbus_serializer(self) -> MessageBus:
+        """
+        Return the kernels message bus serializer (if created).
+
+        Returns
+        -------
+        MsgSpecSerializer or ``None``
+
+        """
+        return self._msgbus_serializer
+
+    @property
+    def msgbus_database(self) -> MessageBus:
+        """
+        Return the kernels message bus database (if created).
+
+        Returns
+        -------
+        RedisMessageBusDatabase or ``None``
+
+        """
+        return self._msgbus_db
 
     @property
     def cache(self) -> CacheFacade:

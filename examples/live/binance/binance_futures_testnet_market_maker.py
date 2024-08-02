@@ -28,8 +28,10 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMaker
 from nautilus_trader.examples.strategies.volatility_market_maker import VolatilityMarketMakerConfig
+from nautilus_trader.live.config import LiveDataEngineConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 
@@ -48,10 +50,11 @@ config_node = TradingNodeConfig(
         log_colors=True,
         use_pyo3=True,
     ),
+    data_engine=LiveDataEngineConfig(
+        external_clients=[ClientId("BYBIT")],
+    ),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
-        reconciliation_lookback_mins=1440,
-        filter_position_reports=True,
     ),
     cache=CacheConfig(
         # database=DatabaseConfig(timeout=2),
@@ -60,11 +63,11 @@ config_node = TradingNodeConfig(
     ),
     # message_bus=MessageBusConfig(
     #     database=DatabaseConfig(timeout=2),
-    #     encoding="json",
     #     timestamps_as_iso8601=True,
-    #     streams_prefix="quoters",
     #     use_instance_id=False,
     #     # types_filter=[QuoteTick],
+    #     stream_per_topic=False,
+    #     external_streams=["bybit"],
     #     autotrim_mins=30,
     # ),
     # heartbeat_interval=1.0,

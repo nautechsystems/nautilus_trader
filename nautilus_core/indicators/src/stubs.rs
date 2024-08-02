@@ -44,8 +44,8 @@ use crate::{
     },
     ratio::{efficiency_ratio::EfficiencyRatio, spread_analyzer::SpreadAnalyzer},
     volatility::{
-        dc::DonchianChannel, fuzzy_candlesticks::FuzzyCandlesticks, kc::KeltnerChannel,
-        kp::KeltnerPosition, rvi::RelativeVolatilityIndex, vr::VolatilityRatio,
+        dc::DonchianChannel, fuzzy::FuzzyCandlesticks, kc::KeltnerChannel, kp::KeltnerPosition,
+        rvi::RelativeVolatilityIndex, vr::VolatilityRatio,
     },
 };
 

@@ -1,3 +1,42 @@
+# NautilusTrader 1.197.0 Beta
+
+Released on 2nd August 2024 (UTC).
+
+### Enhancements
+- Added Databento Status schema support for loading and live trading
+- Added options on futures support for Interactive Brokers (#1795), thanks @rsmb7z
+- Added documentation for option greeks custom data example (#1788), thanks @faysou
+- Added `MarketStatusAction` enum (support Databento `status` schema)
+- Added `ignore_quote_tick_size_updates` config option for Interactive Brokers (#1799), thanks @sunlei
+- Implemented `MessageBus` v2 in Rust (#1786), thanks @twitu
+- Implemented `DataEngine` v2 in Rust (#1785), thanks @twitu
+- Implemented `FillModel` in Rust (#1801), thanks @filipmacek
+- Implemented `FixedFeeModel` in Rust (#1802), thanks @filipmacek
+- Implemented `MakerTakerFeeModel` in Rust (#1803), thanks @filipmacek
+- Implemented Postgres native enum mappings in Rust (#1797, #1806), thanks @filipmacek
+- Refactored order submission error handling for Interactive Brokers (#1783), thanks @rsmb7z
+- Improved live reconciliation robustness (will now generate inferred orders necessary to align external position state)
+- Improved tests for Interactive Brokers (#1776), thanks @mylesgamez
+- Upgraded `tokio` crate to 1.39.2
+- Upgraded `datafusion` crate to 40.0.0
+
+### Breaking Changes
+- Removed `VenueStatus` and all associated methods and schemas (redundant with `InstrumentStatus`)
+- Renamed `QuoteTick.extract_volume(...)` to `.extract_size(...)` (more accurate terminology)
+- Changed `InstrumentStatus` params (support Databento `status` schema)
+- Changed `InstrumentStatus` arrow schema
+- Changed `OrderBook` FFI API to take data by reference instead of by value
+
+### Fixes
+- Fixed rounding errors in accounting calculations for large values (using `decimal.Decimal` internally)
+- Fixed multi-currency account commission handling with multiple PnL currencies (#1805), thanks for reporting @dpmabo
+- Fixed `DataEngine` unsubscribing from order book deltas (#1814), thanks @davidsblom
+- Fixed `LiveExecutionEngine` handling of adapter client execution report causing `None` mass status (#1789), thanks for reporting @faysou
+- Fixed `InteractiveBrokersExecutionClient` handling of instruments not found when generating execution reports (#1789), thanks for reporting @faysou
+- Fixed Bybit parsing of trade and quote ticks for websocket messages (#1794), thanks @davidsblom
+
+---
+
 # NautilusTrader 1.196.0 Beta
 
 Released on 5th July 2024 (UTC).
@@ -45,14 +84,14 @@ Released on 5th July 2024 (UTC).
 - Fixed msgspec encoding and decoding of `Environment` enum for `NautilusKernelConfig`
 - Fixed `OrderMatchingEngine` processing by book type for quotes and deltas (#1754), thanks @davidsblom
 - Fixed `DatabentoDataLoader.from_dbn_file` for `OrderBookDelta`s when `as_legacy_cython=False`
-- Fixed `DatabentoDataLoader` OHLCV bar schema loading (incorrectly accounting for display factor0, thanks for reporting @faysou
+- Fixed `DatabentoDataLoader` OHLCV bar schema loading (incorrectly accounting for display factor), thanks for reporting @faysou
 - Fixed `DatabentoDataLoader` multiplier and round lot size decoding, thanks for reporting @faysou
 - Fixed Binance order report generation `active_symbols` type miss matching (#1729), thanks @DevRoss
 - Fixed Binance trade data websocket schemas (Binance no longer publish `b` buyer and `a` seller order IDs)
 - Fixed `BinanceFuturesInstrumentProvider` parsing of min notional, thanks for the report @AnthonyVince
 - Fixed `BinanceSpotInstrumentProvider` parsing of min and max notional
 - Fixed Bybit order book deltas subscriptions for `INVERSE` product type
-- Fixed `Cache` documentation for `get` (was the same as add), thanks for reporting @faysou
+- Fixed `Cache` documentation for `get` (was the same as `add`), thanks for reporting @faysou
 
 ---
 

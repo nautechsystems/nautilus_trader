@@ -103,7 +103,11 @@ class TestDataMessage:
         )
 
         # Assert
-        assert str(command) == "Subscribe(Data{'type': 'newswire'})"
+
+        assert (
+            str(command)
+            == "Subscribe(client_id=None, venue=BINANCE, data_type=Data{'type': 'newswire'})"
+        )
         assert repr(command) == (
             f"Subscribe("
             f"client_id=None, "
@@ -125,7 +129,10 @@ class TestDataMessage:
         )
 
         # Assert
-        assert str(command) == "Subscribe(TradeTick{'instrument_id': 'BTCUSDT'})"
+        assert (
+            str(command)
+            == "Subscribe(client_id=BINANCE, venue=BINANCE, data_type=TradeTick{'instrument_id': 'BTCUSDT'})"
+        )
         assert repr(command) == (
             f"Subscribe("
             f"client_id=BINANCE, "
@@ -159,7 +166,7 @@ class TestDataMessage:
         # Assert
         assert (
             str(request)
-            == "DataRequest(Data{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'start': None, 'end': None, 'limit': 1000})"
+            == "DataRequest(client_id=None, venue=BINANCE, data_type=Data{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'start': None, 'end': None, 'limit': 1000})"  # noqa
         )
         assert repr(request) == (
             f"DataRequest("
@@ -195,7 +202,7 @@ class TestDataMessage:
         # Assert
         assert (
             str(request)
-            == "DataRequest(TradeTick{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'start': None, 'end': None, 'limit': 1000})"
+            == "DataRequest(client_id=None, venue=BINANCE, data_type=TradeTick{'instrument_id': InstrumentId('SOMETHING.RANDOM'), 'start': None, 'end': None, 'limit': 1000})"  # noqa
         )
         assert repr(request) == (
             f"DataRequest("
@@ -225,7 +232,7 @@ class TestDataMessage:
         # Assert
         assert (
             str(response)
-            == "DataResponse(QuoteTick{'instrument_id': InstrumentId('AUD/USD.IDEALPRO')})"
+            == "DataResponse(client_id=None, venue=BINANCE, data_type=QuoteTick{'instrument_id': InstrumentId('AUD/USD.IDEALPRO')})"
         )
         assert repr(response) == (
             f"DataResponse("
@@ -255,7 +262,7 @@ class TestDataMessage:
         # Assert
         assert (
             str(response)
-            == "DataResponse(QuoteTick{'instrument_id': InstrumentId('AUD/USD.IDEALPRO')})"
+            == "DataResponse(client_id=IB, venue=IDEALPRO, data_type=QuoteTick{'instrument_id': InstrumentId('AUD/USD.IDEALPRO')})"
         )
         assert repr(response) == (
             f"DataResponse("

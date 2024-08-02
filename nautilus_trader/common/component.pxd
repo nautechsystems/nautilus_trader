@@ -254,6 +254,7 @@ cdef class MessageBus:
     cdef dict[str, object] _endpoints
     cdef dict[UUID4, object] _correlation_index
     cdef tuple[type] _publishable_types
+    cdef set[type] _streaming_types
     cdef bint _has_backing
     cdef bint _resolved
 
@@ -282,17 +283,19 @@ cdef class MessageBus:
     cpdef bint has_subscribers(self, str pattern=*)
     cpdef bint is_subscribed(self, str topic, handler)
     cpdef bint is_pending_request(self, UUID4 request_id)
+    cpdef bint is_streaming_type(self, type cls)
 
     cpdef void dispose(self)
     cpdef void register(self, str endpoint, handler)
     cpdef void deregister(self, str endpoint, handler)
+    cpdef void add_streaming_type(self, type cls)
     cpdef void send(self, str endpoint, msg)
     cpdef void request(self, str endpoint, Request request)
     cpdef void response(self, Response response)
     cpdef void subscribe(self, str topic, handler, int priority=*)
     cpdef void unsubscribe(self, str topic, handler)
-    cpdef void publish(self, str topic, msg)
-    cdef void publish_c(self, str topic, msg)
+    cpdef void publish(self, str topic, msg, bint external_pub=*)
+    cdef void publish_c(self, str topic, msg, bint external_pub=*)
     cdef Subscription[:] _resolve_subscriptions(self, str topic)
 
 

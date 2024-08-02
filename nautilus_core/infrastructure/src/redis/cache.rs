@@ -21,7 +21,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use nautilus_common::{cache::database::CacheDatabaseAdapter, enums::SerializationEncoding};
+use bytes::Bytes;
+use nautilus_common::{
+    cache::{database::CacheDatabaseAdapter, CacheConfig},
+    enums::SerializationEncoding,
+};
 use nautilus_core::{correctness::check_slice_not_empty, nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     accounts::any::AccountAny,
@@ -37,18 +41,18 @@ use nautilus_model::{
     types::currency::Currency,
 };
 use redis::{Commands, Connection, Pipeline};
-use serde_json::{json, Value};
 use tracing::{debug, error};
 use ustr::Ustr;
 
-use crate::redis::{create_redis_connection, get_buffer_interval};
+use super::{REDIS_DELIMITER, REDIS_FLUSHDB};
+use crate::redis::create_redis_connection;
+
+// Thread and connection name constants
+const CACHE_READ: &str = "cache-read";
+const CACHE_WRITE: &str = "cache-write";
 
 // Error constants
 const FAILED_TX_CHANNEL: &str = "Failed to send to channel";
-
-// Redis constants
-const FLUSHDB: &str = "FLUSHDB";
-const DELIMITER: char = ':';
 
 // Collection keys
 const INDEX: &str = "index";
@@ -94,13 +98,13 @@ pub struct DatabaseCommand {
     /// The primary key for the operation.
     pub key: Option<String>,
     /// The data payload for the operation.
-    pub payload: Option<Vec<Vec<u8>>>,
+    pub payload: Option<Vec<Bytes>>,
 }
 
 impl DatabaseCommand {
     /// Creates a new [`DatabaseCommand`] instance.
     #[must_use]
-    pub fn new(op_type: DatabaseOperation, key: String, payload: Option<Vec<Vec<u8>>>) -> Self {
+    pub fn new(op_type: DatabaseOperation, key: String, payload: Option<Vec<Bytes>>) -> Self {
         Self {
             op_type,
             key: Some(key),
@@ -126,7 +130,7 @@ impl DatabaseCommand {
 pub struct RedisCacheDatabase {
     pub trader_id: TraderId,
     trader_key: String,
-    conn: Connection,
+    con: Connection,
     tx: Sender<DatabaseCommand>,
     handle: Option<JoinHandle<()>>,
 }
@@ -136,29 +140,29 @@ impl RedisCacheDatabase {
     pub fn new(
         trader_id: TraderId,
         instance_id: UUID4,
-        config: HashMap<String, serde_json::Value>,
+        config: CacheConfig,
     ) -> anyhow::Result<RedisCacheDatabase> {
-        let database_config = config
-            .get("database")
-            .ok_or(anyhow::anyhow!("No database config"))?;
-        debug!("Creating cache-read redis connection");
-        let conn = create_redis_connection(&database_config.clone())?;
+        let db_config = config
+            .database
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No database config"))?;
+        let con = create_redis_connection(CACHE_READ, db_config.clone())?;
 
         let (tx, rx) = channel::<DatabaseCommand>();
         let trader_key = get_trader_key(trader_id, instance_id, &config);
         let trader_key_clone = trader_key.clone();
 
-        let handle = thread::Builder::new()
-            .name("cache".to_string())
+        let handle = std::thread::Builder::new()
+            .name(CACHE_WRITE.to_string())
             .spawn(move || {
-                Self::handle_messages(rx, trader_key_clone, config);
+                Self::process_commands(rx, trader_key_clone, config.clone());
             })
-            .expect("Error spawning `cache` thread");
+            .expect("Error spawning '{CACHE_WRITE}' thread");
 
         Ok(RedisCacheDatabase {
             trader_id,
             trader_key,
-            conn,
+            con,
             tx,
             handle: Some(handle),
         })
@@ -171,7 +175,7 @@ impl RedisCacheDatabase {
             .map_err(anyhow::Error::new)?;
 
         if let Some(handle) = self.handle.take() {
-            debug!("Joining `cache` thread");
+            debug!("Joining '{CACHE_WRITE}' thread");
             handle.join().map_err(|e| anyhow::anyhow!("{:?}", e))
         } else {
             Err(anyhow::anyhow!("Cache database already shutdown"))
@@ -179,41 +183,41 @@ impl RedisCacheDatabase {
     }
 
     pub fn flushdb(&mut self) -> anyhow::Result<()> {
-        match redis::cmd(FLUSHDB).query::<()>(&mut self.conn) {
+        match redis::cmd(REDIS_FLUSHDB).query::<()>(&mut self.con) {
             Ok(_) => Ok(()),
             Err(e) => Err(e.into()),
         }
     }
 
     pub fn keys(&mut self, pattern: &str) -> anyhow::Result<Vec<String>> {
-        let pattern = format!("{}{DELIMITER}{}", self.trader_key, pattern);
+        let pattern = format!("{}{REDIS_DELIMITER}{}", self.trader_key, pattern);
         debug!("Querying keys: {pattern}");
-        match self.conn.keys(pattern) {
+        match self.con.keys(pattern) {
             Ok(keys) => Ok(keys),
             Err(e) => Err(e.into()),
         }
     }
 
-    pub fn read(&mut self, key: &str) -> anyhow::Result<Vec<Vec<u8>>> {
+    pub fn read(&mut self, key: &str) -> anyhow::Result<Vec<Bytes>> {
         let collection = get_collection_key(key)?;
-        let key = format!("{}{DELIMITER}{}", self.trader_key, key);
+        let key = format!("{}{REDIS_DELIMITER}{}", self.trader_key, key);
 
         match collection {
-            INDEX => read_index(&mut self.conn, &key),
-            GENERAL => read_string(&mut self.conn, &key),
-            CURRENCIES => read_string(&mut self.conn, &key),
-            INSTRUMENTS => read_string(&mut self.conn, &key),
-            SYNTHETICS => read_string(&mut self.conn, &key),
-            ACCOUNTS => read_list(&mut self.conn, &key),
-            ORDERS => read_list(&mut self.conn, &key),
-            POSITIONS => read_list(&mut self.conn, &key),
-            ACTORS => read_string(&mut self.conn, &key),
-            STRATEGIES => read_string(&mut self.conn, &key),
+            INDEX => read_index(&mut self.con, &key),
+            GENERAL => read_string(&mut self.con, &key),
+            CURRENCIES => read_string(&mut self.con, &key),
+            INSTRUMENTS => read_string(&mut self.con, &key),
+            SYNTHETICS => read_string(&mut self.con, &key),
+            ACCOUNTS => read_list(&mut self.con, &key),
+            ORDERS => read_list(&mut self.con, &key),
+            POSITIONS => read_list(&mut self.con, &key),
+            ACTORS => read_string(&mut self.con, &key),
+            STRATEGIES => read_string(&mut self.con, &key),
             _ => anyhow::bail!("Unsupported operation: `read` for collection '{collection}'"),
         }
     }
 
-    pub fn insert(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> anyhow::Result<()> {
+    pub fn insert(&mut self, key: String, payload: Option<Vec<Bytes>>) -> anyhow::Result<()> {
         let op = DatabaseCommand::new(DatabaseOperation::Insert, key, payload);
         match self.tx.send(op) {
             Ok(_) => Ok(()),
@@ -221,7 +225,7 @@ impl RedisCacheDatabase {
         }
     }
 
-    pub fn update(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> anyhow::Result<()> {
+    pub fn update(&mut self, key: String, payload: Option<Vec<Bytes>>) -> anyhow::Result<()> {
         let op = DatabaseCommand::new(DatabaseOperation::Update, key, payload);
         match self.tx.send(op) {
             Ok(_) => Ok(()),
@@ -229,7 +233,7 @@ impl RedisCacheDatabase {
         }
     }
 
-    pub fn delete(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> anyhow::Result<()> {
+    pub fn delete(&mut self, key: String, payload: Option<Vec<Bytes>>) -> anyhow::Result<()> {
         let op = DatabaseCommand::new(DatabaseOperation::Delete, key, payload);
         match self.tx.send(op) {
             Ok(_) => Ok(()),
@@ -237,25 +241,18 @@ impl RedisCacheDatabase {
         }
     }
 
-    fn handle_messages(
-        rx: Receiver<DatabaseCommand>,
-        trader_key: String,
-        config: HashMap<String, serde_json::Value>,
-    ) {
-        let empty = Value::Object(serde_json::Map::new());
-        let database_config = config.get("database").unwrap_or(&empty);
-        debug!("Creating cache-write redis connection");
-        let mut conn = create_redis_connection(&database_config.clone()).unwrap();
+    fn process_commands(rx: Receiver<DatabaseCommand>, trader_key: String, config: CacheConfig) {
+        let mut con = create_redis_connection(CACHE_WRITE, config.database.unwrap()).unwrap();
 
         // Buffering
         let mut buffer: VecDeque<DatabaseCommand> = VecDeque::new();
         let mut last_drain = Instant::now();
         let recv_interval = Duration::from_millis(1);
-        let buffer_interval = get_buffer_interval(&config);
+        let buffer_interval = Duration::from_millis(config.buffer_interval_ms.unwrap_or(0) as u64);
 
         loop {
             if last_drain.elapsed() >= buffer_interval && !buffer.is_empty() {
-                drain_buffer(&mut conn, &trader_key, &mut buffer);
+                drain_buffer(&mut con, &trader_key, &mut buffer);
                 last_drain = Instant::now();
             } else {
                 // Continue to receive and handle messages until channel is hung up
@@ -276,7 +273,7 @@ impl RedisCacheDatabase {
 
         // Drain any remaining messages
         if !buffer.is_empty() {
-            drain_buffer(&mut conn, &trader_key, &mut buffer);
+            drain_buffer(&mut con, &trader_key, &mut buffer);
         }
     }
 }
@@ -295,53 +292,30 @@ fn drain_buffer(conn: &mut Connection, trader_key: &str, buffer: &mut VecDeque<D
             }
         };
 
-        let key = format!("{trader_key}{DELIMITER}{}", &key);
+        let key = format!("{trader_key}{REDIS_DELIMITER}{}", &key);
 
         match msg.op_type {
             DatabaseOperation::Insert => {
-                if msg.payload.is_none() {
+                if let Some(payload) = msg.payload {
+                    if let Err(e) = insert(&mut pipe, collection, &key, payload) {
+                        error!("{e}");
+                    }
+                } else {
                     error!("Null `payload` for `insert`");
-                    continue; // Continue to next message
-                };
-
-                let payload = msg
-                    .payload
-                    .as_ref()
-                    .unwrap()
-                    .iter()
-                    .map(|v| v.as_slice())
-                    .collect::<Vec<&[u8]>>();
-
-                if let Err(e) = insert(&mut pipe, collection, &key, payload) {
-                    error!("{e}");
                 }
             }
             DatabaseOperation::Update => {
-                if msg.payload.is_none() {
+                if let Some(payload) = msg.payload {
+                    if let Err(e) = update(&mut pipe, collection, &key, payload) {
+                        error!("{e}");
+                    }
+                } else {
                     error!("Null `payload` for `update`");
-                    continue; // Continue to next message
                 };
-
-                let payload = msg
-                    .payload
-                    .as_ref()
-                    .unwrap()
-                    .iter()
-                    .map(|v| v.as_slice())
-                    .collect::<Vec<&[u8]>>();
-
-                if let Err(e) = update(&mut pipe, collection, &key, payload) {
-                    error!("{e}");
-                }
             }
             DatabaseOperation::Delete => {
                 // `payload` can be `None` for a delete operation
-                let payload = msg
-                    .payload
-                    .as_ref()
-                    .map(|v| v.iter().map(|v| v.as_slice()).collect::<Vec<&[u8]>>());
-
-                if let Err(e) = delete(&mut pipe, collection, &key, payload) {
+                if let Err(e) = delete(&mut pipe, collection, &key, msg.payload) {
                     error!("{e}");
                 }
             }
@@ -354,7 +328,7 @@ fn drain_buffer(conn: &mut Connection, trader_key: &str, buffer: &mut VecDeque<D
     }
 }
 
-fn read_index(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Vec<u8>>> {
+fn read_index(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Bytes>> {
     let index_key = get_index_key(key)?;
     match index_key {
         INDEX_ORDER_IDS => read_set(conn, key),
@@ -372,29 +346,29 @@ fn read_index(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Vec<u8>>> 
     }
 }
 
-fn read_string(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Vec<u8>>> {
+fn read_string(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Bytes>> {
     let result: Vec<u8> = conn.get(key)?;
 
     if result.is_empty() {
         Ok(vec![])
     } else {
-        Ok(vec![result])
+        Ok(vec![Bytes::from(result)])
     }
 }
 
-fn read_set(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Vec<u8>>> {
-    let result: Vec<Vec<u8>> = conn.smembers(key)?;
+fn read_set(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Bytes>> {
+    let result: Vec<Bytes> = conn.smembers(key)?;
     Ok(result)
 }
 
-fn read_hset(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Vec<u8>>> {
+fn read_hset(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Bytes>> {
     let result: HashMap<String, String> = conn.hgetall(key)?;
     let json = serde_json::to_string(&result)?;
-    Ok(vec![json.into_bytes()])
+    Ok(vec![Bytes::from(json.into_bytes())])
 }
 
-fn read_list(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Vec<u8>>> {
-    let result: Vec<Vec<u8>> = conn.lrange(key, 0, -1)?;
+fn read_list(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Bytes>> {
+    let result: Vec<Bytes> = conn.lrange(key, 0, -1)?;
     Ok(result)
 }
 
@@ -402,105 +376,105 @@ fn insert(
     pipe: &mut Pipeline,
     collection: &str,
     key: &str,
-    value: Vec<&[u8]>,
+    value: Vec<Bytes>,
 ) -> anyhow::Result<()> {
     check_slice_not_empty(value.as_slice(), stringify!(value))?;
 
     match collection {
         INDEX => insert_index(pipe, key, &value),
         GENERAL => {
-            insert_string(pipe, key, value[0]);
+            insert_string(pipe, key, value[0].as_ref());
             Ok(())
         }
         CURRENCIES => {
-            insert_string(pipe, key, value[0]);
+            insert_string(pipe, key, value[0].as_ref());
             Ok(())
         }
         INSTRUMENTS => {
-            insert_string(pipe, key, value[0]);
+            insert_string(pipe, key, value[0].as_ref());
             Ok(())
         }
         SYNTHETICS => {
-            insert_string(pipe, key, value[0]);
+            insert_string(pipe, key, value[0].as_ref());
             Ok(())
         }
         ACCOUNTS => {
-            insert_list(pipe, key, value[0]);
+            insert_list(pipe, key, value[0].as_ref());
             Ok(())
         }
         ORDERS => {
-            insert_list(pipe, key, value[0]);
+            insert_list(pipe, key, value[0].as_ref());
             Ok(())
         }
         POSITIONS => {
-            insert_list(pipe, key, value[0]);
+            insert_list(pipe, key, value[0].as_ref());
             Ok(())
         }
         ACTORS => {
-            insert_string(pipe, key, value[0]);
+            insert_string(pipe, key, value[0].as_ref());
             Ok(())
         }
         STRATEGIES => {
-            insert_string(pipe, key, value[0]);
+            insert_string(pipe, key, value[0].as_ref());
             Ok(())
         }
         SNAPSHOTS => {
-            insert_list(pipe, key, value[0]);
+            insert_list(pipe, key, value[0].as_ref());
             Ok(())
         }
         HEALTH => {
-            insert_string(pipe, key, value[0]);
+            insert_string(pipe, key, value[0].as_ref());
             Ok(())
         }
         _ => anyhow::bail!("Unsupported operation: `insert` for collection '{collection}'"),
     }
 }
 
-fn insert_index(pipe: &mut Pipeline, key: &str, value: &[&[u8]]) -> anyhow::Result<()> {
+fn insert_index(pipe: &mut Pipeline, key: &str, value: &[Bytes]) -> anyhow::Result<()> {
     let index_key = get_index_key(key)?;
     match index_key {
         INDEX_ORDER_IDS => {
-            insert_set(pipe, key, value[0]);
+            insert_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_ORDER_POSITION => {
-            insert_hset(pipe, key, value[0], value[1]);
+            insert_hset(pipe, key, value[0].as_ref(), value[1].as_ref());
             Ok(())
         }
         INDEX_ORDER_CLIENT => {
-            insert_hset(pipe, key, value[0], value[1]);
+            insert_hset(pipe, key, value[0].as_ref(), value[1].as_ref());
             Ok(())
         }
         INDEX_ORDERS => {
-            insert_set(pipe, key, value[0]);
+            insert_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_ORDERS_OPEN => {
-            insert_set(pipe, key, value[0]);
+            insert_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_ORDERS_CLOSED => {
-            insert_set(pipe, key, value[0]);
+            insert_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_ORDERS_EMULATED => {
-            insert_set(pipe, key, value[0]);
+            insert_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_ORDERS_INFLIGHT => {
-            insert_set(pipe, key, value[0]);
+            insert_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_POSITIONS => {
-            insert_set(pipe, key, value[0]);
+            insert_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_POSITIONS_OPEN => {
-            insert_set(pipe, key, value[0]);
+            insert_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_POSITIONS_CLOSED => {
-            insert_set(pipe, key, value[0]);
+            insert_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         _ => anyhow::bail!("Index unknown '{index_key}' on insert"),
@@ -527,21 +501,21 @@ fn update(
     pipe: &mut Pipeline,
     collection: &str,
     key: &str,
-    value: Vec<&[u8]>,
+    value: Vec<Bytes>,
 ) -> anyhow::Result<()> {
     check_slice_not_empty(value.as_slice(), stringify!(value))?;
 
     match collection {
         ACCOUNTS => {
-            update_list(pipe, key, value[0]);
+            update_list(pipe, key, value[0].as_ref());
             Ok(())
         }
         ORDERS => {
-            update_list(pipe, key, value[0]);
+            update_list(pipe, key, value[0].as_ref());
             Ok(())
         }
         POSITIONS => {
-            update_list(pipe, key, value[0]);
+            update_list(pipe, key, value[0].as_ref());
             Ok(())
         }
         _ => anyhow::bail!("Unsupported operation: `update` for collection '{collection}'"),
@@ -556,7 +530,7 @@ fn delete(
     pipe: &mut Pipeline,
     collection: &str,
     key: &str,
-    value: Option<Vec<&[u8]>>,
+    value: Option<Vec<Bytes>>,
 ) -> anyhow::Result<()> {
     match collection {
         INDEX => remove_index(pipe, key, value),
@@ -572,33 +546,33 @@ fn delete(
     }
 }
 
-fn remove_index(pipe: &mut Pipeline, key: &str, value: Option<Vec<&[u8]>>) -> anyhow::Result<()> {
+fn remove_index(pipe: &mut Pipeline, key: &str, value: Option<Vec<Bytes>>) -> anyhow::Result<()> {
     let value = value.ok_or_else(|| anyhow::anyhow!("Empty `payload` for `delete` '{key}'"))?;
     let index_key = get_index_key(key)?;
 
     match index_key {
         INDEX_ORDERS_OPEN => {
-            remove_from_set(pipe, key, value[0]);
+            remove_from_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_ORDERS_CLOSED => {
-            remove_from_set(pipe, key, value[0]);
+            remove_from_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_ORDERS_EMULATED => {
-            remove_from_set(pipe, key, value[0]);
+            remove_from_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_ORDERS_INFLIGHT => {
-            remove_from_set(pipe, key, value[0]);
+            remove_from_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_POSITIONS_OPEN => {
-            remove_from_set(pipe, key, value[0]);
+            remove_from_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         INDEX_POSITIONS_CLOSED => {
-            remove_from_set(pipe, key, value[0]);
+            remove_from_set(pipe, key, value[0].as_ref());
             Ok(())
         }
         _ => anyhow::bail!("Unsupported index operation: remove from '{index_key}'"),
@@ -613,21 +587,17 @@ fn delete_string(pipe: &mut Pipeline, key: &str) {
     pipe.del(key);
 }
 
-fn get_trader_key(
-    trader_id: TraderId,
-    instance_id: UUID4,
-    config: &HashMap<String, serde_json::Value>,
-) -> String {
+fn get_trader_key(trader_id: TraderId, instance_id: UUID4, config: &CacheConfig) -> String {
     let mut key = String::new();
 
-    if let Some(json!(true)) = config.get("use_trader_prefix") {
+    if config.use_trader_prefix {
         key.push_str("trader-");
     }
 
     key.push_str(trader_id.as_str());
 
-    if let Some(json!(true)) = config.get("use_instance_id") {
-        key.push(DELIMITER);
+    if config.use_instance_id {
+        key.push(REDIS_DELIMITER);
         key.push_str(&format!("{instance_id}"));
     }
 
@@ -635,18 +605,18 @@ fn get_trader_key(
 }
 
 fn get_collection_key(key: &str) -> anyhow::Result<&str> {
-    key.split_once(DELIMITER)
+    key.split_once(REDIS_DELIMITER)
         .map(|(collection, _)| collection)
         .ok_or_else(|| {
-            anyhow::anyhow!("Invalid `key`, missing a '{DELIMITER}' delimiter, was {key}")
+            anyhow::anyhow!("Invalid `key`, missing a '{REDIS_DELIMITER}' delimiter, was {key}")
         })
 }
 
 fn get_index_key(key: &str) -> anyhow::Result<&str> {
-    key.split_once(DELIMITER)
+    key.split_once(REDIS_DELIMITER)
         .map(|(_, index_key)| index_key)
         .ok_or_else(|| {
-            anyhow::anyhow!("Invalid `key`, missing a '{DELIMITER}' delimiter, was {key}")
+            anyhow::anyhow!("Invalid `key`, missing a '{REDIS_DELIMITER}' delimiter, was {key}")
         })
 }
 
@@ -692,7 +662,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         self.database.flushdb()
     }
 
-    fn load(&mut self) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+    fn load(&mut self) -> anyhow::Result<HashMap<String, Bytes>> {
         // self.database.load()
         Ok(HashMap::new()) // TODO
     }
@@ -839,10 +809,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         todo!()
     }
 
-    fn load_actor(
-        &mut self,
-        component_id: &ComponentId,
-    ) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+    fn load_actor(&mut self, component_id: &ComponentId) -> anyhow::Result<HashMap<String, Bytes>> {
         todo!()
     }
 
@@ -853,7 +820,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     fn load_strategy(
         &mut self,
         strategy_id: &StrategyId,
-    ) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+    ) -> anyhow::Result<HashMap<String, Bytes>> {
         todo!()
     }
 
@@ -861,7 +828,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         todo!()
     }
 
-    fn add(&mut self, key: String, value: Vec<u8>) -> anyhow::Result<()> {
+    fn add(&mut self, key: String, value: Bytes) -> anyhow::Result<()> {
         todo!()
     }
 
@@ -897,12 +864,24 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         anyhow::bail!("Saving market data for Redis cache adapter not supported")
     }
 
+    fn load_quotes(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<QuoteTick>> {
+        anyhow::bail!("Loading quote data for Redis cache adapter not supported")
+    }
+
     fn add_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
         anyhow::bail!("Saving market data for Redis cache adapter not supported")
     }
 
+    fn load_trades(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<TradeTick>> {
+        anyhow::bail!("Loading market data for Redis cache adapter not supported")
+    }
+
     fn add_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
         anyhow::bail!("Saving market data for Redis cache adapter not supported")
+    }
+
+    fn load_bars(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<Bar>> {
+        anyhow::bail!("Loading market data for Redis cache adapter not supported")
     }
 
     fn index_venue_order_id(
@@ -959,10 +938,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use rstest::rstest;
-    use serde_json::json;
 
     use super::*;
 
@@ -970,9 +946,8 @@ mod tests {
     fn test_get_trader_key_with_prefix_and_instance_id() {
         let trader_id = TraderId::from("tester-123");
         let instance_id = UUID4::new();
-        let mut config = HashMap::new();
-        config.insert("use_trader_prefix".to_string(), json!(true));
-        config.insert("use_instance_id".to_string(), json!(true));
+        let mut config = CacheConfig::default();
+        config.use_instance_id = true;
 
         let key = get_trader_key(trader_id, instance_id, &config);
         assert!(key.starts_with("trader-tester-123:"));

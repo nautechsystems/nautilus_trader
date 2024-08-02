@@ -17,7 +17,7 @@
 
 #![allow(warnings)] // non-local `impl` definition, temporary allow until pyo3 upgrade
 
-use std::{borrow::Cow, fmt};
+use std::borrow::Cow;
 
 use pyo3::{
     exceptions::{PyRuntimeError, PyTypeError, PyValueError},
@@ -40,17 +40,17 @@ pub fn get_pytype_name<'p>(obj: &'p PyObject, py: Python<'p>) -> PyResult<&'p st
 }
 
 /// Converts any type that implements `Display` to a Python `ValueError`.
-pub fn to_pyvalue_err(e: impl fmt::Display) -> PyErr {
+pub fn to_pyvalue_err(e: impl std::fmt::Display) -> PyErr {
     PyValueError::new_err(e.to_string())
 }
 
 /// Converts any type that implements `Display` to a Python `TypeError`.
-pub fn to_pytype_err(e: impl fmt::Display) -> PyErr {
+pub fn to_pytype_err(e: impl std::fmt::Display) -> PyErr {
     PyTypeError::new_err(e.to_string())
 }
 
 /// Converts any type that implements `Display` to a Python `RuntimeError`.
-pub fn to_pyruntime_err(e: impl fmt::Display) -> PyErr {
+pub fn to_pyruntime_err(e: impl std::fmt::Display) -> PyErr {
     PyRuntimeError::new_err(e.to_string())
 }
 

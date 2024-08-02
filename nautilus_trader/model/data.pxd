@@ -28,9 +28,8 @@ from nautilus_trader.core.rust.model cimport BarType_t
 from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport BookOrder_t
 from nautilus_trader.core.rust.model cimport BookType
-from nautilus_trader.core.rust.model cimport HaltReason
 from nautilus_trader.core.rust.model cimport InstrumentCloseType
-from nautilus_trader.core.rust.model cimport MarketStatus
+from nautilus_trader.core.rust.model cimport MarketStatusAction
 from nautilus_trader.core.rust.model cimport OrderBookDelta_t
 from nautilus_trader.core.rust.model cimport OrderBookDeltas_API
 from nautilus_trader.core.rust.model cimport OrderBookDepth10_t
@@ -303,32 +302,19 @@ cdef class OrderBookDepth10(Data):
     cdef object list_to_capsule_c(list items)
 
 
-cdef class VenueStatus(Data):
-    cdef readonly Venue venue
-    """The venue.\n\n:returns: `Venue`"""
-    cdef readonly MarketStatus status
-    """The venue market status.\n\n:returns: `MarketStatus`"""
-    cdef readonly uint64_t ts_event
-    """UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
-    cdef readonly uint64_t ts_init
-    """UNIX timestamp (nanoseconds) when the object was initialized.\n\n:returns: `uint64_t`"""
-
-    @staticmethod
-    cdef VenueStatus from_dict_c(dict values)
-
-    @staticmethod
-    cdef dict to_dict_c(VenueStatus obj)
-
-
 cdef class InstrumentStatus(Data):
+    cdef object _is_trading
+    cdef object _is_quoting
+    cdef object _is_short_sell_restricted
+
     cdef readonly InstrumentId instrument_id
     """The instrument ID.\n\n:returns: `InstrumentId`"""
-    cdef readonly str trading_session
-    """The trading session name.\n\n:returns: `str`"""
-    cdef readonly MarketStatus status
-    """The instrument market status.\n\n:returns: `MarketStatus`"""
-    cdef readonly HaltReason halt_reason
-    """The halt reason.\n\n:returns: `HaltReason`"""
+    cdef readonly MarketStatusAction action
+    """The instrument market status action.\n\n:returns: `MarketStatusAction`"""
+    cdef readonly str reason
+    """Additional details about the cause of the status change.\n\n:returns: `str` or ``None``"""
+    cdef readonly str trading_event
+    """Further information about the status change (if provided).\n\n:returns: `str` or ``None``"""
     cdef readonly uint64_t ts_event
     """UNIX timestamp (nanoseconds) when the data event occurred.\n\n:returns: `uint64_t`"""
     cdef readonly uint64_t ts_init
@@ -412,7 +398,7 @@ cdef class QuoteTick(Data):
     cdef dict to_dict_c(QuoteTick obj)
 
     cpdef Price extract_price(self, PriceType price_type)
-    cpdef Quantity extract_volume(self, PriceType price_type)
+    cpdef Quantity extract_size(self, PriceType price_type)
 
 
 cdef class TradeTick(Data):

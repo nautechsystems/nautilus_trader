@@ -251,46 +251,28 @@ impl QuoteTick {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(QuoteTick))
     }
 
-    #[pyo3(name = "extract_price")]
-    fn py_extract_price(&self, price_type: PriceType) -> PyResult<Price> {
-        Ok(self.extract_price(price_type))
+    #[staticmethod]
+    #[pyo3(name = "get_metadata")]
+    fn py_get_metadata(
+        instrument_id: &InstrumentId,
+        price_precision: u8,
+        size_precision: u8,
+    ) -> PyResult<HashMap<String, String>> {
+        Ok(Self::get_metadata(
+            instrument_id,
+            price_precision,
+            size_precision,
+        ))
     }
 
-    #[pyo3(name = "extract_volume")]
-    fn py_extract_volume(&self, price_type: PriceType) -> PyResult<Quantity> {
-        Ok(self.extract_volume(price_type))
-    }
+    #[staticmethod]
+    #[pyo3(name = "get_fields")]
+    fn py_get_fields(py: Python<'_>) -> PyResult<&PyDict> {
+        let py_dict = PyDict::new(py);
+        for (k, v) in Self::get_fields() {
+            py_dict.set_item(k, v)?;
+        }
 
-    /// Creates a `PyCapsule` containing a raw pointer to a `Data::Quote` object.
-    ///
-    /// This function takes the current object (assumed to be of a type that can be represented as
-    /// `Data::Quote`), and encapsulates a raw pointer to it within a `PyCapsule`.
-    ///
-    /// # Safety
-    ///
-    /// This function is safe as long as the following conditions are met:
-    /// - The `Data::Quote` object pointed to by the capsule must remain valid for the lifetime of the capsule.
-    /// - The consumer of the capsule must ensure proper handling to avoid dereferencing a dangling pointer.
-    ///
-    /// # Panics
-    ///
-    /// The function will panic if the `PyCapsule` creation fails, which can occur if the
-    /// `Data::Quote` object cannot be converted into a raw pointer.
-    ///
-    #[pyo3(name = "as_pycapsule")]
-    fn py_as_pycapsule(&self, py: Python<'_>) -> PyObject {
-        data_to_pycapsule(py, Data::Quote(*self))
-    }
-
-    /// Return a dictionary representation of the object.
-    #[pyo3(name = "as_dict")]
-    fn py_as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
-        // Serialize object to JSON bytes
-        let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
-        // Parse JSON into a Python dictionary
-        let py_dict: Py<PyDict> = PyModule::import(py, "json")?
-            .call_method("loads", (json_str,), None)?
-            .extract()?;
         Ok(py_dict)
     }
 
@@ -323,7 +305,7 @@ impl QuoteTick {
         .map_err(to_pyvalue_err)
     }
 
-    /// Return a new object from the given dictionary representation.
+    /// Returns a new object from the given dictionary representation.
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
@@ -331,40 +313,57 @@ impl QuoteTick {
     }
 
     #[staticmethod]
-    #[pyo3(name = "get_metadata")]
-    fn py_get_metadata(
-        instrument_id: &InstrumentId,
-        price_precision: u8,
-        size_precision: u8,
-    ) -> PyResult<HashMap<String, String>> {
-        Ok(Self::get_metadata(
-            instrument_id,
-            price_precision,
-            size_precision,
-        ))
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "get_fields")]
-    fn py_get_fields(py: Python<'_>) -> PyResult<&PyDict> {
-        let py_dict = PyDict::new(py);
-        for (k, v) in Self::get_fields() {
-            py_dict.set_item(k, v)?;
-        }
-
-        Ok(py_dict)
-    }
-
-    #[staticmethod]
     #[pyo3(name = "from_json")]
     fn py_from_json(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_json_bytes(data).map_err(to_pyvalue_err)
+        Self::from_json_bytes(&data).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
     #[pyo3(name = "from_msgpack")]
     fn py_from_msgpack(data: Vec<u8>) -> PyResult<Self> {
-        Self::from_msgpack_bytes(data).map_err(to_pyvalue_err)
+        Self::from_msgpack_bytes(&data).map_err(to_pyvalue_err)
+    }
+
+    #[pyo3(name = "extract_price")]
+    fn py_extract_price(&self, price_type: PriceType) -> PyResult<Price> {
+        Ok(self.extract_price(price_type))
+    }
+
+    #[pyo3(name = "extract_size")]
+    fn py_extract_size(&self, price_type: PriceType) -> PyResult<Quantity> {
+        Ok(self.extract_size(price_type))
+    }
+
+    /// Creates a `PyCapsule` containing a raw pointer to a `Data::Quote` object.
+    ///
+    /// This function takes the current object (assumed to be of a type that can be represented as
+    /// `Data::Quote`), and encapsulates a raw pointer to it within a `PyCapsule`.
+    ///
+    /// # Safety
+    ///
+    /// This function is safe as long as the following conditions are met:
+    /// - The `Data::Quote` object pointed to by the capsule must remain valid for the lifetime of the capsule.
+    /// - The consumer of the capsule must ensure proper handling to avoid dereferencing a dangling pointer.
+    ///
+    /// # Panics
+    ///
+    /// The function will panic if the `PyCapsule` creation fails, which can occur if the
+    /// `Data::Quote` object cannot be converted into a raw pointer.
+    #[pyo3(name = "as_pycapsule")]
+    fn py_as_pycapsule(&self, py: Python<'_>) -> PyObject {
+        data_to_pycapsule(py, Data::Quote(*self))
+    }
+
+    /// Return a dictionary representation of the object.
+    #[pyo3(name = "as_dict")]
+    fn py_as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
+        // Serialize object to JSON bytes
+        let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
+        // Parse JSON into a Python dictionary
+        let py_dict: Py<PyDict> = PyModule::import(py, "json")?
+            .call_method("loads", (json_str,), None)?
+            .extract()?;
+        Ok(py_dict)
     }
 
     /// Return JSON encoded bytes representation of the object.
@@ -395,10 +394,10 @@ mod tests {
     #[rstest]
     fn test_as_dict(quote_tick_ethusdt_binance: QuoteTick) {
         pyo3::prepare_freethreaded_python();
-        let tick = quote_tick_ethusdt_binance;
+        let quote = quote_tick_ethusdt_binance;
 
         Python::with_gil(|py| {
-            let dict_string = tick.py_as_dict(py).unwrap().to_string();
+            let dict_string = quote.py_as_dict(py).unwrap().to_string();
             let expected_string = r"{'type': 'QuoteTick', 'instrument_id': 'ETHUSDT-PERP.BINANCE', 'bid_price': '10000.0000', 'ask_price': '10001.0000', 'bid_size': '1.00000000', 'ask_size': '1.00000000', 'ts_event': 0, 'ts_init': 1}";
             assert_eq!(dict_string, expected_string);
         });
@@ -407,24 +406,24 @@ mod tests {
     #[rstest]
     fn test_from_dict(quote_tick_ethusdt_binance: QuoteTick) {
         pyo3::prepare_freethreaded_python();
-        let tick = quote_tick_ethusdt_binance;
+        let quote = quote_tick_ethusdt_binance;
 
         Python::with_gil(|py| {
-            let dict = tick.py_as_dict(py).unwrap();
+            let dict = quote.py_as_dict(py).unwrap();
             let parsed = QuoteTick::py_from_dict(py, dict).unwrap();
-            assert_eq!(parsed, tick);
+            assert_eq!(parsed, quote);
         });
     }
 
     #[rstest]
     fn test_from_pyobject(quote_tick_ethusdt_binance: QuoteTick) {
         pyo3::prepare_freethreaded_python();
-        let tick = quote_tick_ethusdt_binance;
+        let quote = quote_tick_ethusdt_binance;
 
         Python::with_gil(|py| {
-            let tick_pyobject = tick.into_py(py);
+            let tick_pyobject = quote.into_py(py);
             let parsed_tick = QuoteTick::from_pyobject(tick_pyobject.bind(py)).unwrap();
-            assert_eq!(parsed_tick, tick);
+            assert_eq!(parsed_tick, quote);
         });
     }
 }

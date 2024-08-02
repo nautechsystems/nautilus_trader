@@ -45,6 +45,7 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::data::deltas::OrderBookDeltas>()?;
     m.add_class::<crate::data::depth::OrderBookDepth10>()?;
     m.add_class::<crate::data::quote::QuoteTick>()?;
+    m.add_class::<crate::data::status::InstrumentStatus>()?;
     m.add_class::<crate::data::trade::TradeTick>()?;
     // Enums
     m.add_class::<crate::enums::AccountType>()?;
@@ -60,6 +61,7 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::enums::InstrumentCloseType>()?;
     m.add_class::<crate::enums::LiquiditySide>()?;
     m.add_class::<crate::enums::MarketStatus>()?;
+    m.add_class::<crate::enums::MarketStatusAction>()?;
     m.add_class::<crate::enums::OmsType>()?;
     m.add_class::<crate::enums::OptionKind>()?;
     m.add_class::<crate::enums::OrderSide>()?;

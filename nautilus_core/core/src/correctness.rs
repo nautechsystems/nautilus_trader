@@ -24,7 +24,11 @@
 //! An [`anyhow::Result`] is returned with a descriptive message when the
 //! condition check fails.
 
-use std::{collections::HashMap, hash::Hash};
+use std::{
+    collections::{HashMap, HashSet},
+    fmt::Debug,
+    hash::Hash,
+};
 
 const FAILED: &str = "Condition failed:";
 
@@ -52,15 +56,28 @@ pub fn check_predicate_false(predicate: bool, fail_msg: &str) -> anyhow::Result<
 /// - If `s` consists solely of whitespace characters.
 /// - If `s` contains one or more non-ASCII characters.
 pub fn check_valid_string(s: &str, param: &str) -> anyhow::Result<()> {
+    // Ensure string is only traversed once
     if s.is_empty() {
-        anyhow::bail!("{FAILED} invalid string for '{param}', was empty")
-    } else if s.chars().all(char::is_whitespace) {
-        anyhow::bail!("{FAILED} invalid string for '{param}', was all whitespace",)
-    } else if !s.is_ascii() {
-        anyhow::bail!("{FAILED} invalid string for '{param}' contained a non-ASCII char, was '{s}'",)
-    } else {
-        Ok(())
+        anyhow::bail!("{FAILED} invalid string for '{param}', was empty");
     }
+
+    let mut has_non_whitespace = false;
+    for c in s.chars() {
+        if !c.is_whitespace() {
+            has_non_whitespace = true;
+        }
+        if !c.is_ascii() {
+            anyhow::bail!(
+                "{FAILED} invalid string for '{param}' contained a non-ASCII char, was '{s}'"
+            );
+        }
+    }
+
+    if !has_non_whitespace {
+        anyhow::bail!("{FAILED} invalid string for '{param}', was all whitespace");
+    }
+
+    Ok(())
 }
 
 /// Checks the string `s` if Some, contains only ASCII characters and has semantic meaning.
@@ -81,6 +98,21 @@ pub fn check_valid_string_optional(s: Option<&str>, param: &str) -> anyhow::Resu
 pub fn check_string_contains(s: &str, pat: &str, param: &str) -> anyhow::Result<()> {
     if !s.contains(pat) {
         anyhow::bail!("{FAILED} invalid string for '{param}' did not contain '{pat}', was '{s}'")
+    }
+    Ok(())
+}
+
+/// Checks the values are equal.
+pub fn check_equal<T: PartialEq + Debug>(
+    lhs: T,
+    rhs: T,
+    lhs_param: &str,
+    rhs_param: &str,
+) -> anyhow::Result<()> {
+    if lhs != rhs {
+        anyhow::bail!(
+            "{FAILED} '{lhs_param}' value of {lhs:?} was not equal to '{rhs_param}' value of {rhs:?}",
+        );
     }
     Ok(())
 }
@@ -277,6 +309,48 @@ where
     Ok(())
 }
 
+/// Checks the `member` is **not** in the `set`.
+pub fn check_member_not_in_set<V>(
+    member: &V,
+    set: &HashSet<V>,
+    member_name: &str,
+    set_name: &str,
+) -> anyhow::Result<()>
+where
+    V: Hash,
+    V: std::cmp::Eq,
+    V: std::fmt::Display,
+{
+    if set.contains(member) {
+        anyhow::bail!(
+            "{FAILED} the '{member_name}' member was already in the '{set_name}' set `&<{}>`",
+            std::any::type_name::<V>(),
+        )
+    }
+    Ok(())
+}
+
+/// Checks the `member` is in the `set`.
+pub fn check_member_in_set<V>(
+    member: &V,
+    set: &HashSet<V>,
+    member_name: &str,
+    set_name: &str,
+) -> anyhow::Result<()>
+where
+    V: Hash,
+    V: std::cmp::Eq,
+    V: std::fmt::Display,
+{
+    if !set.contains(member) {
+        anyhow::bail!(
+            "{FAILED} the '{member_name}' member was not in the '{set_name}' set `&<{}>`",
+            std::any::type_name::<V>(),
+        )
+    }
+    Ok(())
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -342,6 +416,26 @@ mod tests {
     #[case("a", "b")]
     fn test_check_string_contains_when_does_not_contain(#[case] s: &str, #[case] pat: &str) {
         assert!(check_string_contains(s, pat, "value").is_err());
+    }
+
+    #[rstest]
+    #[case(0u8, 0u8, "left", "right", true)]
+    #[case(1u8, 1u8, "left", "right", true)]
+    #[case(0u8, 1u8, "left", "right", false)]
+    #[case(1u8, 0u8, "left", "right", false)]
+    #[case(10i32, 10i32, "left", "right", true)]
+    #[case(10i32, 20i32, "left", "right", false)]
+    #[case("hello", "hello", "left", "right", true)]
+    #[case("hello", "world", "left", "right", false)]
+    fn test_check_equal<T: PartialEq + Debug>(
+        #[case] lhs: T,
+        #[case] rhs: T,
+        #[case] lhs_param: &str,
+        #[case] rhs_param: &str,
+        #[case] expected: bool,
+    ) {
+        let result = check_equal(lhs, rhs, lhs_param, rhs_param).is_ok();
+        assert_eq!(result, expected);
     }
 
     #[rstest]
@@ -601,6 +695,36 @@ mod tests {
         #[case] expected: bool,
     ) {
         let result = check_key_in_map(&key, map, key_name, map_name).is_ok();
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(&HashSet::<u32>::new(), 5, "member", "set", true)] // Empty set
+    #[case(&HashSet::from([1, 2]), 1, "member", "set", false)] // Member exists
+    #[case(&HashSet::from([1, 2]), 5, "member", "set", true)] // Member doesn't exist
+    fn test_check_member_not_in_set(
+        #[case] set: &HashSet<u32>,
+        #[case] member: u32,
+        #[case] member_name: &str,
+        #[case] set_name: &str,
+        #[case] expected: bool,
+    ) {
+        let result = check_member_not_in_set(&member, set, member_name, set_name).is_ok();
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(&HashSet::<u32>::new(), 5, "member", "set", false)] // Empty set
+    #[case(&HashSet::from([1, 2]), 1, "member", "set", true)] // Member exists
+    #[case(&HashSet::from([1, 2]), 5, "member", "set", false)] // Member doesn't exist
+    fn test_check_member_in_set(
+        #[case] set: &HashSet<u32>,
+        #[case] member: u32,
+        #[case] member_name: &str,
+        #[case] set_name: &str,
+        #[case] expected: bool,
+    ) {
+        let result = check_member_in_set(&member, set, member_name, set_name).is_ok();
         assert_eq!(result, expected);
     }
 }

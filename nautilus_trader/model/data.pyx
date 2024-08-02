@@ -42,9 +42,8 @@ from nautilus_trader.core.rust.model cimport BookAction
 from nautilus_trader.core.rust.model cimport BookOrder_t
 from nautilus_trader.core.rust.model cimport Data_t
 from nautilus_trader.core.rust.model cimport Data_t_Tag
-from nautilus_trader.core.rust.model cimport HaltReason
 from nautilus_trader.core.rust.model cimport InstrumentCloseType
-from nautilus_trader.core.rust.model cimport MarketStatus
+from nautilus_trader.core.rust.model cimport MarketStatusAction
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.rust.model cimport bar_eq
@@ -120,12 +119,10 @@ from nautilus_trader.model.functions cimport bar_aggregation_from_str
 from nautilus_trader.model.functions cimport bar_aggregation_to_str
 from nautilus_trader.model.functions cimport book_action_from_str
 from nautilus_trader.model.functions cimport book_action_to_str
-from nautilus_trader.model.functions cimport halt_reason_from_str
-from nautilus_trader.model.functions cimport halt_reason_to_str
 from nautilus_trader.model.functions cimport instrument_close_type_from_str
 from nautilus_trader.model.functions cimport instrument_close_type_to_str
-from nautilus_trader.model.functions cimport market_status_from_str
-from nautilus_trader.model.functions cimport market_status_to_str
+from nautilus_trader.model.functions cimport market_status_action_from_str
+from nautilus_trader.model.functions cimport market_status_action_to_str
 from nautilus_trader.model.functions cimport order_side_from_str
 from nautilus_trader.model.functions cimport order_side_to_str
 from nautilus_trader.model.functions cimport price_type_from_str
@@ -1292,6 +1289,26 @@ cdef class Bar(Data):
 
         """
         return Bar.from_pyo3_c(pyo3_bar)
+
+    def to_pyo3(self) -> nautilus_pyo3.Bar:
+        """
+        Return a pyo3 object from this legacy Cython instance.
+
+        Returns
+        -------
+        nautilus_pyo3.Bar
+
+        """
+        return nautilus_pyo3.Bar(
+            nautilus_pyo3.BarType.from_str(BarType.from_mem_c(self._mem.bar_type).to_str()),
+            nautilus_pyo3.Price.from_raw(self._mem.open.raw, self._mem.open.precision),
+            nautilus_pyo3.Price.from_raw(self._mem.high.raw, self._mem.high.precision),
+            nautilus_pyo3.Price.from_raw(self._mem.low.raw, self._mem.low.precision),
+            nautilus_pyo3.Price.from_raw(self._mem.close.raw, self._mem.close.precision),
+            nautilus_pyo3.Quantity.from_raw(self._mem.volume.raw, self._mem.volume.precision),
+            self._mem.ts_event,
+            self._mem.ts_init,
+        )
 
     cpdef bint is_single_price(self):
         """
@@ -2527,6 +2544,14 @@ cdef class OrderBookDeltas(Data):
         return capsule
 
     cpdef to_pyo3(self):
+        """
+        Return a pyo3 object from this legacy Cython instance.
+
+        Returns
+        -------
+        nautilus_pyo3.OrderBookDeltas
+
+        """
         capsule = self.to_capsule()
         deltas = nautilus_pyo3.OrderBookDeltas.from_pycapsule(capsule)
         return deltas
@@ -3005,99 +3030,6 @@ cdef class OrderBookDepth10(Data):
         return output
 
 
-cdef class VenueStatus(Data):
-    """
-    Represents an update that indicates a change in a Venue status.
-
-    Parameters
-    ----------
-    venue : Venue
-        The venue ID.
-    status : MarketStatus
-        The venue market status.
-    ts_event : uint64_t
-        UNIX timestamp (nanoseconds) when the status update event occurred.
-    ts_init : uint64_t
-        UNIX timestamp (nanoseconds) when the object was initialized.
-
-    """
-
-    def __init__(
-        self,
-        Venue venue,
-        MarketStatus status,
-        uint64_t ts_event,
-        uint64_t ts_init,
-    ) -> None:
-        self.venue = venue
-        self.status = status
-        self.ts_event = ts_event
-        self.ts_init = ts_init
-
-    def __eq__(self, VenueStatus other) -> bool:
-        return VenueStatus.to_dict_c(self) == VenueStatus.to_dict_c(other)
-
-    def __hash__(self) -> int:
-        return hash(frozenset(VenueStatus.to_dict_c(self)))
-
-    def __repr__(self) -> str:
-        return (
-            f"{type(self).__name__}("
-            f"venue={self.venue}, "
-            f"status={market_status_to_str(self.status)})"
-        )
-
-    @staticmethod
-    cdef VenueStatus from_dict_c(dict values):
-        Condition.not_none(values, "values")
-        return VenueStatus(
-            venue=Venue(values["venue"]),
-            status=market_status_from_str(values["status"]),
-            ts_event=values["ts_event"],
-            ts_init=values["ts_init"],
-        )
-
-    @staticmethod
-    cdef dict to_dict_c(VenueStatus obj):
-        Condition.not_none(obj, "obj")
-        return {
-            "type": "VenueStatus",
-            "venue": obj.venue.to_str(),
-            "status": market_status_to_str(obj.status),
-            "ts_event": obj.ts_event,
-            "ts_init": obj.ts_init,
-        }
-
-    @staticmethod
-    def from_dict(dict values) -> VenueStatus:
-        """
-        Return a venue status update from the given dict values.
-
-        Parameters
-        ----------
-        values : dict[str, object]
-            The values for initialization.
-
-        Returns
-        -------
-        VenueStatus
-
-        """
-        return VenueStatus.from_dict_c(values)
-
-    @staticmethod
-    def to_dict(VenueStatus obj):
-        """
-        Return a dictionary representation of this object.
-
-        Returns
-        -------
-        dict[str, object]
-
-        """
-        return VenueStatus.to_dict_c(obj)
-
-
 cdef class InstrumentStatus(Data):
     """
     Represents an event that indicates a change in an instrument market status.
@@ -3105,43 +3037,47 @@ cdef class InstrumentStatus(Data):
     Parameters
     ----------
     instrument_id : InstrumentId
-        The instrument ID.
-    status : MarketStatus
-        The instrument market session status.
+        The instrument ID for the status change.
+    action : MarketStatusAction
+        The instrument market status action.
     ts_event : uint64_t
-        UNIX timestamp (nanoseconds) when the status update event occurred.
+        UNIX timestamp (nanoseconds) when the status event occurred.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
-    trading_session : str, default 'Regular'
-        The name of the trading session.
-    halt_reason : HaltReason, default ``NOT_HALTED``
-        The halt reason (only applicable for ``HALT`` status).
-
-    Raises
-    ------
-    ValueError
-        If `status` is not equal to ``HALT`` and `halt_reason` is other than ``NOT_HALTED``.
+    reason : str, optional
+        Additional details about the cause of the status change.
+    trading_event : str, optional
+        Further information about the status change (if provided).
+    is_trading : bool, optional
+        The state of trading in the instrument.
+    is_quoting : bool, optional
+        The state of quoting in the instrument.
+    is_short_sell_restricted : bool, optional
+        The state of short sell restrictions for the instrument (if applicable).
 
     """
 
     def __init__(
         self,
         InstrumentId instrument_id,
-        MarketStatus status,
+        MarketStatusAction action,
         uint64_t ts_event,
         uint64_t ts_init,
-        str trading_session = "Regular",
-        HaltReason halt_reason = HaltReason.NOT_HALTED,
+        str reason = None,
+        str trading_event = None,
+        is_trading: bool | None = None,
+        is_quoting: bool | None = None,
+        is_short_sell_restricted: bool | None = None,
     ) -> None:
-        if status != MarketStatus.HALT:
-            Condition.equal(halt_reason, HaltReason.NOT_HALTED, "halt_reason", "NO_HALT")
-
         self.instrument_id = instrument_id
-        self.trading_session = trading_session
-        self.status = status
-        self.halt_reason = halt_reason
+        self.action = action
         self.ts_event = ts_event
         self.ts_init = ts_init
+        self.reason = reason
+        self.trading_event = trading_event
+        self._is_trading = is_trading
+        self._is_quoting = is_quoting
+        self._is_short_sell_restricted = is_short_sell_restricted
 
     def __eq__(self, InstrumentStatus other) -> bool:
         return InstrumentStatus.to_dict_c(self) == InstrumentStatus.to_dict_c(other)
@@ -3153,20 +3089,62 @@ cdef class InstrumentStatus(Data):
         return (
             f"{type(self).__name__}("
             f"instrument_id={self.instrument_id}, "
-            f"trading_session={self.trading_session}, "
-            f"status={market_status_to_str(self.status)}, "
-            f"halt_reason={halt_reason_to_str(self.halt_reason)}, "
+            f"action={market_status_action_to_str(self.action)}, "
+            f"reason={self.reason}, "
+            f"trading_event={self.trading_event}, "
+            f"is_trading={self.is_trading}, "
+            f"is_quoting={self.is_quoting}, "
+            f"is_short_sell_restricted={self.is_short_sell_restricted}, "
             f"ts_event={self.ts_event})"
         )
+
+    @property
+    def is_trading(self) -> bool | None:
+        """
+        Return the state of trading in the instrument (if known).
+
+        returns
+        -------
+        bool or `None`
+
+        """
+        return self._is_trading
+
+    @property
+    def is_quoting(self) -> bool | None:
+        """
+        Return the state of quoting in the instrument (if known).
+
+        returns
+        -------
+        bool or `None`
+
+        """
+        return self._is_quoting
+
+    @property
+    def is_short_sell_restricted(self) -> bool | None:
+        """
+        Return the state of short sell restrictions for the instrument (if known and applicable).
+
+        returns
+        -------
+        bool or `None`
+
+        """
+        return self._is_short_sell_restricted
 
     @staticmethod
     cdef InstrumentStatus from_dict_c(dict values):
         Condition.not_none(values, "values")
         return InstrumentStatus(
             instrument_id=InstrumentId.from_str_c(values["instrument_id"]),
-            trading_session=values.get("trading_session", "Regular"),
-            status=market_status_from_str(values["status"]),
-            halt_reason=halt_reason_from_str(values.get("halt_reason", "NOT_HALTED")),
+            action=market_status_action_from_str(values["action"]),
+            reason=values["reason"],
+            trading_event=values["trading_event"],
+            is_trading=values["is_trading"],
+            is_quoting=values["is_quoting"],
+            is_short_sell_restricted=values["is_short_sell_restricted"],
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
         )
@@ -3177,9 +3155,12 @@ cdef class InstrumentStatus(Data):
         return {
             "type": "InstrumentStatus",
             "instrument_id": obj.instrument_id.to_str(),
-            "trading_session": obj.trading_session,
-            "status": market_status_to_str(obj.status),
-            "halt_reason": halt_reason_to_str(obj.halt_reason),
+            "action": market_status_action_to_str(obj.action),
+            "reason": obj.reason,
+            "trading_event": obj.trading_event,
+            "is_trading": obj.is_trading,
+            "is_quoting": obj.is_quoting,
+            "is_short_sell_restricted": obj.is_short_sell_restricted,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
         }
@@ -3212,6 +3193,76 @@ cdef class InstrumentStatus(Data):
 
         """
         return InstrumentStatus.to_dict_c(obj)
+
+    @staticmethod
+    def from_pyo3_list(list pyo3_status_list) -> list[QuoteTick]:
+        """
+        Return legacy Cython instrument status converted from the given pyo3 Rust objects.
+
+        Parameters
+        ----------
+        pyo3_status_list : list[nautilus_pyo3.InstrumentStatus]
+            The pyo3 Rust instrument status list to convert from.
+
+        Returns
+        -------
+        list[InstrumentStatus]
+
+        """
+        cdef list[InstrumentStatus] output = []
+
+        for pyo3_status in pyo3_status_list:
+            output.append(InstrumentStatus.from_pyo3(pyo3_status))
+
+        return output
+
+    @staticmethod
+    def from_pyo3(pyo3_status) -> InstrumentStatus:
+        """
+        Return a legacy Cython quote tick converted from the given pyo3 Rust object.
+
+        Parameters
+        ----------
+        pyo3_status : nautilus_pyo3.InstrumentStatus
+            The pyo3 Rust instrument status to convert from.
+
+        Returns
+        -------
+        InstrumentStatus
+
+        """
+        return InstrumentStatus(
+            instrument_id=InstrumentId.from_str(pyo3_status.instrument_id.value),
+            action=pyo3_status.action.value,
+            ts_event=pyo3_status.ts_event,
+            ts_init=pyo3_status.ts_init,
+            reason=pyo3_status.reason,
+            trading_event=pyo3_status.trading_event,
+            is_trading=pyo3_status.is_trading,
+            is_quoting=pyo3_status.is_quoting,
+            is_short_sell_restricted=pyo3_status.is_short_sell_restricted,
+        )
+
+    def to_pyo3(self) -> nautilus_pyo3.InstrumentStatus:
+        """
+        Return a pyo3 object from this legacy Cython instance.
+
+        Returns
+        -------
+        nautilus_pyo3.InstrumentStatus
+
+        """
+        return nautilus_pyo3.InstrumentStatus(
+            nautilus_pyo3.InstrumentId.from_str(self.instrument_id.value),
+            nautilus_pyo3.MarketStatusAction(market_status_action_to_str(self.action)),
+            self.ts_event,
+            self.ts_init,
+            self.reason,
+            self.trading_event,
+            self.is_trading,
+            self.is_quoting,
+            self.is_short_sell_restricted,
+        )
 
 
 cdef class InstrumentClose(Data):
@@ -3318,20 +3369,20 @@ cdef class QuoteTick(Data):
     """
     Represents a single quote tick in a market.
 
-    Contains information about the best top of book bid and ask.
+    Contains information about the best top-of-book bid and ask.
 
     Parameters
     ----------
     instrument_id : InstrumentId
         The quotes instrument ID.
     bid_price : Price
-        The top of book bid price.
+        The top-of-book bid price.
     ask_price : Price
-        The top of book ask price.
+        The top-of-book ask price.
     bid_size : Quantity
-        The top of book bid size.
+        The top-of-book bid size.
     ask_size : Quantity
-        The top of book ask size.
+        The top-of-book ask size.
     ts_event : uint64_t
         UNIX timestamp (nanoseconds) when the tick event occurred.
     ts_init : uint64_t
@@ -3434,7 +3485,7 @@ cdef class QuoteTick(Data):
     @property
     def bid_price(self) -> Price:
         """
-        Return the top of book bid price.
+        Return the top-of-book bid price.
 
         Returns
         -------
@@ -3446,7 +3497,7 @@ cdef class QuoteTick(Data):
     @property
     def ask_price(self) -> Price:
         """
-        Return the top of book ask price.
+        Return the top-of-book ask price.
 
         Returns
         -------
@@ -3458,7 +3509,7 @@ cdef class QuoteTick(Data):
     @property
     def bid_size(self) -> Quantity:
         """
-        Return the top of book bid size.
+        Return the top-of-book bid size.
 
         Returns
         -------
@@ -3470,7 +3521,7 @@ cdef class QuoteTick(Data):
     @property
     def ask_size(self) -> Quantity:
         """
-        Return the top of book ask size.
+        Return the top-of-book ask size.
 
         Returns
         -------
@@ -3700,17 +3751,17 @@ cdef class QuoteTick(Data):
         instrument_id : InstrumentId
             The quotes instrument ID.
         bid_price_raw : int64_t
-            The raw top of book bid price (as a scaled fixed precision integer).
+            The raw top-of-book bid price (as a scaled fixed precision integer).
         ask_price_raw : int64_t
-            The raw top of book ask price (as a scaled fixed precision integer).
+            The raw top-of-book ask price (as a scaled fixed precision integer).
         bid_price_prec : uint8_t
             The bid price precision.
         ask_price_prec : uint8_t
             The ask price precision.
         bid_size_raw : uint64_t
-            The raw top of book bid size (as a scaled fixed precision integer).
+            The raw top-of-book bid size (as a scaled fixed precision integer).
         ask_size_raw : uint64_t
-            The raw top of book ask size (as a scaled fixed precision integer).
+            The raw top-of-book ask size (as a scaled fixed precision integer).
         bid_size_prec : uint8_t
             The bid size precision.
         ask_size_prec : uint8_t
@@ -3863,6 +3914,25 @@ cdef class QuoteTick(Data):
         """
         return QuoteTick.from_pyo3_c(pyo3_quote)
 
+    def to_pyo3(self) -> nautilus_pyo3.QuoteTick:
+        """
+        Return a pyo3 object from this legacy Cython instance.
+
+        Returns
+        -------
+        nautilus_pyo3.QuoteTick
+
+        """
+        return nautilus_pyo3.QuoteTick(
+            nautilus_pyo3.InstrumentId.from_str(self.instrument_id.value),
+            nautilus_pyo3.Price.from_raw(self._mem.bid_price.raw, self._mem.bid_price.precision),
+            nautilus_pyo3.Price.from_raw(self._mem.ask_price.raw, self._mem.ask_price.precision),
+            nautilus_pyo3.Quantity.from_raw(self._mem.bid_size.raw, self._mem.bid_size.precision),
+            nautilus_pyo3.Quantity.from_raw(self._mem.ask_size.raw, self._mem.ask_size.precision),
+            self._mem.ts_event,
+            self._mem.ts_init,
+        )
+
     cpdef Price extract_price(self, PriceType price_type):
         """
         Extract the price for the given price type.
@@ -3886,9 +3956,9 @@ cdef class QuoteTick(Data):
         else:
             raise ValueError(f"Cannot extract with PriceType {price_type_to_str(price_type)}")
 
-    cpdef Quantity extract_volume(self, PriceType price_type):
+    cpdef Quantity extract_size(self, PriceType price_type):
         """
-        Extract the volume for the given price type.
+        Extract the size for the given price type.
 
         Parameters
         ----------
@@ -4424,3 +4494,22 @@ cdef class TradeTick(Data):
 
         """
         return TradeTick.from_pyo3_c(pyo3_trade)
+
+    def to_pyo3(self) -> nautilus_pyo3.TradeTick:
+        """
+        Return a pyo3 object from this legacy Cython instance.
+
+        Returns
+        -------
+        nautilus_pyo3.TradeTick
+
+        """
+        return nautilus_pyo3.TradeTick(
+            nautilus_pyo3.InstrumentId.from_str(self.instrument_id.value),
+            nautilus_pyo3.Price.from_raw(self._mem.price.raw, self._mem.price.precision),
+            nautilus_pyo3.Quantity.from_raw(self._mem.size.raw, self._mem.size.precision),
+            nautilus_pyo3.AggressorSide(aggressor_side_to_str(self._mem.aggressor_side)),
+            nautilus_pyo3.TradeId(self.trade_id.value),
+            self._mem.ts_event,
+            self._mem.ts_init,
+        )

@@ -66,7 +66,7 @@ class TestBacktestConfig:
             fs.rm(path, recursive=True)
 
     def test_backtest_config_pickle(self):
-        pickle.loads(pickle.dumps(self.backtest_config))  # noqa: S301
+        pickle.loads(pickle.dumps(self.backtest_config))  # noqa: S301 (pickle safe here)
 
     def test_backtest_data_config_load(self):
         # Arrange
@@ -285,7 +285,7 @@ class TestBacktestConfigParsing:
                 TestConfigStubs.backtest_engine_config,
                 ("catalog",),
                 {"persist": True},
-                ("882b85369baccfa23783b986b9b62a0cf396a9488d8e2e3057bc851c812ee6f6",),
+                ("7ec0724f21fc85299dc336ceb0c46795fbf2151a1f239ff794930861449563a6",),
             ),
             (
                 TestConfigStubs.risk_engine_config,

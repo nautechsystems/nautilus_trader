@@ -1,15 +1,16 @@
 ------------------- ENUMS -------------------
 
 CREATE TYPE ACCOUNT_TYPE AS ENUM ('Cash', 'Margin', 'Betting');
-CREATE TYPE AGGREGATION_SOURCE AS ENUM ('External', 'Internal');
-CREATE TYPE AGGRESSOR_SIDE AS ENUM ('NoAggressor', 'Buyer', 'Seller');
-CREATE TYPE ASSET_CLASS AS ENUM ('Fx', 'Equity', 'Commodity', 'Debt', 'Index', 'Cryptocurrency', 'Alternative');
+CREATE TYPE AGGREGATION_SOURCE AS ENUM ('EXTERNAL', 'INTERNAL');
+CREATE TYPE AGGRESSOR_SIDE AS ENUM ('NO_AGGRESSOR','BUYER','SELLER');
+CREATE TYPE ASSET_CLASS AS ENUM ('FX', 'EQUITY', 'COMMODITY', 'DEBT', 'INDEX', 'CRYPTOCURRENCY', 'ALTERNATIVE');
 CREATE TYPE INSTRUMENT_CLASS AS ENUM ('Spot', 'Swap', 'Future', 'FutureSpread', 'Forward', 'Cfg', 'Bond', 'Option', 'OptionSpread', 'Warrant', 'SportsBetting');
-CREATE TYPE BAR_AGGREGATION AS ENUM ('Tick', 'TickImbalance', 'TickRuns', 'Volume', 'VolumeImbalance', 'VolumeRuns', 'Value', 'ValueImbalance', 'ValueRuns', 'Millisecond', 'Second', 'Minute', 'Hour', 'Day', 'Week', 'Month');
+CREATE TYPE BAR_AGGREGATION AS ENUM ('TICK', 'TICK_IMBALANCE', 'TICK_RUNS', 'VOLUME', 'VOLUME_IMBALANCE', 'VOLUME_RUNS', 'VALUE', 'VALUE_IMBALANCE', 'VALUE_RUNS', 'MILLISECOND', 'SECOND', 'MINUTE', 'HOUR', 'DAY', 'WEEK', 'MONTH');
 CREATE TYPE BOOK_ACTION AS ENUM ('Add', 'Update', 'Delete','Clear');
 CREATE TYPE ORDER_STATUS AS ENUM ('Initialized', 'Denied', 'Emulated', 'Released', 'Submitted', 'Accepted', 'Rejected', 'Canceled', 'Expired', 'Triggered', 'PendingUpdate', 'PendingCancel', 'PartiallyFilled', 'Filled');
-
-
+CREATE TYPE CURRENCY_TYPE AS ENUM('CRYPTO', 'FIAT', 'COMMODITY_BACKED');
+CREATE TYPE TRAILING_OFFSET_TYPE AS ENUM('NO_TRAILING_OFFSET', 'PRICE', 'BASIS_POINTS', 'TICKS', 'PRICE_TIER');
+CREATE TYPE PRICE_TYPE AS ENUM('BID','ASK','MID','LAST');
 ------------------- TABLES -------------------
 
 CREATE TABLE IF NOT EXISTS "general" (
@@ -40,7 +41,7 @@ CREATE TABLE IF NOT EXISTS "currency" (
     precision INTEGER,
     iso4217 INTEGER,
     name TEXT,
-    currency_type TEXT
+    currency_type CURRENCY_TYPE
 );
 
 CREATE TABLE IF NOT EXISTS "instrument" (
@@ -52,7 +53,7 @@ CREATE TABLE IF NOT EXISTS "instrument" (
     quote_currency TEXT REFERENCES currency(id),
     settlement_currency TEXT REFERENCES currency(id),
     isin TEXT,
-    asset_class TEXT,
+    asset_class ASSET_CLASS,
     exchange TEXT,
     multiplier TEXT,
     option_kind TEXT,
@@ -122,7 +123,7 @@ CREATE TABLE IF NOT EXISTS "order_event" (
     trigger_type TEXT,
     limit_offset TEXT,
     trailing_offset TEXT,
-    trailing_offset_type TEXT,
+    trailing_offset_type TRAILING_OFFSET_TYPE,
     expire_time TEXT,
     display_qty TEXT,
     emulation_trigger TEXT,
@@ -153,6 +154,50 @@ CREATE TABLE IF NOT EXISTS "account_event"(
     balances JSONB,
     margins JSONB,
     is_reported BOOLEAN DEFAULT FALSE,
+    ts_event TEXT NOT NULL,
+    ts_init TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "trade" (
+    id BIGSERIAL PRIMARY KEY NOT NULL,
+    instrument_id TEXT REFERENCES instrument(id) ON DELETE CASCADE,
+    price TEXT NOT NULL,
+    quantity TEXT NOT NULL,
+    aggressor_side AGGRESSOR_SIDE,
+    venue_trade_id TEXT,
+    ts_event TEXT NOT NULL,
+    ts_init TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "quote" (
+    id BIGSERIAL PRIMARY KEY NOT NULL,
+    instrument_id TEXT REFERENCES instrument(id) ON DELETE CASCADE,
+    bid_price TEXT NOT NULL,
+    ask_price TEXT NOT NULL,
+    bid_size TEXT NOT NULL,
+    ask_size TEXT NOT NULL,
+    ts_event TEXT NOT NULL,
+    ts_init TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "bar" (
+    id BIGSERIAL PRIMARY KEY NOT NULL,
+    instrument_id TEXT REFERENCES instrument(id) ON DELETE CASCADE,
+    step INTEGER NOT NULL,
+    bar_aggregation BAR_AGGREGATION NOT NULL,
+    price_type PRICE_TYPE NOT NULL,
+    aggregation_source AGGREGATION_SOURCE NOT NULL,
+    open TEXT NOT NULL,
+    high TEXT NOT NULL,
+    low TEXT NOT NULL,
+    close TEXT NOT NULL,
+    volume TEXT NOT NULL,
     ts_event TEXT NOT NULL,
     ts_init TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,

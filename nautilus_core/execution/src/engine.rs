@@ -13,16 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides a generic `ExecutionEngine` for backtesting and live environments.
+//! Provides a generic `ExecutionEngine` for all environments.
 
 // Under development
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    cell::RefCell,
+    collections::{HashMap, HashSet},
+    rc::Rc,
+};
 
 use log::debug;
-use nautilus_common::{cache::Cache, generators::position_id::PositionIdGenerator};
+use nautilus_common::{
+    cache::Cache, clock::Clock, generators::position_id::PositionIdGenerator, msgbus::MessageBus,
+};
 use nautilus_model::{
     enums::{OmsType, OrderSide},
     events::order::{filled::OrderFilled, OrderEventAny},
@@ -46,21 +52,26 @@ pub struct ExecutionEngineConfig {
     pub debug: bool,
 }
 
-pub struct ExecutionEngine {
-    pub command_count: u64,
-    pub event_count: u64,
-    pub report_count: u64,
-    cache: &'static Cache,
-    default_client: Option<ExecutionClient>,
-    pos_id_generator: PositionIdGenerator,
+pub struct ExecutionEngine<C>
+where
+    C: Clock,
+{
+    clock: C,
+    cache: Rc<RefCell<Cache>>,
+    msgbus: Rc<RefCell<MessageBus>>,
     clients: HashMap<ClientId, ExecutionClient>,
+    default_client: Option<ExecutionClient>,
     routing_map: HashMap<Venue, ClientId>,
     oms_overrides: HashMap<StrategyId, OmsType>,
     external_order_claims: HashMap<InstrumentId, StrategyId>,
+    pos_id_generator: PositionIdGenerator,
     config: ExecutionEngineConfig,
 }
 
-impl ExecutionEngine {
+impl<C> ExecutionEngine<C>
+where
+    C: Clock,
+{
     #[must_use]
     pub fn position_id_count(&self, strategy_id: StrategyId) -> u64 {
         todo!();
@@ -138,9 +149,8 @@ impl ExecutionEngine {
 
     // -- COMMAND HANDLERS ----------------------------------------------------
 
-    fn execute_command(&mut self, command: TradingCommand) {
+    fn execute_command(&self, command: TradingCommand) {
         debug!("<--[CMD] {:?}", command); // TODO: Log constants
-        self.command_count += 1;
 
         // TODO: Refine getting the client (no need for two expects)
         let client = if let Some(client) = self.clients.get(&command.client_id()) {

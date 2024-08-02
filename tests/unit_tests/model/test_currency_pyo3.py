@@ -144,7 +144,7 @@ class TestCurrency:
 
         # Act
         pickled = pickle.dumps(currency)
-        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle is safe here)
 
         # Assert
         assert unpickled == currency

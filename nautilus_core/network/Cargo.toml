@@ -18,10 +18,10 @@ pyo3 = { workspace = true, optional = true }
 pyo3-asyncio-0-21 = { workspace = true, optional = true }
 tracing = { workspace = true }
 tokio = { workspace = true }
-dashmap = "5.5.3"
+dashmap = "6.0.1"
 futures-util = "0.3.30"
 http = "1.1.0"
-hyper = "1.4.0"
+hyper = "1.4.1"
 nonzero_ext = "0.3.0"
 reqwest = "0.12.5"
 tokio-tungstenite = { path = "./tokio-tungstenite", features = ["rustls-tls-native-roots"] }

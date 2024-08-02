@@ -13,5 +13,6 @@
    
    betfair.md
    binance.md
+   databento.md
    interactive_brokers.md
 ```

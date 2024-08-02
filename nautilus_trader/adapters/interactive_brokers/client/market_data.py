@@ -165,6 +165,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         instrument_id: InstrumentId,
         contract: IBContract,
         tick_type: str,
+        ignore_size: bool,
     ) -> None:
         """
         Subscribe to tick data for a specified instrument.
@@ -177,6 +178,9 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             The contract details for the instrument.
         tick_type : str
             The type of tick data to subscribe to.
+        ignore_size : bool
+            Omit updates that reflect only changes in size, and not price.
+            Applicable to Bid_Ask data requests.
 
         """
         name = (str(instrument_id), tick_type)
@@ -187,7 +191,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             contract,
             tick_type,
             0,
-            True,
+            ignore_size,
         )
 
     async def unsubscribe_ticks(self, instrument_id: InstrumentId, tick_type: str) -> None:
@@ -703,7 +707,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         self,
         *,
         req_id: int,
-        tick_type: str,
+        tick_type: int,
         time: int,
         price: float,
         size: Decimal,
@@ -874,3 +878,46 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         if not done:
             return
         await self._process_trade_ticks(req_id, ticks)
+
+    async def get_price(self, contract, tick_type="MidPoint"):
+        """
+        Request market data for a specific contract and tick type.
+
+        This method requests market data from Interactive Brokers for the given
+        contract and tick type, waits for the response, and returns the result.
+
+        Parameters
+        ----------
+        contract : IBContract
+            The contract details for which market data is requested.
+        tick_type : str, optional
+            The type of tick data to request (default is "MidPoint").
+
+        Returns
+        -------
+        Any
+            The market data result.
+
+        Raises
+        ------
+        asyncio.TimeoutError
+            If the request times out.
+
+        """
+        req_id = self._next_req_id()
+        request = self._requests.add(
+            req_id=req_id,
+            name=f"{contract.symbol}-{tick_type}",
+            handle=functools.partial(
+                self._eclient.reqMktData,
+                req_id,
+                contract,
+                tick_type,
+                False,
+                False,
+                [],
+            ),
+            cancel=functools.partial(self._eclient.cancelMktData, req_id),
+        )
+        request.handle()
+        return await self._await_request(request, timeout=60)

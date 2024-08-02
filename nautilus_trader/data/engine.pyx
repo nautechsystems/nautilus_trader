@@ -81,7 +81,6 @@ from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
-from nautilus_trader.model.data cimport VenueStatus
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -131,8 +130,9 @@ cdef class DataEngine(Component):
         self._clients: dict[ClientId, DataClient] = {}
         self._routing_map: dict[Venue, DataClient] = {}
         self._default_client: DataClient | None = None
+        self._external_clients: set[ClientId] = set()
         self._catalog: ParquetDataCatalog | None = None
-        self._order_book_intervals: dict[(InstrumentId, int), list[Callable[[Bar], None]]] = {}
+        self._order_book_intervals: dict[(InstrumentId, int), list[Callable[[OrderBook], None]]] = {}
         self._bar_aggregators: dict[BarType, BarAggregator] = {}
         self._synthetic_quote_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
         self._synthetic_trade_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
@@ -147,6 +147,9 @@ cdef class DataEngine(Component):
         self._time_bars_interval_type = config.time_bars_interval_type
         self._validate_data_sequence = config.validate_data_sequence
         self._buffer_deltas = config.buffer_deltas
+
+        if config.external_clients:
+            self._external_clients = set(config.external_clients)
 
         # Counters
         self.command_count = 0
@@ -297,7 +300,7 @@ cdef class DataEngine(Component):
 
     cpdef void register_venue_routing(self, DataClient client, Venue venue):
         """
-        Register the given client to route orders to the given venue.
+        Register the given client to route messages to the given venue.
 
         Any existing client in the routing map for the given venue will be
         overwritten.
@@ -305,8 +308,8 @@ cdef class DataEngine(Component):
         Parameters
         ----------
         venue : Venue
-            The venue to route orders to.
-        client : ExecutionClient
+            The venue to route messages to.
+        client : DataClient
             The client for the venue routing.
 
         """
@@ -318,7 +321,7 @@ cdef class DataEngine(Component):
 
         self._routing_map[venue] = client
 
-        self._log.info(f"Registered ExecutionClient-{client} for routing to {venue}")
+        self._log.info(f"Registered DataClient-{client} for routing to {venue}")
 
     cpdef void deregister_client(self, DataClient client):
         """
@@ -614,6 +617,13 @@ cdef class DataEngine(Component):
             self._log.debug(f"{RECV}{CMD} {command}")
         self.command_count += 1
 
+        if command.client_id in self._external_clients:
+            self._msgbus.add_streaming_type(command.data_type.type)
+            self._log.debug(
+                f"{command.client_id} declared as external client - disregarding subscription command",
+            )
+            return
+
         cdef Venue venue = command.venue
         cdef DataClient client = self._clients.get(command.client_id)
         if venue is not None and venue.is_synthetic():
@@ -669,11 +679,6 @@ cdef class DataEngine(Component):
                 client,
                 command.data_type.metadata.get("bar_type"),
                 command.data_type.metadata.get("await_partial"),
-            )
-        elif command.data_type.type == VenueStatus:
-            self._handle_subscribe_venue_status(
-                client,
-                command.data_type.metadata.get("instrument_id"),
             )
         elif command.data_type.type == InstrumentStatus:
             self._handle_subscribe_instrument_status(
@@ -1007,17 +1012,6 @@ cdef class DataEngine(Component):
             )
             return
 
-    cpdef void _handle_subscribe_venue_status(
-        self,
-        MarketDataClient client,
-        Venue venue,
-    ):
-        Condition.not_none(client, "client")
-        Condition.not_none(venue, "venue")
-
-        if venue not in client.subscribed_venue_status():
-            client.subscribe_venue_status(venue)
-
     cpdef void _handle_subscribe_instrument_status(
         self,
         MarketDataClient client,
@@ -1089,11 +1083,22 @@ cdef class DataEngine(Component):
             self._log.error("Cannot unsubscribe from synthetic instrument `OrderBookDelta` data")
             return
 
-        if not self._msgbus.has_subscribers(
-            f"data.book.deltas"
-            f".{instrument_id.venue}"
-            f".{instrument_id.symbol}",
-        ):
+        cdef str topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol}"
+
+        cdef int num_subscribers = len(self._msgbus.subscriptions(pattern=topic))
+        cdef bint is_internal_book_subscriber = self._msgbus.is_subscribed(
+            topic=topic,
+            handler=self._update_order_book,
+        )
+
+        # Remove the subscription for the internal order book if it is the last subscription
+        if num_subscribers == 1 and is_internal_book_subscriber:
+            self._msgbus.unsubscribe(
+                topic=topic,
+                handler=self._update_order_book,
+            )
+
+        if not self._msgbus.has_subscribers(topic):
             if instrument_id in client.subscribed_order_book_deltas():
                 client.unsubscribe_order_book_deltas(instrument_id)
 
@@ -1111,11 +1116,36 @@ cdef class DataEngine(Component):
             self._log.error("Cannot unsubscribe from synthetic instrument `OrderBook` data")
             return
 
-        if not self._msgbus.has_subscribers(
-            f"data.book.snapshots"
-            f".{instrument_id.venue}"
-            f".{instrument_id.symbol}",
-        ):
+        # Setup topics
+        cdef str deltas_topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol}"
+        cdef str depth_topic = f"data.book.depth.{instrument_id.venue}.{instrument_id.symbol}"
+        cdef str snapshots_topic = f"data.book.snapshots.{instrument_id.venue}.{instrument_id.symbol}"
+
+        # Check the deltas and the depth subscription
+        cdef list[str] topics = [deltas_topic, depth_topic]
+
+        cdef int num_subscribers = 0
+        cdef bint is_internal_book_subscriber = False
+
+        for topic in topics:
+            num_subscribers = len(self._msgbus.subscriptions(pattern=topic))
+            is_internal_book_subscriber = self._msgbus.is_subscribed(
+                topic=topic,
+                handler=self._update_order_book,
+            )
+
+            # Remove the subscription for the internal order book if it is the last subscription
+            if num_subscribers == 1 and is_internal_book_subscriber:
+                self._msgbus.unsubscribe(
+                    topic=topic,
+                    handler=self._update_order_book,
+                )
+
+        if not self._msgbus.has_subscribers(deltas_topic):
+            if instrument_id in client.subscribed_order_book_deltas():
+                client.unsubscribe_order_book_deltas(instrument_id)
+
+        if not self._msgbus.has_subscribers(snapshots_topic):
             if instrument_id in client.subscribed_order_book_snapshots():
                 client.unsubscribe_order_book_snapshots(instrument_id)
 
@@ -1371,8 +1401,6 @@ cdef class DataEngine(Component):
             self._handle_bar(data)
         elif isinstance(data, Instrument):
             self._handle_instrument(data)
-        elif isinstance(data, VenueStatus):
-            self._handle_venue_status(data)
         elif isinstance(data, InstrumentStatus):
             self._handle_instrument_status(data)
         elif isinstance(data, InstrumentClose):
@@ -1542,9 +1570,6 @@ cdef class DataEngine(Component):
             self._cache.add_bar(bar)
 
         self._msgbus.publish_c(topic=f"data.bars.{bar_type}", msg=bar)
-
-    cpdef void _handle_venue_status(self, VenueStatus data):
-        self._msgbus.publish_c(topic=f"data.status.{data.venue}", msg=data)
 
     cpdef void _handle_instrument_status(self, InstrumentStatus data):
         self._msgbus.publish_c(topic=f"data.status.{data.instrument_id.venue}.{data.instrument_id.symbol}", msg=data)

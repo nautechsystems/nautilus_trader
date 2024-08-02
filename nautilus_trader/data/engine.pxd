@@ -35,7 +35,6 @@ from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
-from nautilus_trader.model.data cimport VenueStatus
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -47,6 +46,7 @@ from nautilus_trader.model.objects cimport Quantity
 cdef class DataEngine(Component):
     cdef readonly Cache _cache
     cdef readonly DataClient _default_client
+    cdef readonly set[ClientId] _external_clients
     cdef readonly object _catalog
 
     cdef readonly dict[ClientId, DataClient] _clients
@@ -126,7 +126,6 @@ cdef class DataEngine(Component):
     cpdef void _handle_subscribe_synthetic_trade_ticks(self, InstrumentId instrument_id)
     cpdef void _handle_subscribe_bars(self, MarketDataClient client, BarType bar_type, bint await_partial)
     cpdef void _handle_subscribe_data(self, DataClient client, DataType data_type)
-    cpdef void _handle_subscribe_venue_status(self, MarketDataClient client, Venue venue)
     cpdef void _handle_subscribe_instrument_status(self, MarketDataClient client, InstrumentId instrument_id)
     cpdef void _handle_subscribe_instrument_close(self, MarketDataClient client, InstrumentId instrument_id)
     cpdef void _handle_unsubscribe_instrument(self, MarketDataClient client, InstrumentId instrument_id)
@@ -150,7 +149,6 @@ cdef class DataEngine(Component):
     cpdef void _handle_trade_tick(self, TradeTick tick)
     cpdef void _handle_bar(self, Bar bar)
     cpdef void _handle_custom_data(self, CustomData data)
-    cpdef void _handle_venue_status(self, VenueStatus data)
     cpdef void _handle_instrument_status(self, InstrumentStatus data)
     cpdef void _handle_close_price(self, InstrumentClose data)
 

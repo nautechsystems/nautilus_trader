@@ -23,12 +23,16 @@ use super::{
     deltas::OrderBookDeltas,
     depth::DEPTH10_LEN,
     quote::QuoteTick,
+    status::InstrumentStatus,
     trade::TradeTick,
     OrderBookDelta, OrderBookDepth10,
 };
 use crate::{
     data::order::BookOrder,
-    enums::{AggregationSource, AggressorSide, BarAggregation, BookAction, OrderSide, PriceType},
+    enums::{
+        AggregationSource, AggressorSide, BarAggregation, BookAction, MarketStatusAction,
+        OrderSide, PriceType,
+    },
     identifiers::{InstrumentId, Symbol, TradeId, Venue},
     types::{price::Price, quantity::Quantity},
 };
@@ -321,7 +325,7 @@ pub fn stub_trade_tick_ethusdt_buyer() -> TradeTick {
 #[fixture]
 pub fn stub_bar() -> Bar {
     let instrument_id = InstrumentId {
-        symbol: Symbol::new("AUDUSD").unwrap(),
+        symbol: Symbol::new("AUD/USD").unwrap(),
         venue: Venue::new("SIM").unwrap(),
     };
     let bar_spec = BarSpecification {
@@ -344,4 +348,20 @@ pub fn stub_bar() -> Bar {
         ts_event: UnixNanos::default(),
         ts_init: UnixNanos::from(1),
     }
+}
+
+#[fixture]
+pub fn stub_instrument_status() -> InstrumentStatus {
+    let instrument_id = InstrumentId::from("MSFT.XNAS");
+    InstrumentStatus::new(
+        instrument_id,
+        MarketStatusAction::Trading,
+        UnixNanos::from(1),
+        UnixNanos::from(2),
+        None,
+        None,
+        None,
+        None,
+        None,
+    )
 }

@@ -71,7 +71,7 @@ class TestBarSpecification:
 
         # Act
         pickled = pickle.dumps(bar_spec)
-        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle is safe here)
 
         # Assert
         assert unpickled == bar_spec
@@ -293,7 +293,7 @@ class TestBarType:
 
         # Act
         pickled = pickle.dumps(bar_type)
-        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle is safe here)
 
         # Assert
         assert unpickled == bar_type
@@ -634,7 +634,7 @@ class TestBar:
 
         # Act
         pickled = pickle.dumps(bar)
-        unpickled = pickle.loads(pickled)  # noqa S301 (pickle is safe here)
+        unpickled = pickle.loads(pickled)  # noqa: S301 (pickle is safe here)
 
         # Assert
         assert unpickled == bar

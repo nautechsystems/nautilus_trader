@@ -383,22 +383,6 @@ class TestActor:
         # Assert
         assert True  # Exception not raised
 
-    def test_on_venue_status_when_not_overridden_does_nothing(self) -> None:
-        # Arrange
-        actor = Actor(config=ActorConfig(component_id=self.component_id))
-        actor.register_base(
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-        )
-
-        # Act
-        actor.on_venue_status(TestDataStubs.venue_status())
-
-        # Assert
-        assert True  # Exception not raised
-
     def test_on_instrument_status_when_not_overridden_does_nothing(self) -> None:
         # Arrange
         actor = Actor(config=ActorConfig(component_id=self.component_id))
@@ -1923,21 +1907,6 @@ class TestActor:
         # Assert
         assert self.data_engine.subscribed_bars() == []
         assert self.data_engine.command_count == 2
-
-    def test_subscribe_venue_status(self) -> None:
-        # Arrange
-        actor = MockActor()
-        actor.register_base(
-            portfolio=self.portfolio,
-            msgbus=self.msgbus,
-            cache=self.cache,
-            clock=self.clock,
-        )
-
-        actor.subscribe_venue_status(Venue("NYMEX"))
-
-        # Assert
-        # TODO: DataEngine.subscribed_venue_status()
 
     def test_request_data_sends_request_to_data_engine(self) -> None:
         # Arrange

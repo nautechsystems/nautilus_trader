@@ -20,9 +20,8 @@ use pyo3::{exceptions::PyPermissionError, prelude::*};
 use crate::{
     average::MovingAverageType,
     indicator::Indicator,
-    volatility::{
-        fuzzy_candlesticks::{FuzzyCandle, FuzzyCandlesticks},
-        fuzzy_enums::{CandleBodySize, CandleDirection, CandleSize, CandleWickSize},
+    volatility::fuzzy::{
+        CandleBodySize, CandleDirection, CandleSize, CandleWickSize, FuzzyCandle, FuzzyCandlesticks,
     },
 };
 

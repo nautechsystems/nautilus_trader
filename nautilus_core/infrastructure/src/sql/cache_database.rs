@@ -18,6 +18,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use bytes::Bytes;
 use log::error;
 use nautilus_common::cache::database::CacheDatabaseAdapter;
 use nautilus_core::nanos::UnixNanos;
@@ -68,6 +69,9 @@ pub enum DatabaseQuery {
     AddInstrument(InstrumentAny),
     AddOrder(OrderAny, bool),
     AddAccount(AccountAny, bool),
+    AddTrade(TradeTick),
+    AddQuote(QuoteTick),
+    AddBar(Bar),
 }
 
 fn get_buffer_interval() -> Duration {
@@ -190,6 +194,15 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
                         .unwrap()
                 }
             },
+            DatabaseQuery::AddTrade(trade) => {
+                DatabaseQueries::add_trade(pool, &trade).await.unwrap();
+            }
+            DatabaseQuery::AddQuote(quote) => {
+                DatabaseQueries::add_quote(pool, &quote).await.unwrap();
+            }
+            DatabaseQuery::AddBar(bar) => {
+                DatabaseQueries::add_bar(pool, &bar).await.unwrap();
+            }
         }
     }
 }
@@ -301,7 +314,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn load(&mut self) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+    fn load(&mut self) -> anyhow::Result<HashMap<String, Bytes>> {
         todo!()
     }
 
@@ -316,15 +329,19 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
                         .into_iter()
                         .map(|currency| (currency.code, currency))
                         .collect();
-                    let _ = tx.send(mapping);
+                    if let Err(e) = tx.send(mapping) {
+                        error!("Failed to send currencies: {:?}", e);
+                    }
                 }
                 Err(e) => {
                     error!("Failed to load currencies: {:?}", e);
-                    let _ = tx.send(HashMap::new());
+                    if let Err(e) = tx.send(HashMap::new()) {
+                        error!("Failed to send empty currencies: {:?}", e);
+                    }
                 }
             }
         });
-        Ok(rx.recv().unwrap())
+        Ok(rx.recv()?)
     }
 
     fn load_instruments(&mut self) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>> {
@@ -338,15 +355,19 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
                         .into_iter()
                         .map(|instrument| (instrument.id(), instrument))
                         .collect();
-                    let _ = tx.send(mapping);
+                    if let Err(e) = tx.send(mapping) {
+                        error!("Failed to send instruments: {:?}", e);
+                    }
                 }
                 Err(e) => {
                     error!("Failed to load instruments: {:?}", e);
-                    let _ = tx.send(HashMap::new());
+                    if let Err(e) = tx.send(HashMap::new()) {
+                        error!("Failed to send empty instruments: {:?}", e);
+                    }
                 }
             }
         });
-        Ok(rx.recv().unwrap())
+        Ok(rx.recv()?)
     }
 
     fn load_synthetics(&mut self) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>> {
@@ -364,15 +385,19 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
                         .into_iter()
                         .map(|account| (account.id(), account))
                         .collect();
-                    let _ = tx.send(mapping);
+                    if let Err(e) = tx.send(mapping) {
+                        error!("Failed to send accounts: {:?}", e);
+                    }
                 }
                 Err(e) => {
                     error!("Failed to load accounts: {:?}", e);
-                    let _ = tx.send(HashMap::new());
+                    if let Err(e) = tx.send(HashMap::new()) {
+                        error!("Failed to send empty accounts: {:?}", e);
+                    }
                 }
             }
         });
-        Ok(rx.recv().unwrap())
+        Ok(rx.recv()?)
     }
 
     fn load_orders(&mut self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
@@ -386,15 +411,19 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
                         .into_iter()
                         .map(|order| (order.client_order_id(), order))
                         .collect();
-                    let _ = tx.send(mapping);
+                    if let Err(e) = tx.send(mapping) {
+                        error!("Failed to send orders: {:?}", e);
+                    }
                 }
                 Err(e) => {
                     error!("Failed to load orders: {:?}", e);
-                    let _ = tx.send(HashMap::new());
+                    if let Err(e) = tx.send(HashMap::new()) {
+                        error!("Failed to send empty orders: {:?}", e);
+                    }
                 }
             }
         });
-        Ok(rx.recv().unwrap())
+        Ok(rx.recv()?)
     }
 
     fn load_positions(&mut self) -> anyhow::Result<HashMap<PositionId, Position>> {
@@ -417,11 +446,15 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
             let result = DatabaseQueries::load_currency(&pool, &code).await;
             match result {
                 Ok(currency) => {
-                    let _ = tx.send(currency);
+                    if let Err(e) = tx.send(currency) {
+                        error!("Failed to send currency {}: {:?}", code, e);
+                    }
                 }
                 Err(e) => {
                     error!("Failed to load currency {}: {:?}", code, e);
-                    let _ = tx.send(None);
+                    if let Err(e) = tx.send(None) {
+                        error!("Failed to send None for currency {}: {:?}", code, e);
+                    }
                 }
             }
         });
@@ -440,15 +473,22 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
             let result = DatabaseQueries::load_instrument(&pool, &instrument_id).await;
             match result {
                 Ok(instrument) => {
-                    let _ = tx.send(instrument);
+                    if let Err(e) = tx.send(instrument) {
+                        error!("Failed to send instrument {}: {:?}", instrument_id, e);
+                    }
                 }
                 Err(e) => {
                     error!("Failed to load instrument {}: {:?}", instrument_id, e);
-                    let _ = tx.send(None);
+                    if let Err(e) = tx.send(None) {
+                        error!(
+                            "Failed to send None for instrument {}: {:?}",
+                            instrument_id, e
+                        );
+                    }
                 }
             }
         });
-        Ok(rx.recv().unwrap())
+        Ok(rx.recv()?)
     }
 
     fn load_synthetic(
@@ -466,15 +506,19 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
             let result = DatabaseQueries::load_account(&pool, &account_id).await;
             match result {
                 Ok(account) => {
-                    let _ = tx.send(account);
+                    if let Err(e) = tx.send(account) {
+                        error!("Failed to send account {}: {:?}", account_id, e);
+                    }
                 }
                 Err(e) => {
                     error!("Failed to load account {}: {:?}", account_id, e);
-                    let _ = tx.send(None);
+                    if let Err(e) = tx.send(None) {
+                        error!("Failed to send None for account {}: {:?}", account_id, e);
+                    }
                 }
             }
         });
-        Ok(rx.recv().unwrap())
+        Ok(rx.recv()?)
     }
 
     fn load_order(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<Option<OrderAny>> {
@@ -485,7 +529,9 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
             let result = DatabaseQueries::load_order(&pool, &client_order_id).await;
             match result {
                 Ok(order) => {
-                    let _ = tx.send(order);
+                    if let Err(e) = tx.send(order) {
+                        error!("Failed to send order {}: {:?}", client_order_id, e);
+                    }
                 }
                 Err(e) => {
                     error!("Failed to load order {}: {:?}", client_order_id, e);
@@ -493,17 +539,14 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
                 }
             }
         });
-        Ok(rx.recv().unwrap())
+        Ok(rx.recv()?)
     }
 
     fn load_position(&mut self, position_id: &PositionId) -> anyhow::Result<Position> {
         todo!()
     }
 
-    fn load_actor(
-        &mut self,
-        component_id: &ComponentId,
-    ) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+    fn load_actor(&mut self, component_id: &ComponentId) -> anyhow::Result<HashMap<String, Bytes>> {
         todo!()
     }
 
@@ -514,7 +557,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     fn load_strategy(
         &mut self,
         strategy_id: &StrategyId,
-    ) -> anyhow::Result<HashMap<String, Vec<u8>>> {
+    ) -> anyhow::Result<HashMap<String, Bytes>> {
         todo!()
     }
 
@@ -522,8 +565,8 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn add(&mut self, key: String, value: Vec<u8>) -> anyhow::Result<()> {
-        let query = DatabaseQuery::Add(key, value);
+    fn add(&mut self, key: String, value: Bytes) -> anyhow::Result<()> {
+        let query = DatabaseQuery::Add(key, value.into());
         self.tx.send(query).map_err(|err| {
             anyhow::anyhow!("Failed to send query to database message handler: {err}")
         })
@@ -572,15 +615,120 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn add_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
-        todo!()
+        let query = DatabaseQuery::AddQuote(quote.to_owned());
+        self.tx.send(query).map_err(|err| {
+            anyhow::anyhow!("Failed to send query add_quote to database message handler: {err}")
+        })
+    }
+
+    fn load_quotes(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<QuoteTick>> {
+        let pool = self.pool.clone();
+        let instrument_id = instrument_id.to_owned();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_quotes(&pool, &instrument_id).await;
+            match result {
+                Ok(quotes) => {
+                    if let Err(er) = tx.send(quotes) {
+                        error!(
+                            "Failed to send quotes for instrument {}: {:?}",
+                            instrument_id, er
+                        );
+                    }
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to load quotes for instrument {}: {:?}",
+                        instrument_id, e
+                    );
+                    if let Err(e) = tx.send(Vec::new()) {
+                        error!(
+                            "Failed to send empty quotes for instrument {}: {:?}",
+                            instrument_id, e
+                        );
+                    }
+                }
+            }
+        });
+        Ok(rx.recv()?)
     }
 
     fn add_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
-        todo!()
+        let query = DatabaseQuery::AddTrade(trade.to_owned());
+        self.tx.send(query).map_err(|err| {
+            anyhow::anyhow!("Failed to send query add_trade to database message handler: {err}")
+        })
+    }
+
+    fn load_trades(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<TradeTick>> {
+        let pool = self.pool.clone();
+        let instrument_id = instrument_id.to_owned();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_trades(&pool, &instrument_id).await;
+            match result {
+                Ok(trades) => {
+                    if let Err(e) = tx.send(trades) {
+                        error!(
+                            "Failed to send trades for instrument {}: {:?}",
+                            instrument_id, e
+                        );
+                    }
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to load trades for instrument {}: {:?}",
+                        instrument_id, e
+                    );
+                    if let Err(e) = tx.send(Vec::new()) {
+                        error!(
+                            "Failed to send empty trades for instrument {}: {:?}",
+                            instrument_id, e
+                        );
+                    }
+                }
+            }
+        });
+        Ok(rx.recv()?)
     }
 
     fn add_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
-        todo!()
+        let query = DatabaseQuery::AddBar(bar.to_owned());
+        self.tx.send(query).map_err(|err| {
+            anyhow::anyhow!("Failed to send query add_bar to database message handler: {err}")
+        })
+    }
+
+    fn load_bars(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<Bar>> {
+        let pool = self.pool.clone();
+        let instrument_id = instrument_id.to_owned();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_bars(&pool, &instrument_id).await;
+            match result {
+                Ok(bars) => {
+                    if let Err(e) = tx.send(bars) {
+                        error!(
+                            "Failed to send bars for instrument {}: {:?}",
+                            instrument_id, e
+                        );
+                    }
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to load bars for instrument {}: {:?}",
+                        instrument_id, e
+                    );
+                    if let Err(e) = tx.send(Vec::new()) {
+                        error!(
+                            "Failed to send empty bars for instrument {}: {:?}",
+                            instrument_id, e
+                        );
+                    }
+                }
+            }
+        });
+        Ok(rx.recv()?)
     }
 
     fn index_venue_order_id(

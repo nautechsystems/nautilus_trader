@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 from nautilus_trader.common.config import NautilusConfig
+from nautilus_trader.model.identifiers import ClientId
 
 
 class DataEngineConfig(NautilusConfig, frozen=True):
@@ -37,6 +38,9 @@ class DataEngineConfig(NautilusConfig, frozen=True):
         If data objects timestamp sequencing will be validated and handled.
     buffer_deltas : bool, default False
         If order book deltas should be buffered until the F_LAST flag is set for a delta.
+    external_clients : list[ClientId], optional
+        The client IDs declared for external stream processing.
+        The data engine will not attempt to send data commands to these client IDs.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
 
@@ -47,4 +51,5 @@ class DataEngineConfig(NautilusConfig, frozen=True):
     time_bars_interval_type: str = "left-open"
     validate_data_sequence: bool = False
     buffer_deltas: bool = False
+    external_clients: list[ClientId] | None = None
     debug: bool = False

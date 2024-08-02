@@ -89,10 +89,11 @@ async def test_subscribe_ticks(ib_client):
     instrument_id = IBTestContractStubs.aapl_instrument().id
     contract = IBTestContractStubs.aapl_equity_ib_contract()
     tick_type = "BidAsk"
+    ignore_size = True
     ib_client._eclient.reqTickByTickData = Mock()
 
     # Act
-    await ib_client.subscribe_ticks(instrument_id, contract, tick_type)
+    await ib_client.subscribe_ticks(instrument_id, contract, tick_type, ignore_size)
 
     # Assert
     ib_client._eclient.reqTickByTickData.assert_called_once_with(
@@ -111,9 +112,10 @@ async def test_unsubscribe_ticks(ib_client):
     instrument_id = IBTestContractStubs.aapl_instrument().id
     contract = IBTestContractStubs.aapl_equity_ib_contract()
     tick_type = "BidAsk"
+    ignore_size = True
     ib_client._eclient.reqTickByTickData = Mock()
     ib_client._eclient.cancelTickByTickData = Mock()
-    await ib_client.subscribe_ticks(instrument_id, contract, tick_type)
+    await ib_client.subscribe_ticks(instrument_id, contract, tick_type, ignore_size)
 
     # Act
     await ib_client.unsubscribe_ticks(instrument_id, tick_type)
@@ -521,3 +523,31 @@ async def test_realtimeBar(ib_client):
         is_revision=False,
     )
     ib_client._handle_data.assert_called_once_with(bar)
+
+
+@pytest.mark.asyncio
+async def test_get_price_retrieval(ib_client):
+    """
+    Test case for retrieving price data.
+    """
+    # Arrange
+    # Set up the request ID and mock the necessary methods
+    ib_client._request_id_seq = 999
+    contract = IBTestContractStubs.aapl_equity_ib_contract()
+    tick_type = "MidPoint"
+    ib_client._eclient.reqMktData = MagicMock()
+
+    # Act
+    # Call the method to get the price
+    await ib_client.get_price(contract, tick_type)
+
+    # Assert
+    # Verify that the market data request was made with the correct parameters
+    ib_client._eclient.reqMktData.assert_called_once_with(
+        999,
+        contract,
+        tick_type,
+        False,
+        False,
+        [],
+    )

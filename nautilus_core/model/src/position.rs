@@ -25,7 +25,7 @@ use nautilus_core::nanos::UnixNanos;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    enums::{OrderSide, PositionSide},
+    enums::{OrderSide, OrderSideSpecified, PositionSide},
     events::order::filled::OrderFilled,
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, TraderId,
@@ -82,10 +82,12 @@ pub struct Position {
 }
 
 impl Position {
+    /// Creates a new [`Position`] instance.
     pub fn new(instrument: &InstrumentAny, fill: OrderFilled) -> anyhow::Result<Self> {
         assert_eq!(instrument.id(), fill.instrument_id);
-        assert!(fill.position_id.is_some());
         assert_ne!(fill.order_side, OrderSide::NoOrderSide);
+
+        let position_id = fill.position_id.expect("No position ID to open `Position`");
 
         let mut item = Self {
             events: Vec::<OrderFilled>::new(),
@@ -96,7 +98,7 @@ impl Position {
             trader_id: fill.trader_id,
             strategy_id: fill.strategy_id,
             instrument_id: fill.instrument_id,
-            id: fill.position_id.unwrap(), // TODO: Improve validation
+            id: position_id,
             account_id: fill.account_id,
             opening_order_id: fill.client_order_id,
             closing_order_id: None,
@@ -156,26 +158,27 @@ impl Position {
         self.trade_ids.push(fill.trade_id);
 
         // Calculate cumulative commissions
-        if let Some(commission_value) = fill.commission {
-            let commission_currency = commission_value.currency;
+        if let Some(commission) = fill.commission {
+            let commission_currency = commission.currency;
             if let Some(existing_commission) = self.commissions.get_mut(&commission_currency) {
-                *existing_commission += commission_value;
+                *existing_commission += commission;
             } else {
-                self.commissions
-                    .insert(commission_currency, commission_value);
+                self.commissions.insert(commission_currency, commission);
             }
         }
 
         // Calculate avg prices, points, return, PnL
-        if fill.order_side == OrderSide::Buy {
-            self.handle_buy_order_fill(fill);
-        } else if fill.order_side == OrderSide::Sell {
-            self.handle_sell_order_fill(fill);
-        } else {
-            panic!("Invalid order side {}", fill.order_side);
+        match fill.specified_side() {
+            OrderSideSpecified::Buy => {
+                self.handle_buy_order_fill(fill);
+            }
+            OrderSideSpecified::Sell => {
+                self.handle_sell_order_fill(fill);
+            }
         }
 
         // Set quantities
+        // SAFETY: size_precision is valid from instrument
         self.quantity = Quantity::new(self.signed_qty.abs(), self.size_precision).unwrap();
         if self.quantity > self.peak_qty {
             self.peak_qty.raw = self.quantity.raw;
@@ -192,8 +195,8 @@ impl Position {
             self.side = PositionSide::Flat;
             self.closing_order_id = Some(fill.client_order_id);
             self.ts_closed = Some(fill.ts_event);
-            self.duration_ns = if self.ts_closed.is_some() {
-                self.ts_closed.unwrap().as_u64() - self.ts_opened.as_u64()
+            self.duration_ns = if let Some(ts_closed) = self.ts_closed {
+                ts_closed.as_u64() - self.ts_opened.as_u64()
             } else {
                 0
             };
@@ -203,11 +206,17 @@ impl Position {
     }
 
     pub fn handle_buy_order_fill(&mut self, fill: &OrderFilled) {
-        let mut realized_pnl = if fill.commission.unwrap().currency == self.settlement_currency {
-            -fill.commission.unwrap().as_f64()
+        // Handle case where commission could be None or not settlement currency
+        let mut realized_pnl = if let Some(commission) = fill.commission {
+            if commission.currency == self.settlement_currency {
+                -commission.as_f64()
+            } else {
+                0.0
+            }
         } else {
             0.0
         };
+
         let last_px = fill.last_px.as_f64();
         let last_qty = fill.last_qty.as_f64();
         let last_qty_object = fill.last_qty;
@@ -216,11 +225,12 @@ impl Position {
             self.avg_px_open = self.calculate_avg_px_open_px(last_px, last_qty);
         } else if self.signed_qty < 0.0 {
             // SHORT POSITION
-            self.avg_px_close = Some(self.calculate_avg_px_close_px(last_px, last_qty));
-            self.realized_return =
-                self.calculate_return(self.avg_px_open, self.avg_px_close.unwrap());
+            let avg_px_close = self.calculate_avg_px_close_px(last_px, last_qty);
+            self.avg_px_close = Some(avg_px_close);
+            self.realized_return = self.calculate_return(self.avg_px_open, avg_px_close);
             realized_pnl += self.calculate_pnl_raw(self.avg_px_open, last_px, last_qty);
         }
+
         if self.realized_pnl.is_none() {
             self.realized_pnl = Some(Money::new(realized_pnl, self.settlement_currency).unwrap());
         } else {
@@ -238,11 +248,17 @@ impl Position {
     }
 
     pub fn handle_sell_order_fill(&mut self, fill: &OrderFilled) {
-        let mut realized_pnl = if fill.commission.unwrap().currency == self.settlement_currency {
-            -fill.commission.unwrap().as_f64()
+        // Handle case where commission could be None or not settlement currency
+        let mut realized_pnl = if let Some(commission) = fill.commission {
+            if commission.currency == self.settlement_currency {
+                -commission.as_f64()
+            } else {
+                0.0
+            }
         } else {
             0.0
         };
+
         let last_px = fill.last_px.as_f64();
         let last_qty = fill.last_qty.as_f64();
         let last_qty_object = fill.last_qty;
@@ -250,9 +266,9 @@ impl Position {
         if self.signed_qty < 0.0 {
             self.avg_px_open = self.calculate_avg_px_open_px(last_px, last_qty);
         } else if self.signed_qty > 0.0 {
-            self.avg_px_close = Some(self.calculate_avg_px_close_px(last_px, last_qty));
-            self.realized_return =
-                self.calculate_return(self.avg_px_open, self.avg_px_close.unwrap());
+            let avg_px_close = self.calculate_avg_px_close_px(last_px, last_qty);
+            self.avg_px_close = Some(avg_px_close);
+            self.realized_return = self.calculate_return(self.avg_px_open, avg_px_close);
             realized_pnl += self.calculate_pnl_raw(self.avg_px_open, last_px, last_qty);
         }
 
@@ -387,8 +403,7 @@ impl Position {
 
     #[must_use]
     pub fn client_order_ids(&self) -> Vec<ClientOrderId> {
-        // first to hash set to remove duplicate,
-        // then again iter to vector
+        // First to hash set to remove duplicate, then again iter to vector
         let mut result = self
             .events
             .iter()
@@ -402,8 +417,7 @@ impl Position {
 
     #[must_use]
     pub fn venue_order_ids(&self) -> Vec<VenueOrderId> {
-        // first to hash set to remove duplicate,
-        // then again iter to vector
+        // First to hash set to remove duplicate, then again iter to vector
         let mut result = self
             .events
             .iter()
@@ -549,7 +563,7 @@ mod tests {
 
     #[rstest]
     #[should_panic(expected = "`fill.trade_id` already contained in `trade_ids")]
-    fn test_two_trades_with_same_trade_id_throws(audusd_sim: CurrencyPair) {
+    fn test_two_trades_with_same_trade_id_error(audusd_sim: CurrencyPair) {
         let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
         let order1 = TestOrderStubs::market_order(
             audusd_sim.id(),
@@ -575,6 +589,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         let fill2 = TestOrderEventStubs::order_filled(
             &order2,
@@ -582,6 +597,7 @@ mod tests {
             Some(TradeId::new("1").unwrap()),
             None,
             Some(Price::from("1.00002")),
+            None,
             None,
             None,
             None,
@@ -611,12 +627,13 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         let last_price = Price::from_str("1.0005").unwrap();
         let position = Position::new(&audusd_sim, fill.into()).unwrap();
         assert_eq!(position.symbol(), audusd_sim.id().symbol);
         assert_eq!(position.venue(), audusd_sim.id().venue);
-        // assert!(!position.is_opposite_side(fill.order_side()));  // TODO
+        assert!(!position.is_opposite_side(OrderSide::Buy));
         assert_eq!(position, position); // equality operator test
         assert!(position.closing_order_id.is_none());
         assert_eq!(position.quantity, Quantity::from(100_000));
@@ -678,13 +695,14 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         let last_price = Price::from_str("1.00050").unwrap();
         let position = Position::new(&audusd_sim, fill.into()).unwrap();
         assert_eq!(position.symbol(), audusd_sim.id().symbol);
         assert_eq!(position.venue(), audusd_sim.id().venue);
-        // assert!(!position.is_opposite_side(fill.order_side));  // TODO
-        assert_eq!(position, position); // equality operator test
+        assert!(!position.is_opposite_side(OrderSide::Sell));
+        assert_eq!(position, position); // Equality operator test
         assert!(position.closing_order_id.is_none());
         assert_eq!(position.quantity, Quantity::from(100_000));
         assert_eq!(position.peak_qty, Quantity::from(100_000));
@@ -740,6 +758,7 @@ mod tests {
             None,
             Some(Price::from("1.00001")),
             Some(Quantity::from(50_000)),
+            None,
             None,
             None,
             None,
@@ -800,6 +819,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         let fill2 = TestOrderEventStubs::order_filled(
             &order,
@@ -808,6 +828,7 @@ mod tests {
             None,
             Some(Price::from("1.00002")),
             Some(Quantity::from(50_000)),
+            None,
             None,
             None,
             None,
@@ -862,6 +883,7 @@ mod tests {
             Some(TradeId::new("1").unwrap()),
             Some(PositionId::new("P-1").unwrap()),
             Some(Price::from("1.00001")),
+            None,
             None,
             None,
             Some(UnixNanos::from(1_000_000_000)),
@@ -957,6 +979,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         let mut position = Position::new(&audusd_sim, fill1.into()).unwrap();
         // create closing from order from different venue but same strategy
@@ -970,6 +993,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         let fill3 = TestOrderEventStubs::order_filled(
             &order2,
@@ -978,6 +1002,7 @@ mod tests {
             Some(PositionId::new("P-19700101-000000-001-001-1").unwrap()),
             Some(Price::from("1.00003")),
             Some(Quantity::from(50_000)),
+            None,
             None,
             None,
             None,
@@ -1049,6 +1074,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         let mut position = Position::new(&audusd_sim, fill1.into()).unwrap();
         let fill2 = TestOrderEventStubs::order_filled(
@@ -1057,6 +1083,7 @@ mod tests {
             Some(TradeId::new("2").unwrap()),
             Some(PositionId::new("P-19700101-000000-001-001-1").unwrap()),
             Some(Price::from("1.0")),
+            None,
             None,
             None,
             None,
@@ -1136,6 +1163,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         let fill2 = TestOrderEventStubs::order_filled(
             &order2,
@@ -1147,6 +1175,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         let fill3 = TestOrderEventStubs::order_filled(
             &order3,
@@ -1154,6 +1183,7 @@ mod tests {
             Some(TradeId::new("3").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("1.0001")),
+            None,
             None,
             None,
             None,
@@ -1221,6 +1251,7 @@ mod tests {
             Some(PositionId::new("P-123456").unwrap()),
             Some(price1),
             None,
+            None,
             Some(commission1),
             None,
             None,
@@ -1242,6 +1273,7 @@ mod tests {
             Some(TradeId::new("2").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(price2),
+            None,
             None,
             Some(commission2),
             None,
@@ -1271,6 +1303,7 @@ mod tests {
             Some(PositionId::new("P-123456").unwrap()),
             Some(price3),
             None,
+            None,
             Some(commission3),
             None,
             None,
@@ -1290,6 +1323,7 @@ mod tests {
             Some(TradeId::new("4").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(price4),
+            None,
             None,
             Some(commission4),
             None,
@@ -1315,6 +1349,7 @@ mod tests {
             Some(TradeId::new("5").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(price5),
+            None,
             None,
             Some(commission5),
             None,
@@ -1344,6 +1379,7 @@ mod tests {
             Some(TradeId::new("5").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("1.00001")),
+            None,
             None,
             Some(commission1),
             Some(UnixNanos::from(1_000_000_000)),
@@ -1465,6 +1501,7 @@ mod tests {
             Some(PositionId::from("P-19700101-000000-001-001-1")),
             Some(Price::from("10000.0")),
             None,
+            None,
             Some(commission1),
             None,
             None,
@@ -1485,6 +1522,7 @@ mod tests {
             Some(TradeId::from("2")),
             Some(PositionId::from("P-19700101-000000-001-001-1")),
             Some(Price::from("9999.0")),
+            None,
             None,
             Some(commission2),
             None,
@@ -1514,6 +1552,7 @@ mod tests {
             Some(PositionId::from("P-19700101-000000-001-001-1")),
             Some(Price::from("10001.0")),
             None,
+            None,
             Some(commission3),
             None,
             None,
@@ -1542,6 +1581,7 @@ mod tests {
             Some(PositionId::from("P-19700101-000000-001-001-1")),
             Some(Price::from("10003.0")),
             None,
+            None,
             Some(commission4),
             None,
             None,
@@ -1569,6 +1609,7 @@ mod tests {
             Some(TradeId::from("5")),
             Some(PositionId::from("P-19700101-000000-001-001-1")),
             Some(Price::from("10005.0")),
+            None,
             None,
             Some(commission5),
             None,
@@ -1609,6 +1650,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         );
         let position = Position::new(&btcusdt, fill.into()).unwrap();
         let result = position.calculate_pnl(10500.0, 10500.0, Quantity::from("100000.0"));
@@ -1633,6 +1675,7 @@ mod tests {
             None,
             Some(PositionId::from("P-123456")),
             Some(Price::from("10500.0")),
+            None,
             None,
             Some(commission),
             None,
@@ -1672,6 +1715,7 @@ mod tests {
             Some(PositionId::from("P-123456")),
             Some(Price::from("10500.0")),
             None,
+            None,
             Some(commission),
             None,
             None,
@@ -1710,6 +1754,7 @@ mod tests {
             Some(PositionId::from("P-123456")),
             Some(Price::from("10500.0")),
             None,
+            None,
             Some(commission),
             None,
             None,
@@ -1747,6 +1792,7 @@ mod tests {
             None,
             Some(PositionId::from("P-123456")),
             Some(Price::from("10500.0")),
+            None,
             None,
             Some(commission),
             None,
@@ -1791,6 +1837,7 @@ mod tests {
             Some(PositionId::from("P-123456")),
             Some(Price::from("10000.0")),
             None,
+            None,
             Some(commission),
             None,
             None,
@@ -1832,6 +1879,7 @@ mod tests {
             None,
             Some(PositionId::from("P-123456")),
             Some(Price::from("375.95")),
+            None,
             None,
             Some(commission),
             None,
@@ -1876,6 +1924,7 @@ mod tests {
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("10500.00")),
             None,
+            None,
             Some(commission1),
             None,
             None,
@@ -1889,6 +1938,7 @@ mod tests {
             Some(TradeId::new("2").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("10500.00")),
+            None,
             None,
             Some(commission2),
             None,
@@ -1927,6 +1977,7 @@ mod tests {
             Some(TradeId::new("1").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("10505.60")),
+            None,
             None,
             Some(commission),
             None,
@@ -1969,6 +2020,7 @@ mod tests {
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("10500.00")),
             None,
+            None,
             Some(commission),
             None,
             None,
@@ -2004,6 +2056,7 @@ mod tests {
             Some(TradeId::new("1").unwrap()),
             Some(PositionId::new("P-123456").unwrap()),
             Some(Price::from("15500.00")),
+            None,
             None,
             Some(commission),
             None,
@@ -2044,11 +2097,39 @@ mod tests {
             Some(PositionId::from("P-123456")),
             None,
             None,
+            None,
             Some(commission),
             None,
             None,
         );
         let position = Position::new(&audusd_sim, fill.into()).unwrap();
         assert_eq!(position.signed_qty, expected);
+    }
+
+    #[rstest]
+    fn test_position_with_commission_none(audusd_sim: CurrencyPair) {
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+        let mut fill = OrderFilled::default();
+        fill.position_id = Some(PositionId::from("1"));
+
+        let position = Position::new(&audusd_sim, fill).unwrap();
+        assert_eq!(
+            position.realized_pnl,
+            Some(Money::from_str("0 USD").unwrap())
+        );
+    }
+
+    #[rstest]
+    fn test_position_with_commission_zero(audusd_sim: CurrencyPair) {
+        let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
+        let mut fill = OrderFilled::default();
+        fill.position_id = Some(PositionId::from("1"));
+        fill.commission = Some(Money::from_str("0 USD").unwrap());
+
+        let position = Position::new(&audusd_sim, fill).unwrap();
+        assert_eq!(
+            position.realized_pnl,
+            Some(Money::from_str("0 USD").unwrap())
+        );
     }
 }

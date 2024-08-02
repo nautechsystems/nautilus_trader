@@ -46,13 +46,13 @@ use crate::{
 pub struct QuoteTick {
     /// The quotes instrument ID.
     pub instrument_id: InstrumentId,
-    /// The top of book bid price.
+    /// The top-of-book bid price.
     pub bid_price: Price,
-    /// The top of book ask price.
+    /// The top-of-book ask price.
     pub ask_price: Price,
-    /// The top of book bid size.
+    /// The top-of-book bid size.
     pub bid_size: Quantity,
-    /// The top of book ask size.
+    /// The top-of-book ask size.
     pub ask_size: Quantity,
     /// UNIX timestamp (nanoseconds) when the quote event occurred.
     pub ts_event: UnixNanos,
@@ -136,7 +136,7 @@ impl QuoteTick {
     }
 
     #[must_use]
-    pub fn extract_volume(&self, price_type: PriceType) -> Quantity {
+    pub fn extract_size(&self, price_type: PriceType) -> Quantity {
         match price_type {
             PriceType::Bid => self.bid_size,
             PriceType::Ask => self.ask_size,
@@ -226,7 +226,7 @@ mod tests {
     fn test_json_serialization(quote_tick_ethusdt_binance: QuoteTick) {
         let tick = quote_tick_ethusdt_binance;
         let serialized = tick.as_json_bytes().unwrap();
-        let deserialized = QuoteTick::from_json_bytes(serialized).unwrap();
+        let deserialized = QuoteTick::from_json_bytes(serialized.as_ref()).unwrap();
         assert_eq!(deserialized, tick);
     }
 
@@ -234,7 +234,7 @@ mod tests {
     fn test_msgpack_serialization(quote_tick_ethusdt_binance: QuoteTick) {
         let tick = quote_tick_ethusdt_binance;
         let serialized = tick.as_msgpack_bytes().unwrap();
-        let deserialized = QuoteTick::from_msgpack_bytes(serialized).unwrap();
+        let deserialized = QuoteTick::from_msgpack_bytes(serialized.as_ref()).unwrap();
         assert_eq!(deserialized, tick);
     }
 }

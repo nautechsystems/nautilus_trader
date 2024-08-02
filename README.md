@@ -14,9 +14,9 @@
 
 | Platform           | Rust    | Python |
 | :----------------- | :------ | :----- |
-| `Linux (x86_64)`   | 1.79.0+ | 3.10+  |
-| `macOS (arm64)`    | 1.79.0+ | 3.10+  |
-| `Windows (x86_64)` | 1.79.0+ | 3.10+  |
+| `Linux (x86_64)`   | 1.80.0+ | 3.10+  |
+| `macOS (arm64)`    | 1.80.0+ | 3.10+  |
+| `Windows (x86_64)` | 1.80.0+ | 3.10+  |
 
 [![](https://dcbadge.limes.pink/api/server/AUWVs3XaCS)](https://discord.gg/AUWVs3XaCS)
 
@@ -116,8 +116,9 @@ This project makes the [Soundness Pledge](https://raphlinus.github.io/rust/2020/
 
 ## Integrations
 
-NautilusTrader is designed in a modular way to work with _adapters_ that provide connectivity to 
-trading venues and data providers by converting their raw APIs into a unified interface.
+NautilusTrader is modularly designed to work with _adapters_, enabling connectivity to trading venues 
+and data providers by converting their raw APIs into a unified interface.
+
 The following integrations are currently supported:
 
 | Name                                                      | ID                    | Type                    | Status                                                  | Docs                                                                       |
@@ -134,9 +135,9 @@ The following integrations are currently supported:
 - **Type:** The type of integration (often the venue type)
 
 ### Status
-- `building` - Under construction and likely not in a usable state
-- `beta` - Completed to a minimally working state and in a 'beta' testing phase
-- `stable` - Stabilized feature set and API, the integration has been tested by both developers and users to a reasonable level (some bugs may still remain)
+- `building`: Under construction and likely not in a usable state
+- `beta`: Completed to a minimally working state and in a 'beta' testing phase
+- `stable`: Stabilized feature set and API, the integration has been tested by both developers and users to a reasonable level (some bugs may still remain)
 
 See the [Integrations](https://nautilustrader.io/docs/latest/integrations/index.html) documentation for further details.
 
@@ -222,9 +223,9 @@ We strive to document these changes in the release notes on a best-effort basis.
 
 We strive to maintain a stable, passing build across all branches.
 
-- `master:` Reflects the source code for the latest released version 
-- `nightly:` Contains experimental features, merged from the `develop` branch daily or as needed 
-- `develop:` Very active with frequent commits and may include experimental features 
+- `master`: Reflects the source code for the latest released version 
+- `nightly`: Contains experimental features, merged from the `develop` branch daily or as needed 
+- `develop`: Very active with frequent commits and may include experimental features 
 
 Our roadmap aims to achieve a stable API for version 2.x (likely post-Rust port).
 Once we reach this milestone, we will implement a formal release process, including deprecation 
@@ -234,21 +235,21 @@ periods for any API changes. This approach allows us to maintain a rapid develop
 
 A `Makefile` is provided to automate most installation and build tasks for development. It provides the following targets:
 
-- `make install` -- Installs in `release` build mode with `main`, `dev` and `test` dependencies then installs the package using poetry (default)
-- `make install-debug` -- Same as `make install` but with `debug` build mode
-- `make install-just-deps` -- Installs just the `main`, `dev` and `test` dependencies (does not install package)
-- `make install-just-deps-all` -- Same as `make install-just-deps` and additionally installs `docs` dependencies
-- `make build` -- Runs the build script in `release` build mode (default)
-- `make build-debug` -- Runs the build script in `debug` build mode
-- `make build-wheel` -- Runs the Poetry build with a wheel format in `release` mode
-- `make build-wheel-debug` -- Runs the Poetry build with a wheel format in `debug` mode
-- `make clean` -- **CAUTION** Cleans all non-source artifacts from the repository
-- `make docs` -- Builds the documentation HTML using Sphinx
-- `make pre-commit` -- Runs the pre-commit checks over all files
-- `make ruff` -- Runs ruff over all files using the `pyproject.toml` config
-- `make outdated` -- Runs commands to show outdated dependencies for both Rust and Python
-- `make pytest` -- Runs all tests with `pytest` (except performance tests)
-- `make pytest-coverage` -- Same as `make pytest` and additionally runs with test coverage and produces a report
+- `make install`: Installs in `release` build mode with `main`, `dev` and `test` dependencies then installs the package using poetry (default)
+- `make install-debug`: Same as `make install` but with `debug` build mode
+- `make install-just-deps`: Installs just the `main`, `dev` and `test` dependencies (does not install package)
+- `make install-just-deps-all`: Same as `make install-just-deps` and additionally installs `docs` dependencies
+- `make build`: Runs the build script in `release` build mode (default)
+- `make build-debug`: Runs the build script in `debug` build mode
+- `make build-wheel`: Runs the Poetry build with a wheel format in `release` mode
+- `make build-wheel-debug`: Runs the Poetry build with a wheel format in `debug` mode
+- `make clean`: **CAUTION** Cleans all non-source artifacts from the repository
+- `make docs`: Builds the documentation HTML using Sphinx
+- `make pre-commit`: Runs the pre-commit checks over all files
+- `make ruff`: Runs ruff over all files using the `pyproject.toml` config
+- `make outdated`: Runs commands to show outdated dependencies for both Rust and Python
+- `make pytest`: Runs all tests with `pytest` (except performance tests)
+- `make pytest-coverage`: Same as `make pytest` and additionally runs with test coverage and produces a report
 
 ## Examples
 
