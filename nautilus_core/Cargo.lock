@@ -2564,7 +2564,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-adapters"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2594,7 +2594,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2614,7 +2614,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cli"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "clap 4.5.13",
@@ -2631,7 +2631,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2660,7 +2660,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2681,7 +2681,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-data"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2707,7 +2707,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-execution"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -2731,7 +2731,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "log",
@@ -2744,7 +2744,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-infrastructure"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -2772,7 +2772,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2800,7 +2800,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2825,7 +2825,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "anyhow",
  "binary-heap-plus",
@@ -2849,7 +2849,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.27.0"
+version = "0.28.0"
 dependencies = [
  "nautilus-adapters",
  "nautilus-common",
@@ -3739,9 +3739,9 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.10.5"
+version = "1.10.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b91213439dad192326a0d7c6ee3955910425f441d7038e0d6933b0aec5c4517f"
+checksum = "4219d74c6b67a3654a9fbebc4b419e22126d13d2f3c4a07ee0cb61ff79a79619"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -4767,12 +4767,13 @@ checksum = "61c41af27dd6d1e27b1b16b489db798443478cef1f06a660c96db617ba5de3b1"
 
 [[package]]
 name = "tempfile"
-version = "3.10.1"
+version = "3.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85b77fafb263dd9d05cbeac119526425676db3784113aa9295c88498cbf8bff1"
+checksum = "b8fcd239983515c23a32fb82099f97d0b11b8c72f654ed659363a95c3dad7a53"
 dependencies = [
  "cfg-if",
  "fastrand",
+ "once_cell",
  "rustix",
  "windows-sys 0.52.0",
 ]
@@ -5774,9 +5775,9 @@ dependencies = [
 
 [[package]]
 name = "zstd-safe"
-version = "7.2.0"
+version = "7.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa556e971e7b568dc775c136fc9de8c779b1c2fc3a63defaafadffdbd3181afa"
+checksum = "54a3ab4db68cea366acc5c897c7b4d4d1b8994a9cd6e6f841f8964566a419059"
 dependencies = [
  "zstd-sys",
 ]
