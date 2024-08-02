@@ -27,7 +27,7 @@ documentation = "https://nautilustrader.io/docs"
 
 [workspace.dependencies]
 anyhow = "1.0.86"
-bytes = { version = "1.7.0", features = ["serde"] }
+bytes = { version = "1.7.1", features = ["serde"] }
 chrono = "0.4.38"
 derive_builder = "0.20.0"
 futures = "0.3.30"
@@ -44,7 +44,7 @@ rust_decimal = "1.35.0"
 rust_decimal_macros = "1.35.0"
 semver = "1.0.23"
 serde = { version = "1.0.203", features = ["derive"] }
-serde_json = "1.0.121"
+serde_json = "1.0.122"
 strum = { version = "0.26.3", features = ["derive"] }
 thiserror = "1.0.63"
 thousands = "0.2.0"
