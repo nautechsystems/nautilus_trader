@@ -56,18 +56,20 @@ use nautilus_model::{
 };
 
 pub struct DataEngineConfig {
-    pub debug: bool,
     pub time_bars_build_with_no_updates: bool,
     pub time_bars_timestamp_on_close: bool,
     pub time_bars_interval_type: String, // Make this an enum `BarIntervalType`
     pub validate_data_sequence: bool,
     pub buffer_deltas: bool,
+    pub external_clients: Vec<ClientId>,
+    pub debug: bool,
 }
 
 pub struct DataEngine<State = PreInitialized> {
     state: PhantomData<State>,
     clock: Box<dyn Clock>,
     cache: Rc<RefCell<Cache>>,
+    msgbus: Rc<RefCell<MessageBus>>,
     default_client: Option<DataClientAdapter>,
     // order_book_intervals: HashMap<(InstrumentId, usize), Vec<fn(&OrderBook)>>,  // TODO
     // bar_aggregators:  // TODO
@@ -75,7 +77,6 @@ pub struct DataEngine<State = PreInitialized> {
     synthetic_trade_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     buffered_deltas_map: HashMap<InstrumentId, Vec<OrderBookDelta>>,
     config: DataEngineConfig,
-    msgbus: MessageBus,
 }
 
 impl DataEngine {
@@ -83,8 +84,8 @@ impl DataEngine {
     pub fn new(
         clock: Box<dyn Clock>,
         cache: Rc<RefCell<Cache>>,
+        msgbus: Rc<RefCell<MessageBus>>,
         config: DataEngineConfig,
-        msgbus: MessageBus,
     ) -> Self {
         Self {
             state: PhantomData::<PreInitialized>,
@@ -123,6 +124,7 @@ impl<S: State> DataEngine<S> {
     #[must_use]
     pub fn check_connected(&self) -> bool {
         self.msgbus
+            .borrow()
             .clients
             .values()
             .all(|client| client.is_connected())
@@ -131,6 +133,7 @@ impl<S: State> DataEngine<S> {
     #[must_use]
     pub fn check_disconnected(&self) -> bool {
         self.msgbus
+            .borrow()
             .clients
             .values()
             .all(|client| !client.is_connected())
@@ -138,7 +141,7 @@ impl<S: State> DataEngine<S> {
 
     #[must_use]
     pub fn registed_clients(&self) -> Vec<ClientId> {
-        self.msgbus.clients.keys().copied().collect()
+        self.msgbus.borrow().clients.keys().copied().collect()
     }
 
     // -- SUBSCRIPTIONS ---------------------------------------------------------------------------
@@ -149,7 +152,7 @@ impl<S: State> DataEngine<S> {
         T: Clone,
     {
         let mut subs = Vec::new();
-        for client in self.msgbus.clients.values() {
+        for client in self.msgbus.borrow().clients.values() {
             subs.extend(get_subs(client).iter().cloned());
         }
         subs
@@ -226,6 +229,7 @@ impl DataEngine<Ready> {
     #[must_use]
     pub fn start(self) -> DataEngine<Starting> {
         self.msgbus
+            .borrow()
             .clients
             .values()
             .for_each(|client| client.start());
@@ -235,6 +239,7 @@ impl DataEngine<Ready> {
     #[must_use]
     pub fn stop(self) -> DataEngine<Stopping> {
         self.msgbus
+            .borrow()
             .clients
             .values()
             .for_each(|client| client.stop());
@@ -244,6 +249,7 @@ impl DataEngine<Ready> {
     #[must_use]
     pub fn reset(self) -> Self {
         self.msgbus
+            .borrow()
             .clients
             .values()
             .for_each(|client| client.reset());
@@ -253,6 +259,7 @@ impl DataEngine<Ready> {
     #[must_use]
     pub fn dispose(mut self) -> DataEngine<Disposed> {
         self.msgbus
+            .borrow()
             .clients
             .values()
             .for_each(|client| client.dispose());
