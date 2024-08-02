@@ -37,8 +37,8 @@ pub struct DataResponse {
     pub client_id: ClientId,
     pub venue: Venue,
     pub data_type: DataType,
-    pub ts_init: UnixNanos,
     pub data: Payload,
+    pub ts_init: UnixNanos,
 }
 
 impl DataResponse {
@@ -77,13 +77,13 @@ pub struct SubscriptionCommand {
 }
 
 pub enum DataEngineRequest {
-    DataRequest(DataRequest),
+    Request(DataRequest),
     SubscriptionCommand(SubscriptionCommand),
 }
 
 // TODO: Refine this to reduce disparity between enum sizes
 #[allow(clippy::large_enum_variant)]
 pub enum DataClientResponse {
-    DataResponse(DataResponse),
+    Response(DataResponse),
     Data(Data),
 }
