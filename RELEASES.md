@@ -1,6 +1,6 @@
 # NautilusTrader 1.197.0 Beta
 
-Released on TBD (UTC).
+Released on 2nd August 2024 (UTC).
 
 ### Enhancements
 - Added Databento Status schema support for loading and live trading
