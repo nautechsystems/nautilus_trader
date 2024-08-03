@@ -21,7 +21,6 @@
 
 use std::{any::Any, collections::HashMap, rc::Rc};
 
-use log::{debug, info};
 use nautilus_common::{cache::Cache, msgbus::MessageBus};
 use nautilus_core::{nanos::UnixNanos, time::AtomicTime, uuid::UUID4};
 use nautilus_execution::matching_core::OrderMatchingCore;
@@ -160,7 +159,7 @@ impl OrderMatchingEngine {
         self.order_count = 0;
         self.execution_count = 0;
 
-        info!("Reset {}", self.instrument.id());
+        log::info!("Reset {}", self.instrument.id());
     }
 
     #[must_use]
@@ -197,7 +196,7 @@ impl OrderMatchingEngine {
 
     /// Process the venues market for the given order book delta.
     pub fn process_order_book_delta(&mut self, delta: &OrderBookDelta) {
-        debug!("Processing {delta}");
+        log::debug!("Processing {delta}");
 
         self.book.apply_delta(delta);
     }

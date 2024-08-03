@@ -37,7 +37,6 @@ use tokio_tungstenite::{
     tungstenite::{client::IntoClientRequest, stream::Mode, Error},
     MaybeTlsStream,
 };
-use tracing::{debug, error};
 
 type TcpWriter = WriteHalf<MaybeTlsStream<TcpStream>>;
 type SharedTcpWriter = Arc<Mutex<WriteHalf<MaybeTlsStream<TcpStream>>>>;
@@ -140,9 +139,9 @@ impl SocketClientInner {
         url: &str,
         mode: Mode,
     ) -> Result<(TcpReader, TcpWriter), Error> {
-        debug!("Connecting to server");
+        tracing::debug!("Connecting to server");
         let stream = TcpStream::connect(url).await?;
-        debug!("Making TLS connection");
+        tracing::debug!("Making TLS connection");
         let request = url.into_client_request()?;
         tcp_tls(&request, mode, stream, None).await.map(split)
     }
@@ -161,16 +160,16 @@ impl SocketClientInner {
                 match reader.read_buf(&mut buf).await {
                     // Connection has been terminated or vector buffer is completely
                     Ok(0) => {
-                        error!("Cannot read anymore bytes");
+                        tracing::error!("Cannot read anymore bytes");
                         break;
                     }
                     Err(e) => {
-                        error!("Failed with error: {e}");
+                        tracing::error!("Failed with error: {e}");
                         break;
                     }
                     // Received bytes of data
                     Ok(bytes) => {
-                        debug!("Received {bytes} bytes of data");
+                        tracing::debug!("Received {bytes} bytes of data");
 
                         // While received data has a line break
                         // drain it and pass it to the handler
@@ -185,7 +184,7 @@ impl SocketClientInner {
                             if let Err(e) =
                                 Python::with_gil(|py| handler.call1(py, (data.as_slice(),)))
                             {
-                                error!("Call to handler failed: {e}");
+                                tracing::error!("Call to handler failed: {e}");
                                 break;
                             }
                         }
@@ -207,11 +206,11 @@ impl SocketClientInner {
                 message.extend(suffix);
                 loop {
                     sleep(duration).await;
-                    debug!("Sending heartbeat");
+                    tracing::debug!("Sending heartbeat");
                     let mut guard = writer.lock().await;
                     match guard.write_all(&message).await {
-                        Ok(()) => debug!("Sent heartbeat"),
-                        Err(e) => error!("Failed to send heartbeat: {e}"),
+                        Ok(()) => tracing::debug!("Sent heartbeat"),
+                        Err(e) => tracing::error!("Failed to send heartbeat: {e}"),
                     }
                 }
             })
@@ -225,7 +224,7 @@ impl SocketClientInner {
     /// Closing the connection is an async call which cannot be done by the
     /// drop method so it must be done explicitly.
     pub async fn shutdown(&mut self) -> Result<(), std::io::Error> {
-        debug!("Abort read task");
+        tracing::debug!("Abort read task");
         if !self.read_task.is_finished() {
             self.read_task.abort();
         }
@@ -233,12 +232,12 @@ impl SocketClientInner {
         // Cancel heart beat task
         if let Some(ref handle) = self.heartbeat_task.take() {
             if !handle.is_finished() {
-                debug!("Abort heartbeat task");
+                tracing::debug!("Abort heartbeat task");
                 handle.abort();
             }
         }
 
-        debug!("Shutdown writer");
+        tracing::debug!("Shutdown writer");
         let mut writer = self.writer.lock().await;
         writer.shutdown().await
     }
@@ -257,15 +256,15 @@ impl SocketClientInner {
             suffix,
             handler,
         } = &self.config;
-        debug!("Reconnecting client");
+        tracing::debug!("Reconnecting client");
         let (reader, new_writer) = Self::tls_connect_with_server(url, *mode).await?;
 
-        debug!("Use new writer end");
+        tracing::debug!("Use new writer end");
         let mut guard = self.writer.lock().await;
         *guard = new_writer;
         drop(guard);
 
-        debug!("Recreate reader and heartbeat task");
+        tracing::debug!("Recreate reader and heartbeat task");
         self.read_task = Self::spawn_read_task(reader, handler.clone(), suffix.clone());
         self.heartbeat_task =
             Self::spawn_heartbeat_task(heartbeat.clone(), self.writer.clone(), suffix.clone());
@@ -332,8 +331,8 @@ impl SocketClient {
 
         if let Some(handler) = post_connection {
             Python::with_gil(|py| match handler.call0(py) {
-                Ok(_) => debug!("Called `post_connection` handler"),
-                Err(e) => error!("Error calling `post_connection` handler: {e}"),
+                Ok(_) => tracing::debug!("Called `post_connection` handler"),
+                Err(e) => tracing::error!("Error calling `post_connection` handler: {e}"),
             });
         }
 
@@ -360,10 +359,10 @@ impl SocketClient {
         .await
         {
             Ok(_) => {
-                debug!("Controller task finished");
+                tracing::debug!("Controller task finished");
             }
             Err(_) => {
-                error!("Timeout waiting for controller task to finish");
+                tracing::error!("Timeout waiting for controller task to finish");
             }
         }
     }
@@ -394,33 +393,37 @@ impl SocketClient {
                 match (disconnected, inner.is_alive()) {
                     (false, false) => match inner.reconnect().await {
                         Ok(()) => {
-                            debug!("Reconnected successfully");
+                            tracing::debug!("Reconnected successfully");
                             if let Some(ref handler) = post_reconnection {
                                 Python::with_gil(|py| match handler.call0(py) {
-                                    Ok(_) => debug!("Called `post_reconnection` handler"),
+                                    Ok(_) => tracing::debug!("Called `post_reconnection` handler"),
                                     Err(e) => {
-                                        error!("Error calling `post_reconnection` handler: {e}");
+                                        tracing::error!(
+                                            "Error calling `post_reconnection` handler: {e}"
+                                        );
                                     }
                                 });
                             }
                         }
                         Err(e) => {
-                            error!("Reconnect failed {e}");
+                            tracing::error!("Reconnect failed {e}");
                             break;
                         }
                     },
                     (true, true) => {
-                        debug!("Shutting down inner client");
+                        tracing::debug!("Shutting down inner client");
                         match inner.shutdown().await {
-                            Ok(()) => debug!("Closed connection"),
-                            Err(e) => error!("Error on `shutdown`: {e}"),
+                            Ok(()) => tracing::debug!("Closed connection"),
+                            Err(e) => tracing::error!("Error on `shutdown`: {e}"),
                         }
 
                         if let Some(ref handler) = post_disconnection {
                             Python::with_gil(|py| match handler.call0(py) {
-                                Ok(_) => debug!("Called `post_disconnection` handler"),
+                                Ok(_) => tracing::debug!("Called `post_disconnection` handler"),
                                 Err(e) => {
-                                    error!("Error calling `post_disconnection` handler: {e}");
+                                    tracing::error!(
+                                        "Error calling `post_disconnection` handler: {e}"
+                                    );
                                 }
                             });
                         }
@@ -530,7 +533,6 @@ mod tests {
         time::{sleep, Duration},
     };
     use tokio_tungstenite::tungstenite::stream::Mode;
-    use tracing::debug;
     use tracing_test::traced_test;
 
     use crate::socket::{SocketClient, SocketConfig};
@@ -556,7 +558,7 @@ mod tests {
                 // keep listening for new connections
                 loop {
                     let (mut stream, _) = server.accept().await.unwrap();
-                    debug!("socket:test Server accepted connection");
+                    tracing::debug!("socket:test Server accepted connection");
 
                     // keep receiving messages from connection
                     // and sending them back as it is
@@ -566,7 +568,7 @@ mod tests {
                         let mut buf = Vec::new();
                         loop {
                             let bytes = stream.read_buf(&mut buf).await.unwrap();
-                            debug!("socket:test Server received {bytes} bytes");
+                            tracing::debug!("socket:test Server received {bytes} bytes");
 
                             // Terminate if 0 bytes have been read
                             // Connection has been terminated or vector buffer is completely
@@ -580,10 +582,10 @@ mod tests {
                                 {
                                     let close_message = b"close".as_slice();
                                     if &buf[0..*i] == close_message {
-                                        debug!("socket:test Client sent closing message");
+                                        tracing::debug!("socket:test Client sent closing message");
                                         return;
                                     } else {
-                                        debug!("socket:test Server sending message");
+                                        tracing::debug!("socket:test Server sending message");
                                         stream
                                             .write_all(buf.drain(0..i + 2).as_slice())
                                             .await

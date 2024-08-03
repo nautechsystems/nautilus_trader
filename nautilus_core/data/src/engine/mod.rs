@@ -31,7 +31,6 @@ use std::{
     sync::Arc,
 };
 
-use log;
 use nautilus_common::{
     cache::Cache,
     client::DataClientAdapter,

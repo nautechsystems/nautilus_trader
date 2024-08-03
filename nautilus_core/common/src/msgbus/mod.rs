@@ -27,7 +27,6 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use log::error;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::{
     data::Data,
@@ -326,7 +325,7 @@ impl MessageBus {
         let sub = Subscription::new(topic, handler, priority);
 
         if self.subscriptions.contains_key(&sub) {
-            error!("{sub:?} already exists.");
+            log::error!("{sub:?} already exists.");
             return;
         }
 

@@ -27,7 +27,6 @@ use reqwest::{
     header::{HeaderMap, HeaderName},
     Method, Response, Url,
 };
-use tracing::trace;
 
 use crate::ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter};
 
@@ -68,7 +67,7 @@ impl InnerHttpClient {
             None => request_builder.build()?,
         };
 
-        trace!("{request:?}");
+        tracing::trace!("{request:?}");
 
         let response = self.client.execute(request).await?;
         self.to_response(response).await
@@ -78,7 +77,7 @@ impl InnerHttpClient {
         &self,
         response: Response,
     ) -> Result<HttpResponse, Box<dyn std::error::Error + Send + Sync>> {
-        trace!("{response:?}");
+        tracing::trace!("{response:?}");
 
         let headers: HashMap<String, String> = self
             .header_keys
