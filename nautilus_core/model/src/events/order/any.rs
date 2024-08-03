@@ -16,6 +16,7 @@
 use nautilus_core::nanos::UnixNanos;
 use serde::{Deserialize, Serialize};
 use strum::Display;
+use ustr::Ustr;
 
 use super::OrderEventType;
 use crate::{
@@ -140,6 +141,28 @@ impl OrderEventAny {
             Self::Updated(event) => event.ts_event,
             Self::PartiallyFilled(event) => event.ts_event,
             Self::Filled(event) => event.ts_event,
+        }
+    }
+
+    pub fn message(&self) -> Option<Ustr> {
+        match self {
+            Self::Initialized(_) => None,
+            Self::Denied(event) => Some(event.reason),
+            Self::Emulated(_) => None,
+            Self::Released(_) => None,
+            Self::Submitted(_) => None,
+            Self::Accepted(_) => None,
+            Self::Rejected(event) => Some(event.reason),
+            Self::Canceled(_) => None,
+            Self::Expired(_) => None,
+            Self::Triggered(_) => None,
+            Self::PendingUpdate(_) => None,
+            Self::PendingCancel(_) => None,
+            Self::ModifyRejected(event) => Some(event.reason),
+            Self::CancelRejected(event) => Some(event.reason),
+            Self::Updated(_) => None,
+            Self::PartiallyFilled(_) => None,
+            Self::Filled(_) => None,
         }
     }
 }

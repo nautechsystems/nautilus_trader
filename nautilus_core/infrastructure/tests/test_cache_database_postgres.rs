@@ -90,7 +90,7 @@ mod serial_tests {
         let crypto_perpetual = crypto_perpetual_ethusdt();
         let currency_pair = currency_pair_ethusdt();
         let equity = equity_aapl();
-        let futures_contract = futures_contract_es();
+        let futures_contract = futures_contract_es(None, None);
         let options_contract = options_contract_appl();
         // Insert all the instruments
         pg_cache

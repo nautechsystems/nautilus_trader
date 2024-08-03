@@ -2598,6 +2598,7 @@ version = "0.28.0"
 dependencies = [
  "anyhow",
  "cbindgen",
+ "chrono",
  "log",
  "nautilus-common",
  "nautilus-core",
