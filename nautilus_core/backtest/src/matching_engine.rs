@@ -31,14 +31,14 @@ use nautilus_model::{
     },
     enums::{AccountType, BookType, LiquiditySide, MarketStatus, OmsType},
     events::order::{
-        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderExpired, OrderFilled,
-        OrderModifyRejected, OrderRejected, OrderTriggered, OrderUpdated,
+        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderExpired,
+        OrderFilled, OrderModifyRejected, OrderRejected, OrderTriggered, OrderUpdated,
     },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId, Venue,
         VenueOrderId,
     },
-    instruments::any::InstrumentAny,
+    instruments::{any::InstrumentAny, EXPIRING_INSTRUMENT_TYPES},
     orderbook::book::OrderBook,
     orders::{
         any::{OrderAny, PassiveOrderAny, StopOrderAny},
@@ -49,6 +49,7 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
+#[derive(Debug, Clone)]
 pub struct OrderMatchingEngineConfig {
     pub bar_execution: bool,
     pub reject_stop_orders: bool,
@@ -57,6 +58,21 @@ pub struct OrderMatchingEngineConfig {
     pub use_position_ids: bool,
     pub use_random_ids: bool,
     pub use_reduce_only: bool,
+}
+
+#[allow(clippy::derivable_impls)]
+impl Default for OrderMatchingEngineConfig {
+    fn default() -> Self {
+        OrderMatchingEngineConfig {
+            bar_execution: false,
+            reject_stop_orders: false,
+            support_gtd_orders: false,
+            support_contingent_orders: false,
+            use_position_ids: false,
+            use_random_ids: false,
+            use_reduce_only: false,
+        }
+    }
 }
 
 /// An order matching engine for a single market.
@@ -201,6 +217,47 @@ impl OrderMatchingEngine {
         self.book.apply_delta(delta);
     }
 
+    // -- TRADING COMMANDS ----------------------------------------------------
+    pub fn process_order(&mut self, order: &OrderAny, account_id: AccountId) {
+        if self.core.order_exists(order.client_order_id()) {
+            self.generate_order_rejected(order, "Order already exists".into());
+            return;
+        }
+
+        // Index identifiers
+        self.account_ids.insert(order.trader_id(), account_id);
+
+        // Check for instrument expiration or activation
+        if EXPIRING_INSTRUMENT_TYPES.contains(&self.instrument.instrument_class()) {
+            if let Some(activation_ns) = self.instrument.activation_ns() {
+                if self.clock.get_time_ns() < activation_ns {
+                    self.generate_order_rejected(
+                        order,
+                        format!(
+                            "Contract {} is not yet active, activation {}",
+                            self.instrument.id(),
+                            self.instrument.activation_ns().unwrap()
+                        )
+                        .into(),
+                    );
+                }
+            }
+            if let Some(expiration_ns) = self.instrument.expiration_ns() {
+                if self.clock.get_time_ns() >= expiration_ns {
+                    self.generate_order_rejected(
+                        order,
+                        format!(
+                            "Contract {} has expired, expiration {}",
+                            self.instrument.id(),
+                            self.instrument.expiration_ns().unwrap()
+                        )
+                        .into(),
+                    );
+                }
+            }
+        }
+    }
+
     // -- ORDER PROCESSING ----------------------------------------------------
 
     /// Iterate the matching engine by processing the bid and ask order sides
@@ -290,19 +347,22 @@ impl OrderMatchingEngine {
         let account_id = order
             .account_id()
             .unwrap_or(self.account_ids.get(&order.trader_id()).unwrap().to_owned());
-        let event = OrderRejected::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            account_id,
-            reason,
-            UUID4::new(),
-            ts_now,
-            ts_now,
-            false,
-        )
-        .unwrap();
+
+        let event = OrderEventAny::Rejected(
+            OrderRejected::new(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                account_id,
+                reason,
+                UUID4::new(),
+                ts_now,
+                ts_now,
+                false,
+            )
+            .unwrap(),
+        );
         self.msgbus.send("ExecEngine.process", &event as &dyn Any);
     }
 
@@ -311,19 +371,21 @@ impl OrderMatchingEngine {
         let account_id = order
             .account_id()
             .unwrap_or(self.account_ids.get(&order.trader_id()).unwrap().to_owned());
-        let event = OrderAccepted::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            venue_order_id,
-            account_id,
-            UUID4::new(),
-            ts_now,
-            ts_now,
-            false,
-        )
-        .unwrap();
+        let event = OrderEventAny::Accepted(
+            OrderAccepted::new(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                venue_order_id,
+                account_id,
+                UUID4::new(),
+                ts_now,
+                ts_now,
+                false,
+            )
+            .unwrap(),
+        );
         self.msgbus.send("ExecEngine.process", &event as &dyn Any);
     }
 
@@ -339,18 +401,21 @@ impl OrderMatchingEngine {
         reason: Ustr,
     ) {
         let ts_now = self.clock.get_time_ns();
-        let event = OrderModifyRejected::new(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            reason,
-            UUID4::new(),
-            ts_now,
-            ts_now,
-            false,
-            Some(venue_order_id),
-            Some(account_id),
+        let event = OrderEventAny::ModifyRejected(
+            OrderModifyRejected::new(
+                trader_id,
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                reason,
+                UUID4::new(),
+                ts_now,
+                ts_now,
+                false,
+                Some(venue_order_id),
+                Some(account_id),
+            )
+            .unwrap(),
         );
         self.msgbus.send("ExecEngine.process", &event as &dyn Any);
     }
@@ -367,20 +432,22 @@ impl OrderMatchingEngine {
         reason: Ustr,
     ) {
         let ts_now = self.clock.get_time_ns();
-        let event = OrderCancelRejected::new(
-            trader_id,
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            reason,
-            UUID4::new(),
-            ts_now,
-            ts_now,
-            false,
-            Some(venue_order_id),
-            Some(account_id),
-        )
-        .unwrap();
+        let event = OrderEventAny::CancelRejected(
+            OrderCancelRejected::new(
+                trader_id,
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                reason,
+                UUID4::new(),
+                ts_now,
+                ts_now,
+                false,
+                Some(venue_order_id),
+                Some(account_id),
+            )
+            .unwrap(),
+        );
         self.msgbus.send("ExecEngine.process", &event as &dyn Any);
     }
 
@@ -392,76 +459,84 @@ impl OrderMatchingEngine {
         trigger_price: Price,
     ) {
         let ts_now = self.clock.get_time_ns();
-        let event = OrderUpdated::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            quantity,
-            UUID4::new(),
-            ts_now,
-            ts_now,
-            false,
-            order.venue_order_id(),
-            order.account_id(),
-            Some(price),
-            Some(trigger_price),
-        )
-        .unwrap();
+        let event = OrderEventAny::Updated(
+            OrderUpdated::new(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                quantity,
+                UUID4::new(),
+                ts_now,
+                ts_now,
+                false,
+                order.venue_order_id(),
+                order.account_id(),
+                Some(price),
+                Some(trigger_price),
+            )
+            .unwrap(),
+        );
         self.msgbus.send("ExecEngine.process", &event as &dyn Any);
     }
 
     fn generate_order_canceled(&self, order: &OrderAny, venue_order_id: VenueOrderId) {
         let ts_now = self.clock.get_time_ns();
-        let event = OrderCanceled::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            UUID4::new(),
-            ts_now,
-            ts_now,
-            false,
-            Some(venue_order_id),
-            order.account_id(),
-        )
-        .unwrap();
+        let event = OrderEventAny::Canceled(
+            OrderCanceled::new(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                UUID4::new(),
+                ts_now,
+                ts_now,
+                false,
+                Some(venue_order_id),
+                order.account_id(),
+            )
+            .unwrap(),
+        );
         self.msgbus.send("ExecEngine.process", &event as &dyn Any);
     }
 
     fn generate_order_triggered(&self, order: &OrderAny) {
         let ts_now = self.clock.get_time_ns();
-        let event = OrderTriggered::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            UUID4::new(),
-            ts_now,
-            ts_now,
-            false,
-            order.venue_order_id(),
-            order.account_id(),
-        )
-        .unwrap();
+        let event = OrderEventAny::Triggered(
+            OrderTriggered::new(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                UUID4::new(),
+                ts_now,
+                ts_now,
+                false,
+                order.venue_order_id(),
+                order.account_id(),
+            )
+            .unwrap(),
+        );
         self.msgbus.send("ExecEngine.process", &event as &dyn Any);
     }
 
     fn generate_order_expired(&self, order: &OrderAny) {
         let ts_now = self.clock.get_time_ns();
-        let event = OrderExpired::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            UUID4::new(),
-            ts_now,
-            ts_now,
-            false,
-            order.venue_order_id(),
-            order.account_id(),
-        )
-        .unwrap();
+        let event = OrderEventAny::Expired(
+            OrderExpired::new(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                UUID4::new(),
+                ts_now,
+                ts_now,
+                false,
+                order.venue_order_id(),
+                order.account_id(),
+            )
+            .unwrap(),
+        );
         self.msgbus.send("ExecEngine.process", &event as &dyn Any);
     }
 
@@ -481,27 +556,177 @@ impl OrderMatchingEngine {
         let account_id = order
             .account_id()
             .unwrap_or(self.account_ids.get(&order.trader_id()).unwrap().to_owned());
-        let event = OrderFilled::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            venue_order_id,
-            account_id,
-            self.generate_trade_id(),
-            order.order_side(),
-            order.order_type(),
-            last_qty,
-            last_px,
-            quote_currency,
-            liquidity_side,
-            UUID4::new(),
-            ts_now,
-            ts_now,
-            false,
-            Some(venue_position_id),
-            Some(commission),
+        let event = OrderEventAny::Filled(
+            OrderFilled::new(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                venue_order_id,
+                account_id,
+                self.generate_trade_id(),
+                order.order_side(),
+                order.order_type(),
+                last_qty,
+                last_px,
+                quote_currency,
+                liquidity_side,
+                UUID4::new(),
+                ts_now,
+                ts_now,
+                false,
+                Some(venue_position_id),
+                Some(commission),
+            )
+            .unwrap(),
         );
         self.msgbus.send("ExecEngine.process", &event as &dyn Any);
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use std::{rc::Rc, sync::LazyLock};
+
+    use chrono::{TimeZone, Utc};
+    use nautilus_common::{
+        cache::Cache,
+        msgbus::{
+            stubs::{get_message_saving_handler, MessageSavingHandler},
+            MessageBus,
+        },
+    };
+    use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
+    use nautilus_model::{
+        enums::{AccountType, BookType, OmsType, OrderSide},
+        events::order::{OrderEventAny, OrderEventType},
+        identifiers::AccountId,
+        instruments::{any::InstrumentAny, stubs::futures_contract_es},
+        orders::stubs::TestOrderStubs,
+        types::quantity::Quantity,
+    };
+    use rstest::rstest;
+    use ustr::Ustr;
+
+    use crate::matching_engine::{OrderMatchingEngine, OrderMatchingEngineConfig};
+
+    static ATOMIC_TIME: LazyLock<AtomicTime> =
+        LazyLock::new(|| AtomicTime::new(true, UnixNanos::default()));
+
+    fn get_order_matching_engine(
+        instrument: InstrumentAny,
+        msgbus: Rc<MessageBus>,
+    ) -> OrderMatchingEngine {
+        let cache = Rc::new(Cache::default());
+        let config = OrderMatchingEngineConfig::default();
+        OrderMatchingEngine::new(
+            instrument,
+            1,
+            BookType::L1_MBP,
+            OmsType::Netting,
+            AccountType::Cash,
+            &ATOMIC_TIME,
+            msgbus,
+            cache,
+            config,
+        )
+    }
+
+    #[rstest]
+    fn test_order_matching_engine_instrument_already_expired() {
+        let account_id = AccountId::from("SIM-001");
+        let time = AtomicTime::new(true, UnixNanos::default());
+        let mut msgbus = MessageBus::default();
+        let instrument = InstrumentAny::FuturesContract(futures_contract_es(None, None));
+
+        // Register saving message handler to exec engine endpoint
+        let exec_engine_endpoint = "ExecEngine.process";
+        let msg_handler =
+            get_message_saving_handler::<OrderEventAny>(Ustr::from(exec_engine_endpoint));
+        msgbus.register(exec_engine_endpoint, msg_handler.clone());
+
+        // Create engine and process order
+        let mut engine = get_order_matching_engine(instrument.clone(), Rc::new(msgbus));
+        let order = TestOrderStubs::market_order(
+            instrument.id(),
+            OrderSide::Buy,
+            Quantity::from("1"),
+            None,
+            None,
+        );
+        engine.process_order(&order, account_id);
+
+        // Get messages and test
+        let saved_messages = msg_handler
+            .0
+            .as_ref()
+            .as_any()
+            .downcast_ref::<MessageSavingHandler<OrderEventAny>>()
+            .unwrap()
+            .get_messages();
+        assert_eq!(saved_messages.len(), 1);
+        let first_message = saved_messages.first().unwrap();
+        assert_eq!(first_message.event_type(), OrderEventType::Rejected);
+        assert_eq!(
+            first_message.message().unwrap(),
+            Ustr::from("Contract ESZ1.GLBX has expired, expiration 1625702400000000000")
+        );
+    }
+
+    #[rstest]
+    fn test_order_matching_engine_instrument_not_active() {
+        let account_id = AccountId::from("SIM-001");
+        let time = AtomicTime::new(true, UnixNanos::default());
+        let mut msgbus = MessageBus::default();
+        let activation = UnixNanos::from(
+            Utc.with_ymd_and_hms(2222, 4, 8, 0, 0, 0)
+                .unwrap()
+                .timestamp_nanos_opt()
+                .unwrap() as u64,
+        );
+        let expiration = UnixNanos::from(
+            Utc.with_ymd_and_hms(2223, 7, 8, 0, 0, 0)
+                .unwrap()
+                .timestamp_nanos_opt()
+                .unwrap() as u64,
+        );
+        let instrument =
+            InstrumentAny::FuturesContract(futures_contract_es(Some(activation), Some(expiration)));
+
+        // Register saving message handler to exec engine endpoint
+        let exec_engine_endpoint = "ExecEngine.process";
+        let msg_handler =
+            get_message_saving_handler::<OrderEventAny>(Ustr::from(exec_engine_endpoint));
+        msgbus.register(exec_engine_endpoint, msg_handler.clone());
+
+        // Create engine and process order
+        let mut engine = get_order_matching_engine(instrument.clone(), Rc::new(msgbus));
+        let order = TestOrderStubs::market_order(
+            instrument.id(),
+            OrderSide::Buy,
+            Quantity::from("1"),
+            None,
+            None,
+        );
+        engine.process_order(&order, account_id);
+
+        // Get messages and test
+        let saved_messages = msg_handler
+            .0
+            .as_ref()
+            .as_any()
+            .downcast_ref::<MessageSavingHandler<OrderEventAny>>()
+            .unwrap()
+            .get_messages();
+        assert_eq!(saved_messages.len(), 1);
+        let first_message = saved_messages.first().unwrap();
+        assert_eq!(first_message.event_type(), OrderEventType::Rejected);
+        assert_eq!(
+            first_message.message().unwrap(),
+            Ustr::from("Contract ESZ1.GLBX is not yet active, activation 7960723200000000000")
+        );
     }
 }
