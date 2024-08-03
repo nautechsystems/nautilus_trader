@@ -15,6 +15,7 @@
 
 use std::{
     any::Any,
+    cell::RefCell,
     rc::Rc,
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -102,5 +103,49 @@ pub fn get_call_check_shareable_handler(id: Ustr) -> ShareableMessageHandler {
     ShareableMessageHandler(Rc::new(CallCheckMessageHandler {
         id,
         called: Arc::new(AtomicBool::new(false)),
+    }))
+}
+
+// Handler which saves the messages it receives
+#[derive(Debug, Clone)]
+pub struct MessageSavingHandler<T> {
+    id: Ustr,
+    messages: Rc<RefCell<Vec<T>>>,
+}
+
+impl<T: Clone + 'static> MessageSavingHandler<T> {
+    #[must_use]
+    pub fn get_messages(&self) -> Vec<T> {
+        self.messages.borrow().clone()
+    }
+}
+
+impl<T: Clone + 'static> MessageHandler for MessageSavingHandler<T> {
+    fn id(&self) -> Ustr {
+        self.id
+    }
+
+    fn handle(&self, message: &dyn Any) {
+        let mut messages = self.messages.borrow_mut();
+        match message.downcast_ref::<T>() {
+            Some(m) => messages.push(m.clone()),
+            None => panic!("MessageSavingHandler: message type mismatch"),
+        }
+    }
+
+    fn handle_response(&self, _resp: DataResponse) {}
+
+    fn handle_data(&self, _resp: &Data) {}
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+#[must_use]
+pub fn get_message_saving_handler<T: Clone + 'static>(id: Ustr) -> ShareableMessageHandler {
+    ShareableMessageHandler(Rc::new(MessageSavingHandler::<T> {
+        id,
+        messages: Rc::new(RefCell::new(Vec::new())),
     }))
 }

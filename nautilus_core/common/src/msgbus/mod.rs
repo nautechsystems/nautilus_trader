@@ -484,6 +484,12 @@ pub fn is_matching(topic: &Ustr, pattern: &Ustr) -> bool {
     table[n][m]
 }
 
+impl Default for MessageBus {
+    fn default() -> Self {
+        Self::new(TraderId::from("TRADER-001"), UUID4::new(), None, None)
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
