@@ -22,6 +22,7 @@
 pub mod runner;
 
 use std::{
+    any::Any,
     cell::RefCell,
     collections::{HashMap, HashSet},
     marker::PhantomData,
@@ -55,6 +56,8 @@ use nautilus_model::{
     instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
 };
 
+use crate::aggregation::BarAggregator;
+
 pub struct DataEngineConfig {
     pub time_bars_build_with_no_updates: bool,
     pub time_bars_timestamp_on_close: bool,
@@ -72,7 +75,7 @@ pub struct DataEngine<State = PreInitialized> {
     msgbus: Rc<RefCell<MessageBus>>,
     default_client: Option<DataClientAdapter>,
     // order_book_intervals: HashMap<(InstrumentId, usize), Vec<fn(&OrderBook)>>,  // TODO
-    // bar_aggregators:  // TODO
+    bar_aggregators: Vec<Box<dyn BarAggregator>>, // TODO: dyn for now
     synthetic_quote_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     synthetic_trade_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     buffered_deltas_map: HashMap<InstrumentId, Vec<OrderBookDelta>>,
@@ -92,6 +95,7 @@ impl DataEngine {
             clock,
             cache,
             default_client: None,
+            bar_aggregators: Vec::new(),
             synthetic_quote_feeds: HashMap::new(),
             synthetic_trade_feeds: HashMap::new(),
             buffered_deltas_map: HashMap::new(),
@@ -108,6 +112,7 @@ impl<S: State> DataEngine<S> {
             clock: self.clock,
             cache: self.cache,
             default_client: self.default_client,
+            bar_aggregators: self.bar_aggregators,
             synthetic_quote_feeds: self.synthetic_quote_feeds,
             synthetic_trade_feeds: self.synthetic_trade_feeds,
             buffered_deltas_map: self.buffered_deltas_map,
@@ -300,34 +305,34 @@ impl DataEngine<Running> {
         }
     }
 
-    pub fn response(&self, response: DataResponse) {
+    pub fn response(&self, resp: DataResponse) {
         log::debug!("{}", format!("{RECV}{RES} response")); // TODO: Display for response
 
-        match response.data_type.type_name() {
+        match resp.data_type.type_name() {
             stringify!(InstrumentAny) => {
-                let instruments = Arc::downcast::<Vec<InstrumentAny>>(response.data.clone())
+                let instruments = Arc::downcast::<Vec<InstrumentAny>>(resp.data.clone())
                     .expect("Invalid response data");
                 self.handle_instruments(instruments);
             }
             stringify!(QuoteTick) => {
-                let quotes = Arc::downcast::<Vec<QuoteTick>>(response.data.clone())
+                let quotes = Arc::downcast::<Vec<QuoteTick>>(resp.data.clone())
                     .expect("Invalid response data");
                 self.handle_quotes(quotes);
             }
             stringify!(TradeTick) => {
-                let trades = Arc::downcast::<Vec<TradeTick>>(response.data.clone())
+                let trades = Arc::downcast::<Vec<TradeTick>>(resp.data.clone())
                     .expect("Invalid response data");
                 self.handle_trades(trades);
             }
             stringify!(Bar) => {
-                let bars = Arc::downcast::<Vec<Bar>>(response.data.clone())
-                    .expect("Invalid response data");
+                let bars =
+                    Arc::downcast::<Vec<Bar>>(resp.data.clone()).expect("Invalid response data");
                 self.handle_bars(bars);
             }
             _ => {} // Nothing else to handle
         }
 
-        // self.msgbus.response()  // TODO: Send response to registered handler
+        self.msgbus.as_ref().borrow().send_response(resp)
     }
 
     // -- DATA HANDLERS ---------------------------------------------------------------------------
@@ -343,39 +348,42 @@ impl DataEngine<Running> {
             log::error!("Error on cache insert: {e}");
         }
 
-        let instrument_id = instrument.id();
-        let topic = format!(
-            "data.instrument.{}.{}",
-            instrument_id.venue, instrument_id.symbol
-        );
+        let topic = get_instrument_publish_topic(&instrument);
+        self.msgbus
+            .as_ref()
+            .borrow()
+            .publish(&topic, &instrument as &dyn Any); // TODO: Optimize
     }
 
     fn handle_delta(&self, delta: OrderBookDelta) {
         // TODO: Manage buffered deltas
         // TODO: Manage book
 
-        let topic = format!(
-            "data.book.deltas.{}.{}",
-            delta.instrument_id.venue, delta.instrument_id.symbol
-        );
+        let topic = get_delta_publish_topic(&delta);
+        self.msgbus
+            .as_ref()
+            .borrow()
+            .publish(&topic, &delta as &dyn Any); // TODO: Optimize
     }
 
     fn handle_deltas(&self, deltas: OrderBookDeltas) {
         // TODO: Manage book
 
-        let topic = format!(
-            "data.book.snapshots.{}.{}", // TODO: Revise snapshots topic component
-            deltas.instrument_id.venue, deltas.instrument_id.symbol
-        );
+        let topic = get_deltas_publish_topic(&deltas);
+        self.msgbus
+            .as_ref()
+            .borrow()
+            .publish(&topic, &deltas as &dyn Any); // TODO: Optimize
     }
 
     fn handle_depth10(&self, depth: OrderBookDepth10) {
         // TODO: Manage book
 
-        let topic = format!(
-            "data.book.depth.{}.{}",
-            depth.instrument_id.venue, depth.instrument_id.symbol
-        );
+        let topic = get_depth_publish_topic(&depth);
+        self.msgbus
+            .as_ref()
+            .borrow()
+            .publish(&topic, &depth as &dyn Any); // TODO: Optimize
     }
 
     fn handle_quote(&self, quote: QuoteTick) {
@@ -385,10 +393,11 @@ impl DataEngine<Running> {
 
         // TODO: Handle synthetics
 
-        let topic = format!(
-            "data.quotes.{}.{}",
-            quote.instrument_id.venue, quote.instrument_id.symbol
-        );
+        let topic = get_quote_publish_topic(&quote);
+        self.msgbus
+            .as_ref()
+            .borrow()
+            .publish(&topic, &quote as &dyn Any); // TODO: Optimize
     }
 
     fn handle_trade(&self, trade: TradeTick) {
@@ -398,33 +407,53 @@ impl DataEngine<Running> {
 
         // TODO: Handle synthetics
 
-        let topic = format!(
-            "data.trades.{}.{}",
-            trade.instrument_id.venue, trade.instrument_id.symbol
-        );
+        let topic = get_trade_publish_topic(&trade);
+        self.msgbus
+            .as_ref()
+            .borrow()
+            .publish(&topic, &trade as &dyn Any); // TODO: Optimize
     }
 
     fn handle_bar(&self, bar: Bar) {
+        // TODO: Handle additional bar logic
+        if self.config.validate_data_sequence {
+            if let Some(last_bar) = self.cache.as_ref().borrow().bar(&bar.bar_type) {
+                if bar.ts_event < last_bar.ts_event {
+                    log::warn!(
+                        "Bar {bar} was prior to last bar `ts_event` {}",
+                        last_bar.ts_event
+                    );
+                    return; // `bar` is out of sequence
+                }
+                if bar.ts_init < last_bar.ts_init {
+                    log::warn!(
+                        "Bar {bar} was prior to last bar `ts_init` {}",
+                        last_bar.ts_init
+                    );
+                    return; // `bar` is out of sequence
+                }
+                // TODO: Implement `bar.is_revision` logic
+            }
+        }
+
         if let Err(e) = self.cache.as_ref().borrow_mut().add_bar(bar) {
             log::error!("Error on cache insert: {e}");
         }
 
-        // TODO: Handle additional bar logic
-
-        let topic = format!("data.bars.{}", bar.bar_type);
+        let topic = get_bar_publish_topic(&bar);
+        self.msgbus
+            .as_ref()
+            .borrow()
+            .publish(&topic, &bar as &dyn Any); // TODO: Optimize
     }
 
     // -- RESPONSE HANDLERS -----------------------------------------------------------------------
 
     fn handle_instruments(&self, instruments: Arc<Vec<InstrumentAny>>) {
         // TODO improve by adding bulk update methods to cache and database
+        let mut cache = self.cache.as_ref().borrow_mut();
         for instrument in instruments.iter() {
-            if let Err(e) = self
-                .cache
-                .as_ref()
-                .borrow_mut()
-                .add_instrument(instrument.clone())
-            {
+            if let Err(e) = cache.add_instrument(instrument.clone()) {
                 log::error!("Error on cache insert: {e}");
             }
         }
@@ -486,4 +515,52 @@ impl DataEngine<Stopped> {
     pub fn dispose(self) -> DataEngine<Disposed> {
         self.transition()
     }
+}
+
+// TODO: Potentially move these
+pub fn get_instrument_publish_topic(instrument: &InstrumentAny) -> String {
+    let instrument_id = instrument.id();
+    format!(
+        "data.instrument.{}.{}",
+        instrument_id.venue, instrument_id.symbol
+    )
+}
+
+pub fn get_delta_publish_topic(delta: &OrderBookDelta) -> String {
+    format!(
+        "data.book.delta.{}.{}",
+        delta.instrument_id.venue, delta.instrument_id.symbol
+    )
+}
+
+pub fn get_deltas_publish_topic(delta: &OrderBookDeltas) -> String {
+    format!(
+        "data.book.snapshots.{}.{}",
+        delta.instrument_id.venue, delta.instrument_id.symbol
+    )
+}
+
+pub fn get_depth_publish_topic(depth: &OrderBookDepth10) -> String {
+    format!(
+        "data.book.depth.{}.{}",
+        depth.instrument_id.venue, depth.instrument_id.symbol
+    )
+}
+
+pub fn get_quote_publish_topic(quote: &QuoteTick) -> String {
+    format!(
+        "data.quotes.{}.{}",
+        quote.instrument_id.venue, quote.instrument_id.symbol
+    )
+}
+
+pub fn get_trade_publish_topic(trade: &TradeTick) -> String {
+    format!(
+        "data.trades.{}.{}",
+        trade.instrument_id.venue, trade.instrument_id.symbol
+    )
+}
+
+pub fn get_bar_publish_topic(bar: &Bar) -> String {
+    format!("data.bars.{}", bar.bar_type)
 }
