@@ -269,7 +269,7 @@ impl MessageBus {
         Ok(())
     }
 
-    /// Registers a new [`DataClientAdaptor`]
+    /// Registers a new [`DataClientAdapter`]
     pub fn register_client(&mut self, client: DataClientAdapter, routing: Option<Venue>) {
         if let Some(routing) = routing {
             self.routing_map.insert(routing, client.client_id());
@@ -280,7 +280,7 @@ impl MessageBus {
         self.clients.insert(client.client_id, client);
     }
 
-    /// Deregisters a [`DataClientAdaptor`]
+    /// Deregisters a [`DataClientAdapter`]
     pub fn deregister_client(&mut self, client_id: &ClientId) {
         // TODO: We could return a `Result` but then this is part of system wiring and instead of
         // propagating results all over the place it may be cleaner to just immediately fail
@@ -419,7 +419,7 @@ impl MessageBus {
 
 /// Data specific functions
 impl MessageBus {
-    /// Send a [`DataRequest`] to an endpoint that must be a [`DataClient`] implementation.
+    /// Send a [`DataRequest`] to an endpoint that must be a data client implementation.
     pub fn send_data_request(&self, message: DataRequest) {
         // TODO: log error
         if let Some(client) = self.get_client(&message.client_id, message.venue) {
@@ -427,7 +427,7 @@ impl MessageBus {
         }
     }
 
-    /// Send a [`SubscriptionCommand`] to an endpoint that must be a [`DataClient`] implementation.
+    /// Send a [`SubscriptionCommand`] to an endpoint that must be a data client implementation.
     pub fn send_subscription_command(&self, message: SubscriptionCommand) {
         if let Some(client) = self.get_client(&message.client_id, message.venue) {
             client.through_execute(message);

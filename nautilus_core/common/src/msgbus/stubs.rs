@@ -56,6 +56,7 @@ impl MessageHandler for StubMessageHandler {
 }
 
 #[must_use]
+#[allow(unused_must_use)] // TODO: Temporary to fix docs build
 pub fn get_stub_shareable_handler(id: Ustr) -> ShareableMessageHandler {
     ShareableMessageHandler(Rc::new(StubMessageHandler {
         id,
