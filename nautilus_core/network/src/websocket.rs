@@ -35,7 +35,6 @@ use tokio_tungstenite::{
     tungstenite::{client::IntoClientRequest, http::HeaderValue, Error, Message},
     MaybeTlsStream, WebSocketStream,
 };
-use tracing::{debug, error};
 
 type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
 type SharedMessageWriter =
@@ -155,7 +154,7 @@ impl WebSocketClientInner {
         message: Option<String>,
         writer: SharedMessageWriter,
     ) -> Option<task::JoinHandle<()>> {
-        debug!("Started task `heartbeat`");
+        tracing::debug!("Started task `heartbeat`");
         heartbeat.map(|duration| {
             task::spawn(async move {
                 let duration = Duration::from_secs(duration);
@@ -167,8 +166,8 @@ impl WebSocketClientInner {
                         None => guard.send(Message::Ping(vec![])).await,
                     };
                     match guard_send_response {
-                        Ok(()) => debug!("Sent ping"),
-                        Err(e) => error!("Error sending ping: {e}"),
+                        Ok(()) => tracing::debug!("Sent ping"),
+                        Err(e) => tracing::error!("Error sending ping: {e}"),
                     }
                 }
             })
@@ -181,59 +180,59 @@ impl WebSocketClientInner {
         handler: PyObject,
         ping_handler: Option<PyObject>,
     ) -> task::JoinHandle<()> {
-        debug!("Started task `read`");
+        tracing::debug!("Started task `read`");
         task::spawn(async move {
             loop {
                 match reader.next().await {
                     Some(Ok(Message::Binary(data))) => {
-                        debug!("Received message <binary>");
+                        tracing::debug!("Received message <binary>");
                         if let Err(e) =
                             Python::with_gil(|py| handler.call1(py, (PyBytes::new(py, &data),)))
                         {
-                            error!("Error calling handler: {e}");
+                            tracing::error!("Error calling handler: {e}");
                             break;
                         }
                         continue;
                     }
                     Some(Ok(Message::Text(data))) => {
-                        debug!("Received message: {data}");
+                        tracing::debug!("Received message: {data}");
                         if let Err(e) = Python::with_gil(|py| {
                             handler.call1(py, (PyBytes::new(py, data.as_bytes()),))
                         }) {
-                            error!("Error calling handler: {e}");
+                            tracing::error!("Error calling handler: {e}");
                             break;
                         }
                         continue;
                     }
                     Some(Ok(Message::Ping(ping))) => {
                         let payload = String::from_utf8(ping.clone()).expect("Invalid payload");
-                        debug!("Received ping: {payload}",);
+                        tracing::debug!("Received ping: {payload}",);
                         if let Some(ref handler) = ping_handler {
                             if let Err(e) =
                                 Python::with_gil(|py| handler.call1(py, (PyBytes::new(py, &ping),)))
                             {
-                                error!("Error calling handler: {e}");
+                                tracing::error!("Error calling handler: {e}");
                                 break;
                             }
                         }
                         continue;
                     }
                     Some(Ok(Message::Pong(_))) => {
-                        debug!("Received pong");
+                        tracing::debug!("Received pong");
                     }
                     Some(Ok(Message::Close(_))) => {
-                        error!("Received close message - terminating");
+                        tracing::error!("Received close message - terminating");
                         break;
                     }
                     Some(Ok(_)) => (),
                     Some(Err(e)) => {
-                        error!("Received error message - terminating: {e}");
+                        tracing::error!("Received error message - terminating: {e}");
                         break;
                     }
                     // Internally tungstenite considers the connection closed when polling
                     // for the next message in the stream returns None.
                     None => {
-                        error!("No message received - terminating");
+                        tracing::error!("No message received - terminating");
                         break;
                     }
                 }
@@ -248,25 +247,25 @@ impl WebSocketClientInner {
     /// Closing the connection is an async call which cannot be done by the
     /// drop method so it must be done explicitly.
     pub async fn shutdown(&mut self) {
-        debug!("Closing connection");
+        tracing::debug!("Closing connection");
 
         if !self.read_task.is_finished() {
             self.read_task.abort();
-            debug!("Aborted message read task");
+            tracing::debug!("Aborted message read task");
         }
 
         // Cancel heart beat task
         if let Some(ref handle) = self.heartbeat_task.take() {
             if !handle.is_finished() {
                 handle.abort();
-                debug!("Aborted heartbeat task");
+                tracing::debug!("Aborted heartbeat task");
             }
         }
 
-        debug!("Closing writer");
+        tracing::debug!("Closing writer");
         let mut write_half = self.writer.lock().await;
         write_half.close().await.unwrap();
-        debug!("Closed connection");
+        tracing::debug!("Closed connection");
     }
 
     /// Reconnect with server.
@@ -342,7 +341,7 @@ impl WebSocketClient {
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
     ) -> Result<Self, Error> {
-        debug!("Connecting");
+        tracing::debug!("Connecting");
         let inner = WebSocketClientInner::connect_url(config).await?;
         let writer = inner.writer.clone();
         let disconnect_mode = Arc::new(AtomicBool::new(false));
@@ -356,8 +355,8 @@ impl WebSocketClient {
 
         if let Some(handler) = post_connection {
             Python::with_gil(|py| match handler.call0(py) {
-                Ok(_) => debug!("Called `post_connection` handler"),
-                Err(e) => error!("Error calling `post_connection` handler: {e}"),
+                Ok(_) => tracing::debug!("Called `post_connection` handler"),
+                Err(e) => tracing::error!("Error calling `post_connection` handler: {e}"),
             });
         };
 
@@ -378,7 +377,7 @@ impl WebSocketClient {
     /// Controller task will periodically check the disconnect mode
     /// and shutdown the client if it is alive
     pub async fn disconnect(&self) {
-        debug!("Disconnecting");
+        tracing::debug!("Disconnecting");
         self.disconnect_mode.store(true, Ordering::SeqCst);
 
         match tokio::time::timeout(Duration::from_secs(5), async {
@@ -389,16 +388,16 @@ impl WebSocketClient {
         .await
         {
             Ok(_) => {
-                debug!("Controller task finished");
+                tracing::debug!("Controller task finished");
             }
             Err(_) => {
-                error!("Timeout waiting for controller task to finish");
+                tracing::error!("Timeout waiting for controller task to finish");
             }
         }
     }
 
     pub async fn send_bytes(&self, data: Vec<u8>) -> Result<(), Error> {
-        debug!("Sending bytes: {:?}", data);
+        tracing::debug!("Sending bytes: {:?}", data);
         let mut guard = self.writer.lock().await;
         guard.send(Message::Binary(data)).await
     }
@@ -406,8 +405,8 @@ impl WebSocketClient {
     pub async fn send_close_message(&self) {
         let mut guard = self.writer.lock().await;
         match guard.send(Message::Close(None)).await {
-            Ok(()) => debug!("Sent close message"),
-            Err(e) => error!("Error sending close message: {e}"),
+            Ok(()) => tracing::debug!("Sent close message"),
+            Err(e) => tracing::error!("Error sending close message: {e}"),
         }
     }
 
@@ -426,29 +425,33 @@ impl WebSocketClient {
                 match (disconnected, inner.is_alive()) {
                     (false, false) => match inner.reconnect().await {
                         Ok(()) => {
-                            debug!("Reconnected successfully");
+                            tracing::debug!("Reconnected successfully");
                             if let Some(ref handler) = post_reconnection {
                                 Python::with_gil(|py| match handler.call0(py) {
-                                    Ok(_) => debug!("Called `post_reconnection` handler"),
+                                    Ok(_) => tracing::debug!("Called `post_reconnection` handler"),
                                     Err(e) => {
-                                        error!("Error calling `post_reconnection` handler: {e}");
+                                        tracing::error!(
+                                            "Error calling `post_reconnection` handler: {e}"
+                                        );
                                     }
                                 });
                             }
                         }
                         Err(e) => {
-                            error!("Reconnect failed {e}");
+                            tracing::error!("Reconnect failed {e}");
                             break;
                         }
                     },
                     (true, true) => {
-                        debug!("Shutting down inner client");
+                        tracing::debug!("Shutting down inner client");
                         inner.shutdown().await;
                         if let Some(ref handler) = post_disconnection {
                             Python::with_gil(|py| match handler.call0(py) {
-                                Ok(_) => debug!("Called `post_reconnection` handler"),
+                                Ok(_) => tracing::debug!("Called `post_reconnection` handler"),
                                 Err(e) => {
-                                    error!("Error calling `post_reconnection` handler: {e}");
+                                    tracing::error!(
+                                        "Error calling `post_reconnection` handler: {e}"
+                                    );
                                 }
                             });
                         }
@@ -519,7 +522,7 @@ impl WebSocketClient {
         data: Vec<u8>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        debug!("Sending bytes {:?}", data);
+        tracing::debug!("Sending bytes {:?}", data);
         let writer = slf.writer.clone();
         pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
             let mut guard = writer.lock().await;
@@ -541,7 +544,7 @@ impl WebSocketClient {
         data: String,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        debug!("Sending text: {}", data);
+        tracing::debug!("Sending text: {}", data);
         let writer = slf.writer.clone();
         pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
             let mut guard = writer.lock().await;
@@ -564,7 +567,7 @@ impl WebSocketClient {
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let data_str = String::from_utf8(data.clone()).map_err(to_pyvalue_err)?;
-        debug!("Sending pong: {}", data_str);
+        tracing::debug!("Sending pong: {}", data_str);
         let writer = slf.writer.clone();
         pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
             let mut guard = writer.lock().await;
@@ -607,7 +610,6 @@ mod tests {
             http::HeaderValue,
         },
     };
-    use tracing::debug;
     use tracing_test::traced_test;
 
     use crate::websocket::{WebSocketClient, WebSocketConfig};
@@ -668,7 +670,7 @@ mod tests {
                                 websocket.send(msg).await.unwrap();
                             } else if msg.is_close() {
                                 if let Err(e) = websocket.close(None).await {
-                                    debug!("Connection already closed {e}");
+                                    tracing::debug!("Connection already closed {e}");
                                 };
                                 break;
                             }

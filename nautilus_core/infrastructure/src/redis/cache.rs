@@ -41,7 +41,6 @@ use nautilus_model::{
     types::currency::Currency,
 };
 use redis::{Commands, Connection, Pipeline};
-use tracing::{debug, error};
 use ustr::Ustr;
 
 use super::{REDIS_DELIMITER, REDIS_FLUSHDB};
@@ -169,13 +168,13 @@ impl RedisCacheDatabase {
     }
 
     pub fn close(&mut self) -> anyhow::Result<()> {
-        debug!("Closing cache database adapter");
+        tracing::debug!("Closing cache database adapter");
         self.tx
             .send(DatabaseCommand::close())
             .map_err(anyhow::Error::new)?;
 
         if let Some(handle) = self.handle.take() {
-            debug!("Joining '{CACHE_WRITE}' thread");
+            tracing::debug!("Joining '{CACHE_WRITE}' thread");
             handle.join().map_err(|e| anyhow::anyhow!("{:?}", e))
         } else {
             Err(anyhow::anyhow!("Cache database already shutdown"))
@@ -191,7 +190,7 @@ impl RedisCacheDatabase {
 
     pub fn keys(&mut self, pattern: &str) -> anyhow::Result<Vec<String>> {
         let pattern = format!("{}{REDIS_DELIMITER}{}", self.trader_key, pattern);
-        debug!("Querying keys: {pattern}");
+        tracing::debug!("Querying keys: {pattern}");
         match self.con.keys(pattern) {
             Ok(keys) => Ok(keys),
             Err(e) => Err(e.into()),
@@ -287,7 +286,7 @@ fn drain_buffer(conn: &mut Connection, trader_key: &str, buffer: &mut VecDeque<D
         let collection = match get_collection_key(&key) {
             Ok(collection) => collection,
             Err(e) => {
-                error!("{e}");
+                tracing::error!("{e}");
                 continue; // Continue to next message
             }
         };
@@ -298,25 +297,25 @@ fn drain_buffer(conn: &mut Connection, trader_key: &str, buffer: &mut VecDeque<D
             DatabaseOperation::Insert => {
                 if let Some(payload) = msg.payload {
                     if let Err(e) = insert(&mut pipe, collection, &key, payload) {
-                        error!("{e}");
+                        tracing::error!("{e}");
                     }
                 } else {
-                    error!("Null `payload` for `insert`");
+                    tracing::error!("Null `payload` for `insert`");
                 }
             }
             DatabaseOperation::Update => {
                 if let Some(payload) = msg.payload {
                     if let Err(e) = update(&mut pipe, collection, &key, payload) {
-                        error!("{e}");
+                        tracing::error!("{e}");
                     }
                 } else {
-                    error!("Null `payload` for `update`");
+                    tracing::error!("Null `payload` for `update`");
                 };
             }
             DatabaseOperation::Delete => {
                 // `payload` can be `None` for a delete operation
                 if let Err(e) = delete(&mut pipe, collection, &key, msg.payload) {
-                    error!("{e}");
+                    tracing::error!("{e}");
                 }
             }
             DatabaseOperation::Close => panic!("Close command should not be drained"),
@@ -324,7 +323,7 @@ fn drain_buffer(conn: &mut Connection, trader_key: &str, buffer: &mut VecDeque<D
     }
 
     if let Err(e) = pipe.query::<()>(conn) {
-        error!("{e}");
+        tracing::error!("{e}");
     }
 }
 
@@ -679,7 +678,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
                     currencies.insert(currency_code, currency);
                 }
                 None => {
-                    error!("Currency not found: {currency_code}");
+                    tracing::error!("Currency not found: {currency_code}");
                 }
             }
         }
@@ -698,7 +697,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
                     instruments.insert(instrument_id, instrument);
                 }
                 None => {
-                    error!("Instrument not found: {instrument_id}");
+                    tracing::error!("Instrument not found: {instrument_id}");
                 }
             }
         }
@@ -731,7 +730,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
                     accounts.insert(account_id, account);
                 }
                 None => {
-                    error!("Account not found: {account_id}");
+                    tracing::error!("Account not found: {account_id}");
                 }
             }
         }
@@ -751,7 +750,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
                     orders.insert(client_order_id, order);
                 }
                 None => {
-                    error!("Order not found: {client_order_id}");
+                    tracing::error!("Order not found: {client_order_id}");
                 }
             }
         }

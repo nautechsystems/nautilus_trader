@@ -37,7 +37,6 @@ use nautilus_core::{
 use nautilus_model::identifiers::TraderId;
 use redis::*;
 use streams::StreamReadOptions;
-use tracing::{debug, error};
 
 use super::{REDIS_MINID, REDIS_XTRIM};
 use crate::redis::{create_redis_connection, get_stream_key};
@@ -128,13 +127,13 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
         if let Err(e) = self.pub_tx.send(msg) {
             // This will occur for now when the Python task
             // blindly attempts to publish to a closed channel.
-            debug!("Failed to send message: {}", e);
+            tracing::debug!("Failed to send message: {}", e);
         }
         Ok(())
     }
 
     fn close(&mut self) -> anyhow::Result<()> {
-        debug!("Closing message bus database adapter");
+        tracing::debug!("Closing message bus database adapter");
 
         self.stream_signal.store(true, Ordering::Relaxed);
 
@@ -143,20 +142,20 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
             payload: Bytes::new(), // Empty
         };
         if let Err(e) = self.pub_tx.send(msg) {
-            error!("Failed to send close message: {:?}", e);
+            tracing::error!("Failed to send close message: {:?}", e);
         }
 
         if let Some(handle) = self.pub_handle.take() {
-            debug!("Joining '{MSGBUS_PUBLISH}' thread");
+            tracing::debug!("Joining '{MSGBUS_PUBLISH}' thread");
             if let Err(e) = handle.join().map_err(|e| anyhow::anyhow!("{:?}", e)) {
-                error!("Error joining '{MSGBUS_PUBLISH}' thread: {:?}", e);
+                tracing::error!("Error joining '{MSGBUS_PUBLISH}' thread: {:?}", e);
             }
         }
 
         if let Some(handle) = self.stream_handle.take() {
-            debug!("Joining '{MSGBUS_STREAM}' thread");
+            tracing::debug!("Joining '{MSGBUS_STREAM}' thread");
             if let Err(e) = handle.join().map_err(|e| anyhow::anyhow!("{:?}", e)) {
-                error!("Error joining '{MSGBUS_STREAM}' thread: {:?}", e);
+                tracing::error!("Error joining '{MSGBUS_STREAM}' thread: {:?}", e);
             }
         }
         Ok(())
@@ -189,7 +188,7 @@ pub fn publish_messages(
     instance_id: UUID4,
     config: MessageBusConfig,
 ) -> anyhow::Result<()> {
-    debug!("Starting message publishing");
+    tracing::debug!("Starting message publishing");
     let db_config = config
         .database
         .as_ref()
@@ -295,7 +294,7 @@ fn drain_buffer(
                 .query(conn);
 
             if let Err(e) = result {
-                error!("Error trimming stream '{stream_key}': {e}");
+                tracing::error!("Error trimming stream '{stream_key}': {e}");
             } else {
                 last_trim_index.insert(
                     stream_key.to_string(),
@@ -315,7 +314,7 @@ pub fn stream_messages(
     stream_keys: Vec<String>,
     stream_signal: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
-    debug!("Starting message streaming");
+    tracing::debug!("Starting message streaming");
     let mut con = create_redis_connection(MSGBUS_STREAM, config)?;
 
     let stream_keys = &stream_keys
@@ -323,7 +322,7 @@ pub fn stream_messages(
         .map(String::as_str)
         .collect::<Vec<&str>>();
 
-    debug!("Listening to streams: [{}]", stream_keys.join(", "));
+    tracing::debug!("Listening to streams: [{}]", stream_keys.join(", "));
 
     // Start streaming from current timestamp
     let clock = get_atomic_clock_realtime();
@@ -334,7 +333,7 @@ pub fn stream_messages(
 
     'outer: loop {
         if stream_signal.load(Ordering::Relaxed) {
-            debug!("Received terminate signal");
+            tracing::debug!("Received terminate signal");
             break;
         }
         let result: Result<RedisStreamBulk, _> =
@@ -354,12 +353,12 @@ pub fn stream_messages(
                                 match decode_bus_message(array) {
                                     Ok(msg) => {
                                         if tx.blocking_send(msg).is_err() {
-                                            debug!("Channel closed");
+                                            tracing::debug!("Channel closed");
                                             break 'outer; // End streaming
                                         }
                                     }
                                     Err(e) => {
-                                        error!("{:?}", e);
+                                        tracing::error!("{:?}", e);
                                         continue;
                                     }
                                 }
@@ -373,7 +372,7 @@ pub fn stream_messages(
             }
         }
     }
-    debug!("Completed message streaming");
+    tracing::debug!("Completed message streaming");
     Ok(())
 }
 

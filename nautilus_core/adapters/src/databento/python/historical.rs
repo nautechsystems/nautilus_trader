@@ -37,7 +37,6 @@ use pyo3::{
     types::{PyDict, PyList},
 };
 use tokio::sync::Mutex;
-use tracing::error;
 
 use crate::databento::{
     common::get_date_time_range,
@@ -167,7 +166,7 @@ impl DatabentoHistoricalClient {
                 let result = decode_instrument_def_msg(msg, instrument_id, ts_init);
                 match result {
                     Ok(instrument) => instruments.push(instrument),
-                    Err(e) => error!("{e:?}"),
+                    Err(e) => tracing::error!("{e:?}"),
                 };
             }
 

@@ -513,7 +513,7 @@ impl Drop for LogGuard {
 mod tests {
     use std::{collections::HashMap, time::Duration};
 
-    use log::{info, LevelFilter};
+    use log::LevelFilter;
     use nautilus_core::uuid::UUID4;
     use nautilus_model::identifiers::TraderId;
     use rstest::*;
@@ -602,7 +602,7 @@ mod tests {
         logging_clock_set_static_mode();
         logging_clock_set_static_time(1_650_000_000_000_000);
 
-        info!(
+        log::info!(
             component = "RiskEngine";
             "This is a test."
         );
@@ -663,7 +663,7 @@ mod tests {
         logging_clock_set_static_mode();
         logging_clock_set_static_time(1_650_000_000_000_000);
 
-        info!(
+        log::info!(
             component = "RiskEngine";
             "This is a test."
         );
@@ -719,7 +719,7 @@ mod tests {
         logging_clock_set_static_mode();
         logging_clock_set_static_time(1_650_000_000_000_000);
 
-        info!(
+        log::info!(
             component = "RiskEngine";
             "This is a test."
         );
