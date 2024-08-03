@@ -149,7 +149,7 @@ Indicates whether the producer will write a separate stream for each topic. This
 useful for Redis backings, which do not support wildcard topics when listening to streams. 
 If set to False, all messages will be written to the same stream.
 
-:::warning
+:::info
 Redis does not support wildcard stream topics. For better compatibility with Redis, it is recommended to set this option to False.
 :::
 
