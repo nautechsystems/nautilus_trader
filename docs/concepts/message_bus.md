@@ -153,15 +153,6 @@ If set to False, all messages will be written to the same stream.
 Redis does not support wildcard stream topics. For better compatibility with Redis, it is recommended to set this option to False.
 :::
 
-#### External streams
-
-The external stream keys the node will listen to for publishing deserialized message payloads on the internal message bus.
-
-:::tip
-Set the `LiveDataEngineConfig.external_clients` with the list of `client_id`s intended for external streaming.
-The `DataEngine` will filter out subscription commands for these clients, ensuring that the external streaming provides the necessary data for the subscriptions.
-:::
-
 ### Types filtering
 
 When messages are published on the message bus, they are serialized and written to a stream if a backing
@@ -193,3 +184,89 @@ Rather than a maximum lookback window based on the current wall clock time.
 :::
 
 The minimum supported Redis version is 6.2.0.
+
+## External streams
+
+The message bus within a `TradingNode` (node) is referred to as the "internal message bus".
+A producer node is one which publishes messages onto an external stream (see [external publishing](#external-publishing)).
+The consumer node listens to external streams to receive and publish deserialized message payloads on its internal message bus.
+                                                                         
+                      ┌───────────────────────────┐                      
+                      │                           │                      
+                      │                           │                      
+                      │                           │                      
+                      │      Producer Node        │                      
+                      │                           │                      
+                      │                           │                      
+                      │                           │                      
+                      │                           │                      
+                      │                           │                      
+                      │                           │                      
+                      └─────────────┬─────────────┘                      
+                                    │                                    
+                                    │                                    
+    ┌───────────────────────────────▼──────────────────────────────┐     
+    │                                                              │     
+    │                            Stream                            │     
+    │                                                              │     
+    └─────────────┬────────────────────────────────────┬───────────┘     
+                  │                                    │                 
+                  │                                    │                 
+    ┌─────────────▼───────────┐          ┌─────────────▼───────────┐     
+    │                         │          │                         │     
+    │                         │          │                         │     
+    │     Consumer Node 1     │          │     Consumer Node 2     │     
+    │                         │          │                         │     
+    │                         │          │                         │     
+    │                         │          │                         │     
+    │                         │          │                         │     
+    │                         │          │                         │     
+    │                         │          │                         │     
+    │                         │          │                         │     
+    └─────────────────────────┘          └─────────────────────────┘     
+
+:::tip
+Set the `LiveDataEngineConfig.external_clients` with the list of `client_id`s intended to represent the external streaming clients.
+The `DataEngine` will filter out subscription commands for these clients, ensuring that the external streaming provides the necessary data for any subscriptions to these clients.
+:::
+
+### Example configuration
+
+The following example details a streaming setup where a producer node publishes Binance data externally,
+and a downstream consumer node publishes these data messages onto its internal message bus.
+
+#### Producer node
+
+We configure the `MessageBus` of the producer node to publish to a `"binance"` stream.
+The settings `use_trader_id`, `use_trader_prefix`, and `use_instance_id` are all set to `False`
+to ensure a simple and predictable stream key that the consumer nodes can register for.
+
+```python
+    message_bus=MessageBusConfig(
+        database=DatabaseConfig(timeout=2),
+        use_trader_id=False,
+        use_trader_prefix=False,
+        use_instance_id=False,
+        streams_prefix="binance",  # <---
+        stream_per_topic=False,
+        autotrim_mins=30,
+    ),
+```
+
+#### Consumer node
+
+We configure the `MessageBus` of the consumer node to receive messages from the same `"binance"` stream.
+The node will listen to the external stream keys to publish these messages onto its internal message bus.
+Additionally, we declare the client ID `"BINANCE_EXT"` as an external client. This ensures that the 
+`DataEngine` does not attempt to send data commands to this client ID, as we expect these messages to be
+published onto the internal message bus from the external stream, to which the node has subscribed to the relevant topics.
+
+```python
+    data_engine=LiveDataEngineConfig(
+        external_clients=[ClientId("BINANCE_EXT")],
+    ),
+    message_bus=MessageBusConfig(
+        database=DatabaseConfig(timeout=2),
+        external_streams=["binance"],  # <---
+    ),
+```
