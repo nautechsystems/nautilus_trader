@@ -163,7 +163,6 @@ impl Hash for Subscription {
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
 )]
-#[allow(clippy::type_complexity)] // Complexity will reduce when Cython eliminated
 pub struct MessageBus {
     /// The trader ID associated with the message bus.
     pub trader_id: TraderId,
