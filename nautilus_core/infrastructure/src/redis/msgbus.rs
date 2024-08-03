@@ -307,7 +307,6 @@ fn drain_buffer(
     pipe.query::<()>(conn).map_err(anyhow::Error::from)
 }
 
-#[allow(clippy::type_complexity)]
 pub fn stream_messages(
     tx: tokio::sync::mpsc::Sender<BusMessage>,
     config: DatabaseConfig,
