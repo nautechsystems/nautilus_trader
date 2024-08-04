@@ -101,9 +101,11 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
         if "_schema" not in cls.__dict__:
             type_mapping = {
                 "InstrumentId": pa.string(),
+                "str": pa.string(),
                 "bool": pa.bool_(),
                 "float": pa.float64(),
                 "int": pa.int64(),
+                "bytes": pa.binary(),
             }
 
             cls._schema = pa.schema(
