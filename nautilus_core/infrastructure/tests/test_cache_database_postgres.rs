@@ -232,6 +232,15 @@ mod serial_tests {
             Some(client_order_id_2),
             None,
         );
+        // add foreign key dependencies: instrument and currencies
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache
+            .add_instrument(&InstrumentAny::CurrencyPair(instrument))
+            .unwrap();
+        // add orders
         pg_cache.add_order(&market_order).unwrap();
         pg_cache.add_order(&limit_order).unwrap();
         wait_until(
@@ -261,8 +270,12 @@ mod serial_tests {
         let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
         let account = account_id();
         let mut pg_cache = get_pg_cache_database().await.unwrap();
-        // Add the target currency of order
+        // add foreign key dependencies: instrument and currencies
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
         pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_instrument(&instrument).unwrap();
         // 1. Create the order
         let mut market_order = TestOrderStubs::market_order(
             instrument.id(),
