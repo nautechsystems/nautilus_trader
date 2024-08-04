@@ -19,6 +19,7 @@ use std::{
     sync::Arc,
 };
 
+use bytes::Bytes;
 use futures_util::{stream, StreamExt};
 use pyo3::{exceptions::PyException, prelude::*, types::PyBytes};
 
@@ -38,6 +39,15 @@ impl HttpMethod {
 
 #[pymethods]
 impl HttpResponse {
+    #[new]
+    pub fn py_new(status: u16, body: Vec<u8>) -> Self {
+        Self {
+            status,
+            headers: HashMap::new(),
+            body: Bytes::from(body),
+        }
+    }
+
     #[getter]
     #[pyo3(name = "status")]
     pub fn py_status(&self) -> u16 {
