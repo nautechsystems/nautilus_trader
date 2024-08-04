@@ -2806,6 +2806,7 @@ version = "0.28.0"
 dependencies = [
  "anyhow",
  "axum",
+ "bytes",
  "criterion",
  "dashmap 6.0.1",
  "futures",
