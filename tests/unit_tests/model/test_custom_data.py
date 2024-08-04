@@ -13,32 +13,38 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from dataclasses import dataclass
+from dataclasses import field
+
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.custom import customdataclass
 from nautilus_trader.model.identifiers import InstrumentId
 
 
 @customdataclass
+@dataclass  # optional
 class GreeksTestData(Data):
-    instrument_id: InstrumentId = InstrumentId.from_str("ES.GLBX")
+    instrument_id: InstrumentId = field(default_factory=InstrumentId.from_str("ES.GLBX"))
     delta: float = 0.0
+    _ts_event: int = 0
+    _ts_init: int = 0
 
     def __repr__(self):
-        return f"{self(type).__name__}(instrument_id={self.instrument_id}, delta={self.delta:.2f}, ts_event={self.ts_event}, ts_init={self._ts_init})"
+        return f"GreeksTestData(instrument_id={self.instrument_id}, delta={self.delta:.2f}, ts_event={self.ts_event}, ts_init={self._ts_init})"
 
 
 def test_customdata_decorator_properties() -> None:
     # Arrange, Act
-    data = GreeksTestData(ts_event=2, ts_init=1)
+    data = GreeksTestData(_ts_event=1, _ts_init=2)
 
     # Assert
-    assert data.ts_event == 2
-    assert data.ts_init == 1
+    assert data.ts_event == 1
+    assert data.ts_init == 2
 
 
 def test_customdata_decorator_dict() -> None:
     # Arrange
-    data = GreeksTestData(ts_event=2, ts_init=1)
+    data = GreeksTestData(_ts_event=1, _ts_init=2)
 
     # Act
     data_dict = data.to_dict()
@@ -47,7 +53,44 @@ def test_customdata_decorator_dict() -> None:
     assert data_dict == {
         "instrument_id": "ES.GLBX",
         "delta": 0.0,
-        "ts_event": 2,
-        "ts_init": 1,
+        "_ts_event": 1,
+        "_ts_init": 2,
     }
-    # assert GreeksTestData.from_dict(data_dict) == data
+
+
+def test_customdata_decorator_dict_identity() -> None:
+    # Arrange
+    data = GreeksTestData(
+        _ts_event=1,
+        _ts_init=2,
+        instrument_id=InstrumentId.from_str("CL.GLBX"),
+        delta=1000.0,
+    )
+
+    # Act
+    new_data = GreeksTestData.from_dict(data.to_dict())
+
+    # Assert
+    assert new_data == data
+
+
+def test_customdata_decorator_bytes_identity() -> None:
+    # Arrange
+    data = GreeksTestData()
+
+    # Act
+    new_data = GreeksTestData.from_bytes(data.to_bytes())
+
+    # Assert
+    assert new_data == data
+
+
+def test_customdata_decorator_arrow_identity() -> None:
+    # Arrange
+    data = GreeksTestData()
+
+    # Act
+    new_data = GreeksTestData.from_arrow(data.to_arrow())[0]
+
+    # Assert
+    assert new_data == data
