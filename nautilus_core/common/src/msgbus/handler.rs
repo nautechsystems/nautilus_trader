@@ -13,21 +13,30 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
-//! algorithmic trading platform, providing quantitative traders with the ability to backtest
-//! portfolios of automated trading strategies on historical data with an event-driven engine,
-//! and also deploy those same strategies live, with no code changes.
-//!
-//! # Feature flags
-//!
-//! This crate provides feature flags to control source code inclusion during compilation,
-//! depending on the intended use case, i.e. whether to provide Python bindings
-//! for the main `nautilus_trader` Python package, or as part of a Rust only build.
-//!
-//! - `ffi`: Enables the C foreign function interface (FFI) from `cbindgen`
-//! - `python`: Enables Python bindings from `pyo3`
+use std::{any::Any, rc::Rc};
 
-pub mod aggregation;
-pub mod client;
-pub mod engine;
-pub mod mocks;
+use nautilus_model::data::Data;
+use ustr::Ustr;
+
+use crate::messages::data::DataResponse;
+
+pub trait MessageHandler: Any {
+    fn id(&self) -> Ustr;
+    fn handle(&self, message: &dyn Any);
+    fn handle_response(&self, resp: DataResponse);
+    fn handle_data(&self, data: Data);
+    fn as_any(&self) -> &dyn Any;
+}
+
+#[derive(Clone)]
+#[repr(transparent)]
+pub struct ShareableMessageHandler(pub Rc<dyn MessageHandler>);
+
+impl From<Rc<dyn MessageHandler>> for ShareableMessageHandler {
+    fn from(value: Rc<dyn MessageHandler>) -> Self {
+        Self(value)
+    }
+}
+
+// Message handlers are not expected to be sent across thread boundaries
+unsafe impl Send for ShareableMessageHandler {}

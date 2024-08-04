@@ -25,21 +25,18 @@ use std::{
     any::Any,
     cell::RefCell,
     collections::{HashMap, HashSet},
-    marker::PhantomData,
     ops::Deref,
     rc::Rc,
     sync::Arc,
 };
 
+use indexmap::IndexMap;
 use nautilus_common::{
     cache::Cache,
-    client::DataClientAdapter,
     clock::Clock,
-    component::{Disposed, PreInitialized, Ready, Running, Starting, State, Stopped, Stopping},
-    enums::ComponentState,
     logging::{RECV, RES},
-    messages::data::DataResponse,
-    msgbus::MessageBus,
+    messages::data::{DataRequest, DataResponse, SubscriptionCommand},
+    msgbus::{handler::MessageHandler, MessageBus},
 };
 use nautilus_model::{
     data::{
@@ -51,11 +48,12 @@ use nautilus_model::{
         trade::TradeTick,
         Data, DataType,
     },
-    identifiers::{ClientId, InstrumentId},
+    identifiers::{ClientId, InstrumentId, Venue},
     instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
 };
+use ustr::Ustr;
 
-use crate::aggregation::BarAggregator;
+use crate::{aggregation::BarAggregator, client::DataClientAdapter};
 
 pub struct DataEngineConfig {
     pub time_bars_build_with_no_updates: bool,
@@ -63,16 +61,31 @@ pub struct DataEngineConfig {
     pub time_bars_interval_type: String, // Make this an enum `BarIntervalType`
     pub validate_data_sequence: bool,
     pub buffer_deltas: bool,
-    pub external_clients: Vec<ClientId>,
+    pub external_clients: Option<Vec<ClientId>>,
     pub debug: bool,
 }
 
-pub struct DataEngine<State = PreInitialized> {
-    state: PhantomData<State>,
+impl Default for DataEngineConfig {
+    fn default() -> Self {
+        Self {
+            time_bars_build_with_no_updates: true,
+            time_bars_timestamp_on_close: true,
+            time_bars_interval_type: "left_open".to_string(), // Make this an enum `BarIntervalType`
+            validate_data_sequence: false,
+            buffer_deltas: false,
+            external_clients: None,
+            debug: false,
+        }
+    }
+}
+
+pub struct DataEngine {
     clock: Box<dyn Clock>,
     cache: Rc<RefCell<Cache>>,
     msgbus: Rc<RefCell<MessageBus>>,
+    clients: IndexMap<ClientId, DataClientAdapter>,
     default_client: Option<DataClientAdapter>,
+    routing_map: IndexMap<Venue, ClientId>,
     // order_book_intervals: HashMap<(InstrumentId, usize), Vec<fn(&OrderBook)>>,  // TODO
     bar_aggregators: Vec<Box<dyn BarAggregator>>, // TODO: dyn for now
     synthetic_quote_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
@@ -87,65 +100,78 @@ impl DataEngine {
         clock: Box<dyn Clock>,
         cache: Rc<RefCell<Cache>>,
         msgbus: Rc<RefCell<MessageBus>>,
-        config: DataEngineConfig,
+        config: Option<DataEngineConfig>,
     ) -> Self {
         Self {
-            state: PhantomData::<PreInitialized>,
             clock,
             cache,
+            msgbus,
+            clients: IndexMap::new(),
+            routing_map: IndexMap::new(),
             default_client: None,
             bar_aggregators: Vec::new(),
             synthetic_quote_feeds: HashMap::new(),
             synthetic_trade_feeds: HashMap::new(),
             buffered_deltas_map: HashMap::new(),
-            config,
-            msgbus,
+            config: config.unwrap_or_default(),
         }
     }
 }
 
-impl<S: State> DataEngine<S> {
-    fn transition<NewState>(self) -> DataEngine<NewState> {
-        DataEngine {
-            state: PhantomData,
-            clock: self.clock,
-            cache: self.cache,
-            default_client: self.default_client,
-            bar_aggregators: self.bar_aggregators,
-            synthetic_quote_feeds: self.synthetic_quote_feeds,
-            synthetic_trade_feeds: self.synthetic_trade_feeds,
-            buffered_deltas_map: self.buffered_deltas_map,
-            config: self.config,
-            msgbus: self.msgbus,
-        }
+impl DataEngine {
+    // pub fn register_catalog(&mut self, catalog: ParquetDataCatalog) {}  TODO: Implement catalog
+
+    /// Register the given data `client` with the engine as the default routing client.
+    ///
+    /// When a specific venue routing cannot be found, this client will receive messages.
+    ///
+    /// # Warnings
+    ///
+    /// Any existing default routing client will be overwritten.
+    /// TODO: change this to suit message bus behaviour
+    pub fn register_default_client(&mut self, client: DataClientAdapter) {
+        log::info!("Registered default client {}", client.client_id());
+        self.default_client = Some(client);
     }
 
-    #[must_use]
-    pub fn state(&self) -> ComponentState {
-        S::state()
+    pub fn start(self) {
+        self.clients.values().for_each(|client| client.start());
+    }
+
+    pub fn stop(self) {
+        self.clients.values().for_each(|client| client.stop());
+    }
+
+    pub fn reset(self) {
+        self.clients.values().for_each(|client| client.reset());
+    }
+
+    pub fn dispose(mut self) {
+        self.clients.values().for_each(|client| client.dispose());
+        self.clock.cancel_timers();
+    }
+
+    pub fn connect(&self) {
+        todo!() //  Implement actual client connections for a live/sandbox context
+    }
+
+    pub fn disconnect(&self) {
+        todo!() // Implement actual client connections for a live/sandbox context
     }
 
     #[must_use]
     pub fn check_connected(&self) -> bool {
-        self.msgbus
-            .borrow()
-            .clients
-            .values()
-            .all(|client| client.is_connected())
+        self.clients.values().all(|client| client.is_connected())
     }
 
     #[must_use]
     pub fn check_disconnected(&self) -> bool {
-        self.msgbus
-            .borrow()
-            .clients
-            .values()
-            .all(|client| !client.is_connected())
+        self.clients.values().all(|client| !client.is_connected())
     }
 
     #[must_use]
     pub fn registed_clients(&self) -> Vec<ClientId> {
-        self.msgbus.borrow().clients.keys().copied().collect()
+        self.clients.keys().copied().collect()
     }
 
     // -- SUBSCRIPTIONS ---------------------------------------------------------------------------
@@ -156,7 +182,7 @@ impl<S: State> DataEngine<S> {
         T: Clone,
     {
         let mut subs = Vec::new();
-        for client in self.msgbus.borrow().clients.values() {
+        for client in self.clients.values() {
             subs.extend(get_subs(client).iter().cloned());
         }
         subs
@@ -206,91 +232,80 @@ impl<S: State> DataEngine<S> {
     pub fn subscribed_instrument_close(&self) -> Vec<InstrumentId> {
         self.collect_subscriptions(|client| &client.subscriptions_instrument_close)
     }
-}
 
-impl DataEngine<PreInitialized> {
-    // pub fn register_catalog(&mut self, catalog: ParquetDataCatalog) {}  TODO: Implement catalog
-
-    /// Register the given data `client` with the engine as the default routing client.
-    ///
-    /// When a specific venue routing cannot be found, this client will receive messages.
-    ///
-    /// # Warnings
-    ///
-    /// Any existing default routing client will be overwritten.
-    /// TODO: change this to suit message bus behaviour
-    pub fn register_default_client(&mut self, client: DataClientAdapter) {
-        log::info!("Registered default client {}", client.client_id());
-        self.default_client = Some(client);
+    pub fn on_start(self) {
+        todo!()
     }
 
-    fn initialize(self) -> DataEngine<Ready> {
-        self.transition()
-    }
-}
-
-impl DataEngine<Ready> {
-    #[must_use]
-    pub fn start(self) -> DataEngine<Starting> {
-        self.msgbus
-            .borrow()
-            .clients
-            .values()
-            .for_each(|client| client.start());
-        self.transition()
+    pub fn on_stop(self) {
+        todo!()
     }
 
-    #[must_use]
-    pub fn stop(self) -> DataEngine<Stopping> {
-        self.msgbus
-            .borrow()
-            .clients
-            .values()
-            .for_each(|client| client.stop());
-        self.transition()
+    /// Registers a new [`DataClientAdapter`]
+    pub fn register_client(&mut self, client: DataClientAdapter, routing: Option<Venue>) {
+        if let Some(routing) = routing {
+            self.routing_map.insert(routing, client.client_id());
+            log::info!("Set client {} routing for {routing}", client.client_id());
+        }
+
+        log::info!("Registered client {}", client.client_id());
+        self.clients.insert(client.client_id, client);
     }
 
-    #[must_use]
-    pub fn reset(self) -> Self {
-        self.msgbus
-            .borrow()
-            .clients
-            .values()
-            .for_each(|client| client.reset());
-        self.transition()
+    /// Deregisters a [`DataClientAdapter`]
+    pub fn deregister_client(&mut self, client_id: &ClientId) {
+        // TODO: We could return a `Result` but then this is part of system wiring and instead of
+        // propagating results all over the place it may be cleaner to just immediately fail
+        // for these sorts of design-time errors?
+        // correctness::check_key_in_map(&client_id, &self.clients, "client_id", "clients").unwrap();
+
+        self.clients.shift_remove(client_id);
+        log::info!("Deregistered client {client_id}");
     }
 
-    #[must_use]
-    pub fn dispose(mut self) -> DataEngine<Disposed> {
-        self.msgbus
-            .borrow()
-            .clients
-            .values()
-            .for_each(|client| client.dispose());
-        self.clock.cancel_timers();
-        self.transition()
-    }
-}
-
-impl DataEngine<Starting> {
-    #[must_use]
-    pub fn on_start(self) -> DataEngine<Running> {
-        self.transition()
-    }
-}
-
-impl DataEngine<Running> {
-    pub fn connect(&self) {
-        todo!() //  Implement actual client connections for a live/sandbox context
+    fn get_client(&self, client_id: &ClientId, venue: &Venue) -> Option<&DataClientAdapter> {
+        match self.clients.get(client_id) {
+            Some(client) => Some(client),
+            None => self
+                .routing_map
+                .get(venue)
+                .and_then(|client_id: &ClientId| self.clients.get(client_id)),
+        }
     }
 
-    pub fn disconnect(&self) {
-        todo!() // Implement actual client connections for a live/sandbox context
+    /// Send a [`DataRequest`] to an endpoint that must be a data client implementation.
+    pub fn execute(&mut self, msg: &dyn Any) {
+        // TODO: log error
+        if let Some(cmd) = msg.downcast_ref::<SubscriptionCommand>() {
+            if let Some(client) = self.clients.get_mut(&cmd.client_id) {
+                client.execute(cmd.clone())
+            } else {
+                log::error!(
+                    "Cannot handle command: no client found for {}",
+                    cmd.client_id
+                );
+            }
+        }
     }
 
-    #[must_use]
-    pub fn stop(self) -> DataEngine<Stopping> {
-        self.transition()
+    pub fn request(&self, req: DataRequest) {
+        if let Some(client) = self.clients.get(&req.client_id) {
+            // TODO: We don't immediately need the response
+            let _ = client.request(req);
+        } else {
+            log::error!(
+                "Cannot handle request: no client found for {}",
+                req.client_id
+            );
+        }
+    }
+
+    /// TODO: Probably not required
+    /// Send a [`SubscriptionCommand`] to an endpoint that must be a data client implementation.
+    pub fn send_subscription_command(&self, message: SubscriptionCommand) {
+        if let Some(client) = self.get_client(&message.client_id, &message.venue) {
+            client.through_execute(message);
+        }
     }
 
     pub fn process(&self, data: Data) {
@@ -497,25 +512,6 @@ impl DataEngine<Running> {
     }
 }
 
-impl DataEngine<Stopping> {
-    #[must_use]
-    pub fn on_stop(self) -> DataEngine<Stopped> {
-        self.transition()
-    }
-}
-
-impl DataEngine<Stopped> {
-    #[must_use]
-    pub fn reset(self) -> DataEngine<Ready> {
-        self.transition()
-    }
-
-    #[must_use]
-    pub fn dispose(self) -> DataEngine<Disposed> {
-        self.transition()
-    }
-}
-
 // TODO: Potentially move these
 pub fn get_instrument_publish_topic(instrument: &InstrumentAny) -> String {
     let instrument_id = instrument.id();
@@ -562,4 +558,99 @@ pub fn get_trade_publish_topic(trade: &TradeTick) -> String {
 
 pub fn get_bar_publish_topic(bar: &Bar) -> String {
     format!("data.bars.{}", bar.bar_type)
+}
+
+pub struct SubscriptionCommandHandler {
+    id: Ustr,
+    data_engine: Rc<RefCell<DataEngine>>,
+}
+
+impl MessageHandler for SubscriptionCommandHandler {
+    fn id(&self) -> Ustr {
+        self.id
+    }
+
+    fn handle(&self, message: &dyn Any) {
+        self.data_engine.borrow_mut().execute(message)
+    }
+    fn handle_response(&self, _resp: DataResponse) {}
+    fn handle_data(&self, _resp: Data) {}
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use indexmap::indexmap;
+    use nautilus_common::{
+        clock::TestClock, messages::data::Action, msgbus::handler::ShareableMessageHandler,
+    };
+    use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
+    use nautilus_model::{
+        identifiers::TraderId,
+        instruments::{currency_pair::CurrencyPair, stubs::audusd_sim},
+    };
+    use rstest::rstest;
+
+    use super::*;
+    use crate::mocks::MockDataClient;
+
+    #[rstest]
+    fn test_execute_subscribe_instruments(audusd_sim: CurrencyPair) {
+        // TODO: Cleanup test and provide more stubs
+        let trader_id = TraderId::from("TESTER-001");
+        let clock = Box::new(TestClock::new());
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let msgbus = Rc::new(RefCell::new(MessageBus::new(
+            trader_id,
+            UUID4::new(),
+            None,
+            None,
+        )));
+        let switchboard = msgbus.borrow().switchboard.clone();
+        let data_engine = DataEngine::new(clock, cache.clone(), msgbus.clone(), None);
+        let data_engine = Rc::new(RefCell::new(data_engine));
+
+        let client_id = ClientId::from("SIM");
+        let venue = Venue::from("SIM");
+        let client = Box::new(MockDataClient::new(
+            cache.clone(),
+            msgbus.clone(),
+            client_id,
+            venue,
+        ));
+
+        let client = DataClientAdapter::new(client_id, venue, client, Box::new(TestClock::new()));
+        data_engine.borrow_mut().register_client(client, None);
+
+        let metadata = indexmap! {
+            "instrument_id".to_string() => audusd_sim.id.to_string(),
+        };
+        let data_type = DataType::new(stringify!(QuoteTick), Some(metadata));
+        let cmd = SubscriptionCommand::new(
+            client_id,
+            venue,
+            data_type,
+            Action::Subscribe,
+            UUID4::new(),
+            UnixNanos::default(),
+        );
+
+        let endpoint = switchboard.data_engine_execute;
+        let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
+            id: switchboard.data_engine_process,
+            data_engine: data_engine.clone(),
+        }));
+        msgbus.borrow_mut().register(endpoint.as_str(), handler);
+        msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+
+        assert!(data_engine
+            .borrow()
+            .subscribed_quote_ticks()
+            .contains(&audusd_sim.id));
+    }
 }

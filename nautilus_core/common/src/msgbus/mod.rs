@@ -16,51 +16,27 @@
 //! A common in-memory `MessageBus` for loosely coupled message passing patterns.
 
 pub mod database;
+pub mod handler;
 pub mod stubs;
+pub mod switchboard;
 
 use std::{
     any::Any,
     collections::HashMap,
     fmt::Debug,
     hash::{Hash, Hasher},
-    rc::Rc,
 };
 
+use handler::ShareableMessageHandler;
 use indexmap::IndexMap;
 use nautilus_core::uuid::UUID4;
-use nautilus_model::{
-    data::Data,
-    identifiers::{ClientId, TraderId, Venue},
-};
+use nautilus_model::{data::Data, identifiers::TraderId};
+use switchboard::MessagingSwitchboard;
 use ustr::Ustr;
 
-use crate::{
-    client::DataClientAdapter,
-    messages::data::{DataRequest, DataResponse, SubscriptionCommand},
-};
+use crate::messages::data::DataResponse;
 
 pub const CLOSE_TOPIC: &str = "CLOSE";
-
-pub trait MessageHandler: Any {
-    fn id(&self) -> Ustr;
-    fn handle(&self, message: &dyn Any);
-    fn handle_response(&self, resp: DataResponse);
-    fn handle_data(&self, resp: &Data);
-    fn as_any(&self) -> &dyn Any;
-}
-
-#[derive(Clone)]
-#[repr(transparent)]
-pub struct ShareableMessageHandler(pub Rc<dyn MessageHandler>);
-
-impl From<Rc<dyn MessageHandler>> for ShareableMessageHandler {
-    fn from(value: Rc<dyn MessageHandler>) -> Self {
-        Self(value)
-    }
-}
-
-// Message handlers are not expected to be sent across thread boundaries
-unsafe impl Send for ShareableMessageHandler {}
 
 // Represents a subscription to a particular topic.
 //
@@ -172,6 +148,8 @@ pub struct MessageBus {
     pub name: String,
     /// If the message bus is backed by a database.
     pub has_backing: bool,
+    /// The switchboard for built-in endpoints.
+    pub switchboard: MessagingSwitchboard,
     /// Mapping from topic to the corresponding handler
     /// a topic can be a string with wildcards
     /// * '?' - any character
@@ -182,9 +160,6 @@ pub struct MessageBus {
     patterns: IndexMap<Ustr, Vec<Subscription>>,
     /// Handles a message or a request destined for a specific endpoint.
     endpoints: IndexMap<Ustr, ShareableMessageHandler>,
-    /// Handles data and subscriptions requests for a specific data client
-    pub clients: IndexMap<ClientId, DataClientAdapter>,
-    routing_map: HashMap<Venue, ClientId>,
 }
 
 /// Message bus is not meant to be passed between threads
@@ -203,11 +178,10 @@ impl MessageBus {
             trader_id,
             instance_id,
             name: name.unwrap_or(stringify!(MessageBus).to_owned()),
+            switchboard: MessagingSwitchboard::default(),
             subscriptions: IndexMap::new(),
             patterns: IndexMap::new(),
             endpoints: IndexMap::new(),
-            clients: IndexMap::new(),
-            routing_map: HashMap::new(),
             has_backing: false,
         }
     }
@@ -267,38 +241,6 @@ impl MessageBus {
     pub const fn close(&self) -> anyhow::Result<()> {
         // TODO: Integrate the backing database
         Ok(())
-    }
-
-    /// Registers a new [`DataClientAdapter`]
-    pub fn register_client(&mut self, client: DataClientAdapter, routing: Option<Venue>) {
-        if let Some(routing) = routing {
-            self.routing_map.insert(routing, client.client_id());
-            log::info!("Set client {} routing for {routing}", client.client_id());
-        }
-
-        log::info!("Registered client {}", client.client_id());
-        self.clients.insert(client.client_id, client);
-    }
-
-    /// Deregisters a [`DataClientAdapter`]
-    pub fn deregister_client(&mut self, client_id: &ClientId) {
-        // TODO: We could return a `Result` but then this is part of system wiring and instead of
-        // propagating results all over the place it may be cleaner to just immediately fail
-        // for these sorts of design-time errors?
-        // correctness::check_key_in_map(&client_id, &self.clients, "client_id", "clients").unwrap();
-
-        self.clients.shift_remove(client_id);
-        log::info!("Deregistered client {client_id}");
-    }
-
-    fn get_client(&self, client_id: &ClientId, venue: Venue) -> Option<&DataClientAdapter> {
-        match self.clients.get(client_id) {
-            Some(client) => Some(client),
-            None => self
-                .routing_map
-                .get(&venue)
-                .and_then(|client_id: &ClientId| self.clients.get(client_id)),
-        }
     }
 
     /// Registers the given `handler` for the `endpoint` address.
@@ -400,8 +342,8 @@ impl MessageBus {
     }
 
     /// Sends a message to an endpoint.
-    pub fn send(&self, endpoint: &str, message: &dyn Any) {
-        if let Some(handler) = self.get_endpoint(&Ustr::from(endpoint)) {
+    pub fn send(&self, endpoint: &Ustr, message: &dyn Any) {
+        if let Some(handler) = self.get_endpoint(endpoint) {
             handler.0.handle(message);
         }
     }
@@ -417,22 +359,22 @@ impl MessageBus {
     }
 }
 
-/// Data specific functions
+/// Data specific functions.
 impl MessageBus {
-    /// Send a [`DataRequest`] to an endpoint that must be a data client implementation.
-    pub fn send_data_request(&self, message: DataRequest) {
-        // TODO: log error
-        if let Some(client) = self.get_client(&message.client_id, message.venue) {
-            let _ = client.request(message);
-        }
-    }
-
-    /// Send a [`SubscriptionCommand`] to an endpoint that must be a data client implementation.
-    pub fn send_subscription_command(&self, message: SubscriptionCommand) {
-        if let Some(client) = self.get_client(&message.client_id, message.venue) {
-            client.through_execute(message);
-        }
-    }
+    // /// Send a [`DataRequest`] to an endpoint that must be a data client implementation.
+    // pub fn send_data_request(&self, message: DataRequest) {
+    //     // TODO: log error
+    //     if let Some(client) = self.get_client(&message.client_id, message.venue) {
+    //         let _ = client.request(message);
+    //     }
+    // }
+    //
+    // /// Send a [`SubscriptionCommand`] to an endpoint that must be a data client implementation.
+    // pub fn send_subscription_command(&self, message: SubscriptionCommand) {
+    //     if let Some(client) = self.get_client(&message.client_id, message.venue) {
+    //         client.through_execute(message);
+    //     }
+    // }
 
     /// Send a [`DataResponse`] to an endpoint that must be an actor.
     pub fn send_response(&self, message: DataResponse) {
@@ -447,7 +389,7 @@ impl MessageBus {
         let matching_subs = self.matching_subscriptions(&topic);
 
         for sub in matching_subs {
-            sub.handler.0.handle_data(&message);
+            sub.handler.0.handle_data(message.clone());
         }
     }
 }
@@ -566,13 +508,13 @@ mod tests {
     #[rstest]
     fn test_endpoint_send() {
         let mut msgbus = stub_msgbus();
-        let endpoint = "MyEndpoint";
+        let endpoint = Ustr::from("MyEndpoint");
 
         let handler_id = Ustr::from("1");
         let handler = get_call_check_shareable_handler(handler_id);
 
-        msgbus.register(endpoint, handler.clone());
-        assert!(msgbus.get_endpoint(&Ustr::from(endpoint)).is_some());
+        msgbus.register(endpoint.as_str(), handler.clone());
+        assert!(msgbus.get_endpoint(&endpoint).is_some());
 
         // check if the handler called variable is false
         assert!(!handler
@@ -584,7 +526,7 @@ mod tests {
             .was_called());
 
         // Send a message to the endpoint
-        msgbus.send(endpoint, &"Test Message");
+        msgbus.send(&endpoint, &"Test Message");
 
         // Check if the handler was called
         assert!(handler

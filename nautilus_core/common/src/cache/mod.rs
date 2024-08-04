@@ -224,14 +224,17 @@ pub struct Cache {
 impl Default for Cache {
     /// Creates a new default [`Cache`] instance.
     fn default() -> Self {
-        Self::new(CacheConfig::default(), None)
+        Self::new(Some(CacheConfig::default()), None)
     }
 }
 
 impl Cache {
     /// Creates a new [`Cache`] instance.
     #[must_use]
-    pub fn new(config: CacheConfig, database: Option<Box<dyn CacheDatabaseAdapter>>) -> Self {
+    pub fn new(
+        config: Option<CacheConfig>,
+        database: Option<Box<dyn CacheDatabaseAdapter>>,
+    ) -> Self {
         let index = CacheIndex {
             venue_account: HashMap::new(),
             venue_orders: HashMap::new(),
@@ -264,7 +267,7 @@ impl Cache {
         };
 
         Self {
-            config,
+            config: config.unwrap_or_default(),
             index,
             database,
             general: HashMap::new(),

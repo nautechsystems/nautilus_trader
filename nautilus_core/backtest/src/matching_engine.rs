@@ -329,15 +329,12 @@ impl OrderMatchingEngine {
 
     fn generate_trade_id(&mut self) -> TradeId {
         self.execution_count += 1;
-        TradeId::new(self.generate_trade_id_str().as_str()).unwrap()
-    }
-
-    fn generate_trade_id_str(&self) -> Ustr {
-        if self.config.use_random_ids {
-            UUID4::new().to_string().into()
+        let trade_id = if self.config.use_random_ids {
+            UUID4::new().to_string()
         } else {
-            format!("{}-{}-{}", self.venue, self.raw_id, self.execution_count).into()
-        }
+            format!("{}-{}-{}", self.venue, self.raw_id, self.execution_count)
+        };
+        TradeId::from(trade_id.as_str())
     }
 
     // -- EVENT GENERATORS -----------------------------------------------------
@@ -363,7 +360,10 @@ impl OrderMatchingEngine {
             )
             .unwrap(),
         );
-        self.msgbus.send("ExecEngine.process", &event as &dyn Any);
+        self.msgbus.send(
+            &self.msgbus.switchboard.exec_engine_process,
+            &event as &dyn Any,
+        );
     }
 
     fn generate_order_accepted(&self, order: &OrderAny, venue_order_id: VenueOrderId) {
@@ -386,7 +386,10 @@ impl OrderMatchingEngine {
             )
             .unwrap(),
         );
-        self.msgbus.send("ExecEngine.process", &event as &dyn Any);
+        self.msgbus.send(
+            &self.msgbus.switchboard.exec_engine_process,
+            &event as &dyn Any,
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -417,7 +420,10 @@ impl OrderMatchingEngine {
             )
             .unwrap(),
         );
-        self.msgbus.send("ExecEngine.process", &event as &dyn Any);
+        self.msgbus.send(
+            &self.msgbus.switchboard.exec_engine_process,
+            &event as &dyn Any,
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -448,7 +454,10 @@ impl OrderMatchingEngine {
             )
             .unwrap(),
         );
-        self.msgbus.send("ExecEngine.process", &event as &dyn Any);
+        self.msgbus.send(
+            &self.msgbus.switchboard.exec_engine_process,
+            &event as &dyn Any,
+        );
     }
 
     fn generate_order_updated(
@@ -477,7 +486,10 @@ impl OrderMatchingEngine {
             )
             .unwrap(),
         );
-        self.msgbus.send("ExecEngine.process", &event as &dyn Any);
+        self.msgbus.send(
+            &self.msgbus.switchboard.exec_engine_process,
+            &event as &dyn Any,
+        );
     }
 
     fn generate_order_canceled(&self, order: &OrderAny, venue_order_id: VenueOrderId) {
@@ -497,7 +509,10 @@ impl OrderMatchingEngine {
             )
             .unwrap(),
         );
-        self.msgbus.send("ExecEngine.process", &event as &dyn Any);
+        self.msgbus.send(
+            &self.msgbus.switchboard.exec_engine_process,
+            &event as &dyn Any,
+        );
     }
 
     fn generate_order_triggered(&self, order: &OrderAny) {
@@ -517,7 +532,10 @@ impl OrderMatchingEngine {
             )
             .unwrap(),
         );
-        self.msgbus.send("ExecEngine.process", &event as &dyn Any);
+        self.msgbus.send(
+            &self.msgbus.switchboard.exec_engine_process,
+            &event as &dyn Any,
+        );
     }
 
     fn generate_order_expired(&self, order: &OrderAny) {
@@ -537,7 +555,10 @@ impl OrderMatchingEngine {
             )
             .unwrap(),
         );
-        self.msgbus.send("ExecEngine.process", &event as &dyn Any);
+        self.msgbus.send(
+            &self.msgbus.switchboard.exec_engine_process,
+            &event as &dyn Any,
+        );
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -580,7 +601,10 @@ impl OrderMatchingEngine {
             )
             .unwrap(),
         );
-        self.msgbus.send("ExecEngine.process", &event as &dyn Any);
+        self.msgbus.send(
+            &self.msgbus.switchboard.exec_engine_process,
+            &event as &dyn Any,
+        );
     }
 }
 

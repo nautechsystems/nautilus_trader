@@ -19,7 +19,7 @@ use nautilus_model::data::Data;
 use pyo3::prelude::*;
 use ustr::Ustr;
 
-use crate::{messages::data::DataResponse, msgbus::MessageHandler};
+use crate::{messages::data::DataResponse, msgbus::handler::MessageHandler};
 
 #[derive(Clone)]
 #[cfg_attr(
@@ -66,7 +66,7 @@ impl MessageHandler for PythonMessageHandler {
         }
     }
 
-    fn handle_data(&self, resp: &Data) {
+    fn handle_data(&self, data: Data) {
         let py_event = ();
         let result =
             pyo3::Python::with_gil(|py| self.handler.call_method1(py, "handle", (py_event,)));
