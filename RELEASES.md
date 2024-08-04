@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added `@customdata` decorator to reduce need for boiler plate implementing custom data types, thanks @faysou
 
 ### Breaking Changes
 None
