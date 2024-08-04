@@ -355,6 +355,10 @@ class TestCachePostgresAdapter:
             OrderSide.BUY,
             Quantity.from_int(100_000),
         )
+        # Add foreign key dependencies: instrument and currencies
+        self.database.add_currency(_AUDUSD_SIM.base_currency)
+        self.database.add_currency(_AUDUSD_SIM.quote_currency)
+        self.database.add_instrument(_AUDUSD_SIM)
 
         # Act
         self.database.add_order(order)
@@ -376,6 +380,10 @@ class TestCachePostgresAdapter:
             OrderSide.BUY,
             Quantity.from_int(100_000),
         )
+        # Add foreign key dependencies: instrument and currencies
+        self.database.add_currency(_AUDUSD_SIM.base_currency)
+        self.database.add_currency(_AUDUSD_SIM.quote_currency)
+        self.database.add_instrument(_AUDUSD_SIM)
 
         self.database.add_order(order)
 
@@ -412,6 +420,10 @@ class TestCachePostgresAdapter:
             Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
+        # Add foreign key dependencies: instrument and currencies
+        self.database.add_currency(_AUDUSD_SIM.base_currency)
+        self.database.add_currency(_AUDUSD_SIM.quote_currency)
+        self.database.add_instrument(_AUDUSD_SIM)
 
         self.database.add_order(order)
         # Allow MPSC thread to insert
