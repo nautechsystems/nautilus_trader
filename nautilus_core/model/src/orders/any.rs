@@ -452,6 +452,36 @@ impl OrderAny {
             Self::TrailingStopMarket(order) => order.is_inflight(),
         }
     }
+
+    #[must_use]
+    pub fn price(&self) -> Option<Price> {
+        match self {
+            Self::Limit(order) => Some(order.price),
+            Self::LimitIfTouched(order) => Some(order.price),
+            Self::Market(_) => None,
+            Self::MarketIfTouched(_) => None,
+            Self::MarketToLimit(order) => order.price,
+            Self::StopLimit(order) => Some(order.price),
+            Self::StopMarket(_) => None,
+            Self::TrailingStopLimit(order) => Some(order.price),
+            Self::TrailingStopMarket(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub fn trigger_price(&self) -> Option<Price> {
+        match self {
+            Self::Limit(_) => None,
+            Self::LimitIfTouched(order) => Some(order.trigger_price),
+            Self::Market(_) => None,
+            Self::MarketIfTouched(order) => Some(order.trigger_price),
+            Self::MarketToLimit(_) => None,
+            Self::StopLimit(order) => Some(order.trigger_price),
+            Self::StopMarket(order) => Some(order.trigger_price),
+            Self::TrailingStopLimit(order) => Some(order.trigger_price),
+            Self::TrailingStopMarket(order) => Some(order.trigger_price),
+        }
+    }
 }
 
 impl PartialEq for OrderAny {
