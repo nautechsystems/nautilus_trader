@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS "order_event" (
     kind TEXT NOT NULL,
     trader_id TEXT REFERENCES trader(id) ON DELETE CASCADE,
     strategy_id TEXT NOT NULL,
-    instrument_id TEXT NOT NULL,
+    instrument_id TEXT REFERENCES instrument(id) ON DELETE CASCADE,
     order_id TEXT DEFAULT NULL,
     trade_id TEXT,
     currency TEXT REFERENCES currency(id),
