@@ -21,6 +21,7 @@ use std::{
     sync::Arc,
 };
 
+use bytes::Bytes;
 use futures_util::{stream, StreamExt};
 use pyo3::{exceptions::PyException, prelude::*, types::PyBytes};
 use reqwest::{
@@ -29,6 +30,32 @@ use reqwest::{
 };
 
 use crate::ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+)]
+pub enum HttpMethod {
+    GET,
+    POST,
+    PUT,
+    DELETE,
+    PATCH,
+}
+
+#[allow(clippy::from_over_into)]
+impl Into<Method> for HttpMethod {
+    fn into(self) -> Method {
+        match self {
+            Self::GET => Method::GET,
+            Self::POST => Method::POST,
+            Self::PUT => Method::PUT,
+            Self::DELETE => Method::DELETE,
+            Self::PATCH => Method::PATCH,
+        }
+    }
+}
 
 /// A high-performance `HttpClient` for HTTP requests.
 ///
@@ -40,8 +67,8 @@ use crate::ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter};
 /// for the give `header_keys`.
 #[derive(Clone)]
 pub struct InnerHttpClient {
-    client: reqwest::Client,
-    header_keys: Vec<String>,
+    pub(crate) client: reqwest::Client,
+    pub(crate) header_keys: Vec<String>,
 }
 
 impl InnerHttpClient {
@@ -87,63 +114,14 @@ impl InnerHttpClient {
             .map(|(k, v)| (k.clone(), v.to_owned()))
             .collect();
         let status = response.status().as_u16();
-        let bytes = response.bytes().await?;
+        let body = response.bytes().await?;
 
         Ok(HttpResponse {
             status,
             headers,
-            body: bytes.to_vec(),
+            body,
         })
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
-)]
-pub enum HttpMethod {
-    GET,
-    POST,
-    PUT,
-    DELETE,
-    PATCH,
-}
-
-#[allow(clippy::from_over_into)]
-impl Into<Method> for HttpMethod {
-    fn into(self) -> Method {
-        match self {
-            Self::GET => Method::GET,
-            Self::POST => Method::POST,
-            Self::PUT => Method::PUT,
-            Self::DELETE => Method::DELETE,
-            Self::PATCH => Method::PATCH,
-        }
-    }
-}
-
-#[pymethods]
-impl HttpMethod {
-    fn __hash__(&self) -> isize {
-        let mut h = DefaultHasher::new();
-        self.hash(&mut h);
-        h.finish() as isize
-    }
-}
-
-/// HttpResponse contains relevant data from a HTTP request.
-#[derive(Debug, Clone)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
-)]
-pub struct HttpResponse {
-    #[pyo3(get)]
-    pub status: u16,
-    #[pyo3(get)]
-    headers: HashMap<String, String>,
-    body: Vec<u8>,
 }
 
 impl Default for InnerHttpClient {
@@ -157,21 +135,16 @@ impl Default for InnerHttpClient {
     }
 }
 
-#[pymethods]
-impl HttpResponse {
-    #[new]
-    fn py_new(status: u16, body: Vec<u8>) -> Self {
-        Self {
-            status,
-            body,
-            headers: Default::default(),
-        }
-    }
-
-    #[getter]
-    fn get_body(&self, py: Python) -> PyResult<Py<PyBytes>> {
-        Ok(PyBytes::new(py, &self.body).into())
-    }
+/// HttpResponse contains relevant data from a HTTP request.
+#[derive(Clone, Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+)]
+pub struct HttpResponse {
+    pub status: u16,
+    pub(crate) headers: HashMap<String, String>,
+    pub(crate) body: Bytes,
 }
 
 #[cfg_attr(
@@ -179,79 +152,8 @@ impl HttpResponse {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
 )]
 pub struct HttpClient {
-    rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
-    client: InnerHttpClient,
-}
-
-#[pymethods]
-impl HttpClient {
-    /// Create a new HttpClient.
-    ///
-    /// * `header_keys`: The key value pairs for the given `header_keys` are retained from the responses.
-    /// * `keyed_quota`: A list of string quota pairs that gives quota for specific key values.
-    /// * `default_quota`: The default rate limiting quota for any request.
-    /// Default quota is optional and no quota is passthrough.
-    #[new]
-    #[pyo3(signature = (header_keys = Vec::new(), keyed_quotas = Vec::new(), default_quota = None))]
-    #[must_use]
-    pub fn py_new(
-        header_keys: Vec<String>,
-        keyed_quotas: Vec<(String, Quota)>,
-        default_quota: Option<Quota>,
-    ) -> Self {
-        let client = reqwest::Client::new();
-        let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
-
-        let client = InnerHttpClient {
-            client,
-            header_keys,
-        };
-
-        Self {
-            rate_limiter,
-            client,
-        }
-    }
-
-    /// Send an HTTP request.
-    ///
-    /// * `method`: The HTTP method to call.
-    /// * `url`: The request is sent to this url.
-    /// * `headers`: The header key value pairs in the request.
-    /// * `body`: The bytes sent in the body of request.
-    /// * `keys`: The keys used for rate limiting the request.
-    #[pyo3(name = "request")]
-    fn py_request<'py>(
-        &self,
-        method: HttpMethod,
-        url: String,
-        headers: Option<HashMap<String, String>>,
-        body: Option<&'py PyBytes>,
-        keys: Option<Vec<String>>,
-        py: Python<'py>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let headers = headers.unwrap_or_default();
-        let body_vec = body.map(|py_bytes| py_bytes.as_bytes().to_vec());
-        let keys = keys.unwrap_or_default();
-        let client = self.client.clone();
-        let rate_limiter = self.rate_limiter.clone();
-        let method = method.into();
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
-            // Check keys for rate limiting quota
-            let tasks = keys.iter().map(|key| rate_limiter.until_key_ready(key));
-            stream::iter(tasks)
-                .for_each(|key| async move {
-                    key.await;
-                })
-                .await;
-            match client.send_request(method, url, headers, body_vec).await {
-                Ok(res) => Ok(res),
-                Err(e) => Err(PyErr::new::<PyException, _>(format!(
-                    "Error handling response: {e}"
-                ))),
-            }
-        })
-    }
+    pub(crate) rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
+    pub(crate) client: InnerHttpClient,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
