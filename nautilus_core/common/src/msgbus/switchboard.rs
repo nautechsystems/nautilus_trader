@@ -13,21 +13,24 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
-//! algorithmic trading platform, providing quantitative traders with the ability to backtest
-//! portfolios of automated trading strategies on historical data with an event-driven engine,
-//! and also deploy those same strategies live, with no code changes.
-//!
-//! # Feature flags
-//!
-//! This crate provides feature flags to control source code inclusion during compilation,
-//! depending on the intended use case, i.e. whether to provide Python bindings
-//! for the main `nautilus_trader` Python package, or as part of a Rust only build.
-//!
-//! - `ffi`: Enables the C foreign function interface (FFI) from `cbindgen`
-//! - `python`: Enables Python bindings from `pyo3`
+use ustr::Ustr;
 
-pub mod aggregation;
-pub mod client;
-pub mod engine;
-pub mod mocks;
+/// Represents a switchboard of built-in messaging endpoint names.
+#[derive(Clone, Debug)]
+pub struct MessagingSwitchboard {
+    pub data_engine_execute: Ustr,
+    pub data_engine_process: Ustr,
+    pub exec_engine_execute: Ustr,
+    pub exec_engine_process: Ustr,
+}
+
+impl Default for MessagingSwitchboard {
+    fn default() -> Self {
+        Self {
+            data_engine_execute: Ustr::from("DataEngine.execute"),
+            data_engine_process: Ustr::from("DataEngine.process"),
+            exec_engine_execute: Ustr::from("ExecEngine.execute"),
+            exec_engine_process: Ustr::from("ExecEngine.process"),
+        }
+    }
+}

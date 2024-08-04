@@ -2602,6 +2602,7 @@ dependencies = [
  "log",
  "nautilus-common",
  "nautilus-core",
+ "nautilus-data",
  "nautilus-execution",
  "nautilus-model",
  "pyo3",

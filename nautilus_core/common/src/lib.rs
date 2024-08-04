@@ -47,6 +47,5 @@ pub mod xrate;
 #[cfg(feature = "ffi")]
 pub mod ffi;
 
-pub mod client;
 #[cfg(feature = "python")]
 pub mod python;

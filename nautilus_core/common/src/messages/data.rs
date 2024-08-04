@@ -67,6 +67,7 @@ pub enum Action {
     Unsubscribe,
 }
 
+#[derive(Debug, Clone)]
 pub struct SubscriptionCommand {
     pub client_id: ClientId,
     pub venue: Venue,
@@ -74,6 +75,26 @@ pub struct SubscriptionCommand {
     pub action: Action,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+}
+
+impl SubscriptionCommand {
+    pub fn new(
+        client_id: ClientId,
+        venue: Venue,
+        data_type: DataType,
+        action: Action,
+        command_id: UUID4,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self {
+            client_id,
+            venue,
+            data_type,
+            action,
+            command_id,
+            ts_init,
+        }
+    }
 }
 
 pub enum DataEngineRequest {

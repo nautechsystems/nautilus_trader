@@ -26,26 +26,24 @@ use std::{
 };
 
 use indexmap::IndexMap;
+use nautilus_common::{
+    clock::Clock,
+    messages::data::{Action, DataRequest, DataResponse, Payload, SubscriptionCommand},
+};
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     data::{
         bar::{Bar, BarType},
         quote::QuoteTick,
         trade::TradeTick,
-        Data, DataType,
+        DataType,
     },
     enums::BookType,
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::any::InstrumentAny,
 };
 
-use crate::{
-    clock::Clock,
-    messages::data::{Action, DataRequest, DataResponse, Payload, SubscriptionCommand},
-};
-
-pub trait LiveDataClient {
-    // -- GETTERS ---------------------------------------------------------------------------
+pub trait DataClient {
     fn client_id(&self) -> ClientId;
     fn venue(&self) -> Option<Venue>;
     fn start(&self);
@@ -55,9 +53,10 @@ pub trait LiveDataClient {
     fn is_connected(&self) -> bool;
     fn is_disconnected(&self) -> bool;
 
+    // TODO: Move to separate trait
     // A [`LiveDataClient`] must have two channels to send back data and data responses
-    fn get_response_data_channel(&self) -> tokio::sync::mpsc::UnboundedSender<DataResponse>;
-    fn get_subscriber_data_channel(&self) -> tokio::sync::mpsc::UnboundedSender<Data>;
+    // fn get_response_data_channel(&self) -> tokio::sync::mpsc::UnboundedSender<DataResponse>;
+    // fn get_subscriber_data_channel(&self) -> tokio::sync::mpsc::UnboundedSender<Data>;
 
     // -- COMMAND HANDLERS ---------------------------------------------------------------------------
 
@@ -147,10 +146,10 @@ pub trait LiveDataClient {
 }
 
 pub struct DataClientAdapter {
+    client: Box<dyn DataClient>,
+    clock: Box<dyn Clock>,
     pub client_id: ClientId,
     pub venue: Venue,
-    client: Box<dyn LiveDataClient>,
-    clock: Box<dyn Clock>,
     pub subscriptions_generic: HashSet<DataType>,
     pub subscriptions_order_book_delta: HashSet<InstrumentId>,
     pub subscriptions_order_book_snapshot: HashSet<InstrumentId>,
@@ -164,7 +163,7 @@ pub struct DataClientAdapter {
 }
 
 impl Deref for DataClientAdapter {
-    type Target = Box<dyn LiveDataClient>;
+    type Target = Box<dyn DataClient>;
 
     fn deref(&self) -> &Self::Target {
         &self.client
@@ -178,6 +177,30 @@ impl DerefMut for DataClientAdapter {
 }
 
 impl DataClientAdapter {
+    pub fn new(
+        client_id: ClientId,
+        venue: Venue,
+        client: Box<dyn DataClient>,
+        clock: Box<dyn Clock>,
+    ) -> Self {
+        Self {
+            client,
+            clock,
+            client_id,
+            venue,
+            subscriptions_generic: HashSet::new(),
+            subscriptions_order_book_delta: HashSet::new(),
+            subscriptions_order_book_snapshot: HashSet::new(),
+            subscriptions_quote_tick: HashSet::new(),
+            subscriptions_trade_tick: HashSet::new(),
+            subscriptions_bar: HashSet::new(),
+            subscriptions_instrument_status: HashSet::new(),
+            subscriptions_instrument_close: HashSet::new(),
+            subscriptions_instrument: HashSet::new(),
+            subscriptions_instrument_venue: HashSet::new(),
+        }
+    }
+
     /// TODO: Decide whether to use mut references for subscription commands
     pub fn through_execute(&self, command: SubscriptionCommand) {}
 

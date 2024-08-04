@@ -13,6 +13,7 @@ crate-type = ["rlib", "staticlib"]
 [dependencies]
 nautilus-common = { path = "../common" }
 nautilus-core = { path = "../core" }
+nautilus-data = { path = "../data" }
 nautilus-execution = { path = "../execution" }
 nautilus-model = { path = "../model" , features = ["stubs"]}
 anyhow = { workspace = true }
