@@ -218,6 +218,7 @@ impl OrderMatchingEngine {
     }
 
     // -- TRADING COMMANDS ----------------------------------------------------
+    #[allow(clippy::needless_return)]
     pub fn process_order(&mut self, order: &OrderAny, account_id: AccountId) {
         if self.core.order_exists(order.client_order_id()) {
             self.generate_order_rejected(order, "Order already exists".into());
@@ -240,6 +241,7 @@ impl OrderMatchingEngine {
                         )
                         .into(),
                     );
+                    return;
                 }
             }
             if let Some(expiration_ns) = self.instrument.expiration_ns() {
@@ -253,7 +255,60 @@ impl OrderMatchingEngine {
                         )
                         .into(),
                     );
+                    return;
                 }
+            }
+        }
+
+        // Check fo valid order quantity precision
+        if order.quantity().precision != self.instrument.size_precision() {
+            self.generate_order_rejected(
+                order,
+                format!(
+                    "Invalid order quantity precision for order {}, was {} when {} size precision is {}",
+                    order.client_order_id(),
+                    order.quantity().precision,
+                    self.instrument.id(),
+                    self.instrument.size_precision()
+                )
+                    .into(),
+            );
+            return;
+        }
+
+        // Check for valid order price precision
+        if let Some(price) = order.price() {
+            if price.precision != self.instrument.price_precision() {
+                self.generate_order_rejected(
+                    order,
+                    format!(
+                        "Invalid order price precision for order {}, was {} when {} price precision is {}",
+                        order.client_order_id(),
+                        price.precision,
+                        self.instrument.id(),
+                        self.instrument.price_precision()
+                    )
+                        .into(),
+                );
+            }
+            return;
+        }
+
+        // Check for valid order trigger price precision
+        if let Some(trigger_price) = order.trigger_price() {
+            if trigger_price.precision != self.instrument.price_precision() {
+                self.generate_order_rejected(
+                    order,
+                    format!(
+                        "Invalid order trigger price precision for order {}, was {} when {} price precision is {}",
+                        order.client_order_id(),
+                        trigger_price.precision,
+                        self.instrument.id(),
+                        self.instrument.price_precision()
+                    )
+                        .into(),
+                );
+                return;
             }
         }
     }
@@ -619,6 +674,7 @@ mod tests {
     use nautilus_common::{
         cache::Cache,
         msgbus::{
+            handler::ShareableMessageHandler,
             stubs::{get_message_saving_handler, MessageSavingHandler},
             MessageBus,
         },
@@ -630,15 +686,56 @@ mod tests {
         identifiers::AccountId,
         instruments::{any::InstrumentAny, stubs::futures_contract_es},
         orders::stubs::TestOrderStubs,
-        types::quantity::Quantity,
+        types::{price::Price, quantity::Quantity},
     };
-    use rstest::rstest;
+    use rstest::{fixture, rstest};
     use ustr::Ustr;
 
     use crate::matching_engine::{OrderMatchingEngine, OrderMatchingEngineConfig};
 
     static ATOMIC_TIME: LazyLock<AtomicTime> =
         LazyLock::new(|| AtomicTime::new(true, UnixNanos::default()));
+
+    // -- FIXTURES ---------------------------------------------------------------------------
+    #[fixture]
+    fn msgbus() -> MessageBus {
+        MessageBus::default()
+    }
+
+    #[fixture]
+    fn account_id() -> AccountId {
+        AccountId::from("SIM-001")
+    }
+
+    #[fixture]
+    fn time() -> AtomicTime {
+        AtomicTime::new(true, UnixNanos::default())
+    }
+
+    #[fixture]
+    fn order_event_handler() -> ShareableMessageHandler {
+        get_message_saving_handler::<OrderEventAny>(Ustr::from("ExecEngine.process"))
+    }
+
+    // for valid es futures contract currently active
+    #[fixture]
+    fn instrument_es() -> InstrumentAny {
+        let activation = UnixNanos::from(
+            Utc.with_ymd_and_hms(2022, 4, 8, 0, 0, 0)
+                .unwrap()
+                .timestamp_nanos_opt()
+                .unwrap() as u64,
+        );
+        let expiration = UnixNanos::from(
+            Utc.with_ymd_and_hms(2100, 7, 8, 0, 0, 0)
+                .unwrap()
+                .timestamp_nanos_opt()
+                .unwrap() as u64,
+        );
+        InstrumentAny::FuturesContract(futures_contract_es(Some(activation), Some(expiration)))
+    }
+
+    // -- HELPERS ---------------------------------------------------------------------------
 
     fn get_order_matching_engine(
         instrument: InstrumentAny,
@@ -659,18 +756,33 @@ mod tests {
         )
     }
 
+    fn get_order_event_handler_messages(
+        event_handler: ShareableMessageHandler,
+    ) -> Vec<OrderEventAny> {
+        event_handler
+            .0
+            .as_ref()
+            .as_any()
+            .downcast_ref::<MessageSavingHandler<OrderEventAny>>()
+            .unwrap()
+            .get_messages()
+    }
+
+    // -- TESTS ---------------------------------------------------------------------------
     #[rstest]
-    fn test_order_matching_engine_instrument_already_expired() {
-        let account_id = AccountId::from("SIM-001");
-        let time = AtomicTime::new(true, UnixNanos::default());
-        let mut msgbus = MessageBus::default();
+    fn test_order_matching_engine_instrument_already_expired(
+        mut msgbus: MessageBus,
+        order_event_handler: ShareableMessageHandler,
+        account_id: AccountId,
+        time: AtomicTime,
+    ) {
         let instrument = InstrumentAny::FuturesContract(futures_contract_es(None, None));
 
         // Register saving message handler to exec engine endpoint
-        let exec_engine_endpoint = "ExecEngine.process";
-        let msg_handler =
-            get_message_saving_handler::<OrderEventAny>(Ustr::from(exec_engine_endpoint));
-        msgbus.register(exec_engine_endpoint, msg_handler.clone());
+        msgbus.register(
+            msgbus.switchboard.exec_engine_process.as_str(),
+            order_event_handler.clone(),
+        );
 
         // Create engine and process order
         let mut engine = get_order_matching_engine(instrument.clone(), Rc::new(msgbus));
@@ -684,13 +796,7 @@ mod tests {
         engine.process_order(&order, account_id);
 
         // Get messages and test
-        let saved_messages = msg_handler
-            .0
-            .as_ref()
-            .as_any()
-            .downcast_ref::<MessageSavingHandler<OrderEventAny>>()
-            .unwrap()
-            .get_messages();
+        let saved_messages = get_order_event_handler_messages(order_event_handler);
         assert_eq!(saved_messages.len(), 1);
         let first_message = saved_messages.first().unwrap();
         assert_eq!(first_message.event_type(), OrderEventType::Rejected);
@@ -701,10 +807,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_matching_engine_instrument_not_active() {
-        let account_id = AccountId::from("SIM-001");
-        let time = AtomicTime::new(true, UnixNanos::default());
-        let mut msgbus = MessageBus::default();
+    fn test_order_matching_engine_instrument_not_active(
+        mut msgbus: MessageBus,
+        order_event_handler: ShareableMessageHandler,
+        account_id: AccountId,
+        time: AtomicTime,
+    ) {
         let activation = UnixNanos::from(
             Utc.with_ymd_and_hms(2222, 4, 8, 0, 0, 0)
                 .unwrap()
@@ -721,10 +829,10 @@ mod tests {
             InstrumentAny::FuturesContract(futures_contract_es(Some(activation), Some(expiration)));
 
         // Register saving message handler to exec engine endpoint
-        let exec_engine_endpoint = "ExecEngine.process";
-        let msg_handler =
-            get_message_saving_handler::<OrderEventAny>(Ustr::from(exec_engine_endpoint));
-        msgbus.register(exec_engine_endpoint, msg_handler.clone());
+        msgbus.register(
+            msgbus.switchboard.exec_engine_process.as_str(),
+            order_event_handler.clone(),
+        );
 
         // Create engine and process order
         let mut engine = get_order_matching_engine(instrument.clone(), Rc::new(msgbus));
@@ -738,19 +846,126 @@ mod tests {
         engine.process_order(&order, account_id);
 
         // Get messages and test
-        let saved_messages = msg_handler
-            .0
-            .as_ref()
-            .as_any()
-            .downcast_ref::<MessageSavingHandler<OrderEventAny>>()
-            .unwrap()
-            .get_messages();
+        let saved_messages = get_order_event_handler_messages(order_event_handler);
         assert_eq!(saved_messages.len(), 1);
         let first_message = saved_messages.first().unwrap();
         assert_eq!(first_message.event_type(), OrderEventType::Rejected);
         assert_eq!(
             first_message.message().unwrap(),
             Ustr::from("Contract ESZ1.GLBX is not yet active, activation 7960723200000000000")
+        );
+    }
+
+    #[rstest]
+    fn test_order_matching_engine_wrong_order_quantity_precision(
+        mut msgbus: MessageBus,
+        order_event_handler: ShareableMessageHandler,
+        account_id: AccountId,
+        time: AtomicTime,
+        instrument_es: InstrumentAny,
+    ) {
+        // Register saving message handler to exec engine endpoint
+        msgbus.register(
+            msgbus.switchboard.exec_engine_process.as_str(),
+            order_event_handler.clone(),
+        );
+
+        // Create engine and process order
+        let mut engine = get_order_matching_engine(instrument_es.clone(), Rc::new(msgbus));
+        let order = TestOrderStubs::market_order(
+            instrument_es.id(),
+            OrderSide::Buy,
+            Quantity::from("1.122"), // <- wrong precision for es futures contract (which is 1)x
+            None,
+            None,
+        );
+        engine.process_order(&order, account_id);
+
+        // Get messages and test
+        let saved_messages = get_order_event_handler_messages(order_event_handler);
+        assert_eq!(saved_messages.len(), 1);
+        let first_message = saved_messages.first().unwrap();
+        assert_eq!(first_message.event_type(), OrderEventType::Rejected);
+        assert_eq!(
+            first_message.message().unwrap(),
+            Ustr::from("Invalid order quantity precision for order O-19700101-000000-001-001-1, was 3 when ESZ1.GLBX size precision is 0")
+        );
+    }
+
+    #[rstest]
+    fn test_order_matching_engine_wrong_order_price_precision(
+        mut msgbus: MessageBus,
+        order_event_handler: ShareableMessageHandler,
+        account_id: AccountId,
+        time: AtomicTime,
+        instrument_es: InstrumentAny,
+    ) {
+        // Register saving message handler to exec engine endpoint
+        msgbus.register(
+            msgbus.switchboard.exec_engine_process.as_str(),
+            order_event_handler.clone(),
+        );
+
+        // Create engine and process order
+        let mut engine = get_order_matching_engine(instrument_es.clone(), Rc::new(msgbus));
+        let limit_order = TestOrderStubs::limit_order(
+            instrument_es.id(),
+            OrderSide::Sell,
+            Price::from("100.12333"), // <- wrong price precision for es futures contract (which is 2)
+            Quantity::from("1"),
+            None,
+            None,
+        );
+
+        engine.process_order(&limit_order, account_id);
+
+        // Get messages and test
+        let saved_messages = get_order_event_handler_messages(order_event_handler);
+        assert_eq!(saved_messages.len(), 1);
+        let first_message = saved_messages.first().unwrap();
+        assert_eq!(first_message.event_type(), OrderEventType::Rejected);
+        assert_eq!(
+            first_message.message().unwrap(),
+            Ustr::from("Invalid order price precision for order O-19700101-000000-001-001-1, was 5 when ESZ1.GLBX price precision is 2")
+        );
+    }
+
+    #[rstest]
+    fn test_order_matching_engine_wrong_order_trigger_price_precision(
+        mut msgbus: MessageBus,
+        order_event_handler: ShareableMessageHandler,
+        account_id: AccountId,
+        time: AtomicTime,
+        instrument_es: InstrumentAny,
+    ) {
+        // Register saving message handler to exec engine endpoint
+        msgbus.register(
+            msgbus.switchboard.exec_engine_process.as_str(),
+            order_event_handler.clone(),
+        );
+
+        // Create engine and process order
+        let mut engine = get_order_matching_engine(instrument_es.clone(), Rc::new(msgbus));
+        let stop_order = TestOrderStubs::stop_market_order(
+            instrument_es.id(),
+            OrderSide::Sell,
+            Price::from("100.12333"), // <- wrong trigger price precision for es futures contract (which is 2)
+            Quantity::from("1"),
+            None,
+            None,
+            None,
+        );
+
+        engine.process_order(&stop_order, account_id);
+
+        // Get messages and test
+        let saved_messages = get_order_event_handler_messages(order_event_handler);
+        assert_eq!(saved_messages.len(), 1);
+        let first_message = saved_messages.first().unwrap();
+        assert_eq!(first_message.event_type(), OrderEventType::Rejected);
+        assert_eq!(
+            first_message.message().unwrap(),
+            Ustr::from("Invalid order trigger price precision for order O-19700101-000000-001-001-1, was 5 when ESZ1.GLBX price precision is 2")
         );
     }
 }
