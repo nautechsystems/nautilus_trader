@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from dataclasses import dataclass
-from dataclasses import field
 
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.custom import customdataclass
@@ -22,9 +20,8 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 
 @customdataclass
-@dataclass  # optional
 class GreeksTestData(Data):
-    instrument_id: InstrumentId = field(default_factory=InstrumentId.from_str("ES.GLBX"))
+    instrument_id: InstrumentId = InstrumentId.from_str("ES.GLBX")
     delta: float = 0.0
     _ts_event: int = 0
     _ts_init: int = 0

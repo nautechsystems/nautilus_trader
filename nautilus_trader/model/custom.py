@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from dataclasses import dataclass
 from typing import Any
 
 import msgspec
@@ -23,100 +24,101 @@ from nautilus_trader.serialization.arrow.serializer import register_arrow
 from nautilus_trader.serialization.base import register_serializable_type
 
 
-def customdataclass(cls):  # noqa: C901 (too complex)
-    if cls.__init__ is object.__init__:
+def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
+    def wrapper(cls):  # noqa: C901 (too complex)
+        # Apply dataclass decorator with provided arguments
+        cls = dataclass(cls, **kwargs)
 
-        def __init__(self, **kwargs):
-            for key, value in kwargs.items():
-                setattr(self, key, value)
+        if "ts_event" not in cls.__dict__:
 
-        cls.__init__ = __init__
+            @property
+            def ts_event(self) -> int:
+                return self._ts_event
 
-    if "ts_event" not in cls.__dict__:
+            cls.ts_event = ts_event
 
-        @property
-        def ts_event(self) -> int:
-            return self._ts_event
+        if "ts_init" not in cls.__dict__:
 
-        cls.ts_event = ts_event
+            @property
+            def ts_init(self) -> int:
+                return self._ts_init
 
-    if "ts_init" not in cls.__dict__:
+            cls.ts_init = ts_init
 
-        @property
-        def ts_init(self) -> int:
-            return self._ts_init
+        if "to_dict" not in cls.__dict__:
 
-        cls.ts_init = ts_init
+            def to_dict(self) -> dict[str, Any]:
+                result = {attr: getattr(self, attr) for attr in self.__annotations__}
 
-    if "to_dict" not in cls.__dict__:
+                if hasattr(self, "instrument_id"):
+                    result["instrument_id"] = self.instrument_id.value
 
-        def to_dict(self) -> dict[str, Any]:
-            result = {attr: getattr(self, attr) for attr in self.__annotations__}
+                return result
 
-            if hasattr(self, "instrument_id"):
-                result["instrument_id"] = self.instrument_id.value
+            cls.to_dict = to_dict
 
-            return result
+        if "from_dict" not in cls.__dict__:
 
-        cls.to_dict = to_dict
+            @classmethod
+            def from_dict(cls, data: dict[str, Any]) -> cls:
+                if "instrument_id" in data:
+                    data["instrument_id"] = InstrumentId.from_str(data["instrument_id"])
 
-    if "from_dict" not in cls.__dict__:
+                return cls(**data)
 
-        @classmethod
-        def from_dict(cls, data: dict[str, Any]) -> cls:
-            if "instrument_id" in data:
-                data["instrument_id"] = InstrumentId.from_str(data["instrument_id"])
+            cls.from_dict = from_dict
 
-            return cls(**data)
+        if "to_bytes" not in cls.__dict__:
 
-        cls.from_dict = from_dict
+            def to_bytes(self) -> bytes:
+                return msgspec.msgpack.encode(self.to_dict())
 
-    if "to_bytes" not in cls.__dict__:
+            cls.to_bytes = to_bytes
 
-        def to_bytes(self) -> bytes:
-            return msgspec.msgpack.encode(self.to_dict())
+        if "from_bytes" not in cls.__dict__:
 
-        cls.to_bytes = to_bytes
+            @classmethod
+            def from_bytes(cls, data: bytes) -> cls:
+                return cls.from_dict(msgspec.msgpack.decode(data))
 
-    if "from_bytes" not in cls.__dict__:
+            cls.from_bytes = from_bytes
 
-        @classmethod
-        def from_bytes(cls, data: bytes) -> cls:
-            return cls.from_dict(msgspec.msgpack.decode(data))
+        if "to_arrow" not in cls.__dict__:
 
-        cls.from_bytes = from_bytes
+            def to_arrow(self) -> pa.RecordBatch:
+                return pa.RecordBatch.from_pylist([self.to_dict()], schema=cls._schema)
 
-    if "to_arrow" not in cls.__dict__:
+            cls.to_arrow = to_arrow
 
-        def to_arrow(self) -> pa.RecordBatch:
-            return pa.RecordBatch.from_pylist([self.to_dict()], schema=cls._schema)
+        if "from_arrow" not in cls.__dict__:
 
-        cls.to_arrow = to_arrow
+            @classmethod
+            def from_arrow(cls, table: pa.Table) -> cls:
+                return [cls.from_dict(d) for d in table.to_pylist()]
 
-    if "from_arrow" not in cls.__dict__:
+            cls.from_arrow = from_arrow
 
-        @classmethod
-        def from_arrow(cls, table: pa.Table) -> cls:
-            return [cls.from_dict(d) for d in table.to_pylist()]
+        if "_schema" not in cls.__dict__:
+            type_mapping = {
+                "InstrumentId": pa.string(),
+                "bool": pa.bool_(),
+                "float": pa.float64(),
+                "int": pa.int64(),
+            }
 
-        cls.from_arrow = from_arrow
+            cls._schema = pa.schema(
+                {
+                    attr: type_mapping[cls.__annotations__[attr].__name__]
+                    for attr in cls.__annotations__
+                },
+            )
 
-    if "_schema" not in cls.__dict__:
-        type_mapping = {
-            "InstrumentId": pa.string(),
-            "bool": pa.bool_(),
-            "float": pa.float64(),
-            "int": pa.int64(),
-        }
+        register_serializable_type(cls, cls.to_dict, cls.from_dict)
+        register_arrow(cls, cls._schema, cls.to_arrow, cls.from_arrow)
 
-        cls._schema = pa.schema(
-            {
-                attr: type_mapping[cls.__annotations__[attr].__name__]
-                for attr in cls.__annotations__
-            },
-        )
+        return cls
 
-    register_serializable_type(cls, cls.to_dict, cls.from_dict)
-    register_arrow(cls, cls._schema, cls.to_arrow, cls.from_arrow)
+    if args and callable(args[0]):
+        return wrapper(args[0])
 
-    return cls
+    return wrapper
