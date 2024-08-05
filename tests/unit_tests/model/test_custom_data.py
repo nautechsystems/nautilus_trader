@@ -23,8 +23,6 @@ from nautilus_trader.model.identifiers import InstrumentId
 class GreeksTestData(Data):
     instrument_id: InstrumentId = InstrumentId.from_str("ES.GLBX")
     delta: float = 0.0
-    _ts_event: int = 0
-    _ts_init: int = 0
 
     def __repr__(self):
         return f"GreeksTestData(instrument_id={self.instrument_id}, delta={self.delta:.2f}, ts_event={self.ts_event}, ts_init={self._ts_init})"
@@ -32,7 +30,7 @@ class GreeksTestData(Data):
 
 def test_customdata_decorator_properties() -> None:
     # Arrange, Act
-    data = GreeksTestData(_ts_event=1, _ts_init=2)
+    data = GreeksTestData(ts_event=1, ts_init=2)
 
     # Assert
     assert data.ts_event == 1
@@ -41,7 +39,7 @@ def test_customdata_decorator_properties() -> None:
 
 def test_customdata_decorator_dict() -> None:
     # Arrange
-    data = GreeksTestData(_ts_event=1, _ts_init=2)
+    data = GreeksTestData(1, 2)
 
     # Act
     data_dict = data.to_dict()
@@ -58,8 +56,8 @@ def test_customdata_decorator_dict() -> None:
 def test_customdata_decorator_dict_identity() -> None:
     # Arrange
     data = GreeksTestData(
-        _ts_event=1,
-        _ts_init=2,
+        ts_event=1,
+        ts_init=2,
         instrument_id=InstrumentId.from_str("CL.GLBX"),
         delta=1000.0,
     )
@@ -73,7 +71,12 @@ def test_customdata_decorator_dict_identity() -> None:
 
 def test_customdata_decorator_bytes_identity() -> None:
     # Arrange
-    data = GreeksTestData()
+    data = GreeksTestData(
+        ts_event=1,
+        ts_init=2,
+        instrument_id=InstrumentId.from_str("CL.GLBX"),
+        delta=1000.0,
+    )
 
     # Act
     new_data = GreeksTestData.from_bytes(data.to_bytes())
@@ -84,7 +87,12 @@ def test_customdata_decorator_bytes_identity() -> None:
 
 def test_customdata_decorator_arrow_identity() -> None:
     # Arrange
-    data = GreeksTestData()
+    data = GreeksTestData(
+        ts_event=1,
+        ts_init=2,
+        instrument_id=InstrumentId.from_str("CL.GLBX"),
+        delta=1000.0,
+    )
 
     # Act
     new_data = GreeksTestData.from_arrow(data.to_arrow())[0]
