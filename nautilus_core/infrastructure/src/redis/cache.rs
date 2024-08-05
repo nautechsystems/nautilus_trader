@@ -847,7 +847,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         todo!()
     }
 
-    fn add_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
+    fn add_order(&mut self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()> {
         todo!()
     }
 

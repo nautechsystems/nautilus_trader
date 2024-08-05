@@ -31,7 +31,8 @@ mod serial_tests {
         enums::{CurrencyType, OrderSide, OrderStatus},
         events::account::stubs::cash_account_state_million_usd,
         identifiers::{
-            stubs::account_id, AccountId, ClientOrderId, InstrumentId, TradeId, VenueOrderId,
+            stubs::account_id, AccountId, ClientId, ClientOrderId, InstrumentId, TradeId,
+            VenueOrderId,
         },
         instruments::{
             any::InstrumentAny,
@@ -212,7 +213,7 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn test_add_order() {
+    async fn test_postgres_cache_database_add_order_and_load_indexes() {
         let client_order_id_1 = ClientOrderId::new("O-19700101-000000-001-001-1").unwrap();
         let client_order_id_2 = ClientOrderId::new("O-19700101-000000-001-001-2").unwrap();
         let instrument = currency_pair_ethusdt();
@@ -240,9 +241,11 @@ mod serial_tests {
         pg_cache
             .add_instrument(&InstrumentAny::CurrencyPair(instrument))
             .unwrap();
+        // Set client id
+        let client_id = ClientId::new("TEST").unwrap();
         // add orders
-        pg_cache.add_order(&market_order).unwrap();
-        pg_cache.add_order(&limit_order).unwrap();
+        pg_cache.add_order(&market_order, Some(client_id)).unwrap();
+        pg_cache.add_order(&limit_order, Some(client_id)).unwrap();
         wait_until(
             || {
                 pg_cache
@@ -260,8 +263,27 @@ mod serial_tests {
             .load_order(&market_order.client_order_id())
             .unwrap();
         let limit_order_result = pg_cache.load_order(&limit_order.client_order_id()).unwrap();
+        let client_order_ids = pg_cache.load_index_order_client().unwrap();
         entirely_equal(market_order_result.unwrap(), market_order);
         entirely_equal(limit_order_result.unwrap(), limit_order);
+        // Check event client order ids
+        assert_eq!(client_order_ids.len(), 2);
+        assert_eq!(
+            client_order_ids
+                .keys()
+                .cloned()
+                .collect::<HashSet<ClientOrderId>>(),
+            vec![client_order_id_1, client_order_id_2]
+                .into_iter()
+                .collect::<HashSet<ClientOrderId>>()
+        );
+        assert_eq!(
+            client_order_ids
+                .values()
+                .cloned()
+                .collect::<HashSet<ClientId>>(),
+            vec![client_id].into_iter().collect::<HashSet<ClientId>>()
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -284,7 +306,7 @@ mod serial_tests {
             Some(client_order_id_1),
             None,
         );
-        pg_cache.add_order(&market_order).unwrap();
+        pg_cache.add_order(&market_order, None).unwrap();
         let submitted = TestOrderEventStubs::order_submitted(&market_order, account);
         market_order.apply(submitted).unwrap();
         pg_cache.update_order(&market_order).unwrap();

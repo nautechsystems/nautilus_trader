@@ -1390,7 +1390,7 @@ impl Cache {
         }
 
         if let Some(database) = &mut self.database {
-            database.add_order(&order)?;
+            database.add_order(&order, client_id)?;
             // TODO: Implement
             // if self.config.snapshot_orders {
             //     database.snapshot_order_state(order)?;

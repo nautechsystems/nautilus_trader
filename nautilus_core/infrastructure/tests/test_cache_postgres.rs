@@ -93,7 +93,7 @@ mod serial_tests {
             .add_instrument(&InstrumentAny::CurrencyPair(instrument))
             .unwrap();
         // insert into database and wait
-        database.add_order(&market_order).unwrap();
+        database.add_order(&market_order, None).unwrap();
         wait_until(
             || {
                 let order = database

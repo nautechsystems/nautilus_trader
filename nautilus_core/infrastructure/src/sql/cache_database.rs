@@ -66,7 +66,7 @@ pub enum DatabaseQuery {
     Add(String, Vec<u8>),
     AddCurrency(Currency),
     AddInstrument(InstrumentAny),
-    AddOrder(OrderAny, bool),
+    AddOrder(OrderAny, Option<ClientId>, bool),
     AddAccount(AccountAny, bool),
     AddTrade(TradeTick),
     AddQuote(QuoteTick),
@@ -128,47 +128,68 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
                         .unwrap()
                 }
             },
-            DatabaseQuery::AddOrder(order_any, updated) => match order_any {
+            DatabaseQuery::AddOrder(order_any, client_id, updated) => match order_any {
                 OrderAny::Limit(order) => {
-                    DatabaseQueries::add_order(pool, "LIMIT", updated, Box::new(order))
+                    DatabaseQueries::add_order(pool, "LIMIT", updated, Box::new(order), client_id)
                         .await
                         .unwrap()
                 }
-                OrderAny::LimitIfTouched(order) => {
-                    DatabaseQueries::add_order(pool, "LIMIT_IF_TOUCHED", updated, Box::new(order))
-                        .await
-                        .unwrap()
-                }
+                OrderAny::LimitIfTouched(order) => DatabaseQueries::add_order(
+                    pool,
+                    "LIMIT_IF_TOUCHED",
+                    updated,
+                    Box::new(order),
+                    client_id,
+                )
+                .await
+                .unwrap(),
                 OrderAny::Market(order) => {
-                    DatabaseQueries::add_order(pool, "MARKET", updated, Box::new(order))
+                    DatabaseQueries::add_order(pool, "MARKET", updated, Box::new(order), client_id)
                         .await
                         .unwrap()
                 }
-                OrderAny::MarketIfTouched(order) => {
-                    DatabaseQueries::add_order(pool, "MARKET_IF_TOUCHED", updated, Box::new(order))
-                        .await
-                        .unwrap()
-                }
-                OrderAny::MarketToLimit(order) => {
-                    DatabaseQueries::add_order(pool, "MARKET_TO_LIMIT", updated, Box::new(order))
-                        .await
-                        .unwrap()
-                }
-                OrderAny::StopLimit(order) => {
-                    DatabaseQueries::add_order(pool, "STOP_LIMIT", updated, Box::new(order))
-                        .await
-                        .unwrap()
-                }
-                OrderAny::StopMarket(order) => {
-                    DatabaseQueries::add_order(pool, "STOP_MARKET", updated, Box::new(order))
-                        .await
-                        .unwrap()
-                }
+                OrderAny::MarketIfTouched(order) => DatabaseQueries::add_order(
+                    pool,
+                    "MARKET_IF_TOUCHED",
+                    updated,
+                    Box::new(order),
+                    client_id,
+                )
+                .await
+                .unwrap(),
+                OrderAny::MarketToLimit(order) => DatabaseQueries::add_order(
+                    pool,
+                    "MARKET_TO_LIMIT",
+                    updated,
+                    Box::new(order),
+                    client_id,
+                )
+                .await
+                .unwrap(),
+                OrderAny::StopLimit(order) => DatabaseQueries::add_order(
+                    pool,
+                    "STOP_LIMIT",
+                    updated,
+                    Box::new(order),
+                    client_id,
+                )
+                .await
+                .unwrap(),
+                OrderAny::StopMarket(order) => DatabaseQueries::add_order(
+                    pool,
+                    "STOP_MARKET",
+                    updated,
+                    Box::new(order),
+                    client_id,
+                )
+                .await
+                .unwrap(),
                 OrderAny::TrailingStopLimit(order) => DatabaseQueries::add_order(
                     pool,
                     "TRAILING_STOP_LIMIT",
                     updated,
                     Box::new(order),
+                    client_id,
                 )
                 .await
                 .unwrap(),
@@ -177,6 +198,7 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
                     "TRAILING_STOP_MARKET",
                     updated,
                     Box::new(order),
+                    client_id,
                 )
                 .await
                 .unwrap(),
@@ -434,7 +456,31 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn load_index_order_client(&mut self) -> anyhow::Result<HashMap<ClientOrderId, ClientId>> {
-        todo!()
+        let pool = self.pool.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_distinct_order_event_client_ids(&pool).await;
+            match result {
+                Ok(currency) => {
+                    if let Err(e) = tx.send(currency) {
+                        log::error!("Failed to send load_index_order_client result : {:?}", e);
+                    }
+                }
+                Err(e) => {
+                    log::error!(
+                        "Failed to run query load_distinct_order_event_client_ids: {:?}",
+                        e
+                    );
+                    if let Err(e) = tx.send(HashMap::new()) {
+                        log::error!(
+                            "Failed to send empty load_index_order_client result : {:?}",
+                            e
+                        );
+                    }
+                }
+            }
+        });
+        Ok(rx.recv()?)
     }
 
     fn load_currency(&mut self, code: &Ustr) -> anyhow::Result<Option<Currency>> {
@@ -599,8 +645,8 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         })
     }
 
-    fn add_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
-        let query = DatabaseQuery::AddOrder(order.clone(), false);
+    fn add_order(&mut self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()> {
+        let query = DatabaseQuery::AddOrder(order.clone(), client_id, false);
         self.tx.send(query).map_err(|err| {
             anyhow::anyhow!("Failed to send query add_order to database message handler: {err}")
         })
@@ -772,7 +818,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn update_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
-        let query = DatabaseQuery::AddOrder(order.clone(), true);
+        let query = DatabaseQuery::AddOrder(order.clone(), None, true);
         self.tx.send(query).map_err(|err| {
             anyhow::anyhow!("Failed to send query add_order to database message handler: {err}")
         })
