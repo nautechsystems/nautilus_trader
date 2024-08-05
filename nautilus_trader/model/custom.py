@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from dataclasses import dataclass
 from typing import Any
 
 import msgspec
@@ -23,101 +24,123 @@ from nautilus_trader.serialization.arrow.serializer import register_arrow
 from nautilus_trader.serialization.base import register_serializable_type
 
 
-def customdataclass(cls):  # noqa: C901 (too complex)
-    if cls.__init__ is object.__init__:
+def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
+    def wrapper(cls):  # noqa: C901 (too complex)
+        if cls.__init__ is object.__init__:
 
-        def __init__(self, ts_event: int, ts_init: int, **kwargs):
-            for key, value in kwargs.items():
-                setattr(self, key, value)
+            def __init__(self, ts_event: int = 0, ts_init: int = 0, **kwargs):
+                for key, value in kwargs.items():
+                    if key in self.__class__.__annotations__:
+                        setattr(self, key, value)
+                    else:
+                        raise ValueError(f"Unexpected keyword argument: {key}")
 
-            self._ts_event = ts_event
-            self._ts_init = ts_init
+                self._ts_event = ts_event
+                self._ts_init = ts_init
 
-        cls.__init__ = __init__
+            cls.__init__ = __init__
 
-    @property
-    def ts_event(self) -> int:
-        return self._ts_event
+        cls = dataclass(cls, **kwargs)
 
-    cls.ts_event = ts_event
+        if "ts_event" not in cls.__dict__:
 
-    @property
-    def ts_init(self) -> int:
-        return self._ts_init
+            @property
+            def ts_event(self) -> int:
+                return self._ts_event
 
-    cls.ts_init = ts_init
+            cls.ts_event = ts_event
 
-    if not hasattr(cls, "to_dict"):
+        if "ts_init" not in cls.__dict__:
 
-        def to_dict(self):
-            result = {attr: getattr(self, attr) for attr in self.__annotations__}
+            @property
+            def ts_init(self) -> int:
+                return self._ts_init
 
-            if hasattr(self, "instrument_id"):
-                result["instrument_id"] = self.instrument_id.value
+            cls.ts_init = ts_init
+
+        if "to_dict" not in cls.__dict__:
+
+            def to_dict(self) -> dict[str, Any]:
+                result = {attr: getattr(self, attr) for attr in self.__annotations__}
+
+                if hasattr(self, "instrument_id"):
+                    result["instrument_id"] = self.instrument_id.value
+
                 result["ts_event"] = self._ts_event
                 result["ts_init"] = self._ts_init
 
-            return result
+                return result
 
-        cls.to_dict = to_dict
+            cls.to_dict = to_dict
 
-    if not hasattr(cls, "from_dict"):
+        if "from_dict" not in cls.__dict__:
 
-        @classmethod
-        def from_dict(cls, data: dict[str, Any]) -> cls:
-            if "instrument_id" in data:
-                data["instrument_id"] = InstrumentId.from_str(data["instrument_id"])
+            @classmethod
+            def from_dict(cls, data: dict[str, Any]) -> cls:
+                if "instrument_id" in data:
+                    data["instrument_id"] = InstrumentId.from_str(data["instrument_id"])
 
-            return cls(**data)
+                return cls(**data)
 
-        cls.from_dict = from_dict
+            cls.from_dict = from_dict
 
-    if not hasattr(cls, "to_bytes"):
+        if "to_bytes" not in cls.__dict__:
 
-        def to_bytes(self) -> bytes:
-            return msgspec.msgpack.encode(self.to_dict())
+            def to_bytes(self) -> bytes:
+                return msgspec.msgpack.encode(self.to_dict())
 
-        cls.to_bytes = to_bytes
+            cls.to_bytes = to_bytes
 
-    if not hasattr(cls, "from_bytes"):
+        if "from_bytes" not in cls.__dict__:
 
-        @classmethod
-        def from_bytes(cls, data: bytes) -> cls:
-            return cls.from_dict(msgspec.msgpack.decode(data))
+            @classmethod
+            def from_bytes(cls, data: bytes) -> cls:
+                return cls.from_dict(msgspec.msgpack.decode(data))
 
-        cls.from_bytes = from_bytes
+            cls.from_bytes = from_bytes
 
-    if not hasattr(cls, "to_arrow"):
+        if "to_arrow" not in cls.__dict__:
 
-        def to_arrow(self) -> pa.RecordBatch:
-            return pa.RecordBatch.from_pylist([self.to_dict()], schema=cls._schema)
+            def to_arrow(self) -> pa.RecordBatch:
+                return pa.RecordBatch.from_pylist([self.to_dict()], schema=cls._schema)
 
-        cls.to_arrow = to_arrow
+            cls.to_arrow = to_arrow
 
-    if not hasattr(cls, "from_arrow"):
+        if "from_arrow" not in cls.__dict__:
 
-        @classmethod
-        def from_arrow(cls, table: pa.Table) -> cls:
-            return [cls.from_dict(d) for d in table.to_pylist()]
+            @classmethod
+            def from_arrow(cls, table: pa.Table) -> cls:
+                return [cls.from_dict(d) for d in table.to_pylist()]
 
-        cls.from_arrow = from_arrow
+            cls.from_arrow = from_arrow
 
-    if not hasattr(cls, "_schema"):
-        type_mapping = {
-            "InstrumentId": pa.string(),
-            "bool": pa.bool_(),
-            "float": pa.float64(),
-            "int": pa.int64(),
-        }
+        if "_schema" not in cls.__dict__:
+            type_mapping = {
+                "InstrumentId": pa.string(),
+                "str": pa.string(),
+                "bool": pa.bool_(),
+                "float": pa.float64(),
+                "int": pa.int64(),
+                "bytes": pa.binary(),
+            }
 
-        cls._schema = pa.schema(
-            {
-                attr: type_mapping[cls.__annotations__[attr].__name__]
-                for attr in cls.__annotations__
-            },
-        )
+            cls._schema = pa.schema(
+                {
+                    attr: type_mapping[cls.__annotations__[attr].__name__]
+                    for attr in cls.__annotations__
+                }
+                | {
+                    "ts_event": pa.int64(),
+                    "ts_init": pa.int64(),
+                },
+            )
 
-    register_serializable_type(cls, cls.to_dict, cls.from_dict)
-    register_arrow(cls, cls._schema, cls.to_arrow, cls.from_arrow)
+        register_serializable_type(cls, cls.to_dict, cls.from_dict)
+        register_arrow(cls, cls._schema, cls.to_arrow, cls.from_arrow)
 
-    return cls
+        return cls
+
+    if args and callable(args[0]):
+        return wrapper(args[0])
+
+    return wrapper
