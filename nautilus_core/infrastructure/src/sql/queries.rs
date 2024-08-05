@@ -22,7 +22,7 @@ use nautilus_model::{
         account::state::AccountState,
         order::{OrderEvent, OrderEventAny},
     },
-    identifiers::{AccountId, ClientOrderId, InstrumentId},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId},
     instruments::{any::InstrumentAny, Instrument},
     orders::{any::OrderAny, base::Order},
     types::{
@@ -39,7 +39,7 @@ use crate::sql::models::{
         AggregationSourceModel, AggressorSideModel, AssetClassModel, BarAggregationModel,
         CurrencyTypeModel, PriceTypeModel, TrailingOffsetTypeModel,
     },
-    general::GeneralRow,
+    general::{GeneralRow, OrderEventOrderClientIdCombination},
     instruments::InstrumentAnyModel,
     orders::OrderEventAnyModel,
     types::CurrencyModel,
@@ -198,6 +198,7 @@ impl DatabaseQueries {
         _kind: &str,
         updated: bool,
         order: Box<dyn Order>,
+        client_id: Option<ClientId>,
     ) -> anyhow::Result<()> {
         if updated {
             let exists =
@@ -213,55 +214,55 @@ impl DatabaseQueries {
         }
         match order.last_event().clone() {
             OrderEventAny::Accepted(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event)).await
+                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::CancelRejected(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event)).await
+                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::Canceled(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event)).await
+                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::Denied(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event)).await
+                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::Emulated(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event)).await
+                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::Expired(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event)).await
+                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::Filled(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event)).await
+                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::Initialized(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event)).await
+                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::ModifyRejected(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event)).await
+                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::PendingCancel(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event)).await
+                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::PendingUpdate(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event)).await
+                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::Rejected(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event)).await
+                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::Released(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event)).await
+                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::Submitted(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event)).await
+                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::Updated(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event)).await
+                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::Triggered(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event)).await
+                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
             }
             OrderEventAny::PartiallyFilled(event) => {
-                DatabaseQueries::add_order_event(pool, Box::new(event)).await
+                DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
             }
         }
     }
@@ -299,9 +300,12 @@ impl DatabaseQueries {
     pub async fn add_order_event(
         pool: &PgPool,
         order_event: Box<dyn OrderEvent>,
+        client_id: Option<ClientId>,
     ) -> anyhow::Result<()> {
         let mut transaction = pool.begin().await?;
 
+        // Insert trader if it does not exist
+        // TODO remove this when node and trader initialization is implemented
         sqlx::query(
             r#"
             INSERT INTO "trader" (id) VALUES ($1) ON CONFLICT (id) DO NOTHING
@@ -313,28 +317,42 @@ impl DatabaseQueries {
         .map(|_| ())
         .map_err(|err| anyhow::anyhow!("Failed to insert into trader table: {err}"))?;
 
+        // Insert client if it does not exist
+        // TODO remove this when client initialization is implemented
+        if let Some(client_id) = client_id {
+            sqlx::query(
+                r#"
+                INSERT INTO "client" (id) VALUES ($1) ON CONFLICT (id) DO NOTHING
+            "#,
+            )
+            .bind(client_id.to_string())
+            .execute(&mut *transaction)
+            .await
+            .map(|_| ())
+            .map_err(|err| anyhow::anyhow!("Failed to insert into client table: {err}"))?;
+        }
+
         sqlx::query(r#"
             INSERT INTO "order_event" (
-                id, kind, order_id, order_type, order_side, trader_id, strategy_id, instrument_id, trade_id, currency, quantity, time_in_force, liquidity_side,
+                id, kind, order_id, order_type, order_side, trader_id, client_id, strategy_id, instrument_id, trade_id, currency, quantity, time_in_force, liquidity_side,
                 post_only, reduce_only, quote_quantity, reconciliation, price, last_px, last_qty, trigger_price, trigger_type, limit_offset, trailing_offset,
                 trailing_offset_type, expire_time, display_qty, emulation_trigger, trigger_instrument_id, contingency_type,
                 order_list_id, linked_order_ids, parent_order_id,
                 exec_algorithm_id, exec_spawn_id, venue_order_id, account_id, position_id, commission, ts_event, ts_init, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
-                $21, $22, $23, $24::trailing_offset_type, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, $37, $38, $39, $40, $41, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                $21, $22, $23, $24, $25::trailing_offset_type, $26, $27, $28, $29, $30, $31, $32, $33, $34,
+                $35, $36, $37, $38, $39, $40, $41, $42,  CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             ON CONFLICT (id)
             DO UPDATE
             SET
-                kind = $2, order_id = $3, order_type = $4, order_side=$5, trader_id = $6, strategy_id = $7, instrument_id = $8, trade_id = $9, currency = $10,
-                quantity = $11, time_in_force = $12, liquidity_side = $13,
-                post_only = $14, reduce_only = $15, quote_quantity = $16, reconciliation = $17, price = $18, last_px = $19,
-                last_qty = $20, trigger_price = $21, trigger_type = $22, limit_offset = $23, trailing_offset = $24,
-                trailing_offset_type = $25, expire_time = $26, display_qty = $27, emulation_trigger = $28, trigger_instrument_id = $29,
-                contingency_type = $30, order_list_id = $31, linked_order_ids = $32,
-                parent_order_id = $33, exec_algorithm_id = $34, exec_spawn_id = $35, venue_order_id = $36, account_id = $37, position_id = $38, commission = $39,
-                ts_event = $40, ts_init = $41, updated_at = CURRENT_TIMESTAMP
+                kind = $2, order_id = $3, order_type = $4, order_side=$5, trader_id = $6, client_id = $7, strategy_id = $8, instrument_id = $9, trade_id = $10, currency = $11,
+                quantity = $12, time_in_force = $13, liquidity_side = $14, post_only = $15, reduce_only = $16, quote_quantity = $17, reconciliation = $18, price = $19, last_px = $20,
+                last_qty = $21, trigger_price = $22, trigger_type = $23, limit_offset = $24, trailing_offset = $25, trailing_offset_type = $26, expire_time = $27, display_qty = $28,
+                emulation_trigger = $29, trigger_instrument_id = $30, contingency_type = $31, order_list_id = $32, linked_order_ids = $33, parent_order_id = $34, exec_algorithm_id = $35,
+                exec_spawn_id = $36, venue_order_id = $37, account_id = $38, position_id = $39, commission = $40, ts_event = $41, ts_init = $42, updated_at = CURRENT_TIMESTAMP
+
         "#)
             .bind(order_event.id().to_string())
             .bind(order_event.kind())
@@ -342,6 +360,7 @@ impl DatabaseQueries {
             .bind(order_event.order_type().map(|x| x.to_string()))
             .bind(order_event.order_side().map(|x| x.to_string()))
             .bind(order_event.trader_id().to_string())
+            .bind(client_id.map(|x| x.to_string()))
             .bind(order_event.strategy_id().to_string())
             .bind(order_event.instrument_id().to_string())
             .bind(order_event.trade_id().map(|x| x.to_string()))
@@ -691,5 +710,26 @@ impl DatabaseQueries {
         .await
         .map(|rows| rows.into_iter().map(|row| row.0).collect())
         .map_err(|err| anyhow::anyhow!("Failed to load bars: {err}"))
+    }
+
+    pub async fn load_distinct_order_event_client_ids(
+        pool: &PgPool,
+    ) -> anyhow::Result<HashMap<ClientOrderId, ClientId>> {
+        let mut map: HashMap<ClientOrderId, ClientId> = HashMap::new();
+        let result = sqlx::query_as::<_, OrderEventOrderClientIdCombination>(
+            r#"
+            SELECT DISTINCT
+                order_id AS "order_id",
+                client_id AS "client_id"
+            FROM "order_event"
+        "#,
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(|err| anyhow::anyhow!("Failed to load account ids: {err}"))?;
+        for id in result {
+            map.insert(id.order_id, id.client_id);
+        }
+        Ok(map)
     }
 }
