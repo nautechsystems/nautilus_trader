@@ -229,3 +229,31 @@ catalog = ParquetDataCatalog('.')
 
 catalog.write_data([GreeksData()])
 ```
+
+## Creating a custom data class automatically
+
+The `@customdataclass` decorator enables the creation of a custom data class with default
+implementations for all the features described above.
+
+Each method can also be overridden if needed. Here is an example of its usage:
+
+```python
+from nautilus_trader.model.custom import customdataclass
+
+
+@customdataclass
+class GreeksTestData(Data):
+    instrument_id: InstrumentId = InstrumentId.from_str("ES.GLBX")
+    delta: float = 0.0
+
+    def __repr__(self):
+        return (f"GreeksData(instrument_id={self.instrument_id}, delta={self.delta:.2f}, ts_event={unix_nanos_to_str(self._ts_event)}, ts_init={unix_nanos_to_str(self._ts_init)})")
+
+
+GreeksTestData(
+    instrument_id=InstrumentId.from_str("CL.GLBX"),
+    delta=1000.0,
+    ts_event=1,
+    ts_init=2,
+)
+```
