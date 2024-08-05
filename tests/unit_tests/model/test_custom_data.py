@@ -48,8 +48,8 @@ def test_customdata_decorator_dict() -> None:
     assert data_dict == {
         "instrument_id": "ES.GLBX",
         "delta": 0.0,
-        "_ts_event": 1,
-        "_ts_init": 2,
+        "ts_event": 1,
+        "ts_init": 2,
     }
 
 

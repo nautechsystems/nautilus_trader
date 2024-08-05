@@ -26,14 +26,6 @@ from nautilus_trader.serialization.base import register_serializable_type
 
 def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
     def wrapper(cls):  # noqa: C901 (too complex)
-        if "_ts_event" not in cls.__annotations__:
-            cls.__annotations__["_ts_event"] = int
-            cls._ts_event = 0
-
-        if "_ts_init" not in cls.__annotations__:
-            cls.__annotations__["_ts_init"] = int
-            cls._ts_init = 0
-
         if cls.__init__ is object.__init__:
 
             def __init__(self, ts_event: int = 0, ts_init: int = 0, **kwargs):
@@ -74,6 +66,9 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
                 if hasattr(self, "instrument_id"):
                     result["instrument_id"] = self.instrument_id.value
 
+                result["ts_event"] = self._ts_event
+                result["ts_init"] = self._ts_init
+
                 return result
 
             cls.to_dict = to_dict
@@ -85,13 +80,7 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
                 if "instrument_id" in data:
                     data["instrument_id"] = InstrumentId.from_str(data["instrument_id"])
 
-                ts_event = data["_ts_event"]
-                ts_init = data["_ts_init"]
-
-                del data["_ts_event"]
-                del data["_ts_init"]
-
-                return cls(ts_event, ts_init, **data)
+                return cls(**data)
 
             cls.from_dict = from_dict
 
@@ -139,6 +128,10 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
                 {
                     attr: type_mapping[cls.__annotations__[attr].__name__]
                     for attr in cls.__annotations__
+                }
+                | {
+                    "ts_event": pa.int64(),
+                    "ts_init": pa.int64(),
                 },
             )
 
