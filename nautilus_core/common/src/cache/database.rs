@@ -98,7 +98,7 @@ pub trait CacheDatabaseAdapter {
 
     fn add_account(&mut self, account: &AccountAny) -> anyhow::Result<()>;
 
-    fn add_order(&mut self, order: &OrderAny) -> anyhow::Result<()>;
+    fn add_order(&mut self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()>;
 
     fn add_position(&mut self, position: &Position) -> anyhow::Result<()>;
 

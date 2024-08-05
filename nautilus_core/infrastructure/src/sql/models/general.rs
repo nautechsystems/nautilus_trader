@@ -13,8 +13,34 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_model::identifiers::{ClientId, ClientOrderId};
+use sqlx::{postgres::PgRow, Error, FromRow, Row};
+
 #[derive(Debug, sqlx::FromRow)]
 pub struct GeneralRow {
     pub id: String,
     pub value: Vec<u8>,
+}
+
+#[derive(Debug)]
+pub struct OrderEventOrderClientIdCombination {
+    pub order_id: ClientOrderId,
+    pub client_id: ClientId,
+}
+
+impl<'r> FromRow<'r, PgRow> for OrderEventOrderClientIdCombination {
+    fn from_row(row: &'r PgRow) -> Result<Self, Error> {
+        let order_id = row
+            .try_get::<&str, _>("order_id")
+            .map(ClientOrderId::from)
+            .unwrap();
+        let client_id = row
+            .try_get::<&str, _>("client_id")
+            .map(ClientId::from)
+            .unwrap();
+        Ok(OrderEventOrderClientIdCombination {
+            order_id,
+            client_id,
+        })
+    }
 }
