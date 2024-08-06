@@ -31,7 +31,10 @@ use super::{
     trailing_stop_market::TrailingStopMarketOrder,
 };
 use crate::{
-    enums::{LiquiditySide, OrderSide, OrderSideSpecified, OrderStatus, OrderType, TriggerType},
+    enums::{
+        LiquiditySide, OrderSide, OrderSideSpecified, OrderStatus, OrderType, PositionSide,
+        TriggerType,
+    },
     events::order::OrderEventAny,
     identifiers::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId, TraderId,
@@ -480,6 +483,21 @@ impl OrderAny {
             Self::StopMarket(order) => Some(order.trigger_price),
             Self::TrailingStopLimit(order) => Some(order.trigger_price),
             Self::TrailingStopMarket(order) => Some(order.trigger_price),
+        }
+    }
+
+    #[must_use]
+    pub fn would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {
+        match self {
+            Self::Limit(order) => order.would_reduce_only(side, position_qty),
+            Self::Market(order) => order.would_reduce_only(side, position_qty),
+            Self::MarketToLimit(order) => order.would_reduce_only(side, position_qty),
+            Self::LimitIfTouched(order) => order.would_reduce_only(side, position_qty),
+            Self::MarketIfTouched(order) => order.would_reduce_only(side, position_qty),
+            Self::StopLimit(order) => order.would_reduce_only(side, position_qty),
+            Self::StopMarket(order) => order.would_reduce_only(side, position_qty),
+            Self::TrailingStopLimit(order) => order.would_reduce_only(side, position_qty),
+            Self::TrailingStopMarket(order) => order.would_reduce_only(side, position_qty),
         }
     }
 }
