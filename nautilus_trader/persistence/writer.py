@@ -209,6 +209,11 @@ class StreamingFeatherWriter:
         PyCondition.not_none(obj, "obj")
 
         cls = obj.__class__
+
+        # Check if an include types filter has been specified
+        if self.include_types is not None and cls not in self.include_types:
+            return
+
         if isinstance(obj, CustomData):
             cls = obj.data_type.type
         elif isinstance(obj, Instrument):
