@@ -112,7 +112,7 @@ impl HttpClient {
         headers: Option<HashMap<String, String>>,
         body: Option<&'py PyBytes>,
         keys: Option<Vec<String>>,
-        timeout_sec: Option<u64>,
+        timeout_secs: Option<u64>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let headers = headers.unwrap_or_default();
@@ -130,7 +130,7 @@ impl HttpClient {
                 })
                 .await;
             match client
-                .send_request(method, url, headers, body_vec, timeout_sec)
+                .send_request(method, url, headers, body_vec, timeout_secs)
                 .await
             {
                 Ok(res) => Ok(res),
