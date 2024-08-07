@@ -79,7 +79,7 @@ impl InnerHttpClient {
         url: String,
         headers: HashMap<String, String>,
         body: Option<Vec<u8>>,
-        timeout_sec: Option<u64>,
+        timeout_secs: Option<u64>,
     ) -> Result<HttpResponse, Box<dyn std::error::Error + Send + Sync>> {
         let reqwest_url = Url::parse(url.as_str())?;
 
@@ -89,14 +89,11 @@ impl InnerHttpClient {
             let _ = header_map.insert(key, header_value.parse().unwrap());
         }
 
-        let request_builder = match timeout_sec {
-            Some(timeout_sec) => self
-                .client
-                .request(method, reqwest_url)
-                .headers(header_map)
-                .timeout(Duration::new(timeout_sec, 0)),
-            None => self.client.request(method, reqwest_url).headers(header_map),
-        };
+        let mut request_builder = self.client.request(method, reqwest_url).headers(header_map);
+
+        if let Some(timeout_secs) = timeout_secs {
+            request_builder = request_builder.timeout(Duration::new(timeout_secs, 0));
+        }
 
         let request = match body {
             Some(b) => request_builder.body(b).build()?,
