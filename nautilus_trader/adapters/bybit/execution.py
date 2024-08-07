@@ -241,6 +241,7 @@ class BybitExecutionClient(LiveExecutionClient):
     ) -> list[OrderStatusReport]:
         self._log.info("Requesting OrderStatusReports...")
         reports: list[OrderStatusReport] = []
+
         try:
             _symbol = instrument_id.symbol.value if instrument_id is not None else None
             symbol = BybitSymbol(_symbol) if _symbol is not None else None
@@ -275,9 +276,11 @@ class BybitExecutionClient(LiveExecutionClient):
                     self._log.debug(f"Received {report}", LogColor.MAGENTA)
         except BybitError as e:
             self._log.error(f"Failed to generate OrderStatusReports: {e}")
+
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
         self._log.info(f"Received {len(reports)} OrderStatusReport{plural}")
+
         return reports
 
     async def generate_order_status_report(
@@ -359,6 +362,7 @@ class BybitExecutionClient(LiveExecutionClient):
     ) -> list[FillReport]:
         self._log.info("Requesting FillReports...")
         reports: list[FillReport] = []
+
         try:
             _symbol = instrument_id.symbol.value if instrument_id is not None else None
             symbol = BybitSymbol(_symbol) if _symbol is not None else None
@@ -384,9 +388,11 @@ class BybitExecutionClient(LiveExecutionClient):
                     self._log.debug(f"Received {report}")
         except BybitError as e:
             self._log.error(f"Failed to generate FillReports: {e}")
+
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
         self._log.info(f"Received {len(reports)} FillReport{plural}")
+
         return reports
 
     async def generate_position_status_reports(
@@ -398,24 +404,31 @@ class BybitExecutionClient(LiveExecutionClient):
         self._log.info("Requesting PositionStatusReports...")
         reports: list[PositionStatusReport] = []
 
-        for product_type in self._product_types:
-            if product_type == BybitProductType.SPOT:
-                continue  # No positions on spot
-            positions = await self._http_account.query_position_info(product_type)
-            for position in positions:
-                # Uncomment for development
-                # self._log.info(f"Generating report {position}", LogColor.MAGENTA)
-                instr: InstrumentId = BybitSymbol(
-                    position.symbol + "-" + product_type.value.upper(),
-                ).parse_as_nautilus()
-                position_report = position.parse_to_position_status_report(
-                    account_id=self.account_id,
-                    instrument_id=instr,
-                    report_id=UUID4(),
-                    ts_init=self._clock.timestamp_ns(),
-                )
-                self._log.debug(f"Received {position_report}")
-                reports.append(position_report)
+        try:
+            for product_type in self._product_types:
+                if product_type == BybitProductType.SPOT:
+                    continue  # No positions on spot
+                positions = await self._http_account.query_position_info(product_type)
+                for position in positions:
+                    # Uncomment for development
+                    self._log.info(f"Generating report {position}", LogColor.MAGENTA)
+                    instr: InstrumentId = BybitSymbol(
+                        position.symbol + "-" + product_type.value.upper(),
+                    ).parse_as_nautilus()
+                    position_report = position.parse_to_position_status_report(
+                        account_id=self.account_id,
+                        instrument_id=instr,
+                        report_id=UUID4(),
+                        ts_init=self._clock.timestamp_ns(),
+                    )
+                    self._log.debug(f"Received {position_report}")
+                    reports.append(position_report)
+        except BybitError as e:
+            self._log.error(f"Failed to generate PositionReports: {e}")
+
+        len_reports = len(reports)
+        plural = "" if len_reports == 1 else "s"
+        self._log.info(f"Received {len(reports)} PositionReport{plural}")
 
         return reports
 
