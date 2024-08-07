@@ -177,6 +177,7 @@ impl DerefMut for DataClientAdapter {
 }
 
 impl DataClientAdapter {
+    #[must_use]
     pub fn new(
         client_id: ClientId,
         venue: Venue,

@@ -47,7 +47,7 @@ pub struct MockDataClient {
 }
 
 impl MockDataClient {
-    pub fn new(
+    pub const fn new(
         cache: Rc<RefCell<Cache>>,
         msgbus: Rc<RefCell<MessageBus>>,
         client_id: ClientId,

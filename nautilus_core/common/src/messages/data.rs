@@ -78,7 +78,8 @@ pub struct SubscriptionCommand {
 }
 
 impl SubscriptionCommand {
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         client_id: ClientId,
         venue: Venue,
         data_type: DataType,

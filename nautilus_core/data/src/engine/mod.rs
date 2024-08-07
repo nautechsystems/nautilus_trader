@@ -278,7 +278,7 @@ impl DataEngine {
         // TODO: log error
         if let Some(cmd) = msg.downcast_ref::<SubscriptionCommand>() {
             if let Some(client) = self.clients.get_mut(&cmd.client_id) {
-                client.execute(cmd.clone())
+                client.execute(cmd.clone());
             } else {
                 log::error!(
                     "Cannot handle command: no client found for {}",
@@ -346,7 +346,7 @@ impl DataEngine {
             _ => {} // Nothing else to handle
         }
 
-        self.msgbus.as_ref().borrow().send_response(resp)
+        self.msgbus.as_ref().borrow().send_response(resp);
     }
 
     // -- DATA HANDLERS ---------------------------------------------------------------------------
@@ -513,6 +513,7 @@ impl DataEngine {
 }
 
 // TODO: Potentially move these
+#[must_use]
 pub fn get_instrument_publish_topic(instrument: &InstrumentAny) -> String {
     let instrument_id = instrument.id();
     format!(
@@ -521,6 +522,7 @@ pub fn get_instrument_publish_topic(instrument: &InstrumentAny) -> String {
     )
 }
 
+#[must_use]
 pub fn get_delta_publish_topic(delta: &OrderBookDelta) -> String {
     format!(
         "data.book.delta.{}.{}",
@@ -528,6 +530,7 @@ pub fn get_delta_publish_topic(delta: &OrderBookDelta) -> String {
     )
 }
 
+#[must_use]
 pub fn get_deltas_publish_topic(delta: &OrderBookDeltas) -> String {
     format!(
         "data.book.snapshots.{}.{}",
@@ -535,6 +538,7 @@ pub fn get_deltas_publish_topic(delta: &OrderBookDeltas) -> String {
     )
 }
 
+#[must_use]
 pub fn get_depth_publish_topic(depth: &OrderBookDepth10) -> String {
     format!(
         "data.book.depth.{}.{}",
@@ -542,6 +546,7 @@ pub fn get_depth_publish_topic(depth: &OrderBookDepth10) -> String {
     )
 }
 
+#[must_use]
 pub fn get_quote_publish_topic(quote: &QuoteTick) -> String {
     format!(
         "data.quotes.{}.{}",
@@ -549,6 +554,7 @@ pub fn get_quote_publish_topic(quote: &QuoteTick) -> String {
     )
 }
 
+#[must_use]
 pub fn get_trade_publish_topic(trade: &TradeTick) -> String {
     format!(
         "data.trades.{}.{}",
@@ -556,6 +562,7 @@ pub fn get_trade_publish_topic(trade: &TradeTick) -> String {
     )
 }
 
+#[must_use]
 pub fn get_bar_publish_topic(bar: &Bar) -> String {
     format!("data.bars.{}", bar.bar_type)
 }
@@ -571,7 +578,7 @@ impl MessageHandler for SubscriptionCommandHandler {
     }
 
     fn handle(&self, message: &dyn Any) {
-        self.data_engine.borrow_mut().execute(message)
+        self.data_engine.borrow_mut().execute(message);
     }
     fn handle_response(&self, _resp: DataResponse) {}
     fn handle_data(&self, _resp: Data) {}
@@ -617,12 +624,7 @@ mod tests {
 
         let client_id = ClientId::from("SIM");
         let venue = Venue::from("SIM");
-        let client = Box::new(MockDataClient::new(
-            cache.clone(),
-            msgbus.clone(),
-            client_id,
-            venue,
-        ));
+        let client = Box::new(MockDataClient::new(cache, msgbus.clone(), client_id, venue));
 
         let client = DataClientAdapter::new(client_id, venue, client, Box::new(TestClock::new()));
         data_engine.borrow_mut().register_client(client, None);
