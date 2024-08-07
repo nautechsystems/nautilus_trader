@@ -206,11 +206,13 @@ class BetfairTestStubs:
         catalog_path: str,
         catalog_fs_protocol: str = "memory",
         flush_interval_ms: int | None = None,
+        include_types: list[type] | None = None,
     ) -> StreamingConfig:
         return StreamingConfig(
             catalog_path=catalog_path,
             fs_protocol=catalog_fs_protocol,
             flush_interval_ms=flush_interval_ms,
+            include_types=include_types,
         )
 
     @staticmethod
