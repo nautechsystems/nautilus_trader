@@ -112,6 +112,7 @@ impl HttpClient {
         headers: Option<HashMap<String, String>>,
         body: Option<&'py PyBytes>,
         keys: Option<Vec<String>>,
+        timeout_sec: Option<u64>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let headers = headers.unwrap_or_default();
@@ -128,7 +129,10 @@ impl HttpClient {
                     key.await;
                 })
                 .await;
-            match client.send_request(method, url, headers, body_vec).await {
+            match client
+                .send_request(method, url, headers, body_vec, timeout_sec)
+                .await
+            {
                 Ok(res) => Ok(res),
                 Err(e) => Err(PyErr::new::<PyException, _>(format!(
                     "Error handling response: {e}"
