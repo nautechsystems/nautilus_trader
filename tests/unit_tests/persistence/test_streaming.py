@@ -140,8 +140,8 @@ class TestPersistenceStreaming:
         assert result["NewsEventData"] == 86985  # type: ignore
 
     def test_feather_writer_include_types(
-            self,
-            catalog_betfair: ParquetDataCatalog,
+        self,
+        catalog_betfair: ParquetDataCatalog,
     ) -> None:
         # Arrange
         self.catalog = catalog_betfair
@@ -192,8 +192,8 @@ class TestPersistenceStreaming:
         assert len(result) == 1
 
     def test_feather_writer_stream_to_data(
-            self,
-            catalog_betfair: ParquetDataCatalog,
+        self,
+        catalog_betfair: ParquetDataCatalog,
     ) -> None:
         # Arrange
         self.catalog = catalog_betfair
