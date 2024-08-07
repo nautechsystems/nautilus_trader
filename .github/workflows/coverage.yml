@@ -91,12 +91,25 @@ jobs:
       #     make install-talib
       #     poetry run pip install setuptools numpy==1.26.4 ta-lib
 
-      - name: Setup cached pre-commit
+      - name: Set up cached pre-commit
         id: cached-pre-commit
         uses: actions/cache@v4
         with:
           path: ~/.cache/pre-commit
           key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Set up cached cargo
+        id: cached-cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
 
       - name: Run pre-commit
         run: pre-commit run --all-files

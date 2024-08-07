@@ -104,14 +104,14 @@ jobs:
       #     make install-talib
       #     poetry run pip install setuptools numpy==1.26.4 ta-lib
 
-      - name: Setup cached pre-commit
+      - name: Set up cached pre-commit
         id: cached-pre-commit
         uses: actions/cache@v4
         with:
           path: ~/.cache/pre-commit
           key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
 
-      - name: Setup cached cargo
+      - name: Set up cached cargo
         id: cached-cargo
         uses: actions/cache@v4
         with:
@@ -218,12 +218,25 @@ jobs:
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools wheel pre-commit msgspec
 
-      - name: Setup cached pre-commit
+      - name: Set up cached pre-commit
         id: cached-pre-commit
         uses: actions/cache@v4
         with:
           path: ~/.cache/pre-commit
           key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Set up cached cargo
+        id: cached-cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
 
       - name: Set poetry cache-dir
         run: echo "POETRY_CACHE_DIR=$(poetry config cache-dir)" >> $GITHUB_ENV
@@ -310,12 +323,25 @@ jobs:
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools wheel pre-commit msgspec
 
-      - name: Setup cached pre-commit
+      - name: Set up cached pre-commit
         id: cached-pre-commit
         uses: actions/cache@v4
         with:
           path: ~/.cache/pre-commit
           key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Set up cached cargo
+        id: cached-cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-
 
       - name: Set poetry cache-dir
         run: echo "POETRY_CACHE_DIR=$(poetry config cache-dir)" >> $GITHUB_ENV
