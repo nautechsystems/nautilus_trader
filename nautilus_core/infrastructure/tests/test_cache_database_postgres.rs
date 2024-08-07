@@ -271,7 +271,7 @@ mod serial_tests {
         assert_eq!(
             client_order_ids
                 .keys()
-                .cloned()
+                .copied()
                 .collect::<HashSet<ClientOrderId>>(),
             vec![client_order_id_1, client_order_id_2]
                 .into_iter()
@@ -280,7 +280,7 @@ mod serial_tests {
         assert_eq!(
             client_order_ids
                 .values()
-                .cloned()
+                .copied()
                 .collect::<HashSet<ClientId>>(),
             vec![client_id].into_iter().collect::<HashSet<ClientId>>()
         );

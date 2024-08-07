@@ -64,7 +64,7 @@ pub struct OrderMatchingEngineConfig {
 #[allow(clippy::derivable_impls)]
 impl Default for OrderMatchingEngineConfig {
     fn default() -> Self {
-        OrderMatchingEngineConfig {
+        Self {
             bar_execution: false,
             reject_stop_orders: false,
             support_gtd_orders: false,
@@ -340,8 +340,7 @@ impl OrderMatchingEngine {
             self.generate_order_rejected(
                 order,
                 format!(
-                    "Short selling not permitted on a CASH account with position {} and order {}",
-                    position_string, order,
+                    "Short selling not permitted on a CASH account with position {position_string} and order {order}",
                 )
                 .into(),
             );

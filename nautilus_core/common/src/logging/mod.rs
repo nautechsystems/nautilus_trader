@@ -107,7 +107,7 @@ pub fn init_tracing() {
             .with_env_filter(EnvFilter::new(v.clone()))
             .try_init()
             .unwrap_or_else(|e| {
-                tracing::error!("Cannot set tracing subscriber because of error: {e}")
+                tracing::error!("Cannot set tracing subscriber because of error: {e}");
             });
         println!("Initialized tracing logs with RUST_LOG={v}");
     }
