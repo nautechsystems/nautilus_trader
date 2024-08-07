@@ -59,7 +59,7 @@ float-cmp = "0.9.0"
 iai = "0.1.1"
 pretty_assertions = "1.4.0"
 rstest = "0.21.0"
-tempfile = "3.11.0"
+tempfile = "3.12.0"
 
 # build-dependencies
 cbindgen = "0.26.0"
