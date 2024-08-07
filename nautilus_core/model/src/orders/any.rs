@@ -500,6 +500,51 @@ impl OrderAny {
             Self::TrailingStopMarket(order) => order.would_reduce_only(side, position_qty),
         }
     }
+
+    #[must_use]
+    pub fn is_reduce_only(&self) -> bool {
+        match self {
+            Self::Limit(order) => order.is_reduce_only(),
+            Self::Market(order) => order.is_reduce_only(),
+            Self::MarketToLimit(order) => order.is_reduce_only(),
+            Self::LimitIfTouched(order) => order.is_reduce_only(),
+            Self::MarketIfTouched(order) => order.is_reduce_only(),
+            Self::StopLimit(order) => order.is_reduce_only(),
+            Self::StopMarket(order) => order.is_reduce_only(),
+            Self::TrailingStopLimit(order) => order.is_reduce_only(),
+            Self::TrailingStopMarket(order) => order.is_reduce_only(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_buy(&self) -> bool {
+        match self {
+            Self::Limit(order) => order.is_buy(),
+            Self::LimitIfTouched(order) => order.is_buy(),
+            Self::Market(order) => order.is_buy(),
+            Self::MarketIfTouched(order) => order.is_buy(),
+            Self::MarketToLimit(order) => order.is_buy(),
+            Self::StopLimit(order) => order.is_buy(),
+            Self::StopMarket(order) => order.is_buy(),
+            Self::TrailingStopLimit(order) => order.is_buy(),
+            Self::TrailingStopMarket(order) => order.is_buy(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_sell(&self) -> bool {
+        match self {
+            Self::Limit(order) => order.is_sell(),
+            Self::LimitIfTouched(order) => order.is_sell(),
+            Self::Market(order) => order.is_sell(),
+            Self::MarketIfTouched(order) => order.is_sell(),
+            Self::MarketToLimit(order) => order.is_sell(),
+            Self::StopLimit(order) => order.is_sell(),
+            Self::StopMarket(order) => order.is_sell(),
+            Self::TrailingStopLimit(order) => order.is_sell(),
+            Self::TrailingStopMarket(order) => order.is_sell(),
+        }
+    }
 }
 
 impl PartialEq for OrderAny {

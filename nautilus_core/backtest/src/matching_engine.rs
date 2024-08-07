@@ -347,6 +347,29 @@ impl OrderMatchingEngine {
             return;
         }
 
+        // Check reduce-only instruction
+        if self.config.use_reduce_only
+            && order.is_reduce_only()
+            && !order.is_closed()
+            && position.map_or(true, |pos| {
+                pos.is_closed()
+                    || (order.is_buy() && pos.is_long())
+                    || (order.is_sell() && pos.is_short())
+            })
+        {
+            self.generate_order_rejected(
+                order,
+                format!(
+                    "Reduce-only order {} ({}-{}) would have increased position",
+                    order.client_order_id(),
+                    order.order_type().to_string().to_uppercase(),
+                    order.order_side().to_string().to_uppercase()
+                )
+                .into(),
+            );
+            return;
+        }
+
         match order.order_type() {
             OrderType::Market => self.process_market_order(order),
             OrderType::Limit => self.process_limit_order(order),
@@ -828,9 +851,10 @@ mod tests {
         instrument: InstrumentAny,
         msgbus: Rc<MessageBus>,
         account_type: Option<AccountType>,
+        config: Option<OrderMatchingEngineConfig>,
     ) -> OrderMatchingEngine {
         let cache = Rc::new(Cache::default());
-        let config = OrderMatchingEngineConfig::default();
+        let config = config.unwrap_or_default();
         OrderMatchingEngine::new(
             instrument,
             1,
@@ -873,7 +897,7 @@ mod tests {
         );
 
         // Create engine and process order
-        let mut engine = get_order_matching_engine(instrument.clone(), Rc::new(msgbus), None);
+        let mut engine = get_order_matching_engine(instrument.clone(), Rc::new(msgbus), None, None);
         let order = TestOrderStubs::market_order(
             instrument.id(),
             OrderSide::Buy,
@@ -923,7 +947,7 @@ mod tests {
         );
 
         // Create engine and process order
-        let mut engine = get_order_matching_engine(instrument.clone(), Rc::new(msgbus), None);
+        let mut engine = get_order_matching_engine(instrument.clone(), Rc::new(msgbus), None, None);
         let order = TestOrderStubs::market_order(
             instrument.id(),
             OrderSide::Buy,
@@ -959,7 +983,8 @@ mod tests {
         );
 
         // Create engine and process order
-        let mut engine = get_order_matching_engine(instrument_es.clone(), Rc::new(msgbus), None);
+        let mut engine =
+            get_order_matching_engine(instrument_es.clone(), Rc::new(msgbus), None, None);
         let order = TestOrderStubs::market_order(
             instrument_es.id(),
             OrderSide::Buy,
@@ -995,7 +1020,8 @@ mod tests {
         );
 
         // Create engine and process order
-        let mut engine = get_order_matching_engine(instrument_es.clone(), Rc::new(msgbus), None);
+        let mut engine =
+            get_order_matching_engine(instrument_es.clone(), Rc::new(msgbus), None, None);
         let limit_order = TestOrderStubs::limit_order(
             instrument_es.id(),
             OrderSide::Sell,
@@ -1033,7 +1059,8 @@ mod tests {
         );
 
         // Create engine and process order
-        let mut engine = get_order_matching_engine(instrument_es.clone(), Rc::new(msgbus), None);
+        let mut engine =
+            get_order_matching_engine(instrument_es.clone(), Rc::new(msgbus), None, None);
         let stop_order = TestOrderStubs::stop_market_order(
             instrument_es.id(),
             OrderSide::Sell,
@@ -1073,7 +1100,7 @@ mod tests {
         );
 
         // Create engine and process order
-        let mut engine = get_order_matching_engine(instrument.clone(), Rc::new(msgbus), None);
+        let mut engine = get_order_matching_engine(instrument.clone(), Rc::new(msgbus), None, None);
         let order = TestOrderStubs::market_order(
             instrument.id(),
             OrderSide::Sell,
@@ -1096,6 +1123,53 @@ mod tests {
                 MarketOrder(SELL 1 AAPL.XNAS @ MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000000-001-001-1, \
                  venue_order_id=None, position_id=None, exec_algorithm_id=None, \
                  exec_spawn_id=None, tags=None)")
+        );
+    }
+
+    #[rstest]
+    fn test_order_matching_engine_reduce_only_error(
+        mut msgbus: MessageBus,
+        order_event_handler: ShareableMessageHandler,
+        account_id: AccountId,
+        time: AtomicTime,
+        instrument_es: InstrumentAny,
+    ) {
+        // Register saving message handler to exec engine endpoint
+        msgbus.register(
+            msgbus.switchboard.exec_engine_process.as_str(),
+            order_event_handler.clone(),
+        );
+
+        // Create engine (with reduce_only option) and process order
+        let config = OrderMatchingEngineConfig {
+            use_reduce_only: true,
+            bar_execution: false,
+            reject_stop_orders: false,
+            support_gtd_orders: false,
+            support_contingent_orders: false,
+            use_position_ids: false,
+            use_random_ids: false,
+        };
+        let mut engine =
+            get_order_matching_engine(instrument_es.clone(), Rc::new(msgbus), None, Some(config));
+        let market_order = TestOrderStubs::market_order_reduce(
+            instrument_es.id(),
+            OrderSide::Buy,
+            Quantity::from("1"),
+            None,
+            None,
+        );
+
+        engine.process_order(&market_order, account_id);
+
+        // Get messages and test
+        let saved_messages = get_order_event_handler_messages(order_event_handler);
+        assert_eq!(saved_messages.len(), 1);
+        let first_message = saved_messages.first().unwrap();
+        assert_eq!(first_message.event_type(), OrderEventType::Rejected);
+        assert_eq!(
+            first_message.message().unwrap(),
+            Ustr::from("Reduce-only order O-19700101-000000-001-001-1 (MARKET-BUY) would have increased position")
         );
     }
 }
