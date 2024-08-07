@@ -44,6 +44,7 @@ from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.core.message import Event
 from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
 from nautilus_trader.core.nautilus_pyo3 import NautilusDataType
+from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model import NautilusRustDataType
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import CustomData
@@ -749,3 +750,20 @@ class ParquetDataCatalog(BaseDataCatalog):
                 return reader.read_all()
         except (pa.ArrowInvalid, OSError):
             return None
+
+    def convert_stream_to_data(
+        self,
+        instance_id: UUID4,
+        data_cls: type,
+        other_catalog: ParquetDataCatalog | None = None,
+    ) -> None:
+        table_name = class_to_filename(data_cls)
+        feather_file = Path(self.path) / "backtest" / instance_id / f"{table_name}.feather"
+
+        feather_table = self._read_feather_file(feather_file)
+        custom_data_list = self._handle_table_nautilus(feather_table, data_cls)
+
+        if other_catalog is not None:
+            other_catalog.write_data(custom_data_list)
+        else:
+            self.write_data(custom_data_list)
