@@ -3,13 +3,16 @@
 Released on TBD (UTC).
 
 ### Enhancements
-- Added `@customdata` decorator to reduce need for boiler plate implementing custom data types, thanks @faysou
+- Added `@customdata` decorator to reduce need for boiler plate implementing custom data types (#1828), thanks @faysou
+- Added timeout for HTTP client in Rust (#1835), thanks @davidsblom
+- Upgraded Cython to 3.0.11
 
 ### Breaking Changes
 None
 
 ### Fixes
-None
+- Fixed creation of `instrumend_id` folder when writing PyO3 bars in catalog (#1832), thanks @faysou
+- Fixed handling `include_types` option in `StreamingFeatherWriter` (#1833), thanks @faysou
 
 ---
 
