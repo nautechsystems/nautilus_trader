@@ -13,6 +13,7 @@ None
 ### Fixes
 - Fixed creation of `instrumend_id` folder when writing PyO3 bars in catalog (#1832), thanks @faysou
 - Fixed handling `include_types` option in `StreamingFeatherWriter` (#1833), thanks @faysou
+- Fixed `BybitExecutionClient` position reports error handling and logging
 
 ---
 
