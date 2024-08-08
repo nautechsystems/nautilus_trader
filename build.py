@@ -172,6 +172,7 @@ def _build_extensions() -> list[Extension]:
             "OleAut32.lib",
             "Pdh.lib",
             "PowrProf.lib",
+            "Propsys.lib",
             "Psapi.lib",
             "schannel.lib",
             "secur32.lib",
