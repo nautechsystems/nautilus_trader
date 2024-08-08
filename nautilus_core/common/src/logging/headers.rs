@@ -37,7 +37,7 @@ pub fn log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, com
     header_sepr(c, "=================================================================");
     header_sepr(c, " NAUTILUS TRADER - Automated Algorithmic Trading Platform");
     header_sepr(c, " by Nautech Systems Pty Ltd.");
-    header_sepr(c, "Copyright (C) 2015-2024. All rights reserved.");
+    header_sepr(c, " Copyright (C) 2015-2024. All rights reserved.");
     header_sepr(c, "=================================================================");
     header_line(c, "");
     header_line(c, "⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣴⣶⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀");
