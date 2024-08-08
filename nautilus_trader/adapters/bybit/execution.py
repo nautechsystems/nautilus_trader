@@ -411,7 +411,7 @@ class BybitExecutionClient(LiveExecutionClient):
                 positions = await self._http_account.query_position_info(product_type)
                 for position in positions:
                     # Uncomment for development
-                    self._log.info(f"Generating report {position}", LogColor.MAGENTA)
+                    # self._log.info(f"Generating report {position}", LogColor.MAGENTA)
                     instr: InstrumentId = BybitSymbol(
                         position.symbol + "-" + product_type.value.upper(),
                     ).parse_as_nautilus()
