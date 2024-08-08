@@ -865,9 +865,9 @@ class BybitExecutionClient(LiveExecutionClient):
             client_order_id = self._cache.client_order_id(venue_order_id)
 
         if client_order_id is None:
-            # TODO: We can generate an external order fill here instead
-            self._log.error(
-                f"Cannot process order execution for {venue_order_id!r}: no `ClientOrderId` found",
+            self._log.debug(
+                f"Cannot process order execution for {venue_order_id!r}: no `ClientOrderId` found "
+                "(most likely due to being an external order)",
             )
             return
 
@@ -976,7 +976,11 @@ class BybitExecutionClient(LiveExecutionClient):
                     enum_parser=self._enum_parser,
                     ts_init=self._clock.timestamp_ns(),
                 )
-                strategy_id = self._cache.strategy_id_for_order(report.client_order_id)
+
+                strategy_id = None
+                if report.client_order_id:
+                    strategy_id = self._cache.strategy_id_for_order(report.client_order_id)
+
                 if strategy_id is None:
                     # External order
                     self._send_order_status_report(report)
