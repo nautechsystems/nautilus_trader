@@ -40,7 +40,7 @@ class TemplateLiveDataClient(LiveDataClient):
     """
     An example of a ``LiveDataClient`` highlighting the overridable abstract methods.
 
-    A live data client general handles non-market or custom data feeds and requests.
+    A live data client generally handles non-market or custom data feeds and requests.
 
     +---------------------------------------+-------------+
     | Method                                | Requirement |
@@ -103,7 +103,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
     An example of a ``LiveMarketDataClient`` highlighting the overridable abstract
     methods.
 
-    A live market data client general handles market data feeds and requests.
+    A live market data client generally handles market data feeds and requests.
 
     +----------------------------------------+-------------+
     | Method                                 | Requirement |
