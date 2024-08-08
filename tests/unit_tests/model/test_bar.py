@@ -344,7 +344,11 @@ class TestBarType:
 
     @pytest.mark.parametrize(
         "value",
-        ["", "AUD/USD", "AUD/USD.IDEALPRO-1-MILLISECOND-BID"],
+        [
+            "",
+            "AUD/USD",
+            "AUD/USD.IDEALPRO-1-MILLISECOND-BID",
+        ],
     )
     def test_from_str_given_various_invalid_strings_raises_value_error(self, value):
         # Arrange, Act, Assert
@@ -391,6 +395,14 @@ class TestBarType:
                     InstrumentId(Symbol("ETHUSDT-PERP"), Venue("BINANCE")),
                     BarSpecification(100, BarAggregation.TICK, PriceType.LAST),
                     AggregationSource.INTERNAL,
+                ),
+            ],
+            [
+                "TOTAL-INDEX.TRADINGVIEW-2-HOUR-LAST-EXTERNAL",
+                BarType(
+                    InstrumentId(Symbol("TOTAL-INDEX"), Venue("TRADINGVIEW")),
+                    BarSpecification(2, BarAggregation.HOUR, PriceType.LAST),
+                    AggregationSource.EXTERNAL,
                 ),
             ],
         ],
