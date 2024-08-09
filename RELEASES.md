@@ -1,6 +1,6 @@
 # NautilusTrader 1.198.0 Beta
 
-Released on TBD (UTC).
+Released on 9th August 2024 (UTC).
 
 ### Enhancements
 - Added `@customdata` decorator to reduce need for boiler plate implementing custom data types (#1828), thanks @faysou
