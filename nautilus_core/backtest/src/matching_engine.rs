@@ -53,6 +53,7 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
+/// Configuration for [`OrderMatchingEngine`] instances.
 #[derive(Debug, Clone)]
 pub struct OrderMatchingEngineConfig {
     pub bar_execution: bool,
@@ -115,7 +116,6 @@ pub struct OrderMatchingEngine {
     execution_count: usize,
 }
 
-// TODO: we'll probably be changing the `FillModel` (don't add for now)
 impl OrderMatchingEngine {
     /// Creates a new [`OrderMatchingEngine`] instance.
     #[allow(clippy::too_many_arguments)]
@@ -212,7 +212,7 @@ impl OrderMatchingEngine {
         self.core.order_exists(client_order_id)
     }
 
-    // -- DATA PROCESSING -----------------------------------------------------
+    // -- DATA PROCESSING -------------------------------------------------------------------------
 
     /// Process the venues market for the given order book delta.
     pub fn process_order_book_delta(&mut self, delta: &OrderBookDelta) {
@@ -221,7 +221,8 @@ impl OrderMatchingEngine {
         self.book.apply_delta(delta);
     }
 
-    // -- TRADING COMMANDS ----------------------------------------------------
+    // -- TRADING COMMANDS ------------------------------------------------------------------------
+
     #[allow(clippy::needless_return)]
     pub fn process_order(&mut self, order: &OrderAny, account_id: AccountId) {
         // enter the scope where you will borrow a cache
@@ -850,7 +851,8 @@ mod tests {
     static ATOMIC_TIME: LazyLock<AtomicTime> =
         LazyLock::new(|| AtomicTime::new(true, UnixNanos::default()));
 
-    // -- FIXTURES ---------------------------------------------------------------------------
+    // -- FIXTURES --------------------------------------------------------------------------------
+
     #[fixture]
     fn msgbus() -> MessageBus {
         MessageBus::default()
@@ -889,7 +891,7 @@ mod tests {
         InstrumentAny::FuturesContract(futures_contract_es(Some(activation), Some(expiration)))
     }
 
-    // -- HELPERS ---------------------------------------------------------------------------
+    // -- HELPERS ---------------------------------------------------------------------------------
 
     fn get_order_matching_engine(
         instrument: InstrumentAny,
@@ -925,9 +927,10 @@ mod tests {
             .get_messages()
     }
 
-    // -- TESTS ---------------------------------------------------------------------------
+    // -- TESTS -----------------------------------------------------------------------------------
+
     #[rstest]
-    fn test_order_matching_engine_instrument_already_expired(
+    fn test_process_order_when_instrument_already_expired(
         mut msgbus: MessageBus,
         order_event_handler: ShareableMessageHandler,
         account_id: AccountId,
@@ -965,7 +968,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_matching_engine_instrument_not_active(
+    fn test_process_order_when_instrument_not_active(
         mut msgbus: MessageBus,
         order_event_handler: ShareableMessageHandler,
         account_id: AccountId,
@@ -1016,7 +1019,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_matching_engine_wrong_order_quantity_precision(
+    fn test_process_order_when_invalid_quantity_precision(
         mut msgbus: MessageBus,
         order_event_handler: ShareableMessageHandler,
         account_id: AccountId,
@@ -1053,7 +1056,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_matching_engine_wrong_order_price_precision(
+    fn test_process_order_when_invalid_price_precision(
         mut msgbus: MessageBus,
         order_event_handler: ShareableMessageHandler,
         account_id: AccountId,
@@ -1092,7 +1095,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_matching_engine_wrong_order_trigger_price_precision(
+    fn test_process_order_when_invalid_trigger_price_precision(
         mut msgbus: MessageBus,
         order_event_handler: ShareableMessageHandler,
         account_id: AccountId,
@@ -1132,7 +1135,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_matching_engine_error_shorting_equity_without_margin_account(
+    fn test_process_order_when_shorting_equity_without_margin_account(
         mut msgbus: MessageBus,
         order_event_handler: ShareableMessageHandler,
         account_id: AccountId,
@@ -1175,7 +1178,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_matching_engine_reduce_only_error(
+    fn test_process_order_when_invalid_reduce_only(
         mut msgbus: MessageBus,
         order_event_handler: ShareableMessageHandler,
         account_id: AccountId,
@@ -1227,7 +1230,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_matching_engine_contingent_orders_errors(
+    fn test_process_order_when_invalid_contingent_orders(
         mut msgbus: MessageBus,
         order_event_handler: ShareableMessageHandler,
         account_id: AccountId,
