@@ -167,4 +167,4 @@ install-talib:
 
 .PHONY: install-cli
 install-cli:
-	(cd nautilus_core && cargo install --path cli --bin nautilus)
+	(cd nautilus_core && cargo install --path cli --bin nautilus --force)
