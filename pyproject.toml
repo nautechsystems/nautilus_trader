@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.198.0"
+version = "1.199.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -106,7 +106,7 @@ pytest-xdist = { version = "^3.6.1", extras = ["psutil"] }
 optional = true
 
 [tool.poetry.group.docs.dependencies]
-numpydoc = "^1.7.0"
+numpydoc = "^1.8.0"
 linkify-it-py = "^2.0.3"
 myst-parser = "^3.0.1"
 sphinx_comments = "^0.0.3"
