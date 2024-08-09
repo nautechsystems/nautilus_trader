@@ -244,15 +244,15 @@ impl MessageBus {
     }
 
     /// Registers the given `handler` for the `endpoint` address.
-    pub fn register(&mut self, endpoint: &str, handler: ShareableMessageHandler) {
+    pub fn register(&mut self, endpoint: Ustr, handler: ShareableMessageHandler) {
         // Updates value if key already exists
-        self.endpoints.insert(Ustr::from(endpoint), handler);
+        self.endpoints.insert(endpoint, handler);
     }
 
     /// Deregisters the given `handler` for the `endpoint` address.
-    pub fn deregister(&mut self, endpoint: &str) {
+    pub fn deregister(&mut self, endpoint: &Ustr) {
         // Removes entry if it exists for endpoint
-        self.endpoints.shift_remove(&Ustr::from(endpoint));
+        self.endpoints.shift_remove(endpoint);
     }
 
     /// Subscribes the given `handler` to the `topic`.
@@ -494,7 +494,7 @@ mod tests {
     #[rstest]
     fn test_regsiter_endpoint() {
         let mut msgbus = stub_msgbus();
-        let endpoint = "MyEndpoint";
+        let endpoint = Ustr::from("MyEndpoint");
 
         let handler_id = Ustr::from("1");
         let handler = get_stub_shareable_handler(handler_id);
@@ -502,7 +502,7 @@ mod tests {
         msgbus.register(endpoint, handler);
 
         assert_eq!(msgbus.endpoints(), vec!["MyEndpoint".to_string()]);
-        assert!(msgbus.get_endpoint(&Ustr::from(endpoint)).is_some());
+        assert!(msgbus.get_endpoint(&endpoint).is_some());
     }
 
     #[rstest]
@@ -513,7 +513,7 @@ mod tests {
         let handler_id = Ustr::from("1");
         let handler = get_call_check_shareable_handler(handler_id);
 
-        msgbus.register(endpoint.as_str(), handler.clone());
+        msgbus.register(endpoint, handler.clone());
         assert!(msgbus.get_endpoint(&endpoint).is_some());
 
         // check if the handler called variable is false
@@ -541,13 +541,13 @@ mod tests {
     #[rstest]
     fn test_deregsiter_endpoint() {
         let mut msgbus = stub_msgbus();
-        let endpoint = "MyEndpoint";
+        let endpoint = Ustr::from("MyEndpoint");
 
         let handler_id = Ustr::from("1");
         let handler = get_stub_shareable_handler(handler_id);
 
         msgbus.register(endpoint, handler);
-        msgbus.deregister(endpoint);
+        msgbus.deregister(&endpoint);
 
         assert!(msgbus.endpoints().is_empty());
     }
