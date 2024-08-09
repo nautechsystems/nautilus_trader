@@ -152,7 +152,7 @@ jobs:
 
       - name: Run nautilus_core cargo tests (Linux)
         run: |
-          cargo install cargo-nextest
+          cargo install cargo-nextest --force
           make cargo-test
 
       - name: Run tests (Linux)
@@ -360,7 +360,7 @@ jobs:
 
       - name: Run nautilus_core cargo tests (macOS)
         run: |
-          cargo install cargo-nextest
+          cargo install cargo-nextest --force
           make cargo-test
 
       - name: Run tests (macOS)
