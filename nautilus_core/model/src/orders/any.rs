@@ -32,8 +32,8 @@ use super::{
 };
 use crate::{
     enums::{
-        LiquiditySide, OrderSide, OrderSideSpecified, OrderStatus, OrderType, PositionSide,
-        TriggerType,
+        ContingencyType, LiquiditySide, OrderSide, OrderSideSpecified, OrderStatus, OrderType,
+        PositionSide, TriggerType,
     },
     events::order::OrderEventAny,
     identifiers::{
@@ -543,6 +543,36 @@ impl OrderAny {
             Self::StopMarket(order) => order.is_sell(),
             Self::TrailingStopLimit(order) => order.is_sell(),
             Self::TrailingStopMarket(order) => order.is_sell(),
+        }
+    }
+
+    #[must_use]
+    pub fn parent_order_id(&self) -> Option<ClientOrderId> {
+        match self {
+            Self::Limit(order) => order.parent_order_id,
+            Self::LimitIfTouched(order) => order.parent_order_id,
+            Self::Market(order) => order.parent_order_id,
+            Self::MarketIfTouched(order) => order.parent_order_id,
+            Self::MarketToLimit(order) => order.parent_order_id,
+            Self::StopLimit(order) => order.parent_order_id,
+            Self::StopMarket(order) => order.parent_order_id,
+            Self::TrailingStopLimit(order) => order.parent_order_id,
+            Self::TrailingStopMarket(order) => order.parent_order_id,
+        }
+    }
+
+    #[must_use]
+    pub fn contingency_type(&self) -> Option<ContingencyType> {
+        match self {
+            Self::Limit(order) => order.contingency_type,
+            Self::LimitIfTouched(order) => order.contingency_type,
+            Self::Market(order) => order.contingency_type,
+            Self::MarketIfTouched(order) => order.contingency_type,
+            Self::MarketToLimit(order) => order.contingency_type,
+            Self::StopLimit(order) => order.contingency_type,
+            Self::StopMarket(order) => order.contingency_type,
+            Self::TrailingStopLimit(order) => order.contingency_type,
+            Self::TrailingStopMarket(order) => order.contingency_type,
         }
     }
 }
