@@ -833,9 +833,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.13"
+version = "4.5.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0fbb260a053428790f3de475e304ff84cdbc4face759ea7a3e64c1edd938a7fc"
+checksum = "c937d4061031a6d0c8da4b9a4f98a172fc2976dfb1c19213a9cf7d0d3c837e36"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -843,9 +843,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.13"
+version = "4.5.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "64b17d7ea74e9f833c7dbf2cbe4fb12ff26783eda4782a8975b72f895c9b4d99"
+checksum = "85379ba512b21a328adf887e85f7742d12e96eb31f3ef077df4ffc26b506ffed"
 dependencies = [
  "anstream",
  "anstyle",
@@ -1020,7 +1020,7 @@ dependencies = [
  "anes",
  "cast",
  "ciborium",
- "clap 4.5.13",
+ "clap 4.5.14",
  "criterion-plot",
  "is-terminal",
  "itertools 0.10.5",
@@ -2619,7 +2619,7 @@ name = "nautilus-cli"
 version = "0.28.0"
 dependencies = [
  "anyhow",
- "clap 4.5.13",
+ "clap 4.5.14",
  "clap_derive",
  "dotenvy",
  "log",
