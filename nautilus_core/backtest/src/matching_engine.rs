@@ -271,7 +271,7 @@ impl OrderMatchingEngine {
             // Contingent orders checks
             if self.config.support_contingent_orders {
                 if let Some(parent_order_id) = order.parent_order_id() {
-                    println!("Search for parent order {}", parent_order_id);
+                    println!("Search for parent order {parent_order_id}");
                     let parent_order = cache_borrow.order(&parent_order_id);
                     if parent_order.is_none()
                         || parent_order.unwrap().contingency_type().unwrap() != ContingencyType::Oto
@@ -284,7 +284,7 @@ impl OrderMatchingEngine {
                         if parent_order.status() == OrderStatus::Rejected && order.is_open() {
                             self.generate_order_rejected(
                                 order,
-                                format!("Rejected OTO order from {}", parent_order_id).into(),
+                                format!("Rejected OTO order from {parent_order_id}").into(),
                             );
                             return;
                         } else if parent_order.status() == OrderStatus::Accepted
@@ -1343,7 +1343,7 @@ mod tests {
         assert_eq!(first_message.event_type(), OrderEventType::Rejected);
         assert_eq!(
             first_message.message().unwrap(),
-            Ustr::from(format!("Rejected OTO order from {}", entry_client_order_id).as_str())
+            Ustr::from(format!("Rejected OTO order from {entry_client_order_id}").as_str())
         );
     }
 }
