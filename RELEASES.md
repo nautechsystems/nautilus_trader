@@ -1,3 +1,24 @@
+# NautilusTrader 1.198.0 Beta
+
+Released on 9th August 2024 (UTC).
+
+### Enhancements
+- Added `@customdata` decorator to reduce need for boiler plate implementing custom data types (#1828), thanks @faysou
+- Added timeout for HTTP client in Rust (#1835), thanks @davidsblom
+- Added catalog conversion function of streamed data to backtest data (#1834), thanks @faysou
+- Upgraded Cython to 3.0.11
+
+### Breaking Changes
+None
+
+### Fixes
+- Fixed creation of `instrumend_id` folder when writing PyO3 bars in catalog (#1832), thanks @faysou
+- Fixed `StreamingFeatherWriter` handling of `include_types` option (#1833), thanks @faysou
+- Fixed `BybitExecutionClient` position reports error handling and logging
+- Fixed `BybitExecutionClient` order report handling to correctly process external orders
+
+---
+
 # NautilusTrader 1.197.0 Beta
 
 Released on 2nd August 2024 (UTC).

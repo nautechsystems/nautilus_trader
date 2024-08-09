@@ -24,7 +24,6 @@ use nautilus_core::{
 };
 use nautilus_model::identifiers::TraderId;
 use pyo3::{prelude::*, types::PyBytes};
-use tracing::error;
 
 use crate::redis::msgbus::RedisMessageBusDatabase;
 
@@ -69,7 +68,7 @@ impl RedisMessageBusDatabase {
 
 fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) -> PyResult<()> {
     callback.call1(py, (py_obj,)).map_err(|e| {
-        error!("Error calling Python: {e}");
+        tracing::error!("Error calling Python: {e}");
         e
     })?;
     Ok(())

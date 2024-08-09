@@ -2532,6 +2532,7 @@ class HttpClient:
         headers: dict[str, str] | None = None,
         body: bytes | None = None,
         keys: list[str] | None = None,
+        timeout_secs: int | None = None,
     ) -> HttpResponse: ...
 
 class HttpMethod(Enum):

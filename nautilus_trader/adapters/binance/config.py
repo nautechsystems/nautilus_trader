@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.config import LiveDataClientConfig
@@ -35,8 +34,8 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
         `BINANCE_TESTNET_API_KEY` environment variables.
     api_secret : str, optional
         The Binance API public key.
-        If ``None`` then will source the `BINANCE_API_KEY` or
-        `BINANCE_TESTNET_API_KEY` environment variables.
+        If ``None`` then will source the `BINANCE_API_SECRET` or
+        `BINANCE_TESTNET_API_SECRET` environment variables.
     account_type : BinanceAccountType, default BinanceAccountType.SPOT
         The account type for the client.
     base_url_http : str, optional

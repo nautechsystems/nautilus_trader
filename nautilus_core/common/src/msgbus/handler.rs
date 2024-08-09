@@ -13,34 +13,30 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
+use std::{any::Any, rc::Rc};
 
-use nautilus_network::http::InnerHttpClient;
-use reqwest::Method;
+use nautilus_model::data::Data;
+use ustr::Ustr;
 
-const CONCURRENCY: usize = 256;
-const TOTAL: usize = 1_000_000;
+use crate::messages::data::DataResponse;
 
-#[tokio::main]
-async fn main() {
-    let client = InnerHttpClient::default();
-    let mut reqs = Vec::new();
-    for _ in 0..(TOTAL / CONCURRENCY) {
-        for _ in 0..CONCURRENCY {
-            reqs.push(client.send_request(
-                Method::GET,
-                "http://127.0.0.1:3000".to_string(),
-                HashMap::new(),
-                None,
-                None,
-            ));
-        }
+pub trait MessageHandler: Any {
+    fn id(&self) -> Ustr;
+    fn handle(&self, message: &dyn Any);
+    fn handle_response(&self, resp: DataResponse);
+    fn handle_data(&self, data: Data);
+    fn as_any(&self) -> &dyn Any;
+}
 
-        let resp = futures::future::join_all(reqs.drain(0..)).await;
-        assert!(resp.iter().all(|res| if let Ok(resp) = res {
-            resp.status == 200
-        } else {
-            false
-        }));
+#[derive(Clone)]
+#[repr(transparent)]
+pub struct ShareableMessageHandler(pub Rc<dyn MessageHandler>);
+
+impl From<Rc<dyn MessageHandler>> for ShareableMessageHandler {
+    fn from(value: Rc<dyn MessageHandler>) -> Self {
+        Self(value)
     }
 }
+
+// Message handlers are not expected to be sent across thread boundaries
+unsafe impl Send for ShareableMessageHandler {}

@@ -36,9 +36,11 @@ use nautilus_model::{
 };
 
 pub trait BarAggregator {
+    /// The [`BarType`] to be aggregated.
     fn bar_type(&self) -> BarType;
+    /// Updates theaggregator  with the given price and size.
     fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos);
-    /// Update the aggregator with the given quote.
+    /// Updates the aggregator with the given quote.
     fn handle_quote_tick(&mut self, quote: QuoteTick) {
         self.update(
             quote.extract_price(self.bar_type().spec.price_type),
@@ -46,7 +48,7 @@ pub trait BarAggregator {
             quote.ts_event,
         );
     }
-    /// Update the aggregator with the given trade.
+    /// Updates the aggregator with the given trade.
     fn handle_trade_tick(&mut self, trade: TradeTick) {
         self.update(trade.price, trade.size, trade.ts_event);
     }

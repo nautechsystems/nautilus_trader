@@ -37,8 +37,8 @@ pub struct DataResponse {
     pub client_id: ClientId,
     pub venue: Venue,
     pub data_type: DataType,
-    pub ts_init: UnixNanos,
     pub data: Payload,
+    pub ts_init: UnixNanos,
 }
 
 impl DataResponse {
@@ -67,6 +67,7 @@ pub enum Action {
     Unsubscribe,
 }
 
+#[derive(Debug, Clone)]
 pub struct SubscriptionCommand {
     pub client_id: ClientId,
     pub venue: Venue,
@@ -76,14 +77,35 @@ pub struct SubscriptionCommand {
     pub ts_init: UnixNanos,
 }
 
+impl SubscriptionCommand {
+    #[must_use]
+    pub const fn new(
+        client_id: ClientId,
+        venue: Venue,
+        data_type: DataType,
+        action: Action,
+        command_id: UUID4,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self {
+            client_id,
+            venue,
+            data_type,
+            action,
+            command_id,
+            ts_init,
+        }
+    }
+}
+
 pub enum DataEngineRequest {
-    DataRequest(DataRequest),
+    Request(DataRequest),
     SubscriptionCommand(SubscriptionCommand),
 }
 
 // TODO: Refine this to reduce disparity between enum sizes
 #[allow(clippy::large_enum_variant)]
 pub enum DataClientResponse {
-    DataResponse(DataResponse),
+    Response(DataResponse),
     Data(Data),
 }

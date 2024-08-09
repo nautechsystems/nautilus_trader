@@ -20,7 +20,7 @@ use nautilus_common::{cache::database::CacheDatabaseAdapter, runtime::get_runtim
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
-    identifiers::{AccountId, ClientOrderId, InstrumentId},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId},
     python::{
         account::{convert_account_any_to_pyobject, convert_pyobject_to_account_any},
         instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
@@ -127,9 +127,15 @@ impl PostgresCacheDatabase {
     }
 
     #[pyo3(name = "add_order")]
-    fn py_add_order(mut slf: PyRefMut<'_, Self>, order: PyObject, py: Python<'_>) -> PyResult<()> {
+    fn py_add_order(
+        mut slf: PyRefMut<'_, Self>,
+        order: PyObject,
+        client_id: Option<ClientId>,
+        py: Python<'_>,
+    ) -> PyResult<()> {
         let order_any = convert_pyobject_to_order_any(py, order)?;
-        slf.add_order(&order_any).map_err(to_pyruntime_err)
+        slf.add_order(&order_any, client_id)
+            .map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "update_order")]

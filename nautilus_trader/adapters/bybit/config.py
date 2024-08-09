@@ -30,8 +30,8 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
         `BYBIT_TESTNET_API_KEY` environment variables.
     api_secret : str, optional
         The Bybit API public key.
-        If ``None`` then will source the `BYBIT_API_KEY` or
-        `BYBIT_TESTNET_API_KEY` environment variables.
+        If ``None`` then will source the `BYBIT_API_SECRET` or
+        `BYBIT_TESTNET_API_SECRET` environment variables.
     product_types : list[BybitProductType], optional
         The Bybit product type for the client.
         If not specified then will use all products.

@@ -13,6 +13,7 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 [dependencies]
 nautilus-core = { path = "../core" }
 anyhow = { workspace = true }
+bytes = { workspace = true }
 futures = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-asyncio-0-21 = { workspace = true, optional = true }

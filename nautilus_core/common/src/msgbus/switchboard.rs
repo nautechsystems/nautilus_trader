@@ -13,34 +13,24 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
+use ustr::Ustr;
 
-use nautilus_network::http::InnerHttpClient;
-use reqwest::Method;
+/// Represents a switchboard of built-in messaging endpoint names.
+#[derive(Clone, Debug)]
+pub struct MessagingSwitchboard {
+    pub data_engine_execute: Ustr,
+    pub data_engine_process: Ustr,
+    pub exec_engine_execute: Ustr,
+    pub exec_engine_process: Ustr,
+}
 
-const CONCURRENCY: usize = 256;
-const TOTAL: usize = 1_000_000;
-
-#[tokio::main]
-async fn main() {
-    let client = InnerHttpClient::default();
-    let mut reqs = Vec::new();
-    for _ in 0..(TOTAL / CONCURRENCY) {
-        for _ in 0..CONCURRENCY {
-            reqs.push(client.send_request(
-                Method::GET,
-                "http://127.0.0.1:3000".to_string(),
-                HashMap::new(),
-                None,
-                None,
-            ));
+impl Default for MessagingSwitchboard {
+    fn default() -> Self {
+        Self {
+            data_engine_execute: Ustr::from("DataEngine.execute"),
+            data_engine_process: Ustr::from("DataEngine.process"),
+            exec_engine_execute: Ustr::from("ExecEngine.execute"),
+            exec_engine_process: Ustr::from("ExecEngine.process"),
         }
-
-        let resp = futures::future::join_all(reqs.drain(0..)).await;
-        assert!(resp.iter().all(|res| if let Ok(resp) = res {
-            resp.status == 200
-        } else {
-            false
-        }));
     }
 }

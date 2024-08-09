@@ -19,7 +19,7 @@ use pyo3::{pymethods, PyObject, PyRef, PyRefMut};
 use ustr::Ustr;
 
 use super::handler::PythonMessageHandler;
-use crate::msgbus::{database::BusMessage, MessageBus, ShareableMessageHandler};
+use crate::msgbus::{database::BusMessage, handler::ShareableMessageHandler, MessageBus};
 
 #[pymethods]
 impl BusMessage {

@@ -27,6 +27,10 @@ CREATE TABLE IF NOT EXISTS "account" (
   id TEXT PRIMARY KEY NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS "client" (
+    id TEXT PRIMARY KEY NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS "strategy" (
   id TEXT PRIMARY KEY NOT NULL,
   order_id_tag TEXT,
@@ -103,8 +107,9 @@ CREATE TABLE IF NOT EXISTS "order_event" (
     kind TEXT NOT NULL,
     trader_id TEXT REFERENCES trader(id) ON DELETE CASCADE,
     strategy_id TEXT NOT NULL,
-    instrument_id TEXT NOT NULL,
+    instrument_id TEXT REFERENCES instrument(id) ON DELETE CASCADE,
     order_id TEXT DEFAULT NULL,
+    client_id TEXT REFERENCES client(id) ON DELETE CASCADE,
     trade_id TEXT,
     currency TEXT REFERENCES currency(id),
     order_type TEXT,
