@@ -1397,7 +1397,7 @@ impl Cache {
             // }
         }
 
-        self.orders.insert(client_order_id, order);
+        self.orders.insert(client_order_id, order.clone());
 
         Ok(())
     }
