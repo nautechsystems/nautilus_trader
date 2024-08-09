@@ -1303,13 +1303,13 @@ files = [
 
 [[package]]
 name = "numpydoc"
-version = "1.7.0"
+version = "1.8.0"
 description = "Sphinx extension to support docstrings in Numpy format"
 optional = false
-python-versions = ">=3.8"
+python-versions = ">=3.9"
 files = [
-    {file = "numpydoc-1.7.0-py3-none-any.whl", hash = "sha256:5a56419d931310d79a06cfc2a126d1558700feeb9b4f3d8dcae1a8134be829c9"},
-    {file = "numpydoc-1.7.0.tar.gz", hash = "sha256:866e5ae5b6509dcf873fc6381120f5c31acf13b135636c1a81d68c166a95f921"},
+    {file = "numpydoc-1.8.0-py3-none-any.whl", hash = "sha256:72024c7fd5e17375dec3608a27c03303e8ad00c81292667955c6fea7a3ccf541"},
+    {file = "numpydoc-1.8.0.tar.gz", hash = "sha256:022390ab7464a44f8737f79f8b31ce1d3cfa4b4af79ccaa1aac5e8368db587fb"},
 ]
 
 [package.dependencies]
@@ -1319,7 +1319,7 @@ tomli = {version = ">=1.1.0", markers = "python_version < \"3.11\""}
 
 [package.extras]
 developer = ["pre-commit (>=3.3)", "tomli"]
-doc = ["matplotlib (>=3.5)", "numpy (>=1.22)", "pydata-sphinx-theme (>=0.13.3)", "sphinx (>=7)"]
+doc = ["intersphinx-registry", "matplotlib (>=3.5)", "numpy (>=1.22)", "pydata-sphinx-theme (>=0.13.3)", "sphinx (>=7)"]
 test = ["matplotlib", "pytest", "pytest-cov"]
 
 [[package]]
@@ -2398,4 +2398,4 @@ ib = ["async-timeout", "defusedxml", "nautilus_ibapi"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<3.13"
-content-hash = "5e63477164b813049a19c7e3a729259e0bea658bb35122528ab55f3c02fff9ac"
+content-hash = "f2fdd11db584bedddd37adcbeec0be1ef10993cfb5db1f750649b058182d9a6d"
