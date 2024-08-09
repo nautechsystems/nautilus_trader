@@ -62,7 +62,7 @@ impl MessageBus {
     pub fn register_py(&mut self, endpoint: &str, handler: PythonMessageHandler) {
         // Updates value if key already exists
         let handler = ShareableMessageHandler(Rc::new(handler));
-        self.register(endpoint, handler);
+        self.register(Ustr::from(endpoint), handler);
     }
 
     /// Subscribes the given `handler` to the `topic`.
@@ -119,6 +119,6 @@ impl MessageBus {
     #[pyo3(name = "deregister")]
     pub fn deregister_py(&mut self, endpoint: &str) {
         // Removes entry if it exists for endpoint
-        self.deregister(endpoint);
+        self.deregister(&Ustr::from(endpoint));
     }
 }

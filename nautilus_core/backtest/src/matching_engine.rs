@@ -940,7 +940,7 @@ mod tests {
 
         // Register saving message handler to exec engine endpoint
         msgbus.register(
-            msgbus.switchboard.exec_engine_process.as_str(),
+            msgbus.switchboard.exec_engine_process,
             order_event_handler.clone(),
         );
 
@@ -991,7 +991,7 @@ mod tests {
 
         // Register saving message handler to exec engine endpoint
         msgbus.register(
-            msgbus.switchboard.exec_engine_process.as_str(),
+            msgbus.switchboard.exec_engine_process,
             order_event_handler.clone(),
         );
 
@@ -1028,7 +1028,7 @@ mod tests {
     ) {
         // Register saving message handler to exec engine endpoint
         msgbus.register(
-            msgbus.switchboard.exec_engine_process.as_str(),
+            msgbus.switchboard.exec_engine_process,
             order_event_handler.clone(),
         );
 
@@ -1065,7 +1065,7 @@ mod tests {
     ) {
         // Register saving message handler to exec engine endpoint
         msgbus.register(
-            msgbus.switchboard.exec_engine_process.as_str(),
+            msgbus.switchboard.exec_engine_process,
             order_event_handler.clone(),
         );
 
@@ -1104,7 +1104,7 @@ mod tests {
     ) {
         // Register saving message handler to exec engine endpoint
         msgbus.register(
-            msgbus.switchboard.exec_engine_process.as_str(),
+            msgbus.switchboard.exec_engine_process,
             order_event_handler.clone(),
         );
 
@@ -1145,7 +1145,7 @@ mod tests {
         let instrument = InstrumentAny::Equity(equity_aapl);
         // Register saving message handler to exec engine endpoint
         msgbus.register(
-            msgbus.switchboard.exec_engine_process.as_str(),
+            msgbus.switchboard.exec_engine_process,
             order_event_handler.clone(),
         );
 
@@ -1187,7 +1187,7 @@ mod tests {
     ) {
         // Register saving message handler to exec engine endpoint
         msgbus.register(
-            msgbus.switchboard.exec_engine_process.as_str(),
+            msgbus.switchboard.exec_engine_process,
             order_event_handler.clone(),
         );
 
@@ -1239,7 +1239,7 @@ mod tests {
     ) {
         // Register saving message handler to exec engine endpoint
         msgbus.register(
-            msgbus.switchboard.exec_engine_process.as_str(),
+            msgbus.switchboard.exec_engine_process,
             order_event_handler.clone(),
         );
 
