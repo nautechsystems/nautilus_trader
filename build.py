@@ -159,7 +159,29 @@ def _build_extensions() -> list[Extension]:
             extra_compile_args.append("-pipe")
 
     if platform.system() == "Windows":
-        extra_link_args.append("/WHOLEARCHIVE")
+        extra_link_args += [
+            "AdvAPI32.Lib",
+            "bcrypt.lib",
+            "Crypt32.lib",
+            "Iphlpapi.lib",
+            "Kernel32.lib",
+            "ncrypt.lib",
+            "Netapi32.lib",
+            "ntdll.lib",
+            "Ole32.lib",
+            "OleAut32.lib",
+            "Pdh.lib",
+            "PowrProf.lib",
+            "Propsys.lib",
+            "Psapi.lib",
+            "runtimeobject.lib",
+            "schannel.lib",
+            "secur32.lib",
+            "Shell32.lib",
+            "User32.Lib",
+            "UserEnv.Lib",
+            "WS2_32.Lib",
+        ]
 
     print("Creating C extension modules...")
     print(f"define_macros={define_macros}")
