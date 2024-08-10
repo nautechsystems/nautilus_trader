@@ -54,8 +54,11 @@ impl Indicator for VolumeWeightedAveragePrice {
     }
 
     fn handle_bar(&mut self, bar: &Bar) {
+        let typical_price = (
+            bar.close.as_f64() + bar.high.as_f64() + bar.low.as_f64()
+        ) / 3.0;
         self.update_raw(
-            (&bar.close).into(),
+            typical_price.into(),
             (&bar.volume).into(),
             bar.ts_init.as_f64(),
         );
@@ -173,7 +176,7 @@ mod tests {
         bar_ethusdt_binance_minute_bid: Bar,
     ) {
         indicator_vwap.handle_bar(&bar_ethusdt_binance_minute_bid);
-        assert_eq!(indicator_vwap.value, 1522.0);
+        assert_eq!(indicator_vwap.value, 1522.333333333333);
         assert!(indicator_vwap.initialized);
     }
 
