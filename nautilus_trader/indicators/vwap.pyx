@@ -47,7 +47,11 @@ cdef class VolumeWeightedAveragePrice(Indicator):
         Condition.not_none(bar, "bar")
 
         self.update_raw(
-            bar.close.as_double(),
+            (
+                bar.close.as_double() +
+                bar.high.as_double() +
+                bar.low.as_double()
+            ) / 3.0,
             bar.volume.as_double(),
             pd.Timestamp(bar.ts_init, tz="UTC"),
         )
