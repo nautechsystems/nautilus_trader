@@ -540,6 +540,10 @@ mod tests {
     };
     use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
     use nautilus_model::{
+        data::{
+            deltas::OrderBookDeltas_API,
+            stubs::{stub_delta, stub_deltas, stub_depth10},
+        },
         enums::BookType,
         identifiers::TraderId,
         instruments::{currency_pair::CurrencyPair, stubs::audusd_sim},
@@ -907,6 +911,160 @@ mod tests {
     }
 
     #[rstest]
+    fn test_process_order_book_delta(
+        audusd_sim: CurrencyPair,
+        msgbus: Rc<RefCell<MessageBus>>,
+        switchboard: MessagingSwitchboard,
+        data_engine: Rc<RefCell<DataEngine>>,
+        data_client: DataClientAdapter,
+    ) {
+        let client_id = data_client.client_id;
+        let venue = data_client.venue;
+        data_engine.borrow_mut().register_client(data_client, None);
+
+        let metadata = indexmap! {
+            "instrument_id".to_string() => audusd_sim.id.to_string(),
+            "book_type".to_string() => BookType::L3_MBO.to_string(),
+        };
+        let data_type = DataType::new(stringify!(OrderBookDelta), Some(metadata));
+        let cmd = SubscriptionCommand::new(
+            client_id,
+            venue,
+            data_type,
+            Action::Subscribe,
+            UUID4::new(),
+            UnixNanos::default(),
+        );
+
+        let endpoint = switchboard.data_engine_execute;
+        let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
+            id: endpoint,
+            data_engine: data_engine.clone(),
+        }));
+        msgbus.borrow_mut().register(endpoint, handler);
+        msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+
+        let delta = stub_delta();
+        let handler = get_message_saving_handler::<OrderBookDelta>(None);
+        {
+            let mut msgbus = msgbus.borrow_mut();
+            let topic = msgbus.switchboard.get_delta_topic(delta.instrument_id);
+            msgbus.subscribe(topic, handler.clone(), None);
+        }
+
+        let mut data_engine = data_engine.borrow_mut();
+        data_engine.process(Data::Delta(delta));
+        let cache = &data_engine.cache.borrow();
+        let messages = get_saved_messages::<OrderBookDelta>(handler);
+
+        assert_eq!(messages.len(), 1);
+        assert!(messages.contains(&delta));
+    }
+
+    #[rstest]
+    fn test_process_order_book_deltas(
+        audusd_sim: CurrencyPair,
+        msgbus: Rc<RefCell<MessageBus>>,
+        switchboard: MessagingSwitchboard,
+        data_engine: Rc<RefCell<DataEngine>>,
+        data_client: DataClientAdapter,
+    ) {
+        let client_id = data_client.client_id;
+        let venue = data_client.venue;
+        data_engine.borrow_mut().register_client(data_client, None);
+
+        let metadata = indexmap! {
+            "instrument_id".to_string() => audusd_sim.id.to_string(),
+            "book_type".to_string() => BookType::L3_MBO.to_string(),
+        };
+        let data_type = DataType::new(stringify!(OrderBookDeltas), Some(metadata));
+        let cmd = SubscriptionCommand::new(
+            client_id,
+            venue,
+            data_type,
+            Action::Subscribe,
+            UUID4::new(),
+            UnixNanos::default(),
+        );
+
+        let endpoint = switchboard.data_engine_execute;
+        let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
+            id: endpoint,
+            data_engine: data_engine.clone(),
+        }));
+        msgbus.borrow_mut().register(endpoint, handler);
+        msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+
+        // TODO: Using FFI API wrapper temporarily until Cython gone
+        let deltas = OrderBookDeltas_API::new(stub_deltas());
+        let handler = get_message_saving_handler::<OrderBookDeltas>(None);
+        {
+            let mut msgbus = msgbus.borrow_mut();
+            let topic = msgbus.switchboard.get_deltas_topic(deltas.instrument_id);
+            msgbus.subscribe(topic, handler.clone(), None);
+        }
+
+        let mut data_engine = data_engine.borrow_mut();
+        data_engine.process(Data::Deltas(deltas.clone()));
+        let cache = &data_engine.cache.borrow();
+        let messages = get_saved_messages::<OrderBookDeltas>(handler);
+
+        assert_eq!(messages.len(), 1);
+        assert!(messages.contains(&deltas));
+    }
+
+    #[rstest]
+    fn test_process_order_book_depth10(
+        audusd_sim: CurrencyPair,
+        msgbus: Rc<RefCell<MessageBus>>,
+        switchboard: MessagingSwitchboard,
+        data_engine: Rc<RefCell<DataEngine>>,
+        data_client: DataClientAdapter,
+    ) {
+        let client_id = data_client.client_id;
+        let venue = data_client.venue;
+        data_engine.borrow_mut().register_client(data_client, None);
+
+        let metadata = indexmap! {
+            "instrument_id".to_string() => audusd_sim.id.to_string(),
+            "book_type".to_string() => BookType::L3_MBO.to_string(),
+        };
+        let data_type = DataType::new(stringify!(OrderBookDepth10), Some(metadata));
+        let cmd = SubscriptionCommand::new(
+            client_id,
+            venue,
+            data_type,
+            Action::Subscribe,
+            UUID4::new(),
+            UnixNanos::default(),
+        );
+
+        let endpoint = switchboard.data_engine_execute;
+        let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
+            id: endpoint,
+            data_engine: data_engine.clone(),
+        }));
+        msgbus.borrow_mut().register(endpoint, handler);
+        msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+
+        let depth = stub_depth10();
+        let handler = get_message_saving_handler::<OrderBookDepth10>(None);
+        {
+            let mut msgbus = msgbus.borrow_mut();
+            let topic = msgbus.switchboard.get_depth_topic(depth.instrument_id);
+            msgbus.subscribe(topic, handler.clone(), None);
+        }
+
+        let mut data_engine = data_engine.borrow_mut();
+        data_engine.process(Data::Depth10(depth));
+        let cache = &data_engine.cache.borrow();
+        let messages = get_saved_messages::<OrderBookDepth10>(handler);
+
+        assert_eq!(messages.len(), 1);
+        assert!(messages.contains(&depth));
+    }
+
+    #[rstest]
     fn test_process_quote_tick(
         audusd_sim: CurrencyPair,
         msgbus: Rc<RefCell<MessageBus>>,
@@ -940,7 +1098,6 @@ mod tests {
         msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
 
         let quote = QuoteTick::default();
-
         let handler = get_message_saving_handler::<QuoteTick>(None);
         {
             let mut msgbus = msgbus.borrow_mut();
@@ -955,6 +1112,7 @@ mod tests {
 
         assert_eq!(cache.quote_tick(&quote.instrument_id), Some(quote).as_ref());
         assert_eq!(messages.len(), 1);
+        assert!(messages.contains(&quote));
     }
 
     #[rstest]
@@ -972,7 +1130,7 @@ mod tests {
         let metadata = indexmap! {
             "instrument_id".to_string() => audusd_sim.id.to_string(),
         };
-        let data_type = DataType::new(stringify!(QuoteTick), Some(metadata));
+        let data_type = DataType::new(stringify!(TradeTick), Some(metadata));
         let cmd = SubscriptionCommand::new(
             client_id,
             venue,
@@ -991,7 +1149,6 @@ mod tests {
         msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
 
         let trade = TradeTick::default();
-
         let handler = get_message_saving_handler::<TradeTick>(None);
         {
             let mut msgbus = msgbus.borrow_mut();
@@ -1006,5 +1163,57 @@ mod tests {
 
         assert_eq!(cache.trade_tick(&trade.instrument_id), Some(trade).as_ref());
         assert_eq!(messages.len(), 1);
+        assert!(messages.contains(&trade));
+    }
+
+    #[rstest]
+    fn test_process_bar(
+        audusd_sim: CurrencyPair,
+        msgbus: Rc<RefCell<MessageBus>>,
+        switchboard: MessagingSwitchboard,
+        data_engine: Rc<RefCell<DataEngine>>,
+        data_client: DataClientAdapter,
+    ) {
+        let client_id = data_client.client_id;
+        let venue = data_client.venue;
+        data_engine.borrow_mut().register_client(data_client, None);
+
+        let bar = Bar::default();
+        let metadata = indexmap! {
+            "bar_type".to_string() => bar.bar_type.to_string(),
+        };
+        let data_type = DataType::new(stringify!(Bar), Some(metadata));
+        let cmd = SubscriptionCommand::new(
+            client_id,
+            venue,
+            data_type,
+            Action::Subscribe,
+            UUID4::new(),
+            UnixNanos::default(),
+        );
+
+        let endpoint = switchboard.data_engine_execute;
+        let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
+            id: endpoint,
+            data_engine: data_engine.clone(),
+        }));
+        msgbus.borrow_mut().register(endpoint, handler);
+        msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+
+        let handler = get_message_saving_handler::<Bar>(None);
+        {
+            let mut msgbus = msgbus.borrow_mut();
+            let topic = msgbus.switchboard.get_bar_topic(bar.bar_type);
+            msgbus.subscribe(topic, handler.clone(), None);
+        }
+
+        let mut data_engine = data_engine.borrow_mut();
+        data_engine.process(Data::Bar(bar));
+        let cache = &data_engine.cache.borrow();
+        let messages = get_saved_messages::<Bar>(handler);
+
+        assert_eq!(cache.bar(&bar.bar_type), Some(bar).as_ref());
+        assert_eq!(messages.len(), 1);
+        assert!(messages.contains(&bar));
     }
 }
