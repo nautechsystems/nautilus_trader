@@ -26,6 +26,7 @@ use std::{
 use nautilus_core::message::Message;
 use nautilus_model::data::Data;
 use ustr::Ustr;
+use uuid::Uuid;
 
 use crate::{
     messages::data::DataResponse,
@@ -58,9 +59,13 @@ impl MessageHandler for StubMessageHandler {
 
 #[must_use]
 #[allow(unused_must_use)] // TODO: Temporary to fix docs build
-pub fn get_stub_shareable_handler(id: Ustr) -> ShareableMessageHandler {
+pub fn get_stub_shareable_handler(id: Option<Ustr>) -> ShareableMessageHandler {
+    // TODO: This reduces the need to come up with ID strings in tests.
+    // In Python we do something like `hash((self.topic, str(self.handler)))` for the hash
+    // which includes the memory address, just went with a UUID4 here.
+    let unique_id = id.unwrap_or_else(|| Ustr::from(&Uuid::new_v4().to_string()));
     ShareableMessageHandler(Rc::new(StubMessageHandler {
-        id,
+        id: unique_id,
         callback: Arc::new(|m: Message| {
             format!("{m:?}");
         }),
@@ -99,11 +104,26 @@ impl MessageHandler for CallCheckMessageHandler {
 }
 
 #[must_use]
-pub fn get_call_check_shareable_handler(id: Ustr) -> ShareableMessageHandler {
+pub fn get_call_check_shareable_handler(id: Option<Ustr>) -> ShareableMessageHandler {
+    // TODO: This reduces the need to come up with ID strings in tests.
+    // In Python we do something like `hash((self.topic, str(self.handler)))` for the hash
+    // which includes the memory address, just went with a UUID4 here.
+    let unique_id = id.unwrap_or_else(|| Ustr::from(&Uuid::new_v4().to_string()));
     ShareableMessageHandler(Rc::new(CallCheckMessageHandler {
-        id,
+        id: unique_id,
         called: Arc::new(AtomicBool::new(false)),
     }))
+}
+
+#[must_use]
+pub fn check_handler_was_called(call_check_handler: ShareableMessageHandler) -> bool {
+    call_check_handler
+        .0
+        .as_ref()
+        .as_any()
+        .downcast_ref::<CallCheckMessageHandler>()
+        .unwrap()
+        .was_called()
 }
 
 // Handler which saves the messages it receives
@@ -143,9 +163,24 @@ impl<T: Clone + 'static> MessageHandler for MessageSavingHandler<T> {
 }
 
 #[must_use]
-pub fn get_message_saving_handler<T: Clone + 'static>(id: Ustr) -> ShareableMessageHandler {
+pub fn get_message_saving_handler<T: Clone + 'static>(id: Option<Ustr>) -> ShareableMessageHandler {
+    // TODO: This reduces the need to come up with ID strings in tests.
+    // In Python we do something like `hash((self.topic, str(self.handler)))` for the hash
+    // which includes the memory address, just went with a UUID4 here.
+    let unique_id = id.unwrap_or_else(|| Ustr::from(&Uuid::new_v4().to_string()));
     ShareableMessageHandler(Rc::new(MessageSavingHandler::<T> {
-        id,
+        id: unique_id,
         messages: Rc::new(RefCell::new(Vec::new())),
     }))
+}
+
+#[must_use]
+pub fn get_saved_messages<T: Clone + 'static>(handler: ShareableMessageHandler) -> Vec<T> {
+    handler
+        .0
+        .as_ref()
+        .as_any()
+        .downcast_ref::<MessageSavingHandler<T>>()
+        .unwrap()
+        .get_messages()
 }

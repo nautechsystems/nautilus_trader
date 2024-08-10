@@ -143,12 +143,13 @@ impl MessagingSwitchboard {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::*;
     use nautilus_model::{
         data::{bar::BarType, DataType},
         identifiers::InstrumentId,
     };
     use rstest::*;
+
+    use super::*;
 
     #[fixture]
     fn switchboard() -> MessagingSwitchboard {

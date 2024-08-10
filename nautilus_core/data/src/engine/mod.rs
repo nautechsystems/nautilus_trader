@@ -524,13 +524,17 @@ impl MessageHandler for SubscriptionCommandHandler {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::cell::OnceCell;
+
     use indexmap::indexmap;
+    use log::LevelFilter;
     use nautilus_common::{
         clock::TestClock,
+        logging::{init_logging, logger::LoggerConfig, writer::FileWriterConfig},
         messages::data::Action,
         msgbus::{
             handler::ShareableMessageHandler,
-            stubs::{get_call_check_shareable_handler, CallCheckMessageHandler},
+            stubs::{get_message_saving_handler, get_saved_messages},
             switchboard::MessagingSwitchboard,
         },
     };
@@ -544,6 +548,17 @@ mod tests {
 
     use super::*;
     use crate::mocks::MockDataClient;
+
+    fn init_logger(stdout_level: LevelFilter) {
+        let mut config = LoggerConfig::default();
+        config.stdout_level = stdout_level;
+        init_logging(
+            TraderId::default(),
+            UUID4::new(),
+            config,
+            FileWriterConfig::default(),
+        );
+    }
 
     #[fixture]
     fn trader_id() -> TraderId {
@@ -567,17 +582,31 @@ mod tests {
 
     #[fixture]
     fn cache() -> Rc<RefCell<Cache>> {
+        // Ensure there is only ever one instance of the cache *per test*
+        thread_local! {
+            static CACHE: OnceCell<Rc<RefCell<Cache>>> = OnceCell::new();
+        }
         Rc::new(RefCell::new(Cache::default()))
     }
 
     #[fixture]
     fn msgbus(trader_id: TraderId) -> Rc<RefCell<MessageBus>> {
-        Rc::new(RefCell::new(MessageBus::new(
-            trader_id,
-            UUID4::new(),
-            None,
-            None,
-        )))
+        // Ensure there is only ever one instance of the message bus *per test*
+        thread_local! {
+            static MSGBUS: OnceCell<Rc<RefCell<MessageBus>>> = OnceCell::new();
+        }
+
+        MSGBUS.with(|cell| {
+            cell.get_or_init(|| {
+                Rc::new(RefCell::new(MessageBus::new(
+                    trader_id,
+                    UUID4::new(),
+                    None,
+                    None,
+                )))
+            })
+            .clone()
+        })
     }
 
     #[fixture]
@@ -593,18 +622,6 @@ mod tests {
     ) -> Rc<RefCell<DataEngine>> {
         let data_engine = DataEngine::new(clock, cache, msgbus, None);
         Rc::new(RefCell::new(data_engine))
-    }
-
-    // TODO: For some reason using this fixture causes the tests to fail?
-    #[fixture]
-    fn subscription_handler(
-        data_engine: Rc<RefCell<DataEngine>>,
-        switchboard: MessagingSwitchboard,
-    ) -> ShareableMessageHandler {
-        ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-            id: switchboard.data_engine_execute,
-            data_engine,
-        }))
     }
 
     #[fixture]
@@ -924,19 +941,20 @@ mod tests {
 
         let quote = QuoteTick::default();
 
-        let mut msgbus = msgbus.borrow_mut();
-        let topic = msgbus.switchboard.get_quote_topic(quote.instrument_id);
-        let handler = get_call_check_shareable_handler(Ustr::from("quote-handler"));
-        msgbus.subscribe(topic, handler.clone(), None);
+        let handler = get_message_saving_handler::<QuoteTick>(None);
+        {
+            let mut msgbus = msgbus.borrow_mut();
+            let topic = msgbus.switchboard.get_quote_topic(quote.instrument_id);
+            msgbus.subscribe(topic, handler.clone(), None);
+        }
 
-        data_engine.borrow_mut().process(Data::Quote(quote));
-        assert!(!handler
-            .0
-            .as_ref()
-            .as_any()
-            .downcast_ref::<CallCheckMessageHandler>()
-            .unwrap()
-            .was_called());
+        let mut data_engine = data_engine.borrow_mut();
+        data_engine.process(Data::Quote(quote));
+        let cache = &data_engine.cache.borrow();
+        let messages = get_saved_messages::<QuoteTick>(handler);
+
+        assert_eq!(cache.quote_tick(&quote.instrument_id), Some(quote).as_ref());
+        assert_eq!(messages.len(), 1);
     }
 
     #[rstest]
@@ -974,18 +992,19 @@ mod tests {
 
         let trade = TradeTick::default();
 
-        let mut msgbus = msgbus.borrow_mut();
-        let topic = msgbus.switchboard.get_quote_topic(trade.instrument_id);
-        let handler = get_call_check_shareable_handler(Ustr::from("trade-handler"));
-        msgbus.subscribe(topic, handler.clone(), None);
+        let handler = get_message_saving_handler::<TradeTick>(None);
+        {
+            let mut msgbus = msgbus.borrow_mut();
+            let topic = msgbus.switchboard.get_trade_topic(trade.instrument_id);
+            msgbus.subscribe(topic, handler.clone(), None);
+        }
 
-        data_engine.borrow_mut().process(Data::Trade(trade));
-        assert!(!handler
-            .0
-            .as_ref()
-            .as_any()
-            .downcast_ref::<CallCheckMessageHandler>()
-            .unwrap()
-            .was_called());
+        let mut data_engine = data_engine.borrow_mut();
+        data_engine.process(Data::Trade(trade));
+        let cache = &data_engine.cache.borrow();
+        let messages = get_saved_messages::<TradeTick>(handler);
+
+        assert_eq!(cache.trade_tick(&trade.instrument_id), Some(trade).as_ref());
+        assert_eq!(messages.len(), 1);
     }
 }
