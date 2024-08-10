@@ -221,6 +221,10 @@ pub struct Cache {
     position_snapshots: HashMap<PositionId, Bytes>,
 }
 
+// SAFETY: Cache is not meant to be passed between threads
+unsafe impl Send for Cache {}
+unsafe impl Sync for Cache {}
+
 impl Default for Cache {
     /// Creates a new default [`Cache`] instance.
     fn default() -> Self {

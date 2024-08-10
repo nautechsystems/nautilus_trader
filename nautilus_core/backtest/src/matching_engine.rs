@@ -822,7 +822,7 @@ mod tests {
         cache::Cache,
         msgbus::{
             handler::ShareableMessageHandler,
-            stubs::{get_message_saving_handler, MessageSavingHandler},
+            stubs::{get_message_saving_handler, get_saved_messages},
             MessageBus,
         },
     };
@@ -870,7 +870,7 @@ mod tests {
 
     #[fixture]
     fn order_event_handler() -> ShareableMessageHandler {
-        get_message_saving_handler::<OrderEventAny>(Ustr::from("ExecEngine.process"))
+        get_message_saving_handler::<OrderEventAny>(Some(Ustr::from("ExecEngine.process")))
     }
 
     // for valid es futures contract currently active
@@ -918,13 +918,7 @@ mod tests {
     fn get_order_event_handler_messages(
         event_handler: ShareableMessageHandler,
     ) -> Vec<OrderEventAny> {
-        event_handler
-            .0
-            .as_ref()
-            .as_any()
-            .downcast_ref::<MessageSavingHandler<OrderEventAny>>()
-            .unwrap()
-            .get_messages()
+        get_saved_messages::<OrderEventAny>(event_handler)
     }
 
     // -- TESTS -----------------------------------------------------------------------------------
