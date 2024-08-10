@@ -349,9 +349,9 @@ class LiveExecutionEngine(ExecutionEngine):
             self._inflight_check_task = None
 
         if self._kill:
-            return  # Avoids queuing redundant sentinel messages
+            return  # Avoids enqueuing unnecessary sentinel messages when termination already signaled
 
-        # This will stop the queues processing as soon as they see the sentinel message
+        # This will stop queue processing as soon as they 'see' the sentinel message
         self._enqueue_sentinel()
 
     async def _wait_for_inflight_check_task(self) -> None:
