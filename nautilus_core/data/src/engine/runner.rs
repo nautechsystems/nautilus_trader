@@ -24,7 +24,7 @@ pub trait Runner {
     type Sender;
 
     fn new() -> Self;
-    fn run(&mut self, engine: &DataEngine);
+    fn run(&mut self, engine: &mut DataEngine);
     fn get_sender(&self) -> Self::Sender;
 }
 
@@ -47,7 +47,7 @@ impl Runner for BacktestRunner {
         }
     }
 
-    fn run(&mut self, engine: &DataEngine) {
+    fn run(&mut self, engine: &mut DataEngine) {
         while let Some(resp) = self.queue.as_ref().borrow_mut().pop_front() {
             match resp {
                 DataClientResponse::Response(resp) => engine.response(resp),
@@ -74,7 +74,7 @@ impl Runner for LiveRunner {
         Self { resp_tx, resp_rx }
     }
 
-    fn run(&mut self, engine: &DataEngine) {
+    fn run(&mut self, engine: &mut DataEngine) {
         while let Some(resp) = self.resp_rx.blocking_recv() {
             match resp {
                 DataClientResponse::Response(resp) => engine.response(resp),

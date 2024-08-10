@@ -90,7 +90,7 @@ impl MessageBus {
     ) {
         // Updates value if key already exists
         let handler = ShareableMessageHandler(Rc::new(handler));
-        slf.subscribe(topic, handler, priority);
+        slf.subscribe(Ustr::from(topic), handler, priority);
     }
 
     /// Returns whether there are subscribers for the given `pattern`.
@@ -105,7 +105,7 @@ impl MessageBus {
     #[pyo3(name = "unsubscribe")]
     pub fn unsubscribe_py(&mut self, topic: &str, handler: PythonMessageHandler) {
         let handler = ShareableMessageHandler(Rc::new(handler));
-        self.unsubscribe(topic, handler);
+        self.unsubscribe(Ustr::from(topic), handler);
     }
 
     /// Returns whether there are subscribers for the given `pattern`.
