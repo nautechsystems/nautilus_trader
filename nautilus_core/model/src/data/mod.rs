@@ -50,7 +50,7 @@ use crate::{
 /// Not recommended for storing large amounts of data, as the largest variant is significantly
 /// larger (10x) than the smallest.
 #[repr(C)]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 #[allow(clippy::large_enum_variant)]
 pub enum Data {
     Delta(OrderBookDelta),

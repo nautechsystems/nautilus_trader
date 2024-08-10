@@ -258,11 +258,10 @@ impl MessageBus {
     /// Subscribes the given `handler` to the `topic`.
     pub fn subscribe(
         &mut self,
-        topic: &str,
+        topic: Ustr,
         handler: ShareableMessageHandler,
         priority: Option<u8>,
     ) {
-        let topic = Ustr::from(topic);
         let sub = Subscription::new(topic, handler, priority);
 
         if self.subscriptions.contains_key(&sub) {
@@ -287,8 +286,8 @@ impl MessageBus {
     }
 
     /// Unsubscribes the given `handler` from the `topic`.
-    pub fn unsubscribe(&mut self, topic: &str, handler: ShareableMessageHandler) {
-        let sub = Subscription::new(Ustr::from(topic), handler, None);
+    pub fn unsubscribe(&mut self, topic: Ustr, handler: ShareableMessageHandler) {
+        let sub = Subscription::new(topic, handler, None);
         self.subscriptions.shift_remove(&sub);
     }
 
@@ -349,9 +348,8 @@ impl MessageBus {
     }
 
     /// Publish a message to a topic.
-    pub fn publish(&self, topic: &str, message: &dyn Any) {
-        let topic = Ustr::from(topic);
-        let matching_subs = self.matching_subscriptions(&topic);
+    pub fn publish(&self, topic: &Ustr, message: &dyn Any) {
+        let matching_subs = self.matching_subscriptions(topic);
 
         for sub in matching_subs {
             sub.handler.0.handle(message);
@@ -555,21 +553,21 @@ mod tests {
     #[rstest]
     fn test_subscribe() {
         let mut msgbus = stub_msgbus();
-        let topic = "my-topic";
+        let topic = Ustr::from("my-topic");
 
         let handler_id = Ustr::from("1");
         let handler = get_stub_shareable_handler(handler_id);
 
         msgbus.subscribe(topic, handler, Some(1));
 
-        assert!(msgbus.has_subscribers(topic));
-        assert_eq!(msgbus.topics(), vec![topic]);
+        assert!(msgbus.has_subscribers(topic.as_str()));
+        assert_eq!(msgbus.topics(), vec![topic.as_str()]);
     }
 
     #[rstest]
     fn test_unsubscribe() {
         let mut msgbus = stub_msgbus();
-        let topic = "my-topic";
+        let topic = Ustr::from("my-topic");
 
         let handler_id = Ustr::from("1");
         let handler = get_stub_shareable_handler(handler_id);
@@ -577,14 +575,14 @@ mod tests {
         msgbus.subscribe(topic, handler.clone(), None);
         msgbus.unsubscribe(topic, handler);
 
-        assert!(!msgbus.has_subscribers(topic));
+        assert!(!msgbus.has_subscribers(topic.as_str()));
         assert!(msgbus.topics().is_empty());
     }
 
     #[rstest]
     fn test_matching_subscriptions() {
         let mut msgbus = stub_msgbus();
-        let topic = "my-topic";
+        let topic = Ustr::from("my-topic");
 
         let handler_id1 = Ustr::from("1");
         let handler1 = get_stub_shareable_handler(handler_id1);
@@ -602,8 +600,7 @@ mod tests {
         msgbus.subscribe(topic, handler2, None);
         msgbus.subscribe(topic, handler3, Some(1));
         msgbus.subscribe(topic, handler4, Some(2));
-        let topic_ustr = Ustr::from(topic);
-        let subs = msgbus.matching_subscriptions(&topic_ustr);
+        let subs = msgbus.matching_subscriptions(&topic);
 
         assert_eq!(subs.len(), 4);
         assert_eq!(subs[0].handler_id, handler_id4);
