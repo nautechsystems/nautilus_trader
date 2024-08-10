@@ -543,11 +543,14 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> list[PositionStatusReport]:
-        self._log.info("Requesting PositionStatusReports...")
-
         try:
-            symbol = instrument_id.symbol.value if instrument_id is not None else None
-            reports = await self._get_binance_position_status_reports(symbol)
+            if instrument_id:
+                self._log.info(f"Requesting PositionStatusReport for {instrument_id}")
+                symbol = instrument_id.symbol.value
+                reports = await self._get_binance_position_status_reports(symbol)
+            else:
+                self._log.info("Requesting PositionStatusReports...")
+                reports = await self._get_binance_position_status_reports()
         except BinanceError as e:
             self._log.exception(f"Cannot generate PositionStatusReport: {e.message}", e)
             return []
