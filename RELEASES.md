@@ -3,7 +3,9 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Improve `BinanceExecutionClient` position report requests (can now filter by instrument)
+- Improve `BybitExecutionClient` position report requests (can now filter by instrument)
+- Improve `LiveExecutionEngine` reconciliation robustness and recovery when internal positions do not match external positions
 
 ### Breaking Changes
 None
