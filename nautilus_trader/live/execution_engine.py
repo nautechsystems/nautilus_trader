@@ -434,7 +434,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
     # -- RECONCILIATION -------------------------------------------------------------------------------
 
-    async def reconcile_state(self, timeout_secs: float = 10.0) -> bool:
+    async def reconcile_state(self, timeout_secs: float = 10.0) -> bool:  # noqa: C901 (too complex)
         """
         Reconcile the internal execution state with all execution clients (external
         state).
@@ -480,8 +480,63 @@ class LiveExecutionEngine(ExecutionEngine):
                     "(likely due to an adapter client error when generating reports)",
                 )
                 continue
+
+            client_id = mass_status.client_id
+            venue = mass_status.venue
             result = self._reconcile_mass_status(mass_status)
-            results.append(result)
+
+            if result:
+                results.append(result)
+                self._log.info(f"Reconciliation for {client_id} succeeded", LogColor.GREEN)
+                continue
+
+            self._log.warning(f"Reconciliation for {client_id} failed")
+
+            if self.filter_position_reports:
+                self._log.warning(
+                    f"Filtering position reports enabled. Skipping further reconciliation for {client_id}",
+                )
+                continue
+
+            # Reconcile specific positions open
+            positions = self._cache.positions_open(venue)
+            if not positions:
+                self._log.warning(f"No cached open positions found for {venue}")
+                results.append(False)
+                continue
+
+            client = self._clients.get(client_id)
+
+            report_tasks: list[asyncio.Task] = []
+            for position in positions:
+                instrument_id = position.instrument_id
+                if instrument_id in mass_status.position_reports:
+                    self._log.debug(f"Position {instrument_id} for {client_id} already reconciled")
+                    continue  # Already reconciled
+                self._log.info(f"{position} pending reconciliation")
+                report_tasks.append(client.generate_position_report(instrument_id))
+
+            if not report_tasks:
+                self._log.warning(f"No new position reports received for {venue}")
+                results.append(False)
+                continue
+
+            self._log.info(
+                f"Awaiting reconciliation for {len(report_tasks)} position reports for {client_id}",
+            )
+
+            position_reports = await asyncio.gather(*report_tasks)
+            position_results: list[bool] = []
+            for report in position_reports:
+                position_result = self._reconcile_position_report(report)
+                instrument_id = report.instrument_id
+                if position_result:
+                    self._log.info(f"Reconciliation for {instrument_id} succeeded", LogColor.GREEN)
+                else:
+                    self._log.warning(f"Reconciliation for {instrument_id} failed")
+                position_results.append(position_result)
+
+            results.append(all(position_results))
 
         return all(results)
 
