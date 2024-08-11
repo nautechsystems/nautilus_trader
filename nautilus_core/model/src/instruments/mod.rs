@@ -143,3 +143,10 @@ pub trait Instrument: 'static + Send {
         Quantity::new(value, self.size_precision()).unwrap() // TODO: Handle error properly
     }
 }
+
+pub const EXPIRING_INSTRUMENT_TYPES: [InstrumentClass; 4] = [
+    InstrumentClass::Future,
+    InstrumentClass::FutureSpread,
+    InstrumentClass::Option,
+    InstrumentClass::OptionSpread,
+];

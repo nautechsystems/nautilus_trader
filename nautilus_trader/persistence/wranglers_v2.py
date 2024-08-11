@@ -475,7 +475,7 @@ class BarDataWranglerV2(WranglerBase):
         df["open"] = (df["open"] * 1e9).astype(pd.Int64Dtype())
         df["high"] = (df["high"] * 1e9).astype(pd.Int64Dtype())
         df["low"] = (df["low"] * 1e9).astype(pd.Int64Dtype())
-        df["clow"] = (df["close"] * 1e9).astype(pd.Int64Dtype())
+        df["close"] = (df["close"] * 1e9).astype(pd.Int64Dtype())
 
         if "volume" not in df.columns:
             df["volume"] = pd.Series([default_volume * 1e9] * len(df), dtype=pd.UInt64Dtype())

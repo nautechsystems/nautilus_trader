@@ -17,12 +17,13 @@ use std::{any::Any, sync::Arc};
 
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
-    data::DataType,
+    data::{Data, DataType},
     identifiers::{ClientId, Venue},
 };
 
+// TODO: redesign data messages for a tighter model
+#[derive(Debug)]
 pub struct DataRequest {
-    pub request_id: UUID4,
     pub correlation_id: UUID4,
     pub client_id: ClientId,
     pub venue: Venue,
@@ -30,19 +31,20 @@ pub struct DataRequest {
     pub ts_init: UnixNanos,
 }
 
+pub type Payload = Arc<dyn Any + Send + Sync>;
+
+#[derive(Debug)]
 pub struct DataResponse {
-    pub response_id: UUID4,
     pub correlation_id: UUID4,
     pub client_id: ClientId,
     pub venue: Venue,
     pub data_type: DataType,
-    pub data: Arc<dyn Any + Send + Sync>,
+    pub data: Payload,
     pub ts_init: UnixNanos,
 }
 
 impl DataResponse {
     pub fn new<T: Any + Send + Sync>(
-        response_id: UUID4,
         correlation_id: UUID4,
         client_id: ClientId,
         venue: Venue,
@@ -51,7 +53,6 @@ impl DataResponse {
         ts_init: UnixNanos,
     ) -> Self {
         Self {
-            response_id,
             correlation_id,
             client_id,
             venue,
@@ -62,16 +63,51 @@ impl DataResponse {
     }
 }
 
-pub enum DataCommandAction {
+#[derive(Debug, Clone, Copy)]
+pub enum Action {
     Subscribe,
-    Unsubscibe,
+    Unsubscribe,
 }
 
-pub struct DataCommand {
+#[derive(Debug, Clone)]
+pub struct SubscriptionCommand {
     pub client_id: ClientId,
     pub venue: Venue,
     pub data_type: DataType,
-    pub action: DataCommandAction,
+    pub action: Action,
     pub command_id: UUID4,
     pub ts_init: UnixNanos,
+}
+
+impl SubscriptionCommand {
+    #[must_use]
+    pub const fn new(
+        client_id: ClientId,
+        venue: Venue,
+        data_type: DataType,
+        action: Action,
+        command_id: UUID4,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self {
+            client_id,
+            venue,
+            data_type,
+            action,
+            command_id,
+            ts_init,
+        }
+    }
+}
+
+pub enum DataEngineRequest {
+    Request(DataRequest),
+    SubscriptionCommand(SubscriptionCommand),
+}
+
+// TODO: Refine this to reduce disparity between enum sizes
+#[allow(clippy::large_enum_variant)]
+pub enum DataClientResponse {
+    Response(DataResponse),
+    Data(Data),
 }

@@ -19,7 +19,7 @@ use pyo3::{pymethods, PyObject, PyRef, PyRefMut};
 use ustr::Ustr;
 
 use super::handler::PythonMessageHandler;
-use crate::msgbus::{database::BusMessage, MessageBus, ShareableMessageHandler};
+use crate::msgbus::{database::BusMessage, handler::ShareableMessageHandler, MessageBus};
 
 #[pymethods]
 impl BusMessage {
@@ -62,7 +62,7 @@ impl MessageBus {
     pub fn register_py(&mut self, endpoint: &str, handler: PythonMessageHandler) {
         // Updates value if key already exists
         let handler = ShareableMessageHandler(Rc::new(handler));
-        self.register(endpoint, handler);
+        self.register(Ustr::from(endpoint), handler);
     }
 
     /// Subscribes the given `handler` to the `topic`.
@@ -90,7 +90,7 @@ impl MessageBus {
     ) {
         // Updates value if key already exists
         let handler = ShareableMessageHandler(Rc::new(handler));
-        slf.subscribe(topic, handler, priority);
+        slf.subscribe(Ustr::from(topic), handler, priority);
     }
 
     /// Returns whether there are subscribers for the given `pattern`.
@@ -105,7 +105,7 @@ impl MessageBus {
     #[pyo3(name = "unsubscribe")]
     pub fn unsubscribe_py(&mut self, topic: &str, handler: PythonMessageHandler) {
         let handler = ShareableMessageHandler(Rc::new(handler));
-        self.unsubscribe(topic, handler);
+        self.unsubscribe(Ustr::from(topic), handler);
     }
 
     /// Returns whether there are subscribers for the given `pattern`.
@@ -119,6 +119,6 @@ impl MessageBus {
     #[pyo3(name = "deregister")]
     pub fn deregister_py(&mut self, endpoint: &str) {
         // Removes entry if it exists for endpoint
-        self.deregister(endpoint);
+        self.deregister(&Ustr::from(endpoint));
     }
 }

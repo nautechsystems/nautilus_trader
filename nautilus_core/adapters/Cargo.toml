@@ -34,7 +34,7 @@ tokio = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 ustr = { workspace = true }
-databento = { version = "0.11.4", optional = true }
+databento = { version = "0.12.0", optional = true }
 fallible-streaming-iterator = "0.1.9"
 time = "0.3.36"
 

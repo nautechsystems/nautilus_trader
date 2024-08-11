@@ -15,13 +15,17 @@
 
 use std::any::Any;
 
+use nautilus_model::data::Data;
 use pyo3::prelude::*;
 use ustr::Ustr;
 
-use crate::msgbus::MessageHandler;
+use crate::{messages::data::DataResponse, msgbus::handler::MessageHandler};
 
-#[pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common.PyMessageHandler")]
 #[derive(Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
+)]
 pub struct PythonMessageHandler {
     id: Ustr,
     handler: PyObject,
@@ -50,5 +54,28 @@ impl MessageHandler for PythonMessageHandler {
 
     fn id(&self) -> Ustr {
         self.id
+    }
+
+    fn handle_response(&self, resp: DataResponse) {
+        // TODO: convert message to PyObject
+        let py_event = ();
+        let result =
+            pyo3::Python::with_gil(|py| self.handler.call_method1(py, "handle", (py_event,)));
+        if let Err(err) = result {
+            eprintln!("Error calling handle method: {:?}", err);
+        }
+    }
+
+    fn handle_data(&self, data: Data) {
+        let py_event = ();
+        let result =
+            pyo3::Python::with_gil(|py| self.handler.call_method1(py, "handle", (py_event,)));
+        if let Err(err) = result {
+            eprintln!("Error calling handle method: {:?}", err);
+        }
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }

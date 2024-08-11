@@ -25,7 +25,6 @@ use std::{
     rc::Rc,
 };
 
-use log::debug;
 use nautilus_common::{
     cache::Cache, clock::Clock, generators::position_id::PositionIdGenerator, msgbus::MessageBus,
 };
@@ -150,7 +149,7 @@ where
     // -- COMMAND HANDLERS ----------------------------------------------------
 
     fn execute_command(&self, command: TradingCommand) {
-        debug!("<--[CMD] {:?}", command); // TODO: Log constants
+        log::debug!("<--[CMD] {:?}", command); // TODO: Log constants
 
         // TODO: Refine getting the client (no need for two expects)
         let client = if let Some(client) = self.clients.get(&command.client_id()) {

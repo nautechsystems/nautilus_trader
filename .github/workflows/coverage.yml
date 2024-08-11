@@ -91,7 +91,7 @@ jobs:
       #     make install-talib
       #     poetry run pip install setuptools numpy==1.26.4 ta-lib
 
-      - name: Setup cached pre-commit
+      - name: Set up cached pre-commit
         id: cached-pre-commit
         uses: actions/cache@v4
         with:

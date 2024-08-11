@@ -269,11 +269,11 @@ impl Instrument for FuturesContract {
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{futures_contract::FuturesContract, stubs::*};
+    use crate::instruments::stubs::*;
 
     #[rstest]
-    fn test_equality(futures_contract_es: FuturesContract) {
-        let cloned = futures_contract_es;
-        assert_eq!(futures_contract_es, cloned);
+    fn test_equality() {
+        let futures_contract = futures_contract_es(None, None);
+        assert_eq!(futures_contract, futures_contract.clone());
     }
 }

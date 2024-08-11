@@ -22,10 +22,19 @@ import pytest
 from nautilus_trader.cache.postgres.adapter import CachePostgresAdapter
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
+from nautilus_trader.core.nautilus_pyo3 import AggressorSide
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarAggregation
+from nautilus_trader.model.data import BarSpecification
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Currency
@@ -346,6 +355,10 @@ class TestCachePostgresAdapter:
             OrderSide.BUY,
             Quantity.from_int(100_000),
         )
+        # Add foreign key dependencies: instrument and currencies
+        self.database.add_currency(_AUDUSD_SIM.base_currency)
+        self.database.add_currency(_AUDUSD_SIM.quote_currency)
+        self.database.add_instrument(_AUDUSD_SIM)
 
         # Act
         self.database.add_order(order)
@@ -367,6 +380,10 @@ class TestCachePostgresAdapter:
             OrderSide.BUY,
             Quantity.from_int(100_000),
         )
+        # Add foreign key dependencies: instrument and currencies
+        self.database.add_currency(_AUDUSD_SIM.base_currency)
+        self.database.add_currency(_AUDUSD_SIM.quote_currency)
+        self.database.add_instrument(_AUDUSD_SIM)
 
         self.database.add_order(order)
 
@@ -403,6 +420,10 @@ class TestCachePostgresAdapter:
             Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
+        # Add foreign key dependencies: instrument and currencies
+        self.database.add_currency(_AUDUSD_SIM.base_currency)
+        self.database.add_currency(_AUDUSD_SIM.quote_currency)
+        self.database.add_instrument(_AUDUSD_SIM)
 
         self.database.add_order(order)
         # Allow MPSC thread to insert
@@ -481,3 +502,105 @@ class TestCachePostgresAdapter:
 
         # Assert
         assert self.database.load_account(account.id) == account
+
+    ################################################################################
+    # Market data
+    ################################################################################
+    @pytest.mark.asyncio
+    async def test_add_and_load_trades(self):
+        # add target instruments and currencies
+        instrument = TestInstrumentProvider.ethusdt_perp_binance()
+        self.database.add_currency(instrument.base_currency)
+        self.database.add_currency(instrument.quote_currency)
+        self.database.add_instrument(instrument)
+
+        trade = TradeTick(
+            instrument_id=instrument.id,
+            price=Price.from_str("1500.00"),
+            size=Quantity.from_int(10),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("123456789"),
+            ts_event=1,
+            ts_init=2,
+        )
+        self.database.add_trade(trade)
+
+        await eventually(lambda: len(self.database.load_trades(instrument.id)) > 0)
+
+        trades = self.database.load_trades(instrument.id)
+        assert len(trades) == 1
+        target_trade = trades[0]
+        assert target_trade.instrument_id == trade.instrument_id
+        assert target_trade.price == trade.price
+        assert target_trade.size == trade.size
+        assert target_trade.aggressor_side == trade.aggressor_side
+        assert target_trade.trade_id == trade.trade_id
+        assert target_trade.ts_event == trade.ts_event
+        assert target_trade.ts_init == trade.ts_init
+
+    @pytest.mark.asyncio
+    async def test_add_and_load_quotes(self):
+        # add target instruments and currencies
+        instrument = TestInstrumentProvider.ethusdt_perp_binance()
+        self.database.add_currency(instrument.base_currency)
+        self.database.add_currency(instrument.quote_currency)
+        self.database.add_instrument(instrument)
+
+        quote = QuoteTick(
+            instrument_id=instrument.id,
+            bid_price=Price.from_str("1400.00"),
+            ask_price=Price.from_str("1400.50"),
+            bid_size=Quantity.from_int(4),
+            ask_size=Quantity.from_int(5),
+            ts_event=1,
+            ts_init=1,
+        )
+        self.database.add_quote(quote)
+
+        await eventually(lambda: len(self.database.load_quotes(instrument.id)) > 0)
+
+        quotes = self.database.load_quotes(instrument.id)
+        assert len(quotes) == 1
+        target_quote = quotes[0]
+        assert target_quote.instrument_id == quote.instrument_id
+        assert target_quote.bid_price == quote.bid_price
+        assert target_quote.bid_size == quote.bid_size
+        assert target_quote.ask_price == quote.ask_price
+        assert target_quote.ask_size == quote.ask_size
+        assert target_quote.ts_event == quote.ts_event
+        assert target_quote.ts_init == quote.ts_init
+
+    @pytest.mark.asyncio
+    async def test_add_and_load_bars(self):
+        instrument = TestInstrumentProvider.ethusdt_perp_binance()
+        self.database.add_currency(instrument.base_currency)
+        self.database.add_currency(instrument.quote_currency)
+        self.database.add_instrument(instrument)
+
+        bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
+        bar_type = BarType(instrument.id, bar_spec)
+        bar = Bar(
+            bar_type=bar_type,
+            open=Price.from_str("1500.00"),
+            high=Price.from_str("1505.00"),
+            low=Price.from_str("1490.00"),
+            close=Price.from_str("1502.00"),
+            volume=Quantity.from_int(2_000),
+            ts_event=1,
+            ts_init=2,
+        )
+        self.database.add_bar(bar)
+
+        await eventually(lambda: len(self.database.load_bars(instrument.id)) > 0)
+
+        bars = self.database.load_bars(instrument.id)
+        assert len(bars) == 1
+        target_bar = bars[0]
+        assert target_bar.bar_type == bar.bar_type
+        assert target_bar.open == bar.open
+        assert target_bar.close == bar.close
+        assert target_bar.low == bar.low
+        assert target_bar.high == bar.high
+        assert target_bar.volume == bar.volume
+        assert target_bar.ts_init == bar.ts_init
+        assert target_bar.ts_event == bar.ts_event

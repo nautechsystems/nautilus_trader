@@ -29,7 +29,7 @@ serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = {workspace = true }
 ustr = { workspace = true }
-redis = { version = "0.26.0", features = [
+redis = { version = "0.26.1", features = [
     "connection-manager",
     "keep-alive",
     "sentinel",
@@ -39,10 +39,8 @@ redis = { version = "0.26.0", features = [
     "tls-rustls",
     "tls-rustls-webpki-roots",
 ], optional = true }
-sqlx = { version = "0.7.4", features = [
-    "sqlite",
+sqlx = { version = "0.8.0", features = [
     "postgres",
-    "any",
     "runtime-tokio",
     "json"
 ], optional = true }

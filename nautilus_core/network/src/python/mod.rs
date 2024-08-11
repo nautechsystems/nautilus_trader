@@ -15,20 +15,22 @@
 
 //! Python bindings from `pyo3`.
 
-use pyo3::prelude::*;
+pub mod http;
+pub mod socket;
+pub mod websocket;
 
-use crate::{http, ratelimiter, socket, websocket};
+use pyo3::prelude::*;
 
 /// Loaded as nautilus_pyo3.network
 #[pymodule]
 pub fn network(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<http::HttpClient>()?;
-    m.add_class::<http::HttpMethod>()?;
-    m.add_class::<http::HttpResponse>()?;
-    m.add_class::<ratelimiter::quota::Quota>()?;
-    m.add_class::<websocket::WebSocketClient>()?;
-    m.add_class::<websocket::WebSocketConfig>()?;
-    m.add_class::<socket::SocketClient>()?;
-    m.add_class::<socket::SocketConfig>()?;
+    m.add_class::<crate::http::HttpClient>()?;
+    m.add_class::<crate::http::HttpMethod>()?;
+    m.add_class::<crate::http::HttpResponse>()?;
+    m.add_class::<crate::ratelimiter::quota::Quota>()?;
+    m.add_class::<crate::websocket::WebSocketClient>()?;
+    m.add_class::<crate::websocket::WebSocketConfig>()?;
+    m.add_class::<crate::socket::SocketClient>()?;
+    m.add_class::<crate::socket::SocketConfig>()?;
     Ok(())
 }

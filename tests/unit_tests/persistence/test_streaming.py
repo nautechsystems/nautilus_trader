@@ -139,6 +139,114 @@ class TestPersistenceStreaming:
         result = Counter([r.__class__.__name__ for r in result])  # type: ignore
         assert result["NewsEventData"] == 86985  # type: ignore
 
+    def test_feather_writer_include_types(
+        self,
+        catalog_betfair: ParquetDataCatalog,
+    ) -> None:
+        # Arrange
+        self.catalog = catalog_betfair
+        TestPersistenceStubs.setup_news_event_persistence()
+
+        # Load news events into catalog
+        news_events = TestPersistenceStubs.news_events()
+        self.catalog.write_data(news_events)
+
+        data_config = BacktestDataConfig(
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol="file",
+            data_cls=NewsEventData.fully_qualified_name(),
+            client_id="NewsClient",
+        )
+
+        # Add some arbitrary instrument data to appease BacktestEngine
+        instrument_data_config = BacktestDataConfig(
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol="file",
+            data_cls=InstrumentStatus.fully_qualified_name(),
+        )
+
+        streaming = BetfairTestStubs.streaming_config(
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol="file",
+            include_types=[NewsEventData],
+        )
+
+        run_config = BacktestRunConfig(
+            engine=BacktestEngineConfig(streaming=streaming),
+            data=[data_config, instrument_data_config],
+            venues=[BetfairTestStubs.betfair_venue_config(book_type="L1_MBP")],
+        )
+
+        # Act
+        node = BacktestNode(configs=[run_config])
+        r = node.run()
+
+        # Assert
+        result = self.catalog.read_backtest(
+            instance_id=r[0].instance_id,
+            raise_on_failed_deserialize=True,
+        )
+
+        result = Counter([r.__class__.__name__ for r in result])  # type: ignore
+        assert result["NewsEventData"] == 86985  # type: ignore
+        assert len(result) == 1
+
+    def test_feather_writer_stream_to_data(
+        self,
+        catalog_betfair: ParquetDataCatalog,
+    ) -> None:
+        # Arrange
+        self.catalog = catalog_betfair
+        TestPersistenceStubs.setup_news_event_persistence()
+
+        # Load news events into catalog
+        news_events = TestPersistenceStubs.news_events()
+        self.catalog.write_data(news_events)
+
+        data_config = BacktestDataConfig(
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol="file",
+            data_cls=NewsEventData.fully_qualified_name(),
+            client_id="NewsClient",
+        )
+
+        # Add some arbitrary instrument data to appease BacktestEngine
+        instrument_data_config = BacktestDataConfig(
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol="file",
+            data_cls=InstrumentStatus.fully_qualified_name(),
+        )
+
+        streaming = BetfairTestStubs.streaming_config(
+            catalog_path=self.catalog.path,
+            catalog_fs_protocol="file",
+        )
+
+        run_config = BacktestRunConfig(
+            engine=BacktestEngineConfig(streaming=streaming),
+            data=[data_config, instrument_data_config],
+            venues=[BetfairTestStubs.betfair_venue_config(book_type="L1_MBP")],
+        )
+
+        node = BacktestNode(configs=[run_config])
+        r = node.run()
+
+        # Act
+        # NewsEventData is overridden here with data from the stream, but it should be the same data
+        self.catalog.convert_stream_to_data(r[0].instance_id, NewsEventData)
+
+        node2 = BacktestNode(configs=[run_config])
+        r2 = node2.run()
+
+        # Assert
+        result = self.catalog.read_backtest(
+            instance_id=r2[0].instance_id,
+            raise_on_failed_deserialize=True,
+        )
+
+        result = Counter([r.__class__.__name__ for r in result])  # type: ignore
+        assert result["NewsEventData"] == 86985  # type: ignore
+
     def test_feather_writer_signal_data(
         self,
         catalog_betfair: ParquetDataCatalog,

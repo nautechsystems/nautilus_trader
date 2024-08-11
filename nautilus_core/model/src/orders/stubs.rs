@@ -161,6 +161,39 @@ impl TestOrderStubs {
     }
 
     #[must_use]
+    pub fn market_order_reduce(
+        instrument_id: InstrumentId,
+        order_side: OrderSide,
+        quantity: Quantity,
+        client_order_id: Option<ClientOrderId>,
+        time_in_force: Option<TimeInForce>,
+    ) -> OrderAny {
+        let order = MarketOrder::new(
+            TraderId::default(),
+            StrategyId::default(),
+            instrument_id,
+            client_order_id.unwrap_or_default(),
+            order_side,
+            quantity,
+            time_in_force.unwrap_or(TimeInForce::Gtc),
+            UUID4::new(),
+            UnixNanos::default(),
+            true, // reduce only
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        OrderAny::Market(order)
+    }
+
+    #[must_use]
     pub fn limit_order(
         instrument_id: InstrumentId,
         order_side: OrderSide,

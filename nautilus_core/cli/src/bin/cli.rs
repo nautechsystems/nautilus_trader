@@ -14,7 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use clap::Parser;
-use log::{error, LevelFilter};
+use log::LevelFilter;
 use nautilus_cli::opt::NautilusCli;
 
 #[tokio::main]
@@ -25,6 +25,6 @@ async fn main() {
         .init()
         .unwrap();
     if let Err(e) = nautilus_cli::run(NautilusCli::parse()).await {
-        error!("Error executing Nautilus CLI: {}", e);
+        log::error!("Error executing Nautilus CLI: {}", e);
     }
 }

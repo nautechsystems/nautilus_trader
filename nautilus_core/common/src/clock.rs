@@ -23,7 +23,6 @@ use nautilus_core::{
     nanos::UnixNanos,
     time::{get_atomic_clock_realtime, AtomicTime},
 };
-use tracing::error;
 use ustr::Ustr;
 
 use crate::{
@@ -444,7 +443,7 @@ impl Clock for LiveClock {
             None => {}
             Some(mut timer) => {
                 if let Err(e) = timer.cancel() {
-                    error!("Error on timer cancel: {:?}", e);
+                    log::error!("Error on timer cancel: {:?}", e);
                 }
             }
         }
@@ -453,7 +452,7 @@ impl Clock for LiveClock {
     fn cancel_timers(&mut self) {
         for timer in &mut self.timers.values_mut() {
             if let Err(e) = timer.cancel() {
-                error!("Error on timer cancel: {:?}", e);
+                log::error!("Error on timer cancel: {:?}", e);
             }
         }
         self.timers.clear();

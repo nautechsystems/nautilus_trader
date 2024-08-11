@@ -21,7 +21,6 @@ use std::{
 
 use chrono::{DateTime, Utc};
 use log::LevelFilter;
-use tracing::error;
 
 use crate::logging::logger::LogLine;
 
@@ -162,7 +161,7 @@ impl FileWriter {
             Some(ref format) if format == "json" => true,
             None => false,
             Some(ref unrecognized) => {
-                error!(
+                tracing::error!(
                     "Unrecognized log file format: {unrecognized}. Using plain text format as default."
                 );
                 false
@@ -187,7 +186,7 @@ impl FileWriter {
                 level: fileout_level,
             }),
             Err(e) => {
-                error!("Error creating log file: {}", e);
+                tracing::error!("Error creating log file: {}", e);
                 None
             }
         }
@@ -259,20 +258,20 @@ impl LogWriter for FileWriter {
                     self.buf = BufWriter::new(file);
                     self.path = file_path;
                 }
-                Err(e) => error!("Error creating log file: {}", e),
+                Err(e) => tracing::error!("Error creating log file: {}", e),
             }
         }
 
         match self.buf.write_all(line.as_bytes()) {
             Ok(()) => {}
-            Err(e) => error!("Error writing to file: {e:?}"),
+            Err(e) => tracing::error!("Error writing to file: {e:?}"),
         }
     }
 
     fn flush(&mut self) {
         match self.buf.flush() {
             Ok(()) => {}
-            Err(e) => error!("Error flushing file: {e:?}"),
+            Err(e) => tracing::error!("Error flushing file: {e:?}"),
         }
     }
 

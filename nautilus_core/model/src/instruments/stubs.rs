@@ -323,18 +323,30 @@ pub fn equity_aapl() -> Equity {
 // FuturesContract
 ////////////////////////////////////////////////////////////////////////////////
 
-#[fixture]
-pub fn futures_contract_es() -> FuturesContract {
-    let activation = Utc.with_ymd_and_hms(2021, 4, 8, 0, 0, 0).unwrap();
-    let expiration = Utc.with_ymd_and_hms(2021, 7, 8, 0, 0, 0).unwrap();
+pub fn futures_contract_es(
+    activation: Option<UnixNanos>,
+    expiration: Option<UnixNanos>,
+) -> FuturesContract {
+    let activation = activation.unwrap_or(UnixNanos::from(
+        Utc.with_ymd_and_hms(2021, 4, 8, 0, 0, 0)
+            .unwrap()
+            .timestamp_nanos_opt()
+            .unwrap() as u64,
+    ));
+    let expiration = expiration.unwrap_or(UnixNanos::from(
+        Utc.with_ymd_and_hms(2021, 7, 8, 0, 0, 0)
+            .unwrap()
+            .timestamp_nanos_opt()
+            .unwrap() as u64,
+    ));
     FuturesContract::new(
         InstrumentId::from("ESZ1.GLBX"),
         Symbol::from("ESZ1"),
         AssetClass::Index,
         Some(Ustr::from("XCME")),
         Ustr::from("ES"),
-        UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
-        UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
+        activation,
+        expiration,
         Currency::USD(),
         2,
         Price::from("0.01"),

@@ -13,12 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_common::cache::{database::CacheDatabaseAdapter, Cache, CacheConfig};
+use nautilus_common::cache::{database::CacheDatabaseAdapter, Cache};
 
 #[must_use]
 pub fn get_cache(cache_database: Option<Box<dyn CacheDatabaseAdapter>>) -> Cache {
-    let cache_config = CacheConfig::default();
-    Cache::new(cache_config, cache_database)
+    Cache::new(None, cache_database)
 }
 
 #[cfg(test)]
@@ -85,8 +84,16 @@ mod serial_tests {
             Some(ClientOrderId::new("O-19700101-0000-001-001-1").unwrap()),
             None,
         );
+        // add foreign key dependencies: instrument and currencies
+        database
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        database.add_currency(&instrument.quote_currency()).unwrap();
+        database
+            .add_instrument(&InstrumentAny::CurrencyPair(instrument))
+            .unwrap();
         // insert into database and wait
-        database.add_order(&market_order).unwrap();
+        database.add_order(&market_order, None).unwrap();
         wait_until(
             || {
                 let order = database

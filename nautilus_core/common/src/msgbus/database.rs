@@ -76,7 +76,7 @@ pub struct DatabaseConfig {
 
 impl Default for DatabaseConfig {
     fn default() -> Self {
-        DatabaseConfig {
+        Self {
             database_type: "redis".to_string(),
             host: None,
             port: None,
@@ -123,7 +123,7 @@ pub struct MessageBusConfig {
 
 impl Default for MessageBusConfig {
     fn default() -> Self {
-        MessageBusConfig {
+        Self {
             database: None,
             encoding: SerializationEncoding::MsgPack,
             timestamps_as_iso8601: false,
@@ -176,7 +176,7 @@ mod tests {
         assert_eq!(config.port, None);
         assert_eq!(config.username, None);
         assert_eq!(config.password, None);
-        assert_eq!(config.ssl, false);
+        assert!(!config.ssl);
         assert_eq!(config.timeout, 20);
     }
 
@@ -197,7 +197,7 @@ mod tests {
         assert_eq!(config.port, Some(6379));
         assert_eq!(config.username, Some("user".to_string()));
         assert_eq!(config.password, Some("pass".to_string()));
-        assert_eq!(config.ssl, true);
+        assert!(config.ssl);
         assert_eq!(config.timeout, 30);
     }
 
@@ -205,14 +205,14 @@ mod tests {
     fn test_default_message_bus_config() {
         let config = MessageBusConfig::default();
         assert_eq!(config.encoding, SerializationEncoding::MsgPack);
-        assert_eq!(config.timestamps_as_iso8601, false);
+        assert!(!config.timestamps_as_iso8601);
         assert_eq!(config.buffer_interval_ms, None);
         assert_eq!(config.autotrim_mins, None);
-        assert_eq!(config.use_trader_prefix, true);
-        assert_eq!(config.use_trader_id, true);
-        assert_eq!(config.use_instance_id, false);
+        assert!(config.use_trader_prefix);
+        assert!(config.use_trader_id);
+        assert!(!config.use_instance_id);
         assert_eq!(config.streams_prefix, "stream");
-        assert_eq!(config.stream_per_topic, true);
+        assert!(config.stream_per_topic);
         assert_eq!(config.external_streams, None);
         assert_eq!(config.types_filter, None);
     }
@@ -243,14 +243,14 @@ mod tests {
         });
         let config: MessageBusConfig = serde_json::from_value(config_json).unwrap();
         assert_eq!(config.encoding, SerializationEncoding::Json);
-        assert_eq!(config.timestamps_as_iso8601, true);
+        assert!(config.timestamps_as_iso8601);
         assert_eq!(config.buffer_interval_ms, Some(100));
         assert_eq!(config.autotrim_mins, Some(60));
-        assert_eq!(config.use_trader_prefix, false);
-        assert_eq!(config.use_trader_id, false);
-        assert_eq!(config.use_instance_id, true);
+        assert!(!config.use_trader_prefix);
+        assert!(!config.use_trader_id);
+        assert!(config.use_instance_id);
         assert_eq!(config.streams_prefix, "data_streams");
-        assert_eq!(config.stream_per_topic, false);
+        assert!(!config.stream_per_topic);
         assert_eq!(
             config.external_streams,
             Some(vec!["stream1".to_string(), "stream2".to_string()])

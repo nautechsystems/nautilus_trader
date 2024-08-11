@@ -31,7 +31,10 @@ use super::{
     trailing_stop_market::TrailingStopMarketOrder,
 };
 use crate::{
-    enums::{LiquiditySide, OrderSide, OrderSideSpecified, OrderStatus, OrderType, TriggerType},
+    enums::{
+        ContingencyType, LiquiditySide, OrderSide, OrderSideSpecified, OrderStatus, OrderType,
+        PositionSide, TriggerType,
+    },
     events::order::OrderEventAny,
     identifiers::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId, TraderId,
@@ -450,6 +453,126 @@ impl OrderAny {
             Self::StopMarket(order) => order.is_inflight(),
             Self::TrailingStopLimit(order) => order.is_inflight(),
             Self::TrailingStopMarket(order) => order.is_inflight(),
+        }
+    }
+
+    #[must_use]
+    pub fn price(&self) -> Option<Price> {
+        match self {
+            Self::Limit(order) => Some(order.price),
+            Self::LimitIfTouched(order) => Some(order.price),
+            Self::Market(_) => None,
+            Self::MarketIfTouched(_) => None,
+            Self::MarketToLimit(order) => order.price,
+            Self::StopLimit(order) => Some(order.price),
+            Self::StopMarket(_) => None,
+            Self::TrailingStopLimit(order) => Some(order.price),
+            Self::TrailingStopMarket(_) => None,
+        }
+    }
+
+    #[must_use]
+    pub fn trigger_price(&self) -> Option<Price> {
+        match self {
+            Self::Limit(_) => None,
+            Self::LimitIfTouched(order) => Some(order.trigger_price),
+            Self::Market(_) => None,
+            Self::MarketIfTouched(order) => Some(order.trigger_price),
+            Self::MarketToLimit(_) => None,
+            Self::StopLimit(order) => Some(order.trigger_price),
+            Self::StopMarket(order) => Some(order.trigger_price),
+            Self::TrailingStopLimit(order) => Some(order.trigger_price),
+            Self::TrailingStopMarket(order) => Some(order.trigger_price),
+        }
+    }
+
+    #[must_use]
+    pub fn would_reduce_only(&self, side: PositionSide, position_qty: Quantity) -> bool {
+        match self {
+            Self::Limit(order) => order.would_reduce_only(side, position_qty),
+            Self::Market(order) => order.would_reduce_only(side, position_qty),
+            Self::MarketToLimit(order) => order.would_reduce_only(side, position_qty),
+            Self::LimitIfTouched(order) => order.would_reduce_only(side, position_qty),
+            Self::MarketIfTouched(order) => order.would_reduce_only(side, position_qty),
+            Self::StopLimit(order) => order.would_reduce_only(side, position_qty),
+            Self::StopMarket(order) => order.would_reduce_only(side, position_qty),
+            Self::TrailingStopLimit(order) => order.would_reduce_only(side, position_qty),
+            Self::TrailingStopMarket(order) => order.would_reduce_only(side, position_qty),
+        }
+    }
+
+    #[must_use]
+    pub fn is_reduce_only(&self) -> bool {
+        match self {
+            Self::Limit(order) => order.is_reduce_only(),
+            Self::Market(order) => order.is_reduce_only(),
+            Self::MarketToLimit(order) => order.is_reduce_only(),
+            Self::LimitIfTouched(order) => order.is_reduce_only(),
+            Self::MarketIfTouched(order) => order.is_reduce_only(),
+            Self::StopLimit(order) => order.is_reduce_only(),
+            Self::StopMarket(order) => order.is_reduce_only(),
+            Self::TrailingStopLimit(order) => order.is_reduce_only(),
+            Self::TrailingStopMarket(order) => order.is_reduce_only(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_buy(&self) -> bool {
+        match self {
+            Self::Limit(order) => order.is_buy(),
+            Self::LimitIfTouched(order) => order.is_buy(),
+            Self::Market(order) => order.is_buy(),
+            Self::MarketIfTouched(order) => order.is_buy(),
+            Self::MarketToLimit(order) => order.is_buy(),
+            Self::StopLimit(order) => order.is_buy(),
+            Self::StopMarket(order) => order.is_buy(),
+            Self::TrailingStopLimit(order) => order.is_buy(),
+            Self::TrailingStopMarket(order) => order.is_buy(),
+        }
+    }
+
+    #[must_use]
+    pub fn is_sell(&self) -> bool {
+        match self {
+            Self::Limit(order) => order.is_sell(),
+            Self::LimitIfTouched(order) => order.is_sell(),
+            Self::Market(order) => order.is_sell(),
+            Self::MarketIfTouched(order) => order.is_sell(),
+            Self::MarketToLimit(order) => order.is_sell(),
+            Self::StopLimit(order) => order.is_sell(),
+            Self::StopMarket(order) => order.is_sell(),
+            Self::TrailingStopLimit(order) => order.is_sell(),
+            Self::TrailingStopMarket(order) => order.is_sell(),
+        }
+    }
+
+    #[must_use]
+    pub fn parent_order_id(&self) -> Option<ClientOrderId> {
+        match self {
+            Self::Limit(order) => order.parent_order_id,
+            Self::LimitIfTouched(order) => order.parent_order_id,
+            Self::Market(order) => order.parent_order_id,
+            Self::MarketIfTouched(order) => order.parent_order_id,
+            Self::MarketToLimit(order) => order.parent_order_id,
+            Self::StopLimit(order) => order.parent_order_id,
+            Self::StopMarket(order) => order.parent_order_id,
+            Self::TrailingStopLimit(order) => order.parent_order_id,
+            Self::TrailingStopMarket(order) => order.parent_order_id,
+        }
+    }
+
+    #[must_use]
+    pub fn contingency_type(&self) -> Option<ContingencyType> {
+        match self {
+            Self::Limit(order) => order.contingency_type,
+            Self::LimitIfTouched(order) => order.contingency_type,
+            Self::Market(order) => order.contingency_type,
+            Self::MarketIfTouched(order) => order.contingency_type,
+            Self::MarketToLimit(order) => order.contingency_type,
+            Self::StopLimit(order) => order.contingency_type,
+            Self::StopMarket(order) => order.contingency_type,
+            Self::TrailingStopLimit(order) => order.contingency_type,
+            Self::TrailingStopMarket(order) => order.contingency_type,
         }
     }
 }
