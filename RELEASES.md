@@ -3,15 +3,15 @@
 Released on TBD (UTC).
 
 ### Enhancements
-- Improve `BinanceExecutionClient` position report requests (can now filter by instrument)
-- Improve `BybitExecutionClient` position report requests (can now filter by instrument)
+- Improve `BinanceExecutionClient` position report requests (can now filter by instrument and includes reporting for flat positions)
+- Improve `BybitExecutionClient` position report requests (can now filter by instrument and includes reporting for flat positions)
 - Improve `LiveExecutionEngine` reconciliation robustness and recovery when internal positions do not match external positions
 
 ### Breaking Changes
 None
 
 ### Fixes
-- Fixed Bybit position report parsing when position is flat (`BybitPositionSide` need to handle the empty string)
+- Fixed Bybit position report parsing when position is flat (`BybitPositionSide` now correctly handles the empty string)
 
 ---
 

@@ -59,6 +59,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
@@ -72,6 +73,7 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import LimitOrder
 from nautilus_trader.model.orders import MarketOrder
 from nautilus_trader.model.orders import Order
@@ -548,6 +550,18 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 self._log.info(f"Requesting PositionStatusReport for {instrument_id}")
                 symbol = instrument_id.symbol.value
                 reports = await self._get_binance_position_status_reports(symbol)
+                if not reports:
+                    now = self._clock.timestamp_ns()
+                    report = PositionStatusReport(
+                        account_id=self.account_id,
+                        instrument_id=instrument_id,
+                        position_side=PositionSide.FLAT,
+                        quantity=Quantity.zero(),
+                        report_id=UUID4(),
+                        ts_last=now,
+                        ts_init=now,
+                    )
+                    reports = [report]
             else:
                 self._log.info("Requesting PositionStatusReports...")
                 reports = await self._get_binance_position_status_reports()
