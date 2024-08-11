@@ -485,29 +485,24 @@ class LiveExecutionEngine(ExecutionEngine):
             client_id = mass_status.client_id
             venue = mass_status.venue
             result = self._reconcile_mass_status(mass_status)
+            positions = self._cache.positions_open(venue)
 
             if result:
-                results.append(result)
-                self._log.info(f"Reconciliation for {client_id} succeeded", LogColor.GREEN)
-                continue
-
-            self._log.warning(f"Reconciliation for {client_id} failed")
-
-            if self.filter_position_reports:
-                self._log.warning(
-                    "`filter_position_reports` enabled, skipping further reconciliation",
-                )
-                continue
-
-            # Reconcile specific positions open
-            positions = self._cache.positions_open(venue)
-            if not positions:
-                self._log.warning(f"No cached open positions found for {venue}")
-                results.append(False)
-                continue
+                if not positions:
+                    results.append(result)
+                    self._log.info(f"Reconciliation for {client_id} succeeded", LogColor.GREEN)
+                    continue
+            else:  # Reconciliation failed
+                self._log.warning(f"Reconciliation for {client_id} initially failed")
+                if self.filter_position_reports:
+                    self._log.warning(
+                        "`filter_position_reports` enabled, skipping further reconciliation",
+                    )
+                    continue
 
             client = self._clients.get(client_id)
 
+            # Reconcile specific internal open positions
             report_tasks: list[asyncio.Task] = []
             for position in positions:
                 instrument_id = position.instrument_id
@@ -518,7 +513,9 @@ class LiveExecutionEngine(ExecutionEngine):
                 report_tasks.append(client.generate_position_report(instrument_id))
 
             if not report_tasks:
-                self._log.warning(f"No new position reports received for {venue}")
+                self._log.warning(
+                    f"No specific position reports received for {venue}, skipping further reconciliation",
+                )
                 results.append(False)
                 continue
 
