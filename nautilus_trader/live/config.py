@@ -84,6 +84,9 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
         If position status reports are filtered from reconciliation.
         This may be applicable when other nodes are trading the same instrument(s), on the same
         account - which could cause conflicts in position status.
+    generate_missing_orders : bool, default True
+        If MARKET order events will be generated during reconciliation to align discrepancies
+        between internal and external positions.
     inflight_check_interval_ms : NonNegativeInt, default 2_000
         The interval (milliseconds) between checking whether in-flight orders
         have exceeded their time-in-flight threshold.
@@ -102,6 +105,7 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     reconciliation_lookback_mins: NonNegativeInt | None = None
     filter_unclaimed_external_orders: bool = False
     filter_position_reports: bool = False
+    generate_missing_orders: bool = True
     inflight_check_interval_ms: NonNegativeInt = 2_000
     inflight_check_threshold_ms: NonNegativeInt = 5_000
     qsize: PositiveInt = 100_000
