@@ -86,11 +86,14 @@ class BybitOptionType(Enum):
 
 @unique
 class BybitPositionSide(Enum):
+    FLAT = ""
     BUY = "Buy"
     SELL = "Sell"
 
     def parse_to_position_side(self) -> PositionSide:
-        if self == BybitPositionSide.BUY:
+        if self == BybitPositionSide.FLAT:
+            return PositionSide.FLAT
+        elif self == BybitPositionSide.BUY:
             return PositionSide.LONG
         elif self == BybitPositionSide.SELL:
             return PositionSide.SHORT
