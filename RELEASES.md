@@ -9,7 +9,7 @@ Released on TBD (UTC).
 - Improve `LiveExecutionEngine` reconciliation robustness and recovery when internal positions do not match external positions
 
 ### Breaking Changes
-None
+- Changed `VolumeWeightedAveragePrice` calculation formula to use each bars "typical" price (#1842), thanks @evgenii-prusov
 
 ### Fixes
 - Fixed Bybit position report parsing when position is flat (`BybitPositionSide` now correctly handles the empty string)
