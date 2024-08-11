@@ -189,6 +189,34 @@ impl DataEngine {
         subs
     }
 
+    fn get_client(&self, client_id: &ClientId, venue: &Venue) -> Option<&DataClientAdapter> {
+        match self.clients.get(client_id) {
+            Some(client) => Some(client),
+            None => self
+                .routing_map
+                .get(venue)
+                .and_then(|client_id: &ClientId| self.clients.get(client_id)),
+        }
+    }
+
+    fn get_client_mut(
+        &mut self,
+        client_id: &ClientId,
+        venue: &Venue,
+    ) -> Option<&mut DataClientAdapter> {
+        // Try to get client directly from clients map
+        if self.clients.contains_key(client_id) {
+            return self.clients.get_mut(client_id);
+        }
+
+        // If not found, try to get client_id from routing map
+        if let Some(mapped_client_id) = self.routing_map.get(venue) {
+            return self.clients.get_mut(mapped_client_id);
+        }
+
+        None
+    }
+
     #[must_use]
     pub fn subscribed_custom_data(&self) -> Vec<DataType> {
         self.collect_subscriptions(|client| &client.subscriptions_generic)
@@ -264,16 +292,6 @@ impl DataEngine {
         log::info!("Deregistered client {client_id}");
     }
 
-    fn get_client(&self, client_id: &ClientId, venue: &Venue) -> Option<&DataClientAdapter> {
-        match self.clients.get(client_id) {
-            Some(client) => Some(client),
-            None => self
-                .routing_map
-                .get(venue)
-                .and_then(|client_id: &ClientId| self.clients.get(client_id)),
-        }
-    }
-
     pub fn execute(&mut self, msg: &dyn Any) {
         if let Some(cmd) = msg.downcast_ref::<SubscriptionCommand>() {
             match cmd.data_type.type_name() {
@@ -289,7 +307,7 @@ impl DataEngine {
                 type_name => log::error!("Cannot handle request, type {type_name} is unrecognized"),
             }
 
-            if let Some(client) = self.clients.get_mut(&cmd.client_id) {
+            if let Some(client) = self.get_client_mut(&cmd.client_id, &cmd.venue) {
                 client.execute(cmd.clone());
             } else {
                 log::error!(
@@ -304,7 +322,7 @@ impl DataEngine {
 
     /// Send a [`DataRequest`] to an endpoint that must be a data client implementation.
     pub fn request(&self, req: DataRequest) {
-        if let Some(client) = self.clients.get(&req.client_id) {
+        if let Some(client) = self.get_client(&req.client_id, &req.venue) {
             client.through_request(req);
         } else {
             log::error!(
