@@ -51,7 +51,7 @@ impl Runner for BacktestRunner {
         while let Some(resp) = self.queue.as_ref().borrow_mut().pop_front() {
             match resp {
                 DataClientResponse::Response(resp) => engine.response(resp),
-                DataClientResponse::Data(data) => engine.process(data),
+                DataClientResponse::Data(data) => engine.process_data(data),
             }
         }
     }
@@ -78,7 +78,7 @@ impl Runner for LiveRunner {
         while let Some(resp) = self.resp_rx.blocking_recv() {
             match resp {
                 DataClientResponse::Response(resp) => engine.response(resp),
-                DataClientResponse::Data(data) => engine.process(data),
+                DataClientResponse::Data(data) => engine.process_data(data),
             }
         }
     }
