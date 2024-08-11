@@ -486,6 +486,9 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None,
+            None,
         );
 
         let result = matching_core.is_stop_matched(&order.into());
@@ -520,6 +523,9 @@ mod tests {
             order_side,
             trigger_price,
             Quantity::from("100"),
+            None,
+            None,
+            None,
             None,
             None,
             None,

@@ -575,6 +575,21 @@ impl OrderAny {
             Self::TrailingStopMarket(order) => order.contingency_type,
         }
     }
+
+    #[must_use]
+    pub fn linked_order_ids(&self) -> Option<Vec<ClientOrderId>> {
+        match self {
+            Self::Limit(order) => order.linked_order_ids.clone(),
+            Self::LimitIfTouched(order) => order.linked_order_ids.clone(),
+            Self::Market(order) => order.linked_order_ids.clone(),
+            Self::MarketIfTouched(order) => order.linked_order_ids.clone(),
+            Self::MarketToLimit(order) => order.linked_order_ids.clone(),
+            Self::StopLimit(order) => order.linked_order_ids.clone(),
+            Self::StopMarket(order) => order.linked_order_ids.clone(),
+            Self::TrailingStopLimit(order) => order.linked_order_ids.clone(),
+            Self::TrailingStopMarket(order) => order.linked_order_ids.clone(),
+        }
+    }
 }
 
 impl PartialEq for OrderAny {
