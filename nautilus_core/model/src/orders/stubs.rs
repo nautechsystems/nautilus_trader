@@ -19,14 +19,14 @@ use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 
 use super::{any::OrderAny, limit::LimitOrder, stop_market::StopMarketOrder};
 use crate::{
-    enums::{LiquiditySide, OrderSide, TimeInForce, TriggerType},
+    enums::{ContingencyType, LiquiditySide, OrderSide, TimeInForce, TriggerType},
     events::order::{OrderAccepted, OrderEventAny, OrderFilled, OrderSubmitted},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
         VenueOrderId,
     },
     instruments::any::InstrumentAny,
-    orders::market::MarketOrder,
+    orders::{market::MarketOrder, market_if_touched::MarketIfTouchedOrder},
     types::{money::Money, price::Price, quantity::Quantity},
 };
 
@@ -235,14 +235,18 @@ impl TestOrderStubs {
     }
 
     #[must_use]
+    #[allow(clippy::too_many_arguments)]
     pub fn stop_market_order(
         instrument_id: InstrumentId,
         order_side: OrderSide,
         trigger_price: Price,
         quantity: Quantity,
         trigger_type: Option<TriggerType>,
+        contingency_type: Option<ContingencyType>,
         client_order_id: Option<ClientOrderId>,
         time_in_force: Option<TimeInForce>,
+        parent_order_id: Option<ClientOrderId>,
+        linked_order_ids: Option<Vec<ClientOrderId>>,
     ) -> OrderAny {
         let order = StopMarketOrder::new(
             TraderId::default(),
@@ -260,10 +264,10 @@ impl TestOrderStubs {
             None,
             None,
             None,
+            contingency_type,
             None,
-            None,
-            None,
-            None,
+            linked_order_ids,
+            parent_order_id,
             None,
             None,
             None,
@@ -273,6 +277,51 @@ impl TestOrderStubs {
         )
         .unwrap();
         OrderAny::StopMarket(order)
+    }
+
+    #[must_use]
+    #[allow(clippy::too_many_arguments)]
+    pub fn market_if_touched_order(
+        instrument_id: InstrumentId,
+        order_side: OrderSide,
+        trigger_price: Price,
+        quantity: Quantity,
+        trigger_type: Option<TriggerType>,
+        contingency_type: Option<ContingencyType>,
+        client_order_id: Option<ClientOrderId>,
+        time_in_force: Option<TimeInForce>,
+        linked_order_ids: Option<Vec<ClientOrderId>>,
+    ) -> OrderAny {
+        OrderAny::MarketIfTouched(
+            MarketIfTouchedOrder::new(
+                TraderId::default(),
+                StrategyId::default(),
+                instrument_id,
+                client_order_id.unwrap_or_default(),
+                order_side,
+                quantity,
+                trigger_price,
+                trigger_type.unwrap_or(TriggerType::BidAsk),
+                time_in_force.unwrap_or(TimeInForce::Gtc),
+                None,
+                false,
+                false,
+                None,
+                None,
+                None,
+                contingency_type,
+                None,
+                linked_order_ids,
+                None,
+                None,
+                None,
+                None,
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+            )
+            .unwrap(),
+        )
     }
 
     pub fn make_accepted_order(order: &OrderAny) -> OrderAny {
