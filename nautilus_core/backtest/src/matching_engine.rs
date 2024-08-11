@@ -313,12 +313,12 @@ impl OrderMatchingEngine {
                             {
                                 self.generate_order_rejected(
                                     order,
-                                    format!("Contingent order {} already closed", client_order_id)
+                                    format!("Contingent order {client_order_id} already closed")
                                         .into(),
                                 );
                                 return;
                             }
-                            None => panic!("Cannot find contingent order for {}", client_order_id),
+                            None => panic!("Cannot find contingent order for {client_order_id}"),
                             _ => {}
                         }
                     }
