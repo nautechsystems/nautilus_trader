@@ -11,7 +11,7 @@ Released on TBD (UTC).
 None
 
 ### Fixes
-None
+- Fixed Bybit position report parsing when position is flat (`BybitPositionSide` need to handle the empty string)
 
 ---
 

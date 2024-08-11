@@ -23,6 +23,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderStatus
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitPositionIdx
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.enums import BybitStopOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerDirection
@@ -455,7 +456,7 @@ class TestBybitWsDecoders:
         decoder = msgspec.json.Decoder(BybitWsAccountExecutionMsg)
         result = decoder.decode(item)
         target_data = BybitWsAccountExecution(
-            category="linear",
+            category=BybitProductType.LINEAR,
             symbol="XRPUSDT",
             execFee="0.005061",
             execId="7e2ae69c-4edf-5800-a352-893d52b446aa",
@@ -498,6 +499,7 @@ class TestBybitWsDecoders:
         decoder = msgspec.json.Decoder(BybitWsAccountOrderMsg)
         result = decoder.decode(item)
         target_data = BybitWsAccountOrder(
+            category=BybitProductType.OPTION,
             symbol="ETH-30DEC22-1400-C",
             orderId="5cf98598-39a7-459e-97bf-76ca765ee020",
             side=BybitOrderSide.SELL,
@@ -534,7 +536,6 @@ class TestBybitWsDecoders:
             triggerDirection=BybitTriggerDirection.RISES_TO,
             triggerBy=BybitTriggerType.NONE,
             closeOnTrigger=False,
-            category="option",
             placeType="price",
             smpType="None",
             smpGroup=0,

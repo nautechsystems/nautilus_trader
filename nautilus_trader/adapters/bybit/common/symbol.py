@@ -147,7 +147,7 @@ class BybitSymbol(str):
         """
         return self.product_type == BybitProductType.OPTION
 
-    def parse_as_nautilus(self) -> InstrumentId:
+    def to_instrument_id(self) -> InstrumentId:
         """
         Parse the Bybit symbol into a Nautilus instrument ID.
 
