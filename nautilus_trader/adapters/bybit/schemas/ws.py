@@ -25,6 +25,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitOrderSide
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderStatus
 from nautilus_trader.adapters.bybit.common.enums import BybitOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitPositionIdx
+from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.bybit.common.enums import BybitStopOrderType
 from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerDirection
@@ -600,7 +601,7 @@ class BybitWsAccountPositionMsg(msgspec.Struct):
 
 
 class BybitWsAccountOrder(msgspec.Struct):
-    category: str
+    category: BybitProductType
     symbol: str
     orderId: str
     side: BybitOrderSide
@@ -709,7 +710,7 @@ class BybitWsAccountOrderMsg(msgspec.Struct):
 
 
 class BybitWsAccountExecution(msgspec.Struct):
-    category: str
+    category: BybitProductType
     symbol: str
     execFee: str
     execId: str
