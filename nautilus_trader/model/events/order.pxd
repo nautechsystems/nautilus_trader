@@ -26,6 +26,7 @@ from nautilus_trader.core.rust.model cimport OrderReleased_t
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderSubmitted_t
 from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.core.uuid cimport UUID4
@@ -65,6 +66,8 @@ cdef class OrderInitialized(OrderEvent):
     """The order type.\n\n:returns: `OrderType`"""
     cdef readonly Quantity quantity
     """The order quantity.\n\n:returns: `Quantity`"""
+    cdef readonly PositionSide position_side
+    """The order position side.\n\n:returns: `PositionSide`"""
     cdef readonly TimeInForce time_in_force
     """The order time in force.\n\n:returns: `TimeInForce`"""
     cdef readonly bint post_only

@@ -24,6 +24,7 @@ from nautilus_trader.core.datetime cimport dt_to_unix_nanos
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.rust.model cimport TrailingOffsetType
 from nautilus_trader.core.rust.model cimport TriggerType
@@ -215,6 +216,7 @@ cdef class OrderFactory:
         InstrumentId instrument_id,
         OrderSide order_side,
         Quantity quantity,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         TimeInForce time_in_force = TimeInForce.GTC,
         bint reduce_only = False,
         bint quote_quantity = False,
@@ -233,6 +235,8 @@ cdef class OrderFactory:
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
+        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
+            The orders position side. Must be sent in hedge mode.
         time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}, default ``GTC``
             The orders time in force. Often not applicable for market orders.
         reduce_only : bool, default False
@@ -266,6 +270,7 @@ cdef class OrderFactory:
             client_order_id=client_order_id,
             order_side=order_side,
             quantity=quantity,
+            position_side = position_side,
             time_in_force=time_in_force,
             reduce_only=reduce_only,
             quote_quantity=quote_quantity,
@@ -287,6 +292,7 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         Price price,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
         bint post_only = False,
@@ -312,6 +318,8 @@ cdef class OrderFactory:
             The orders quantity (> 0).
         price : Price
             The orders price.
+        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
+            The orders position side. Must be sent in hedge mode.
         time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}, default ``GTC``
             The orders time in force.
         expire_time : datetime, optional
@@ -360,6 +368,7 @@ cdef class OrderFactory:
             price=price,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            position_side=position_side,
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             post_only=post_only,
@@ -385,6 +394,7 @@ cdef class OrderFactory:
         Quantity quantity,
         Price trigger_price,
         TriggerType trigger_type = TriggerType.DEFAULT,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
         bint reduce_only = False,
@@ -410,6 +420,8 @@ cdef class OrderFactory:
             The orders trigger price (STOP).
         trigger_type : TriggerType, default ``DEFAULT``
             The order trigger type.
+        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
+            The orders position side. Must be sent in hedge mode.
         time_in_force : TimeInForce  {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
             The orders time in force.
         expire_time : datetime, optional
@@ -457,6 +469,7 @@ cdef class OrderFactory:
             trigger_type=trigger_type,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            position_side = position_side,
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             reduce_only=reduce_only,
@@ -481,6 +494,7 @@ cdef class OrderFactory:
         Price price,
         Price trigger_price,
         TriggerType trigger_type = TriggerType.DEFAULT,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
         bint post_only = False,
@@ -510,6 +524,8 @@ cdef class OrderFactory:
             The orders trigger stop price.
         trigger_type : TriggerType, default ``DEFAULT``
             The order trigger type.
+        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
+            The orders position side. Must be sent in hedge mode.
         time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
             The orders time in force.
         expire_time : datetime, optional
@@ -564,6 +580,7 @@ cdef class OrderFactory:
             trigger_type=trigger_type,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            position_side = position_side,
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             post_only=post_only,
@@ -587,6 +604,7 @@ cdef class OrderFactory:
         InstrumentId instrument_id,
         OrderSide order_side,
         Quantity quantity,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
         bint reduce_only = False,
@@ -607,6 +625,8 @@ cdef class OrderFactory:
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
+        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
+            The orders position side. Must be sent in hedge mode.
         time_in_force : TimeInForce {``GTC``, ``GTD``, ``IOC``, ``FOK``}, default ``GTC``
             The orders time in force.
         expire_time : datetime, optional
@@ -648,6 +668,7 @@ cdef class OrderFactory:
             display_qty=display_qty,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            position_side = position_side,
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             contingency_type=ContingencyType.NO_CONTINGENCY,
@@ -667,6 +688,7 @@ cdef class OrderFactory:
         Quantity quantity,
         Price trigger_price,
         TriggerType trigger_type = TriggerType.DEFAULT,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
         bint reduce_only = False,
@@ -692,6 +714,8 @@ cdef class OrderFactory:
             The orders trigger price (STOP).
         trigger_type : TriggerType, default ``DEFAULT``
             The order trigger type.
+        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
+            The orders position side. Must be sent in hedge mode.
         time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
             The orders time in force.
         expire_time : datetime, optional
@@ -739,6 +763,7 @@ cdef class OrderFactory:
             trigger_type=trigger_type,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            position_side = position_side,
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             reduce_only=reduce_only,
@@ -763,6 +788,7 @@ cdef class OrderFactory:
         Price price,
         Price trigger_price,
         TriggerType trigger_type = TriggerType.DEFAULT,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
         bint post_only = False,
@@ -792,6 +818,8 @@ cdef class OrderFactory:
             The orders trigger stop price.
         trigger_type : TriggerType, default ``DEFAULT``
             The order trigger type.
+        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
+            The orders position side. Must be sent in hedge mode.
         time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
             The orders time in force.
         expire_time : datetime, optional
@@ -846,6 +874,7 @@ cdef class OrderFactory:
             trigger_type=trigger_type,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            position_side = PositionSide.NO_POSITION_SIDE,
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             post_only=post_only,
@@ -873,6 +902,7 @@ cdef class OrderFactory:
         Price trigger_price = None,
         TriggerType trigger_type = TriggerType.DEFAULT,
         TrailingOffsetType trailing_offset_type = TrailingOffsetType.PRICE,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
         bint reduce_only = False,
@@ -903,6 +933,8 @@ cdef class OrderFactory:
             The order trigger type.
         trailing_offset_type : TrailingOffsetType, default ``PRICE``
             The order trailing offset type.
+        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
+            The orders position side. Must be sent in hedge mode.
         time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
             The orders time in force.
         expire_time : datetime, optional
@@ -952,6 +984,7 @@ cdef class OrderFactory:
             trailing_offset_type=trailing_offset_type,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            position_side = position_side,
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             reduce_only=reduce_only,
@@ -979,6 +1012,7 @@ cdef class OrderFactory:
         Price trigger_price = None,
         TriggerType trigger_type = TriggerType.DEFAULT,
         TrailingOffsetType trailing_offset_type = TrailingOffsetType.PRICE,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
         bint post_only = False,
@@ -1016,6 +1050,8 @@ cdef class OrderFactory:
             The order trigger type.
         trailing_offset_type : TrailingOffsetType, default ``PRICE``
             The order trailing offset type.
+        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
+            The orders position side. Must be sent in hedge mode.
         time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
             The orders time in force.
         expire_time : datetime, optional
@@ -1075,6 +1111,7 @@ cdef class OrderFactory:
             trailing_offset_type=trailing_offset_type,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            position_side = PositionSide.NO_POSITION_SIDE,
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
             post_only=post_only,
@@ -1105,6 +1142,7 @@ cdef class OrderFactory:
         Price tp_price = None,
         OrderType entry_order_type = OrderType.MARKET,
         OrderType tp_order_type = OrderType.LIMIT,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
         bint entry_post_only = False,
@@ -1152,6 +1190,8 @@ cdef class OrderFactory:
             The entry order type.
         tp_order_type : OrderType {``LIMIT``, ``LIMIT_IF_TOUCHED``, ``MARKET_IF_TOUCHED``}, default ``LIMIT``
             The take-profit order type.
+        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
+            The orders position side. Must be sent in hedge mode.
         time_in_force : TimeInForce {``DAY``, ``GTC``}, optional
             The entry orders time in force.
         expire_time : datetime, optional
@@ -1214,6 +1254,7 @@ cdef class OrderFactory:
                 quantity=quantity,
                 init_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
+                position_side = position_side,
                 time_in_force=TimeInForce.GTC,
                 quote_quantity=quote_quantity,
                 contingency_type=ContingencyType.OTO,
@@ -1236,6 +1277,7 @@ cdef class OrderFactory:
                 price=entry_price,
                 init_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
+                position_side = position_side,
                 time_in_force=time_in_force,
                 expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
                 post_only=entry_post_only,
@@ -1263,6 +1305,7 @@ cdef class OrderFactory:
                 trigger_type=TriggerType.DEFAULT,
                 init_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
+                position_side = position_side,
                 time_in_force=time_in_force,
                 expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
                 quote_quantity=quote_quantity,
@@ -1290,6 +1333,7 @@ cdef class OrderFactory:
                 trigger_type=TriggerType.DEFAULT,
                 init_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
+                position_side = position_side,
                 time_in_force=time_in_force,
                 expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
                 post_only=entry_post_only,
@@ -1322,6 +1366,7 @@ cdef class OrderFactory:
                 price=tp_price,
                 init_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
+                position_side = position_side,
                 time_in_force=TimeInForce.GTC,
                 post_only=tp_post_only,
                 reduce_only=True,
@@ -1351,6 +1396,7 @@ cdef class OrderFactory:
                 trigger_type=TriggerType.DEFAULT,
                 init_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
+                position_side = position_side,
                 time_in_force=TimeInForce.GTC,
                 post_only=tp_post_only,
                 reduce_only=True,
@@ -1379,6 +1425,7 @@ cdef class OrderFactory:
                 trigger_type=TriggerType.DEFAULT,
                 init_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
+                position_side = position_side,
                 time_in_force=TimeInForce.GTC,
                 reduce_only=True,
                 quote_quantity=quote_quantity,
@@ -1410,6 +1457,7 @@ cdef class OrderFactory:
             trigger_type=TriggerType.DEFAULT,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            position_side = position_side,
             time_in_force=TimeInForce.GTC,
             reduce_only=True,
             quote_quantity=quote_quantity,

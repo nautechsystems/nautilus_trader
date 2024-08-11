@@ -23,6 +23,7 @@ from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.core.rust.model cimport order_accepted_new
@@ -46,6 +47,8 @@ from nautilus_trader.model.functions cimport order_side_from_str
 from nautilus_trader.model.functions cimport order_side_to_str
 from nautilus_trader.model.functions cimport order_type_from_str
 from nautilus_trader.model.functions cimport order_type_to_str
+from nautilus_trader.model.functions cimport position_side_from_str
+from nautilus_trader.model.functions cimport position_side_to_str
 from nautilus_trader.model.functions cimport time_in_force_from_str
 from nautilus_trader.model.functions cimport time_in_force_to_str
 from nautilus_trader.model.functions cimport trigger_type_from_str
@@ -219,6 +222,8 @@ cdef class OrderInitialized(OrderEvent):
         The order type.
     quantity : Quantity
         The order quantity.
+    position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}
+        The order position side.
     time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}
         The order time in force.
     post_only : bool
@@ -274,6 +279,7 @@ cdef class OrderInitialized(OrderEvent):
         OrderSide order_side,
         OrderType order_type,
         Quantity quantity not None,
+        PositionSide position_side,
         TimeInForce time_in_force,
         bint post_only,
         bint reduce_only,
@@ -309,6 +315,7 @@ cdef class OrderInitialized(OrderEvent):
         self.side = order_side
         self.order_type = order_type
         self.quantity = quantity
+        self.position_side = position_side
         self.time_in_force = time_in_force
         self.post_only = post_only
         self.reduce_only = reduce_only
@@ -343,6 +350,7 @@ cdef class OrderInitialized(OrderEvent):
             f"side={order_side_to_str(self.side)}, "
             f"type={order_type_to_str(self.order_type)}, "
             f"quantity={self.quantity.to_formatted_str()}, "
+            f"position_side={position_side_to_str(self.position_side)}, "
             f"time_in_force={time_in_force_to_str(self.time_in_force)}, "
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
@@ -534,6 +542,7 @@ cdef class OrderInitialized(OrderEvent):
             order_side=order_side_from_str(values["order_side"]),
             order_type=order_type_from_str(values["order_type"]),
             quantity=Quantity.from_str_c(values["quantity"]),
+            position_side=position_side_from_str(values["position_side"]) if values["position_side"] is not None else PositionSide.NO_POSITION_SIDE,
             time_in_force=time_in_force_from_str(values["time_in_force"]),
             post_only=values["post_only"],
             reduce_only=values["reduce_only"],
@@ -567,6 +576,7 @@ cdef class OrderInitialized(OrderEvent):
             "order_side": order_side_to_str(obj.side),
             "order_type": order_type_to_str(obj.order_type),
             "quantity": str(obj.quantity),
+            "position_side": position_side_to_str(obj.position_side),
             "time_in_force": time_in_force_to_str(obj.time_in_force),
             "post_only": obj.post_only,
             "reduce_only": obj.reduce_only,

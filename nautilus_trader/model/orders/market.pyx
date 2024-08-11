@@ -19,6 +19,7 @@ from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.core.uuid cimport UUID4
@@ -30,6 +31,8 @@ from nautilus_trader.model.functions cimport liquidity_side_to_str
 from nautilus_trader.model.functions cimport order_side_from_str
 from nautilus_trader.model.functions cimport order_side_to_str
 from nautilus_trader.model.functions cimport order_type_to_str
+from nautilus_trader.model.functions cimport position_side_from_str
+from nautilus_trader.model.functions cimport position_side_to_str
 from nautilus_trader.model.functions cimport time_in_force_from_str
 from nautilus_trader.model.functions cimport time_in_force_to_str
 from nautilus_trader.model.functions cimport trigger_type_to_str
@@ -74,6 +77,8 @@ cdef class MarketOrder(Order):
         The order initialization event ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
+    posision_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
+        The position side.
     time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}, default ``GTC``
         The order time in force.
     reduce_only : bool, default False
@@ -121,6 +126,7 @@ cdef class MarketOrder(Order):
         Quantity quantity not None,
         UUID4 init_id not None,
         uint64_t ts_init,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         TimeInForce time_in_force = TimeInForce.GTC,
         bint reduce_only = False,
         bint quote_quantity = False,
@@ -145,6 +151,7 @@ cdef class MarketOrder(Order):
             order_side=order_side,
             order_type=OrderType.MARKET,
             quantity=quantity,
+            position_side=position_side,
             time_in_force=time_in_force,
             post_only=False,
             reduce_only=reduce_only,
@@ -185,10 +192,12 @@ cdef class MarketOrder(Order):
         str
 
         """
+        cdef str position_side_str = "" if self.position_side == PositionSide.NO_POSITION_SIDE else f" POSITION_SIDE[{position_side_to_str(self.position_side)}]"
         return (
             f"{order_side_to_str(self.side)} {self.quantity.to_formatted_str()} {self.instrument_id} "
             f"{order_type_to_str(self.order_type)} "
             f"{time_in_force_to_str(self.time_in_force)}"
+            f"{position_side_str}"
         )
 
     @staticmethod
@@ -202,6 +211,7 @@ cdef class MarketOrder(Order):
             quantity=Quantity.from_raw_c(pyo3_order.quantity.raw, pyo3_order.quantity.precision),
             init_id=UUID4(str(pyo3_order.init_id)),
             ts_init=pyo3_order.ts_init,
+            position_side=position_side_from_str(str(pyo3_order.position_side)),
             time_in_force=time_in_force_from_str(str(pyo3_order.time_in_force)),
             reduce_only=pyo3_order.is_reduce_only,
             quote_quantity=pyo3_order.is_quote_quantity,
@@ -241,6 +251,7 @@ cdef class MarketOrder(Order):
             "type": order_type_to_str(self.order_type),
             "side": order_side_to_str(self.side),
             "quantity": str(self.quantity),
+            "position_side": position_side_to_str(self.position_side),
             "time_in_force": time_in_force_to_str(self.time_in_force),
             "is_reduce_only": self.is_reduce_only,
             "is_quote_quantity": self.is_quote_quantity,
@@ -294,6 +305,7 @@ cdef class MarketOrder(Order):
             client_order_id=init.client_order_id,
             order_side=init.side,
             quantity=init.quantity,
+            position_side=init.position_side,
             time_in_force=init.time_in_force,
             reduce_only=init.reduce_only,
             quote_quantity=init.quote_quantity,
@@ -343,6 +355,7 @@ cdef class MarketOrder(Order):
             client_order_id=order.client_order_id,
             order_side=order.side,
             quantity=order.quantity,
+            position_side=order.position_side,
             time_in_force=order.time_in_force if order.time_in_force != TimeInForce.GTD else TimeInForce.GTC,
             reduce_only=order.is_reduce_only,
             quote_quantity=order.is_quote_quantity,

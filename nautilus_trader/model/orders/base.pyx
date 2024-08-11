@@ -187,6 +187,7 @@ cdef class Order:
         self.side = init.side
         self.order_type = init.order_type
         self.quantity = init.quantity
+        self.position_side = init.position_side
         self.time_in_force = init.time_in_force
         self.liquidity_side = LiquiditySide.NO_LIQUIDITY_SIDE
         self.is_post_only = init.post_only
@@ -335,6 +336,9 @@ cdef class Order:
 
     cdef str side_string_c(self):
         return order_side_to_str(self.side)
+
+    cdef str position_side_string_c(self):
+        return position_side_to_str(self.position_side)
 
     cdef str tif_string_c(self):
         return time_in_force_to_str(self.time_in_force)

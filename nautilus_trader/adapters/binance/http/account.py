@@ -17,6 +17,7 @@
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceFuturesPositionSide
 from nautilus_trader.adapters.binance.common.enums import BinanceNewOrderRespType
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
@@ -134,6 +135,10 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
             The market side of the order (BUY, SELL)
         type : BinanceOrderType
             The type of the order (LIMIT, STOP_LOSS..)
+        positionSide : BinanceFuturesPositionSide, optional
+            Only for FUTURES orders.
+            Must be sent in Hedge Mode.
+            The position side of the order (LONG, SHORT)
         timeInForce : BinanceTimeInForce, optional
             Mandatory for LIMIT, STOP_LOSS_LIMIT, TAKE_PROFIT_LIMIT orders.
             The time in force of the order (GTC, IOC..)
@@ -214,6 +219,7 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         timestamp: str
         side: BinanceOrderSide
         type: BinanceOrderType
+        positionSide: BinanceFuturesPositionSide | None = None
         timeInForce: BinanceTimeInForce | None = None
         quantity: str | None = None
         quoteOrderQty: str | None = None
@@ -614,6 +620,7 @@ class BinanceAccountHttpAPI:
         symbol: str,
         side: BinanceOrderSide,
         order_type: BinanceOrderType,
+        position_side: BinanceFuturesPositionSide | None = None,
         time_in_force: BinanceTimeInForce | None = None,
         quantity: str | None = None,
         quote_order_qty: str | None = None,
@@ -643,6 +650,7 @@ class BinanceAccountHttpAPI:
                 timestamp=self._timestamp(),
                 side=side,
                 type=order_type,
+                positionSide=position_side,
                 timeInForce=time_in_force,
                 quantity=quantity,
                 quoteOrderQty=quote_order_qty,

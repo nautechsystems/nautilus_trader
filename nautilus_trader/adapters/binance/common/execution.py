@@ -24,6 +24,7 @@ from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
 from nautilus_trader.adapters.binance.common.enums import BinanceErrorCode
+from nautilus_trader.adapters.binance.common.enums import BinanceFuturesPositionSide
 from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
 from nautilus_trader.adapters.binance.common.schemas.account import BinanceOrder
 from nautilus_trader.adapters.binance.common.schemas.account import BinanceUserTrade
@@ -59,6 +60,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
@@ -168,6 +170,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay=}", LogColor.BLUE)
 
+        self._is_dual_side_position: bool | None = None  # Initialized on connection
         self._set_account_id(
             AccountId(f"{name or BINANCE_VENUE.value}-{self._binance_account_type.value}-master"),
         )
@@ -261,6 +264,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             # Authenticate API key and update account(s)
             await self._update_account_state()
 
+            # Set dual side position
+            await self._set_dual_side_position()
+
             # Get listen keys
             response: BinanceListenKey = await self._http_user.create_listen_key()
         except BinanceError as e:
@@ -283,6 +289,10 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         await self._ws_client.subscribe_listen_key(self._listen_key)
 
     async def _update_account_state(self) -> None:
+        # Replace method in child class
+        raise NotImplementedError
+
+    async def _set_dual_side_position(self) -> None:
         # Replace method in child class
         raise NotImplementedError
 
@@ -601,9 +611,37 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         return order.is_reduce_only if self._use_reduce_only else False
 
     def _determine_reduce_only_str(self, order: Order) -> str | None:
-        if self._binance_account_type.is_futures:
+        if self._binance_account_type.is_futures and not self._is_dual_side_position:
             return str(self._determine_reduce_only(order))
         return None
+
+    def _translate_position_side(
+        self,
+        position_side: PositionSide,
+    ) -> BinanceFuturesPositionSide | None:
+        """
+        Translate `PositionSide` to BinanceFuturesPositionSide.
+
+        Parameters
+        ----------
+        position_side : PositionSide
+            The position side to translate.
+
+        Returns
+        -------
+        BinanceFuturesPositionSide |
+        None
+
+        """
+        binance_position_side = None
+        if self._binance_account_type.is_futures:
+            if position_side == PositionSide.NO_POSITION_SIDE:
+                binance_position_side = BinanceFuturesPositionSide.BOTH
+            elif position_side == PositionSide.LONG:
+                binance_position_side = BinanceFuturesPositionSide.LONG
+            elif position_side == PositionSide.SHORT:
+                binance_position_side = BinanceFuturesPositionSide.SHORT
+        return binance_position_side
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         await self._submit_order_inner(command.order)
@@ -655,6 +693,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 await asyncio.sleep(self._retry_delay)
 
     async def _submit_market_order(self, order: MarketOrder) -> None:
+        position_side = self._translate_position_side(order.position_side)
         await self._http_account.new_order(
             symbol=order.instrument_id.symbol.value,
             side=self._enum_parser.parse_internal_order_side(order.side),
@@ -663,6 +702,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             reduce_only=self._determine_reduce_only_str(order),
             new_client_order_id=order.client_order_id.value,
             recv_window=str(self._recv_window),
+            position_side=position_side,
         )
 
     async def _submit_limit_order(self, order: LimitOrder) -> None:
@@ -671,6 +711,8 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             time_in_force = None
         elif order.is_post_only and self._binance_account_type.is_futures:
             time_in_force = BinanceTimeInForce.GTX
+
+        position_side = self._translate_position_side(order.position_side)
 
         await self._http_account.new_order(
             symbol=order.instrument_id.symbol.value,
@@ -684,6 +726,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             reduce_only=self._determine_reduce_only_str(order),
             new_client_order_id=order.client_order_id.value,
             recv_window=str(self._recv_window),
+            position_side=position_side,
         )
 
     async def _submit_stop_limit_order(self, order: StopLimitOrder) -> None:
@@ -701,6 +744,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             return
 
         time_in_force = self._determine_time_in_force(order)
+        position_side = self._translate_position_side(order.position_side)
         await self._http_account.new_order(
             symbol=order.instrument_id.symbol.value,
             side=self._enum_parser.parse_internal_order_side(order.side),
@@ -715,6 +759,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             reduce_only=self._determine_reduce_only_str(order),
             new_client_order_id=order.client_order_id.value,
             recv_window=str(self._recv_window),
+            position_side=position_side,
         )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
@@ -746,6 +791,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             return
 
         time_in_force = self._determine_time_in_force(order)
+        position_side = self._translate_position_side(order.position_side)
         await self._http_account.new_order(
             symbol=order.instrument_id.symbol.value,
             side=self._enum_parser.parse_internal_order_side(order.side),
@@ -758,6 +804,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             reduce_only=self._determine_reduce_only_str(order),
             new_client_order_id=order.client_order_id.value,
             recv_window=str(self._recv_window),
+            position_side=position_side,
         )
 
     async def _submit_trailing_stop_market_order(self, order: TrailingStopMarketOrder) -> None:
@@ -811,6 +858,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 )
 
         time_in_force = self._determine_time_in_force(order)
+        position_side = self._translate_position_side(order.position_side)
         await self._http_account.new_order(
             symbol=order.instrument_id.symbol.value,
             side=self._enum_parser.parse_internal_order_side(order.side),
@@ -824,6 +872,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             reduce_only=self._determine_reduce_only_str(order),
             new_client_order_id=order.client_order_id.value,
             recv_window=str(self._recv_window),
+            position_side=position_side,
         )
 
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
