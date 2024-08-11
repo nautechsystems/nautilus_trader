@@ -443,7 +443,7 @@ class LiveExecutionEngine(ExecutionEngine):
         else:
             self._log.warning(f"Reconciliation for {value} failed")
 
-    async def reconcile_state(self, timeout_secs: float = 10.0) -> bool:  # (too complex)
+    async def reconcile_state(self, timeout_secs: float = 10.0) -> bool:
         """
         Reconcile the internal execution state with all execution clients (external
         state).
