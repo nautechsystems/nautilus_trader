@@ -128,6 +128,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self.reconciliation_lookback_mins: int = config.reconciliation_lookback_mins or 0
         self.filter_unclaimed_external_orders: bool = config.filter_unclaimed_external_orders
         self.filter_position_reports: bool = config.filter_position_reports
+        self.generate_missing_orders: bool = config.generate_missing_orders
         self.inflight_check_interval_ms: int = config.inflight_check_interval_ms
         self.inflight_check_threshold_ms: int = config.inflight_check_threshold_ms
         self._inflight_check_threshold_ns: int = millis_to_nanos(self.inflight_check_threshold_ms)
@@ -494,7 +495,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
             if self.filter_position_reports:
                 self._log.warning(
-                    f"Filtering position reports enabled. Skipping further reconciliation for {client_id}",
+                    "`filter_position_reports` enabled, skipping further reconciliation",
                 )
                 continue
 
@@ -848,6 +849,13 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.info(f"{position_signed_decimal_qty=}", LogColor.BLUE)
 
         if position_signed_decimal_qty != report.signed_decimal_qty:
+            if not self.generate_missing_orders:
+                self._log.warning(
+                    f"Discrepancy for {report.instrument_id} position "
+                    "when `generate_missing_orders` disabled, skipping further reconciliation",
+                )
+                return False
+
             diff = abs(position_signed_decimal_qty - report.signed_decimal_qty)
             diff_quantity = Quantity(diff, instrument.size_precision)
             self._log.info(f"{diff_quantity=}", LogColor.BLUE)
