@@ -149,7 +149,7 @@ impl<T: Clone + 'static> MessageHandler for MessageSavingHandler<T> {
         let mut messages = self.messages.borrow_mut();
         match message.downcast_ref::<T>() {
             Some(m) => messages.push(m.clone()),
-            None => panic!("MessageSavingHandler: message type mismatch"),
+            None => panic!("MessageSavingHandler: message type mismatch {message:?}"),
         }
     }
 

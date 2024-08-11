@@ -187,6 +187,12 @@ impl MessageBus {
         }
     }
 
+    /// Returns the message bus instances memory address.
+    #[must_use]
+    pub fn memory_address(&self) -> String {
+        format!("{:?}", std::ptr::from_ref(self))
+    }
+
     /// Returns the registered endpoint addresses.
     #[must_use]
     pub fn endpoints(&self) -> Vec<&str> {
@@ -368,8 +374,8 @@ impl MessageBus {
     /// Publish a message to a topic.
     pub fn publish(&self, topic: &Ustr, message: &dyn Any) {
         log::trace!(
-            "Publishing topic '{topic}' {message:?} {:?}",
-            self as *const _
+            "Publishing topic '{topic}' {message:?} {}",
+            self.memory_address()
         );
         let matching_subs = self.matching_subscriptions(topic);
 
@@ -379,10 +385,6 @@ impl MessageBus {
             log::trace!("Matched {sub:?}");
             sub.handler.0.handle(message);
         }
-    }
-
-    fn memory_address(&self) -> String {
-        format!("{:?}", self as *const _)
     }
 }
 

@@ -21,7 +21,8 @@ use nautilus_model::{
     identifiers::{ClientId, Venue},
 };
 
-// TOOD: redesign data messages for a tighter model
+// TODO: redesign data messages for a tighter model
+#[derive(Debug)]
 pub struct DataRequest {
     pub correlation_id: UUID4,
     pub client_id: ClientId,
@@ -32,6 +33,7 @@ pub struct DataRequest {
 
 pub type Payload = Arc<dyn Any + Send + Sync>;
 
+#[derive(Debug)]
 pub struct DataResponse {
     pub correlation_id: UUID4,
     pub client_id: ClientId,

@@ -290,6 +290,12 @@ impl Cache {
         }
     }
 
+    /// Returns the cache instances memory address.
+    #[must_use]
+    pub fn memory_address(&self) -> String {
+        format!("{:?}", std::ptr::from_ref(self))
+    }
+
     // -- COMMANDS --------------------------------------------------------------------------------
 
     /// Clears the current general cache and loads the general objects from the cache database.
