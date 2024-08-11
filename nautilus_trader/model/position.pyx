@@ -179,6 +179,10 @@ cdef class Position:
     cdef TradeId last_trade_id_c(self):
         return self._events[-1].trade_id
 
+    cdef bint has_trade_id_c(self, TradeId trade_id):
+        Condition.not_none(trade_id, "trade_id")
+        return trade_id in self._trade_ids
+
     cdef int event_count_c(self):
         return len(self._events)
 
