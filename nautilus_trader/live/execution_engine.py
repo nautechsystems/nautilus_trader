@@ -510,29 +510,28 @@ class LiveExecutionEngine(ExecutionEngine):
                     self._log.debug(f"Position {instrument_id} for {client_id} already reconciled")
                     continue  # Already reconciled
                 self._log.info(f"{position} pending reconciliation")
-                report_tasks.append(client.generate_position_report(instrument_id))
+                report_tasks.append(client.generate_position_status_reports(instrument_id))
 
             if not report_tasks:
-                self._log.warning(
-                    f"No specific position reports received for {venue}, skipping further reconciliation",
-                )
-                results.append(False)
+                # No specific position reports to continue reconciliation
                 continue
 
             self._log.info(
                 f"Awaiting reconciliation for {len(report_tasks)} position reports for {client_id}",
             )
 
-            position_reports = await asyncio.gather(*report_tasks)
             position_results: list[bool] = []
-            for report in position_reports:
-                position_result = self._reconcile_position_report(report)
-                instrument_id = report.instrument_id
-                if position_result:
-                    self._log.info(f"Reconciliation for {instrument_id} succeeded", LogColor.GREEN)
-                else:
-                    self._log.warning(f"Reconciliation for {instrument_id} failed")
-                position_results.append(position_result)
+            for task_result in await asyncio.gather(*report_tasks):
+                for report in task_result:
+                    position_result = self._reconcile_position_report(report)
+                    if position_result:
+                        self._log.info(
+                            f"Reconciliation for {report.instrument_id} succeeded",
+                            LogColor.GREEN,
+                        )
+                    else:
+                        self._log.warning(f"Reconciliation for {report.instrument_id} failed")
+                    position_results.append(position_result)
 
             results.append(all(position_results))
 
