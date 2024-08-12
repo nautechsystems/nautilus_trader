@@ -12,6 +12,7 @@ Released on TBD (UTC).
 - Changed `VolumeWeightedAveragePrice` calculation formula to use each bars "typical" price (#1842), thanks @evgenii-prusov
 
 ### Fixes
+- Fixed `Position` exception type on duplicate fill (should be `KeyError` like `Order`)
 - Fixed Bybit position report parsing when position is flat (`BybitPositionSide` now correctly handles the empty string)
 
 ---
