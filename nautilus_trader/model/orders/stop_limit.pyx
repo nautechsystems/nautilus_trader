@@ -21,6 +21,7 @@ from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.core.uuid cimport UUID4
@@ -33,6 +34,8 @@ from nautilus_trader.model.functions cimport liquidity_side_to_str
 from nautilus_trader.model.functions cimport order_side_from_str
 from nautilus_trader.model.functions cimport order_side_to_str
 from nautilus_trader.model.functions cimport order_type_to_str
+from nautilus_trader.model.functions cimport position_side_from_str
+from nautilus_trader.model.functions cimport position_side_to_str
 from nautilus_trader.model.functions cimport time_in_force_from_str
 from nautilus_trader.model.functions cimport time_in_force_to_str
 from nautilus_trader.model.functions cimport trigger_type_from_str
@@ -91,6 +94,8 @@ cdef class StopLimitOrder(Order):
         The order time in force.
     expire_time_ns : uint64_t, default 0 (no expiry)
         UNIX timestamp (nanoseconds) when the order will expire.
+    posision_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
+        The position side.
     post_only : bool, default False
         If the ``LIMIT`` order will only provide liquidity (once triggered).
     reduce_only : bool, default False
@@ -155,6 +160,7 @@ cdef class StopLimitOrder(Order):
         uint64_t ts_init,
         TimeInForce time_in_force = TimeInForce.GTC,
         uint64_t expire_time_ns = 0,
+        PositionSide posision_side = PositionSide.NO_POSITION_SIDE,
         bint post_only = False,
         bint reduce_only = False,
         bint quote_quantity = False,
@@ -205,6 +211,7 @@ cdef class StopLimitOrder(Order):
             order_type=OrderType.STOP_LIMIT,
             quantity=quantity,
             time_in_force=time_in_force,
+            posision_side=posision_side,
             post_only=post_only,
             reduce_only=reduce_only,
             quote_quantity=quote_quantity,
@@ -283,11 +290,13 @@ cdef class StopLimitOrder(Order):
         """
         cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {format_iso8601(unix_nanos_to_dt(self.expire_time_ns))}"
         cdef str emulation_str = "" if self.emulation_trigger == TriggerType.NO_TRIGGER else f" EMULATED[{trigger_type_to_str(self.emulation_trigger)}]"
+        cdef str position_side_str = "" if self.position_side == PositionSide.NO_POSITION_SIDE else f" POSITION_SIDE[{position_side_to_str(self.position_side)}]"
         return (
             f"{order_side_to_str(self.side)} {self.quantity.to_formatted_str()} {self.instrument_id} "
             f"{order_type_to_str(self.order_type)} @ {self.trigger_price.to_formatted_str()}-STOP"
             f"[{trigger_type_to_str(self.trigger_type)}] {self.price.to_formatted_str()}-LIMIT "
             f"{time_in_force_to_str(self.time_in_force)}{expiration_str}"
+            f"{position_side_str}"
             f"{emulation_str}"
         )
 
@@ -307,6 +316,7 @@ cdef class StopLimitOrder(Order):
             ts_init=pyo3_order.ts_init,
             time_in_force=time_in_force_from_str(str(pyo3_order.time_in_force)),
             expire_time_ns=pyo3_order.expire_time if pyo3_order.expire_time is not None else 0,
+            posision_side=position_side_from_str(str(pyo3_order.position_side)),
             post_only=pyo3_order.is_post_only,
             reduce_only=pyo3_order.is_reduce_only,
             quote_quantity=pyo3_order.is_quote_quantity,
@@ -355,6 +365,7 @@ cdef class StopLimitOrder(Order):
             "init_id": str(self.init_id),
             "expire_time_ns": self.expire_time_ns if self.expire_time_ns > 0 else None,
             "time_in_force": time_in_force_to_str(self.time_in_force),
+            "position_side": position_side_to_str(self.position_side),
             "filled_qty": str(self.filled_qty),
             "liquidity_side": liquidity_side_to_str(self.liquidity_side),
             "avg_px": str(self.avg_px) if self.filled_qty.as_f64_c() > 0.0 else None,
@@ -416,6 +427,7 @@ cdef class StopLimitOrder(Order):
             trigger_type=trigger_type_from_str(init.options["trigger_type"]),
             time_in_force=init.time_in_force,
             expire_time_ns=init.options["expire_time_ns"],
+            posision_side=init.posision_side,
             init_id=init.id,
             ts_init=init.ts_init,
             post_only=init.post_only,

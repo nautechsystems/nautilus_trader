@@ -23,6 +23,7 @@ from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderType
+from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.core.uuid cimport UUID4
@@ -32,6 +33,7 @@ from nautilus_trader.model.functions cimport contingency_type_to_str
 from nautilus_trader.model.functions cimport liquidity_side_to_str
 from nautilus_trader.model.functions cimport order_side_to_str
 from nautilus_trader.model.functions cimport order_type_to_str
+from nautilus_trader.model.functions cimport position_side_to_str
 from nautilus_trader.model.functions cimport time_in_force_to_str
 from nautilus_trader.model.functions cimport trailing_offset_type_from_str
 from nautilus_trader.model.functions cimport trailing_offset_type_to_str
@@ -83,6 +85,8 @@ cdef class TrailingStopMarketOrder(Order):
         The order time in force.
     expire_time_ns : uint64_t, default 0 (no expiry)
         UNIX timestamp (nanoseconds) when the order will expire.
+    posision_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
+        The position side.
     reduce_only : bool, default False
         If the order carries the 'reduce-only' execution instruction.
     quote_quantity : bool, default False
@@ -140,6 +144,7 @@ cdef class TrailingStopMarketOrder(Order):
         uint64_t ts_init,
         TimeInForce time_in_force = TimeInForce.GTC,
         uint64_t expire_time_ns = 0,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         bint reduce_only = False,
         bint quote_quantity = False,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
@@ -185,6 +190,7 @@ cdef class TrailingStopMarketOrder(Order):
             order_type=OrderType.TRAILING_STOP_MARKET,
             quantity=quantity,
             time_in_force=time_in_force,
+            position_side=position_side,
             post_only=False,
             reduce_only=reduce_only,
             quote_quantity=quote_quantity,
@@ -258,12 +264,14 @@ cdef class TrailingStopMarketOrder(Order):
         """
         cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {format_iso8601(unix_nanos_to_dt(self.expire_time_ns))}"
         cdef str emulation_str = "" if self.emulation_trigger == TriggerType.NO_TRIGGER else f" EMULATED[{trigger_type_to_str(self.emulation_trigger)}]"
+        cdef str position_side_str = "" if self.position_side == PositionSide.NO_POSITION_SIDE else f" POSITION_SIDE[{position_side_to_str(self.position_side)}]"
         return (
             f"{order_side_to_str(self.side)} {self.quantity.to_formatted_str()} {self.instrument_id} "
             f"{order_type_to_str(self.order_type)}[{trigger_type_to_str(self.trigger_type)}] "
             f"{'@ ' + str(self.trigger_price.to_formatted_str()) + '-STOP ' if self.trigger_price else ''}"
             f"{self.trailing_offset}-TRAILING_OFFSET[{trailing_offset_type_to_str(self.trailing_offset_type)}] "
             f"{time_in_force_to_str(self.time_in_force)}{expiration_str}"
+            f"{position_side_str}"
             f"{emulation_str}"
         )
 
@@ -295,6 +303,7 @@ cdef class TrailingStopMarketOrder(Order):
             "trailing_offset_type": trailing_offset_type_to_str(self.trailing_offset_type),
             "expire_time_ns": self.expire_time_ns if self.expire_time_ns > 0 else None,
             "time_in_force": time_in_force_to_str(self.time_in_force),
+            "position_side": position_side_to_str(self.position_side),
             "filled_qty": str(self.filled_qty),
             "liquidity_side": liquidity_side_to_str(self.liquidity_side),
             "avg_px": str(self.avg_px) if self.filled_qty.as_f64_c() > 0.0 else None,
@@ -355,6 +364,7 @@ cdef class TrailingStopMarketOrder(Order):
             trailing_offset_type=trailing_offset_type_from_str(init.options["trailing_offset_type"]),
             time_in_force=init.time_in_force,
             expire_time_ns=init.options["expire_time_ns"],
+            position_side=init.position_side,
             init_id=init.id,
             ts_init=init.ts_init,
             reduce_only=init.reduce_only,
