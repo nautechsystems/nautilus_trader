@@ -2593,6 +2593,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-analysis"
+version = "0.29.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "criterion",
+ "indexmap 2.3.0",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-model",
+ "pyo3",
+ "rstest",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "nautilus-backtest"
 version = "0.29.0"
 dependencies = [

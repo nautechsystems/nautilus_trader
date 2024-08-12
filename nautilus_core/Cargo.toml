@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "adapters",
+    "analysis",
     "backtest",
     "common",
     "core",
