@@ -84,3 +84,4 @@ tests/unit_tests/persistence/catalog/
 # Exceptions
 !/nautilus_core/adapters/src/databento/test_data/*
 !tests/integration_tests/adapters/betfair/responses/*.log
+.aider*
