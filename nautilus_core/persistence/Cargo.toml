@@ -22,7 +22,7 @@ tokio = { workspace = true }
 thiserror = { workspace = true }
 binary-heap-plus = "0.5.0"
 compare = "0.1.0"
-datafusion = { version = "40.0.0", default-features = false, features = ["compression", "regex_expressions", "unicode_expressions", "pyarrow"] }
+datafusion = { version = "41.0.0", default-features = false, features = ["compression", "regex_expressions", "unicode_expressions", "pyarrow"] }
 dotenv = "0.15.0"
 
 [dev-dependencies]

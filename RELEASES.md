@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Improve `BinanceExecutionClient` position report requests (can now filter by instrument and includes reporting for flat positions)
 - Improve `BybitExecutionClient` position report requests (can now filter by instrument and includes reporting for flat positions)
 - Improve `LiveExecutionEngine` reconciliation robustness and recovery when internal positions do not match external positions
+- Upgraded `datafusion` crate to v41.0.0
 
 ### Breaking Changes
 - Changed `VolumeWeightedAveragePrice` calculation formula to use each bars "typical" price (#1842), thanks @evgenii-prusov
@@ -25,7 +26,7 @@ Released on 9th August 2024 (UTC).
 - Added `@customdata` decorator to reduce need for boiler plate implementing custom data types (#1828), thanks @faysou
 - Added timeout for HTTP client in Rust (#1835), thanks @davidsblom
 - Added catalog conversion function of streamed data to backtest data (#1834), thanks @faysou
-- Upgraded Cython to 3.0.11
+- Upgraded Cython to v3.0.11
 
 ### Breaking Changes
 None
@@ -57,8 +58,8 @@ Released on 2nd August 2024 (UTC).
 - Refactored order submission error handling for Interactive Brokers (#1783), thanks @rsmb7z
 - Improved live reconciliation robustness (will now generate inferred orders necessary to align external position state)
 - Improved tests for Interactive Brokers (#1776), thanks @mylesgamez
-- Upgraded `tokio` crate to 1.39.2
-- Upgraded `datafusion` crate to 40.0.0
+- Upgraded `tokio` crate to v1.39.2
+- Upgraded `datafusion` crate to v40.0.0
 
 ### Breaking Changes
 - Removed `VenueStatus` and all associated methods and schemas (redundant with `InstrumentStatus`)
@@ -308,7 +309,7 @@ Released on 22nd March 2024 (UTC).
 - Ported `VIDYA` indicator to Rust, thanks @Pushkarm029
 - Refactored `InteractiveBrokersEWrapper`, thanks @rsmb7z
 - Redact Redis passwords in strings and logs
-- Upgraded `redis` crate to 0.25.2 which bumps up TLS dependencies, and turned on `tls-rustls-webpki-roots` feature flag
+- Upgraded `redis` crate to v0.25.2 which bumps up TLS dependencies, and turned on `tls-rustls-webpki-roots` feature flag
 
 ### Breaking Changes
 None
@@ -784,7 +785,7 @@ Released on 31st July 2023 (UTC).
 - Added `USDP` (Pax Dollar) and `TUSD` (TrueUSD) stablecoins
 - Improved `OrderMatchingEngine` handling when no fills (an error is now logged)
 - Improved `Binance` live clients logging
-- Upgraded Cython to 3.0.0 stable
+- Upgraded Cython to v3.0.0 stable
 
 ### Breaking Changes
 - Moved `filter_unclaimed_external_orders` from `ExecEngineConfig` to `LiveExecEngineConfig`
