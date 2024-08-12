@@ -216,8 +216,8 @@ cdef class OrderFactory:
         InstrumentId instrument_id,
         OrderSide order_side,
         Quantity quantity,
-        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         TimeInForce time_in_force = TimeInForce.GTC,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         bint reduce_only = False,
         bint quote_quantity = False,
         ExecAlgorithmId exec_algorithm_id = None,
@@ -235,10 +235,10 @@ cdef class OrderFactory:
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
-        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
-            The orders position side. Must be sent in hedge mode.
         time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}, default ``GTC``
             The orders time in force. Often not applicable for market orders.
+        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
+            The orders position side. Must be sent in hedge mode.
         reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
         quote_quantity : bool
@@ -270,8 +270,8 @@ cdef class OrderFactory:
             client_order_id=client_order_id,
             order_side=order_side,
             quantity=quantity,
-            position_side = position_side,
             time_in_force=time_in_force,
+            position_side = position_side,
             reduce_only=reduce_only,
             quote_quantity=quote_quantity,
             init_id=UUID4(),
@@ -292,9 +292,9 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         Price price,
-        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         bint post_only = False,
         bint reduce_only = False,
         bint quote_quantity = False,
@@ -318,11 +318,11 @@ cdef class OrderFactory:
             The orders quantity (> 0).
         price : Price
             The orders price.
-        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
-            The orders position side. Must be sent in hedge mode.
         time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}, default ``GTC``
             The orders time in force.
         expire_time : datetime, optional
+        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
+            The orders position side. Must be sent in hedge mode.
             The order expiration (for ``GTD`` orders).
         post_only : bool, default False
             If the order will only provide liquidity (make a market).
@@ -368,9 +368,9 @@ cdef class OrderFactory:
             price=price,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            position_side=position_side,
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
+            position_side=position_side,
             post_only=post_only,
             reduce_only=reduce_only,
             quote_quantity=quote_quantity,
@@ -394,9 +394,9 @@ cdef class OrderFactory:
         Quantity quantity,
         Price trigger_price,
         TriggerType trigger_type = TriggerType.DEFAULT,
-        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         bint reduce_only = False,
         bint quote_quantity = False,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
@@ -420,12 +420,12 @@ cdef class OrderFactory:
             The orders trigger price (STOP).
         trigger_type : TriggerType, default ``DEFAULT``
             The order trigger type.
-        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
-            The orders position side. Must be sent in hedge mode.
         time_in_force : TimeInForce  {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
             The orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
+        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
+            The orders position side. Must be sent in hedge mode.
         reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
         quote_quantity : bool
@@ -469,9 +469,9 @@ cdef class OrderFactory:
             trigger_type=trigger_type,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            position_side = position_side,
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
+            position_side = position_side,
             reduce_only=reduce_only,
             quote_quantity=quote_quantity,
             emulation_trigger=emulation_trigger,
@@ -494,9 +494,9 @@ cdef class OrderFactory:
         Price price,
         Price trigger_price,
         TriggerType trigger_type = TriggerType.DEFAULT,
-        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         bint post_only = False,
         bint reduce_only = False,
         bint quote_quantity = False,
@@ -524,12 +524,12 @@ cdef class OrderFactory:
             The orders trigger stop price.
         trigger_type : TriggerType, default ``DEFAULT``
             The order trigger type.
-        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
-            The orders position side. Must be sent in hedge mode.
         time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
             The orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
+        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
+            The orders position side. Must be sent in hedge mode.
         post_only : bool, default False
             If the order will only provide liquidity (make a market).
         reduce_only : bool, default False
@@ -580,9 +580,9 @@ cdef class OrderFactory:
             trigger_type=trigger_type,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            position_side = position_side,
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
+            position_side = position_side,
             post_only=post_only,
             reduce_only=reduce_only,
             quote_quantity=quote_quantity,
@@ -604,9 +604,9 @@ cdef class OrderFactory:
         InstrumentId instrument_id,
         OrderSide order_side,
         Quantity quantity,
-        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         bint reduce_only = False,
         bint quote_quantity = False,
         Quantity display_qty = None,
@@ -625,12 +625,12 @@ cdef class OrderFactory:
             The orders side.
         quantity : Quantity
             The orders quantity (> 0).
-        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
-            The orders position side. Must be sent in hedge mode.
         time_in_force : TimeInForce {``GTC``, ``GTD``, ``IOC``, ``FOK``}, default ``GTC``
             The orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
+        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
+            The orders position side. Must be sent in hedge mode.
         reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
         quote_quantity : bool
@@ -668,9 +668,9 @@ cdef class OrderFactory:
             display_qty=display_qty,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            position_side = position_side,
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
+            position_side = position_side,
             contingency_type=ContingencyType.NO_CONTINGENCY,
             order_list_id=None,
             linked_order_ids=None,
@@ -688,9 +688,9 @@ cdef class OrderFactory:
         Quantity quantity,
         Price trigger_price,
         TriggerType trigger_type = TriggerType.DEFAULT,
-        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         bint reduce_only = False,
         bint quote_quantity = False,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
@@ -714,12 +714,12 @@ cdef class OrderFactory:
             The orders trigger price (STOP).
         trigger_type : TriggerType, default ``DEFAULT``
             The order trigger type.
-        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
-            The orders position side. Must be sent in hedge mode.
         time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
             The orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
+        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
+            The orders position side. Must be sent in hedge mode.
         reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
         quote_quantity : bool
@@ -763,9 +763,9 @@ cdef class OrderFactory:
             trigger_type=trigger_type,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            position_side = position_side,
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
+            position_side = position_side,
             reduce_only=reduce_only,
             quote_quantity=quote_quantity,
             emulation_trigger=emulation_trigger,
@@ -788,9 +788,9 @@ cdef class OrderFactory:
         Price price,
         Price trigger_price,
         TriggerType trigger_type = TriggerType.DEFAULT,
-        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         bint post_only = False,
         bint reduce_only = False,
         bint quote_quantity = False,
@@ -818,12 +818,12 @@ cdef class OrderFactory:
             The orders trigger stop price.
         trigger_type : TriggerType, default ``DEFAULT``
             The order trigger type.
-        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
-            The orders position side. Must be sent in hedge mode.
         time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
             The orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
+        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
+            The orders position side. Must be sent in hedge mode.
         post_only : bool, default False
             If the order will only provide liquidity (make a market).
         reduce_only : bool, default False
@@ -874,9 +874,9 @@ cdef class OrderFactory:
             trigger_type=trigger_type,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            position_side = PositionSide.NO_POSITION_SIDE,
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
+            position_side = PositionSide.NO_POSITION_SIDE,
             post_only=post_only,
             reduce_only=reduce_only,
             quote_quantity=quote_quantity,
@@ -902,9 +902,9 @@ cdef class OrderFactory:
         Price trigger_price = None,
         TriggerType trigger_type = TriggerType.DEFAULT,
         TrailingOffsetType trailing_offset_type = TrailingOffsetType.PRICE,
-        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         bint reduce_only = False,
         bint quote_quantity = False,
         TriggerType emulation_trigger = TriggerType.NO_TRIGGER,
@@ -933,12 +933,12 @@ cdef class OrderFactory:
             The order trigger type.
         trailing_offset_type : TrailingOffsetType, default ``PRICE``
             The order trailing offset type.
-        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
-            The orders position side. Must be sent in hedge mode.
         time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
             The orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
+        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
+            The orders position side. Must be sent in hedge mode.
         reduce_only : bool, default False
             If the order carries the 'reduce-only' execution instruction.
         quote_quantity : bool
@@ -984,9 +984,9 @@ cdef class OrderFactory:
             trailing_offset_type=trailing_offset_type,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            position_side = position_side,
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
+            position_side = position_side,
             reduce_only=reduce_only,
             quote_quantity=quote_quantity,
             emulation_trigger=emulation_trigger,
@@ -1012,9 +1012,9 @@ cdef class OrderFactory:
         Price trigger_price = None,
         TriggerType trigger_type = TriggerType.DEFAULT,
         TrailingOffsetType trailing_offset_type = TrailingOffsetType.PRICE,
-        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         bint post_only = False,
         bint reduce_only = False,
         bint quote_quantity = False,
@@ -1050,12 +1050,12 @@ cdef class OrderFactory:
             The order trigger type.
         trailing_offset_type : TrailingOffsetType, default ``PRICE``
             The order trailing offset type.
-        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
-            The orders position side. Must be sent in hedge mode.
         time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``}, default ``GTC``
             The orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
+        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
+            The orders position side. Must be sent in hedge mode.
         post_only : bool, default False
             If the order will only provide liquidity (make a market).
         reduce_only : bool, default False
@@ -1111,9 +1111,9 @@ cdef class OrderFactory:
             trailing_offset_type=trailing_offset_type,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            position_side = PositionSide.NO_POSITION_SIDE,
             time_in_force=time_in_force,
             expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
+            position_side = PositionSide.NO_POSITION_SIDE,
             post_only=post_only,
             reduce_only=reduce_only,
             quote_quantity=quote_quantity,
@@ -1142,9 +1142,9 @@ cdef class OrderFactory:
         Price tp_price = None,
         OrderType entry_order_type = OrderType.MARKET,
         OrderType tp_order_type = OrderType.LIMIT,
-        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         TimeInForce time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         bint entry_post_only = False,
         bint tp_post_only = True,
         bint quote_quantity = False,
@@ -1190,12 +1190,12 @@ cdef class OrderFactory:
             The entry order type.
         tp_order_type : OrderType {``LIMIT``, ``LIMIT_IF_TOUCHED``, ``MARKET_IF_TOUCHED``}, default ``LIMIT``
             The take-profit order type.
-        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
-            The orders position side. Must be sent in hedge mode.
         time_in_force : TimeInForce {``DAY``, ``GTC``}, optional
             The entry orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
+        position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
+            The orders position side. Must be sent in hedge mode.
         entry_post_only : bool, default False
             If the entry order will only provide liquidity (make a market).
         tp_post_only : bool, default False
@@ -1254,8 +1254,8 @@ cdef class OrderFactory:
                 quantity=quantity,
                 init_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
-                position_side = position_side,
                 time_in_force=TimeInForce.GTC,
+                position_side = position_side,
                 quote_quantity=quote_quantity,
                 contingency_type=ContingencyType.OTO,
                 order_list_id=order_list_id,
@@ -1277,9 +1277,9 @@ cdef class OrderFactory:
                 price=entry_price,
                 init_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
-                position_side = position_side,
                 time_in_force=time_in_force,
                 expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
+                position_side = position_side,
                 post_only=entry_post_only,
                 quote_quantity=quote_quantity,
                 emulation_trigger=emulation_trigger,
@@ -1305,9 +1305,9 @@ cdef class OrderFactory:
                 trigger_type=TriggerType.DEFAULT,
                 init_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
-                position_side = position_side,
                 time_in_force=time_in_force,
                 expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
+                position_side = position_side,
                 quote_quantity=quote_quantity,
                 emulation_trigger=emulation_trigger,
                 trigger_instrument_id=trigger_instrument_id,
@@ -1333,9 +1333,9 @@ cdef class OrderFactory:
                 trigger_type=TriggerType.DEFAULT,
                 init_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
-                position_side = position_side,
                 time_in_force=time_in_force,
                 expire_time_ns=0 if expire_time is None else dt_to_unix_nanos(expire_time),
+                position_side = position_side,
                 post_only=entry_post_only,
                 quote_quantity=quote_quantity,
                 emulation_trigger=emulation_trigger,
@@ -1366,8 +1366,8 @@ cdef class OrderFactory:
                 price=tp_price,
                 init_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
-                position_side = position_side,
                 time_in_force=TimeInForce.GTC,
+                position_side = position_side,
                 post_only=tp_post_only,
                 reduce_only=True,
                 quote_quantity=quote_quantity,
@@ -1396,8 +1396,8 @@ cdef class OrderFactory:
                 trigger_type=TriggerType.DEFAULT,
                 init_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
-                position_side = position_side,
                 time_in_force=TimeInForce.GTC,
+                position_side = position_side,
                 post_only=tp_post_only,
                 reduce_only=True,
                 quote_quantity=quote_quantity,
@@ -1425,8 +1425,8 @@ cdef class OrderFactory:
                 trigger_type=TriggerType.DEFAULT,
                 init_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
-                position_side = position_side,
                 time_in_force=TimeInForce.GTC,
+                position_side = position_side,
                 reduce_only=True,
                 quote_quantity=quote_quantity,
                 emulation_trigger=emulation_trigger,
@@ -1457,8 +1457,8 @@ cdef class OrderFactory:
             trigger_type=TriggerType.DEFAULT,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            position_side = position_side,
             time_in_force=TimeInForce.GTC,
+            position_side = position_side,
             reduce_only=True,
             quote_quantity=quote_quantity,
             emulation_trigger=emulation_trigger,

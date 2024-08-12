@@ -84,10 +84,10 @@ cdef class Order:
     """The order side.\n\n:returns: `OrderSide`"""
     cdef readonly OrderType order_type
     """The order type.\n\n:returns: `OrderType`"""
-    cdef readonly PositionSide position_side
-    """The order position side.\n\n:returns: `PositionSide`"""
     cdef readonly TimeInForce time_in_force
     """The order time in force.\n\n:returns: `TimeInForce`"""
+    cdef readonly PositionSide position_side
+    """The order position side.\n\n:returns: `PositionSide`"""
     cdef readonly LiquiditySide liquidity_side
     """The order liquidity side.\n\n:returns: `LiquiditySide`"""
     cdef readonly bint is_post_only

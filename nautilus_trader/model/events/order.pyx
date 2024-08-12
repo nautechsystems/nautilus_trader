@@ -222,10 +222,10 @@ cdef class OrderInitialized(OrderEvent):
         The order type.
     quantity : Quantity
         The order quantity.
-    position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}
-        The order position side.
     time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}
         The order time in force.
+    position_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}
+        The order position side.
     post_only : bool
         If the order will only provide liquidity (make a market).
     reduce_only : bool
@@ -279,8 +279,8 @@ cdef class OrderInitialized(OrderEvent):
         OrderSide order_side,
         OrderType order_type,
         Quantity quantity not None,
-        PositionSide position_side,
         TimeInForce time_in_force,
+        PositionSide position_side,
         bint post_only,
         bint reduce_only,
         bint quote_quantity,
@@ -315,8 +315,8 @@ cdef class OrderInitialized(OrderEvent):
         self.side = order_side
         self.order_type = order_type
         self.quantity = quantity
-        self.position_side = position_side
         self.time_in_force = time_in_force
+        self.position_side = position_side
         self.post_only = post_only
         self.reduce_only = reduce_only
         self.quote_quantity = quote_quantity
@@ -350,8 +350,8 @@ cdef class OrderInitialized(OrderEvent):
             f"side={order_side_to_str(self.side)}, "
             f"type={order_type_to_str(self.order_type)}, "
             f"quantity={self.quantity.to_formatted_str()}, "
-            f"position_side={position_side_to_str(self.position_side)}, "
             f"time_in_force={time_in_force_to_str(self.time_in_force)}, "
+            f"position_side={position_side_to_str(self.position_side)}, "
             f"post_only={self.post_only}, "
             f"reduce_only={self.reduce_only}, "
             f"quote_quantity={self.quote_quantity}, "
@@ -542,8 +542,8 @@ cdef class OrderInitialized(OrderEvent):
             order_side=order_side_from_str(values["order_side"]),
             order_type=order_type_from_str(values["order_type"]),
             quantity=Quantity.from_str_c(values["quantity"]),
-            position_side=position_side_from_str(values["position_side"]) if values["position_side"] is not None else PositionSide.NO_POSITION_SIDE,
             time_in_force=time_in_force_from_str(values["time_in_force"]),
+            position_side=position_side_from_str(values["position_side"]) if values["position_side"] is not None else PositionSide.NO_POSITION_SIDE,
             post_only=values["post_only"],
             reduce_only=values["reduce_only"],
             quote_quantity=values["quote_quantity"],
@@ -576,8 +576,8 @@ cdef class OrderInitialized(OrderEvent):
             "order_side": order_side_to_str(obj.side),
             "order_type": order_type_to_str(obj.order_type),
             "quantity": str(obj.quantity),
-            "position_side": position_side_to_str(obj.position_side),
             "time_in_force": time_in_force_to_str(obj.time_in_force),
+            "position_side": position_side_to_str(obj.position_side) if obj.position_side is not None else None,
             "post_only": obj.post_only,
             "reduce_only": obj.reduce_only,
             "quote_quantity": obj.quote_quantity,

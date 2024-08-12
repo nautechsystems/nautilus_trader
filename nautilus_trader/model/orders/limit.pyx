@@ -81,12 +81,12 @@ cdef class LimitOrder(Order):
         The order initialization event ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
-    posision_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
-        The position side.
     time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}, default ``GTC``
         The order time in force.
     expire_time_ns : uint64_t, default 0 (no expiry)
         UNIX timestamp (nanoseconds) when the order will expire.
+    posision_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
+        The position side.
     post_only : bool, default False
         If the order will only provide liquidity (make a market).
     reduce_only : bool, default False
@@ -143,9 +143,9 @@ cdef class LimitOrder(Order):
         Price price not None,
         UUID4 init_id not None,
         uint64_t ts_init,
-        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         TimeInForce time_in_force = TimeInForce.GTC,
         uint64_t expire_time_ns = 0,
+        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         bint post_only = False,
         bint reduce_only = False,
         bint quote_quantity = False,
@@ -189,8 +189,8 @@ cdef class LimitOrder(Order):
             order_side=order_side,
             order_type=OrderType.LIMIT,
             quantity=quantity,
-            position_side=position_side,
             time_in_force=time_in_force,
+            position_side=position_side,
             post_only=post_only,
             reduce_only=reduce_only,
             quote_quantity=quote_quantity,
@@ -281,9 +281,9 @@ cdef class LimitOrder(Order):
             price=Price.from_raw_c(pyo3_order.price.raw, pyo3_order.price.precision),
             init_id=UUID4(str(pyo3_order.init_id)),
             ts_init=pyo3_order.ts_init,
-            position_side=position_side_from_str(str(pyo3_order.position_side)),
             time_in_force=time_in_force_from_str(str(pyo3_order.time_in_force)),
             expire_time_ns=int(pyo3_order.expire_time_ns) if pyo3_order.expire_time_ns is not None else 0,
+            position_side=position_side_from_str(str(pyo3_order.position_side)),
             post_only=pyo3_order.is_post_only,
             reduce_only=pyo3_order.is_reduce_only,
             quote_quantity=pyo3_order.is_quote_quantity,
@@ -327,9 +327,9 @@ cdef class LimitOrder(Order):
             "side": order_side_to_str(self.side),
             "quantity": str(self.quantity),
             "price": str(self.price),
-            "position_side": position_side_to_str(self.position_side),
             "time_in_force": time_in_force_to_str(self.time_in_force),
             "expire_time_ns": self.expire_time_ns if self.expire_time_ns > 0 else None,
+            "position_side": position_side_to_str(self.position_side),
             "filled_qty": str(self.filled_qty),
             "liquidity_side": liquidity_side_to_str(self.liquidity_side),
             "avg_px": str(self.avg_px) if self.filled_qty.as_f64_c() > 0.0 else None,
@@ -390,9 +390,9 @@ cdef class LimitOrder(Order):
             price=Price.from_str_c(init.options["price"]),
             init_id=init.id,
             ts_init=init.ts_init,
-            position_side=init.position_side,
             time_in_force=init.time_in_force,
             expire_time_ns=init.options["expire_time_ns"],
+            position_side=init.position_side,
             post_only=init.post_only,
             reduce_only=init.reduce_only,
             quote_quantity=init.quote_quantity,
@@ -451,9 +451,9 @@ cdef class LimitOrder(Order):
             order_side=order.side,
             quantity=order.quantity,
             price=price or order.price,
-            position_side=order.position_side,
             time_in_force=order.time_in_force,
             expire_time_ns=order.expire_time_ns if hasattr(order, "expire_time_ns") else 0,
+            position_side=order.position_side,
             init_id=UUID4(),
             ts_init=ts_init,
             post_only=order.is_post_only if hasattr(order, "is_post_only") else False,

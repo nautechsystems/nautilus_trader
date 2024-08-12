@@ -135,13 +135,13 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
             The market side of the order (BUY, SELL)
         type : BinanceOrderType
             The type of the order (LIMIT, STOP_LOSS..)
+        timeInForce : BinanceTimeInForce, optional
+            Mandatory for LIMIT, STOP_LOSS_LIMIT, TAKE_PROFIT_LIMIT orders.
+            The time in force of the order (GTC, IOC..)
         positionSide : BinanceFuturesPositionSide, optional
             Only for FUTURES orders.
             Must be sent in Hedge Mode.
             The position side of the order (LONG, SHORT)
-        timeInForce : BinanceTimeInForce, optional
-            Mandatory for LIMIT, STOP_LOSS_LIMIT, TAKE_PROFIT_LIMIT orders.
-            The time in force of the order (GTC, IOC..)
         quantity : str, optional
             Mandatory for all order types, except STOP_MARKET/TAKE_PROFIT_MARKET
             and TRAILING_STOP_MARKET orders
@@ -219,8 +219,8 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         timestamp: str
         side: BinanceOrderSide
         type: BinanceOrderType
-        positionSide: BinanceFuturesPositionSide | None = None
         timeInForce: BinanceTimeInForce | None = None
+        positionSide: BinanceFuturesPositionSide | None = None
         quantity: str | None = None
         quoteOrderQty: str | None = None
         price: str | None = None
@@ -620,8 +620,8 @@ class BinanceAccountHttpAPI:
         symbol: str,
         side: BinanceOrderSide,
         order_type: BinanceOrderType,
-        position_side: BinanceFuturesPositionSide | None = None,
         time_in_force: BinanceTimeInForce | None = None,
+        position_side: BinanceFuturesPositionSide | None = None,
         quantity: str | None = None,
         quote_order_qty: str | None = None,
         price: str | None = None,
@@ -650,8 +650,8 @@ class BinanceAccountHttpAPI:
                 timestamp=self._timestamp(),
                 side=side,
                 type=order_type,
-                positionSide=position_side,
                 timeInForce=time_in_force,
+                positionSide=position_side,
                 quantity=quantity,
                 quoteOrderQty=quote_order_qty,
                 price=price,

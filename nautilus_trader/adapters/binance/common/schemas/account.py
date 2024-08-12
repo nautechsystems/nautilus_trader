@@ -229,12 +229,12 @@ class BinanceOrder(msgspec.Struct, frozen=True):
             order_side=enum_parser.parse_binance_order_side(self.side),
             order_type=enum_parser.parse_binance_order_type(self.type),
             contingency_type=contingency_type,
-            position_side=self.positionSide,
             time_in_force=(
                 enum_parser.parse_binance_time_in_force(self.timeInForce)
                 if self.timeInForce
                 else None
             ),
+            position_side=self.positionSide,
             order_status=order_status,
             price=Price.from_str(self.price),
             trigger_price=Price.from_str(str(trigger_price)),  # `decimal.Decimal`

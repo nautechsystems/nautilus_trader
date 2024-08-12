@@ -66,10 +66,10 @@ cdef class OrderInitialized(OrderEvent):
     """The order type.\n\n:returns: `OrderType`"""
     cdef readonly Quantity quantity
     """The order quantity.\n\n:returns: `Quantity`"""
-    cdef readonly PositionSide position_side
-    """The order position side.\n\n:returns: `PositionSide`"""
     cdef readonly TimeInForce time_in_force
     """The order time in force.\n\n:returns: `TimeInForce`"""
+    cdef readonly PositionSide position_side
+    """The order position side.\n\n:returns: `PositionSide`"""
     cdef readonly bint post_only
     """If the order will only provide liquidity (make a market).\n\n:returns: `bool`"""
     cdef readonly bint reduce_only
