@@ -448,7 +448,21 @@ impl OrderMatchingEngine {
     }
 
     fn process_market_order(&mut self, order: &OrderAny) {
-        todo!("process_market_order")
+        // Check if market exists
+        let order_side = order.order_side();
+        let is_ask_initialized = self.core.is_ask_initialized;
+        let is_bid_initialized = self.core.is_bid_initialized;
+        if (order.order_side() == OrderSide::Buy && !self.core.is_ask_initialized)
+            || (order.order_side() == OrderSide::Sell && !self.core.is_bid_initialized)
+        {
+            self.generate_order_rejected(
+                order,
+                format!("No market for {}", order.instrument_id()).into(),
+            );
+            return;
+        }
+
+        self.fill_market_order(order);
     }
 
     fn process_limit_order(&mut self, order: &OrderAny) {
@@ -538,8 +552,43 @@ impl OrderMatchingEngine {
         self.target_last = None;
     }
 
-    fn expire_order(&mut self, order: &PassiveOrderAny) {
-        todo!();
+    fn determine_limit_price_and_volume(&self, order: &OrderAny) {
+        todo!("determine_limit_price_and_volume")
+    }
+
+    fn determine_market_price_and_volume(&self, order: &OrderAny) {
+        todo!("determine_market_price_and_volume")
+    }
+
+    fn fill_market_order(&mut self, order: &OrderAny) {
+        todo!("fill_market_order")
+    }
+
+    fn fill_limit_order(&mut self, order: &OrderAny) {
+        todo!("fill_limit_order")
+    }
+
+    fn apply_fills(
+        &mut self,
+        order: &OrderAny,
+        fills: Vec<(Price, Quantity)>,
+        liquidity_side: LiquiditySide,
+        venue_position_id: Option<PositionId>,
+        position: Option<Position>,
+    ) {
+        todo!("apply_fills")
+    }
+
+    fn fill_order(
+        &mut self,
+        order: &OrderAny,
+        price: Price,
+        quantity: Quantity,
+        liquidity_side: LiquiditySide,
+        venue_position_id: Option<PositionId>,
+        position: Option<Position>,
+    ) {
+        todo!("fill_order")
     }
 
     fn update_trailing_stop_market(&mut self, order: &TrailingStopMarketOrder) {
@@ -560,6 +609,36 @@ impl OrderMatchingEngine {
             format!("{}-{}-{}", self.venue, self.raw_id, self.execution_count)
         };
         TradeId::from(trade_id.as_str())
+    }
+
+    // -- EVENT HANDLING -----------------------------------------------------
+
+    fn accept_order(&mut self, order: &OrderAny) {
+        todo!("accept_order")
+    }
+
+    fn expire_order(&mut self, order: &PassiveOrderAny) {
+        todo!("expire_order")
+    }
+
+    fn cancel_order(&mut self, order: &OrderAny) {
+        todo!("cancel_order")
+    }
+
+    fn update_order(&mut self, order: &OrderAny) {
+        todo!("update_order")
+    }
+
+    fn trigger_stop_order(&mut self, order: &OrderAny) {
+        todo!("trigger_stop_order")
+    }
+
+    fn update_contingent_order(&mut self, order: &OrderAny) {
+        todo!("update_contingent_order")
+    }
+
+    fn cancel_contingent_orders(&mut self, order: &OrderAny) {
+        todo!("cancel_contingent_orders")
     }
 
     // -- EVENT GENERATORS -----------------------------------------------------
@@ -1427,6 +1506,57 @@ mod tests {
             Ustr::from(
                 format!("Contingent order {stop_loss_client_order_id} already closed").as_str()
             )
+        );
+    }
+
+    #[rstest]
+    fn test_process_market_order_no_market_rejected(
+        mut msgbus: MessageBus,
+        order_event_handler: ShareableMessageHandler,
+        account_id: AccountId,
+        time: AtomicTime,
+        instrument_es: InstrumentAny,
+    ) {
+        // Register saving message handler to exec engine endpoint
+        msgbus.register(
+            msgbus.switchboard.exec_engine_process,
+            order_event_handler.clone(),
+        );
+
+        // Create engine and process order
+        let mut engine =
+            get_order_matching_engine(instrument_es.clone(), Rc::new(msgbus), None, None, None);
+        let market_order_buy = TestOrderStubs::market_order(
+            instrument_es.id(),
+            OrderSide::Buy,
+            Quantity::from("1"),
+            None,
+            None,
+        );
+        let market_order_sell = TestOrderStubs::market_order(
+            instrument_es.id(),
+            OrderSide::Sell,
+            Quantity::from("1"),
+            None,
+            None,
+        );
+        engine.process_order(&market_order_buy, account_id);
+        engine.process_order(&market_order_sell, account_id);
+
+        // Get messages and test
+        let saved_messages = get_order_event_handler_messages(order_event_handler);
+        assert_eq!(saved_messages.len(), 2);
+        let first = saved_messages.first().unwrap();
+        let second = saved_messages.get(1).unwrap();
+        assert_eq!(first.event_type(), OrderEventType::Rejected);
+        assert_eq!(second.event_type(), OrderEventType::Rejected);
+        assert_eq!(
+            first.message().unwrap(),
+            Ustr::from("No market for ESZ1.GLBX")
+        );
+        assert_eq!(
+            second.message().unwrap(),
+            Ustr::from("No market for ESZ1.GLBX")
         );
     }
 }
