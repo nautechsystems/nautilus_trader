@@ -636,7 +636,7 @@ cdef class Position:
                 and fill.last_px == p_fill.last_px
                 and fill.last_qty == p_fill.last_qty
             ):
-                raise ValueError(f"Duplicate {fill.trade_id!r} in events {fill} {p_fill}")
+                raise KeyError(f"Duplicate {fill.trade_id!r} in events {fill} {p_fill}")
 
     cdef void _handle_buy_order_fill(self, OrderFilled fill):
         # Initialize realized PnL for fill
