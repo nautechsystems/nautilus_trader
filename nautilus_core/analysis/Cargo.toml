@@ -1,5 +1,5 @@
 [package]
-name = "nautilus-persistence"
+name = "nautilus-analysis"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -7,42 +7,43 @@ description.workspace = true
 documentation.workspace = true
 
 [lib]
-name = "nautilus_persistence"
+name = "nautilus_analysis"
 crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]
+nautilus-common = { path = "../common" }
 nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model", features = ["stubs"] }
 anyhow = { workspace = true }
-futures = { workspace = true }
-log = { workspace = true }
+chrono = { workspace = true }
+indexmap = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-rand = { workspace = true }
-tokio = { workspace = true }
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 thiserror = { workspace = true }
-binary-heap-plus = "0.5.0"
-compare = "0.1.0"
-datafusion = { version = "41.0.0", default-features = false, features = ["compression", "regex_expressions", "unicode_expressions", "pyarrow"] }
-dotenv = "0.15.0"
 
 [dev-dependencies]
 criterion = { workspace = true }
 rstest = { workspace = true }
-quickcheck = "1"
-quickcheck_macros = "1"
-[target.'cfg(target_os = "linux")'.dependencies]
-procfs = "0.16.0"
 
 [features]
 default = ["ffi", "python"]
 extension-module = [
   "pyo3/extension-module",
+  "nautilus-common/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
 ]
-ffi = ["nautilus-core/ffi", "nautilus-model/ffi"]
-python = ["pyo3", "nautilus-core/python", "nautilus-model/python"]
-
-[[bench]]
-name = "bench_persistence"
-harness = false
+ffi = [
+  "nautilus-common/ffi",
+  "nautilus-core/ffi",
+  "nautilus-model/ffi",
+]
+python = [
+  "pyo3",
+  "nautilus-common/python",
+  "nautilus-core/python",
+  "nautilus-model/python",
+]

@@ -300,6 +300,29 @@ impl OrderMatchingEngine {
                         }
                     }
                 }
+
+                if let Some(linked_order_ids) = order.linked_order_ids() {
+                    for client_order_id in linked_order_ids {
+                        match cache_borrow.order(&client_order_id) {
+                            Some(contingent_order)
+                                if (order.contingency_type().unwrap() == ContingencyType::Oco
+                                    || order.contingency_type().unwrap()
+                                        == ContingencyType::Ouo)
+                                    && !order.is_closed()
+                                    && contingent_order.is_closed() =>
+                            {
+                                self.generate_order_rejected(
+                                    order,
+                                    format!("Contingent order {client_order_id} already closed")
+                                        .into(),
+                                );
+                                return;
+                            }
+                            None => panic!("Cannot find contingent order for {client_order_id}"),
+                            _ => {}
+                        }
+                    }
+                }
             }
 
             // Check fo valid order quantity precision
@@ -425,7 +448,21 @@ impl OrderMatchingEngine {
     }
 
     fn process_market_order(&mut self, order: &OrderAny) {
-        todo!("process_market_order")
+        // Check if market exists
+        let order_side = order.order_side();
+        let is_ask_initialized = self.core.is_ask_initialized;
+        let is_bid_initialized = self.core.is_bid_initialized;
+        if (order.order_side() == OrderSide::Buy && !self.core.is_ask_initialized)
+            || (order.order_side() == OrderSide::Sell && !self.core.is_bid_initialized)
+        {
+            self.generate_order_rejected(
+                order,
+                format!("No market for {}", order.instrument_id()).into(),
+            );
+            return;
+        }
+
+        self.fill_market_order(order);
     }
 
     fn process_limit_order(&mut self, order: &OrderAny) {
@@ -515,8 +552,43 @@ impl OrderMatchingEngine {
         self.target_last = None;
     }
 
-    fn expire_order(&mut self, order: &PassiveOrderAny) {
-        todo!();
+    fn determine_limit_price_and_volume(&self, order: &OrderAny) {
+        todo!("determine_limit_price_and_volume")
+    }
+
+    fn determine_market_price_and_volume(&self, order: &OrderAny) {
+        todo!("determine_market_price_and_volume")
+    }
+
+    fn fill_market_order(&mut self, order: &OrderAny) {
+        todo!("fill_market_order")
+    }
+
+    fn fill_limit_order(&mut self, order: &OrderAny) {
+        todo!("fill_limit_order")
+    }
+
+    fn apply_fills(
+        &mut self,
+        order: &OrderAny,
+        fills: Vec<(Price, Quantity)>,
+        liquidity_side: LiquiditySide,
+        venue_position_id: Option<PositionId>,
+        position: Option<Position>,
+    ) {
+        todo!("apply_fills")
+    }
+
+    fn fill_order(
+        &mut self,
+        order: &OrderAny,
+        price: Price,
+        quantity: Quantity,
+        liquidity_side: LiquiditySide,
+        venue_position_id: Option<PositionId>,
+        position: Option<Position>,
+    ) {
+        todo!("fill_order")
     }
 
     fn update_trailing_stop_market(&mut self, order: &TrailingStopMarketOrder) {
@@ -537,6 +609,36 @@ impl OrderMatchingEngine {
             format!("{}-{}-{}", self.venue, self.raw_id, self.execution_count)
         };
         TradeId::from(trade_id.as_str())
+    }
+
+    // -- EVENT HANDLING -----------------------------------------------------
+
+    fn accept_order(&mut self, order: &OrderAny) {
+        todo!("accept_order")
+    }
+
+    fn expire_order(&mut self, order: &PassiveOrderAny) {
+        todo!("expire_order")
+    }
+
+    fn cancel_order(&mut self, order: &OrderAny) {
+        todo!("cancel_order")
+    }
+
+    fn update_order(&mut self, order: &OrderAny) {
+        todo!("update_order")
+    }
+
+    fn trigger_stop_order(&mut self, order: &OrderAny) {
+        todo!("trigger_stop_order")
+    }
+
+    fn update_contingent_order(&mut self, order: &OrderAny) {
+        todo!("update_contingent_order")
+    }
+
+    fn cancel_contingent_orders(&mut self, order: &OrderAny) {
+        todo!("cancel_contingent_orders")
     }
 
     // -- EVENT GENERATORS -----------------------------------------------------
@@ -828,19 +930,17 @@ mod tests {
     };
     use nautilus_core::{nanos::UnixNanos, time::AtomicTime, uuid::UUID4};
     use nautilus_model::{
-        enums::{
-            AccountType, BookType, ContingencyType, OmsType, OrderSide, TimeInForce, TriggerType,
+        enums::{AccountType, BookType, ContingencyType, OmsType, OrderSide, TimeInForce},
+        events::order::{
+            rejected::OrderRejectedBuilder, OrderEventAny, OrderEventType, OrderRejected,
         },
-        events::order::{OrderEventAny, OrderEventType, OrderRejected},
         identifiers::{AccountId, ClientOrderId, StrategyId, TraderId},
         instruments::{
             any::InstrumentAny,
             equity::Equity,
             stubs::{futures_contract_es, *},
         },
-        orders::{
-            any::OrderAny, market::MarketOrder, stop_market::StopMarketOrder, stubs::TestOrderStubs,
-        },
+        orders::{any::OrderAny, market::MarketOrder, stubs::TestOrderStubs},
         types::{price::Price, quantity::Quantity},
     };
     use rstest::{fixture, rstest};
@@ -891,7 +991,19 @@ mod tests {
         InstrumentAny::FuturesContract(futures_contract_es(Some(activation), Some(expiration)))
     }
 
-    // -- HELPERS ---------------------------------------------------------------------------------
+    #[fixture]
+    fn engine_config() -> OrderMatchingEngineConfig {
+        OrderMatchingEngineConfig {
+            bar_execution: false,
+            reject_stop_orders: false,
+            support_gtd_orders: false,
+            support_contingent_orders: true,
+            use_position_ids: false,
+            use_random_ids: false,
+            use_reduce_only: true,
+        }
+    }
+    // -- HELPERS ---------------------------------------------------------------------------
 
     fn get_order_matching_engine(
         instrument: InstrumentAny,
@@ -1113,6 +1225,9 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None,
+            None,
         );
 
         engine.process_order(&stop_order, account_id);
@@ -1178,6 +1293,7 @@ mod tests {
         account_id: AccountId,
         time: AtomicTime,
         instrument_es: InstrumentAny,
+        engine_config: OrderMatchingEngineConfig,
     ) {
         // Register saving message handler to exec engine endpoint
         msgbus.register(
@@ -1185,22 +1301,12 @@ mod tests {
             order_event_handler.clone(),
         );
 
-        // Create engine (with reduce_only option) and process order
-        let config = OrderMatchingEngineConfig {
-            use_reduce_only: true,
-            bar_execution: false,
-            reject_stop_orders: false,
-            support_gtd_orders: false,
-            support_contingent_orders: false,
-            use_position_ids: false,
-            use_random_ids: false,
-        };
         let mut engine = get_order_matching_engine(
             instrument_es.clone(),
             Rc::new(msgbus),
             None,
             None,
-            Some(config),
+            Some(engine_config),
         );
         let market_order = TestOrderStubs::market_order_reduce(
             instrument_es.id(),
@@ -1230,6 +1336,7 @@ mod tests {
         account_id: AccountId,
         time: AtomicTime,
         instrument_es: InstrumentAny,
+        engine_config: OrderMatchingEngineConfig,
     ) {
         // Register saving message handler to exec engine endpoint
         msgbus.register(
@@ -1237,23 +1344,13 @@ mod tests {
             order_event_handler.clone(),
         );
 
-        // Create engine (with reduce_only option) and process order
-        let config = OrderMatchingEngineConfig {
-            use_reduce_only: false,
-            bar_execution: false,
-            reject_stop_orders: false,
-            support_gtd_orders: false,
-            support_contingent_orders: true,
-            use_position_ids: false,
-            use_random_ids: false,
-        };
         let cache = Rc::new(RefCell::new(Cache::default()));
         let mut engine = get_order_matching_engine(
             instrument_es.clone(),
             Rc::new(msgbus),
             Some(cache.clone()),
             None,
-            Some(config),
+            Some(engine_config),
         );
 
         let entry_client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
@@ -1291,35 +1388,17 @@ mod tests {
             .unwrap();
 
         // Create stop loss order
-        let stop_order = OrderAny::StopMarket(
-            StopMarketOrder::new(
-                entry_order.trader_id(),
-                entry_order.strategy_id(),
-                entry_order.instrument_id(),
-                stop_loss_client_order_id,
-                OrderSide::Sell,
-                entry_order.quantity(),
-                Price::from("0.95"),
-                TriggerType::BidAsk,
-                TimeInForce::Gtc,
-                None,
-                true,
-                false,
-                None,
-                None,
-                None,
-                Some(ContingencyType::Oto),
-                None,
-                None,
-                Some(entry_client_order_id), // <- parent order id set from entry order
-                None,
-                None,
-                None,
-                None,
-                UUID4::new(),
-                UnixNanos::default(),
-            )
-            .unwrap(),
+        let stop_order = TestOrderStubs::stop_market_order(
+            instrument_es.id(),
+            OrderSide::Sell,
+            Price::from("0.95"),
+            Quantity::from(1),
+            None,
+            Some(ContingencyType::Oto),
+            Some(stop_loss_client_order_id),
+            None,
+            Some(entry_client_order_id),
+            None,
         );
         // Make it Accepted
         let accepted_stop_order = TestOrderStubs::make_accepted_order(&stop_order);
@@ -1341,6 +1420,143 @@ mod tests {
         assert_eq!(
             first_message.message().unwrap(),
             Ustr::from(format!("Rejected OTO order from {entry_client_order_id}").as_str())
+        );
+    }
+
+    #[rstest]
+    fn test_process_order_when_closed_linked_order(
+        mut msgbus: MessageBus,
+        order_event_handler: ShareableMessageHandler,
+        account_id: AccountId,
+        time: AtomicTime,
+        instrument_es: InstrumentAny,
+        engine_config: OrderMatchingEngineConfig,
+    ) {
+        // Register saving message handler to exec engine endpoint
+        msgbus.register(
+            msgbus.switchboard.exec_engine_process,
+            order_event_handler.clone(),
+        );
+
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut engine = get_order_matching_engine(
+            instrument_es.clone(),
+            Rc::new(msgbus),
+            Some(cache.clone()),
+            None,
+            Some(engine_config),
+        );
+
+        let stop_loss_client_order_id = ClientOrderId::from("O-19700101-000000-001-001-2");
+        let take_profit_client_order_id = ClientOrderId::from("O-19700101-000000-001-001-3");
+        // Create two linked orders: stop loss and take profit
+        let mut stop_loss_order = TestOrderStubs::stop_market_order(
+            instrument_es.id(),
+            OrderSide::Sell,
+            Price::from("0.95"),
+            Quantity::from(1),
+            None,
+            Some(ContingencyType::Oco),
+            Some(stop_loss_client_order_id),
+            None,
+            None,
+            Some(vec![take_profit_client_order_id]),
+        );
+        let take_profit_order = TestOrderStubs::market_if_touched_order(
+            instrument_es.id(),
+            OrderSide::Sell,
+            Price::from("1.1"),
+            Quantity::from(1),
+            None,
+            Some(ContingencyType::Oco),
+            Some(take_profit_client_order_id),
+            None,
+            Some(vec![stop_loss_client_order_id]),
+        );
+        // Set stop loss order status to Rejected with proper event
+        let rejected_event: OrderRejected = OrderRejectedBuilder::default()
+            .client_order_id(stop_loss_client_order_id)
+            .reason(Ustr::from("Rejected"))
+            .build()
+            .unwrap();
+        stop_loss_order
+            .apply(OrderEventAny::Rejected(rejected_event))
+            .unwrap();
+
+        // Make take profit order Accepted
+        let accepted_take_profit = TestOrderStubs::make_accepted_order(&take_profit_order);
+
+        // 1. save stop loss order in cache which is rejected and closed is set to true
+        // 2. send the take profit order which has linked the stop loss order
+        cache
+            .as_ref()
+            .borrow_mut()
+            .add_order(stop_loss_order.clone(), None, None, false)
+            .unwrap();
+        let stop_loss_closed_after = stop_loss_order.is_closed();
+        engine.process_order(&accepted_take_profit, account_id);
+
+        // Get messages and test
+        let saved_messages = get_order_event_handler_messages(order_event_handler);
+        assert_eq!(saved_messages.len(), 1);
+        let first_message = saved_messages.first().unwrap();
+        assert_eq!(first_message.event_type(), OrderEventType::Rejected);
+        assert_eq!(
+            first_message.message().unwrap(),
+            Ustr::from(
+                format!("Contingent order {stop_loss_client_order_id} already closed").as_str()
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_process_market_order_no_market_rejected(
+        mut msgbus: MessageBus,
+        order_event_handler: ShareableMessageHandler,
+        account_id: AccountId,
+        time: AtomicTime,
+        instrument_es: InstrumentAny,
+    ) {
+        // Register saving message handler to exec engine endpoint
+        msgbus.register(
+            msgbus.switchboard.exec_engine_process,
+            order_event_handler.clone(),
+        );
+
+        // Create engine and process order
+        let mut engine =
+            get_order_matching_engine(instrument_es.clone(), Rc::new(msgbus), None, None, None);
+        let market_order_buy = TestOrderStubs::market_order(
+            instrument_es.id(),
+            OrderSide::Buy,
+            Quantity::from("1"),
+            None,
+            None,
+        );
+        let market_order_sell = TestOrderStubs::market_order(
+            instrument_es.id(),
+            OrderSide::Sell,
+            Quantity::from("1"),
+            None,
+            None,
+        );
+        engine.process_order(&market_order_buy, account_id);
+        engine.process_order(&market_order_sell, account_id);
+
+        // Get messages and test
+        let saved_messages = get_order_event_handler_messages(order_event_handler);
+        assert_eq!(saved_messages.len(), 2);
+        let first = saved_messages.first().unwrap();
+        let second = saved_messages.get(1).unwrap();
+        assert_eq!(first.event_type(), OrderEventType::Rejected);
+        assert_eq!(second.event_type(), OrderEventType::Rejected);
+        assert_eq!(
+            first.message().unwrap(),
+            Ustr::from("No market for ESZ1.GLBX")
+        );
+        assert_eq!(
+            second.message().unwrap(),
+            Ustr::from("No market for ESZ1.GLBX")
         );
     }
 }

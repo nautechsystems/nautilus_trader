@@ -267,7 +267,7 @@ class BybitExecutionClient(LiveExecutionClient):
                     report = bybit_order.parse_to_order_status_report(
                         client_order_id=client_order_id,
                         account_id=self.account_id,
-                        instrument_id=bybit_symbol.parse_as_nautilus(),
+                        instrument_id=bybit_symbol.to_instrument_id(),
                         report_id=UUID4(),
                         enum_parser=self._enum_parser,
                         ts_init=self._clock.timestamp_ns(),
@@ -379,7 +379,7 @@ class BybitExecutionClient(LiveExecutionClient):
                     )
                     report = bybit_fill.parse_to_fill_report(
                         account_id=self.account_id,
-                        instrument_id=bybit_symbol.parse_as_nautilus(),
+                        instrument_id=bybit_symbol.to_instrument_id(),
                         report_id=UUID4(),
                         enum_parser=self._enum_parser,
                         ts_init=self._clock.timestamp_ns(),
@@ -412,8 +412,6 @@ class BybitExecutionClient(LiveExecutionClient):
                     bybit_symbol.raw_symbol,
                 )
                 for position in positions:
-                    # Uncomment for development
-                    # self._log.info(f"Generating report {position}", LogColor.MAGENTA)
                     position_report = position.parse_to_position_status_report(
                         account_id=self.account_id,
                         instrument_id=instrument_id,
@@ -429,14 +427,11 @@ class BybitExecutionClient(LiveExecutionClient):
                         continue  # No positions on spot
                     positions = await self._http_account.query_position_info(product_type)
                     for position in positions:
-                        # Uncomment for development
-                        # self._log.info(f"Generating report {position}", LogColor.MAGENTA)
-                        instr: InstrumentId = BybitSymbol(
-                            position.symbol + "-" + product_type.value.upper(),
-                        ).parse_as_nautilus()
+                        symbol = position.symbol
+                        bybit_symbol = BybitSymbol(f"{symbol}-{product_type.value.upper()}")
                         position_report = position.parse_to_position_status_report(
                             account_id=self.account_id,
-                            instrument_id=instr,
+                            instrument_id=bybit_symbol.to_instrument_id(),
                             report_id=UUID4(),
                             ts_init=self._clock.timestamp_ns(),
                         )
@@ -451,10 +446,13 @@ class BybitExecutionClient(LiveExecutionClient):
 
         return reports
 
-    def _get_cached_instrument_id(self, symbol: str, category: str) -> InstrumentId:
-        bybit_symbol = BybitSymbol(symbol + f"-{category.upper()}")
-        nautilus_instrument_id: InstrumentId = bybit_symbol.parse_as_nautilus()
-        return nautilus_instrument_id
+    def _get_cached_instrument_id(
+        self,
+        symbol: str,
+        product_type: BybitProductType,
+    ) -> InstrumentId:
+        bybit_symbol = BybitSymbol(f"{symbol}-{product_type.value.upper()}")
+        return bybit_symbol.to_instrument_id()
 
     def _get_cache_active_symbols(self) -> set[str]:
         # Check cache for all active orders
