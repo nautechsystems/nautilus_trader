@@ -65,6 +65,28 @@ pub struct OrderMatchingEngineConfig {
     pub use_reduce_only: bool,
 }
 
+impl OrderMatchingEngineConfig {
+    pub fn new(
+        bar_execution: bool,
+        reject_stop_orders: bool,
+        support_gtd_orders: bool,
+        support_contingent_orders: bool,
+        use_position_ids: bool,
+        use_random_ids: bool,
+        use_reduce_only: bool,
+    ) -> Self {
+        Self {
+            support_gtd_orders,
+            bar_execution,
+            reject_stop_orders,
+            support_contingent_orders,
+            use_position_ids,
+            use_random_ids,
+            use_reduce_only,
+        }
+    }
+}
+
 #[allow(clippy::derivable_impls)]
 impl Default for OrderMatchingEngineConfig {
     fn default() -> Self {
@@ -99,7 +121,7 @@ pub struct OrderMatchingEngine {
     /// The config for the matching engine.
     pub config: OrderMatchingEngineConfig,
     clock: &'static AtomicTime,
-    msgbus: Rc<MessageBus>,
+    msgbus: Rc<RefCell<MessageBus>>,
     cache: Rc<RefCell<Cache>>,
     book: OrderBook,
     core: OrderMatchingCore,
@@ -126,7 +148,7 @@ impl OrderMatchingEngine {
         oms_type: OmsType,
         account_type: AccountType,
         clock: &'static AtomicTime,
-        msgbus: Rc<MessageBus>,
+        msgbus: Rc<RefCell<MessageBus>>,
         cache: Rc<RefCell<Cache>>,
         config: OrderMatchingEngineConfig,
     ) -> Self {
@@ -664,10 +686,8 @@ impl OrderMatchingEngine {
             )
             .unwrap(),
         );
-        self.msgbus.send(
-            &self.msgbus.switchboard.exec_engine_process,
-            &event as &dyn Any,
-        );
+        let msgbus = self.msgbus.as_ref().borrow();
+        msgbus.send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
     }
 
     fn generate_order_accepted(&self, order: &OrderAny, venue_order_id: VenueOrderId) {
@@ -690,10 +710,8 @@ impl OrderMatchingEngine {
             )
             .unwrap(),
         );
-        self.msgbus.send(
-            &self.msgbus.switchboard.exec_engine_process,
-            &event as &dyn Any,
-        );
+        let msgbus = self.msgbus.as_ref().borrow();
+        msgbus.send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -724,10 +742,8 @@ impl OrderMatchingEngine {
             )
             .unwrap(),
         );
-        self.msgbus.send(
-            &self.msgbus.switchboard.exec_engine_process,
-            &event as &dyn Any,
-        );
+        let msgbus = self.msgbus.as_ref().borrow();
+        msgbus.send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -758,10 +774,8 @@ impl OrderMatchingEngine {
             )
             .unwrap(),
         );
-        self.msgbus.send(
-            &self.msgbus.switchboard.exec_engine_process,
-            &event as &dyn Any,
-        );
+        let msgbus = self.msgbus.as_ref().borrow();
+        msgbus.send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
     }
 
     fn generate_order_updated(
@@ -790,10 +804,8 @@ impl OrderMatchingEngine {
             )
             .unwrap(),
         );
-        self.msgbus.send(
-            &self.msgbus.switchboard.exec_engine_process,
-            &event as &dyn Any,
-        );
+        let msgbus = self.msgbus.as_ref().borrow();
+        msgbus.send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
     }
 
     fn generate_order_canceled(&self, order: &OrderAny, venue_order_id: VenueOrderId) {
@@ -813,10 +825,8 @@ impl OrderMatchingEngine {
             )
             .unwrap(),
         );
-        self.msgbus.send(
-            &self.msgbus.switchboard.exec_engine_process,
-            &event as &dyn Any,
-        );
+        let msgbus = self.msgbus.as_ref().borrow();
+        msgbus.send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
     }
 
     fn generate_order_triggered(&self, order: &OrderAny) {
@@ -836,10 +846,8 @@ impl OrderMatchingEngine {
             )
             .unwrap(),
         );
-        self.msgbus.send(
-            &self.msgbus.switchboard.exec_engine_process,
-            &event as &dyn Any,
-        );
+        let msgbus = self.msgbus.as_ref().borrow();
+        msgbus.send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
     }
 
     fn generate_order_expired(&self, order: &OrderAny) {
@@ -859,10 +867,8 @@ impl OrderMatchingEngine {
             )
             .unwrap(),
         );
-        self.msgbus.send(
-            &self.msgbus.switchboard.exec_engine_process,
-            &event as &dyn Any,
-        );
+        let msgbus = self.msgbus.as_ref().borrow();
+        msgbus.send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -905,10 +911,8 @@ impl OrderMatchingEngine {
             )
             .unwrap(),
         );
-        self.msgbus.send(
-            &self.msgbus.switchboard.exec_engine_process,
-            &event as &dyn Any,
-        );
+        let msgbus = self.msgbus.as_ref().borrow();
+        msgbus.send(&msgbus.switchboard.exec_engine_process, &event as &dyn Any);
     }
 }
 
@@ -1007,7 +1011,7 @@ mod tests {
 
     fn get_order_matching_engine(
         instrument: InstrumentAny,
-        msgbus: Rc<MessageBus>,
+        msgbus: Rc<RefCell<MessageBus>>,
         cache: Option<Rc<RefCell<Cache>>>,
         account_type: Option<AccountType>,
         config: Option<OrderMatchingEngineConfig>,
@@ -1051,8 +1055,13 @@ mod tests {
         );
 
         // Create engine and process order
-        let mut engine =
-            get_order_matching_engine(instrument.clone(), Rc::new(msgbus), None, None, None);
+        let mut engine = get_order_matching_engine(
+            instrument.clone(),
+            Rc::new(RefCell::new(msgbus)),
+            None,
+            None,
+            None,
+        );
         let order = TestOrderStubs::market_order(
             instrument.id(),
             OrderSide::Buy,
@@ -1102,8 +1111,13 @@ mod tests {
         );
 
         // Create engine and process order
-        let mut engine =
-            get_order_matching_engine(instrument.clone(), Rc::new(msgbus), None, None, None);
+        let mut engine = get_order_matching_engine(
+            instrument.clone(),
+            Rc::new(RefCell::new(msgbus)),
+            None,
+            None,
+            None,
+        );
         let order = TestOrderStubs::market_order(
             instrument.id(),
             OrderSide::Buy,
@@ -1139,8 +1153,13 @@ mod tests {
         );
 
         // Create engine and process order
-        let mut engine =
-            get_order_matching_engine(instrument_es.clone(), Rc::new(msgbus), None, None, None);
+        let mut engine = get_order_matching_engine(
+            instrument_es.clone(),
+            Rc::new(RefCell::new(msgbus)),
+            None,
+            None,
+            None,
+        );
         let order = TestOrderStubs::market_order(
             instrument_es.id(),
             OrderSide::Buy,
@@ -1176,8 +1195,13 @@ mod tests {
         );
 
         // Create engine and process order
-        let mut engine =
-            get_order_matching_engine(instrument_es.clone(), Rc::new(msgbus), None, None, None);
+        let mut engine = get_order_matching_engine(
+            instrument_es.clone(),
+            Rc::new(RefCell::new(msgbus)),
+            None,
+            None,
+            None,
+        );
         let limit_order = TestOrderStubs::limit_order(
             instrument_es.id(),
             OrderSide::Sell,
@@ -1215,8 +1239,13 @@ mod tests {
         );
 
         // Create engine and process order
-        let mut engine =
-            get_order_matching_engine(instrument_es.clone(), Rc::new(msgbus), None, None, None);
+        let mut engine = get_order_matching_engine(
+            instrument_es.clone(),
+            Rc::new(RefCell::new(msgbus)),
+            None,
+            None,
+            None,
+        );
         let stop_order = TestOrderStubs::stop_market_order(
             instrument_es.id(),
             OrderSide::Sell,
@@ -1259,8 +1288,13 @@ mod tests {
         );
 
         // Create engine and process order
-        let mut engine =
-            get_order_matching_engine(instrument.clone(), Rc::new(msgbus), None, None, None);
+        let mut engine = get_order_matching_engine(
+            instrument.clone(),
+            Rc::new(RefCell::new(msgbus)),
+            None,
+            None,
+            None,
+        );
         let order = TestOrderStubs::market_order(
             instrument.id(),
             OrderSide::Sell,
@@ -1303,7 +1337,7 @@ mod tests {
 
         let mut engine = get_order_matching_engine(
             instrument_es.clone(),
-            Rc::new(msgbus),
+            Rc::new(RefCell::new(msgbus)),
             None,
             None,
             Some(engine_config),
@@ -1347,7 +1381,7 @@ mod tests {
         let cache = Rc::new(RefCell::new(Cache::default()));
         let mut engine = get_order_matching_engine(
             instrument_es.clone(),
-            Rc::new(msgbus),
+            Rc::new(RefCell::new(msgbus)),
             Some(cache.clone()),
             None,
             Some(engine_config),
@@ -1441,7 +1475,7 @@ mod tests {
         let cache = Rc::new(RefCell::new(Cache::default()));
         let mut engine = get_order_matching_engine(
             instrument_es.clone(),
-            Rc::new(msgbus),
+            Rc::new(RefCell::new(msgbus)),
             Some(cache.clone()),
             None,
             Some(engine_config),
@@ -1524,8 +1558,13 @@ mod tests {
         );
 
         // Create engine and process order
-        let mut engine =
-            get_order_matching_engine(instrument_es.clone(), Rc::new(msgbus), None, None, None);
+        let mut engine = get_order_matching_engine(
+            instrument_es.clone(),
+            Rc::new(RefCell::new(msgbus)),
+            None,
+            None,
+            None,
+        );
         let market_order_buy = TestOrderStubs::market_order(
             instrument_es.id(),
             OrderSide::Buy,
