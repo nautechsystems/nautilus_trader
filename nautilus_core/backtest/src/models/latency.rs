@@ -13,6 +13,4 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod fee;
-pub mod fill;
-pub mod latency;
+pub struct LatencyModel;

@@ -13,6 +13,17 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod fee;
-pub mod fill;
-pub mod latency;
+use nautilus_common::logging::logger::Logger;
+use nautilus_core::nanos::UnixNanos;
+use nautilus_model::data::Data;
+
+use crate::exchange::SimulatedExchange;
+
+#[warn(dead_code)]
+pub trait SimulationModule {
+    fn register_venue(&self, exchange: SimulatedExchange);
+    fn pre_process(&self, data: Data);
+    fn process(&self, ts_now: UnixNanos);
+    fn log_diagnostics(&self, logger: Logger);
+    fn reset(&self);
+}
