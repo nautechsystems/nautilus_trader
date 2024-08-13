@@ -294,7 +294,9 @@ impl Log for Logger {
     }
 
     fn flush(&self) {
-        self.tx.send(LogEvent::Flush).unwrap();
+        if let Err(e) = self.tx.send(LogEvent::Flush) {
+            eprintln!("Error sending flush log event: {e}");
+        }
     }
 }
 

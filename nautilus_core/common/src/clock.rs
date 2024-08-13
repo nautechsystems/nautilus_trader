@@ -146,7 +146,9 @@ impl TestClock {
                 let handler = self.callbacks.get(&event.name).cloned().unwrap_or_else(|| {
                     // If callback_py is None, use the default_callback_py
                     // TODO: clone for now
-                    self.default_callback.clone().unwrap()
+                    self.default_callback
+                        .clone()
+                        .expect("Default callback should exist")
                 });
                 create_time_event_handler(event, &handler)
             })

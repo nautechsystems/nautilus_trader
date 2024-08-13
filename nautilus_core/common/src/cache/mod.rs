@@ -1365,10 +1365,9 @@ impl Cache {
                 .or_default()
                 .insert(client_order_id);
 
-            // SAFETY: We can guarantee the `exec_spawn_id` is Some
             self.index
                 .exec_spawn_orders
-                .entry(exec_spawn_id.unwrap())
+                .entry(exec_spawn_id.expect("`exec_spawn_id` is guaranteed to exist"))
                 .or_default()
                 .insert(client_order_id);
         }

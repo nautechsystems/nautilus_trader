@@ -142,7 +142,9 @@ impl FromStr for Currency {
 
 impl From<&str> for Currency {
     fn from(input: &str) -> Self {
-        input.parse().unwrap()
+        input
+            .parse()
+            .expect("Currency string representation should be valid")
     }
 }
 

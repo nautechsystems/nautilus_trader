@@ -461,8 +461,10 @@ impl Position {
 
     #[must_use]
     pub fn last_event(&self) -> OrderFilled {
-        // SAFETY: Position invariant guarantees at least one event
-        *self.events.last().unwrap()
+        *self
+            .events
+            .last()
+            .expect("Position invariant guarantees at least one event")
     }
 
     #[must_use]
