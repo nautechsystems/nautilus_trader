@@ -33,19 +33,13 @@ use std::{
 const FAILED: &str = "Condition failed:";
 
 /// Checks the `predicate` is true.
-pub fn check_predicate_true(predicate: bool, fail_msg: &str) -> anyhow::Result<()> {
-    if !predicate {
-        anyhow::bail!("{FAILED} {fail_msg}")
-    }
-    Ok(())
+pub fn check_predicate_true(predicate: bool, fail_msg: &str) {
+    assert!(predicate, "{FAILED} {fail_msg}");
 }
 
 /// Checks the `predicate` is false.
-pub fn check_predicate_false(predicate: bool, fail_msg: &str) -> anyhow::Result<()> {
-    if predicate {
-        anyhow::bail!("{FAILED} {fail_msg}")
-    }
-    Ok(())
+pub fn check_predicate_false(predicate: bool, fail_msg: &str) {
+    assert!(!predicate, "{FAILED} {fail_msg}");
 }
 
 /// Checks the string `s` has semantic meaning and contains only ASCII characters.
@@ -55,29 +49,22 @@ pub fn check_predicate_false(predicate: bool, fail_msg: &str) -> anyhow::Result<
 /// - If `s` is an empty string.
 /// - If `s` consists solely of whitespace characters.
 /// - If `s` contains one or more non-ASCII characters.
-pub fn check_valid_string(s: &str, param: &str) -> anyhow::Result<()> {
-    // Ensure string is only traversed once
-    if s.is_empty() {
-        anyhow::bail!("{FAILED} invalid string for '{param}', was empty");
-    }
+pub fn check_valid_string(s: &str, param: &str) {
+    assert!(
+        !s.is_empty(),
+        "{FAILED} invalid string for '{param}', was empty"
+    );
 
-    let mut has_non_whitespace = false;
-    for c in s.chars() {
-        if !c.is_whitespace() {
-            has_non_whitespace = true;
-        }
-        if !c.is_ascii() {
-            anyhow::bail!(
-                "{FAILED} invalid string for '{param}' contained a non-ASCII char, was '{s}'"
-            );
-        }
-    }
+    let has_non_whitespace = s.chars().any(|c| !c.is_whitespace());
+    assert!(
+        has_non_whitespace,
+        "{FAILED} invalid string for '{param}', was all whitespace"
+    );
 
-    if !has_non_whitespace {
-        anyhow::bail!("{FAILED} invalid string for '{param}', was all whitespace");
-    }
-
-    Ok(())
+    assert!(
+        s.chars().all(|c| c.is_ascii()),
+        "{FAILED} invalid string for '{param}' contained a non-ASCII char, was '{s}'"
+    );
 }
 
 /// Checks the string `s` if Some, contains only ASCII characters and has semantic meaning.
@@ -87,268 +74,204 @@ pub fn check_valid_string(s: &str, param: &str) -> anyhow::Result<()> {
 /// - If `s` is an empty string.
 /// - If `s` consists solely of whitespace characters.
 /// - If `s` contains one or more non-ASCII characters.
-pub fn check_valid_string_optional(s: Option<&str>, param: &str) -> anyhow::Result<()> {
+pub fn check_valid_string_optional(s: Option<&str>, param: &str) {
     if let Some(s) = s {
-        check_valid_string(s, param)?;
+        check_valid_string(s, param);
     }
-    Ok(())
 }
 
 /// Checks the string `s` contains the pattern `pat`.
-pub fn check_string_contains(s: &str, pat: &str, param: &str) -> anyhow::Result<()> {
-    if !s.contains(pat) {
-        anyhow::bail!("{FAILED} invalid string for '{param}' did not contain '{pat}', was '{s}'")
-    }
-    Ok(())
+pub fn check_string_contains(s: &str, pat: &str, param: &str) {
+    assert!(
+        s.contains(pat),
+        "{FAILED} invalid string for '{param}' did not contain '{pat}', was '{s}'"
+    );
 }
 
 /// Checks the values are equal.
-pub fn check_equal<T: PartialEq + Debug>(
-    lhs: T,
-    rhs: T,
-    lhs_param: &str,
-    rhs_param: &str,
-) -> anyhow::Result<()> {
-    if lhs != rhs {
-        anyhow::bail!(
-            "{FAILED} '{lhs_param}' value of {lhs:?} was not equal to '{rhs_param}' value of {rhs:?}",
-        );
-    }
-    Ok(())
+pub fn check_equal<T: PartialEq + Debug>(lhs: T, rhs: T, lhs_param: &str, rhs_param: &str) {
+    assert_eq!(
+        lhs, rhs,
+        "{FAILED} '{lhs_param}' value of {lhs:?} was not equal to '{rhs_param}' value of {rhs:?}"
+    );
 }
 
 /// Checks the `u8` values are equal.
-pub fn check_equal_u8(lhs: u8, rhs: u8, lhs_param: &str, rhs_param: &str) -> anyhow::Result<()> {
-    if lhs != rhs {
-        anyhow::bail!(
-            "{FAILED} '{lhs_param}' u8 of {lhs} was not equal to '{rhs_param}' u8 of {rhs}"
-        )
-    }
-    Ok(())
+pub fn check_equal_u8(lhs: u8, rhs: u8, lhs_param: &str, rhs_param: &str) {
+    assert_eq!(
+        lhs, rhs,
+        "{FAILED} '{lhs_param}' u8 of {lhs} was not equal to '{rhs_param}' u8 of {rhs}"
+    );
 }
 
 /// Checks the `usize` values are equal.
-pub fn check_equal_usize(
-    lhs: usize,
-    rhs: usize,
-    lhs_param: &str,
-    rhs_param: &str,
-) -> anyhow::Result<()> {
-    if lhs != rhs {
-        anyhow::bail!(
-            "{FAILED} '{lhs_param}' usize of {lhs} was not equal to '{rhs_param}' usize of {rhs}"
-        )
-    }
-    Ok(())
+pub fn check_equal_usize(lhs: usize, rhs: usize, lhs_param: &str, rhs_param: &str) {
+    assert_eq!(
+        lhs, rhs,
+        "{FAILED} '{lhs_param}' usize of {lhs} was not equal to '{rhs_param}' usize of {rhs}"
+    );
 }
 
 /// Checks the `u64` value is positive (> 0).
-pub fn check_positive_u64(value: u64, param: &str) -> anyhow::Result<()> {
-    if value == 0 {
-        anyhow::bail!("{FAILED} invalid u64 for '{param}' not positive, was {value}")
-    }
-    Ok(())
+pub fn check_positive_u64(value: u64, param: &str) {
+    assert!(
+        value > 0,
+        "{FAILED} invalid u64 for '{param}' not positive, was {value}"
+    );
 }
 
 /// Checks the `i64` value is positive (> 0).
-pub fn check_positive_i64(value: i64, param: &str) -> anyhow::Result<()> {
-    if value <= 0 {
-        anyhow::bail!("{FAILED} invalid i64 for '{param}' not positive, was {value}")
-    }
-    Ok(())
+pub fn check_positive_i64(value: i64, param: &str) {
+    assert!(
+        value > 0,
+        "{FAILED} invalid i64 for '{param}' not positive, was {value}"
+    );
 }
 
 /// Checks the `f64` value is non-negative (< 0).
-pub fn check_non_negative_f64(value: f64, param: &str) -> anyhow::Result<()> {
-    if value.is_nan() || value.is_infinite() {
-        anyhow::bail!("{FAILED} invalid f64 for '{param}', was {value}")
-    }
-    if value < 0.0 {
-        anyhow::bail!("{FAILED} invalid f64 for '{param}' negative, was {value}")
-    }
-    Ok(())
+pub fn check_non_negative_f64(value: f64, param: &str) {
+    assert!(
+        !value.is_nan() && !value.is_infinite(),
+        "{FAILED} invalid f64 for '{param}', was {value}"
+    );
+    assert!(
+        value >= 0.0,
+        "{FAILED} invalid f64 for '{param}' negative, was {value}"
+    );
 }
 
 /// Checks the `u8` value is in range [`l`, `r`] (inclusive).
-pub fn check_in_range_inclusive_u8(value: u8, l: u8, r: u8, param: &str) -> anyhow::Result<()> {
-    if value < l || value > r {
-        anyhow::bail!("{FAILED} invalid u8 for '{param}' not in range [{l}, {r}], was {value}")
-    }
-    Ok(())
+pub fn check_in_range_inclusive_u8(value: u8, l: u8, r: u8, param: &str) {
+    assert!(
+        l <= value && value <= r,
+        "{FAILED} invalid u8 for '{param}' not in range [{l}, {r}], was {value}"
+    );
 }
 
 /// Checks the `u64` value is range [`l`, `r`] (inclusive).
-pub fn check_in_range_inclusive_u64(value: u64, l: u64, r: u64, param: &str) -> anyhow::Result<()> {
-    if value < l || value > r {
-        anyhow::bail!("{FAILED} invalid u64 for '{param}' not in range [{l}, {r}], was {value}")
-    }
-    Ok(())
+pub fn check_in_range_inclusive_u64(value: u64, l: u64, r: u64, param: &str) {
+    assert!(
+        l <= value && value <= r,
+        "{FAILED} invalid u64 for '{param}' not in range [{l}, {r}], was {value}"
+    );
 }
 
 /// Checks the `i64` value is in range [`l`, `r`] (inclusive).
-pub fn check_in_range_inclusive_i64(value: i64, l: i64, r: i64, param: &str) -> anyhow::Result<()> {
-    if value < l || value > r {
-        anyhow::bail!("{FAILED} invalid i64 for '{param}' not in range [{l}, {r}], was {value}")
-    }
-    Ok(())
+pub fn check_in_range_inclusive_i64(value: i64, l: i64, r: i64, param: &str) {
+    assert!(
+        l <= value && value <= r,
+        "{FAILED} invalid i64 for '{param}' not in range [{l}, {r}], was {value}"
+    );
 }
 
 /// Checks the `f64` value is in range [`l`, `r`] (inclusive).
-pub fn check_in_range_inclusive_f64(value: f64, l: f64, r: f64, param: &str) -> anyhow::Result<()> {
+pub fn check_in_range_inclusive_f64(value: f64, l: f64, r: f64, param: &str) {
     const EPSILON: f64 = 1e-15; // Epsilon to account for floating-point precision issues
 
-    if value.is_nan() || value.is_infinite() {
-        anyhow::bail!("{FAILED} invalid f64 for '{param}', was {value}")
-    }
-    if value < l - EPSILON || value > r + EPSILON {
-        anyhow::bail!("{FAILED} invalid f64 for '{param}' not in range [{l}, {r}], was {value}")
-    }
-    Ok(())
+    assert!(
+        !value.is_nan() && !value.is_infinite(),
+        "{FAILED} invalid f64 for '{param}', was {value}"
+    );
+    assert!(
+        (l - EPSILON) <= value && value <= r + EPSILON,
+        "{FAILED} invalid f64 for '{param}' not in range [{l}, {r}], was {value}"
+    );
 }
 
 /// Checks the `usize` value is in range [`l`, `r`] (inclusive).
-pub fn check_in_range_inclusive_usize(
-    value: usize,
-    l: usize,
-    r: usize,
-    param: &str,
-) -> anyhow::Result<()> {
-    if value < l || value > r {
-        anyhow::bail!("{FAILED} invalid usize for '{param}' not in range [{l}, {r}], was {value}")
-    }
-    Ok(())
+pub fn check_in_range_inclusive_usize(value: usize, l: usize, r: usize, param: &str) {
+    assert!(
+        l <= value && value <= r,
+        "{FAILED} invalid usize for '{param}' not in range [{l}, {r}], was {value}"
+    );
 }
 
 /// Checks the slice is empty.
-pub fn check_slice_empty<T>(slice: &[T], param: &str) -> anyhow::Result<()> {
-    if !slice.is_empty() {
-        anyhow::bail!(
-            "{FAILED} the '{param}' slice `&[{}]` was not empty",
-            std::any::type_name::<T>()
-        )
-    }
-    Ok(())
+pub fn check_slice_empty<T>(slice: &[T], param: &str) {
+    assert!(
+        slice.is_empty(),
+        "{FAILED} the '{param}' slice `&[{}]` was not empty",
+        std::any::type_name::<T>()
+    );
 }
 
 /// Checks the slice is **not** empty.
-pub fn check_slice_not_empty<T>(slice: &[T], param: &str) -> anyhow::Result<()> {
-    if slice.is_empty() {
-        anyhow::bail!(
-            "{FAILED} the '{param}' slice `&[{}]` was empty",
-            std::any::type_name::<T>()
-        )
-    }
-    Ok(())
+pub fn check_slice_not_empty<T>(slice: &[T], param: &str) {
+    assert!(
+        !slice.is_empty(),
+        "{FAILED} the '{param}' slice `&[{}]` was empty",
+        std::any::type_name::<T>()
+    );
 }
 
 /// Checks the hashmap is empty.
-pub fn check_map_empty<K, V>(map: &HashMap<K, V>, param: &str) -> anyhow::Result<()> {
-    if !map.is_empty() {
-        anyhow::bail!(
-            "{FAILED} the '{param}' map `&<{}, {}>` was not empty",
-            std::any::type_name::<K>(),
-            std::any::type_name::<V>(),
-        )
-    }
-    Ok(())
+pub fn check_empty_map<K, V>(map: &HashMap<K, V>, param: &str) {
+    assert!(
+        map.is_empty(),
+        "{FAILED} the '{param}' map `&<{}, {}>` was not empty",
+        std::any::type_name::<K>(),
+        std::any::type_name::<V>(),
+    );
 }
 
 /// Checks the map is **not** empty.
-pub fn check_map_not_empty<K, V>(map: &HashMap<K, V>, param: &str) -> anyhow::Result<()> {
-    if map.is_empty() {
-        anyhow::bail!(
-            "{FAILED} the '{param}' map `&<{}, {}>` was empty",
-            std::any::type_name::<K>(),
-            std::any::type_name::<V>(),
-        )
-    }
-    Ok(())
+pub fn check_map_not_empty<K, V>(map: &HashMap<K, V>, param: &str) {
+    assert!(
+        !map.is_empty(),
+        "{FAILED} the '{param}' map `&<{}, {}>` was empty",
+        std::any::type_name::<K>(),
+        std::any::type_name::<V>(),
+    );
 }
 
 /// Checks the `key` is **not** in the `map`.
-pub fn check_key_not_in_map<K, V>(
-    key: &K,
-    map: &HashMap<K, V>,
-    key_name: &str,
-    map_name: &str,
-) -> anyhow::Result<()>
+pub fn check_key_not_in_map<K, V>(key: &K, map: &HashMap<K, V>, key_name: &str, map_name: &str)
 where
-    K: Hash,
-    K: std::cmp::Eq,
-    K: std::fmt::Display,
+    K: Hash + Eq + std::fmt::Display,
 {
-    if map.contains_key(key) {
-        anyhow::bail!(
-            "{FAILED} the '{key_name}' key {key} was already in the '{map_name}' map `&<{}, {}>`",
-            std::any::type_name::<K>(),
-            std::any::type_name::<V>(),
-        )
-    }
-    Ok(())
+    assert!(
+        !map.contains_key(key),
+        "{FAILED} the '{key_name}' key {key} was already in the '{map_name}' map `&<{}, {}>`",
+        std::any::type_name::<K>(),
+        std::any::type_name::<V>(),
+    );
 }
 
 /// Checks the `key` is in the `map`.
-pub fn check_key_in_map<K, V>(
-    key: &K,
-    map: &HashMap<K, V>,
-    key_name: &str,
-    map_name: &str,
-) -> anyhow::Result<()>
+pub fn check_key_in_map<K, V>(key: &K, map: &HashMap<K, V>, key_name: &str, map_name: &str)
 where
-    K: Hash,
-    K: std::cmp::Eq,
-    K: std::fmt::Display,
+    K: Hash + Eq + std::fmt::Display,
 {
-    if !map.contains_key(key) {
-        anyhow::bail!(
-            "{FAILED} the '{key_name}' key {key} was not in the '{map_name}' map `&<{}, {}>`",
-            std::any::type_name::<K>(),
-            std::any::type_name::<V>(),
-        )
-    }
-    Ok(())
+    assert!(
+        map.contains_key(key),
+        "{FAILED} the '{key_name}' key {key} was not in the '{map_name}' map `&<{}, {}>`",
+        std::any::type_name::<K>(),
+        std::any::type_name::<V>(),
+    );
 }
 
 /// Checks the `member` is **not** in the `set`.
-pub fn check_member_not_in_set<V>(
-    member: &V,
-    set: &HashSet<V>,
-    member_name: &str,
-    set_name: &str,
-) -> anyhow::Result<()>
+pub fn check_member_not_in_set<V>(member: &V, set: &HashSet<V>, member_name: &str, set_name: &str)
 where
-    V: Hash,
-    V: std::cmp::Eq,
-    V: std::fmt::Display,
+    V: Hash + Eq + std::fmt::Display,
 {
-    if set.contains(member) {
-        anyhow::bail!(
-            "{FAILED} the '{member_name}' member was already in the '{set_name}' set `&<{}>`",
-            std::any::type_name::<V>(),
-        )
-    }
-    Ok(())
+    assert!(
+        !set.contains(member),
+        "{FAILED} the '{member_name}' member was already in the '{set_name}' set `&<{}>`",
+        std::any::type_name::<V>(),
+    );
 }
 
 /// Checks the `member` is in the `set`.
-pub fn check_member_in_set<V>(
-    member: &V,
-    set: &HashSet<V>,
-    member_name: &str,
-    set_name: &str,
-) -> anyhow::Result<()>
+pub fn check_member_in_set<V>(member: &V, set: &HashSet<V>, member_name: &str, set_name: &str)
 where
-    V: Hash,
-    V: std::cmp::Eq,
-    V: std::fmt::Display,
+    V: Hash + Eq + std::fmt::Display,
 {
-    if !set.contains(member) {
-        anyhow::bail!(
-            "{FAILED} the '{member_name}' member was not in the '{set_name}' set `&<{}>`",
-            std::any::type_name::<V>(),
-        )
-    }
-    Ok(())
+    assert!(
+        set.contains(member),
+        "{FAILED} the '{member_name}' member was not in the '{set_name}' set `&<{}>`",
+        std::any::type_name::<V>(),
+    );
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -356,15 +279,29 @@ where
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::panic::{self, UnwindSafe};
+
     use rstest::rstest;
 
     use super::*;
+
+    fn catch_unwind_silent<F: FnOnce() -> R + panic::UnwindSafe, R>(
+        f: F,
+    ) -> std::thread::Result<R> {
+        let prev_hook = panic::take_hook();
+        panic::set_hook(Box::new(|_| {}));
+        let result = panic::catch_unwind(f);
+        panic::set_hook(prev_hook);
+        result
+    }
 
     #[rstest]
     #[case(false, false)]
     #[case(true, true)]
     fn test_check_predicate_true(#[case] predicate: bool, #[case] expected: bool) {
-        let result = check_predicate_true(predicate, "the predicate was false").is_ok();
+        let result =
+            catch_unwind_silent(|| check_predicate_true(predicate, "the predicate was false"))
+                .is_ok();
         assert_eq!(result, expected);
     }
 
@@ -372,7 +309,9 @@ mod tests {
     #[case(false, true)]
     #[case(true, false)]
     fn test_check_predicate_false(#[case] predicate: bool, #[case] expected: bool) {
-        let result = check_predicate_false(predicate, "the predicate was true").is_ok();
+        let result =
+            catch_unwind_silent(|| check_predicate_false(predicate, "the predicate was true"))
+                .is_ok();
         assert_eq!(result, expected);
     }
 
@@ -383,7 +322,7 @@ mod tests {
     #[case(" a ")]
     #[case("abc")]
     fn test_check_valid_string_with_valid_value(#[case] s: &str) {
-        assert!(check_valid_string(s, "value").is_ok());
+        assert!(catch_unwind_silent(|| check_valid_string(s, "value")).is_ok());
     }
 
     #[rstest]
@@ -392,7 +331,7 @@ mod tests {
     #[case("  ")] // <-- whitespace-only string
     #[case("🦀")] // <-- contains non-ASCII char
     fn test_check_valid_string_with_invalid_values(#[case] s: &str) {
-        assert!(check_valid_string(s, "value").is_err());
+        assert!(catch_unwind_silent(|| check_valid_string(s, "value")).is_err());
     }
 
     #[rstest]
@@ -403,19 +342,19 @@ mod tests {
     #[case(Some(" a "))]
     #[case(Some("abc"))]
     fn test_check_valid_string_optional_with_valid_value(#[case] s: Option<&str>) {
-        assert!(check_valid_string_optional(s, "value").is_ok());
+        assert!(catch_unwind_silent(|| check_valid_string_optional(s, "value")).is_ok());
     }
 
     #[rstest]
     #[case("a", "a")]
     fn test_check_string_contains_when_does_contain(#[case] s: &str, #[case] pat: &str) {
-        assert!(check_string_contains(s, pat, "value").is_ok());
+        assert!(catch_unwind_silent(|| check_string_contains(s, pat, "value")).is_ok());
     }
 
     #[rstest]
     #[case("a", "b")]
     fn test_check_string_contains_when_does_not_contain(#[case] s: &str, #[case] pat: &str) {
-        assert!(check_string_contains(s, pat, "value").is_err());
+        assert!(catch_unwind_silent(|| check_string_contains(s, pat, "value")).is_err());
     }
 
     #[rstest]
@@ -427,14 +366,14 @@ mod tests {
     #[case(10i32, 20i32, "left", "right", false)]
     #[case("hello", "hello", "left", "right", true)]
     #[case("hello", "world", "left", "right", false)]
-    fn test_check_equal<T: PartialEq + Debug>(
+    fn test_check_equal<T: PartialEq + Debug + UnwindSafe>(
         #[case] lhs: T,
         #[case] rhs: T,
         #[case] lhs_param: &str,
         #[case] rhs_param: &str,
         #[case] expected: bool,
     ) {
-        let result = check_equal(lhs, rhs, lhs_param, rhs_param).is_ok();
+        let result = catch_unwind_silent(|| check_equal(lhs, rhs, lhs_param, rhs_param)).is_ok();
         assert_eq!(result, expected);
     }
 
@@ -450,7 +389,7 @@ mod tests {
         #[case] rhs_param: &str,
         #[case] expected: bool,
     ) {
-        let result = check_equal_u8(lhs, rhs, lhs_param, rhs_param).is_ok();
+        let result = catch_unwind_silent(|| check_equal_u8(lhs, rhs, lhs_param, rhs_param)).is_ok();
         assert_eq!(result, expected);
     }
 
@@ -466,40 +405,41 @@ mod tests {
         #[case] rhs_param: &str,
         #[case] expected: bool,
     ) {
-        let result = check_equal_usize(lhs, rhs, lhs_param, rhs_param).is_ok();
+        let result =
+            catch_unwind_silent(|| check_equal_usize(lhs, rhs, lhs_param, rhs_param)).is_ok();
         assert_eq!(result, expected);
     }
 
     #[rstest]
     #[case(1, "value")]
     fn test_check_positive_u64_when_positive(#[case] value: u64, #[case] param: &str) {
-        assert!(check_positive_u64(value, param).is_ok());
+        assert!(catch_unwind_silent(|| check_positive_u64(value, param)).is_ok());
     }
 
     #[rstest]
     #[case(0, "value")]
     fn test_check_positive_u64_when_not_positive(#[case] value: u64, #[case] param: &str) {
-        assert!(check_positive_u64(value, param).is_err());
+        assert!(catch_unwind_silent(|| check_positive_u64(value, param)).is_err());
     }
 
     #[rstest]
     #[case(1, "value")]
     fn test_check_positive_i64_when_positive(#[case] value: i64, #[case] param: &str) {
-        assert!(check_positive_i64(value, param).is_ok());
+        assert!(catch_unwind_silent(|| check_positive_i64(value, param)).is_ok());
     }
 
     #[rstest]
     #[case(0, "value")]
     #[case(-1, "value")]
     fn test_check_positive_i64_when_not_positive(#[case] value: i64, #[case] param: &str) {
-        assert!(check_positive_i64(value, param).is_err());
+        assert!(catch_unwind_silent(|| check_positive_i64(value, param)).is_err());
     }
 
     #[rstest]
     #[case(0.0, "value")]
     #[case(1.0, "value")]
     fn test_check_non_negative_f64_when_not_negative(#[case] value: f64, #[case] param: &str) {
-        assert!(check_non_negative_f64(value, param).is_ok());
+        assert!(catch_unwind_silent(|| check_non_negative_f64(value, param)).is_ok());
     }
 
     #[rstest]
@@ -508,7 +448,7 @@ mod tests {
     #[case(f64::NEG_INFINITY, "value")]
     #[case(-0.1, "value")]
     fn test_check_non_negative_f64_when_negative(#[case] value: f64, #[case] param: &str) {
-        assert!(check_non_negative_f64(value, param).is_err());
+        assert!(catch_unwind_silent(|| check_non_negative_f64(value, param)).is_err());
     }
 
     #[rstest]
@@ -521,7 +461,7 @@ mod tests {
         #[case] r: u8,
         #[case] desc: &str,
     ) {
-        assert!(check_in_range_inclusive_u8(value, l, r, desc).is_ok());
+        assert!(catch_unwind_silent(|| check_in_range_inclusive_u8(value, l, r, desc)).is_ok());
     }
 
     #[rstest]
@@ -533,7 +473,7 @@ mod tests {
         #[case] r: u8,
         #[case] param: &str,
     ) {
-        assert!(check_in_range_inclusive_u8(value, l, r, param).is_err());
+        assert!(catch_unwind_silent(|| check_in_range_inclusive_u8(value, l, r, param)).is_err());
     }
 
     #[rstest]
@@ -546,7 +486,7 @@ mod tests {
         #[case] r: u64,
         #[case] param: &str,
     ) {
-        assert!(check_in_range_inclusive_u64(value, l, r, param).is_ok());
+        assert!(catch_unwind_silent(|| check_in_range_inclusive_u64(value, l, r, param)).is_ok());
     }
 
     #[rstest]
@@ -558,7 +498,7 @@ mod tests {
         #[case] r: u64,
         #[case] param: &str,
     ) {
-        assert!(check_in_range_inclusive_u64(value, l, r, param).is_err());
+        assert!(catch_unwind_silent(|| check_in_range_inclusive_u64(value, l, r, param)).is_err());
     }
 
     #[rstest]
@@ -571,7 +511,7 @@ mod tests {
         #[case] r: i64,
         #[case] param: &str,
     ) {
-        assert!(check_in_range_inclusive_i64(value, l, r, param).is_ok());
+        assert!(catch_unwind_silent(|| check_in_range_inclusive_i64(value, l, r, param)).is_ok());
     }
 
     #[rstest]
@@ -584,7 +524,7 @@ mod tests {
         #[case] r: f64,
         #[case] param: &str,
     ) {
-        assert!(check_in_range_inclusive_f64(value, l, r, param).is_ok());
+        assert!(catch_unwind_silent(|| check_in_range_inclusive_f64(value, l, r, param)).is_ok());
     }
 
     #[rstest]
@@ -596,7 +536,7 @@ mod tests {
         #[case] r: f64,
         #[case] param: &str,
     ) {
-        assert!(check_in_range_inclusive_f64(value, l, r, param).is_err());
+        assert!(catch_unwind_silent(|| check_in_range_inclusive_f64(value, l, r, param)).is_err());
     }
 
     #[rstest]
@@ -608,7 +548,7 @@ mod tests {
         #[case] r: i64,
         #[case] param: &str,
     ) {
-        assert!(check_in_range_inclusive_i64(value, l, r, param).is_err());
+        assert!(catch_unwind_silent(|| check_in_range_inclusive_i64(value, l, r, param)).is_err());
     }
 
     #[rstest]
@@ -621,7 +561,7 @@ mod tests {
         #[case] r: usize,
         #[case] param: &str,
     ) {
-        assert!(check_in_range_inclusive_usize(value, l, r, param).is_ok());
+        assert!(catch_unwind_silent(|| check_in_range_inclusive_usize(value, l, r, param)).is_ok());
     }
 
     #[rstest]
@@ -633,14 +573,17 @@ mod tests {
         #[case] r: usize,
         #[case] param: &str,
     ) {
-        assert!(check_in_range_inclusive_usize(value, l, r, param).is_err());
+        assert!(
+            catch_unwind_silent(|| check_in_range_inclusive_usize(value, l, r, param)).is_err()
+        );
     }
 
     #[rstest]
     #[case(vec![], true)]
     #[case(vec![1_u8], false)]
     fn test_check_slice_empty(#[case] collection: Vec<u8>, #[case] expected: bool) {
-        let result = check_slice_empty(collection.as_slice(), "param").is_ok();
+        let result =
+            catch_unwind_silent(|| check_slice_empty(collection.as_slice(), "param")).is_ok();
         assert_eq!(result, expected);
     }
 
@@ -648,7 +591,8 @@ mod tests {
     #[case(vec![], false)]
     #[case(vec![1_u8], true)]
     fn test_check_slice_not_empty(#[case] collection: Vec<u8>, #[case] expected: bool) {
-        let result = check_slice_not_empty(collection.as_slice(), "param").is_ok();
+        let result =
+            catch_unwind_silent(|| check_slice_not_empty(collection.as_slice(), "param")).is_ok();
         assert_eq!(result, expected);
     }
 
@@ -656,7 +600,7 @@ mod tests {
     #[case(HashMap::new(), true)]
     #[case(HashMap::from([("A".to_string(), 1_u8)]), false)]
     fn test_check_map_empty(#[case] map: HashMap<String, u8>, #[case] expected: bool) {
-        let result = check_map_empty(&map, "param").is_ok();
+        let result = catch_unwind_silent(|| check_empty_map(&map, "param")).is_ok();
         assert_eq!(result, expected);
     }
 
@@ -664,7 +608,7 @@ mod tests {
     #[case(HashMap::new(), false)]
     #[case(HashMap::from([("A".to_string(), 1_u8)]), true)]
     fn test_check_map_not_empty(#[case] map: HashMap<String, u8>, #[case] expected: bool) {
-        let result = check_map_not_empty(&map, "param").is_ok();
+        let result = catch_unwind_silent(|| check_map_not_empty(&map, "param")).is_ok();
         assert_eq!(result, expected);
     }
 
@@ -679,7 +623,8 @@ mod tests {
         #[case] map_name: &str,
         #[case] expected: bool,
     ) {
-        let result = check_key_not_in_map(&key, map, key_name, map_name).is_ok();
+        let result =
+            catch_unwind_silent(|| check_key_not_in_map(&key, map, key_name, map_name)).is_ok();
         assert_eq!(result, expected);
     }
 
@@ -694,7 +639,8 @@ mod tests {
         #[case] map_name: &str,
         #[case] expected: bool,
     ) {
-        let result = check_key_in_map(&key, map, key_name, map_name).is_ok();
+        let result =
+            catch_unwind_silent(|| check_key_in_map(&key, map, key_name, map_name)).is_ok();
         assert_eq!(result, expected);
     }
 
@@ -709,7 +655,9 @@ mod tests {
         #[case] set_name: &str,
         #[case] expected: bool,
     ) {
-        let result = check_member_not_in_set(&member, set, member_name, set_name).is_ok();
+        let result =
+            catch_unwind_silent(|| check_member_not_in_set(&member, set, member_name, set_name))
+                .is_ok();
         assert_eq!(result, expected);
     }
 
@@ -724,7 +672,9 @@ mod tests {
         #[case] set_name: &str,
         #[case] expected: bool,
     ) {
-        let result = check_member_in_set(&member, set, member_name, set_name).is_ok();
+        let result =
+            catch_unwind_silent(|| check_member_in_set(&member, set, member_name, set_name))
+                .is_ok();
         assert_eq!(result, expected);
     }
 }
