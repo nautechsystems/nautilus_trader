@@ -21,7 +21,6 @@ from nautilus_trader.core.datetime cimport unix_nanos_to_dt
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderType
-from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.core.uuid cimport UUID4
@@ -31,7 +30,6 @@ from nautilus_trader.model.functions cimport contingency_type_to_str
 from nautilus_trader.model.functions cimport liquidity_side_to_str
 from nautilus_trader.model.functions cimport order_side_to_str
 from nautilus_trader.model.functions cimport order_type_to_str
-from nautilus_trader.model.functions cimport position_side_to_str
 from nautilus_trader.model.functions cimport time_in_force_to_str
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecAlgorithmId
@@ -75,8 +73,6 @@ cdef class MarketToLimitOrder(Order):
         The order time in force.
     expire_time_ns : uint64_t, default 0 (no expiry)
         UNIX timestamp (nanoseconds) when the order will expire.
-    posision_side : PositionSide {``NO_POSITION_SIDE``, ``LONG``, ``SHORT``}, default ``NO_POSITION_SIDE``
-        The position side.
     reduce_only : bool, default False
         If the order carries the 'reduce-only' execution instruction.
     quote_quantity : bool, default False
@@ -126,7 +122,6 @@ cdef class MarketToLimitOrder(Order):
         uint64_t ts_init,
         TimeInForce time_in_force = TimeInForce.GTC,
         uint64_t expire_time_ns = 0,
-        PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         bint reduce_only = False,
         bint quote_quantity = False,
         Quantity display_qty = None,
@@ -166,7 +161,6 @@ cdef class MarketToLimitOrder(Order):
             order_type=OrderType.MARKET_TO_LIMIT,
             quantity=quantity,
             time_in_force=time_in_force,
-            position_side=position_side,
             post_only=False,
             reduce_only=reduce_only,
             quote_quantity=quote_quantity,
@@ -234,12 +228,10 @@ cdef class MarketToLimitOrder(Order):
 
         """
         cdef str expiration_str = "" if self.expire_time_ns == 0 else f" {format_iso8601(unix_nanos_to_dt(self.expire_time_ns))}"
-        cdef str position_side_str = "" if self.position_side == PositionSide.NO_POSITION_SIDE else f" POSITION_SIDE[{position_side_to_str(self.position_side)}]"
         return (
             f"{order_side_to_str(self.side)} {self.quantity.to_formatted_str()} {self.instrument_id} "
             f"{order_type_to_str(self.order_type)} @ {self.price.to_formatted_str() if self.price else None} "
             f"{time_in_force_to_str(self.time_in_force)}{expiration_str}"
-            f"{position_side_str}"
         )
 
     cpdef dict to_dict(self):
@@ -267,7 +259,6 @@ cdef class MarketToLimitOrder(Order):
             "price": str(self.price),
             "time_in_force": time_in_force_to_str(self.time_in_force),
             "expire_time_ns": self.expire_time_ns if self.expire_time_ns > 0 else None,
-            "position_side": position_side_to_str(self.position_side),
             "is_reduce_only": self.is_reduce_only,
             "is_quote_quantity": self.is_quote_quantity,
             "display_qty": str(self.display_qty) if self.display_qty is not None else None,
@@ -323,7 +314,6 @@ cdef class MarketToLimitOrder(Order):
             quantity=init.quantity,
             time_in_force=init.time_in_force,
             expire_time_ns=init.options["expire_time_ns"],
-            position_side=init.position_side,
             reduce_only=init.reduce_only,
             quote_quantity=init.quote_quantity,
             display_qty=Quantity.from_str_c(display_qty_str) if display_qty_str is not None else None,

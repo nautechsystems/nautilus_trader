@@ -1226,7 +1226,6 @@ cdef class Strategy(Actor):
             order_side=Order.closing_side_c(position.side),
             quantity=position.quantity,
             time_in_force=TimeInForce.GTC,
-            position_side=position.side,
             reduce_only=True,
             quote_quantity=False,
             exec_algorithm_id=None,

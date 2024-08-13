@@ -31,7 +31,6 @@ from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.execution.messages import SubmitOrder
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import PositionSide
 from nautilus_trader.model.enums import TrailingOffsetType
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.identifiers import AccountId
@@ -472,85 +471,3 @@ class TestBinanceFuturesExecutionClient:
         assert request[2]["workingType"] == "MARK_PRICE"
         assert request[2]["recvWindow"] == "5000"
         assert request[2]["signature"] is not None
-
-    @pytest.mark.asyncio()
-    async def test_submit_market_order_with_position_side(self, mocker):
-        # Arrange
-        mock_send_request = mocker.patch(
-            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
-        )
-
-        order = self.strategy.order_factory.market(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(1),
-            position_side=PositionSide.SHORT,
-        )
-        self.cache.add_order(order, None)
-
-        submit_order = SubmitOrder(
-            trader_id=self.trader_id,
-            strategy_id=self.strategy.id,
-            position_id=None,
-            order=order,
-            command_id=UUID4(),
-            ts_init=0,
-        )
-
-        # Act
-        self.exec_client.submit_order(submit_order)
-        await asyncio.sleep(0.3)
-
-        # Assert
-        request = mock_send_request.call_args[0]
-        assert request[0] == "POST"
-        assert request[1] == "/fapi/v1/order"
-        assert request[2]["symbol"] == "ETHUSDT"  # -PERP was stripped
-        assert request[2]["type"] == "MARKET"
-        assert request[2]["side"] == "BUY"
-        assert request[2]["quantity"] == "1"
-        assert request[2]["newClientOrderId"] is not None
-        assert request[2]["recvWindow"] == "5000"
-        assert request[2]["positionSide"] == "SHORT"
-
-    @pytest.mark.asyncio()
-    async def test_submit_limit_order_with_position_side(self, mocker):
-        # Arrange
-        mock_send_request = mocker.patch(
-            target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
-        )
-
-        order = self.strategy.order_factory.limit(
-            instrument_id=ETHUSDT_PERP_BINANCE.id,
-            order_side=OrderSide.BUY,
-            quantity=Quantity.from_int(10),
-            price=Price.from_str("10050.80"),
-            position_side=PositionSide.LONG,
-        )
-        self.cache.add_order(order, None)
-
-        submit_order = SubmitOrder(
-            trader_id=self.trader_id,
-            strategy_id=self.strategy.id,
-            position_id=None,
-            order=order,
-            command_id=UUID4(),
-            ts_init=0,
-        )
-
-        # Act
-        self.exec_client.submit_order(submit_order)
-        await asyncio.sleep(0.3)
-
-        # Assert
-        request = mock_send_request.call_args[0]
-        assert request[0] == "POST"
-        assert request[1] == "/fapi/v1/order"
-        assert request[2]["symbol"] == "ETHUSDT"  # -PERP was stripped
-        assert request[2]["side"] == "BUY"
-        assert request[2]["type"] == "LIMIT"
-        assert request[2]["quantity"] == "10"
-        assert request[2]["newClientOrderId"] is not None
-        assert request[2]["recvWindow"] == "5000"
-        assert request[2]["signature"] is not None
-        assert request[2]["positionSide"] == "LONG"

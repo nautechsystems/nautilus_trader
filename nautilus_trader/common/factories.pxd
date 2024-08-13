@@ -24,7 +24,6 @@ from nautilus_trader.common.generators cimport OrderListIdGenerator
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport OrderType
-from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.rust.model cimport TimeInForce
 from nautilus_trader.core.rust.model cimport TrailingOffsetType
 from nautilus_trader.core.rust.model cimport TriggerType
@@ -73,7 +72,6 @@ cdef class OrderFactory:
         OrderSide order_side,
         Quantity quantity,
         TimeInForce time_in_force=*,
-        PositionSide position_side=*,
         bint reduce_only=*,
         bint quote_quantity=*,
         ExecAlgorithmId exec_algorithm_id=*,
@@ -89,7 +87,6 @@ cdef class OrderFactory:
         Price price,
         TimeInForce time_in_force=*,
         datetime expire_time=*,
-        PositionSide position_side=*,
         bint post_only=*,
         bint reduce_only=*,
         bint quote_quantity=*,
@@ -110,7 +107,6 @@ cdef class OrderFactory:
         TriggerType trigger_type=*,
         TimeInForce time_in_force=*,
         datetime expire_time=*,
-        PositionSide position_side=*,
         bint reduce_only=*,
         bint quote_quantity=*,
         TriggerType emulation_trigger=*,
@@ -130,7 +126,6 @@ cdef class OrderFactory:
         TriggerType trigger_type=*,
         TimeInForce time_in_force=*,
         datetime expire_time=*,
-        PositionSide position_side=*,
         bint post_only=*,
         bint reduce_only=*,
         bint quote_quantity=*,
@@ -149,7 +144,6 @@ cdef class OrderFactory:
         Quantity quantity,
         TimeInForce time_in_force=*,
         datetime expire_time=*,
-        PositionSide position_side=*,
         bint reduce_only=*,
         bint quote_quantity=*,
         Quantity display_qty=*,
@@ -167,7 +161,6 @@ cdef class OrderFactory:
         TriggerType trigger_type=*,
         TimeInForce time_in_force=*,
         datetime expire_time=*,
-        PositionSide position_side=*,
         bint reduce_only=*,
         bint quote_quantity=*,
         TriggerType emulation_trigger=*,
@@ -187,7 +180,6 @@ cdef class OrderFactory:
         TriggerType trigger_type=*,
         TimeInForce time_in_force=*,
         datetime expire_time=*,
-        PositionSide position_side=*,
         bint post_only=*,
         bint reduce_only=*,
         bint quote_quantity=*,
@@ -210,7 +202,6 @@ cdef class OrderFactory:
         TrailingOffsetType trailing_offset_type=*,
         TimeInForce time_in_force=*,
         datetime expire_time=*,
-        PositionSide position_side=*,
         bint reduce_only=*,
         bint quote_quantity=*,
         TriggerType emulation_trigger=*,
@@ -233,7 +224,6 @@ cdef class OrderFactory:
         TrailingOffsetType trailing_offset_type=*,
         TimeInForce time_in_force=*,
         datetime expire_time=*,
-        PositionSide position_side=*,
         bint post_only=*,
         bint reduce_only=*,
         bint quote_quantity=*,
@@ -259,7 +249,6 @@ cdef class OrderFactory:
         OrderType tp_order_type=*,
         TimeInForce time_in_force=*,
         datetime expire_time=*,
-        PositionSide position_side=*,
         bint entry_post_only=*,
         bint tp_post_only=*,
         bint quote_quantity=*,

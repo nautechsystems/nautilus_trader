@@ -234,7 +234,6 @@ class BinanceOrder(msgspec.Struct, frozen=True):
                 if self.timeInForce
                 else None
             ),
-            position_side=self.positionSide,
             order_status=order_status,
             price=Price.from_str(self.price),
             trigger_price=Price.from_str(str(trigger_price)),  # `decimal.Decimal`

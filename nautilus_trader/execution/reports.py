@@ -89,8 +89,6 @@ class OrderStatusReport(ExecutionReport):
         The reported order type.
     time_in_force : TimeInForce {``GTC``, ``IOC``, ``FOK``, ``GTD``, ``DAY``, ``AT_THE_OPEN``, ``AT_THE_CLOSE``}
         The reported order time in force.
-    position_side : PositionSide {``FLAT``, ``LONG``, ``SHORT``}
-        The reported position side at the exchange.
     order_status : OrderStatus
         The reported order status at the exchange.
     quantity : Quantity
@@ -182,7 +180,6 @@ class OrderStatusReport(ExecutionReport):
         reduce_only: bool = False,
         cancel_reason: str | None = None,
         ts_triggered: int | None = None,
-        position_side: PositionSide | None = None,
     ) -> None:
         PyCondition.positive(quantity, "quantity")
         PyCondition.not_negative(filled_qty, "filled_qty")
@@ -210,7 +207,6 @@ class OrderStatusReport(ExecutionReport):
         self.contingency_type = contingency_type
         self.time_in_force = time_in_force
         self.expire_time = expire_time
-        self.position_side = position_side
         self.order_status = order_status
         self.price = price
         self.trigger_price = trigger_price
@@ -256,7 +252,6 @@ class OrderStatusReport(ExecutionReport):
             f"contingency_type={contingency_type_to_str(self.contingency_type)}, "
             f"time_in_force={time_in_force_to_str(self.time_in_force)}, "
             f"expire_time={self.expire_time}, "
-            f"position_side={position_side_to_str(self.position_side)}, "
             f"order_status={order_status_to_str(self.order_status)}, "
             f"price={self.price}, "
             f"trigger_price={self.trigger_price}, "
