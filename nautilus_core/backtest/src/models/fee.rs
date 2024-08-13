@@ -31,6 +31,12 @@ pub trait FeeModel {
     ) -> anyhow::Result<Money>;
 }
 
+#[derive(Clone, Debug)]
+pub enum FeeModelAny {
+    Fixed(FixedFeeModel),
+    MakerTaker(MakerTakerFeeModel),
+}
+
 #[derive(Debug, Clone)]
 pub struct FixedFeeModel {
     commission: Money,
