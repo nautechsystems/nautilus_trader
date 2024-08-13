@@ -53,9 +53,9 @@ pub fn calculate_commission(
         panic!("Invalid liquidity side {liquidity_side}")
     };
     if instrument.is_inverse() && !use_quote_for_inverse.unwrap_or(false) {
-        Ok(Money::new(commission, instrument.base_currency().unwrap()).unwrap())
+        Ok(Money::new(commission, instrument.base_currency().unwrap()))
     } else {
-        Ok(Money::new(commission, instrument.quote_currency()).unwrap())
+        Ok(Money::new(commission, instrument.quote_currency()))
     }
 }
 
@@ -81,7 +81,7 @@ pub fn test_position_long(audusd_sim: CurrencyPair) -> Position {
         None,
         None,
     );
-    Position::new(&audusd_sim, filled.into()).unwrap()
+    Position::new(&audusd_sim, filled.into())
 }
 
 #[fixture]
@@ -106,7 +106,7 @@ pub fn test_position_short(audusd_sim: CurrencyPair) -> Position {
         None,
         None,
     );
-    Position::new(&audusd_sim, filled.into()).unwrap()
+    Position::new(&audusd_sim, filled.into())
 }
 
 #[must_use]
@@ -146,13 +146,11 @@ pub fn stub_order_book_mbp(
         let price = Price::new(
             price_increment.mul_add(-(i as f64), top_bid_price),
             price_precision,
-        )
-        .unwrap();
+        );
         let size = Quantity::new(
             size_increment.mul_add(i as f64, top_bid_size),
             size_precision,
-        )
-        .unwrap();
+        );
         let order = BookOrder::new(
             OrderSide::Buy,
             price,
@@ -167,13 +165,11 @@ pub fn stub_order_book_mbp(
         let price = Price::new(
             price_increment.mul_add(i as f64, top_ask_price),
             price_precision,
-        )
-        .unwrap();
+        );
         let size = Quantity::new(
             size_increment.mul_add(i as f64, top_ask_size),
             size_precision,
-        )
-        .unwrap();
+        );
         let order = BookOrder::new(
             OrderSide::Sell,
             price,

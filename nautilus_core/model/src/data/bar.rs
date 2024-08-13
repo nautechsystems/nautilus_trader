@@ -236,11 +236,10 @@ impl FromStr for BarType {
 }
 
 impl From<&str> for BarType {
-    fn from(input: &str) -> Self {
-        Self::from_str(input).unwrap()
+    fn from(value: &str) -> Self {
+        Self::from_str(value).unwrap()
     }
 }
-
 impl Display for BarType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -642,12 +641,12 @@ mod tests {
     #[rstest]
     fn test_bar_type_equality() {
         let instrument_id1 = InstrumentId {
-            symbol: Symbol::new("AUD/USD").unwrap(),
-            venue: Venue::new("SIM").unwrap(),
+            symbol: Symbol::new("AUD/USD"),
+            venue: Venue::new("SIM"),
         };
         let instrument_id2 = InstrumentId {
-            symbol: Symbol::new("GBP/USD").unwrap(),
-            venue: Venue::new("SIM").unwrap(),
+            symbol: Symbol::new("GBP/USD"),
+            venue: Venue::new("SIM"),
         };
         let bar_spec = BarSpecification {
             step: 1,
@@ -677,13 +676,13 @@ mod tests {
     #[rstest]
     fn test_bar_type_comparison() {
         let instrument_id1 = InstrumentId {
-            symbol: Symbol::new("AUD/USD").unwrap(),
-            venue: Venue::new("SIM").unwrap(),
+            symbol: Symbol::new("AUD/USD"),
+            venue: Venue::new("SIM"),
         };
 
         let instrument_id2 = InstrumentId {
-            symbol: Symbol::new("GBP/USD").unwrap(),
-            venue: Venue::new("SIM").unwrap(),
+            symbol: Symbol::new("GBP/USD"),
+            venue: Venue::new("SIM"),
         };
         let bar_spec = BarSpecification {
             step: 1,
@@ -715,8 +714,8 @@ mod tests {
     #[rstest]
     fn test_bar_equality() {
         let instrument_id = InstrumentId {
-            symbol: Symbol::new("AUDUSD").unwrap(),
-            venue: Venue::new("SIM").unwrap(),
+            symbol: Symbol::new("AUDUSD"),
+            venue: Venue::new("SIM"),
         };
         let bar_spec = BarSpecification {
             step: 1,

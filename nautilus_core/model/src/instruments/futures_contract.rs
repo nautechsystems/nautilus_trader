@@ -89,18 +89,17 @@ impl FuturesContract {
         margin_maint: Option<Decimal>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
-        check_valid_string_optional(exchange.map(|u| u.as_str()), stringify!(isin))?;
-        check_valid_string(underlying.as_str(), stringify!(underlying))?;
+    ) -> Self {
+        check_valid_string_optional(exchange.map(|u| u.as_str()), stringify!(isin));
+        check_valid_string(underlying.as_str(), stringify!(underlying));
         check_equal_u8(
             price_precision,
             price_increment.precision,
             stringify!(price_precision),
             stringify!(price_increment.precision),
-        )?;
-        check_positive_i64(price_increment.raw, stringify!(price_increment.raw))?;
-
-        Ok(Self {
+        );
+        check_positive_i64(price_increment.raw, stringify!(price_increment.raw));
+        Self {
             id,
             raw_symbol,
             asset_class,
@@ -112,7 +111,7 @@ impl FuturesContract {
             price_precision,
             price_increment,
             size_precision: 0,
-            size_increment: Quantity::from("1"),
+            size_increment: Quantity::from(1),
             multiplier,
             lot_size,
             margin_init: margin_init.unwrap_or(0.into()),
@@ -123,7 +122,7 @@ impl FuturesContract {
             min_price,
             ts_event,
             ts_init,
-        })
+        }
     }
 }
 

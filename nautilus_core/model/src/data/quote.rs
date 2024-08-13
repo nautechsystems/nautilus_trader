@@ -76,13 +76,13 @@ impl QuoteTick {
             ask_price.precision,
             "bid_price.precision",
             "ask_price.precision",
-        )?;
+        );
         check_equal_u8(
             bid_size.precision,
             ask_size.precision,
             "bid_size.precision",
             "ask_size.precision",
-        )?;
+        );
         Ok(Self {
             instrument_id,
             bid_price,
@@ -129,8 +129,7 @@ impl QuoteTick {
             PriceType::Mid => Price::from_raw(
                 (self.bid_price.raw + self.ask_price.raw) / 2,
                 cmp::min(self.bid_price.precision + 1, FIXED_PRECISION),
-            )
-            .unwrap(), // Already a valid `Price`
+            ),
             _ => panic!("Cannot extract with price type {price_type}"),
         }
     }
@@ -144,7 +143,7 @@ impl QuoteTick {
                 (self.bid_size.raw + self.ask_size.raw) / 2,
                 cmp::min(self.bid_size.precision + 1, FIXED_PRECISION),
             )
-            .unwrap(), // Already a valid `Quantity`
+            .unwrap(),
             _ => panic!("Cannot extract with price type {price_type}"),
         }
     }

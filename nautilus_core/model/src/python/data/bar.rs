@@ -139,19 +139,19 @@ impl Bar {
         let open_py: &PyAny = obj.getattr("open")?;
         let price_prec: u8 = open_py.getattr("precision")?.extract()?;
         let open_raw: i64 = open_py.getattr("raw")?.extract()?;
-        let open = Price::from_raw(open_raw, price_prec).map_err(to_pyvalue_err)?;
+        let open = Price::from_raw(open_raw, price_prec);
 
         let high_py: &PyAny = obj.getattr("high")?;
         let high_raw: i64 = high_py.getattr("raw")?.extract()?;
-        let high = Price::from_raw(high_raw, price_prec).map_err(to_pyvalue_err)?;
+        let high = Price::from_raw(high_raw, price_prec);
 
         let low_py: &PyAny = obj.getattr("low")?;
         let low_raw: i64 = low_py.getattr("raw")?.extract()?;
-        let low = Price::from_raw(low_raw, price_prec).map_err(to_pyvalue_err)?;
+        let low = Price::from_raw(low_raw, price_prec);
 
         let close_py: &PyAny = obj.getattr("close")?;
         let close_raw: i64 = close_py.getattr("raw")?.extract()?;
-        let close = Price::from_raw(close_raw, price_prec).map_err(to_pyvalue_err)?;
+        let close = Price::from_raw(close_raw, price_prec);
 
         let volume_py: &PyAny = obj.getattr("volume")?;
         let volume_raw: u64 = volume_py.getattr("raw")?.extract()?;

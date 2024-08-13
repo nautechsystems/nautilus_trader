@@ -42,7 +42,7 @@ pub extern "C" fn trade_tick_new(
 ) -> TradeTick {
     TradeTick::new(
         instrument_id,
-        Price::from_raw(price_raw, price_prec).unwrap(),
+        Price::from_raw(price_raw, price_prec),
         Quantity::from_raw(size_raw, size_prec).unwrap(),
         aggressor_side,
         trade_id,

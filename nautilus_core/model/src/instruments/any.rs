@@ -237,7 +237,7 @@ impl InstrumentAny {
         }
     }
 
-    pub fn make_price(&self, value: f64) -> anyhow::Result<Price> {
+    pub fn make_price(&self, value: f64) -> Price {
         match self {
             Self::CryptoFuture(inst) => inst.make_price(value),
             Self::CryptoPerpetual(inst) => inst.make_price(value),
@@ -250,7 +250,7 @@ impl InstrumentAny {
         }
     }
 
-    pub fn make_qty(&self, value: f64) -> anyhow::Result<Quantity> {
+    pub fn make_qty(&self, value: f64) -> Quantity {
         match self {
             Self::CryptoFuture(inst) => inst.make_qty(value),
             Self::CryptoPerpetual(inst) => inst.make_qty(value),

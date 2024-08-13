@@ -67,7 +67,7 @@ impl OrderBookDelta {
             let price_py: &PyAny = order_pyobject.getattr("price")?;
             let price_raw: i64 = price_py.getattr("raw")?.extract()?;
             let price_prec: u8 = price_py.getattr("precision")?.extract()?;
-            let price = Price::from_raw(price_raw, price_prec).map_err(to_pyvalue_err)?;
+            let price = Price::from_raw(price_raw, price_prec);
 
             let size_py: &PyAny = order_pyobject.getattr("size")?;
             let size_raw: u64 = size_py.getattr("raw")?.extract()?;

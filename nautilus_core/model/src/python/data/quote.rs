@@ -49,12 +49,12 @@ impl QuoteTick {
         let bid_price_py: &PyAny = obj.getattr("bid_price")?.extract()?;
         let bid_price_raw: i64 = bid_price_py.getattr("raw")?.extract()?;
         let bid_price_prec: u8 = bid_price_py.getattr("precision")?.extract()?;
-        let bid_price = Price::from_raw(bid_price_raw, bid_price_prec).map_err(to_pyvalue_err)?;
+        let bid_price = Price::from_raw(bid_price_raw, bid_price_prec);
 
         let ask_price_py: &PyAny = obj.getattr("ask_price")?.extract()?;
         let ask_price_raw: i64 = ask_price_py.getattr("raw")?.extract()?;
         let ask_price_prec: u8 = ask_price_py.getattr("precision")?.extract()?;
-        let ask_price = Price::from_raw(ask_price_raw, ask_price_prec).map_err(to_pyvalue_err)?;
+        let ask_price = Price::from_raw(ask_price_raw, ask_price_prec);
 
         let bid_size_py: &PyAny = obj.getattr("bid_size")?.extract()?;
         let bid_size_raw: u64 = bid_size_py.getattr("raw")?.extract()?;
@@ -134,8 +134,8 @@ impl QuoteTick {
         let ts_init: u64 = tuple.10.extract()?;
 
         self.instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
-        self.bid_price = Price::from_raw(bid_price_raw, bid_price_prec).map_err(to_pyvalue_err)?;
-        self.ask_price = Price::from_raw(ask_price_raw, ask_price_prec).map_err(to_pyvalue_err)?;
+        self.bid_price = Price::from_raw(bid_price_raw, bid_price_prec);
+        self.ask_price = Price::from_raw(ask_price_raw, ask_price_prec);
         self.bid_size = Quantity::from_raw(bid_size_raw, bid_size_prec).map_err(to_pyvalue_err)?;
         self.ask_size = Quantity::from_raw(ask_size_raw, ask_size_prec).map_err(to_pyvalue_err)?;
         self.ts_event = ts_event.into();
@@ -295,8 +295,8 @@ impl QuoteTick {
     ) -> PyResult<Self> {
         Self::new(
             instrument_id,
-            Price::from_raw(bid_price_raw, bid_price_prec).map_err(to_pyvalue_err)?,
-            Price::from_raw(ask_price_raw, ask_price_prec).map_err(to_pyvalue_err)?,
+            Price::from_raw(bid_price_raw, bid_price_prec),
+            Price::from_raw(ask_price_raw, ask_price_prec),
             Quantity::from_raw(bid_size_raw, bid_size_prec).map_err(to_pyvalue_err)?,
             Quantity::from_raw(ask_size_raw, ask_size_prec).map_err(to_pyvalue_err)?,
             ts_event.into(),

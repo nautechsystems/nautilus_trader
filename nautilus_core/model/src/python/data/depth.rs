@@ -193,8 +193,8 @@ impl OrderBookDepth10 {
         for order in bids.iter_mut().take(DEPTH10_LEN) {
             *order = BookOrder::new(
                 OrderSide::Buy,
-                Price::new(price, 2).unwrap(),
-                Quantity::new(quantity, 0).unwrap(),
+                Price::new(price, 2),
+                Quantity::new(quantity, 0),
                 order_id,
             );
 
@@ -211,8 +211,8 @@ impl OrderBookDepth10 {
         for order in asks.iter_mut().take(DEPTH10_LEN) {
             *order = BookOrder::new(
                 OrderSide::Sell,
-                Price::new(price, 2).unwrap(),
-                Quantity::new(quantity, 0).unwrap(),
+                Price::new(price, 2),
+                Quantity::new(quantity, 0),
                 order_id,
             );
 

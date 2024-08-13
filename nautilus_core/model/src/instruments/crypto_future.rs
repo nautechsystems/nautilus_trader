@@ -94,23 +94,23 @@ impl CryptoFuture {
         min_price: Option<Price>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
+    ) -> Self {
         check_equal_u8(
             price_precision,
             price_increment.precision,
             stringify!(price_precision),
             stringify!(price_increment.precision),
-        )?;
+        );
         check_equal_u8(
             size_precision,
             size_increment.precision,
             stringify!(size_precision),
             stringify!(size_increment.precision),
-        )?;
-        check_positive_i64(price_increment.raw, stringify!(price_increment.raw))?;
-        check_positive_u64(size_increment.raw, stringify!(size_increment.raw))?;
+        );
+        check_positive_i64(price_increment.raw, stringify!(price_increment.raw));
+        check_positive_u64(size_increment.raw, stringify!(size_increment.raw));
 
-        Ok(Self {
+        Self {
             id,
             raw_symbol,
             underlying,
@@ -136,7 +136,7 @@ impl CryptoFuture {
             min_price,
             ts_event,
             ts_init,
-        })
+        }
     }
 }
 
@@ -225,7 +225,7 @@ impl Instrument for CryptoFuture {
 
     fn multiplier(&self) -> Quantity {
         // SAFETY: Unwrap safe as using known values
-        Quantity::new(1.0, 0).unwrap()
+        Quantity::new(1.0, 0)
     }
 
     fn lot_size(&self) -> Option<Quantity> {

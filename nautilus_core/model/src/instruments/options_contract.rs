@@ -93,18 +93,18 @@ impl OptionsContract {
         margin_maint: Option<Decimal>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
-        check_valid_string_optional(exchange.map(|u| u.as_str()), stringify!(isin))?;
-        check_valid_string(underlying.as_str(), stringify!(underlying))?;
+    ) -> Self {
+        check_valid_string_optional(exchange.map(|u| u.as_str()), stringify!(isin));
+        check_valid_string(underlying.as_str(), stringify!(underlying));
         check_equal_u8(
             price_precision,
             price_increment.precision,
             stringify!(price_precision),
             stringify!(price_increment.precision),
-        )?;
-        check_positive_i64(price_increment.raw, stringify!(price_increment.raw))?;
+        );
+        check_positive_i64(price_increment.raw, stringify!(price_increment.raw));
 
-        Ok(Self {
+        Self {
             id,
             raw_symbol,
             asset_class,
@@ -129,7 +129,7 @@ impl OptionsContract {
             margin_maint: margin_maint.unwrap_or(0.into()),
             ts_event,
             ts_init,
-        })
+        }
     }
 }
 

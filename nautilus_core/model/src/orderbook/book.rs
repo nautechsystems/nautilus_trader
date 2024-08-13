@@ -595,7 +595,7 @@ mod tests {
             price,
             size,
             AggressorSide::Buyer,
-            TradeId::new("123456789").unwrap(),
+            TradeId::new("123456789"),
             0.into(),
             0.into(),
         );

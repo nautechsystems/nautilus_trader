@@ -35,8 +35,8 @@ impl Currency {
         iso4217: u16,
         name: &str,
         currency_type: CurrencyType,
-    ) -> PyResult<Self> {
-        Self::new(code, precision, iso4217, name, currency_type).map_err(to_pyvalue_err)
+    ) -> Self {
+        Self::new(code, precision, iso4217, name, currency_type)
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -149,9 +149,7 @@ impl Currency {
                 if strict {
                     Err(to_pyvalue_err(e))
                 } else {
-                    // SAFETY: Unwrap safe as using known values
-                    let new_crypto = Self::new(value, 8, 0, value, CurrencyType::Crypto).unwrap();
-                    Ok(new_crypto)
+                    Ok(Self::new(value, 8, 0, value, CurrencyType::Crypto))
                 }
             }
         }

@@ -136,7 +136,7 @@ impl AccountState {
         let ts_event: u64 = dict.get_item("ts_event")?.unwrap().extract()?;
         let ts_init: u64 = dict.get_item("ts_init")?.unwrap().extract()?;
         let account = Self::new(
-            AccountId::from_str(account_id).unwrap(),
+            AccountId::from(account_id),
             AccountType::from_str(account_type).unwrap(),
             balances,
             margins,

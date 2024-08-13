@@ -21,7 +21,7 @@ use crate::types::quantity::Quantity;
 #[no_mangle]
 pub extern "C" fn quantity_new(value: f64, precision: u8) -> Quantity {
     // SAFETY: Assumes `value` and `precision` are properly validated
-    Quantity::new(value, precision).unwrap()
+    Quantity::new(value, precision)
 }
 
 #[no_mangle]

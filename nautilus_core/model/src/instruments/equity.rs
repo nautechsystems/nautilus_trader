@@ -79,17 +79,17 @@ impl Equity {
         min_price: Option<Price>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
-        check_valid_string_optional(isin.map(|u| u.as_str()), stringify!(isin))?;
+    ) -> Self {
+        check_valid_string_optional(isin.map(|u| u.as_str()), stringify!(isin));
         check_equal_u8(
             price_precision,
             price_increment.precision,
             stringify!(price_precision),
             stringify!(price_increment.precision),
-        )?;
-        check_positive_i64(price_increment.raw, stringify!(price_increment.raw))?;
+        );
+        check_positive_i64(price_increment.raw, stringify!(price_increment.raw));
 
-        Ok(Self {
+        Self {
             id,
             raw_symbol,
             isin,
@@ -107,7 +107,7 @@ impl Equity {
             min_price,
             ts_event,
             ts_init,
-        })
+        }
     }
 }
 

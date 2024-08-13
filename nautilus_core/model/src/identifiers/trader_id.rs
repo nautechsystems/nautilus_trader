@@ -44,11 +44,10 @@ impl TraderId {
     /// # Panics
     ///
     /// Panics if `value` is not a valid string, or does not contain a hyphen '-' separator.
-    pub fn new(value: &str) -> anyhow::Result<Self> {
-        check_valid_string(value, stringify!(value))?;
-        check_string_contains(value, "-", stringify!(value))?;
-
-        Ok(Self(Ustr::from(value)))
+    pub fn new(value: &str) -> Self {
+        check_valid_string(value, stringify!(value));
+        check_string_contains(value, "-", stringify!(value));
+        Self(Ustr::from(value))
     }
 
     /// Sets the inner identifier value.
@@ -84,12 +83,6 @@ impl Debug for TraderId {
 impl Display for TraderId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
-    }
-}
-
-impl From<&str> for TraderId {
-    fn from(input: &str) -> Self {
-        Self::new(input).unwrap()
     }
 }
 

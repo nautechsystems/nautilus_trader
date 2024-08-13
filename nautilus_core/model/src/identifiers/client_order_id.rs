@@ -38,10 +38,9 @@ impl ClientOrderId {
     /// # Panics
     ///
     /// Panics if `value` is not a valid string.
-    pub fn new(value: &str) -> anyhow::Result<Self> {
-        check_valid_string(value, stringify!(value))?;
-
-        Ok(Self(Ustr::from(value)))
+    pub fn new(value: &str) -> Self {
+        check_valid_string(value, stringify!(value));
+        Self(Ustr::from(value))
     }
 
     /// Sets the inner identifier value.
@@ -80,7 +79,7 @@ pub fn optional_ustr_to_vec_client_order_ids(s: Option<Ustr>) -> Option<Vec<Clie
         let s_str = ustr.to_string();
         s_str
             .split(',')
-            .map(|s| ClientOrderId::new(s).unwrap())
+            .map(|s| ClientOrderId::new(s))
             .collect::<Vec<ClientOrderId>>()
     })
 }
@@ -95,12 +94,6 @@ pub fn optional_vec_client_order_ids_to_ustr(vec: Option<Vec<ClientOrderId>>) ->
             .join(",");
         Ustr::from(&s)
     })
-}
-
-impl From<&str> for ClientOrderId {
-    fn from(input: &str) -> Self {
-        Self::new(input).unwrap()
-    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////

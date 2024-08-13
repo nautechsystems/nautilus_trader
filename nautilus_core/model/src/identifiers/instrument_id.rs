@@ -60,10 +60,8 @@ impl FromStr for InstrumentId {
     fn from_str(s: &str) -> anyhow::Result<Self> {
         match s.rsplit_once('.') {
             Some((symbol_part, venue_part)) => Ok(Self {
-                symbol: Symbol::new(symbol_part)
-                    .map_err(|e| anyhow::anyhow!(err_message(s, e.to_string())))?,
-                venue: Venue::new(venue_part)
-                    .map_err(|e| anyhow::anyhow!(err_message(s, e.to_string())))?,
+                symbol: Symbol::new(symbol_part),
+                venue: Venue::new(venue_part),
             }),
             None => {
                 anyhow::bail!(err_message(
@@ -76,8 +74,22 @@ impl FromStr for InstrumentId {
 }
 
 impl From<&str> for InstrumentId {
-    fn from(input: &str) -> Self {
-        Self::from_str(input).unwrap()
+    fn from(s: &str) -> Self {
+        match s.rsplit_once('.') {
+            Some((symbol_part, venue_part)) => Self {
+                symbol: Symbol::new(symbol_part),
+                venue: Venue::new(venue_part),
+            },
+            None => {
+                panic!(
+                    "{}",
+                    err_message(
+                        s,
+                        "Missing '.' separator between symbol and venue components".to_string()
+                    )
+                )
+            }
+        }
     }
 }
 
@@ -108,7 +120,7 @@ impl<'de> Deserialize<'de> for InstrumentId {
         D: Deserializer<'de>,
     {
         let instrument_id_str = String::deserialize(deserializer)?;
-        Self::from_str(&instrument_id_str).map_err(|err| serde::de::Error::custom(err.to_string()))
+        Ok(Self::from(instrument_id_str.as_str()))
     }
 }
 
@@ -135,15 +147,11 @@ mod tests {
     }
 
     #[rstest]
+    #[should_panic(
+        expected = "Error parsing `InstrumentId` from '': Missing '.' separator between symbol and venue components"
+    )]
     fn test_instrument_id_parse_failure_no_dot() {
-        let result = InstrumentId::from_str("ETHUSDT-BINANCE");
-        assert!(result.is_err());
-
-        let error = result.unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            "Error parsing `InstrumentId` from 'ETHUSDT-BINANCE': Missing '.' separator between symbol and venue components"
-        );
+        InstrumentId::from("ETHUSDT-BINANCE");
     }
 
     #[rstest]
