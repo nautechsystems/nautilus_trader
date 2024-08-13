@@ -15,7 +15,6 @@
 
 //! Identifiers for the trading domain model.
 
-use std::str::FromStr;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
