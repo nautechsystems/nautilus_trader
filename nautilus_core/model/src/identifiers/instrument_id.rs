@@ -133,7 +133,6 @@ fn err_message(s: &str, e: String) -> String {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    
 
     use rstest::rstest;
 

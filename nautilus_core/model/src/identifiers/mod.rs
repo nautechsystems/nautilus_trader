@@ -15,7 +15,6 @@
 
 //! Identifiers for the trading domain model.
 
-
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[macro_use]

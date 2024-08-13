@@ -72,7 +72,7 @@ impl OrderBookDelta {
             let size_py: &PyAny = order_pyobject.getattr("size")?;
             let size_raw: u64 = size_py.getattr("raw")?.extract()?;
             let size_prec: u8 = size_py.getattr("precision")?.extract()?;
-            let size = Quantity::from_raw(size_raw, size_prec).map_err(to_pyvalue_err)?;
+            let size = Quantity::from_raw(size_raw, size_prec);
 
             let order_id: OrderId = order_pyobject.getattr("order_id")?.extract()?;
             BookOrder {

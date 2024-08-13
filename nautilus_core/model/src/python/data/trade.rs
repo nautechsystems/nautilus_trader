@@ -54,7 +54,7 @@ impl TradeTick {
         let size_py: &PyAny = obj.getattr("size")?.extract()?;
         let size_raw: u64 = size_py.getattr("raw")?.extract()?;
         let size_prec: u8 = size_py.getattr("precision")?.extract()?;
-        let size = Quantity::from_raw(size_raw, size_prec).map_err(to_pyvalue_err)?;
+        let size = Quantity::from_raw(size_raw, size_prec);
 
         let aggressor_side_obj: &PyAny = obj.getattr("aggressor_side")?.extract()?;
         let aggressor_side_u8 = aggressor_side_obj.getattr("value")?.extract()?;
@@ -126,7 +126,7 @@ impl TradeTick {
 
         self.instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
         self.price = Price::from_raw(price_raw, price_prec);
-        self.size = Quantity::from_raw(size_raw, size_prec).map_err(to_pyvalue_err)?;
+        self.size = Quantity::from_raw(size_raw, size_prec);
         self.aggressor_side = AggressorSide::from_u8(aggressor_side_u8).unwrap();
         self.trade_id = TradeId::from(trade_id_str.as_str());
         self.ts_event = ts_event.into();

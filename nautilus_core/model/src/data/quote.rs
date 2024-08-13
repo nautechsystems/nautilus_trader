@@ -142,8 +142,7 @@ impl QuoteTick {
             PriceType::Mid => Quantity::from_raw(
                 (self.bid_size.raw + self.ask_size.raw) / 2,
                 cmp::min(self.bid_size.precision + 1, FIXED_PRECISION),
-            )
-            .unwrap(),
+            ),
             _ => panic!("Cannot extract with price type {price_type}"),
         }
     }

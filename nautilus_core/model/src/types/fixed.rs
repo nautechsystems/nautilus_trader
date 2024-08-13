@@ -16,11 +16,10 @@
 pub const FIXED_PRECISION: u8 = 9;
 pub const FIXED_SCALAR: f64 = 1_000_000_000.0; // 10.0**FIXED_PRECISION
 
-pub fn check_fixed_precision(precision: u8) -> anyhow::Result<()> {
-    if precision > FIXED_PRECISION {
-        anyhow::bail!("Condition failed: `precision` was greater than the maximum `FIXED_PRECISION` (9), was {precision}")
-    }
-    Ok(())
+pub fn check_fixed_precision(precision: u8) {
+    assert!(precision > FIXED_PRECISION,
+        "Condition failed: `precision` was greater than the maximum `FIXED_PRECISION` (9), was {precision}"
+    )
 }
 
 #[must_use]
@@ -59,19 +58,30 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use std::panic::{self, UnwindSafe};
+
+    fn catch_unwind_silent<F: FnOnce() -> R + panic::UnwindSafe, R>(
+        f: F,
+    ) -> std::thread::Result<R> {
+        let prev_hook = panic::take_hook();
+        panic::set_hook(Box::new(|_| {}));
+        let result = panic::catch_unwind(f);
+        panic::set_hook(prev_hook);
+        result
+    }
 
     #[rstest]
     #[case(0)]
     #[case(FIXED_PRECISION)]
     fn test_valid_precision(#[case] precision: u8) {
-        let result = check_fixed_precision(precision);
+        let result = catch_unwind_silent(|| check_fixed_precision(precision));
         assert!(result.is_ok());
     }
 
     #[rstest]
     fn test_invalid_precision() {
         let precision = FIXED_PRECISION + 1;
-        let result = check_fixed_precision(precision);
+        let result = catch_unwind_silent(|| check_fixed_precision(precision));
         assert!(result.is_err());
     }
 

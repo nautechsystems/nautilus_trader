@@ -79,7 +79,7 @@ pub fn optional_ustr_to_vec_client_order_ids(s: Option<Ustr>) -> Option<Vec<Clie
         let s_str = ustr.to_string();
         s_str
             .split(',')
-            .map(|s| ClientOrderId::new(s))
+            .map(ClientOrderId::new)
             .collect::<Vec<ClientOrderId>>()
     })
 }

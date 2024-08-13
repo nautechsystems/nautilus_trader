@@ -331,8 +331,8 @@ impl Quantity {
 
     #[staticmethod]
     #[pyo3(name = "from_raw")]
-    fn py_from_raw(raw: u64, precision: u8) -> PyResult<Self> {
-        Self::from_raw(raw, precision).map_err(to_pyvalue_err)
+    fn py_from_raw(raw: u64, precision: u8) -> Self {
+        Self::from_raw(raw, precision)
     }
 
     #[staticmethod]

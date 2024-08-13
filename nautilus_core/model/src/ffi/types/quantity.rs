@@ -26,7 +26,7 @@ pub extern "C" fn quantity_new(value: f64, precision: u8) -> Quantity {
 
 #[no_mangle]
 pub extern "C" fn quantity_from_raw(raw: u64, precision: u8) -> Quantity {
-    Quantity::from_raw(raw, precision).unwrap()
+    Quantity::from_raw(raw, precision)
 }
 
 #[no_mangle]

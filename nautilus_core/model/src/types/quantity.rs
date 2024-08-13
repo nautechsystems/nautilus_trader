@@ -60,14 +60,14 @@ impl Quantity {
         }
     }
 
-    pub fn from_raw(raw: u64, precision: u8) -> anyhow::Result<Self> {
-        check_fixed_precision(precision)?;
-        Ok(Self { raw, precision })
+    pub fn from_raw(raw: u64, precision: u8) -> Self {
+        check_fixed_precision(precision);
+        Self { raw, precision }
     }
 
     #[must_use]
     pub fn zero(precision: u8) -> Self {
-        check_fixed_precision(precision).unwrap();
+        check_fixed_precision(precision);
         Self::new(0.0, precision)
     }
 
@@ -410,7 +410,7 @@ mod tests {
 
     #[rstest]
     fn test_undefined() {
-        let qty = Quantity::from_raw(QUANTITY_UNDEF, 0).unwrap();
+        let qty = Quantity::from_raw(QUANTITY_UNDEF, 0);
         assert_eq!(qty.raw, QUANTITY_UNDEF);
         assert!(qty.is_undefined());
     }
