@@ -156,8 +156,7 @@ impl SimulatedExchange {
             self.id,
             "Venue of instrument id",
             "Venue of simulated exchange",
-        )
-        .unwrap();
+        );
 
         if self.account_type == AccountType::Cash
             && (matches!(instrument, InstrumentAny::CryptoPerpetual(_))

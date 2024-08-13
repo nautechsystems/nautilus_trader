@@ -426,7 +426,7 @@ mod tests {
     #[case("0 US")] // <-- Invalid currency
     #[case("0 USD USD")] // <-- Too many parts
     fn test_from_str_invalid_input(#[case] input: &str) {
-        Money::from(input);
+        let _ = Money::from(input);
     }
 
     #[rstest]

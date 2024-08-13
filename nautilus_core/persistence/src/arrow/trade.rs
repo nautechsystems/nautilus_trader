@@ -136,8 +136,8 @@ impl DecodeFromRecordBatch for TradeTick {
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|i| {
-                let price = Price::from_raw(price_values.value(i), price_precision).unwrap();
-                let size = Quantity::from_raw(size_values.value(i), size_precision).unwrap();
+                let price = Price::from_raw(price_values.value(i), price_precision);
+                let size = Quantity::from_raw(size_values.value(i), size_precision);
                 let aggressor_side_value = aggressor_side_values.value(i);
                 let aggressor_side = AggressorSide::from_repr(aggressor_side_value as usize)
                     .ok_or_else(|| {
@@ -232,7 +232,7 @@ mod tests {
             price: Price::from("100.10"),
             size: Quantity::from(1000),
             aggressor_side: AggressorSide::Buyer,
-            trade_id: TradeId::new("1").unwrap(),
+            trade_id: TradeId::new("1"),
             ts_event: 1.into(),
             ts_init: 3.into(),
         };
@@ -242,7 +242,7 @@ mod tests {
             price: Price::from("100.50"),
             size: Quantity::from(500),
             aggressor_side: AggressorSide::Seller,
-            trade_id: TradeId::new("2").unwrap(),
+            trade_id: TradeId::new("2"),
             ts_event: 2.into(),
             ts_init: 4.into(),
         };

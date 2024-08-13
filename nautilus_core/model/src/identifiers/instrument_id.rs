@@ -150,7 +150,7 @@ mod tests {
         expected = "Error parsing `InstrumentId` from '': Missing '.' separator between symbol and venue components"
     )]
     fn test_instrument_id_parse_failure_no_dot() {
-        InstrumentId::from("ETHUSDT-BINANCE");
+        let _ = InstrumentId::from("ETHUSDT-BINANCE");
     }
 
     #[rstest]

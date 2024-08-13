@@ -58,7 +58,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use std::panic::{self, UnwindSafe};
+    use std::panic::{self};
 
     fn catch_unwind_silent<F: FnOnce() -> R + panic::UnwindSafe, R>(
         f: F,

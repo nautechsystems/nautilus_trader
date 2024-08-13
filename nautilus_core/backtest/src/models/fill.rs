@@ -36,9 +36,9 @@ impl FillModel {
         prob_slippage: f64,
         random_seed: Option<u64>,
     ) -> anyhow::Result<Self> {
-        check_in_range_inclusive_f64(prob_fill_on_limit, 0.0, 1.0, "prob_fill_on_limit").unwrap();
-        check_in_range_inclusive_f64(prob_fill_on_stop, 0.0, 1.0, "prob_fill_on_stop").unwrap();
-        check_in_range_inclusive_f64(prob_slippage, 0.0, 1.0, "prob_slippage").unwrap();
+        check_in_range_inclusive_f64(prob_fill_on_limit, 0.0, 1.0, "prob_fill_on_limit");
+        check_in_range_inclusive_f64(prob_fill_on_stop, 0.0, 1.0, "prob_fill_on_stop");
+        check_in_range_inclusive_f64(prob_slippage, 0.0, 1.0, "prob_slippage");
         let rng = match random_seed {
             Some(seed) => ChaChaRng::seed_from_u64(seed),
             None => ChaChaRng::from_entropy(),

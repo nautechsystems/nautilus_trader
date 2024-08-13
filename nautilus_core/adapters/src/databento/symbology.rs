@@ -95,7 +95,7 @@ pub fn infer_symbology_type(symbol: &str) -> String {
 }
 
 pub fn check_consistent_symbology(symbols: &[&str]) -> anyhow::Result<()> {
-    check_slice_not_empty(symbols, stringify!(symbols))?;
+    check_slice_not_empty(symbols, stringify!(symbols));
 
     // SAFETY: We checked len so know there must be at least one symbol
     let first_symbol = symbols.first().unwrap();

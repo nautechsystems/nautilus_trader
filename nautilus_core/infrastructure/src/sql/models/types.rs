@@ -33,8 +33,7 @@ impl<'r> FromRow<'r, PgRow> for CurrencyModel {
             iso4217 as u16,
             name.as_str(),
             currency_type_model.0,
-        )
-        .unwrap();
+        );
         Ok(CurrencyModel(currency))
     }
 }
