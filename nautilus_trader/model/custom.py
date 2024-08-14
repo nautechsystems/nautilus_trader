@@ -26,21 +26,24 @@ from nautilus_trader.serialization.base import register_serializable_type
 
 def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
     def wrapper(cls):  # noqa: C901 (too complex)
-        if cls.__init__ is object.__init__:
+        create_init = False
 
-            def __init__(self, ts_event: int = 0, ts_init: int = 0, **kwargs):
-                for key, value in kwargs.items():
-                    if key in self.__class__.__annotations__:
-                        setattr(self, key, value)
-                    else:
-                        raise ValueError(f"Unexpected keyword argument: {key}")
+        if cls.__init__ is object.__init__:
+            create_init = True
+
+        cls = dataclass(cls, **kwargs)
+
+        if create_init:
+            # cls.fields_init allows to use positional arguments for parameters other than ts_event and ts_init
+            cls.fields_init = cls.__init__
+
+            def __init__(self, ts_event: int = 0, ts_init: int = 0, *args2, **kwargs2):
+                self.fields_init(*args2, **kwargs2)
 
                 self._ts_event = ts_event
                 self._ts_init = ts_init
 
             cls.__init__ = __init__
-
-        cls = dataclass(cls, **kwargs)
 
         if "ts_event" not in cls.__dict__:
 
