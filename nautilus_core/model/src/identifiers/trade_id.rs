@@ -53,7 +53,8 @@ impl TradeId {
     ///
     /// Panics if `value` is not a valid string, or value length is greater than 36.
     pub fn new(value: &str) -> Self {
-        check_in_range_inclusive_usize(value.len(), 2, TRADE_ID_LEN, stringify!(value)).unwrap();
+        // check that string is non-empty and within the expected length
+        check_in_range_inclusive_usize(value.len(), 1, TRADE_ID_LEN, stringify!(value)).unwrap();
         Self::from_valid_bytes(value.as_bytes())
     }
 
@@ -63,6 +64,7 @@ impl TradeId {
             .expect("TradeId expected valid string as `CString`");
         check_valid_string(cstr_str, stringify!(cstr)).unwrap();
         let bytes = cstr.as_bytes_with_nul();
+        // check that string is non-empty excluding '\0' and within the expected length
         check_in_range_inclusive_usize(bytes.len(), 2, TRADE_ID_LEN, stringify!(cstr)).unwrap();
         Self::from_valid_bytes(bytes)
     }
