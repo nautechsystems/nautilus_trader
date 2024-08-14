@@ -4,9 +4,10 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added `LiveExecEngineConfig.generate_missing_orders` reconciliation config option to align internal and external position states
-- Improve `BinanceExecutionClient` position report requests (can now filter by instrument and includes reporting for flat positions)
-- Improve `BybitExecutionClient` position report requests (can now filter by instrument and includes reporting for flat positions)
-- Improve `LiveExecutionEngine` reconciliation robustness and recovery when internal positions do not match external positions
+- Improved `BinanceExecutionClient` position report requests (can now filter by instrument and includes reporting for flat positions)
+- Improved `BybitExecutionClient` position report requests (can now filter by instrument and includes reporting for flat positions)
+- Improved `LiveExecutionEngine` reconciliation robustness and recovery when internal positions do not match external positions
+- Improved `@customdataclass` decorator constructor to allow more positional arguments, thanks @faysou
 - Upgraded `datafusion` crate to v41.0.0
 
 ### Breaking Changes
@@ -23,7 +24,7 @@ Released on TBD (UTC).
 Released on 9th August 2024 (UTC).
 
 ### Enhancements
-- Added `@customdata` decorator to reduce need for boiler plate implementing custom data types (#1828), thanks @faysou
+- Added `@customdataclass` decorator to reduce need for boiler plate implementing custom data types (#1828), thanks @faysou
 - Added timeout for HTTP client in Rust (#1835), thanks @davidsblom
 - Added catalog conversion function of streamed data to backtest data (#1834), thanks @faysou
 - Upgraded Cython to v3.0.11
