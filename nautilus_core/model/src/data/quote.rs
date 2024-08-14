@@ -76,13 +76,15 @@ impl QuoteTick {
             ask_price.precision,
             "bid_price.precision",
             "ask_price.precision",
-        );
+        )
+        .unwrap();
         check_equal_u8(
             bid_size.precision,
             ask_size.precision,
             "bid_size.precision",
             "ask_size.precision",
-        );
+        )
+        .unwrap();
         Ok(Self {
             instrument_id,
             bid_price,

@@ -52,7 +52,7 @@ pub struct Money {
 impl Money {
     /// Creates a new [`Money`] instance.
     pub fn new(amount: f64, currency: Currency) -> Self {
-        check_in_range_inclusive_f64(amount, MONEY_MIN, MONEY_MAX, "amount");
+        check_in_range_inclusive_f64(amount, MONEY_MIN, MONEY_MAX, "amount").unwrap();
 
         Self {
             raw: f64_to_fixed_i64(amount, currency.precision),

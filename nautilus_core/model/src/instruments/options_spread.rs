@@ -92,16 +92,17 @@ impl OptionsSpread {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Self {
-        check_valid_string_optional(exchange.map(|u| u.as_str()), stringify!(isin));
-        check_valid_string(underlying.as_str(), stringify!(underlying));
-        check_valid_string(strategy_type.as_str(), stringify!(strategy_type));
+        check_valid_string_optional(exchange.map(|u| u.as_str()), stringify!(isin)).unwrap();
+        check_valid_string(underlying.as_str(), stringify!(underlying)).unwrap();
+        check_valid_string(strategy_type.as_str(), stringify!(strategy_type)).unwrap();
         check_equal_u8(
             price_precision,
             price_increment.precision,
             stringify!(price_precision),
             stringify!(price_increment.precision),
-        );
-        check_positive_i64(price_increment.raw, stringify!(price_increment.raw));
+        )
+        .unwrap();
+        check_positive_i64(price_increment.raw, stringify!(price_increment.raw)).unwrap();
         Self {
             id,
             raw_symbol,

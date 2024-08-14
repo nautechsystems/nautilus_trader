@@ -46,8 +46,8 @@ impl AccountId {
     ///
     /// Panics if `value` is not a valid string, or does not contain a hyphen '-' separator.
     pub fn new(value: &str) -> Self {
-        check_valid_string(value, stringify!(value));
-        check_string_contains(value, "-", stringify!(value));
+        check_valid_string(value, stringify!(value)).unwrap();
+        check_string_contains(value, "-", stringify!(value)).unwrap();
         Self(Ustr::from(value))
     }
 

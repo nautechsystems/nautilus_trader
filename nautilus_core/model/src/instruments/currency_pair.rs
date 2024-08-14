@@ -92,15 +92,17 @@ impl CurrencyPair {
             price_increment.precision,
             stringify!(price_precision),
             stringify!(price_increment.precision),
-        );
+        )
+        .unwrap();
         check_equal_u8(
             size_precision,
             size_increment.precision,
             stringify!(size_precision),
             stringify!(size_increment.precision),
-        );
-        check_positive_i64(price_increment.raw, stringify!(price_increment.raw));
-        check_positive_u64(size_increment.raw, stringify!(size_increment.raw));
+        )
+        .unwrap();
+        check_positive_i64(price_increment.raw, stringify!(price_increment.raw)).unwrap();
+        check_positive_u64(size_increment.raw, stringify!(size_increment.raw)).unwrap();
 
         Self {
             id,

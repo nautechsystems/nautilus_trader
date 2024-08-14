@@ -84,13 +84,15 @@ impl BarBuilder {
             bar_type.instrument_id,
             "instrument.id",
             "bar_type.instrument_id",
-        );
+        )
+        .unwrap();
         correctness::check_equal(
             bar_type.aggregation_source,
             AggregationSource::Internal,
             "bar_type.aggregation_source",
             "AggregationSource::Internal",
-        );
+        )
+        .unwrap();
 
         Self {
             bar_type,

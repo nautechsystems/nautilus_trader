@@ -1034,8 +1034,8 @@ impl Cache {
     /// The cache is agnostic to what the bytes actually represent (and how it may be serialized),
     /// which provides maximum flexibility.
     pub fn add(&mut self, key: &str, value: Bytes) -> anyhow::Result<()> {
-        check_valid_string(key, stringify!(key));
-        check_predicate_false(value.is_empty(), stringify!(value));
+        check_valid_string(key, stringify!(key)).unwrap();
+        check_predicate_false(value.is_empty(), stringify!(value)).unwrap();
 
         log::debug!("Adding general {key}");
         self.general.insert(key.to_string(), value.clone());
@@ -1080,7 +1080,7 @@ impl Cache {
 
     /// Adds the given `quotes` to the cache.
     pub fn add_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
-        check_slice_not_empty(quotes, stringify!(quotes));
+        check_slice_not_empty(quotes, stringify!(quotes)).unwrap();
 
         let instrument_id = quotes[0].instrument_id;
         log::debug!("Adding `QuoteTick`[{}] {}", quotes.len(), instrument_id);
@@ -1124,7 +1124,7 @@ impl Cache {
 
     /// Adds the give `trades` to the cache.
     pub fn add_trades(&mut self, trades: &[TradeTick]) -> anyhow::Result<()> {
-        check_slice_not_empty(trades, stringify!(trades));
+        check_slice_not_empty(trades, stringify!(trades)).unwrap();
 
         let instrument_id = trades[0].instrument_id;
         log::debug!("Adding `TradeTick`[{}] {}", trades.len(), instrument_id);
@@ -1168,7 +1168,7 @@ impl Cache {
 
     /// Adds the given `bars` to the cache.
     pub fn add_bars(&mut self, bars: &[Bar]) -> anyhow::Result<()> {
-        check_slice_not_empty(bars, stringify!(bars));
+        check_slice_not_empty(bars, stringify!(bars)).unwrap();
 
         let bar_type = bars[0].bar_type;
         log::debug!("Adding `Bar`[{}] {}", bars.len(), bar_type);
@@ -1305,25 +1305,29 @@ impl Cache {
                 &self.orders,
                 stringify!(client_order_id),
                 stringify!(orders),
-            );
+            )
+            .unwrap();
             check_key_not_in_map(
                 &client_order_id,
                 &self.orders,
                 stringify!(client_order_id),
                 stringify!(orders),
-            );
+            )
+            .unwrap();
             check_key_not_in_map(
                 &client_order_id,
                 &self.orders,
                 stringify!(client_order_id),
                 stringify!(orders),
-            );
+            )
+            .unwrap();
             check_key_not_in_map(
                 &client_order_id,
                 &self.orders,
                 stringify!(client_order_id),
                 stringify!(orders),
-            );
+            )
+            .unwrap();
         };
 
         log::debug!("Adding {:?}", order);
@@ -2393,7 +2397,7 @@ impl Cache {
 
     /// Gets a reference to the general object value for the given `key` (if found).
     pub fn get(&self, key: &str) -> anyhow::Result<Option<&Bytes>> {
-        check_valid_string(key, stringify!(key));
+        check_valid_string(key, stringify!(key)).unwrap();
 
         Ok(self.general.get(key))
     }

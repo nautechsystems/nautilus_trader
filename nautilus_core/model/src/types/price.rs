@@ -60,8 +60,8 @@ pub struct Price {
 
 impl Price {
     pub fn new(value: f64, precision: u8) -> Self {
-        check_in_range_inclusive_f64(value, PRICE_MIN, PRICE_MAX, "value");
-        check_fixed_precision(precision);
+        check_in_range_inclusive_f64(value, PRICE_MIN, PRICE_MAX, "value").unwrap();
+        check_fixed_precision(precision).unwrap();
         Self {
             raw: f64_to_fixed_i64(value, precision),
             precision,
@@ -69,13 +69,13 @@ impl Price {
     }
 
     pub fn from_raw(raw: i64, precision: u8) -> Self {
-        check_fixed_precision(precision);
+        check_fixed_precision(precision).unwrap();
         Self { raw, precision }
     }
 
     #[must_use]
     pub fn max(precision: u8) -> Self {
-        check_fixed_precision(precision);
+        check_fixed_precision(precision).unwrap();
         Self {
             raw: (PRICE_MAX * FIXED_SCALAR) as i64,
             precision,
@@ -84,7 +84,7 @@ impl Price {
 
     #[must_use]
     pub fn min(precision: u8) -> Self {
-        check_fixed_precision(precision);
+        check_fixed_precision(precision).unwrap();
         Self {
             raw: (PRICE_MIN * FIXED_SCALAR) as i64,
             precision,
@@ -93,7 +93,7 @@ impl Price {
 
     #[must_use]
     pub fn zero(precision: u8) -> Self {
-        check_fixed_precision(precision);
+        check_fixed_precision(precision).unwrap();
         Self { raw: 0, precision }
     }
 

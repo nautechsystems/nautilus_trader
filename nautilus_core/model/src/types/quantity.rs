@@ -52,8 +52,8 @@ pub struct Quantity {
 impl Quantity {
     /// Creates a new [`Quantity`] instance.
     pub fn new(value: f64, precision: u8) -> Self {
-        check_in_range_inclusive_f64(value, QUANTITY_MIN, QUANTITY_MAX, "value");
-        check_fixed_precision(precision);
+        check_in_range_inclusive_f64(value, QUANTITY_MIN, QUANTITY_MAX, "value").unwrap();
+        check_fixed_precision(precision).unwrap();
         Self {
             raw: f64_to_fixed_u64(value, precision),
             precision,
@@ -61,13 +61,13 @@ impl Quantity {
     }
 
     pub fn from_raw(raw: u64, precision: u8) -> Self {
-        check_fixed_precision(precision);
+        check_fixed_precision(precision).unwrap();
         Self { raw, precision }
     }
 
     #[must_use]
     pub fn zero(precision: u8) -> Self {
-        check_fixed_precision(precision);
+        check_fixed_precision(precision).unwrap();
         Self::new(0.0, precision)
     }
 

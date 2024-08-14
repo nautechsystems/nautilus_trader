@@ -228,11 +228,12 @@ impl Clock for TestClock {
         alert_time_ns: UnixNanos,
         callback: Option<EventHandler>,
     ) -> anyhow::Result<()> {
-        check_valid_string(name, stringify!(name));
+        check_valid_string(name, stringify!(name)).unwrap();
         check_predicate_true(
             callback.is_some() | self.default_callback.is_some(),
             "All Python callbacks were `None`",
-        );
+        )
+        .unwrap();
 
         let name_ustr = Ustr::from(name);
         match callback {
@@ -259,12 +260,13 @@ impl Clock for TestClock {
         stop_time_ns: Option<UnixNanos>,
         callback: Option<EventHandler>,
     ) -> anyhow::Result<()> {
-        check_valid_string(name, "name");
-        check_positive_u64(interval_ns, stringify!(interval_ns));
+        check_valid_string(name, "name").unwrap();
+        check_positive_u64(interval_ns, stringify!(interval_ns)).unwrap();
         check_predicate_true(
             callback.is_some() | self.default_callback.is_some(),
             "All Python callbacks were `None`",
-        );
+        )
+        .unwrap();
 
         let name_ustr = Ustr::from(name);
         match callback {
@@ -384,7 +386,7 @@ impl Clock for LiveClock {
         mut alert_time_ns: UnixNanos,
         callback: Option<EventHandler>,
     ) -> anyhow::Result<()> {
-        check_valid_string(name, stringify!(name));
+        check_valid_string(name, stringify!(name)).unwrap();
         assert!(
             callback.is_some() | self.default_callback.is_some(),
             "No callbacks provided",
@@ -413,12 +415,13 @@ impl Clock for LiveClock {
         stop_time_ns: Option<UnixNanos>,
         callback: Option<EventHandler>,
     ) -> anyhow::Result<()> {
-        check_valid_string(name, stringify!(name));
-        check_positive_u64(interval_ns, stringify!(interval_ns));
+        check_valid_string(name, stringify!(name)).unwrap();
+        check_positive_u64(interval_ns, stringify!(interval_ns)).unwrap();
         check_predicate_true(
             callback.is_some() | self.default_callback.is_some(),
             "No callbacks provided",
-        );
+        )
+        .unwrap();
 
         let callback = match callback {
             Some(callback) => callback,

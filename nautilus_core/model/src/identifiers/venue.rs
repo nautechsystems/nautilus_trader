@@ -43,7 +43,7 @@ impl Venue {
     ///
     /// Panics if `value` is not a valid string.
     pub fn new(value: &str) -> Self {
-        check_valid_string(value, stringify!(value));
+        check_valid_string(value, stringify!(value)).unwrap();
         Self(Ustr::from(value))
     }
 

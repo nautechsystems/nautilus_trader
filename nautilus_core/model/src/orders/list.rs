@@ -43,7 +43,7 @@ impl OrderList {
         orders: Vec<OrderAny>,
         ts_init: UnixNanos,
     ) -> Self {
-        check_slice_not_empty(orders.as_slice(), stringify!(orders));
+        check_slice_not_empty(orders.as_slice(), stringify!(orders)).unwrap();
         for order in &orders {
             assert_eq!(instrument_id, order.instrument_id());
             assert_eq!(strategy_id, order.strategy_id());

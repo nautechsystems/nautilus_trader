@@ -49,9 +49,9 @@ impl Currency {
         name: &str,
         currency_type: CurrencyType,
     ) -> Self {
-        check_valid_string(code, "code");
-        check_valid_string(name, "name");
-        check_fixed_precision(precision);
+        check_valid_string(code, "code").unwrap();
+        check_valid_string(name, "name").unwrap();
+        check_fixed_precision(precision).unwrap();
         Self {
             code: Ustr::from(code),
             precision,
