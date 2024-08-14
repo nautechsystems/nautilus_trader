@@ -39,7 +39,7 @@ def test_customdata_decorator_properties() -> None:
 
 def test_customdata_decorator_dict() -> None:
     # Arrange
-    data = GreeksTestData(1, 2)
+    data = GreeksTestData(1, 2, InstrumentId.from_str("ES.GLBX"), 0.0)
 
     # Act
     data_dict = data.to_dict()
