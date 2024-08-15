@@ -40,7 +40,6 @@ pub unsafe extern "C" fn currency_from_py(
         cstr_to_str(name_ptr),
         currency_type,
     )
-    .unwrap()
 }
 
 #[no_mangle]
@@ -103,7 +102,7 @@ mod tests {
 
     #[rstest]
     fn test_registration() {
-        let currency = Currency::new("MYC", 4, 0, "My Currency", CurrencyType::Crypto).unwrap();
+        let currency = Currency::new("MYC", 4, 0, "My Currency", CurrencyType::Crypto);
         currency_register(currency);
         unsafe {
             assert_eq!(currency_exists(str_to_cstr("MYC")), 1);

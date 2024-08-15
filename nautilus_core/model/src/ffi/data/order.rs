@@ -38,8 +38,8 @@ pub extern "C" fn book_order_from_raw(
 ) -> BookOrder {
     BookOrder::new(
         order_side,
-        Price::from_raw(price_raw, price_prec).unwrap(),
-        Quantity::from_raw(size_raw, size_prec).unwrap(),
+        Price::from_raw(price_raw, price_prec),
+        Quantity::from_raw(size_raw, size_prec),
         order_id,
     )
 }

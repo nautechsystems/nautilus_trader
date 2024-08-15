@@ -457,7 +457,7 @@ impl MarketOrder {
             x.and_then(|inner| {
                 let extracted_str = inner.extract::<&str>();
                 match extracted_str {
-                    Ok(item) => item.parse::<OrderListId>().ok(),
+                    Ok(item) => Some(OrderListId::from(item)),
                     Err(_) => None,
                 }
             })
@@ -468,7 +468,7 @@ impl MarketOrder {
                 match extracted_str {
                     Ok(item) => Some(
                         item.iter()
-                            .map(|x| x.parse::<ClientOrderId>().unwrap())
+                            .map(|x| ClientOrderId::from(x.as_str()))
                             .collect(),
                     ),
                     Err(_) => None,
@@ -479,7 +479,7 @@ impl MarketOrder {
             x.and_then(|inner| {
                 let extracted_str = inner.extract::<&str>();
                 match extracted_str {
-                    Ok(item) => item.parse::<ClientOrderId>().ok(),
+                    Ok(item) => Some(ClientOrderId::from(item)),
                     Err(_) => None,
                 }
             })
@@ -488,7 +488,7 @@ impl MarketOrder {
             x.and_then(|inner| {
                 let extracted_str = inner.extract::<&str>();
                 match extracted_str {
-                    Ok(item) => item.parse::<ExecAlgorithmId>().ok(),
+                    Ok(item) => Some(ExecAlgorithmId::from(item)),
                     Err(_) => None,
                 }
             })
@@ -506,7 +506,7 @@ impl MarketOrder {
             x.and_then(|inner| {
                 let extracted_str = inner.extract::<&str>();
                 match extracted_str {
-                    Ok(item) => item.parse::<ClientOrderId>().ok(),
+                    Ok(item) => Some(ClientOrderId::from(item)),
                     Err(_) => None,
                 }
             })

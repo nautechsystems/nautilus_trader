@@ -60,7 +60,7 @@ impl Default for TradeTick {
             price: Price::from("1.00000"),
             size: Quantity::from(100_000),
             aggressor_side: AggressorSide::Buyer,
-            trade_id: TradeId::new("123456789").unwrap(),
+            trade_id: TradeId::new("123456789"),
             ts_event: UnixNanos::default(),
             ts_init: UnixNanos::default(),
         }
@@ -227,8 +227,8 @@ pub fn stub_depth10() -> OrderBookDepth10 {
     for i in 0..DEPTH10_LEN {
         let order = BookOrder::new(
             OrderSide::Buy,
-            Price::new(price, 2).unwrap(),
-            Quantity::new(quantity, 0).unwrap(),
+            Price::new(price, 2),
+            Quantity::new(quantity, 0),
             order_id,
         );
 
@@ -248,8 +248,8 @@ pub fn stub_depth10() -> OrderBookDepth10 {
     for i in 0..DEPTH10_LEN {
         let order = BookOrder::new(
             OrderSide::Sell,
-            Price::new(price, 2).unwrap(),
-            Quantity::new(quantity, 0).unwrap(),
+            Price::new(price, 2),
+            Quantity::new(quantity, 0),
             order_id,
         );
 
@@ -316,7 +316,7 @@ pub fn stub_trade_tick_ethusdt_buyer() -> TradeTick {
         price: Price::from("10000.0000"),
         size: Quantity::from("1.00000000"),
         aggressor_side: AggressorSide::Buyer,
-        trade_id: TradeId::new("123456789").unwrap(),
+        trade_id: TradeId::new("123456789"),
         ts_event: UnixNanos::default(),
         ts_init: UnixNanos::from(1),
     }
@@ -325,8 +325,8 @@ pub fn stub_trade_tick_ethusdt_buyer() -> TradeTick {
 #[fixture]
 pub fn stub_bar() -> Bar {
     let instrument_id = InstrumentId {
-        symbol: Symbol::new("AUD/USD").unwrap(),
-        venue: Venue::new("SIM").unwrap(),
+        symbol: Symbol::new("AUD/USD"),
+        venue: Venue::new("SIM"),
     };
     let bar_spec = BarSpecification {
         step: 1,

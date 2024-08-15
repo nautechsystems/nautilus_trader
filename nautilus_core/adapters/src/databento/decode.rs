@@ -213,23 +213,23 @@ pub fn parse_status_trading_event(value: u16) -> anyhow::Result<Option<Ustr>> {
 }
 
 pub fn decode_price(value: i64, precision: u8) -> anyhow::Result<Price> {
-    match value {
+    Ok(match value {
         0 | i64::MAX => Price::new(10f64.powi(-i32::from(precision)), precision),
         _ => Price::from_raw(value, precision),
-    }
+    })
 }
 
 pub fn decode_optional_price(value: i64, precision: u8) -> anyhow::Result<Option<Price>> {
     match value {
         i64::MAX => Ok(None),
-        _ => Ok(Some(Price::from_raw(value, precision)?)),
+        _ => Ok(Some(Price::from_raw(value, precision))),
     }
 }
 
 pub fn decode_optional_quantity_i32(value: i32) -> anyhow::Result<Option<Quantity>> {
     match value {
         i32::MAX => Ok(None),
-        _ => Ok(Some(Quantity::new(f64::from(value), 0)?)),
+        _ => Ok(Some(Quantity::new(f64::from(value), 0))),
     }
 }
 
@@ -258,7 +258,7 @@ pub fn decode_equity_v1(
 ) -> anyhow::Result<Equity> {
     let currency = Currency::USD(); // TODO: Hard coding of US equities for now
 
-    Equity::new(
+    Ok(Equity::new(
         instrument_id,
         instrument_id.symbol,
         None, // No ISIN available yet
@@ -269,14 +269,14 @@ pub fn decode_equity_v1(
         None, // TBD
         None, // TBD
         None, // TBD
-        Some(Quantity::new(f64::from(msg.min_lot_size_round_lot), 0)?),
+        Some(Quantity::new(f64::from(msg.min_lot_size_round_lot), 0)),
         None,               // TBD
         None,               // TBD
         None,               // TBD
         None,               // TBD
         msg.ts_recv.into(), // More accurate and reliable timestamp
         ts_init,
-    )
+    ))
 }
 
 pub fn decode_futures_contract_v1(
@@ -299,7 +299,7 @@ pub fn decode_futures_contract_v1(
         other => f64::from(other),
     };
 
-    FuturesContract::new(
+    Ok(FuturesContract::new(
         instrument_id,
         instrument_id.symbol,
         asset_class.unwrap_or(AssetClass::Commodity),
@@ -310,8 +310,8 @@ pub fn decode_futures_contract_v1(
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(unit_of_measure_qty, 0)?,
-        Quantity::new(lot_size_round, 0)?,
+        Quantity::new(unit_of_measure_qty, 0),
+        Quantity::new(lot_size_round, 0),
         None,               // TBD
         None,               // TBD
         None,               // TBD
@@ -320,7 +320,7 @@ pub fn decode_futures_contract_v1(
         None,               // TBD
         msg.ts_recv.into(), // More accurate and reliable timestamp
         ts_init,
-    )
+    ))
 }
 
 pub fn decode_futures_spread_v1(
@@ -344,7 +344,7 @@ pub fn decode_futures_spread_v1(
         other => f64::from(other),
     };
 
-    FuturesSpread::new(
+    Ok(FuturesSpread::new(
         instrument_id,
         instrument_id.symbol,
         asset_class.unwrap_or(AssetClass::Commodity),
@@ -356,8 +356,8 @@ pub fn decode_futures_spread_v1(
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(unit_of_measure_qty, 0)?,
-        Quantity::new(lot_size_round, 0)?,
+        Quantity::new(unit_of_measure_qty, 0),
+        Quantity::new(lot_size_round, 0),
         None,               // TBD
         None,               // TBD
         None,               // TBD
@@ -366,7 +366,7 @@ pub fn decode_futures_spread_v1(
         None,               // TBD
         msg.ts_recv.into(), // More accurate and reliable timestamp
         ts_init,
-    )
+    ))
 }
 
 pub fn decode_options_contract_v1(
@@ -395,7 +395,7 @@ pub fn decode_options_contract_v1(
         other => f64::from(other),
     };
 
-    OptionsContract::new(
+    Ok(OptionsContract::new(
         instrument_id,
         instrument_id.symbol,
         asset_class_opt.unwrap_or(AssetClass::Commodity),
@@ -404,12 +404,12 @@ pub fn decode_options_contract_v1(
         parse_option_kind(msg.instrument_class)?,
         msg.activation.into(),
         msg.expiration.into(),
-        Price::from_raw(msg.strike_price, currency.precision)?,
+        Price::from_raw(msg.strike_price, currency.precision),
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(unit_of_measure_qty, 0)?,
-        Quantity::new(lot_size_round, 0)?,
+        Quantity::new(unit_of_measure_qty, 0),
+        Quantity::new(lot_size_round, 0),
         None, // TBD
         None, // TBD
         None, // TBD
@@ -418,7 +418,7 @@ pub fn decode_options_contract_v1(
         None,
         msg.ts_recv.into(), // More accurate and reliable timestamp
         ts_init,
-    )
+    ))
 }
 
 pub fn decode_options_spread_v1(
@@ -448,7 +448,7 @@ pub fn decode_options_spread_v1(
         other => f64::from(other),
     };
 
-    OptionsSpread::new(
+    Ok(OptionsSpread::new(
         instrument_id,
         instrument_id.symbol,
         asset_class_opt.unwrap_or(AssetClass::Commodity),
@@ -460,8 +460,8 @@ pub fn decode_options_spread_v1(
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(unit_of_measure_qty, 0)?,
-        Quantity::new(lot_size_round, 0)?,
+        Quantity::new(unit_of_measure_qty, 0),
+        Quantity::new(lot_size_round, 0),
         None,               // TBD
         None,               // TBD
         None,               // TBD
@@ -470,7 +470,7 @@ pub fn decode_options_spread_v1(
         None,               // TBD
         msg.ts_recv.into(), // More accurate and reliable timestamp
         ts_init,
-    )
+    ))
 }
 
 #[must_use]
@@ -490,10 +490,10 @@ pub fn decode_mbo_msg(
         if include_trades {
             let trade = TradeTick::new(
                 instrument_id,
-                Price::from_raw(msg.price, price_precision)?,
-                Quantity::from_raw(u64::from(msg.size) * FIXED_SCALAR as u64, 0)?,
+                Price::from_raw(msg.price, price_precision),
+                Quantity::from_raw(u64::from(msg.size) * FIXED_SCALAR as u64, 0),
                 parse_aggressor_side(msg.side),
-                TradeId::new(itoa::Buffer::new().format(msg.sequence))?,
+                TradeId::new(itoa::Buffer::new().format(msg.sequence)),
                 msg.ts_recv.into(),
                 ts_init,
             );
@@ -505,8 +505,8 @@ pub fn decode_mbo_msg(
 
     let order = BookOrder::new(
         side,
-        Price::from_raw(msg.price, price_precision)?,
-        Quantity::from_raw(u64::from(msg.size) * FIXED_SCALAR as u64, 0)?,
+        Price::from_raw(msg.price, price_precision),
+        Quantity::from_raw(u64::from(msg.size) * FIXED_SCALAR as u64, 0),
         msg.order_id,
     );
 
@@ -531,10 +531,10 @@ pub fn decode_trade_msg(
 ) -> anyhow::Result<TradeTick> {
     let trade = TradeTick::new(
         instrument_id,
-        Price::from_raw(msg.price, price_precision)?,
-        Quantity::from_raw(u64::from(msg.size) * FIXED_SCALAR as u64, 0)?,
+        Price::from_raw(msg.price, price_precision),
+        Quantity::from_raw(u64::from(msg.size) * FIXED_SCALAR as u64, 0),
         parse_aggressor_side(msg.side),
-        TradeId::new(itoa::Buffer::new().format(msg.sequence))?,
+        TradeId::new(itoa::Buffer::new().format(msg.sequence)),
         msg.ts_recv.into(),
         ts_init,
     );
@@ -551,20 +551,20 @@ pub fn decode_tbbo_msg(
     let top_level = &msg.levels[0];
     let quote = QuoteTick::new(
         instrument_id,
-        Price::from_raw(top_level.bid_px, price_precision)?,
-        Price::from_raw(top_level.ask_px, price_precision)?,
-        Quantity::from_raw(u64::from(top_level.bid_sz) * FIXED_SCALAR as u64, 0)?,
-        Quantity::from_raw(u64::from(top_level.ask_sz) * FIXED_SCALAR as u64, 0)?,
+        Price::from_raw(top_level.bid_px, price_precision),
+        Price::from_raw(top_level.ask_px, price_precision),
+        Quantity::from_raw(u64::from(top_level.bid_sz) * FIXED_SCALAR as u64, 0),
+        Quantity::from_raw(u64::from(top_level.ask_sz) * FIXED_SCALAR as u64, 0),
         msg.ts_recv.into(),
         ts_init,
     )?;
 
     let trade = TradeTick::new(
         instrument_id,
-        Price::from_raw(msg.price, price_precision)?,
-        Quantity::from_raw(u64::from(msg.size) * FIXED_SCALAR as u64, 0)?,
+        Price::from_raw(msg.price, price_precision),
+        Quantity::from_raw(u64::from(msg.size) * FIXED_SCALAR as u64, 0),
         parse_aggressor_side(msg.side),
-        TradeId::new(itoa::Buffer::new().format(msg.sequence))?,
+        TradeId::new(itoa::Buffer::new().format(msg.sequence)),
         msg.ts_recv.into(),
         ts_init,
     );
@@ -582,10 +582,10 @@ pub fn decode_mbp1_msg(
     let top_level = &msg.levels[0];
     let quote = QuoteTick::new(
         instrument_id,
-        Price::from_raw(top_level.bid_px, price_precision)?,
-        Price::from_raw(top_level.ask_px, price_precision)?,
-        Quantity::from_raw(u64::from(top_level.bid_sz) * FIXED_SCALAR as u64, 0)?,
-        Quantity::from_raw(u64::from(top_level.ask_sz) * FIXED_SCALAR as u64, 0)?,
+        Price::from_raw(top_level.bid_px, price_precision),
+        Price::from_raw(top_level.ask_px, price_precision),
+        Quantity::from_raw(u64::from(top_level.bid_sz) * FIXED_SCALAR as u64, 0),
+        Quantity::from_raw(u64::from(top_level.ask_sz) * FIXED_SCALAR as u64, 0),
         msg.ts_recv.into(),
         ts_init,
     )?;
@@ -593,10 +593,10 @@ pub fn decode_mbp1_msg(
     let maybe_trade = if include_trades && msg.action as u8 as char == 'T' {
         Some(TradeTick::new(
             instrument_id,
-            Price::from_raw(msg.price, price_precision)?,
-            Quantity::from_raw(u64::from(msg.size) * FIXED_SCALAR as u64, 0)?,
+            Price::from_raw(msg.price, price_precision),
+            Quantity::from_raw(u64::from(msg.size) * FIXED_SCALAR as u64, 0),
             parse_aggressor_side(msg.side),
-            TradeId::new(itoa::Buffer::new().format(msg.sequence))?,
+            TradeId::new(itoa::Buffer::new().format(msg.sequence)),
             msg.ts_recv.into(),
             ts_init,
         ))
@@ -621,15 +621,15 @@ pub fn decode_mbp10_msg(
     for level in &msg.levels {
         let bid_order = BookOrder::new(
             OrderSide::Buy,
-            Price::from_raw(level.bid_px, price_precision)?,
-            Quantity::from_raw(u64::from(level.bid_sz) * FIXED_SCALAR as u64, 0)?,
+            Price::from_raw(level.bid_px, price_precision),
+            Quantity::from_raw(u64::from(level.bid_sz) * FIXED_SCALAR as u64, 0),
             0,
         );
 
         let ask_order = BookOrder::new(
             OrderSide::Sell,
-            Price::from_raw(level.ask_px, price_precision)?,
-            Quantity::from_raw(u64::from(level.ask_sz) * FIXED_SCALAR as u64, 0)?,
+            Price::from_raw(level.ask_px, price_precision),
+            Quantity::from_raw(u64::from(level.ask_sz) * FIXED_SCALAR as u64, 0),
             0,
         );
 
@@ -731,11 +731,11 @@ pub fn decode_ohlcv_msg(
 
     let bar = Bar::new(
         bar_type,
-        Price::from_raw(msg.open, price_precision)?,
-        Price::from_raw(msg.high, price_precision)?,
-        Price::from_raw(msg.low, price_precision)?,
-        Price::from_raw(msg.close, price_precision)?,
-        Quantity::from_raw(msg.volume * FIXED_SCALAR as u64, 0)?,
+        Price::from_raw(msg.open, price_precision),
+        Price::from_raw(msg.high, price_precision),
+        Price::from_raw(msg.low, price_precision),
+        Price::from_raw(msg.close, price_precision),
+        Quantity::from_raw(msg.volume * FIXED_SCALAR as u64, 0),
         ts_event,
         ts_init,
     )?;
@@ -902,7 +902,7 @@ pub fn decode_equity(
 ) -> anyhow::Result<Equity> {
     let currency = Currency::USD(); // TODO: Hard coding of US equities for now
 
-    Equity::new(
+    Ok(Equity::new(
         instrument_id,
         instrument_id.symbol,
         None, // No ISIN available yet
@@ -913,14 +913,14 @@ pub fn decode_equity(
         None, // TBD
         None, // TBD
         None, // TBD
-        Some(Quantity::new(f64::from(msg.min_lot_size_round_lot), 0)?),
+        Some(Quantity::new(f64::from(msg.min_lot_size_round_lot), 0)),
         None,               // TBD
         None,               // TBD
         None,               // TBD
         None,               // TBD
         msg.ts_recv.into(), // More accurate and reliable timestamp
         ts_init,
-    )
+    ))
 }
 
 pub fn decode_futures_contract(
@@ -943,7 +943,7 @@ pub fn decode_futures_contract(
         other => f64::from(other),
     };
 
-    FuturesContract::new(
+    Ok(FuturesContract::new(
         instrument_id,
         instrument_id.symbol,
         asset_class.unwrap_or(AssetClass::Commodity),
@@ -954,8 +954,8 @@ pub fn decode_futures_contract(
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(unit_of_measure_qty, 0)?,
-        Quantity::new(lot_size_round, 0)?,
+        Quantity::new(unit_of_measure_qty, 0),
+        Quantity::new(lot_size_round, 0),
         None,               // TBD
         None,               // TBD
         None,               // TBD
@@ -964,7 +964,7 @@ pub fn decode_futures_contract(
         None,               // TBD
         msg.ts_recv.into(), // More accurate and reliable timestamp
         ts_init,
-    )
+    ))
 }
 
 pub fn decode_futures_spread(
@@ -988,7 +988,7 @@ pub fn decode_futures_spread(
         other => f64::from(other),
     };
 
-    FuturesSpread::new(
+    Ok(FuturesSpread::new(
         instrument_id,
         instrument_id.symbol,
         asset_class.unwrap_or(AssetClass::Commodity),
@@ -1000,8 +1000,8 @@ pub fn decode_futures_spread(
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(unit_of_measure_qty, 0)?,
-        Quantity::new(lot_size_round, 0)?,
+        Quantity::new(unit_of_measure_qty, 0),
+        Quantity::new(lot_size_round, 0),
         None,               // TBD
         None,               // TBD
         None,               // TBD
@@ -1010,7 +1010,7 @@ pub fn decode_futures_spread(
         None,               // TBD
         msg.ts_recv.into(), // More accurate and reliable timestamp
         ts_init,
-    )
+    ))
 }
 
 pub fn decode_options_contract(
@@ -1039,7 +1039,7 @@ pub fn decode_options_contract(
         other => f64::from(other),
     };
 
-    OptionsContract::new(
+    Ok(OptionsContract::new(
         instrument_id,
         instrument_id.symbol,
         asset_class_opt.unwrap_or(AssetClass::Commodity),
@@ -1048,12 +1048,12 @@ pub fn decode_options_contract(
         parse_option_kind(msg.instrument_class)?,
         msg.activation.into(),
         msg.expiration.into(),
-        Price::from_raw(msg.strike_price, currency.precision)?,
+        Price::from_raw(msg.strike_price, currency.precision),
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(unit_of_measure_qty, 0)?,
-        Quantity::new(lot_size_round, 0)?,
+        Quantity::new(unit_of_measure_qty, 0),
+        Quantity::new(lot_size_round, 0),
         None,               // TBD
         None,               // TBD
         None,               // TBD
@@ -1062,7 +1062,7 @@ pub fn decode_options_contract(
         None,               // TBD
         msg.ts_recv.into(), // More accurate and reliable timestamp
         ts_init,
-    )
+    ))
 }
 
 pub fn decode_options_spread(
@@ -1092,7 +1092,7 @@ pub fn decode_options_spread(
         other => f64::from(other),
     };
 
-    OptionsSpread::new(
+    Ok(OptionsSpread::new(
         instrument_id,
         instrument_id.symbol,
         asset_class_opt.unwrap_or(AssetClass::Commodity),
@@ -1104,8 +1104,8 @@ pub fn decode_options_spread(
         currency,
         currency.precision,
         decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(unit_of_measure_qty, 0)?,
-        Quantity::new(lot_size_round, 0)?,
+        Quantity::new(unit_of_measure_qty, 0),
+        Quantity::new(lot_size_round, 0),
         None,               // TBD
         None,               // TBD
         None,               // TBD
@@ -1114,7 +1114,7 @@ pub fn decode_options_spread(
         None,               // TBD
         msg.ts_recv.into(), // More accurate and reliable timestamp
         ts_init,
-    )
+    ))
 }
 
 pub fn decode_imbalance_msg(
@@ -1125,11 +1125,11 @@ pub fn decode_imbalance_msg(
 ) -> anyhow::Result<DatabentoImbalance> {
     DatabentoImbalance::new(
         instrument_id,
-        Price::from_raw(msg.ref_price, price_precision)?,
-        Price::from_raw(msg.cont_book_clr_price, price_precision)?,
-        Price::from_raw(msg.auct_interest_clr_price, price_precision)?,
-        Quantity::new(f64::from(msg.paired_qty), 0)?,
-        Quantity::new(f64::from(msg.total_imbalance_qty), 0)?,
+        Price::from_raw(msg.ref_price, price_precision),
+        Price::from_raw(msg.cont_book_clr_price, price_precision),
+        Price::from_raw(msg.auct_interest_clr_price, price_precision),
+        Quantity::new(f64::from(msg.paired_qty), 0),
+        Quantity::new(f64::from(msg.total_imbalance_qty), 0),
         parse_order_side(msg.side),
         msg.significant_imbalance as c_char,
         msg.hd.ts_event.into(),

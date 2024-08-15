@@ -50,9 +50,9 @@ pub fn order_filled(
         strategy_id_ema_cross,
         instrument_id_btc_usdt,
         client_order_id,
-        VenueOrderId::new("123456").unwrap(),
-        AccountId::new("SIM-001").unwrap(),
-        TradeId::new("1").unwrap(),
+        VenueOrderId::new("123456"),
+        AccountId::new("SIM-001"),
+        TradeId::new("1"),
         OrderSide::Buy,
         OrderType::Limit,
         Quantity::from_str("0.561").unwrap(),
@@ -64,7 +64,7 @@ pub fn order_filled(
         UnixNanos::default(),
         false,
         None,
-        Some(Money::from_str("12.2 USDT").unwrap()),
+        Some(Money::from("12.2 USDT")),
     )
     .unwrap()
 }
@@ -122,8 +122,8 @@ pub fn order_initialized_buy_limit(
     client_order_id: ClientOrderId,
     uuid4: UUID4,
 ) -> OrderInitialized {
-    let order_list_id = OrderListId::new("1").unwrap();
-    let linked_order_ids = vec![ClientOrderId::new("O-2020872378424").unwrap()];
+    let order_list_id = OrderListId::new("1");
+    let linked_order_ids = vec![ClientOrderId::new("O-2020872378424")];
     OrderInitialized::new(
         trader_id,
         strategy_id_ema_cross,

@@ -108,18 +108,9 @@ mod tests {
         let result2 = generator.generate();
         let result3 = generator.generate();
 
-        assert_eq!(
-            result1,
-            ClientOrderId::new("O-19700101-000000-001-001-1").unwrap()
-        );
-        assert_eq!(
-            result2,
-            ClientOrderId::new("O-19700101-000000-001-001-2").unwrap()
-        );
-        assert_eq!(
-            result3,
-            ClientOrderId::new("O-19700101-000000-001-001-3").unwrap()
-        );
+        assert_eq!(result1, ClientOrderId::new("O-19700101-000000-001-001-1"));
+        assert_eq!(result2, ClientOrderId::new("O-19700101-000000-001-001-2"));
+        assert_eq!(result3, ClientOrderId::new("O-19700101-000000-001-001-3"));
     }
 
     #[rstest]
@@ -129,18 +120,9 @@ mod tests {
         let result2 = generator.generate();
         let result3 = generator.generate();
 
-        assert_eq!(
-            result1,
-            ClientOrderId::new("O-19700101-000000-001-001-6").unwrap()
-        );
-        assert_eq!(
-            result2,
-            ClientOrderId::new("O-19700101-000000-001-001-7").unwrap()
-        );
-        assert_eq!(
-            result3,
-            ClientOrderId::new("O-19700101-000000-001-001-8").unwrap()
-        );
+        assert_eq!(result1, ClientOrderId::new("O-19700101-000000-001-001-6"));
+        assert_eq!(result2, ClientOrderId::new("O-19700101-000000-001-001-7"));
+        assert_eq!(result3, ClientOrderId::new("O-19700101-000000-001-001-8"));
     }
 
     #[rstest]
@@ -151,9 +133,6 @@ mod tests {
         generator.reset();
         let result = generator.generate();
 
-        assert_eq!(
-            result,
-            ClientOrderId::new("O-19700101-000000-001-001-1").unwrap()
-        );
+        assert_eq!(result, ClientOrderId::new("O-19700101-000000-001-001-1"));
     }
 }

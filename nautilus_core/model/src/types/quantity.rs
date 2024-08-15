@@ -21,7 +21,10 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::{correctness::check_in_range_inclusive_f64, parsing::precision_from_str};
+use nautilus_core::{
+    correctness::{check_in_range_inclusive_f64, FAILED},
+    parsing::precision_from_str,
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
@@ -51,25 +54,24 @@ pub struct Quantity {
 
 impl Quantity {
     /// Creates a new [`Quantity`] instance.
-    pub fn new(value: f64, precision: u8) -> anyhow::Result<Self> {
-        check_in_range_inclusive_f64(value, QUANTITY_MIN, QUANTITY_MAX, "value")?;
-        check_fixed_precision(precision)?;
-
-        Ok(Self {
+    pub fn new(value: f64, precision: u8) -> Self {
+        check_in_range_inclusive_f64(value, QUANTITY_MIN, QUANTITY_MAX, "value").expect(FAILED);
+        check_fixed_precision(precision).expect(FAILED);
+        Self {
             raw: f64_to_fixed_u64(value, precision),
             precision,
-        })
+        }
     }
 
-    pub fn from_raw(raw: u64, precision: u8) -> anyhow::Result<Self> {
-        check_fixed_precision(precision)?;
-        Ok(Self { raw, precision })
+    pub fn from_raw(raw: u64, precision: u8) -> Self {
+        check_fixed_precision(precision).expect(FAILED);
+        Self { raw, precision }
     }
 
     #[must_use]
     pub fn zero(precision: u8) -> Self {
-        check_fixed_precision(precision).unwrap();
-        Self::new(0.0, precision).unwrap()
+        check_fixed_precision(precision).expect(FAILED);
+        Self::new(0.0, precision)
     }
 
     #[must_use]
@@ -117,29 +119,9 @@ impl From<&Quantity> for f64 {
     }
 }
 
-impl FromStr for Quantity {
-    type Err = String;
-
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        let float_from_input = input
-            .replace('_', "")
-            .parse::<f64>()
-            .map_err(|e| format!("Error parsing `input` string '{input}' as f64: {e}"))?;
-
-        Self::new(float_from_input, precision_from_str(input))
-            .map_err(|e: anyhow::Error| e.to_string())
-    }
-}
-
-impl From<&str> for Quantity {
-    fn from(input: &str) -> Self {
-        Self::from_str(input).unwrap()
-    }
-}
-
 impl From<i64> for Quantity {
     fn from(input: i64) -> Self {
-        Self::new(input as f64, 0).unwrap()
+        Self::new(input as f64, 0)
     }
 }
 
@@ -283,6 +265,25 @@ impl From<&Quantity> for u64 {
     }
 }
 
+impl FromStr for Quantity {
+    type Err = String;
+
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        let float_from_input = input
+            .replace('_', "")
+            .parse::<f64>()
+            .map_err(|e| format!("Error parsing `input` string '{input}' as f64: {e}"))?;
+
+        Ok(Self::new(float_from_input, precision_from_str(input)))
+    }
+}
+
+impl From<&str> for Quantity {
+    fn from(input: &str) -> Self {
+        Self::from_str(input).expect("Valid string input for `Quantity`")
+    }
+}
+
 impl<T: Into<u64>> AddAssign<T> for Quantity {
     fn add_assign(&mut self, other: T) {
         self.raw = self
@@ -350,7 +351,7 @@ impl<'de> Deserialize<'de> for Quantity {
 
 pub fn check_quantity_positive(value: Quantity) -> anyhow::Result<()> {
     if !value.is_positive() {
-        anyhow::bail!("Condition failed: invalid `Quantity`, should be positive and was {value}")
+        anyhow::bail!("{FAILED}: invalid `Quantity`, should be positive and was {value}")
     }
     Ok(())
 }
@@ -371,7 +372,7 @@ mod tests {
     #[rstest]
     #[should_panic(expected = "Condition failed: invalid `Quantity`, should be positive and was 0")]
     fn test_check_quantity_positive() {
-        let qty = Quantity::new(0.0, 0).unwrap();
+        let qty = Quantity::new(0.0, 0);
         check_quantity_positive(qty).unwrap();
     }
 
@@ -379,14 +380,14 @@ mod tests {
     #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
     fn test_invalid_precision_new() {
         // Precision out of range for fixed
-        let _ = Quantity::new(1.0, 10).unwrap();
+        let _ = Quantity::new(1.0, 10);
     }
 
     #[rstest]
     #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
     fn test_invalid_precision_from_raw() {
         // Precision out of range for fixed
-        let _ = Quantity::from_raw(1, 10).unwrap();
+        let _ = Quantity::from_raw(1, 10);
     }
 
     #[rstest]
@@ -398,7 +399,7 @@ mod tests {
 
     #[rstest]
     fn test_new() {
-        let qty = Quantity::new(0.00812, 8).unwrap();
+        let qty = Quantity::new(0.00812, 8);
         assert_eq!(qty, qty);
         assert_eq!(qty.raw, 8_120_000);
         assert_eq!(qty.precision, 8);
@@ -412,7 +413,7 @@ mod tests {
 
     #[rstest]
     fn test_undefined() {
-        let qty = Quantity::from_raw(QUANTITY_UNDEF, 0).unwrap();
+        let qty = Quantity::from_raw(QUANTITY_UNDEF, 0);
         assert_eq!(qty.raw, QUANTITY_UNDEF);
         assert!(qty.is_undefined());
     }
@@ -436,7 +437,7 @@ mod tests {
 
     #[rstest]
     fn test_with_maximum_value() {
-        let qty = Quantity::new(QUANTITY_MAX, 8).unwrap();
+        let qty = Quantity::new(QUANTITY_MAX, 8);
         assert_eq!(qty.raw, 18_446_744_073_000_000_000);
         assert_eq!(qty.as_decimal(), dec!(18_446_744_073));
         assert_eq!(qty.to_string(), "18446744073.00000000");
@@ -445,7 +446,7 @@ mod tests {
 
     #[rstest]
     fn test_with_minimum_positive_value() {
-        let qty = Quantity::new(0.000_000_001, 9).unwrap();
+        let qty = Quantity::new(0.000_000_001, 9);
         assert_eq!(qty.raw, 1);
         assert_eq!(qty.as_decimal(), dec!(0.000000001));
         assert_eq!(qty.to_string(), "0.000000001");
@@ -453,7 +454,7 @@ mod tests {
 
     #[rstest]
     fn test_with_minimum_value() {
-        let qty = Quantity::new(QUANTITY_MIN, 9).unwrap();
+        let qty = Quantity::new(QUANTITY_MIN, 9);
         assert_eq!(qty.raw, 0);
         assert_eq!(qty.as_decimal(), dec!(0));
         assert_eq!(qty.to_string(), "0.000000000");
@@ -473,14 +474,14 @@ mod tests {
 
     #[rstest]
     fn test_precision() {
-        let qty = Quantity::new(1.001, 2).unwrap();
+        let qty = Quantity::new(1.001, 2);
         assert_eq!(qty.raw, 1_000_000_000);
         assert_eq!(qty.to_string(), "1.00");
     }
 
     #[rstest]
     fn test_new_from_str() {
-        let qty = Quantity::from_str("0.00812000").unwrap();
+        let qty = Quantity::new(0.00812000, 8);
         assert_eq!(qty, qty);
         assert_eq!(qty.raw, 8_120_000);
         assert_eq!(qty.precision, 8);
@@ -493,80 +494,71 @@ mod tests {
     #[case("1.1", 1)]
     #[case("1.123456789", 9)]
     fn test_from_str_valid_input(#[case] input: &str, #[case] expected_prec: u8) {
-        let qty = Quantity::from_str(input).unwrap();
+        let qty = Quantity::from(input);
         assert_eq!(qty.precision, expected_prec);
         assert_eq!(qty.as_decimal(), Decimal::from_str(input).unwrap());
     }
 
     #[rstest]
+    #[should_panic]
     fn test_from_str_invalid_input() {
         let input = "invalid";
-        let result = Quantity::from_str(input);
-        assert!(result.is_err());
+        Quantity::new(f64::from_str(input).unwrap(), 8);
     }
 
     #[rstest]
     fn test_add() {
-        let quantity1 = Quantity::new(1.0, 0).unwrap();
-        let quantity2 = Quantity::new(2.0, 0).unwrap();
+        let quantity1 = Quantity::new(1.0, 0);
+        let quantity2 = Quantity::new(2.0, 0);
         let quantity3 = quantity1 + quantity2;
         assert_eq!(quantity3.raw, 3_000_000_000);
     }
 
     #[rstest]
     fn test_sub() {
-        let quantity1 = Quantity::new(3.0, 0).unwrap();
-        let quantity2 = Quantity::new(2.0, 0).unwrap();
+        let quantity1 = Quantity::new(3.0, 0);
+        let quantity2 = Quantity::new(2.0, 0);
         let quantity3 = quantity1 - quantity2;
         assert_eq!(quantity3.raw, 1_000_000_000);
     }
 
     #[rstest]
     fn test_add_assign() {
-        let mut quantity1 = Quantity::new(1.0, 0).unwrap();
-        let quantity2 = Quantity::new(2.0, 0).unwrap();
+        let mut quantity1 = Quantity::new(1.0, 0);
+        let quantity2 = Quantity::new(2.0, 0);
         quantity1 += quantity2;
         assert_eq!(quantity1.raw, 3_000_000_000);
     }
 
     #[rstest]
     fn test_sub_assign() {
-        let mut quantity1 = Quantity::new(3.0, 0).unwrap();
-        let quantity2 = Quantity::new(2.0, 0).unwrap();
+        let mut quantity1 = Quantity::new(3.0, 0);
+        let quantity2 = Quantity::new(2.0, 0);
         quantity1 -= quantity2;
         assert_eq!(quantity1.raw, 1_000_000_000);
     }
 
     #[rstest]
     fn test_mul() {
-        let quantity1 = Quantity::new(2.0, 1).unwrap();
-        let quantity2 = Quantity::new(2.0, 1).unwrap();
+        let quantity1 = Quantity::new(2.0, 1);
+        let quantity2 = Quantity::new(2.0, 1);
         let quantity3 = quantity1 * quantity2;
         assert_eq!(quantity3.raw, 4_000_000_000);
     }
 
     #[rstest]
     fn test_equality() {
-        assert_eq!(
-            Quantity::new(1.0, 1).unwrap(),
-            Quantity::new(1.0, 1).unwrap()
-        );
-        assert_eq!(
-            Quantity::new(1.0, 1).unwrap(),
-            Quantity::new(1.0, 2).unwrap()
-        );
-        assert_ne!(
-            Quantity::new(1.1, 1).unwrap(),
-            Quantity::new(1.0, 1).unwrap()
-        );
-        assert!(Quantity::new(1.0, 1).unwrap() <= Quantity::new(1.0, 2).unwrap());
-        assert!(Quantity::new(1.1, 1).unwrap() > Quantity::new(1.0, 1).unwrap());
-        assert!(Quantity::new(1.0, 1).unwrap() >= Quantity::new(1.0, 1).unwrap());
-        assert!(Quantity::new(1.0, 1).unwrap() >= Quantity::new(1.0, 2).unwrap());
-        assert!(Quantity::new(1.0, 1).unwrap() >= Quantity::new(1.0, 2).unwrap());
-        assert!(Quantity::new(0.9, 1).unwrap() < Quantity::new(1.0, 1).unwrap());
-        assert!(Quantity::new(0.9, 1).unwrap() <= Quantity::new(1.0, 2).unwrap());
-        assert!(Quantity::new(0.9, 1).unwrap() <= Quantity::new(1.0, 1).unwrap());
+        assert_eq!(Quantity::new(1.0, 1), Quantity::new(1.0, 1));
+        assert_eq!(Quantity::new(1.0, 1), Quantity::new(1.0, 2));
+        assert_ne!(Quantity::new(1.1, 1), Quantity::new(1.0, 1));
+        assert!(Quantity::new(1.0, 1) <= Quantity::new(1.0, 2));
+        assert!(Quantity::new(1.1, 1) > Quantity::new(1.0, 1));
+        assert!(Quantity::new(1.0, 1) >= Quantity::new(1.0, 1));
+        assert!(Quantity::new(1.0, 1) >= Quantity::new(1.0, 2));
+        assert!(Quantity::new(1.0, 1) >= Quantity::new(1.0, 2));
+        assert!(Quantity::new(0.9, 1) < Quantity::new(1.0, 1));
+        assert!(Quantity::new(0.9, 1) <= Quantity::new(1.0, 2));
+        assert!(Quantity::new(0.9, 1) <= Quantity::new(1.0, 1));
     }
 
     #[rstest]

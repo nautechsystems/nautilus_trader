@@ -100,7 +100,11 @@ impl From<UnixNanos> for u64 {
 
 impl From<&str> for UnixNanos {
     fn from(value: &str) -> Self {
-        Self(value.parse().unwrap())
+        Self(
+            value
+                .parse()
+                .expect("Value is not a valid u64 string representation"),
+        )
     }
 }
 

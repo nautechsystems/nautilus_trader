@@ -32,7 +32,7 @@ macro_rules! impl_serialization_for_identifier {
                 D: Deserializer<'de>,
             {
                 let value_str: &str = Deserialize::deserialize(deserializer)?;
-                let value: $ty = FromStr::from_str(value_str).map_err(serde::de::Error::custom)?;
+                let value: $ty = value_str.into();
                 Ok(value)
             }
         }
@@ -41,11 +41,9 @@ macro_rules! impl_serialization_for_identifier {
 
 macro_rules! impl_from_str_for_identifier {
     ($ty:ty) => {
-        impl FromStr for $ty {
-            type Err = String;
-
-            fn from_str(input: &str) -> Result<Self, Self::Err> {
-                Self::new(input).map_err(|e| e.to_string())
+        impl From<&str> for $ty {
+            fn from(input: &str) -> Self {
+                Self::new(input)
             }
         }
     };

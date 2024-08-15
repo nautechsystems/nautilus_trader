@@ -84,8 +84,8 @@ pub fn trade_tick() -> TradeTick {
 #[fixture]
 pub fn bar_ethusdt_binance_minute_bid(#[default("1522")] close_price: &str) -> Bar {
     let instrument_id = InstrumentId {
-        symbol: Symbol::new("ETHUSDT-PERP.BINANCE").unwrap(),
-        venue: Venue::new("BINANCE").unwrap(),
+        symbol: Symbol::new("ETHUSDT-PERP.BINANCE"),
+        venue: Venue::new("BINANCE"),
     };
     let bar_spec = BarSpecification {
         step: 1,

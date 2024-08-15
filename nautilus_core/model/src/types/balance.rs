@@ -35,16 +35,16 @@ pub struct AccountBalance {
 }
 
 impl AccountBalance {
-    pub fn new(total: Money, locked: Money, free: Money) -> anyhow::Result<Self> {
+    pub fn new(total: Money, locked: Money, free: Money) -> Self {
         assert!(total == locked + free,
                 "Total balance is not equal to the sum of locked and free balances: {total} != {locked} + {free}"
             );
-        Ok(Self {
+        Self {
             currency: total.currency,
             total,
             locked,
             free,
-        })
+        }
     }
 }
 
@@ -86,17 +86,13 @@ pub struct MarginBalance {
 }
 
 impl MarginBalance {
-    pub fn new(
-        initial: Money,
-        maintenance: Money,
-        instrument_id: InstrumentId,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    pub fn new(initial: Money, maintenance: Money, instrument_id: InstrumentId) -> Self {
+        Self {
             initial,
             maintenance,
             currency: initial.currency,
             instrument_id,
-        })
+        }
     }
 }
 

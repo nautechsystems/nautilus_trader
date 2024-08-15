@@ -20,7 +20,7 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness::{check_string_contains, check_valid_string};
+use nautilus_core::correctness::{check_string_contains, check_valid_string, FAILED};
 use ustr::Ustr;
 
 use super::Venue;
@@ -45,11 +45,10 @@ impl AccountId {
     /// # Panics
     ///
     /// Panics if `value` is not a valid string, or does not contain a hyphen '-' separator.
-    pub fn new(value: &str) -> anyhow::Result<Self> {
-        check_valid_string(value, stringify!(value))?;
-        check_string_contains(value, "-", stringify!(value))?;
-
-        Ok(Self(Ustr::from(value)))
+    pub fn new(value: &str) -> Self {
+        check_valid_string(value, stringify!(value)).expect(FAILED);
+        check_string_contains(value, "-", stringify!(value)).expect(FAILED);
+        Self(Ustr::from(value))
     }
 
     /// Sets the inner identifier value.
@@ -96,12 +95,6 @@ impl Display for AccountId {
     }
 }
 
-impl From<&str> for AccountId {
-    fn from(input: &str) -> Self {
-        Self::new(input).unwrap()
-    }
-}
-
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -113,23 +106,21 @@ mod tests {
     use crate::identifiers::stubs::*;
 
     #[rstest]
+    #[should_panic]
     fn test_account_id_new_invalid_string() {
-        let s = "";
-        let result = AccountId::new(s);
-        assert!(result.is_err());
+        AccountId::new("");
     }
 
     #[rstest]
+    #[should_panic]
     fn test_account_id_new_missing_hyphen() {
-        let s = "123456789";
-        let result = AccountId::new(s);
-        assert!(result.is_err());
+        AccountId::new("123456789");
     }
 
     #[rstest]
     fn test_account_id_fmt() {
         let s = "IB-U123456789";
-        let account_id = AccountId::new(s).unwrap();
+        let account_id = AccountId::new(s);
         let formatted = format!("{account_id}");
         assert_eq!(formatted, s);
     }
@@ -141,7 +132,7 @@ mod tests {
 
     #[rstest]
     fn test_get_issuer(account_ib: AccountId) {
-        assert_eq!(account_ib.get_issuer(), Venue::new("IB").unwrap());
+        assert_eq!(account_ib.get_issuer(), Venue::new("IB"));
     }
 
     #[rstest]

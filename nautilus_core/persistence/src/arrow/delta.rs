@@ -167,8 +167,8 @@ impl DecodeFromRecordBatch for OrderBookDelta {
                         format!("Invalid enum value, was {side_value}"),
                     )
                 })?;
-                let price = Price::from_raw(price_values.value(i), price_precision).unwrap();
-                let size = Quantity::from_raw(size_values.value(i), size_precision).unwrap();
+                let price = Price::from_raw(price_values.value(i), price_precision);
+                let size = Quantity::from_raw(size_values.value(i), size_precision);
                 let order_id = order_id_values.value(i);
                 let flags = flags_values.value(i);
                 let sequence = sequence_values.value(i);

@@ -95,7 +95,7 @@ pub fn infer_symbology_type(symbol: &str) -> String {
 }
 
 pub fn check_consistent_symbology(symbols: &[&str]) -> anyhow::Result<()> {
-    check_slice_not_empty(symbols, stringify!(symbols))?;
+    check_slice_not_empty(symbols, stringify!(symbols)).unwrap();
 
     // SAFETY: We checked len so know there must be at least one symbol
     let first_symbol = symbols.first().unwrap();
@@ -148,12 +148,8 @@ mod tests {
     #[rstest]
     fn test_check_consistent_symbology_when_empty_symbols() {
         let symbols: Vec<&str> = vec![];
-        let result = check_consistent_symbology(&symbols);
+        let result = std::panic::catch_unwind(|| check_consistent_symbology(&symbols));
         assert!(result.is_err());
-        assert_eq!(
-            result.err().unwrap().to_string(),
-            "Condition failed: the 'symbols' slice `&[&str]` was empty"
-        );
     }
 
     #[rstest]

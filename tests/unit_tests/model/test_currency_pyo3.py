@@ -41,7 +41,7 @@ class TestCurrency:
 
     def test_currency_with_precision_over_maximum_raises_value_error(self):
         # Arrange, Act, Assert
-        with pytest.raises(ValueError):
+        with pytest.raises(BaseException):
             Currency(
                 code="AUD",
                 precision=10,

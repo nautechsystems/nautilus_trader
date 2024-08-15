@@ -119,10 +119,9 @@ impl MarginAccount {
                 instrument_id,
                 MarginBalance::new(
                     margin_init,
-                    Money::new(0.0, margin_init.currency).unwrap(),
+                    Money::new(0.0, margin_init.currency),
                     instrument_id,
-                )
-                .unwrap(),
+                ),
             );
         } else {
             // update the margin_balance initial property with margin_init
@@ -153,11 +152,10 @@ impl MarginAccount {
             self.margins.insert(
                 instrument_id,
                 MarginBalance::new(
-                    Money::new(0.0, margin_maintenance.currency).unwrap(),
+                    Money::new(0.0, margin_maintenance.currency),
                     margin_maintenance,
                     instrument_id,
-                )
-                .unwrap(),
+                ),
             );
         } else {
             // update the margin_balance maintenance property with margin_maintenance
@@ -198,9 +196,9 @@ impl MarginAccount {
         margin += adjusted_notional * instrument.taker_fee().to_f64().unwrap() * 2.0;
         let use_quote_for_inverse = use_quote_for_inverse.unwrap_or(false);
         if instrument.is_inverse() && !use_quote_for_inverse {
-            Money::new(margin, instrument.base_currency().unwrap()).unwrap()
+            Money::new(margin, instrument.base_currency().unwrap())
         } else {
-            Money::new(margin, instrument.quote_currency()).unwrap()
+            Money::new(margin, instrument.quote_currency())
         }
     }
 
@@ -224,9 +222,9 @@ impl MarginAccount {
         margin += adjusted_notional * instrument.taker_fee().to_f64().unwrap();
         let use_quote_for_inverse = use_quote_for_inverse.unwrap_or(false);
         if instrument.is_inverse() && !use_quote_for_inverse {
-            Money::new(margin, instrument.base_currency().unwrap()).unwrap()
+            Money::new(margin, instrument.base_currency().unwrap())
         } else {
-            Money::new(margin, instrument.quote_currency()).unwrap()
+            Money::new(margin, instrument.quote_currency())
         }
     }
 
@@ -254,8 +252,7 @@ impl MarginAccount {
             current_balance.total,
             Money::from_raw(total_margin, currency),
             Money::from_raw(total_free, currency),
-        )
-        .unwrap();
+        );
         self.balances.insert(currency, new_balance);
     }
 }

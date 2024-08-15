@@ -25,7 +25,7 @@ from nautilus_trader.core.nautilus_pyo3 import Price
 class TestPrice:
     def test_instantiate_with_nan_raises_value_error(self):
         # Arrange, Act, Assert
-        with pytest.raises(ValueError):
+        with pytest.raises(BaseException):
             Price(math.nan, precision=0)
 
     def test_instantiate_with_none_value_raises_type_error(self):
@@ -40,17 +40,17 @@ class TestPrice:
 
     def test_instantiate_with_precision_over_maximum_raises_overflow_error(self):
         # Arrange, Act, Assert
-        with pytest.raises(ValueError):
+        with pytest.raises(BaseException):
             Price(1.0, precision=10)
 
     def test_instantiate_with_value_exceeding_positive_limit_raises_value_error(self):
         # Arrange, Act, Assert
-        with pytest.raises(ValueError):
+        with pytest.raises(BaseException):
             Price(9_223_372_036 + 1, precision=0)
 
     def test_instantiate_with_value_exceeding_negative_limit_raises_value_error(self):
         # Arrange, Act, Assert
-        with pytest.raises(ValueError):
+        with pytest.raises(BaseException):
             Price(-9_223_372_036 - 1, precision=0)
 
     def test_instantiate_base_decimal_from_int(self):

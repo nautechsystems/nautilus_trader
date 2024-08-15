@@ -21,7 +21,7 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness::{check_in_range_inclusive_usize, check_valid_string};
+use nautilus_core::correctness::{check_in_range_inclusive_usize, check_valid_string, FAILED};
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// The maximum length of ASCII characters for a `TradeId` string value (including null terminator).
@@ -52,20 +52,29 @@ impl TradeId {
     /// # Panics
     ///
     /// Panics if `value` is not a valid string, or value length is greater than 36.
-    pub fn new(value: &str) -> anyhow::Result<Self> {
-        let cstr = CString::new(value).expect("`CString` conversion failed");
-        Self::from_cstr(cstr)
+    pub fn new(value: &str) -> Self {
+        // check that string is non-empty and within the expected length
+        check_in_range_inclusive_usize(value.len(), 1, TRADE_ID_LEN, stringify!(value))
+            .expect(FAILED);
+        Self::from_valid_bytes(value.as_bytes())
     }
 
-    pub fn from_cstr(cstr: CString) -> anyhow::Result<Self> {
+    pub fn from_cstr(cstr: CString) -> Self {
+        let cstr_str = cstr
+            .to_str()
+            .expect("TradeId expected valid string as `CString`");
+        check_valid_string(cstr_str, stringify!(cstr)).expect(FAILED);
         let bytes = cstr.as_bytes_with_nul();
-        check_valid_string(cstr.to_str()?, stringify!(cstr))?;
-        check_in_range_inclusive_usize(bytes.len(), 2, TRADE_ID_LEN, stringify!(cstr))?;
+        // check that string is non-empty excluding '\0' and within the expected length
+        check_in_range_inclusive_usize(bytes.len(), 2, TRADE_ID_LEN, stringify!(cstr))
+            .expect(FAILED);
+        Self::from_valid_bytes(bytes)
+    }
 
+    fn from_valid_bytes(bytes: &[u8]) -> Self {
         let mut value = [0; TRADE_ID_LEN];
         value[..bytes.len()].copy_from_slice(bytes);
-
-        Ok(Self { value })
+        Self { value }
     }
 
     #[must_use]
@@ -79,12 +88,6 @@ impl TradeId {
 impl Display for TradeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.to_cstr().to_str().unwrap())
-    }
-}
-
-impl From<&str> for TradeId {
-    fn from(input: &str) -> Self {
-        Self::new(input).unwrap()
     }
 }
 
@@ -103,7 +106,7 @@ impl<'de> Deserialize<'de> for TradeId {
         D: Deserializer<'de>,
     {
         let value_str = String::deserialize(deserializer)?;
-        Self::new(&value_str).map_err(|err| serde::de::Error::custom(err.to_string()))
+        Ok(Self::new(&value_str))
     }
 }
 

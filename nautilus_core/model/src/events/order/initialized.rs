@@ -91,7 +91,7 @@ impl Default for OrderInitialized {
             client_order_id: ClientOrderId::default(),
             order_side: OrderSide::Buy,
             order_type: OrderType::Market,
-            quantity: Quantity::new(100_000.0, 0).unwrap(),
+            quantity: Quantity::new(100_000.0, 0),
             price: Default::default(),
             trigger_price: Default::default(),
             trigger_type: Default::default(),

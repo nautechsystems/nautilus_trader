@@ -27,8 +27,11 @@ use std::{
 };
 
 use nautilus_core::{
-    correctness::check_valid_string, datetime::floor_to_nearest_microsecond, nanos::UnixNanos,
-    time::get_atomic_clock_realtime, uuid::UUID4,
+    correctness::{check_valid_string, FAILED},
+    datetime::floor_to_nearest_microsecond,
+    nanos::UnixNanos,
+    time::get_atomic_clock_realtime,
+    uuid::UUID4,
 };
 #[cfg(feature = "python")]
 use pyo3::{types::PyCapsule, IntoPy, PyObject, Python};
@@ -138,7 +141,7 @@ impl TestTimer {
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
     ) -> anyhow::Result<Self> {
-        check_valid_string(name, stringify!(name))?;
+        check_valid_string(name, stringify!(name)).expect(FAILED);
         // SAFETY: Guaranteed to be non-zero
         let interval_ns = NonZeroU64::new(std::cmp::max(interval_ns, 1)).unwrap();
 
@@ -242,7 +245,7 @@ impl LiveTimer {
         stop_time_ns: Option<UnixNanos>,
         callback: EventHandler,
     ) -> anyhow::Result<Self> {
-        check_valid_string(name, stringify!(name))?;
+        check_valid_string(name, stringify!(name)).expect(FAILED);
         // SAFETY: Guaranteed to be non-zero
         let interval_ns = NonZeroU64::new(std::cmp::max(interval_ns, 1)).unwrap();
 

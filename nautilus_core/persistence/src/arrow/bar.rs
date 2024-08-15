@@ -137,11 +137,11 @@ impl DecodeFromRecordBatch for Bar {
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|i| {
-                let open = Price::from_raw(open_values.value(i), price_precision).unwrap();
-                let high = Price::from_raw(high_values.value(i), price_precision).unwrap();
-                let low = Price::from_raw(low_values.value(i), price_precision).unwrap();
-                let close = Price::from_raw(close_values.value(i), price_precision).unwrap();
-                let volume = Quantity::from_raw(volume_values.value(i), size_precision).unwrap();
+                let open = Price::from_raw(open_values.value(i), price_precision);
+                let high = Price::from_raw(high_values.value(i), price_precision);
+                let low = Price::from_raw(low_values.value(i), price_precision);
+                let close = Price::from_raw(close_values.value(i), price_precision);
+                let volume = Quantity::from_raw(volume_values.value(i), size_precision);
                 let ts_event = ts_event_values.value(i).into();
                 let ts_init = ts_init_values.value(i).into();
 

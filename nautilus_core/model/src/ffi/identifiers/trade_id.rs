@@ -28,7 +28,7 @@ use crate::identifiers::trade_id::TradeId;
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn trade_id_new(ptr: *const c_char) -> TradeId {
-    TradeId::from_cstr(CStr::from_ptr(ptr).to_owned()).unwrap()
+    TradeId::from_cstr(CStr::from_ptr(ptr).to_owned())
 }
 
 #[no_mangle]

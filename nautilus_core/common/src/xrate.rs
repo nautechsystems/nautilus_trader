@@ -24,7 +24,7 @@
 use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
-use nautilus_core::correctness::{check_equal_usize, check_map_not_empty};
+use nautilus_core::correctness::{check_equal_usize, check_map_not_empty, FAILED};
 use nautilus_model::{enums::PriceType, identifiers::Symbol, types::currency::Currency};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -42,14 +42,15 @@ pub fn get_exchange_rate(
     quotes_bid: HashMap<Symbol, Decimal>,
     quotes_ask: HashMap<Symbol, Decimal>,
 ) -> anyhow::Result<Decimal> {
-    check_map_not_empty(&quotes_bid, stringify!(quotes_bid))?;
-    check_map_not_empty(&quotes_ask, stringify!(quotes_ask))?;
+    check_map_not_empty(&quotes_bid, stringify!(quotes_bid)).unwrap();
+    check_map_not_empty(&quotes_ask, stringify!(quotes_ask)).unwrap();
     check_equal_usize(
         quotes_bid.len(),
         quotes_ask.len(),
         "quotes_bid.len()",
         "quotes_ask.len()",
-    )?;
+    )
+    .expect(FAILED);
 
     if from_currency == to_currency {
         return Ok(DECIMAL_ONE); // No conversion necessary
