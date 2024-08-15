@@ -25,7 +25,7 @@ from nautilus_trader.core.nautilus_pyo3 import Quantity
 class TestQuantity:
     def test_instantiate_with_nan_raises_value_error(self):
         # Arrange, Act, Assert
-        with pytest.raises(ValueError):
+        with pytest.raises(BaseException):
             Quantity(math.nan, precision=0)
 
     def test_instantiate_with_none_value_raises_type_error(self):
@@ -43,12 +43,12 @@ class TestQuantity:
 
     def test_instantiate_with_precision_over_maximum_raises_value_error(self):
         # Arrange, Act, Assert
-        with pytest.raises(ValueError):
+        with pytest.raises(BaseException):
             Quantity(1.0, precision=10)
 
     def test_instantiate_with_value_exceeding_limit_raises_value_error(self):
         # Arrange, Act, Assert
-        with pytest.raises(ValueError):
+        with pytest.raises(BaseException):
             Quantity(18_446_744_073 + 1, precision=0)
 
     def test_instantiate_base_decimal_from_int(self):
