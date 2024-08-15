@@ -491,7 +491,7 @@ mod tests {
     #[case("1.1", 1)]
     #[case("1.123456789", 9)]
     fn test_from_str_valid_input(#[case] input: &str, #[case] expected_prec: u8) {
-        let qty = Quantity::new(f64::from_str(input).unwrap(), 8);
+        let qty = Quantity::from(input);
         assert_eq!(qty.precision, expected_prec);
         assert_eq!(qty.as_decimal(), Decimal::from_str(input).unwrap());
     }

@@ -420,11 +420,11 @@ mod tests {
     }
 
     #[rstest]
-    #[should_panic]
     #[case("0USD")] // <-- No whitespace separator
     #[case("0x00 USD")] // <-- Invalid float
     #[case("0 US")] // <-- Invalid currency
     #[case("0 USD USD")] // <-- Too many parts
+    #[should_panic]
     fn test_from_str_invalid_input(#[case] input: &str) {
         let _ = Money::from(input);
     }
