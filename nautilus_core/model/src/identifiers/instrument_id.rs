@@ -21,6 +21,7 @@ use std::{
     str::FromStr,
 };
 
+use nautilus_core::correctness::check_valid_string;
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::identifiers::{Symbol, Venue};
@@ -59,10 +60,14 @@ impl FromStr for InstrumentId {
 
     fn from_str(s: &str) -> anyhow::Result<Self> {
         match s.rsplit_once('.') {
-            Some((symbol_part, venue_part)) => Ok(Self {
-                symbol: Symbol::new(symbol_part),
-                venue: Venue::new(venue_part),
-            }),
+            Some((symbol_part, venue_part)) => {
+                check_valid_string(symbol_part, stringify!(value))?;
+                check_valid_string(venue_part, stringify!(value))?;
+                Ok(Self {
+                    symbol: Symbol::new(symbol_part),
+                    venue: Venue::new(venue_part),
+                })
+            }
             None => {
                 anyhow::bail!(err_message(
                     s,

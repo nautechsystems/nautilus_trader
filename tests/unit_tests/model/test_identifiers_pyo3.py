@@ -190,11 +190,11 @@ def test_instrument_id_from_str() -> None:
         ],
         [
             ".USDT",
-            "Condition failed: invalid string for 'value', was empty",
+            "invalid string for 'value', was empty",  # TODO: Improve error message
         ],
         [
             "BTC.",
-            "Condition failed: invalid string for 'value', was empty",
+            "invalid string for 'value', was empty",  # TODO: Improve error message
         ],
     ],
 )
