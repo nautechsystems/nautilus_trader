@@ -257,3 +257,20 @@ GreeksTestData(
     ts_init=2,
 )
 ```
+
+For more convenience, you can use a pyi file with a proper signature so it's usable for code suggestions in an IDE, as the constructor is generated at runtime.  
+For example in a file named `greeks.pyi` if the custom data class is defined in `greeks.py`, the signature of the constructor would be:
+
+```python
+from nautilus_trader.core.data import Data
+from nautilus_trader.model.identifiers import InstrumentId
+
+
+class GreeksData(Data):
+    def __init__(self,
+                 ts_event: int = 0,
+                 ts_init: int = 0,
+                 instrument_id: InstrumentId = InstrumentId.from_str('ES.GLBX'),
+                 delta: float = 0.) -> GreeksData:
+        ...
+```
