@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Improved `BybitExecutionClient` position report requests (can now filter by instrument and includes reporting for flat positions)
 - Improved `LiveExecutionEngine` reconciliation robustness and recovery when internal positions do not match external positions
 - Improved `@customdataclass` decorator constructor to allow more positional arguments, thanks @faysou
+- Refined error modeling and handling in Rust (#1849), thanks @twitu
 - Upgraded `datafusion` crate to v41.0.0
 
 ### Breaking Changes
