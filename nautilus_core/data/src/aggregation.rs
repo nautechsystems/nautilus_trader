@@ -583,8 +583,6 @@ where
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::panic::AssertUnwindSafe;
-
     use nautilus_model::{
         data::bar::{BarSpecification, BarType},
         enums::{AggregationSource, BarAggregation, PriceType},
@@ -764,6 +762,7 @@ mod tests {
     }
 
     #[rstest]
+    #[should_panic]
     fn test_bar_builder_build_when_no_updates_panics(equity_aapl: Equity) {
         let instrument = InstrumentAny::Equity(equity_aapl);
         let bar_type = BarType::new(
@@ -772,12 +771,7 @@ mod tests {
             AggregationSource::Internal,
         );
         let mut builder = BarBuilder::new(&instrument, bar_type);
-
-        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            builder.build_now();
-        }));
-
-        assert!(result.is_err());
+        let _ = builder.build_now();
     }
 
     #[rstest]
