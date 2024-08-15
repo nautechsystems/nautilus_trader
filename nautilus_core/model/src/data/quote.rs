@@ -24,7 +24,11 @@ use std::{
 
 use derive_builder::Builder;
 use indexmap::IndexMap;
-use nautilus_core::{correctness::check_equal_u8, nanos::UnixNanos, serialization::Serializable};
+use nautilus_core::{
+    correctness::{check_equal_u8, FAILED},
+    nanos::UnixNanos,
+    serialization::Serializable,
+};
 use serde::{Deserialize, Serialize};
 
 use super::GetTsInit;
@@ -77,14 +81,14 @@ impl QuoteTick {
             "bid_price.precision",
             "ask_price.precision",
         )
-        .unwrap();
+        .expect(FAILED);
         check_equal_u8(
             bid_size.precision,
             ask_size.precision,
             "bid_size.precision",
             "ask_size.precision",
         )
-        .unwrap();
+        .expect(FAILED);
         Ok(Self {
             instrument_id,
             bid_price,

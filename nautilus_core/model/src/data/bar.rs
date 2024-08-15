@@ -25,7 +25,7 @@ use std::{
 use chrono::{DateTime, Datelike, TimeDelta, Timelike, Utc};
 use derive_builder::Builder;
 use indexmap::IndexMap;
-use nautilus_core::{nanos::UnixNanos, serialization::Serializable};
+use nautilus_core::{correctness::FAILED, nanos::UnixNanos, serialization::Serializable};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::GetTsInit;
@@ -237,7 +237,7 @@ impl FromStr for BarType {
 
 impl From<&str> for BarType {
     fn from(value: &str) -> Self {
-        Self::from_str(value).unwrap()
+        Self::from_str(value).expect(FAILED)
     }
 }
 impl Display for BarType {
@@ -556,7 +556,7 @@ mod tests {
     #[rstest]
     fn test_bar_type_parse_valid() {
         let input = "BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL";
-        let bar_type = BarType::from_str(input).unwrap();
+        let bar_type = BarType::from(input);
 
         assert_eq!(
             bar_type.instrument_id,

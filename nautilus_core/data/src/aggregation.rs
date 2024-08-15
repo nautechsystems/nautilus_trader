@@ -23,7 +23,10 @@ use std::ops::Add;
 
 use chrono::TimeDelta;
 use nautilus_common::{clock::Clock, timer::TimeEvent};
-use nautilus_core::{correctness, nanos::UnixNanos};
+use nautilus_core::{
+    correctness::{self, FAILED},
+    nanos::UnixNanos,
+};
 use nautilus_model::{
     data::{
         bar::{get_bar_interval, get_bar_interval_ns, get_time_bar_start, Bar, BarType},
@@ -85,14 +88,14 @@ impl BarBuilder {
             "instrument.id",
             "bar_type.instrument_id",
         )
-        .unwrap();
+        .expect(FAILED);
         correctness::check_equal(
             bar_type.aggregation_source,
             AggregationSource::Internal,
             "bar_type.aggregation_source",
             "AggregationSource::Internal",
         )
-        .unwrap();
+        .expect(FAILED);
 
         Self {
             bar_type,

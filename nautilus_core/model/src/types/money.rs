@@ -21,7 +21,7 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::correctness::check_in_range_inclusive_f64;
+use nautilus_core::correctness::{check_in_range_inclusive_f64, FAILED};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
@@ -52,7 +52,7 @@ pub struct Money {
 impl Money {
     /// Creates a new [`Money`] instance.
     pub fn new(amount: f64, currency: Currency) -> Self {
-        check_in_range_inclusive_f64(amount, MONEY_MIN, MONEY_MAX, "amount").unwrap();
+        check_in_range_inclusive_f64(amount, MONEY_MIN, MONEY_MAX, "amount").expect(FAILED);
 
         Self {
             raw: f64_to_fixed_i64(amount, currency.precision),

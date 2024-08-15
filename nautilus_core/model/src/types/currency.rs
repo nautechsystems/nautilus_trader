@@ -19,7 +19,7 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::correctness::check_valid_string;
+use nautilus_core::correctness::{check_valid_string, FAILED};
 use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
 
@@ -49,9 +49,9 @@ impl Currency {
         name: &str,
         currency_type: CurrencyType,
     ) -> Self {
-        check_valid_string(code, "code").unwrap();
-        check_valid_string(name, "name").unwrap();
-        check_fixed_precision(precision).unwrap();
+        check_valid_string(code, "code").expect(FAILED);
+        check_valid_string(name, "name").expect(FAILED);
+        check_fixed_precision(precision).expect(FAILED);
         Self {
             code: Ustr::from(code),
             precision,

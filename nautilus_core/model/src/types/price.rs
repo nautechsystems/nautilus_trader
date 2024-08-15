@@ -21,7 +21,10 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::{correctness::check_in_range_inclusive_f64, parsing::precision_from_str};
+use nautilus_core::{
+    correctness::{check_in_range_inclusive_f64, FAILED},
+    parsing::precision_from_str,
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
@@ -60,8 +63,8 @@ pub struct Price {
 
 impl Price {
     pub fn new(value: f64, precision: u8) -> Self {
-        check_in_range_inclusive_f64(value, PRICE_MIN, PRICE_MAX, "value").unwrap();
-        check_fixed_precision(precision).unwrap();
+        check_in_range_inclusive_f64(value, PRICE_MIN, PRICE_MAX, "value").expect(FAILED);
+        check_fixed_precision(precision).expect(FAILED);
         Self {
             raw: f64_to_fixed_i64(value, precision),
             precision,
@@ -69,13 +72,13 @@ impl Price {
     }
 
     pub fn from_raw(raw: i64, precision: u8) -> Self {
-        check_fixed_precision(precision).unwrap();
+        check_fixed_precision(precision).expect(FAILED);
         Self { raw, precision }
     }
 
     #[must_use]
     pub fn max(precision: u8) -> Self {
-        check_fixed_precision(precision).unwrap();
+        check_fixed_precision(precision).expect(FAILED);
         Self {
             raw: (PRICE_MAX * FIXED_SCALAR) as i64,
             precision,
@@ -84,7 +87,7 @@ impl Price {
 
     #[must_use]
     pub fn min(precision: u8) -> Self {
-        check_fixed_precision(precision).unwrap();
+        check_fixed_precision(precision).expect(FAILED);
         Self {
             raw: (PRICE_MIN * FIXED_SCALAR) as i64,
             precision,
@@ -93,7 +96,7 @@ impl Price {
 
     #[must_use]
     pub fn zero(precision: u8) -> Self {
-        check_fixed_precision(precision).unwrap();
+        check_fixed_precision(precision).expect(FAILED);
         Self { raw: 0, precision }
     }
 
@@ -140,7 +143,7 @@ impl FromStr for Price {
 
 impl From<&str> for Price {
     fn from(input: &str) -> Self {
-        Self::from_str(input).unwrap()
+        Self::from_str(input).expect(FAILED)
     }
 }
 

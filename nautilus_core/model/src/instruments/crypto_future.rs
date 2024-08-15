@@ -16,7 +16,7 @@
 use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
-    correctness::{check_equal_u8, check_positive_i64, check_positive_u64},
+    correctness::{check_equal_u8, check_positive_i64, check_positive_u64, FAILED},
     nanos::UnixNanos,
 };
 use rust_decimal::Decimal;
@@ -101,16 +101,16 @@ impl CryptoFuture {
             stringify!(price_precision),
             stringify!(price_increment.precision),
         )
-        .unwrap();
+        .expect(FAILED);
         check_equal_u8(
             size_precision,
             size_increment.precision,
             stringify!(size_precision),
             stringify!(size_increment.precision),
         )
-        .unwrap();
-        check_positive_i64(price_increment.raw, stringify!(price_increment.raw)).unwrap();
-        check_positive_u64(size_increment.raw, stringify!(size_increment.raw)).unwrap();
+        .expect(FAILED);
+        check_positive_i64(price_increment.raw, stringify!(price_increment.raw)).expect(FAILED);
+        check_positive_u64(size_increment.raw, stringify!(size_increment.raw)).expect(FAILED);
 
         Self {
             id,

@@ -24,7 +24,7 @@
 use std::collections::{HashMap, HashSet};
 
 use itertools::Itertools;
-use nautilus_core::correctness::{check_equal_usize, check_map_not_empty};
+use nautilus_core::correctness::{check_equal_usize, check_map_not_empty, FAILED};
 use nautilus_model::{enums::PriceType, identifiers::Symbol, types::currency::Currency};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -50,7 +50,7 @@ pub fn get_exchange_rate(
         "quotes_bid.len()",
         "quotes_ask.len()",
     )
-    .unwrap();
+    .expect(FAILED);
 
     if from_currency == to_currency {
         return Ok(DECIMAL_ONE); // No conversion necessary

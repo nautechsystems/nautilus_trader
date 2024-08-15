@@ -20,7 +20,7 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness::check_valid_string;
+use nautilus_core::correctness::{check_valid_string, FAILED};
 use ustr::Ustr;
 
 use crate::venues::VENUE_MAP;
@@ -43,7 +43,7 @@ impl Venue {
     ///
     /// Panics if `value` is not a valid string.
     pub fn new(value: &str) -> Self {
-        check_valid_string(value, stringify!(value)).unwrap();
+        check_valid_string(value, stringify!(value)).expect(FAILED);
         Self(Ustr::from(value))
     }
 

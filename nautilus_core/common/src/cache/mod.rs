@@ -29,7 +29,7 @@ use std::{
 use bytes::Bytes;
 use database::CacheDatabaseAdapter;
 use nautilus_core::correctness::{
-    check_key_not_in_map, check_predicate_false, check_slice_not_empty, check_valid_string,
+    check_key_not_in_map, check_predicate_false, check_slice_not_empty, check_valid_string, FAILED,
 };
 use nautilus_model::{
     accounts::any::AccountAny,
@@ -1034,8 +1034,8 @@ impl Cache {
     /// The cache is agnostic to what the bytes actually represent (and how it may be serialized),
     /// which provides maximum flexibility.
     pub fn add(&mut self, key: &str, value: Bytes) -> anyhow::Result<()> {
-        check_valid_string(key, stringify!(key)).unwrap();
-        check_predicate_false(value.is_empty(), stringify!(value)).unwrap();
+        check_valid_string(key, stringify!(key)).expect(FAILED);
+        check_predicate_false(value.is_empty(), stringify!(value)).expect(FAILED);
 
         log::debug!("Adding general {key}");
         self.general.insert(key.to_string(), value.clone());
@@ -2397,7 +2397,7 @@ impl Cache {
 
     /// Gets a reference to the general object value for the given `key` (if found).
     pub fn get(&self, key: &str) -> anyhow::Result<Option<&Bytes>> {
-        check_valid_string(key, stringify!(key)).unwrap();
+        check_valid_string(key, stringify!(key)).expect(FAILED);
 
         Ok(self.general.get(key))
     }

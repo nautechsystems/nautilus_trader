@@ -20,7 +20,7 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness::{check_string_contains, check_valid_string};
+use nautilus_core::correctness::{check_string_contains, check_valid_string, FAILED};
 use ustr::Ustr;
 
 use super::Venue;
@@ -46,8 +46,8 @@ impl AccountId {
     ///
     /// Panics if `value` is not a valid string, or does not contain a hyphen '-' separator.
     pub fn new(value: &str) -> Self {
-        check_valid_string(value, stringify!(value)).unwrap();
-        check_string_contains(value, "-", stringify!(value)).unwrap();
+        check_valid_string(value, stringify!(value)).expect(FAILED);
+        check_string_contains(value, "-", stringify!(value)).expect(FAILED);
         Self(Ustr::from(value))
     }
 

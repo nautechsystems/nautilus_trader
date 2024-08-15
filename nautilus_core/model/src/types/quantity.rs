@@ -21,7 +21,10 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::{correctness::check_in_range_inclusive_f64, parsing::precision_from_str};
+use nautilus_core::{
+    correctness::{check_in_range_inclusive_f64, FAILED},
+    parsing::precision_from_str,
+};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
@@ -52,8 +55,8 @@ pub struct Quantity {
 impl Quantity {
     /// Creates a new [`Quantity`] instance.
     pub fn new(value: f64, precision: u8) -> Self {
-        check_in_range_inclusive_f64(value, QUANTITY_MIN, QUANTITY_MAX, "value").unwrap();
-        check_fixed_precision(precision).unwrap();
+        check_in_range_inclusive_f64(value, QUANTITY_MIN, QUANTITY_MAX, "value").expect(FAILED);
+        check_fixed_precision(precision).expect(FAILED);
         Self {
             raw: f64_to_fixed_u64(value, precision),
             precision,
@@ -61,13 +64,13 @@ impl Quantity {
     }
 
     pub fn from_raw(raw: u64, precision: u8) -> Self {
-        check_fixed_precision(precision).unwrap();
+        check_fixed_precision(precision).expect(FAILED);
         Self { raw, precision }
     }
 
     #[must_use]
     pub fn zero(precision: u8) -> Self {
-        check_fixed_precision(precision).unwrap();
+        check_fixed_precision(precision).expect(FAILED);
         Self::new(0.0, precision)
     }
 
@@ -348,7 +351,7 @@ impl<'de> Deserialize<'de> for Quantity {
 
 pub fn check_quantity_positive(value: Quantity) -> anyhow::Result<()> {
     if !value.is_positive() {
-        anyhow::bail!("Condition failed: invalid `Quantity`, should be positive and was {value}")
+        anyhow::bail!("{FAILED}: invalid `Quantity`, should be positive and was {value}")
     }
     Ok(())
 }

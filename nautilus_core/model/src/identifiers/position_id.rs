@@ -20,7 +20,7 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness::check_valid_string;
+use nautilus_core::correctness::{check_valid_string, FAILED};
 use ustr::Ustr;
 
 /// Represents a valid position ID.
@@ -39,7 +39,7 @@ impl PositionId {
     ///
     /// Panics if `value` is not a valid string.
     pub fn new(value: &str) -> Self {
-        check_valid_string(value, stringify!(value)).unwrap();
+        check_valid_string(value, stringify!(value)).expect(FAILED);
         Self(Ustr::from(value))
     }
 

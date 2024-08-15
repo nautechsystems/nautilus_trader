@@ -21,7 +21,7 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness::{check_in_range_inclusive_usize, check_valid_string};
+use nautilus_core::correctness::{check_in_range_inclusive_usize, check_valid_string, FAILED};
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// The maximum length of ASCII characters for a `TradeId` string value (including null terminator).
@@ -54,7 +54,8 @@ impl TradeId {
     /// Panics if `value` is not a valid string, or value length is greater than 36.
     pub fn new(value: &str) -> Self {
         // check that string is non-empty and within the expected length
-        check_in_range_inclusive_usize(value.len(), 1, TRADE_ID_LEN, stringify!(value)).unwrap();
+        check_in_range_inclusive_usize(value.len(), 1, TRADE_ID_LEN, stringify!(value))
+            .expect(FAILED);
         Self::from_valid_bytes(value.as_bytes())
     }
 
@@ -62,10 +63,11 @@ impl TradeId {
         let cstr_str = cstr
             .to_str()
             .expect("TradeId expected valid string as `CString`");
-        check_valid_string(cstr_str, stringify!(cstr)).unwrap();
+        check_valid_string(cstr_str, stringify!(cstr)).expect(FAILED);
         let bytes = cstr.as_bytes_with_nul();
         // check that string is non-empty excluding '\0' and within the expected length
-        check_in_range_inclusive_usize(bytes.len(), 2, TRADE_ID_LEN, stringify!(cstr)).unwrap();
+        check_in_range_inclusive_usize(bytes.len(), 2, TRADE_ID_LEN, stringify!(cstr))
+            .expect(FAILED);
         Self::from_valid_bytes(bytes)
     }
 
