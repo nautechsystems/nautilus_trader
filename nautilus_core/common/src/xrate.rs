@@ -42,8 +42,8 @@ pub fn get_exchange_rate(
     quotes_bid: HashMap<Symbol, Decimal>,
     quotes_ask: HashMap<Symbol, Decimal>,
 ) -> anyhow::Result<Decimal> {
-    check_map_not_empty(&quotes_bid, stringify!(quotes_bid)).unwrap();
-    check_map_not_empty(&quotes_ask, stringify!(quotes_ask)).unwrap();
+    check_map_not_empty(&quotes_bid, stringify!(quotes_bid)).expect(FAILED);
+    check_map_not_empty(&quotes_ask, stringify!(quotes_ask)).expect(FAILED);
     check_equal_usize(
         quotes_bid.len(),
         quotes_ask.len(),

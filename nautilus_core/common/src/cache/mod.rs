@@ -1306,28 +1306,28 @@ impl Cache {
                 stringify!(client_order_id),
                 stringify!(orders),
             )
-            .unwrap();
+            .expect(FAILED);
             check_key_not_in_map(
                 &client_order_id,
                 &self.orders,
                 stringify!(client_order_id),
                 stringify!(orders),
             )
-            .unwrap();
+            .expect(FAILED);
             check_key_not_in_map(
                 &client_order_id,
                 &self.orders,
                 stringify!(client_order_id),
                 stringify!(orders),
             )
-            .unwrap();
+            .expect(FAILED);
             check_key_not_in_map(
                 &client_order_id,
                 &self.orders,
                 stringify!(client_order_id),
                 stringify!(orders),
             )
-            .unwrap();
+            .expect(FAILED);
         };
 
         log::debug!("Adding {:?}", order);

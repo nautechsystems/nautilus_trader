@@ -146,10 +146,10 @@ mod tests {
     }
 
     #[rstest]
+    #[should_panic]
     fn test_check_consistent_symbology_when_empty_symbols() {
         let symbols: Vec<&str> = vec![];
-        let result = std::panic::catch_unwind(|| check_consistent_symbology(&symbols));
-        assert!(result.is_err());
+        let _ = check_consistent_symbology(&symbols);
     }
 
     #[rstest]
