@@ -24,7 +24,11 @@ use std::{
 
 use derive_builder::Builder;
 use indexmap::IndexMap;
-use nautilus_core::{correctness::check_equal_u8, nanos::UnixNanos, serialization::Serializable};
+use nautilus_core::{
+    correctness::{check_equal_u8, FAILED},
+    nanos::UnixNanos,
+    serialization::Serializable,
+};
 use serde::{Deserialize, Serialize};
 
 use super::GetTsInit;
@@ -76,13 +80,15 @@ impl QuoteTick {
             ask_price.precision,
             "bid_price.precision",
             "ask_price.precision",
-        )?;
+        )
+        .expect(FAILED);
         check_equal_u8(
             bid_size.precision,
             ask_size.precision,
             "bid_size.precision",
             "ask_size.precision",
-        )?;
+        )
+        .expect(FAILED);
         Ok(Self {
             instrument_id,
             bid_price,
@@ -129,8 +135,7 @@ impl QuoteTick {
             PriceType::Mid => Price::from_raw(
                 (self.bid_price.raw + self.ask_price.raw) / 2,
                 cmp::min(self.bid_price.precision + 1, FIXED_PRECISION),
-            )
-            .unwrap(), // Already a valid `Price`
+            ),
             _ => panic!("Cannot extract with price type {price_type}"),
         }
     }
@@ -143,8 +148,7 @@ impl QuoteTick {
             PriceType::Mid => Quantity::from_raw(
                 (self.bid_size.raw + self.ask_size.raw) / 2,
                 cmp::min(self.bid_size.precision + 1, FIXED_PRECISION),
-            )
-            .unwrap(), // Already a valid `Quantity`
+            ),
             _ => panic!("Cannot extract with price type {price_type}"),
         }
     }

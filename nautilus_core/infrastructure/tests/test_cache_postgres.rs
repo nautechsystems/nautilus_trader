@@ -46,8 +46,8 @@ mod serial_tests {
     async fn test_cache_instruments() {
         let mut database = get_pg_cache_database().await.unwrap();
         let mut cache = get_cache(Some(Box::new(database.clone())));
-        let eth = Currency::new("ETH", 2, 0, "ETH", CurrencyType::Crypto).unwrap();
-        let usdt = Currency::new("USDT", 2, 0, "USDT", CurrencyType::Crypto).unwrap();
+        let eth = Currency::new("ETH", 2, 0, "ETH", CurrencyType::Crypto);
+        let usdt = Currency::new("USDT", 2, 0, "USDT", CurrencyType::Crypto);
         let crypto_perpetual = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         // insert into database and wait
         database.add_currency(&eth).unwrap();
@@ -81,7 +81,7 @@ mod serial_tests {
             instrument.id(),
             OrderSide::Buy,
             Quantity::from("1.0"),
-            Some(ClientOrderId::new("O-19700101-0000-001-001-1").unwrap()),
+            Some(ClientOrderId::new("O-19700101-0000-001-001-1")),
             None,
         );
         // add foreign key dependencies: instrument and currencies

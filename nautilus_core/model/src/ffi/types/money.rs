@@ -21,7 +21,7 @@ use crate::types::{currency::Currency, money::Money};
 #[no_mangle]
 pub extern "C" fn money_new(amount: f64, currency: Currency) -> Money {
     // SAFETY: Assumes `amount` is properly validated
-    Money::new(amount, currency).unwrap()
+    Money::new(amount, currency)
 }
 
 #[no_mangle]

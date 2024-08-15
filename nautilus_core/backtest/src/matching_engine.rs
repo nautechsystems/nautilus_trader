@@ -406,8 +406,7 @@ impl OrderMatchingEngine {
                     if self.oms_type == OmsType::Netting {
                         let position_id = PositionId::new(
                             format!("{}-{}", order.instrument_id(), order.strategy_id()).as_str(),
-                        )
-                        .unwrap();
+                        );
                         cache_borrow.position(&position_id)
                     } else {
                         None

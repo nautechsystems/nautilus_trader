@@ -172,7 +172,7 @@ pub mod tests {
         let client_order_id = order_factory.generate_client_order_id();
         assert_eq!(
             client_order_id,
-            ClientOrderId::new("O-19700101-000000-001-001-1").unwrap()
+            ClientOrderId::new("O-19700101-000000-001-001-1")
         );
     }
 
@@ -181,7 +181,7 @@ pub mod tests {
         let order_list_id = order_factory.generate_order_list_id();
         assert_eq!(
             order_list_id,
-            OrderListId::new("OL-19700101-000000-001-001-1").unwrap()
+            OrderListId::new("OL-19700101-000000-001-001-1")
         );
     }
 
@@ -191,7 +191,7 @@ pub mod tests {
         let client_order_id = order_factory.generate_client_order_id();
         assert_eq!(
             client_order_id,
-            ClientOrderId::new("O-19700101-000000-001-001-11").unwrap()
+            ClientOrderId::new("O-19700101-000000-001-001-11")
         );
     }
 
@@ -201,7 +201,7 @@ pub mod tests {
         let order_list_id = order_factory.generate_order_list_id();
         assert_eq!(
             order_list_id,
-            OrderListId::new("OL-19700101-000000-001-001-11").unwrap()
+            OrderListId::new("OL-19700101-000000-001-001-11")
         );
     }
 
@@ -214,11 +214,11 @@ pub mod tests {
         let order_list_id = order_factory.generate_order_list_id();
         assert_eq!(
             client_order_id,
-            ClientOrderId::new("O-19700101-000000-001-001-1").unwrap()
+            ClientOrderId::new("O-19700101-000000-001-001-1")
         );
         assert_eq!(
             order_list_id,
-            OrderListId::new("OL-19700101-000000-001-001-1").unwrap()
+            OrderListId::new("OL-19700101-000000-001-001-1")
         );
     }
 
@@ -248,7 +248,7 @@ pub mod tests {
         // assert_eq!(market_order.tags, None);
         assert_eq!(
             market_order.client_order_id(),
-            ClientOrderId::new("O-19700101-000000-001-001-1").unwrap()
+            ClientOrderId::new("O-19700101-000000-001-001-1")
         );
         // assert_eq!(market_order.order_list_id(), None);
     }

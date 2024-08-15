@@ -377,7 +377,7 @@ fn insert(
     key: &str,
     value: Vec<Bytes>,
 ) -> anyhow::Result<()> {
-    check_slice_not_empty(value.as_slice(), stringify!(value))?;
+    check_slice_not_empty(value.as_slice(), stringify!(value)).unwrap();
 
     match collection {
         INDEX => insert_index(pipe, key, &value),
@@ -502,7 +502,7 @@ fn update(
     key: &str,
     value: Vec<Bytes>,
 ) -> anyhow::Result<()> {
-    check_slice_not_empty(value.as_slice(), stringify!(value))?;
+    check_slice_not_empty(value.as_slice(), stringify!(value)).unwrap();
 
     match collection {
         ACCOUNTS => {

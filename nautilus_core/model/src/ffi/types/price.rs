@@ -21,12 +21,12 @@ use crate::types::price::Price;
 #[no_mangle]
 pub extern "C" fn price_new(value: f64, precision: u8) -> Price {
     // SAFETY: Assumes `value` and `precision` are properly validated
-    Price::new(value, precision).unwrap()
+    Price::new(value, precision)
 }
 
 #[no_mangle]
 pub extern "C" fn price_from_raw(raw: i64, precision: u8) -> Price {
-    Price::from_raw(raw, precision).unwrap()
+    Price::from_raw(raw, precision)
 }
 
 #[no_mangle]

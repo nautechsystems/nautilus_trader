@@ -203,7 +203,7 @@ impl DataType {
     pub fn parse_venue_from_metadata(&self) -> Option<Venue> {
         let metadata = self.metadata.as_ref().expect("metadata was None");
         let venue_str = metadata.get("venue")?;
-        Some(Venue::from_str(venue_str).expect("Invalid `Venue`"))
+        Some(Venue::from(venue_str.as_str()))
     }
 
     pub fn parse_bar_type_from_metadata(&self) -> BarType {
@@ -480,7 +480,7 @@ mod tests {
 
         assert_eq!(
             data_type.parse_venue_from_metadata().unwrap(),
-            Venue::from_str(venue_str).unwrap()
+            Venue::new(venue_str)
         );
     }
 

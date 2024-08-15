@@ -87,15 +87,15 @@ impl TestOrderEventStubs {
         let account_id = account_id
             .or(order.account_id())
             .unwrap_or(AccountId::from("SIM-001"));
-        let trade_id = trade_id.unwrap_or(
-            TradeId::new(order.client_order_id().as_str().replace('O', "E").as_str()).unwrap(),
-        );
+        let trade_id = trade_id.unwrap_or(TradeId::new(
+            order.client_order_id().as_str().replace('O', "E").as_str(),
+        ));
         let liquidity_side = liquidity_side.unwrap_or(LiquiditySide::Maker);
         let event = UUID4::new();
         let position_id = position_id
             .or_else(|| order.position_id())
-            .unwrap_or(PositionId::new("1").unwrap());
-        let commission = commission.unwrap_or(Money::from_str("2 USD").unwrap());
+            .unwrap_or(PositionId::new("1"));
+        let commission = commission.unwrap_or(Money::from("2 USD"));
         let last_px = last_px.unwrap_or(Price::from_str("1.0").unwrap());
         let last_qty = last_qty.unwrap_or(order.quantity());
         let event = OrderFilled::new(

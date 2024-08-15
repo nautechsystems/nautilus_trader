@@ -20,7 +20,7 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness::check_valid_string;
+use nautilus_core::correctness::{check_valid_string, FAILED};
 use ustr::Ustr;
 
 /// Represents a valid position ID.
@@ -38,10 +38,9 @@ impl PositionId {
     /// # Panics
     ///
     /// Panics if `value` is not a valid string.
-    pub fn new(value: &str) -> anyhow::Result<Self> {
-        check_valid_string(value, stringify!(value))?;
-
-        Ok(Self(Ustr::from(value)))
+    pub fn new(value: &str) -> Self {
+        check_valid_string(value, stringify!(value)).expect(FAILED);
+        Self(Ustr::from(value))
     }
 
     /// Sets the inner identifier value.
@@ -70,12 +69,6 @@ impl Debug for PositionId {
 impl Display for PositionId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
-    }
-}
-
-impl From<&str> for PositionId {
-    fn from(input: &str) -> Self {
-        Self::new(input).unwrap()
     }
 }
 

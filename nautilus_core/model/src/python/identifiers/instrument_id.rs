@@ -31,14 +31,14 @@ use crate::identifiers::{InstrumentId, Symbol, Venue};
 #[pymethods]
 impl InstrumentId {
     #[new]
-    fn py_new(symbol: Symbol, venue: Venue) -> PyResult<Self> {
-        Ok(Self::new(symbol, venue))
+    fn py_new(symbol: Symbol, venue: Venue) -> Self {
+        Self::new(symbol, venue)
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         let tuple: (&PyString, &PyString) = state.extract(py)?;
-        self.symbol = Symbol::new(tuple.0.extract()?).map_err(to_pyvalue_err)?;
-        self.venue = Venue::new(tuple.1.extract()?).map_err(to_pyvalue_err)?;
+        self.symbol = Symbol::new(tuple.0.extract()?);
+        self.venue = Venue::new(tuple.1.extract()?);
         Ok(())
     }
 
