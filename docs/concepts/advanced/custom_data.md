@@ -258,8 +258,14 @@ GreeksTestData(
 )
 ```
 
-For more convenience, you can use a pyi file with a proper signature so it's usable for code suggestions in an IDE, as the constructor is generated at runtime.  
-For example in a file named `greeks.pyi` if the custom data class is defined in `greeks.py`, the signature of the constructor would be:
+### Custom data type stub
+
+To enhance development convenience and improve code suggestions in your IDE, you can create a `.pyi`
+stub file with the proper constructor signature for your custom data types. This is particularly 
+useful when the constructor is dynamically generated at runtime, as it allows the IDE to recognize 
+and provide suggestions for the class's methods and attributes.
+
+For instance, if you have a custom data class defined in `greeks.py`, you can create a corresponding `greeks.pyi` file with the following constructor signature:
 
 ```python
 from nautilus_trader.core.data import Data
@@ -267,10 +273,12 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 
 class GreeksData(Data):
-    def __init__(self,
-                 ts_event: int = 0,
-                 ts_init: int = 0,
-                 instrument_id: InstrumentId = InstrumentId.from_str('ES.GLBX'),
-                 delta: float = 0.) -> GreeksData:
+    def __init__(
+        self,
+        ts_event: int = 0,
+        ts_init: int = 0,
+        instrument_id: InstrumentId = InstrumentId.from_str("ES.GLBX"),
+        delta: float = 0.0,
+  ) -> GreeksData:
         ...
 ```
