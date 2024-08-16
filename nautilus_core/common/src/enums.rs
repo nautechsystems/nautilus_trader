@@ -161,22 +161,26 @@ pub enum LogLevel {
     #[strum(serialize = "OFF")]
     #[serde(rename = "OFF")]
     Off = 0,
+    /// The **TRACE** trace log level. Only available in Rust for debug/development builds.
+    #[strum(serialize = "TRACE")]
+    #[serde(rename = "TRACE")]
+    Trace = 1,
     /// The **DEBUG** debug log level.
     #[strum(serialize = "DEBUG")]
     #[serde(rename = "DEBUG")]
-    Debug = 10,
+    Debug = 2,
     /// The **INFO** info log level.
     #[strum(serialize = "INFO")]
     #[serde(rename = "INFO")]
-    Info = 20,
+    Info = 3,
     /// The **WARNING** warning log level.
     #[strum(serialize = "WARN", serialize = "WARNING")]
     #[serde(rename = "WARNING")]
-    Warning = 30,
+    Warning = 4,
     /// The **ERROR** error log level.
     #[strum(serialize = "ERROR")]
     #[serde(rename = "ERROR")]
-    Error = 40,
+    Error = 5,
 }
 
 /// The log color for log messages.

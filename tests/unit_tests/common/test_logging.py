@@ -26,6 +26,7 @@ class TestLogLevel:
     @pytest.mark.parametrize(
         ("enum", "expected"),
         [
+            [LogLevel.TRACE, "TRACE"],
             [LogLevel.DEBUG, "DEBUG"],
             [LogLevel.INFO, "INFO"],
             [LogLevel.WARNING, "WARNING"],
@@ -42,6 +43,7 @@ class TestLogLevel:
     @pytest.mark.parametrize(
         ("string", "expected"),
         [
+            ["TRACE", LogLevel.TRACE],
             ["DEBUG", LogLevel.DEBUG],
             ["INFO", LogLevel.INFO],
             ["WARN", LogLevel.WARNING],
@@ -71,7 +73,7 @@ class TestLoggerTests:
         logger = Logger(name="TEST_LOGGER")
 
         # Act
-        logger.debug("This is a log message.")
+        logger.debug("This is a DEBUG log message.")
 
         # Assert
         assert True  # No exceptions raised
@@ -81,7 +83,7 @@ class TestLoggerTests:
         logger = Logger(name="TEST_LOGGER")
 
         # Act
-        logger.info("This is a log message.")
+        logger.info("This is an INFO log message.")
 
         # Assert
         assert True  # No exceptions raised
@@ -91,7 +93,7 @@ class TestLoggerTests:
         logger = Logger(name="TEST_LOGGER")
 
         # Act
-        logger.info("This is a log message.", color=LogColor.BLUE)
+        logger.info("This is an INFO log message.", color=LogColor.BLUE)
 
         # Assert
         assert True  # No exceptions raised
@@ -101,7 +103,7 @@ class TestLoggerTests:
         logger = Logger(name="TEST_LOGGER")
 
         # Act
-        logger.info("This is a log message.", color=LogColor.GREEN)
+        logger.info("This is an INFO log message.", color=LogColor.GREEN)
 
         # Assert
         assert True  # No exceptions raised
@@ -111,7 +113,7 @@ class TestLoggerTests:
         logger = Logger(name="TEST_LOGGER")
 
         # Act
-        logger.warning("This is a log message.")
+        logger.warning("This is a WARNING log message.")
 
         # Assert
         assert True  # No exceptions raised
@@ -121,7 +123,7 @@ class TestLoggerTests:
         logger = Logger(name="TEST_LOGGER")
 
         # Act
-        logger.error("This is a log message.")
+        logger.error("This is an ERROR log message.")
 
         # Assert
         assert True  # No exceptions raised

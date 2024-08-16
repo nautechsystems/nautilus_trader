@@ -139,6 +139,7 @@ pub fn init_logging(
 pub const fn map_log_level_to_filter(log_level: LogLevel) -> LevelFilter {
     match log_level {
         LogLevel::Off => LevelFilter::Off,
+        LogLevel::Trace => LevelFilter::Trace,
         LogLevel::Debug => LevelFilter::Debug,
         LogLevel::Info => LevelFilter::Info,
         LogLevel::Warning => LevelFilter::Warn,
