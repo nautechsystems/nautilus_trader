@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added `LiveExecEngineConfig.generate_missing_orders` reconciliation config option to align internal and external position states
+- Added `LogLevel::TRACE` (only available in Rust for debug/development builds)
 - Improved `BinanceExecutionClient` position report requests (can now filter by instrument and includes reporting for flat positions)
 - Improved `BybitExecutionClient` position report requests (can now filter by instrument and includes reporting for flat positions)
 - Improved `LiveExecutionEngine` reconciliation robustness and recovery when internal positions do not match external positions

@@ -1167,7 +1167,7 @@ cdef class Logger:
         LogColor color = LogColor.NORMAL,
     ):
         """
-        Log the given debug level message.
+        Log the given DEBUG level message.
 
         Parameters
         ----------
@@ -1201,7 +1201,7 @@ cdef class Logger:
         LogColor color = LogColor.NORMAL,
     ):
         """
-        Log the given information level message.
+        Log the given INFO level message.
 
         Parameters
         ----------
@@ -1236,7 +1236,7 @@ cdef class Logger:
         LogColor color = LogColor.YELLOW,
     ):
         """
-        Log the given warning level message.
+        Log the given WARNING level message.
 
         Parameters
         ----------
@@ -1271,7 +1271,7 @@ cdef class Logger:
         LogColor color = LogColor.RED,
     ):
         """
-        Log the given error level message.
+        Log the given ERROR level message.
 
         Parameters
         ----------
