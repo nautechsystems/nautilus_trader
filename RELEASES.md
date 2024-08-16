@@ -10,6 +10,7 @@ Released on TBD (UTC).
 - Improved `@customdataclass` decorator constructor to allow more positional arguments, thanks @faysou
 - Refined error modeling and handling in Rust (#1849), thanks @twitu
 - Upgraded `datafusion` crate to v41.0.0
+- Upgraded `uvloop` to v0.20.0
 
 ### Breaking Changes
 - Changed `VolumeWeightedAveragePrice` calculation formula to use each bars "typical" price (#1842), thanks @evgenii-prusov
