@@ -1840,8 +1840,8 @@ class TestActor:
         # Assert
         msg = handler[0]
         assert isinstance(msg, Data)
-        assert actor.is_signal(msg)
-        assert actor.is_signal(msg, "test")
+        assert msg.is_signal()
+        assert msg.is_signal("test")
         assert msg.ts_event == 0
         assert msg.ts_init == 0
         assert msg.value == value

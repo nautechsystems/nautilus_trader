@@ -1851,14 +1851,6 @@ cdef class Actor(Component):
             handler=self.handle_data,
         )
 
-    cpdef bint is_signal(self, Data data, str name = ""):
-        Condition.not_none(data, "data")
-
-        if name == "":
-            return data.__class__.__name__.startswith("Signal")
-
-        return data.__class__.__name__ == f"Signal{name.title()}"
-
 # -- REQUESTS -------------------------------------------------------------------------------------
 
     cpdef UUID4 request_data(
