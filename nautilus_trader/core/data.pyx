@@ -65,3 +65,10 @@ cdef class Data:
 
         """
         return cls.__module__ + ':' + cls.__qualname__
+
+    @classmethod
+    def is_signal(cls, str name = "") -> bool:
+        if name == "":
+            return cls.__name__.startswith("Signal")
+
+        return cls.__name__ == f"Signal{name.title()}"

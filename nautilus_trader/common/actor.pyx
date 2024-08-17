@@ -1841,6 +1841,16 @@ cdef class Actor(Component):
         )
         self.publish_data(data_type=DataType(cls), data=data)
 
+    cpdef void subscribe_signal(self, str name = ""):
+        Condition.not_none(name, "name")
+
+        topic = f"Signal{name.title()}*"
+
+        self._msgbus.subscribe(
+            topic=f"data.{topic}",
+            handler=self.handle_data,
+        )
+
 # -- REQUESTS -------------------------------------------------------------------------------------
 
     cpdef UUID4 request_data(
