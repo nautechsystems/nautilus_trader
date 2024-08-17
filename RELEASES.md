@@ -19,6 +19,7 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 - Changed `VolumeWeightedAveragePrice` calculation formula to use each bars "typical" price (#1842), thanks @evgenii-prusov
+- Changed `OptionsContract` constructor parameter ordering and Arrow schema (consistently group option kind and strike price)
 
 ### Fixes
 - Fixed `Position` exception type on duplicate fill (should be `KeyError` like `Order`)
@@ -73,7 +74,7 @@ Released on 2nd August 2024 (UTC).
 - Removed `VenueStatus` and all associated methods and schemas (redundant with `InstrumentStatus`)
 - Renamed `QuoteTick.extract_volume(...)` to `.extract_size(...)` (more accurate terminology)
 - Changed `InstrumentStatus` params (support Databento `status` schema)
-- Changed `InstrumentStatus` arrow schema
+- Changed `InstrumentStatus` Arrow schema
 - Changed `OrderBook` FFI API to take data by reference instead of by value
 
 ### Fixes

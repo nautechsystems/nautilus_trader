@@ -403,10 +403,10 @@ pub fn options_contract_appl() -> OptionsContract {
         Some(Ustr::from("GMNI")), // Nasdaq GEMX
         Ustr::from("AAPL"),
         OptionKind::Call,
-        UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
-        UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
         Price::from("149.0"),
         Currency::USD(),
+        UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
+        UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
         2,
         Price::from("0.01"),
         Quantity::from(1),
