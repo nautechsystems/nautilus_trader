@@ -140,8 +140,7 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
             The time in force of the order (GTC, IOC..)
         positionSide : BinanceFuturesPositionSide, optional
             Only for FUTURES orders.
-            Must be sent in Hedge Mode.
-            The position side of the order (LONG, SHORT)
+            Must be sent in Hedge Mode and the position side must be one of LONG and SHORT.
         quantity : str, optional
             Mandatory for all order types, except STOP_MARKET/TAKE_PROFIT_MARKET
             and TRAILING_STOP_MARKET orders

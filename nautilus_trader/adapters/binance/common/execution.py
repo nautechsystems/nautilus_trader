@@ -70,6 +70,7 @@ from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
@@ -266,7 +267,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             await self._update_account_state()
 
             # Set dual side position
-            await self._set_dual_side_position()
+            await self._init_dual_side_position()
 
             # Get listen keys
             response: BinanceListenKey = await self._http_user.create_listen_key()
@@ -293,7 +294,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         # Replace method in child class
         raise NotImplementedError
 
-    async def _set_dual_side_position(self) -> None:
+    async def _init_dual_side_position(self) -> None:
         # Replace method in child class
         raise NotImplementedError
 
@@ -627,49 +628,65 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         return order.is_reduce_only if self._use_reduce_only else False
 
     def _determine_reduce_only_str(self, order: Order) -> str | None:
+        # `reduceOnly` Cannot be sent in Futures Hedge Mode
         if self._binance_account_type.is_futures and not self._is_dual_side_position:
             return str(self._determine_reduce_only(order))
         return None
 
-    def _translate_position_side(
+    def _get_position_side_from_position_id(
         self,
-        position_side: PositionSide,
+        position_id: PositionId | None,
     ) -> BinanceFuturesPositionSide | None:
         """
-        Translate `PositionSide` to BinanceFuturesPositionSide.
+        Parse the position side from the position ID.
 
         Parameters
         ----------
-        position_side : PositionSide
-            The position side to translate.
+        position_id : PositionId | None
+            The position ID, can be `None`.
+            Position ID must end with either 'LONG' or 'SHORT' for Binance Futures Hedge position mode.
 
         Returns
         -------
-        BinanceFuturesPositionSide |
-        None
+        BinanceFuturesPositionSide | None
 
         """
-        binance_position_side = None
-        if self._binance_account_type.is_futures:
-            if position_side == PositionSide.NO_POSITION_SIDE:
-                binance_position_side = BinanceFuturesPositionSide.BOTH
-            elif position_side == PositionSide.LONG:
-                binance_position_side = BinanceFuturesPositionSide.LONG
-            elif position_side == PositionSide.SHORT:
-                binance_position_side = BinanceFuturesPositionSide.SHORT
-        return binance_position_side
+        position_side = None
+        if self._binance_account_type.is_spot_or_margin:  # Spot or Margin mode
+            return position_side
+        elif not self._is_dual_side_position:  # One-way position mode
+            return BinanceFuturesPositionSide.BOTH
+
+        # For Binance Futures Hedge mode, the position side must be specified in the position_id
+        PyCondition.not_none(position_id, "position_id")
+        position_side = self._enum_parser.parse_position_id_to_binance_futures_position_side(
+            position_id,
+        )
+        # Check if the position side is valid
+        PyCondition.is_in(
+            position_side,
+            [BinanceFuturesPositionSide.LONG, BinanceFuturesPositionSide.SHORT],
+            "position_side",
+            "HedgeModePositionSides",
+        )
+        return position_side
 
     async def _submit_order(self, command: SubmitOrder) -> None:
-        await self._submit_order_inner(command.order)
+        position_side = self._get_position_side_from_position_id(command.position_id)
+        await self._submit_order_inner(command.order, position_side)
 
-    async def _submit_order_inner(self, order: Order) -> None:
+    async def _submit_order_inner(
+        self,
+        order: Order,
+        position_side: BinanceFuturesPositionSide | None,
+    ) -> None:
         if order.is_closed:
             self._log.warning(f"Cannot submit already closed order {order}")
             return
 
         # Check validity
         self._check_order_validity(order)
-        self._log.debug(f"Submitting {order}")
+        self._log.debug(f"Submitting {order}, position_side={position_side}")
 
         # Generate event here to ensure correct ordering of events
         self.generate_order_submitted(
@@ -681,7 +698,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
         while True:
             try:
-                await self._submit_order_method[order.order_type](order)
+                await self._submit_order_method[order.order_type](order, position_side)
                 self._order_retries.pop(order.client_order_id, None)
                 break  # Successful request
             except KeyError:
@@ -708,8 +725,11 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 )
                 await asyncio.sleep(self._retry_delay)
 
-    async def _submit_market_order(self, order: MarketOrder) -> None:
-        position_side = self._translate_position_side(order.position_side)
+    async def _submit_market_order(
+        self,
+        order: MarketOrder,
+        position_side: BinanceFuturesPositionSide | None,
+    ) -> None:
         await self._http_account.new_order(
             symbol=order.instrument_id.symbol.value,
             side=self._enum_parser.parse_internal_order_side(order.side),
@@ -721,14 +741,16 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             position_side=position_side,
         )
 
-    async def _submit_limit_order(self, order: LimitOrder) -> None:
+    async def _submit_limit_order(
+        self,
+        order: LimitOrder,
+        position_side: BinanceFuturesPositionSide | None,
+    ) -> None:
         time_in_force = self._determine_time_in_force(order)
         if order.is_post_only and self._binance_account_type.is_spot_or_margin:
             time_in_force = None
         elif order.is_post_only and self._binance_account_type.is_futures:
             time_in_force = BinanceTimeInForce.GTX
-
-        position_side = self._translate_position_side(order.position_side)
 
         await self._http_account.new_order(
             symbol=order.instrument_id.symbol.value,
@@ -745,7 +767,11 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             position_side=position_side,
         )
 
-    async def _submit_stop_limit_order(self, order: StopLimitOrder) -> None:
+    async def _submit_stop_limit_order(
+        self,
+        order: StopLimitOrder,
+        position_side: BinanceFuturesPositionSide | None,
+    ) -> None:
         if self._binance_account_type.is_spot_or_margin:
             working_type = None
         elif order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST_TRADE):
@@ -760,7 +786,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             return
 
         time_in_force = self._determine_time_in_force(order)
-        position_side = self._translate_position_side(order.position_side)
         await self._http_account.new_order(
             symbol=order.instrument_id.symbol.value,
             side=self._enum_parser.parse_internal_order_side(order.side),
@@ -779,6 +804,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
+        position_side = self._get_position_side_from_position_id(command.position_id)
         for order in command.order_list.orders:
             self.generate_order_submitted(
                 strategy_id=order.strategy_id,
@@ -790,9 +816,13 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         for order in command.order_list.orders:
             if order.linked_order_ids:  # TODO: Implement
                 self._log.warning(f"Cannot yet handle OCO conditional orders, {order}")
-            await self._submit_order_inner(order)
+            await self._submit_order_inner(order, position_side)
 
-    async def _submit_stop_market_order(self, order: StopMarketOrder) -> None:
+    async def _submit_stop_market_order(
+        self,
+        order: StopMarketOrder,
+        position_side: BinanceFuturesPositionSide | None,
+    ) -> None:
         if self._binance_account_type.is_spot_or_margin:
             working_type = None
         elif order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST_TRADE):
@@ -807,7 +837,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             return
 
         time_in_force = self._determine_time_in_force(order)
-        position_side = self._translate_position_side(order.position_side)
         await self._http_account.new_order(
             symbol=order.instrument_id.symbol.value,
             side=self._enum_parser.parse_internal_order_side(order.side),
@@ -823,7 +852,11 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             position_side=position_side,
         )
 
-    async def _submit_trailing_stop_market_order(self, order: TrailingStopMarketOrder) -> None:
+    async def _submit_trailing_stop_market_order(
+        self,
+        order: TrailingStopMarketOrder,
+        position_side: BinanceFuturesPositionSide | None,
+    ) -> None:
         if order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST_TRADE):
             working_type = "CONTRACT_PRICE"
         elif order.trigger_type == TriggerType.MARK_PRICE:
@@ -874,7 +907,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 )
 
         time_in_force = self._determine_time_in_force(order)
-        position_side = self._translate_position_side(order.position_side)
         await self._http_account.new_order(
             symbol=order.instrument_id.symbol.value,
             side=self._enum_parser.parse_internal_order_side(order.side),

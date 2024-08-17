@@ -170,11 +170,17 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             account.set_leverage(instrument_id, leverage)
             self._log.debug(f"Set leverage {position.symbol} {leverage}X")
 
-    async def _set_dual_side_position(self) -> None:
+    async def _init_dual_side_position(self) -> None:
         binance_futures_dual_side_position: BinanceFuturesDualSidePosition = (
             await self._futures_http_account.query_futures_hedge_mode()
         )
+        # "true": Hedge Mode; "false": One-way Mode
         self._is_dual_side_position = binance_futures_dual_side_position.dualSidePosition
+        if self._is_dual_side_position:
+            PyCondition.false(
+                self._use_reduce_only,
+                "Cannot use `reduce_only` with Binance Hedge Mode",
+            )
         self._log.info(f"Dual side position: {self._is_dual_side_position}")
 
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
