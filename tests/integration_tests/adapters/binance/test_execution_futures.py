@@ -113,7 +113,7 @@ class TestBinanceFuturesExecutionClient:
             cache=self.cache,
             clock=self.clock,
             instrument_provider=self.provider,
-            base_url_ws="wss://fstream.binance.com/ws",
+            base_url_ws="",
             config=BinanceExecClientConfig(),
             account_type=BinanceAccountType.USDT_FUTURE,
         )
