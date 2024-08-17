@@ -155,6 +155,10 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
         while self.get_account() is None:
             await asyncio.sleep(0.1)
 
+    async def _init_dual_side_position(self) -> None:
+        self._is_dual_side_position = False
+        self._log.info(f"Dual side position: {self._is_dual_side_position}")
+
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
     async def _get_binance_position_status_reports(

@@ -17,6 +17,7 @@
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceFuturesPositionSide
 from nautilus_trader.adapters.binance.common.enums import BinanceNewOrderRespType
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
@@ -137,6 +138,9 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         timeInForce : BinanceTimeInForce, optional
             Mandatory for LIMIT, STOP_LOSS_LIMIT, TAKE_PROFIT_LIMIT orders.
             The time in force of the order (GTC, IOC..)
+        positionSide : BinanceFuturesPositionSide, optional
+            Only for FUTURES orders.
+            Must be sent in Hedge Mode and the position side must be one of LONG and SHORT.
         quantity : str, optional
             Mandatory for all order types, except STOP_MARKET/TAKE_PROFIT_MARKET
             and TRAILING_STOP_MARKET orders
@@ -215,6 +219,7 @@ class BinanceOrderHttp(BinanceHttpEndpoint):
         side: BinanceOrderSide
         type: BinanceOrderType
         timeInForce: BinanceTimeInForce | None = None
+        positionSide: BinanceFuturesPositionSide | None = None
         quantity: str | None = None
         quoteOrderQty: str | None = None
         price: str | None = None
@@ -615,6 +620,7 @@ class BinanceAccountHttpAPI:
         side: BinanceOrderSide,
         order_type: BinanceOrderType,
         time_in_force: BinanceTimeInForce | None = None,
+        position_side: BinanceFuturesPositionSide | None = None,
         quantity: str | None = None,
         quote_order_qty: str | None = None,
         price: str | None = None,
@@ -644,6 +650,7 @@ class BinanceAccountHttpAPI:
                 side=side,
                 type=order_type,
                 timeInForce=time_in_force,
+                positionSide=position_side,
                 quantity=quantity,
                 quoteOrderQty=quote_order_qty,
                 price=price,

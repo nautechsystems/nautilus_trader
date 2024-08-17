@@ -19,6 +19,7 @@ from nautilus_trader.adapters.binance.common.enums import BinanceOrderSide
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
 from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
 from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
+from nautilus_trader.adapters.binance.futures.http.account import BinanceFuturesAccountHttpAPI
 from nautilus_trader.adapters.binance.http.account import BinanceOrderHttp
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.http.account import BinanceSpotAccountHttpAPI
@@ -38,6 +39,15 @@ class TestBinanceSpotAccountHttpAPI:
         )
 
         self.api = BinanceSpotAccountHttpAPI(self.client, self.clock)
+
+        self.futures_client = BinanceHttpClient(
+            clock=self.clock,
+            key="SOME_BINANCE_FUTURES_API_KEY",
+            secret="SOME_BINANCE_FUTURES_API_SECRET",
+            base_url="https://fapi.binance.com/",  # Futures
+        )
+
+        self.futures_api = BinanceFuturesAccountHttpAPI(self.futures_client, self.clock)
 
     # COMMON tests
 
@@ -328,4 +338,18 @@ class TestBinanceSpotAccountHttpAPI:
         request = mock_send_request.call_args.kwargs
         assert request["method"] == "GET"
         assert request["url"] == "https://api.binance.com/api/v3/account"
+        assert request["params"].startswith("recvWindow=5000&timestamp=")
+
+    @pytest.mark.asyncio()
+    async def test_query_futures_hedge_mode_sends_expected_request(self, mocker):
+        # Arrange
+        mock_send_request = mocker.patch(target="aiohttp.client.ClientSession.request")
+
+        # Act
+        await self.futures_api.query_futures_hedge_mode(recv_window=5000)
+
+        # Assert
+        request = mock_send_request.call_args.kwargs
+        assert request["method"] == "GET"
+        assert request["url"] == "https://fapi.binance.com/fapi/v1/positionSide/dual"
         assert request["params"].startswith("recvWindow=5000&timestamp=")

@@ -113,3 +113,15 @@ class TestIdStubs:
     @staticmethod
     def trade_id() -> TradeId:
         return TradeId("1")
+
+    @staticmethod
+    def position_id_long() -> PositionId:
+        return PositionId("001-LONG")
+
+    @staticmethod
+    def position_id_short() -> PositionId:
+        return PositionId("001-SHORT")
+
+    @staticmethod
+    def position_id_both() -> PositionId:
+        return PositionId("001-BOTH")
