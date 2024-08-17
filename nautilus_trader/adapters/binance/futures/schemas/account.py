@@ -17,8 +17,8 @@ from decimal import Decimal
 
 import msgspec
 
+from nautilus_trader.adapters.binance.common.enums import BinanceFuturesPositionSide
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEnumParser
-from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesPositionSide
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.model.identifiers import AccountId

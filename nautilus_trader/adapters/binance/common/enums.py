@@ -35,7 +35,19 @@ from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.enums import bar_aggregation_to_str
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.orders import Order
+
+
+@unique
+class BinanceFuturesPositionSide(Enum):
+    """
+    Represents a `Binance Futures` position side.
+    """
+
+    BOTH = "BOTH"
+    LONG = "LONG"
+    SHORT = "SHORT"
 
 
 @unique
@@ -596,3 +608,18 @@ class BinanceEnumParser:
         raise NotImplementedError(  # pragma: no cover (design-time error)
             "Cannot parse binance trigger type (not implemented).",  # pragma: no cover
         )
+
+    def parse_position_id_to_binance_futures_position_side(
+        self,
+        position_id: PositionId,
+    ) -> BinanceFuturesPositionSide:
+        if position_id.value.endswith("LONG"):  # Position Long
+            return BinanceFuturesPositionSide.LONG
+        elif position_id.value.endswith("SHORT"):  # Position Short
+            return BinanceFuturesPositionSide.SHORT
+        elif position_id.value.endswith("BOTH"):
+            return BinanceFuturesPositionSide.BOTH
+        else:
+            raise RuntimeError(  # pragma: no cover (design-time error)
+                f"unrecognized position id, was {position_id}",  # pragma: no cover
+            )
