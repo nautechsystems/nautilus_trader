@@ -1810,12 +1810,14 @@ cdef class Actor(Component):
 
     cpdef void publish_signal(self, str name, value, uint64_t ts_event = 0):
         """
-        Publish the given value as a signal to the message bus. Optionally setup persistence for this `signal`.
+        Publish the given value as a signal to the message bus.
 
         Parameters
         ----------
         name : str
             The name of the signal being published.
+            The signal name is case-insensitive and will be capitalized
+            (e.g., 'example' becomes 'SignalExample').
         value : object
             The signal data to publish.
         ts_event : uint64_t, optional
@@ -1842,6 +1844,18 @@ cdef class Actor(Component):
         self.publish_data(data_type=DataType(cls), data=data)
 
     cpdef void subscribe_signal(self, str name = ""):
+        """
+        Subscribe to a specific signal by name, or to all signals if no name is provided.
+
+        Parameters
+        ----------
+        name : str, optional
+            The name of the signal to subscribe to. If not provided or an empty
+            string is passed, the subscription will include all signals.
+            The signal name is case-insensitive and will be capitalized
+            (e.g., 'example' becomes 'SignalExample*').
+
+        """
         Condition.not_none(name, "name")
 
         topic = f"Signal{name.title()}*"
