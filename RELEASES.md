@@ -6,13 +6,16 @@ Released on TBD (UTC).
 - Added `LiveExecEngineConfig.generate_missing_orders` reconciliation config option to align internal and external position states
 - Added `LogLevel::TRACE` (only available in Rust for debug/development builds)
 - Added `Actor.subscribe_signal(...)` method and `Data.is_signal(...)` class method (#1853), thanks @faysou
+- Added Binance Futures support for `HEDGE` mode (#1846), thanks @DevRoss
+- Overhauled and refined error modeling and handling in Rust (#1849), thanks @twitu
 - Improved `BinanceExecutionClient` position report requests (can now filter by instrument and includes reporting for flat positions)
 - Improved `BybitExecutionClient` position report requests (can now filter by instrument and includes reporting for flat positions)
 - Improved `LiveExecutionEngine` reconciliation robustness and recovery when internal positions do not match external positions
-- Improved `@customdataclass` decorator constructor to allow more positional arguments, thanks @faysou
-- Refined error modeling and handling in Rust (#1849), thanks @twitu
+- Improved `@customdataclass` decorator constructor to allow more positional arguments (#1850), thanks @faysou
+- Improved `@customdataclass` documentation (#1854), thanks @faysou
 - Upgraded `datafusion` crate to v41.0.0
-- Upgraded `uvloop` to v0.20.0
+- Upgraded `tokio` crate to v1.39.3
+- Upgraded `uvloop` to v0.20.0 (upgrades libuv to v1.48.0)
 
 ### Breaking Changes
 - Changed `VolumeWeightedAveragePrice` calculation formula to use each bars "typical" price (#1842), thanks @evgenii-prusov
