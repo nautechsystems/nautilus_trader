@@ -108,12 +108,11 @@ A signal is an automatically generated custom data identified by a name containi
 (str, float, int, bool or bytes).
 
 ```python
-self.publish_signal('signal_name', value, ts_event)
-
-self.subscribe_signal('signal_name')
+self.publish_signal("signal_name", value, ts_event)
+self.subscribe_signal("signal_name")
 
 def on_data(self, data):
-    if data.is_signal('signal_name'):
+    if data.is_signal("signal_name"):
         print("Signal", data)
 ```
 
