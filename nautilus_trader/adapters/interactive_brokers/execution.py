@@ -261,7 +261,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 break
         if report is None:
             self._log.warning(
-                f"Order {client_order_id=}, {venue_order_id} not found, Cancelling...",
+                f"Order {client_order_id=}, {venue_order_id} not found, canceling...",
             )
             self._on_order_status(
                 order_ref=client_order_id.value,

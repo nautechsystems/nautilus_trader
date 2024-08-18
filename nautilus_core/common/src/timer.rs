@@ -287,7 +287,7 @@ impl LiveTimer {
         // Floor the next time to the nearest microsecond which is within the timers accuracy
         let mut next_time_ns = UnixNanos::from(floor_to_nearest_microsecond(next_time_ns));
 
-        // Setup oneshot channel for cancelling timer task
+        // Setup oneshot channel for canceling timer task
         let (cancel_tx, mut cancel_rx) = oneshot::channel();
         self.canceler = Some(cancel_tx);
 

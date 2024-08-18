@@ -81,10 +81,6 @@ cdef class Cache(CacheFacade):
         The database adapter for the cache. If ``None`` then will bypass persistence.
     config : CacheConfig, optional
         The cache configuration.
-    snapshot_orders : bool, default False
-        If order state snapshots should be persisted.
-    snapshot_positions : bool, default False
-        If position state snapshots should be persisted.
 
     Raises
     ------
@@ -95,10 +91,8 @@ cdef class Cache(CacheFacade):
     def __init__(
         self,
         CacheDatabaseFacade database: CacheDatabaseFacade | None = None,
-        bint snapshot_orders: bool = False,
-        bint snapshot_positions: bool = False,
         config: CacheConfig | None = None,
-    ):
+    ) -> None:
         if config is None:
             config = CacheConfig()
         Condition.type(config, CacheConfig, "config")
@@ -109,10 +103,9 @@ cdef class Cache(CacheFacade):
 
         # Configuration
         self._drop_instruments_on_reset = config.drop_instruments_on_reset
+        self.has_backing = database is not None
         self.tick_capacity = config.tick_capacity
         self.bar_capacity = config.bar_capacity
-        self.snapshot_orders = snapshot_orders
-        self.snapshot_positions = snapshot_positions
 
         # Caches
         self._general: dict[str, bytes] = {}
@@ -1565,8 +1558,6 @@ cdef class Cache(CacheFacade):
 
         # Update database
         self._database.add_order(order, position_id, client_id)
-        if self.snapshot_orders:
-            self._database.snapshot_order_state(order)
 
     cpdef void add_order_list(self, OrderList order_list):
         """
@@ -1702,12 +1693,6 @@ cdef class Cache(CacheFacade):
 
         # Update database
         self._database.add_position(position)
-        if self.snapshot_positions:
-            self._database.snapshot_position_state(
-                position,
-                position.ts_last,
-                self.calculate_unrealized_pnl(position),
-            )
 
     cpdef void snapshot_position(self, Position position):
         """
@@ -1860,8 +1845,6 @@ cdef class Cache(CacheFacade):
 
         # Update database
         self._database.update_order(order)
-        if self.snapshot_orders:
-            self._database.snapshot_order_state(order)
 
     cpdef void update_order_pending_cancel_local(self, Order order):
         """
@@ -1901,12 +1884,6 @@ cdef class Cache(CacheFacade):
 
         # Update database
         self._database.update_position(position)
-        if self.snapshot_positions:
-            self._database.snapshot_position_state(
-                position,
-                position.ts_last,
-                self.calculate_unrealized_pnl(position),
-            )
 
     cpdef void update_actor(self, Actor actor):
         """

@@ -132,7 +132,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         UUID4 instance_id not None,
         Serializer serializer not None,
         config: CacheConfig | None = None,
-    ):
+    ) -> None:
         if config is None:
             config = CacheConfig()
         Condition.type(config, CacheConfig, "config")

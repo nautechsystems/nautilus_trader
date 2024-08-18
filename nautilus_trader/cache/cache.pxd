@@ -106,14 +106,12 @@ cdef class Cache(CacheFacade):
     cdef set _index_exec_algorithms
     cdef bint _drop_instruments_on_reset
 
+    cdef readonly bint has_backing
+    """If the cache has a database backing.\n\n:returns: `bool`"""
     cdef readonly int tick_capacity
     """The caches tick capacity.\n\n:returns: `int`"""
     cdef readonly int bar_capacity
     """The caches bar capacity.\n\n:returns: `int`"""
-    cdef readonly bint snapshot_orders
-    """If order state snapshots should be persisted.\n\n:returns: `bool`"""
-    cdef readonly bint snapshot_positions
-    """If position state snapshots should be persisted.\n\n:returns: `bool`"""
 
     cpdef void cache_general(self)
     cpdef void cache_currencies(self)

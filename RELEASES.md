@@ -20,6 +20,10 @@ Released on TBD (UTC).
 ### Breaking Changes
 - Changed `VolumeWeightedAveragePrice` calculation formula to use each bars "typical" price (#1842), thanks @evgenii-prusov
 - Changed `OptionsContract` constructor parameter ordering and Arrow schema (consistently group option kind and strike price)
+- Renamed `snapshot_positions_interval` to `snapshot_positions_interval_secs` (more explicitly indicates time units)
+- Moved `snapshot_orders` config setting to `ExecEngineConfig` (can now be used for all environment contexts)
+- Moved `snapshot_positions` config setting to `ExecEngineConfig` (can now be used for all environment contexts)
+- Moved `snapshot_positions_interval_secs` config setting to `ExecEngineConfig` (can now be used for all environment contexts)
 
 ### Fixes
 - Fixed `Position` exception type on duplicate fill (should be `KeyError` like `Order`)

@@ -49,6 +49,9 @@ config_node = TradingNodeConfig(
     ),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
+        # snapshot_orders=True,
+        # snapshot_positions=True,
+        # snapshot_positions_interval_secs=5.0,
     ),
     cache=CacheConfig(
         # database=DatabaseConfig(),
@@ -67,9 +70,6 @@ config_node = TradingNodeConfig(
     #     autotrim_mins=30,
     # ),
     # heartbeat_interval=1.0,
-    # snapshot_orders=True,
-    # snapshot_positions=True,
-    # snapshot_positions_interval=5.0,
     # streaming=StreamingConfig(catalog_path="catalog"),
     data_clients={
         "BINANCE": BinanceDataClientConfig(
