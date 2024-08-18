@@ -132,7 +132,7 @@ impl WebSocketClientInner {
         message: Option<String>,
         writer: SharedMessageWriter,
     ) -> Option<task::JoinHandle<()>> {
-        tracing::debug!("Started task `heartbeat`");
+        tracing::debug!("Started task 'heartbeat'");
         heartbeat.map(|duration| {
             task::spawn(async move {
                 let duration = Duration::from_secs(duration);
@@ -158,7 +158,7 @@ impl WebSocketClientInner {
         handler: PyObject,
         ping_handler: Option<PyObject>,
     ) -> task::JoinHandle<()> {
-        tracing::debug!("Started task `read`");
+        tracing::debug!("Started task 'read'");
         task::spawn(async move {
             loop {
                 match reader.next().await {

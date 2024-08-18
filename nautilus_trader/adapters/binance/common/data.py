@@ -244,7 +244,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                     )
                     await asyncio.sleep(self._retry_delay)
                 except asyncio.CancelledError:
-                    self._log.debug("Canceled `update_instruments` task")
+                    self._log.debug("Canceled task 'update_instruments'")
                     return
 
     async def _reconnect(self) -> None:
@@ -257,7 +257,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     async def _disconnect(self) -> None:
         # Cancel update instruments task
         if self._update_instruments_task:
-            self._log.debug("Canceling `update_instruments` task")
+            self._log.debug("Canceling task 'update_instruments'")
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
 

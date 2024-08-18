@@ -139,11 +139,11 @@ class LiveRiskEngine(RiskEngine):
         self._kill = True
         self.stop()
         if self._cmd_queue_task:
-            self._log.debug(f"Canceling {self._cmd_queue_task.get_name()}")
+            self._log.debug(f"Canceling task '{self._cmd_queue_task.get_name()}'")
             self._cmd_queue_task.cancel()
             self._cmd_queue_task = None
         if self._evt_queue_task:
-            self._log.debug(f"Canceling {self._evt_queue_task.get_name()}")
+            self._log.debug(f"Canceling task '{self._evt_queue_task.get_name()}'")
             self._evt_queue_task.cancel()
             self._evt_queue_task = None
 
@@ -223,8 +223,8 @@ class LiveRiskEngine(RiskEngine):
         self._cmd_queue_task = self._loop.create_task(self._run_cmd_queue(), name="cmd_queue")
         self._evt_queue_task = self._loop.create_task(self._run_evt_queue(), name="evt_queue")
 
-        self._log.debug(f"Scheduled {self._cmd_queue_task}")
-        self._log.debug(f"Scheduled {self._evt_queue_task}")
+        self._log.debug(f"Scheduled task '{self._cmd_queue_task.get_name()}'")
+        self._log.debug(f"Scheduled task '{self._evt_queue_task.get_name()}'")
 
     def _on_stop(self) -> None:
         if self._kill:

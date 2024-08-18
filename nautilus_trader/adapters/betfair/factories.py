@@ -74,7 +74,7 @@ def get_cached_betfair_client(
 
     key: str = "|".join((username, password, app_key))
     if key not in CLIENTS:
-        Logger("BetfairFactory").warning("Creating new instance of BetfairHttpClient")
+        Logger("BetfairFactory").warning("Creating new instance of `BetfairHttpClient`")
 
         client = BetfairHttpClient(
             username=username,
@@ -109,7 +109,7 @@ def get_cached_betfair_instrument_provider(
     """
     global INSTRUMENT_PROVIDER
     if INSTRUMENT_PROVIDER is None:
-        Logger("BetfairFactory").warning("Creating new instance of BetfairInstrumentProvider")
+        Logger("BetfairFactory").warning("Creating new instance of `BetfairInstrumentProvider`")
 
         INSTRUMENT_PROVIDER = BetfairInstrumentProvider(
             client=client,

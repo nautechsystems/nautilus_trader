@@ -398,7 +398,7 @@ class InteractiveBrokersClient(
 
         """
         log_msg = log_msg or coro.__name__
-        self._log.debug(f"Creating task {log_msg}.")
+        self._log.debug(f"Creating task '{log_msg}'")
         task = self._loop.create_task(
             coro,
             name=coro.__name__,
@@ -433,7 +433,7 @@ class InteractiveBrokersClient(
         """
         if task.exception():
             self._log.error(
-                f"Error on `{task.get_name()}`: {task.exception()!r}",
+                f"Error on '{task.get_name()}': {task.exception()!r}",
             )
         else:
             if actions:
@@ -441,7 +441,7 @@ class InteractiveBrokersClient(
                     actions()
                 except Exception as e:
                     self._log.error(
-                        f"Failed triggering action {actions.__name__} on `{task.get_name()}`: "
+                        f"Failed triggering action {actions.__name__} on '{task.get_name()}': "
                         f"{e!r}",
                     )
             if success:
