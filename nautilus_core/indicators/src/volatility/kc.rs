@@ -102,7 +102,7 @@ impl KeltnerChannel {
             has_inputs: false,
             initialized: false,
             ma: MovingAverageFactory::create(ma_type.unwrap_or(MovingAverageType::Simple), period),
-            atr: AverageTrueRange::new(period, ma_type_atr, use_previous, atr_floor)?,
+            atr: AverageTrueRange::new(period, ma_type_atr, use_previous, atr_floor),
         }
     }
 

@@ -78,11 +78,7 @@ impl Indicator for CommodityChannelIndex {
 
 impl CommodityChannelIndex {
     /// Creates a new [`CommodityChannelIndex`] instance.
-    pub fn new(
-        period: usize,
-        scalar: f64,
-        ma_type: Option<MovingAverageType>,
-    ) -> Self {
+    pub fn new(period: usize, scalar: f64, ma_type: Option<MovingAverageType>) -> Self {
         Self {
             period,
             scalar,

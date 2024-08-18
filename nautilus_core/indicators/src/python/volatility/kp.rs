@@ -39,7 +39,6 @@ impl KeltnerPosition {
             use_previous,
             atr_floor,
         )
-        
     }
 
     fn __repr__(&self) -> String {

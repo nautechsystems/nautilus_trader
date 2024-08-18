@@ -96,8 +96,8 @@ impl DoubleExponentialMovingAverage {
             count: 0,
             has_inputs: false,
             initialized: false,
-            ema1: ExponentialMovingAverage::new(period, price_type)?,
-            ema2: ExponentialMovingAverage::new(period, price_type)?,
+            ema1: ExponentialMovingAverage::new(period, price_type),
+            ema2: ExponentialMovingAverage::new(period, price_type),
         }
     }
 }

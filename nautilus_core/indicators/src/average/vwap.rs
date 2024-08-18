@@ -20,7 +20,7 @@ use nautilus_model::data::bar::Bar;
 use crate::indicator::Indicator;
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Default)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")

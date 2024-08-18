@@ -106,7 +106,7 @@ impl KeltnerPosition {
                 ma_type_atr,
                 use_previous,
                 atr_floor,
-            )
+            ),
         }
     }
 

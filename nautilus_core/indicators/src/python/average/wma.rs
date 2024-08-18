@@ -28,11 +28,7 @@ use crate::{
 #[pymethods]
 impl WeightedMovingAverage {
     #[new]
-    pub fn py_new(
-        period: usize,
-        weights: Vec<f64>,
-        price_type: Option<PriceType>,
-    ) -> Self {
+    pub fn py_new(period: usize, weights: Vec<f64>, price_type: Option<PriceType>) -> Self {
         Self::new(period, weights, price_type)
     }
 

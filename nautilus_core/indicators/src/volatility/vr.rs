@@ -95,8 +95,8 @@ impl VolatilityRatio {
             value: 0.0,
             has_inputs: false,
             initialized: false,
-            atr_fast: AverageTrueRange::new(fast_period, ma_type, use_previous, value_floor)?,
-            atr_slow: AverageTrueRange::new(slow_period, ma_type, use_previous, value_floor)?,
+            atr_fast: AverageTrueRange::new(fast_period, ma_type, use_previous, value_floor),
+            atr_slow: AverageTrueRange::new(slow_period, ma_type, use_previous, value_floor),
         }
     }
 

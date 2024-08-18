@@ -24,11 +24,7 @@ use crate::{
 #[pymethods]
 impl CommodityChannelIndex {
     #[new]
-    pub fn py_new(
-        period: usize,
-        scalar: f64,
-        ma_type: Option<MovingAverageType>,
-    ) -> Self {
+    pub fn py_new(period: usize, scalar: f64, ma_type: Option<MovingAverageType>) -> Self {
         Self::new(period, scalar, ma_type)
     }
 

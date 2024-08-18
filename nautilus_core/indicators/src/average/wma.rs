@@ -167,9 +167,9 @@ mod tests {
     }
 
     #[rstest]
+    #[should_panic]
     fn test_different_weights_len_and_period_error() {
-        let wma = WeightedMovingAverage::new(10, vec![0.5, 0.5, 0.5], None);
-        assert!(wma.is_err());
+        WeightedMovingAverage::new(10, vec![0.5, 0.5, 0.5], None);
     }
 
     #[rstest]

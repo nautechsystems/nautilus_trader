@@ -30,7 +30,6 @@ impl VolatilityRatio {
         ma_type: Option<MovingAverageType>,
     ) -> Self {
         Self::new(fast_period, slow_period, ma_type, use_previous, value_floor)
-            
     }
 
     fn __repr__(&self) -> String {

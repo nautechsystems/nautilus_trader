@@ -36,7 +36,6 @@ impl FuzzyCandle {
         lower_wick_size: CandleWickSize,
     ) -> Self {
         Self::new(direction, size, body_size, upper_wick_size, lower_wick_size)
-            
     }
 
     fn __repr__(&self) -> String {
@@ -86,8 +85,8 @@ impl FuzzyCandlesticks {
         threshold2: f64,
         threshold3: f64,
         threshold4: f64,
-    ) -> PyResult<Self> {
-        Self::new(period, threshold1, threshold2, threshold3, threshold4).map_err(to_pyvalue_err)
+    ) -> Self {
+        Self::new(period, threshold1, threshold2, threshold3, threshold4)
     }
 
     fn __repr__(&self) -> String {

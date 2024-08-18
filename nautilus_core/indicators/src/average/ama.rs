@@ -123,7 +123,7 @@ impl AdaptiveMovingAverage {
             prior_value: None,
             has_inputs: false,
             initialized: false,
-            efficiency_ratio: EfficiencyRatio::new(period_efficiency_ratio, price_type)?,
+            efficiency_ratio: EfficiencyRatio::new(period_efficiency_ratio, price_type),
         }
     }
 
