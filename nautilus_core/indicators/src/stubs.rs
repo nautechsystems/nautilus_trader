@@ -114,54 +114,53 @@ pub fn bar_ethusdt_binance_minute_bid(#[default("1522")] close_price: &str) -> B
 ////////////////////////////////////////////////////////////////////////////////
 #[fixture]
 pub fn indicator_ama_10() -> AdaptiveMovingAverage {
-    AdaptiveMovingAverage::new(10, 2, 30, Some(PriceType::Mid)).unwrap()
+    AdaptiveMovingAverage::new(10, 2, 30, Some(PriceType::Mid))
 }
 
 #[fixture]
 pub fn indicator_sma_10() -> SimpleMovingAverage {
-    SimpleMovingAverage::new(10, Some(PriceType::Mid)).unwrap()
+    SimpleMovingAverage::new(10, Some(PriceType::Mid))
 }
 
 #[fixture]
 pub fn indicator_ema_10() -> ExponentialMovingAverage {
-    ExponentialMovingAverage::new(10, Some(PriceType::Mid)).unwrap()
+    ExponentialMovingAverage::new(10, Some(PriceType::Mid))
 }
 
 #[fixture]
 pub fn indicator_hma_10() -> HullMovingAverage {
-    HullMovingAverage::new(10, Some(PriceType::Mid)).unwrap()
+    HullMovingAverage::new(10, Some(PriceType::Mid))
 }
 
 #[fixture]
 pub fn indicator_rma_10() -> WilderMovingAverage {
-    WilderMovingAverage::new(10, Some(PriceType::Mid)).unwrap()
+    WilderMovingAverage::new(10, Some(PriceType::Mid))
 }
 
 #[fixture]
 pub fn indicator_dema_10() -> DoubleExponentialMovingAverage {
-    DoubleExponentialMovingAverage::new(10, Some(PriceType::Mid)).unwrap()
+    DoubleExponentialMovingAverage::new(10, Some(PriceType::Mid))
 }
 
 #[fixture]
 pub fn indicator_vidya_10() -> VariableIndexDynamicAverage {
     VariableIndexDynamicAverage::new(10, Some(PriceType::Mid), Some(MovingAverageType::Wilder))
-        .unwrap()
 }
 
 #[fixture]
 pub fn indicator_vwap() -> VolumeWeightedAveragePrice {
-    VolumeWeightedAveragePrice::new().unwrap()
+    VolumeWeightedAveragePrice::new()
 }
 
 #[fixture]
 pub fn indicator_wma_10() -> WeightedMovingAverage {
     let weights = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
-    WeightedMovingAverage::new(10, weights, Some(PriceType::Mid)).unwrap()
+    WeightedMovingAverage::new(10, weights, Some(PriceType::Mid))
 }
 
 #[fixture]
 pub fn indicator_lr_10() -> LinearRegression {
-    LinearRegression::new(10).unwrap()
+    LinearRegression::new(10)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -169,12 +168,12 @@ pub fn indicator_lr_10() -> LinearRegression {
 ////////////////////////////////////////////////////////////////////////////////
 #[fixture]
 pub fn efficiency_ratio_10() -> EfficiencyRatio {
-    EfficiencyRatio::new(10, Some(PriceType::Mid)).unwrap()
+    EfficiencyRatio::new(10, Some(PriceType::Mid))
 }
 
 #[fixture]
 pub fn spread_analyzer_10() -> SpreadAnalyzer {
-    SpreadAnalyzer::new(10, InstrumentId::from("ETHUSDT-PERP.BINANCE")).unwrap()
+    SpreadAnalyzer::new(10, InstrumentId::from("ETHUSDT-PERP.BINANCE"))
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -182,67 +181,67 @@ pub fn spread_analyzer_10() -> SpreadAnalyzer {
 ////////////////////////////////////////////////////////////////////////////////
 #[fixture]
 pub fn rsi_10() -> RelativeStrengthIndex {
-    RelativeStrengthIndex::new(10, Some(MovingAverageType::Exponential)).unwrap()
+    RelativeStrengthIndex::new(10, Some(MovingAverageType::Exponential))
 }
 
 #[fixture]
 pub fn cmo_10() -> ChandeMomentumOscillator {
-    ChandeMomentumOscillator::new(10, Some(MovingAverageType::Wilder)).unwrap()
+    ChandeMomentumOscillator::new(10, Some(MovingAverageType::Wilder))
 }
 
 #[fixture]
 pub fn bias_10() -> Bias {
-    Bias::new(10, Some(MovingAverageType::Wilder)).unwrap()
+    Bias::new(10, Some(MovingAverageType::Wilder))
 }
 
 #[fixture]
 pub fn vhf_10() -> VerticalHorizontalFilter {
-    VerticalHorizontalFilter::new(10, Some(MovingAverageType::Simple)).unwrap()
+    VerticalHorizontalFilter::new(10, Some(MovingAverageType::Simple))
 }
 
 #[fixture]
 pub fn kvo_345() -> KlingerVolumeOscillator {
-    KlingerVolumeOscillator::new(3, 4, 5, Some(MovingAverageType::Simple)).unwrap()
+    KlingerVolumeOscillator::new(3, 4, 5, Some(MovingAverageType::Simple))
 }
 
 #[fixture]
 pub fn dm_10() -> DirectionalMovement {
-    DirectionalMovement::new(10, Some(MovingAverageType::Simple)).unwrap()
+    DirectionalMovement::new(10, Some(MovingAverageType::Simple))
 }
 
 #[fixture]
 pub fn amat_345() -> ArcherMovingAveragesTrends {
-    ArcherMovingAveragesTrends::new(3, 4, 5, Some(MovingAverageType::Simple)).unwrap()
+    ArcherMovingAveragesTrends::new(3, 4, 5, Some(MovingAverageType::Simple))
 }
 
 #[fixture]
 pub fn swings_10() -> Swings {
-    Swings::new(10).unwrap()
+    Swings::new(10)
 }
 
 #[fixture]
 pub fn bb_10() -> BollingerBands {
-    BollingerBands::new(10, 0.1, Some(MovingAverageType::Simple)).unwrap()
+    BollingerBands::new(10, 0.1, Some(MovingAverageType::Simple))
 }
 
 #[fixture]
 pub fn stochastics_10() -> Stochastics {
-    Stochastics::new(10, 10).unwrap()
+    Stochastics::new(10, 10)
 }
 
 #[fixture]
 pub fn psl_10() -> PsychologicalLine {
-    PsychologicalLine::new(10, Some(MovingAverageType::Simple)).unwrap()
+    PsychologicalLine::new(10, Some(MovingAverageType::Simple))
 }
 
 #[fixture]
 pub fn pressure_10() -> Pressure {
-    Pressure::new(10, Some(MovingAverageType::Simple), Some(1.0)).unwrap()
+    Pressure::new(10, Some(MovingAverageType::Simple), Some(1.0))
 }
 
 #[fixture]
 pub fn cci_10() -> CommodityChannelIndex {
-    CommodityChannelIndex::new(10, 2.0, Some(MovingAverageType::Simple)).unwrap()
+    CommodityChannelIndex::new(10, 2.0, Some(MovingAverageType::Simple))
 }
 
 #[fixture]
@@ -253,12 +252,11 @@ pub fn macd_10() -> MovingAverageConvergenceDivergence {
         Some(MovingAverageType::Simple),
         Some(PriceType::Bid),
     )
-    .unwrap()
 }
 
 #[fixture]
 pub fn obv_10() -> OnBalanceVolume {
-    OnBalanceVolume::new(10).unwrap()
+    OnBalanceVolume::new(10)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -273,17 +271,16 @@ pub fn vr_10() -> VolatilityRatio {
         Some(false),
         Some(10.0),
     )
-    .unwrap()
 }
 
 #[fixture]
 pub fn dc_10() -> DonchianChannel {
-    DonchianChannel::new(10).unwrap()
+    DonchianChannel::new(10)
 }
 
 #[fixture]
 pub fn rvi_10() -> RelativeVolatilityIndex {
-    RelativeVolatilityIndex::new(10, Some(10.0), Some(MovingAverageType::Simple)).unwrap()
+    RelativeVolatilityIndex::new(10, Some(10.0), Some(MovingAverageType::Simple))
 }
 
 #[fixture]
@@ -296,7 +293,6 @@ pub fn kc_10() -> KeltnerChannel {
         Some(true),
         Some(0.0),
     )
-    .unwrap()
 }
 
 #[fixture]
@@ -309,15 +305,14 @@ pub fn kp_10() -> KeltnerPosition {
         Some(true),
         Some(0.0),
     )
-    .unwrap()
 }
 
 #[fixture]
 pub fn roc_10() -> RateOfChange {
-    RateOfChange::new(10, Some(true)).unwrap()
+    RateOfChange::new(10, Some(true))
 }
 
 #[fixture]
 pub fn fuzzy_candlesticks_10() -> FuzzyCandlesticks {
-    FuzzyCandlesticks::new(10, 0.1, 0.15, 0.2, 0.3).unwrap()
+    FuzzyCandlesticks::new(10, 0.1, 0.15, 0.2, 0.3)
 }

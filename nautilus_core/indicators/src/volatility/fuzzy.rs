@@ -117,14 +117,14 @@ impl FuzzyCandle {
         body_size: CandleBodySize,
         upper_wick_size: CandleWickSize,
         lower_wick_size: CandleWickSize,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             direction,
             size,
             body_size,
             upper_wick_size,
             lower_wick_size,
-        })
+        }
     }
 }
 

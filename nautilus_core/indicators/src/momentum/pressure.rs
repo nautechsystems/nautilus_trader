@@ -85,8 +85,8 @@ impl Pressure {
         period: usize,
         ma_type: Option<MovingAverageType>,
         atr_floor: Option<f64>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             period,
             ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
             atr_floor: atr_floor.unwrap_or(0.0),
@@ -104,7 +104,7 @@ impl Pressure {
             ),
             has_inputs: false,
             initialized: false,
-        })
+        }
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64, volume: f64) {

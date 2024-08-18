@@ -88,8 +88,8 @@ impl Indicator for DoubleExponentialMovingAverage {
 
 impl DoubleExponentialMovingAverage {
     /// Creates a new [`DoubleExponentialMovingAverage`] instance.
-    pub fn new(period: usize, price_type: Option<PriceType>) -> anyhow::Result<Self> {
-        Ok(Self {
+    pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
+        Self {
             period,
             price_type: price_type.unwrap_or(PriceType::Last),
             value: 0.0,
@@ -98,7 +98,7 @@ impl DoubleExponentialMovingAverage {
             initialized: false,
             ema1: ExponentialMovingAverage::new(period, price_type)?,
             ema2: ExponentialMovingAverage::new(period, price_type)?,
-        })
+        }
     }
 }
 

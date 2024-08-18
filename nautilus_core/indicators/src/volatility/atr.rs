@@ -89,8 +89,8 @@ impl AverageTrueRange {
         ma_type: Option<MovingAverageType>,
         use_previous: Option<bool>,
         value_floor: Option<f64>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             period,
             ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
             use_previous: use_previous.unwrap_or(true),
@@ -101,7 +101,7 @@ impl AverageTrueRange {
             ma: MovingAverageFactory::create(MovingAverageType::Simple, period),
             has_inputs: false,
             initialized: false,
-        })
+        }
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64) {

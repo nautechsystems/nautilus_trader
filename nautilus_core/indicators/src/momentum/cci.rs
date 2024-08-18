@@ -82,8 +82,8 @@ impl CommodityChannelIndex {
         period: usize,
         scalar: f64,
         ma_type: Option<MovingAverageType>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             period,
             scalar,
             ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
@@ -93,7 +93,7 @@ impl CommodityChannelIndex {
             has_inputs: false,
             initialized: false,
             mad: 0.0,
-        })
+        }
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64) {

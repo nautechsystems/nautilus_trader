@@ -28,8 +28,8 @@ impl CommodityChannelIndex {
         period: usize,
         scalar: f64,
         ma_type: Option<MovingAverageType>,
-    ) -> PyResult<Self> {
-        Self::new(period, scalar, ma_type).map_err(to_pyvalue_err)
+    ) -> Self {
+        Self::new(period, scalar, ma_type)
     }
 
     fn __repr__(&self) -> String {

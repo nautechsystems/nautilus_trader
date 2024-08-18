@@ -34,9 +34,9 @@ impl FuzzyCandle {
         body_size: CandleBodySize,
         upper_wick_size: CandleWickSize,
         lower_wick_size: CandleWickSize,
-    ) -> PyResult<Self> {
+    ) -> Self {
         Self::new(direction, size, body_size, upper_wick_size, lower_wick_size)
-            .map_err(to_pyvalue_err)
+            
     }
 
     fn __repr__(&self) -> String {

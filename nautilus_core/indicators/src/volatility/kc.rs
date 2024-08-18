@@ -88,8 +88,8 @@ impl KeltnerChannel {
         ma_type_atr: Option<MovingAverageType>,
         use_previous: Option<bool>,
         atr_floor: Option<f64>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             period,
             k_multiplier,
             ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
@@ -103,7 +103,7 @@ impl KeltnerChannel {
             initialized: false,
             ma: MovingAverageFactory::create(ma_type.unwrap_or(MovingAverageType::Simple), period),
             atr: AverageTrueRange::new(period, ma_type_atr, use_previous, atr_floor)?,
-        })
+        }
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64) {

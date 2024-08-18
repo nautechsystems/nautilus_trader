@@ -96,8 +96,8 @@ impl ArcherMovingAveragesTrends {
         slow_period: usize,
         signal_period: usize,
         ma_type: Option<MovingAverageType>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             fast_period,
             slow_period,
             signal_period,
@@ -116,7 +116,7 @@ impl ArcherMovingAveragesTrends {
             slow_ma_price: VecDeque::with_capacity(signal_period + 1),
             has_inputs: false,
             initialized: false,
-        })
+        }
     }
 
     pub fn update_raw(&mut self, close: f64) {
@@ -127,6 +127,7 @@ impl ArcherMovingAveragesTrends {
             self.fast_ma_price.push_back(self.fast_ma.value());
             self.slow_ma_price.push_back(self.slow_ma.value());
 
+            // TODO: Remove unwraps
             self.long_run = self.fast_ma_price.back().unwrap()
                 - self.fast_ma_price.front().unwrap()
                 > 0.0

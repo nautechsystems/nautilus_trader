@@ -33,14 +33,13 @@ impl AdaptiveMovingAverage {
         period_fast: usize,
         period_slow: usize,
         price_type: Option<PriceType>,
-    ) -> PyResult<Self> {
+    ) -> Self {
         Self::new(
             period_efficiency_ratio,
             period_fast,
             period_slow,
             price_type,
         )
-        .map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {
