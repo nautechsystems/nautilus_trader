@@ -31,8 +31,7 @@ use crate::{
 impl AccountBalance {
     #[new]
     fn py_new(total: Money, locked: Money, free: Money) -> PyResult<Self> {
-        std::panic::catch_unwind(|| Self::new(total, locked, free))
-            .map_err(|e| PyErr::new::<PyValueError, _>(format!("{e:?}")))
+        Ok(Self::new(total, locked, free))
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

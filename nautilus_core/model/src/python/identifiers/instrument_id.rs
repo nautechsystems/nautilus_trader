@@ -33,8 +33,7 @@ use crate::identifiers::{InstrumentId, Symbol, Venue};
 impl InstrumentId {
     #[new]
     fn py_new(symbol: Symbol, venue: Venue) -> PyResult<Self> {
-        std::panic::catch_unwind(|| Self::new(symbol, venue))
-            .map_err(|e| PyErr::new::<PyValueError, _>(format!("{e:?}")))
+        Ok(Self::new(symbol, venue))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
