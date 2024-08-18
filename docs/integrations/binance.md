@@ -229,11 +229,13 @@ instrument_provider=InstrumentProviderConfig(
 ```
 
 ### Futures Hedge mode
-Binance Futures Hedge mode is a position mode where a trader opens positions in both long and short directions to mitigate risk and potentially profit from market volatility. Before starting a
+
+Binance Futures Hedge mode is a position mode where a trader opens positions in both long and short 
+directions to mitigate risk and potentially profit from market volatility.
 
 To use Binance Future Hedge mode, you need to follow the three items below:
-1. Before starting the strategy, please ensure that hedge mode is configured on Binance.
-2. Set the `use_reduce_only` option to `False` in BinanceExecClientConfig (this is `True` by default.)
+- 1. Before starting the strategy, ensure that hedge mode is configured on Binance.
+- 2. Set the `use_reduce_only` option to `False` in BinanceExecClientConfig (this is `True` by default.)
     ```python
     config = TradingNodeConfig(
         ...,  # Omitted
@@ -259,8 +261,7 @@ To use Binance Future Hedge mode, you need to follow the three items below:
     )
     ```
 
-
-3. When submitting an order, use a suffix (`LONG` or `SHORT` ) in the position_id to indicate the position direction.
+- 3. When submitting an order, use a suffix (`LONG` or `SHORT` ) in the `position_id` to indicate the position direction.
     ```python
     class EMACrossHedgeMode(Strategy):
         ...,  # Omitted
