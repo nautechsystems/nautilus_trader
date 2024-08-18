@@ -21,6 +21,7 @@ use std::{
 
 use nautilus_core::python::to_pyvalue_err;
 use pyo3::{
+    exceptions::PyValueError,
     prelude::*,
     pyclass::CompareOp,
     types::{PyString, PyTuple},
@@ -31,8 +32,9 @@ use crate::identifiers::{InstrumentId, Symbol, Venue};
 #[pymethods]
 impl InstrumentId {
     #[new]
-    fn py_new(symbol: Symbol, venue: Venue) -> Self {
-        Self::new(symbol, venue)
+    fn py_new(symbol: Symbol, venue: Venue) -> PyResult<Self> {
+        std::panic::catch_unwind(|| Self::new(symbol, venue))
+            .map_err(|e| PyErr::new::<PyValueError, _>(format!("{e:?}")))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {

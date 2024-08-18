@@ -16,7 +16,7 @@
 use std::str::FromStr;
 
 use nautilus_core::python::to_pyvalue_err;
-use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
+use pyo3::{basic::CompareOp, exceptions::PyValueError, prelude::*, types::PyDict};
 
 use crate::{
     identifiers::InstrumentId,
@@ -30,8 +30,9 @@ use crate::{
 #[pymethods]
 impl AccountBalance {
     #[new]
-    fn py_new(total: Money, locked: Money, free: Money) -> Self {
-        Self::new(total, locked, free)
+    fn py_new(total: Money, locked: Money, free: Money) -> PyResult<Self> {
+        std::panic::catch_unwind(|| Self::new(total, locked, free))
+            .map_err(|e| PyErr::new::<PyValueError, _>(format!("{e:?}")))
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

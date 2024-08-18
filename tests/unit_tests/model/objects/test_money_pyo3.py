@@ -31,7 +31,7 @@ USDT = Currency.from_str("USDT")
 class TestMoney:
     def test_instantiate_with_nan_raises_value_error(self):
         # Arrange, Act, Assert
-        with pytest.raises(BaseException):
+        with pytest.raises(ValueError):
             Money(math.nan, currency=USD)
 
     def test_instantiate_with_none_value_raises_type_error(self) -> None:
@@ -46,12 +46,12 @@ class TestMoney:
 
     def test_instantiate_with_value_exceeding_positive_limit_raises_value_error(self) -> None:
         # Arrange, Act, Assert
-        with pytest.raises(BaseException):
+        with pytest.raises(ValueError):
             Money(9_223_372_036 + 1, currency=USD)
 
     def test_instantiate_with_value_exceeding_negative_limit_raises_value_error(self) -> None:
         # Arrange, Act, Assert
-        with pytest.raises(BaseException):
+        with pytest.raises(ValueError):
             Money(-9_223_372_036 - 1, currency=USD)
 
     @pytest.mark.parametrize(

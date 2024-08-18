@@ -200,7 +200,7 @@ def test_instrument_id_from_str() -> None:
 )
 def test_instrument_id_from_str_when_invalid(input: str, expected_err: str) -> None:
     # Arrange, Act
-    with pytest.raises(BaseException) as exc_info:
+    with pytest.raises(ValueError) as exc_info:
         InstrumentId.from_str(input)
 
     # Assert

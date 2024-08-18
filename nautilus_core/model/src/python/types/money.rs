@@ -34,8 +34,9 @@ use crate::types::{currency::Currency, money::Money};
 #[pymethods]
 impl Money {
     #[new]
-    fn py_new(value: f64, currency: Currency) -> Self {
-        Self::new(value, currency)
+    fn py_new(value: f64, currency: Currency) -> PyResult<Self> {
+        std::panic::catch_unwind(|| Self::new(value, currency))
+            .map_err(|e| PyErr::new::<PyValueError, _>(format!("{e:?}")))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
