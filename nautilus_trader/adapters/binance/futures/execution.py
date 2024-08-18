@@ -181,7 +181,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
                 self._use_reduce_only,
                 "Cannot use `reduce_only` with Binance Hedge Mode",
             )
-        self._log.info(f"Dual side position: {self._is_dual_side_position}")
+        self._log.info(f"Dual side position: {self._is_dual_side_position}", LogColor.BLUE)
 
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
