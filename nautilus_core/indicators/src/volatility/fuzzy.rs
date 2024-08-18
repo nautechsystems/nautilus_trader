@@ -111,6 +111,7 @@ impl Display for FuzzyCandle {
 }
 
 impl FuzzyCandle {
+    #[must_use]
     pub const fn new(
         direction: CandleDirection,
         size: CandleSize,
@@ -212,6 +213,7 @@ impl FuzzyCandlesticks {
     /// - Threshold2: f64 : The membership function x threshold2 (> threshold1).
     /// - Threshold3: f64 : The membership function x threshold3 (> threshold2).
     /// - Threshold4: f64 : The membership function x threshold4 (> threshold3).
+    #[must_use]
     pub fn new(
         period: usize,
         threshold1: f64,

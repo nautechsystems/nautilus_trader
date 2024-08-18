@@ -93,6 +93,7 @@ impl Indicator for KlingerVolumeOscillator {
 
 impl KlingerVolumeOscillator {
     /// Creates a new [`KlingerVolumeOscillator`] instance.
+    #[must_use]
     pub fn new(
         fast_period: usize,
         slow_period: usize,

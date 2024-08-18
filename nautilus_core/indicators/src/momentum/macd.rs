@@ -94,6 +94,7 @@ impl Indicator for MovingAverageConvergenceDivergence {
 
 impl MovingAverageConvergenceDivergence {
     /// Creates a new [`MovingAverageConvergenceDivergence`] instance.
+    #[must_use]
     pub fn new(
         fast_period: usize,
         slow_period: usize,

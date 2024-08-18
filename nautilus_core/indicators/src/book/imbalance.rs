@@ -65,6 +65,7 @@ impl Indicator for BookImbalanceRatio {
 
 impl BookImbalanceRatio {
     /// Creates a new [`BookImbalanceRatio`] instance.
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             value: 0.0,

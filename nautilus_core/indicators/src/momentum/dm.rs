@@ -78,6 +78,7 @@ impl Indicator for DirectionalMovement {
 
 impl DirectionalMovement {
     /// Creates a new [`DirectionalMovement`] instance.
+    #[must_use]
     pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
         Self {
             period,

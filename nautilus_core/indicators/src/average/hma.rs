@@ -97,6 +97,7 @@ fn _get_weights(size: usize) -> Vec<f64> {
 
 impl HullMovingAverage {
     /// Creates a new [`HullMovingAverage`] instance.
+    #[must_use]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
         let period_halved = period / 2;
         let period_sqrt = (period as f64).sqrt() as usize;

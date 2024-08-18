@@ -87,6 +87,7 @@ impl Indicator for RelativeStrengthIndex {
 
 impl RelativeStrengthIndex {
     /// Creates a new [`RelativeStrengthIndex`] instance.
+    #[must_use]
     pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
         Self {
             period,

@@ -98,6 +98,7 @@ impl Indicator for SpreadAnalyzer {
 
 impl SpreadAnalyzer {
     /// Creates a new [`SpreadAnalyzer`] instance.
+    #[must_use]
     pub fn new(capacity: usize, instrument_id: InstrumentId) -> Self {
         Self {
             capacity,

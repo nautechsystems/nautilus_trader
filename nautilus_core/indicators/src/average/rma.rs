@@ -79,6 +79,7 @@ impl Indicator for WilderMovingAverage {
 
 impl WilderMovingAverage {
     /// Creates a new [`WilderMovingAverage`] instance.
+    #[must_use]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
         // The Wilder Moving Average is The Wilder's Moving Average is simply
         // an Exponential Moving Average (EMA) with a modified alpha.

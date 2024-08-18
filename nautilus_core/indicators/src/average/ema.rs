@@ -79,6 +79,7 @@ impl Indicator for ExponentialMovingAverage {
 
 impl ExponentialMovingAverage {
     /// Creates a new [`ExponentialMovingAverage`] instance.
+    #[must_use]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
         Self {
             period,

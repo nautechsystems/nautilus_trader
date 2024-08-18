@@ -78,6 +78,7 @@ impl Indicator for Stochastics {
 
 impl Stochastics {
     /// Creates a new [`Stochastics`] instance.
+    #[must_use]
     pub fn new(period_k: usize, period_d: usize) -> Self {
         Self {
             period_k,

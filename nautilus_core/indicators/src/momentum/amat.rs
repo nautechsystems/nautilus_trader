@@ -91,6 +91,7 @@ impl Indicator for ArcherMovingAveragesTrends {
 
 impl ArcherMovingAveragesTrends {
     /// Creates a new [`ArcherMovingAveragesTrends`] instance.
+    #[must_use]
     pub fn new(
         fast_period: usize,
         slow_period: usize,

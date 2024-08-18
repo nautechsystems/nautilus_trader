@@ -78,6 +78,7 @@ impl Indicator for SimpleMovingAverage {
 
 impl SimpleMovingAverage {
     /// Creates a new [`SimpleMovingAverage`] instance.
+    #[must_use]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
         Self {
             period,

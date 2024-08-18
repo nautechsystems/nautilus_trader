@@ -75,6 +75,7 @@ impl Indicator for DonchianChannel {
 
 impl DonchianChannel {
     /// Creates a new [`DonchianChannel`] instance.
+    #[must_use]
     pub fn new(period: usize) -> Self {
         Self {
             period,

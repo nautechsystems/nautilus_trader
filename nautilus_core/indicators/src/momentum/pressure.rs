@@ -81,6 +81,7 @@ impl Indicator for Pressure {
 
 impl Pressure {
     /// Creates a new [`Pressure`] instance.
+    #[must_use]
     pub fn new(period: usize, ma_type: Option<MovingAverageType>, atr_floor: Option<f64>) -> Self {
         Self {
             period,

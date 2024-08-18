@@ -72,6 +72,7 @@ impl Indicator for VolumeWeightedAveragePrice {
 
 impl VolumeWeightedAveragePrice {
     /// Creates a new [`VolumeWeightedAveragePrice`] instance.
+    #[must_use]
     pub const fn new() -> Self {
         Self {
             value: 0.0,

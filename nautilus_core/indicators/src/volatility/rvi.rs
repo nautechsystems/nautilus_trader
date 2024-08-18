@@ -93,6 +93,7 @@ impl Indicator for RelativeVolatilityIndex {
 
 impl RelativeVolatilityIndex {
     /// Creates a new [`RelativeVolatilityIndex`] instance.
+    #[must_use]
     pub fn new(period: usize, scalar: Option<f64>, ma_type: Option<MovingAverageType>) -> Self {
         Self {
             period,
