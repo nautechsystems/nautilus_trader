@@ -208,19 +208,19 @@ class LiveDataEngine(DataEngine):
         self._kill = True
         self.stop()
         if self._cmd_queue_task:
-            self._log.debug(f"Canceling {self._cmd_queue_task.get_name()}")
+            self._log.debug(f"Canceling task '{self._cmd_queue_task.get_name()}'")
             self._cmd_queue_task.cancel()
             self._cmd_queue_task = None
         if self._req_queue_task:
-            self._log.debug(f"Canceling {self._req_queue_task.get_name()}")
+            self._log.debug(f"Canceling task '{self._req_queue_task.get_name()}'")
             self._req_queue_task.cancel()
             self._req_queue_task = None
         if self._res_queue_task:
-            self._log.debug(f"Canceling {self._res_queue_task.get_name()}")
+            self._log.debug(f"Canceling task '{self._res_queue_task.get_name()}'")
             self._res_queue_task.cancel()
             self._res_queue_task = None
         if self._data_queue_task:
-            self._log.debug(f"Canceling {self._data_queue_task.get_name()}")
+            self._log.debug(f"Canceling task '{self._data_queue_task.get_name()}'")
             self._data_queue_task.cancel()
             self._data_queue_task = None
 
@@ -366,10 +366,10 @@ class LiveDataEngine(DataEngine):
         self._res_queue_task = self._loop.create_task(self._run_req_queue(), name="req_queue")
         self._data_queue_task = self._loop.create_task(self._run_data_queue(), name="data_queue")
 
-        self._log.debug(f"Scheduled {self._cmd_queue_task}")
-        self._log.debug(f"Scheduled {self._req_queue_task}")
-        self._log.debug(f"Scheduled {self._res_queue_task}")
-        self._log.debug(f"Scheduled {self._data_queue_task}")
+        self._log.debug(f"Scheduled task '{self._cmd_queue_task.get_name()}'")
+        self._log.debug(f"Scheduled task '{self._req_queue_task.get_name()}'")
+        self._log.debug(f"Scheduled task '{self._res_queue_task.get_name()}'")
+        self._log.debug(f"Scheduled task '{self._data_queue_task.get_name()}'")
 
     def _on_stop(self) -> None:
         if self._kill:

@@ -157,7 +157,7 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
 
     async def _init_dual_side_position(self) -> None:
         self._is_dual_side_position = False
-        self._log.info(f"Dual side position: {self._is_dual_side_position}")
+        self._log.info(f"Dual side position: {self._is_dual_side_position}", LogColor.BLUE)
 
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
 

@@ -395,12 +395,12 @@ class TradingNode:
 
         """
         if self._task_streaming:
-            self.kernel.logger.info("Canceling `task_streaming`")
+            self.kernel.logger.info("Canceling task 'streaming'")
             self._task_streaming.cancel()
             self._task_streaming = None
 
         if self._task_heartbeats:
-            self.kernel.logger.info("Canceling `task_heartbeats`")
+            self.kernel.logger.info("Canceling task 'heartbeats'")
             self._task_heartbeats.cancel()
             self._task_heartbeats = None
 

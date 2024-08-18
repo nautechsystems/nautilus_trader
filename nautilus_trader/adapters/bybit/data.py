@@ -222,7 +222,7 @@ class BybitDataClient(LiveMarketDataClient):
 
     async def _disconnect(self) -> None:
         if self._update_instruments_task:
-            self._log.debug("Canceling `update_instruments` task")
+            self._log.debug("Canceling task 'update_instruments'")
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
         for ws_client in self._ws_clients.values():
@@ -239,14 +239,14 @@ class BybitDataClient(LiveMarketDataClient):
         try:
             while True:
                 self._log.debug(
-                    f"Scheduled `update_instruments` to run in "
+                    f"Scheduled task 'update_instruments' to run in "
                     f"{self._update_instrument_interval}s",
                 )
                 await asyncio.sleep(self._update_instrument_interval)
                 await self._instrument_provider.load_all_async()
                 self._send_all_instruments_to_data_engine()
         except asyncio.CancelledError:
-            self._log.debug("Canceled `update_instruments` task")
+            self._log.debug("Canceled task 'update_instruments'")
 
     async def _subscribe_order_book_deltas(
         self,

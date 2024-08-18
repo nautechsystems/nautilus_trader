@@ -252,11 +252,11 @@ class LiveExecutionEngine(ExecutionEngine):
         self._kill = True
         self.stop()
         if self._cmd_queue_task:
-            self._log.debug(f"Canceling {self._cmd_queue_task.get_name()}")
+            self._log.debug(f"Canceling task '{self._cmd_queue_task.get_name()}'")
             self._cmd_queue_task.cancel()
             self._cmd_queue_task = None
         if self._evt_queue_task:
-            self._log.debug(f"Canceling {self._evt_queue_task.get_name()}")
+            self._log.debug(f"Canceling task '{self._evt_queue_task.get_name()}'")
             self._evt_queue_task.cancel()
             self._evt_queue_task = None
 
@@ -334,8 +334,8 @@ class LiveExecutionEngine(ExecutionEngine):
 
         self._cmd_queue_task = self._loop.create_task(self._run_cmd_queue(), name="cmd_queue")
         self._evt_queue_task = self._loop.create_task(self._run_evt_queue(), name="evt_queue")
-        self._log.debug(f"Scheduled {self._cmd_queue_task}")
-        self._log.debug(f"Scheduled {self._evt_queue_task}")
+        self._log.debug(f"Scheduled task '{self._cmd_queue_task.get_name()}'")
+        self._log.debug(f"Scheduled task '{self._evt_queue_task.get_name()}'")
 
         if not self._inflight_check_task:
             if self.inflight_check_interval_ms > 0:
@@ -343,11 +343,11 @@ class LiveExecutionEngine(ExecutionEngine):
                     self._inflight_check_loop(),
                     name="inflight_check",
                 )
-                self._log.debug(f"Scheduled {self._inflight_check_task}")
+                self._log.debug(f"Scheduled task '{self._inflight_check_task.get_name()}'")
 
     def _on_stop(self) -> None:
         if self._inflight_check_task:
-            self._log.info("Canceling in-flight check task")
+            self._log.info(f"Canceling task '{self._inflight_check_task.get_name()}'")
             self._inflight_check_task.cancel()
             self._inflight_check_task = None
 

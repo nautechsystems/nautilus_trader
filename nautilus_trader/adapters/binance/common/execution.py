@@ -302,7 +302,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         try:
             while True:
                 self._log.debug(
-                    f"Scheduled `ping_listen_keys` to run in "
+                    f"Scheduled task 'ping_listen_keys' to run in "
                     f"{self._ping_listen_keys_interval}s",
                 )
                 await asyncio.sleep(self._ping_listen_keys_interval)
@@ -314,12 +314,12 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                         # We may see this if an old listen key was used for the ping
                         self._log.error(f"Error pinging listen key: {e}")
         except asyncio.CancelledError:
-            self._log.debug("Canceled `ping_listen_keys` task")
+            self._log.debug("Canceled task 'ping_listen_keys'")
 
     async def _disconnect(self) -> None:
         # Cancel tasks
         if self._ping_listen_keys_task:
-            self._log.debug("Canceling `ping_listen_keys` task")
+            self._log.debug("Canceling task 'ping_listen_keys'")
             self._ping_listen_keys_task.cancel()
             self._ping_listen_keys_task = None
 

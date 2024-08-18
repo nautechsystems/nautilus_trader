@@ -996,7 +996,7 @@ class NautilusKernel:
             return
 
         for task in to_cancel:
-            self._log.warning(f"Canceling pending task {task}")
+            self._log.warning(f"Canceling pending task '{task.get_name()}'")
             task.cancel()
 
         if self.loop and self.loop.is_running():
