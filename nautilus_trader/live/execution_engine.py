@@ -546,7 +546,7 @@ class LiveExecutionEngine(ExecutionEngine):
             True if reconciliation successful, else False.
 
         """
-        self._log.debug(f"[RECV][RPT] {report}")
+        self._log.debug(f"<--[RPT] {report}")
         self.report_count += 1
 
         self._log.info(f"Reconciling {report}", color=LogColor.BLUE)
@@ -588,7 +588,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self,
         mass_status: ExecutionMassStatus,
     ) -> bool:
-        self._log.debug(f"[RECV][RPT] {mass_status}")
+        self._log.debug(f"<--[RPT] {mass_status}")
         self.report_count += 1
 
         self._log.info(
