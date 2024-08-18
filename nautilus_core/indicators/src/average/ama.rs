@@ -110,10 +110,8 @@ impl AdaptiveMovingAverage {
         period_fast: usize,
         period_slow: usize,
         price_type: Option<PriceType>,
-    ) -> anyhow::Result<Self> {
-        // Inputs don't require validation, however we return a `Result`
-        // to standardize with other indicators which do need validation.
-        Ok(Self {
+    ) -> Self {
+        Self {
             period_efficiency_ratio,
             period_fast,
             period_slow,
@@ -125,8 +123,8 @@ impl AdaptiveMovingAverage {
             prior_value: None,
             has_inputs: false,
             initialized: false,
-            efficiency_ratio: EfficiencyRatio::new(period_efficiency_ratio, price_type)?,
-        })
+            efficiency_ratio: EfficiencyRatio::new(period_efficiency_ratio, price_type),
+        }
     }
 
     #[must_use]
@@ -171,6 +169,7 @@ impl MovingAverage for AdaptiveMovingAverage {
             .powi(2);
 
         // Calculate the AMA
+        // TODO: Remove unwraps
         self.value = smoothing_constant
             .mul_add(value - self.prior_value.unwrap(), self.prior_value.unwrap());
         if self.efficiency_ratio.initialized() {

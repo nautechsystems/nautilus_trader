@@ -30,7 +30,7 @@ impl KeltnerChannel {
         ma_type_atr: Option<MovingAverageType>,
         use_previous: Option<bool>,
         atr_floor: Option<f64>,
-    ) -> PyResult<Self> {
+    ) -> Self {
         Self::new(
             period,
             k_multiplier,
@@ -39,7 +39,6 @@ impl KeltnerChannel {
             use_previous,
             atr_floor,
         )
-        .map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {

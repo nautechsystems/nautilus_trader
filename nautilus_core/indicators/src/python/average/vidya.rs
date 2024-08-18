@@ -32,8 +32,8 @@ impl VariableIndexDynamicAverage {
         period: usize,
         price_type: Option<PriceType>,
         cmo_ma_type: Option<MovingAverageType>,
-    ) -> PyResult<Self> {
-        Self::new(period, price_type, cmo_ma_type).map_err(to_pyvalue_err)
+    ) -> Self {
+        Self::new(period, price_type, cmo_ma_type)
     }
 
     fn __repr__(&self) -> String {

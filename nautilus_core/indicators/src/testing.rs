@@ -29,6 +29,8 @@
 /// # Example
 ///
 /// ```
+/// use nautilus_indicators::testing::approx_equal;
+///
 /// let a = 0.1 + 0.2;
 /// let b = 0.3;
 /// assert!(approx_equal(a, b));

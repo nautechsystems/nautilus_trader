@@ -140,19 +140,19 @@ impl TestTimer {
         interval_ns: u64,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
-    ) -> anyhow::Result<Self> {
+    ) -> Self {
         check_valid_string(name, stringify!(name)).expect(FAILED);
         // SAFETY: Guaranteed to be non-zero
         let interval_ns = NonZeroU64::new(std::cmp::max(interval_ns, 1)).unwrap();
 
-        Ok(Self {
+        Self {
             name: Ustr::from(name),
             interval_ns,
             start_time_ns,
             stop_time_ns,
             next_time_ns: start_time_ns + interval_ns.get(),
             is_expired: false,
-        })
+        }
     }
 
     /// Returns the next time in UNIX nanoseconds when the timer will fire.
@@ -244,13 +244,13 @@ impl LiveTimer {
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
         callback: EventHandler,
-    ) -> anyhow::Result<Self> {
+    ) -> Self {
         check_valid_string(name, stringify!(name)).expect(FAILED);
         // SAFETY: Guaranteed to be non-zero
         let interval_ns = NonZeroU64::new(std::cmp::max(interval_ns, 1)).unwrap();
 
         log::debug!("Creating timer '{}'", name);
-        Ok(Self {
+        Self {
             name: Ustr::from(name),
             interval_ns,
             start_time_ns,
@@ -259,7 +259,7 @@ impl LiveTimer {
             is_expired: Arc::new(AtomicBool::new(false)),
             callback,
             canceler: None,
-        })
+        }
     }
 
     /// Returns the next time in UNIX nanoseconds when the timer will fire.
@@ -406,7 +406,7 @@ mod tests {
 
     #[rstest]
     fn test_test_timer_pop_event() {
-        let mut timer = TestTimer::new("test_timer", 1, UnixNanos::from(1), None).unwrap();
+        let mut timer = TestTimer::new("test_timer", 1, UnixNanos::from(1), None);
 
         assert!(timer.next().is_some());
         assert!(timer.next().is_some());
@@ -416,7 +416,7 @@ mod tests {
 
     #[rstest]
     fn test_test_timer_advance_within_next_time_ns() {
-        let mut timer = TestTimer::new("test_timer", 5, UnixNanos::default(), None).unwrap();
+        let mut timer = TestTimer::new("test_timer", 5, UnixNanos::default(), None);
         let _: Vec<TimeEvent> = timer.advance(UnixNanos::from(1)).collect();
         let _: Vec<TimeEvent> = timer.advance(UnixNanos::from(2)).collect();
         let _: Vec<TimeEvent> = timer.advance(UnixNanos::from(3)).collect();
@@ -427,7 +427,7 @@ mod tests {
 
     #[rstest]
     fn test_test_timer_advance_up_to_next_time_ns() {
-        let mut timer = TestTimer::new("test_timer", 1, UnixNanos::default(), None).unwrap();
+        let mut timer = TestTimer::new("test_timer", 1, UnixNanos::default(), None);
         assert_eq!(timer.advance(UnixNanos::from(1)).count(), 1);
         assert!(!timer.is_expired);
     }
@@ -439,8 +439,7 @@ mod tests {
             1,
             UnixNanos::default(),
             Some(UnixNanos::from(2)),
-        )
-        .unwrap();
+        );
         assert_eq!(timer.advance(UnixNanos::from(2)).count(), 2);
         assert!(timer.is_expired);
     }
@@ -452,8 +451,7 @@ mod tests {
             1,
             UnixNanos::default(),
             Some(UnixNanos::from(5)),
-        )
-        .unwrap();
+        );
         assert_eq!(timer.advance(UnixNanos::from(5)).count(), 5);
         assert!(timer.is_expired);
     }
@@ -465,8 +463,7 @@ mod tests {
             1,
             UnixNanos::default(),
             Some(UnixNanos::from(5)),
-        )
-        .unwrap();
+        );
         assert_eq!(timer.advance(UnixNanos::from(10)).count(), 5);
         assert!(timer.is_expired);
     }
@@ -484,8 +481,7 @@ mod tests {
         let clock = get_atomic_clock_realtime();
         let start_time = clock.get_time_ns();
         let interval_ns = 100 * NANOSECONDS_IN_MILLISECOND;
-        let mut timer =
-            LiveTimer::new("TEST_TIMER", interval_ns, start_time, None, handler).unwrap();
+        let mut timer = LiveTimer::new("TEST_TIMER", interval_ns, start_time, None, handler);
         let next_time_ns = timer.next_time_ns();
         timer.start();
 
@@ -517,8 +513,7 @@ mod tests {
             start_time,
             Some(stop_time),
             handler,
-        )
-        .unwrap();
+        );
         let next_time_ns = timer.next_time_ns();
         timer.start();
 
@@ -549,8 +544,7 @@ mod tests {
             start_time,
             Some(stop_time),
             handler,
-        )
-        .unwrap();
+        );
         timer.start();
 
         wait_until(|| timer.is_expired(), Duration::from_secs(2));

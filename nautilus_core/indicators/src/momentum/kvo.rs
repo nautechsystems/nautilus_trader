@@ -98,8 +98,8 @@ impl KlingerVolumeOscillator {
         slow_period: usize,
         signal_period: usize,
         ma_type: Option<MovingAverageType>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             fast_period,
             slow_period,
             signal_period,
@@ -121,7 +121,7 @@ impl KlingerVolumeOscillator {
             hlc3: 0.0,
             previous_hlc3: 0.0,
             initialized: false,
-        })
+        }
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64, volume: f64) {

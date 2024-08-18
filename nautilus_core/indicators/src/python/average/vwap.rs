@@ -28,8 +28,8 @@ use crate::{
 #[pymethods]
 impl VolumeWeightedAveragePrice {
     #[new]
-    pub fn py_new() -> PyResult<Self> {
-        Self::new().map_err(to_pyvalue_err)
+    pub fn py_new() -> Self {
+        Self::new()
     }
 
     fn __repr__(&self) -> String {

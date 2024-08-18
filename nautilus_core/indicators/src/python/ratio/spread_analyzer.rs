@@ -25,8 +25,8 @@ use crate::{indicator::Indicator, ratio::spread_analyzer::SpreadAnalyzer};
 #[pymethods]
 impl SpreadAnalyzer {
     #[new]
-    fn py_new(instrument_id: InstrumentId, capacity: usize) -> PyResult<Self> {
-        Self::new(capacity, instrument_id).map_err(to_pyvalue_err)
+    fn py_new(instrument_id: InstrumentId, capacity: usize) -> Self {
+        Self::new(capacity, instrument_id)
     }
 
     fn __repr__(&self) -> String {

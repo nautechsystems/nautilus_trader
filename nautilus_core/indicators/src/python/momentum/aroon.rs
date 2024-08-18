@@ -22,8 +22,8 @@ use crate::{indicator::Indicator, momentum::aroon::AroonOscillator};
 #[pymethods]
 impl AroonOscillator {
     #[new]
-    pub fn py_new(period: usize) -> PyResult<Self> {
-        Self::new(period).map_err(to_pyvalue_err)
+    pub fn py_new(period: usize) -> Self {
+        Self::new(period)
     }
 
     fn __repr__(&self) -> String {

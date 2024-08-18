@@ -20,7 +20,7 @@ use nautilus_model::data::bar::Bar;
 use crate::indicator::Indicator;
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Default)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
@@ -72,15 +72,15 @@ impl Indicator for VolumeWeightedAveragePrice {
 
 impl VolumeWeightedAveragePrice {
     /// Creates a new [`VolumeWeightedAveragePrice`] instance.
-    pub const fn new() -> anyhow::Result<Self> {
-        Ok(Self {
+    pub const fn new() -> Self {
+        Self {
             value: 0.0,
             has_inputs: false,
             initialized: false,
             price_volume: 0.0,
             volume_total: 0.0,
             day: 0.0,
-        })
+        }
     }
 
     pub fn update_raw(&mut self, price: f64, volume: f64, timestamp: f64) {

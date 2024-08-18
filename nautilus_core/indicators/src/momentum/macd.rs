@@ -99,8 +99,8 @@ impl MovingAverageConvergenceDivergence {
         slow_period: usize,
         ma_type: Option<MovingAverageType>,
         price_type: Option<PriceType>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             fast_period,
             slow_period,
             ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
@@ -117,7 +117,7 @@ impl MovingAverageConvergenceDivergence {
                 ma_type.unwrap_or(MovingAverageType::Simple),
                 slow_period,
             ),
-        })
+        }
     }
 }
 

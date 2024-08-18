@@ -27,8 +27,8 @@ impl AverageTrueRange {
         ma_type: Option<MovingAverageType>,
         use_previous: Option<bool>,
         value_floor: Option<f64>,
-    ) -> PyResult<Self> {
-        Self::new(period, ma_type, use_previous, value_floor).map_err(to_pyvalue_err)
+    ) -> Self {
+        Self::new(period, ma_type, use_previous, value_floor)
     }
 
     fn __repr__(&self) -> String {

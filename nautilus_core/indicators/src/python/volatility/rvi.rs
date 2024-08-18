@@ -24,12 +24,8 @@ use crate::{
 #[pymethods]
 impl RelativeVolatilityIndex {
     #[new]
-    pub fn py_new(
-        period: usize,
-        scalar: Option<f64>,
-        ma_type: Option<MovingAverageType>,
-    ) -> PyResult<Self> {
-        Self::new(period, scalar, ma_type).map_err(to_pyvalue_err)
+    pub fn py_new(period: usize, scalar: Option<f64>, ma_type: Option<MovingAverageType>) -> Self {
+        Self::new(period, scalar, ma_type)
     }
 
     fn __repr__(&self) -> String {

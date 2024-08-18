@@ -29,8 +29,8 @@ impl ArcherMovingAveragesTrends {
         slow_period: usize,
         signal_period: usize,
         ma_type: Option<MovingAverageType>,
-    ) -> PyResult<Self> {
-        Self::new(fast_period, slow_period, signal_period, ma_type).map_err(to_pyvalue_err)
+    ) -> Self {
+        Self::new(fast_period, slow_period, signal_period, ma_type)
     }
 
     fn __repr__(&self) -> String {

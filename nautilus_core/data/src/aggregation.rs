@@ -509,7 +509,7 @@ where
             start_time_ns,
             None,
             None, // TODO: Implement Rust callback handlers properly (see above commented code)
-        )?;
+        );
 
         log::debug!("Started timer {}", self.timer_name);
         Ok(())

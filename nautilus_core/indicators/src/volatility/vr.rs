@@ -85,8 +85,8 @@ impl VolatilityRatio {
         ma_type: Option<MovingAverageType>,
         use_previous: Option<bool>,
         value_floor: Option<f64>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             fast_period,
             slow_period,
             ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
@@ -95,9 +95,9 @@ impl VolatilityRatio {
             value: 0.0,
             has_inputs: false,
             initialized: false,
-            atr_fast: AverageTrueRange::new(fast_period, ma_type, use_previous, value_floor)?,
-            atr_slow: AverageTrueRange::new(slow_period, ma_type, use_previous, value_floor)?,
-        })
+            atr_fast: AverageTrueRange::new(fast_period, ma_type, use_previous, value_floor),
+            atr_slow: AverageTrueRange::new(slow_period, ma_type, use_previous, value_floor),
+        }
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64) {
