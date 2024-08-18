@@ -15,6 +15,7 @@
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
+from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.rust.model cimport OrderSide
@@ -127,6 +128,6 @@ cdef class ExecutionEngine(Component):
     cpdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type)
     cpdef bint _will_flip_position(self, Position position, OrderFilled fill)
     cpdef void _flip_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type)
-    cpdef void _publish_order_snapshot(self, Order order)
-    cpdef void _publish_position_snapshot(self, Position position)
-    cpdef void _snapshot_open_positions(self)
+    cpdef void _create_order_state_snapshot(self, Order order)
+    cpdef void _create_position_state_snapshot(self, Position position)
+    cpdef void _snapshot_open_position_states(self, TimeEvent event)
