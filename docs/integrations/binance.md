@@ -260,7 +260,7 @@ To use Binance Future Hedge mode, you need to follow the three items below:
     ```
 
 
-3. When submitting an order, use a suffix in the position_id to indicate the position direction. Use `LONG` or `SHORT` to represent the position direction for different orders.
+3. When submitting an order, use a suffix (`LONG` or `SHORT` ) in the position_id to indicate the position direction.
     ```python
     class EMACrossHedgeMode(Strategy):
         ...,  # Omitted
