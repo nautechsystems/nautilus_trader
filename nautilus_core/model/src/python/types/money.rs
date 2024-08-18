@@ -34,8 +34,8 @@ use crate::types::{currency::Currency, money::Money};
 #[pymethods]
 impl Money {
     #[new]
-    fn py_new(value: f64, currency: Currency) -> PyResult<Self> {
-        Self::new(value, currency).map_err(to_pyvalue_err)
+    fn py_new(value: f64, currency: Currency) -> Self {
+        Self::new(value, currency)
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -57,8 +57,8 @@ impl Money {
     }
 
     #[staticmethod]
-    fn _safe_constructor() -> PyResult<Self> {
-        Ok(Self::new(0.0, Currency::AUD()).unwrap()) // Safe default
+    fn _safe_constructor() -> Self {
+        Self::new(0.0, Currency::AUD())
     }
 
     fn __add__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
@@ -331,8 +331,8 @@ impl Money {
 
     #[staticmethod]
     #[pyo3(name = "zero")]
-    fn py_zero(currency: Currency) -> PyResult<Self> {
-        Self::new(0.0, currency).map_err(to_pyvalue_err)
+    fn py_zero(currency: Currency) -> Self {
+        Self::new(0.0, currency)
     }
 
     #[staticmethod]

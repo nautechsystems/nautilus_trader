@@ -57,7 +57,7 @@ impl SyntheticInstrument {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
-        let price_increment = Price::new(10f64.powi(-i32::from(price_precision)), price_precision)?;
+        let price_increment = Price::new(10f64.powi(-i32::from(price_precision)), price_precision);
 
         // Extract variables from the component instruments
         let variables: Vec<String> = components
@@ -103,7 +103,8 @@ impl SyntheticInstrument {
             if let Some(&value) = inputs.get(variable) {
                 input_values.push(value);
                 self.context
-                    .set_value(variable.clone(), Value::from(value))?;
+                    .set_value(variable.clone(), Value::from(value))
+                    .expect("TODO: Unable to set value");
             } else {
                 panic!("Missing price for component: {variable}");
             }
@@ -127,7 +128,7 @@ impl SyntheticInstrument {
         let result: Value = self.operator_tree.eval_with_context(&self.context)?;
 
         match result {
-            Value::Float(price) => Price::new(price, self.price_precision),
+            Value::Float(price) => Ok(Price::new(price, self.price_precision)),
             _ => Err(anyhow::anyhow!(
                 "Failed to evaluate formula to a floating point number"
             )),

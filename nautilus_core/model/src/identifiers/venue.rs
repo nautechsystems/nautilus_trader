@@ -20,7 +20,7 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness::check_valid_string;
+use nautilus_core::correctness::{check_valid_string, FAILED};
 use ustr::Ustr;
 
 use crate::venues::VENUE_MAP;
@@ -42,10 +42,9 @@ impl Venue {
     /// # Panics
     ///
     /// Panics if `value` is not a valid string.
-    pub fn new(value: &str) -> anyhow::Result<Self> {
-        check_valid_string(value, stringify!(value))?;
-
-        Ok(Self(Ustr::from(value)))
+    pub fn new(value: &str) -> Self {
+        check_valid_string(value, stringify!(value)).expect(FAILED);
+        Self(Ustr::from(value))
     }
 
     /// Sets the inner identifier value.
@@ -83,7 +82,7 @@ impl Venue {
     #[must_use]
     pub fn synthetic() -> Self {
         // SAFETY: Unwrap safe as using known synthetic venue constant
-        Self::new(SYNTHETIC_VENUE).unwrap()
+        Self::new(SYNTHETIC_VENUE)
     }
 
     #[must_use]
@@ -101,12 +100,6 @@ impl Debug for Venue {
 impl Display for Venue {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
-    }
-}
-
-impl From<&str> for Venue {
-    fn from(input: &str) -> Self {
-        Self::new(input).unwrap()
     }
 }
 

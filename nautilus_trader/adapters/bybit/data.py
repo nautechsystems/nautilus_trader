@@ -222,7 +222,7 @@ class BybitDataClient(LiveMarketDataClient):
 
     async def _disconnect(self) -> None:
         if self._update_instruments_task:
-            self._log.debug("Cancelling `update_instruments` task")
+            self._log.debug("Canceling `update_instruments` task")
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
         for ws_client in self._ws_clients.values():

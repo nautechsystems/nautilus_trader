@@ -92,7 +92,6 @@ class TradingNode:
         # Async tasks
         self._task_streaming: asyncio.Future | None = None
         self._task_heartbeats: asyncio.Task | None = None
-        self._task_position_snapshots: asyncio.Task | None = None
 
     @property
     def trader_id(self) -> TraderId:
@@ -336,10 +335,6 @@ class TradingNode:
                 self._task_heartbeats = asyncio.create_task(
                     self.maintain_heartbeat(self._config.heartbeat_interval),
                 )
-            if self._config.snapshot_positions_interval:
-                self._task_position_snapshots = asyncio.create_task(
-                    self.snapshot_open_positions(self._config.snapshot_positions_interval),
-                )
 
             await asyncio.gather(*tasks)
         except asyncio.CancelledError as e:
@@ -373,46 +368,6 @@ class TradingNode:
             # Catch-all exceptions for development purposes (unexpected errors)
             self.kernel.logger.error(str(e))
 
-    async def snapshot_open_positions(self, interval: float) -> None:
-        """
-        Snapshot the state of all open positions at the configured interval.
-
-        Parameters
-        ----------
-        interval : float
-            The interval (seconds) between open position state snapshotting.
-
-        """
-        self.kernel.logger.info(
-            f"Starting task: snapshot open positions at {interval}s intervals",
-            LogColor.BLUE,
-        )
-        try:
-            while True:
-                await asyncio.sleep(interval)
-                open_positions = self.kernel.cache.positions_open()
-                for position in open_positions:
-                    if self._has_cache_backing:
-                        self.cache.snapshot_position_state(
-                            position=position,
-                            ts_snapshot=self.kernel.clock.timestamp_ns(),
-                        )
-                    if self._has_msgbus_backing:
-                        #  TODO: Consolidate this with the cache
-                        position_state = position.to_dict()
-                        unrealized_pnl = self.kernel.cache.calculate_unrealized_pnl(position)
-                        if unrealized_pnl is not None:
-                            position_state["unrealized_pnl"] = str(unrealized_pnl)
-                        self.kernel.msgbus.publish(
-                            topic=f"snapshots:positions:{position.id}",
-                            msg=self.kernel.msgbus.serializer.serialize(position_state),
-                        )
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            # Catch-all exceptions for development purposes (unexpected errors)
-            self.kernel.logger.error(str(e))
-
     def stop(self) -> None:
         """
         Stop the trading node gracefully.
@@ -440,19 +395,14 @@ class TradingNode:
 
         """
         if self._task_streaming:
-            self.kernel.logger.info("Cancelling `task_streaming`")
+            self.kernel.logger.info("Canceling `task_streaming`")
             self._task_streaming.cancel()
             self._task_streaming = None
 
         if self._task_heartbeats:
-            self.kernel.logger.info("Cancelling `task_heartbeats`")
+            self.kernel.logger.info("Canceling `task_heartbeats`")
             self._task_heartbeats.cancel()
             self._task_heartbeats = None
-
-        if self._task_position_snapshots:
-            self.kernel.logger.info("Cancelling `task_position_snapshots`")
-            self._task_position_snapshots.cancel()
-            self._task_position_snapshots = None
 
         await self.kernel.stop_async()
 

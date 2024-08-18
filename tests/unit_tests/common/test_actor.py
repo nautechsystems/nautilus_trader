@@ -1840,9 +1840,45 @@ class TestActor:
         # Assert
         msg = handler[0]
         assert isinstance(msg, Data)
+        assert msg.is_signal()
+        assert msg.is_signal("test")
         assert msg.ts_event == 0
         assert msg.ts_init == 0
         assert msg.value == value
+
+    def test_subscribe_signal(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Act
+        actor.subscribe_signal("test")
+
+        # Assert
+        assert self.data_engine.command_count == 0
+        assert actor.msgbus.subscriptions()[4].topic == "data.SignalTest*"
+
+    def test_subscribe_all_signals(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        # Act
+        actor.subscribe_signal()
+
+        # Assert
+        assert self.data_engine.command_count == 0
+        assert actor.msgbus.subscriptions()[4].topic == "data.Signal*"
 
     def test_publish_data_persist(self) -> None:
         # Arrange

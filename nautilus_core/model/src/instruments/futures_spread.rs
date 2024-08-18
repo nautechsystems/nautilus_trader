@@ -17,7 +17,7 @@ use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
     correctness::{
-        check_equal_u8, check_positive_i64, check_valid_string, check_valid_string_optional,
+        check_equal_u8, check_positive_i64, check_valid_string, check_valid_string_optional, FAILED,
     },
     nanos::UnixNanos,
 };
@@ -91,19 +91,19 @@ impl FuturesSpread {
         margin_maint: Option<Decimal>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
-        check_valid_string_optional(exchange.map(|u| u.as_str()), stringify!(isin))?;
-        check_valid_string(underlying.as_str(), stringify!(underlying))?;
-        check_valid_string(strategy_type.as_str(), stringify!(strategy_type))?;
+    ) -> Self {
+        check_valid_string_optional(exchange.map(|u| u.as_str()), stringify!(isin)).expect(FAILED);
+        check_valid_string(underlying.as_str(), stringify!(underlying)).expect(FAILED);
+        check_valid_string(strategy_type.as_str(), stringify!(strategy_type)).expect(FAILED);
         check_equal_u8(
             price_precision,
             price_increment.precision,
             stringify!(price_precision),
             stringify!(price_increment.precision),
-        )?;
-        check_positive_i64(price_increment.raw, stringify!(price_increment.raw))?;
-
-        Ok(Self {
+        )
+        .expect(FAILED);
+        check_positive_i64(price_increment.raw, stringify!(price_increment.raw)).expect(FAILED);
+        Self {
             id,
             raw_symbol,
             asset_class,
@@ -127,7 +127,7 @@ impl FuturesSpread {
             min_price,
             ts_event,
             ts_init,
-        })
+        }
     }
 }
 

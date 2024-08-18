@@ -171,6 +171,7 @@ cdef class Actor(Component):
     cpdef void unsubscribe_instrument_status(self, InstrumentId instrument_id, ClientId client_id=*)
     cpdef void publish_data(self, DataType data_type, Data data)
     cpdef void publish_signal(self, str name, value, uint64_t ts_event=*)
+    cpdef void subscribe_signal(self, str name=*)
 
 # -- REQUESTS -------------------------------------------------------------------------------------
 

@@ -30,8 +30,8 @@ use crate::{
 #[pymethods]
 impl AccountBalance {
     #[new]
-    fn py_new(total: Money, locked: Money, free: Money) -> PyResult<Self> {
-        Self::new(total, locked, free).map_err(to_pyvalue_err)
+    fn py_new(total: Money, locked: Money, free: Money) -> Self {
+        Self::new(total, locked, free)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -63,11 +63,10 @@ impl AccountBalance {
         let locked: f64 = locked_str.parse::<f64>().unwrap();
         let currency = Currency::from_str(currency).map_err(to_pyvalue_err)?;
         let account_balance = Self::new(
-            Money::new(total, currency).map_err(to_pyvalue_err)?,
-            Money::new(locked, currency).map_err(to_pyvalue_err)?,
-            Money::new(free, currency).map_err(to_pyvalue_err)?,
-        )
-        .unwrap();
+            Money::new(total, currency),
+            Money::new(locked, currency),
+            Money::new(free, currency),
+        );
         Ok(account_balance)
     }
 
@@ -107,8 +106,8 @@ impl AccountBalance {
 #[pymethods]
 impl MarginBalance {
     #[new]
-    fn py_new(initial: Money, maintenance: Money, instrument: InstrumentId) -> PyResult<Self> {
-        Self::new(initial, maintenance, instrument).map_err(to_pyvalue_err)
+    fn py_new(initial: Money, maintenance: Money, instrument: InstrumentId) -> Self {
+        Self::new(initial, maintenance, instrument)
     }
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
@@ -138,11 +137,10 @@ impl MarginBalance {
         let instrument_id_str: &str = dict.get_item("instrument_id")?.unwrap().extract()?;
         let currency = Currency::from_str(currency).map_err(to_pyvalue_err)?;
         let account_balance = Self::new(
-            Money::new(initial, currency).map_err(to_pyvalue_err)?,
-            Money::new(maintenance, currency).map_err(to_pyvalue_err)?,
-            InstrumentId::from_str(instrument_id_str).unwrap(),
-        )
-        .unwrap();
+            Money::new(initial, currency),
+            Money::new(maintenance, currency),
+            InstrumentId::from(instrument_id_str),
+        );
         Ok(account_balance)
     }
 

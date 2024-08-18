@@ -40,10 +40,10 @@ impl OptionsContract {
         asset_class: AssetClass,
         underlying: String,
         option_kind: OptionKind,
-        activation_ns: u64,
-        expiration_ns: u64,
         strike_price: Price,
         currency: Currency,
+        activation_ns: u64,
+        expiration_ns: u64,
         price_precision: u8,
         price_increment: Price,
         multiplier: Quantity,
@@ -57,7 +57,7 @@ impl OptionsContract {
         max_price: Option<Price>,
         min_price: Option<Price>,
         exchange: Option<String>,
-    ) -> PyResult<Self> {
+    ) -> Self {
         Self::new(
             id,
             raw_symbol,
@@ -65,10 +65,10 @@ impl OptionsContract {
             exchange.map(|e| Ustr::from(&e)),
             underlying.into(),
             option_kind,
-            activation_ns.into(),
-            expiration_ns.into(),
             strike_price,
             currency,
+            activation_ns.into(),
+            expiration_ns.into(),
             price_precision,
             price_increment,
             multiplier,
@@ -82,7 +82,6 @@ impl OptionsContract {
             ts_event.into(),
             ts_init.into(),
         )
-        .map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

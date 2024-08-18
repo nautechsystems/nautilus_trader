@@ -27,12 +27,12 @@ cdef class OptionsContract(Instrument):
     """The underlying asset for the contract.\n\n:returns: `str`"""
     cdef readonly OptionKind option_kind
     """The option kind (PUT | CALL) for the contract.\n\n:returns: `OptionKind`"""
+    cdef readonly Price strike_price
+    """The strike price for the contract.\n\n:returns: `Price`"""
     cdef readonly uint64_t activation_ns
     """UNIX timestamp (nanoseconds) for contract activation.\n\n:returns: `unit64_t`"""
     cdef readonly uint64_t expiration_ns
     """UNIX timestamp (nanoseconds) for contract expiration.\n\n:returns: `unit64_t`"""
-    cdef readonly Price strike_price
-    """The strike price for the contract.\n\n:returns: `Price`"""
 
     @staticmethod
     cdef OptionsContract from_dict_c(dict values)

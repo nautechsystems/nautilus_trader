@@ -190,7 +190,7 @@ cdef class OrderManager:
             return
 
         if self.debug:
-            self._log.info(f"Cancelling order {order}", LogColor.MAGENTA)
+            self._log.info(f"Canceling order {order}", LogColor.MAGENTA)
 
         self._submit_order_commands.pop(order.client_order_id, None)
 

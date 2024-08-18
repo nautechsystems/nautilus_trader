@@ -49,20 +49,20 @@ impl TradeTick {
         let price_py: &PyAny = obj.getattr("price")?.extract()?;
         let price_raw: i64 = price_py.getattr("raw")?.extract()?;
         let price_prec: u8 = price_py.getattr("precision")?.extract()?;
-        let price = Price::from_raw(price_raw, price_prec).map_err(to_pyvalue_err)?;
+        let price = Price::from_raw(price_raw, price_prec);
 
         let size_py: &PyAny = obj.getattr("size")?.extract()?;
         let size_raw: u64 = size_py.getattr("raw")?.extract()?;
         let size_prec: u8 = size_py.getattr("precision")?.extract()?;
-        let size = Quantity::from_raw(size_raw, size_prec).map_err(to_pyvalue_err)?;
+        let size = Quantity::from_raw(size_raw, size_prec);
 
         let aggressor_side_obj: &PyAny = obj.getattr("aggressor_side")?.extract()?;
         let aggressor_side_u8 = aggressor_side_obj.getattr("value")?.extract()?;
         let aggressor_side = AggressorSide::from_u8(aggressor_side_u8).unwrap();
 
         let trade_id_obj: &PyAny = obj.getattr("trade_id")?.extract()?;
-        let trade_id_str = trade_id_obj.getattr("value")?.extract()?;
-        let trade_id = TradeId::from_str(trade_id_str).map_err(to_pyvalue_err)?;
+        let trade_id_str: String = trade_id_obj.getattr("value")?.extract()?;
+        let trade_id = TradeId::from(trade_id_str.as_str());
 
         let ts_event: u64 = obj.getattr("ts_event")?.extract()?;
         let ts_init: u64 = obj.getattr("ts_init")?.extract()?;
@@ -120,15 +120,15 @@ impl TradeTick {
         let size_raw = tuple.3.extract()?;
         let size_prec = tuple.4.extract()?;
         let aggressor_side_u8 = tuple.5.extract()?;
-        let trade_id_str = tuple.6.extract()?;
+        let trade_id_str: String = tuple.6.extract()?;
         let ts_event: u64 = tuple.7.extract()?;
         let ts_init: u64 = tuple.8.extract()?;
 
         self.instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
-        self.price = Price::from_raw(price_raw, price_prec).map_err(to_pyvalue_err)?;
-        self.size = Quantity::from_raw(size_raw, size_prec).map_err(to_pyvalue_err)?;
+        self.price = Price::from_raw(price_raw, price_prec);
+        self.size = Quantity::from_raw(size_raw, size_prec);
         self.aggressor_side = AggressorSide::from_u8(aggressor_side_u8).unwrap();
-        self.trade_id = TradeId::from_str(trade_id_str).map_err(to_pyvalue_err)?;
+        self.trade_id = TradeId::from(trade_id_str.as_str());
         self.ts_event = ts_event.into();
         self.ts_init = ts_init.into();
 

@@ -125,7 +125,7 @@ class InteractiveBrokersClientErrorMixin(BaseMixin):
     ) -> None:
         """
         Handle errors specific to data subscriptions. Processes subscription-related
-        errors and takes appropriate actions, such as cancelling the subscription or
+        errors and takes appropriate actions, such as canceling the subscription or
         clearing flags.
 
         Parameters

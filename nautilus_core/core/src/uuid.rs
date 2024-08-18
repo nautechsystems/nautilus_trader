@@ -47,7 +47,8 @@ impl UUID4 {
     #[must_use]
     pub fn new() -> Self {
         let uuid = Uuid::new_v4();
-        let c_string = CString::new(uuid.to_string()).expect("`CString` conversion failed");
+        let c_string =
+            CString::new(uuid.to_string()).expect("Expected UUID to convert to valid `CString`");
         let bytes = c_string.as_bytes_with_nul();
         let mut value = [0; UUID4_LEN];
         value[..bytes.len()].copy_from_slice(bytes);
@@ -59,7 +60,8 @@ impl UUID4 {
     #[must_use]
     pub fn to_cstr(&self) -> &CStr {
         // SAFETY: We always store valid C strings
-        CStr::from_bytes_with_nul(&self.value).unwrap()
+        CStr::from_bytes_with_nul(&self.value)
+            .expect("Expected UUID byte representation to be a valid `CString`")
     }
 }
 
@@ -79,7 +81,7 @@ impl FromStr for UUID4 {
 
 impl From<&str> for UUID4 {
     fn from(input: &str) -> Self {
-        input.parse().unwrap_or_else(|err| panic!("{}", err))
+        input.parse().expect("Input should be a valid UUID")
     }
 }
 

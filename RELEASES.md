@@ -4,13 +4,26 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added `LiveExecEngineConfig.generate_missing_orders` reconciliation config option to align internal and external position states
-- Improve `BinanceExecutionClient` position report requests (can now filter by instrument and includes reporting for flat positions)
-- Improve `BybitExecutionClient` position report requests (can now filter by instrument and includes reporting for flat positions)
-- Improve `LiveExecutionEngine` reconciliation robustness and recovery when internal positions do not match external positions
+- Added `LogLevel::TRACE` (only available in Rust for debug/development builds)
+- Added `Actor.subscribe_signal(...)` method and `Data.is_signal(...)` class method (#1853), thanks @faysou
+- Added Binance Futures support for `HEDGE` mode (#1846), thanks @DevRoss
+- Overhauled and refined error modeling and handling in Rust (#1849), thanks @twitu
+- Improved `BinanceExecutionClient` position report requests (can now filter by instrument and includes reporting for flat positions)
+- Improved `BybitExecutionClient` position report requests (can now filter by instrument and includes reporting for flat positions)
+- Improved `LiveExecutionEngine` reconciliation robustness and recovery when internal positions do not match external positions
+- Improved `@customdataclass` decorator constructor to allow more positional arguments (#1850), thanks @faysou
+- Improved `@customdataclass` documentation (#1854), thanks @faysou
 - Upgraded `datafusion` crate to v41.0.0
+- Upgraded `tokio` crate to v1.39.3
+- Upgraded `uvloop` to v0.20.0 (upgrades libuv to v1.48.0)
 
 ### Breaking Changes
 - Changed `VolumeWeightedAveragePrice` calculation formula to use each bars "typical" price (#1842), thanks @evgenii-prusov
+- Changed `OptionsContract` constructor parameter ordering and Arrow schema (consistently group option kind and strike price)
+- Renamed `snapshot_positions_interval` to `snapshot_positions_interval_secs` (more explicitly indicates time units)
+- Moved `snapshot_orders` config setting to `ExecEngineConfig` (can now be used for all environment contexts)
+- Moved `snapshot_positions` config setting to `ExecEngineConfig` (can now be used for all environment contexts)
+- Moved `snapshot_positions_interval_secs` config setting to `ExecEngineConfig` (can now be used for all environment contexts)
 
 ### Fixes
 - Fixed `Position` exception type on duplicate fill (should be `KeyError` like `Order`)
@@ -23,7 +36,7 @@ Released on TBD (UTC).
 Released on 9th August 2024 (UTC).
 
 ### Enhancements
-- Added `@customdata` decorator to reduce need for boiler plate implementing custom data types (#1828), thanks @faysou
+- Added `@customdataclass` decorator to reduce need for boiler plate implementing custom data types (#1828), thanks @faysou
 - Added timeout for HTTP client in Rust (#1835), thanks @davidsblom
 - Added catalog conversion function of streamed data to backtest data (#1834), thanks @faysou
 - Upgraded Cython to v3.0.11
@@ -65,7 +78,7 @@ Released on 2nd August 2024 (UTC).
 - Removed `VenueStatus` and all associated methods and schemas (redundant with `InstrumentStatus`)
 - Renamed `QuoteTick.extract_volume(...)` to `.extract_size(...)` (more accurate terminology)
 - Changed `InstrumentStatus` params (support Databento `status` schema)
-- Changed `InstrumentStatus` arrow schema
+- Changed `InstrumentStatus` Arrow schema
 - Changed `OrderBook` FFI API to take data by reference instead of by value
 
 ### Fixes

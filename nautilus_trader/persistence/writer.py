@@ -361,7 +361,13 @@ def generate_signal_class(name: str, value_type: type) -> type:
         {
             "ts_event": pa.uint64(),
             "ts_init": pa.uint64(),
-            "value": {int: pa.int64(), float: pa.float64(), str: pa.string()}[value_type],
+            "value": {
+                int: pa.int64(),
+                float: pa.float64(),
+                str: pa.string(),
+                bool: pa.bool_(),
+                bytes: pa.binary(),
+            }[value_type],
         },
     )
     register_arrow(

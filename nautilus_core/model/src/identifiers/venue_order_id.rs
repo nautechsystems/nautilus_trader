@@ -20,7 +20,7 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness::check_valid_string;
+use nautilus_core::correctness::{check_valid_string, FAILED};
 use ustr::Ustr;
 
 /// Represents a valid venue order ID (assigned by a trading venue).
@@ -38,10 +38,9 @@ impl VenueOrderId {
     /// # Panics
     ///
     /// Panics if `value` is not a valid string.
-    pub fn new(value: &str) -> anyhow::Result<Self> {
-        check_valid_string(value, stringify!(value))?;
-
-        Ok(Self(Ustr::from(value)))
+    pub fn new(value: &str) -> Self {
+        check_valid_string(value, stringify!(value)).expect(FAILED);
+        Self(Ustr::from(value))
     }
 
     /// Sets the inner identifier value.
@@ -71,12 +70,6 @@ impl Debug for VenueOrderId {
 impl Display for VenueOrderId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
-    }
-}
-
-impl From<&str> for VenueOrderId {
-    fn from(input: &str) -> Self {
-        Self::new(input).unwrap()
     }
 }
 

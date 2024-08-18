@@ -77,19 +77,6 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         If the asyncio event loop should be in debug mode.
     logging : LoggingConfig, optional
         The logging config for the kernel.
-    snapshot_orders : bool, default False
-        If order state snapshot lists should be persisted.
-        Snapshots will be taken at every order state update (when events are applied).
-    snapshot_positions : bool, default False
-        If position state snapshot lists should be persisted.
-        Snapshots will be taken at position opened, changed and closed (when events are applied).
-        To include the unrealized PnL in the snapshot then quotes for the positions instrument must
-        be available in the cache.
-    snapshot_positions_interval : PositiveFloat, optional
-        The interval (seconds) at which additional position state snapshots are persisted.
-        If ``None`` then no additional snapshots will be taken.
-        To include the unrealized PnL in the snapshot then quotes for the positions instrument must
-        be available in the cache.
     timeout_connection : PositiveFloat (seconds)
         The timeout for all clients to connect and initialize.
     timeout_reconciliation : PositiveFloat (seconds)
@@ -122,9 +109,7 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     save_state: bool = False
     loop_debug: bool = False
     logging: LoggingConfig | None = None
-    snapshot_orders: bool = False
-    snapshot_positions: bool = False
-    snapshot_positions_interval: PositiveFloat | None = None
+
     timeout_connection: PositiveFloat = 10.0
     timeout_reconciliation: PositiveFloat = 10.0
     timeout_portfolio: PositiveFloat = 10.0
