@@ -21,6 +21,7 @@ from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
+from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
@@ -42,9 +43,27 @@ config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
     logging=LoggingConfig(log_level="INFO"),
     exec_engine=LiveExecEngineConfig(
+        # debug=True,
         reconciliation=True,
         reconciliation_lookback_mins=1440,
+        # snapshot_orders=True,
+        # snapshot_positions=True,
+        # snapshot_positions_interval_secs=5.0,
     ),
+    cache=CacheConfig(
+        # database=DatabaseConfig(timeout=2),
+        timestamps_as_iso8601=True,
+        flush_on_start=False,
+    ),
+    # message_bus=MessageBusConfig(
+    #     database=DatabaseConfig(timeout=2),
+    #     timestamps_as_iso8601=True,
+    #     use_instance_id=False,
+    #     # types_filter=[QuoteTick],
+    #     stream_per_topic=False,
+    #     external_streams=["bybit"],
+    #     autotrim_mins=30,
+    # ),
     data_clients={
         "BINANCE": BinanceDataClientConfig(
             api_key=None,  # 'BINANCE_API_KEY' env var
@@ -90,6 +109,8 @@ strat_config = EMACrossConfig(
     trade_size=Decimal("0.010"),
     order_id_tag="001",
     oms_type="HEDGING",
+    subscribe_trade_ticks=True,
+    subscribe_quote_ticks=True,
 )
 
 # Instantiate your strategy
