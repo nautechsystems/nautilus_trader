@@ -7,7 +7,7 @@ Released on TBD (UTC).
 - Added `LogLevel::TRACE` (only available in Rust for debug/development builds)
 - Added `Actor.subscribe_signal(...)` method and `Data.is_signal(...)` class method (#1853), thanks @faysou
 - Added Binance Futures support for `HEDGE` mode (#1846), thanks @DevRoss
-- Overhauled and refined error modeling and handling in Rust (#1849), thanks @twitu
+- Overhauled and refined error modeling and handling in Rust (#1849, #1858), thanks @twitu
 - Improved `BinanceExecutionClient` position report requests (can now filter by instrument and includes reporting for flat positions)
 - Improved `BybitExecutionClient` position report requests (can now filter by instrument and includes reporting for flat positions)
 - Improved `LiveExecutionEngine` reconciliation robustness and recovery when internal positions do not match external positions
@@ -26,7 +26,7 @@ Released on TBD (UTC).
 - Moved `snapshot_positions_interval_secs` config setting to `ExecEngineConfig` (can now be used for all environment contexts)
 
 ### Fixes
-- Fixed `Position` exception type on duplicate fill (should be `KeyError` like `Order`)
+- Fixed `Position` exception type on duplicate fill (should be `KeyError` to align with the same error for `Order`)
 - Fixed Bybit position report parsing when position is flat (`BybitPositionSide` now correctly handles the empty string)
 
 ---
