@@ -22,6 +22,7 @@ use std::{
 
 use nautilus_core::python::to_pyvalue_err;
 use pyo3::{
+    exceptions::PyValueError,
     prelude::*,
     pyclass::CompareOp,
     types::{PyString, PyTuple},
@@ -32,8 +33,9 @@ use crate::identifiers::trade_id::TradeId;
 #[pymethods]
 impl TradeId {
     #[new]
-    fn py_new(value: &str) -> Self {
-        Self::new(value)
+    fn py_new(value: &str) -> PyResult<Self> {
+        std::panic::catch_unwind(|| Self::new(value))
+            .map_err(|e| PyErr::new::<PyValueError, _>(format!("{e:?}")))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {

@@ -15,9 +15,9 @@
 
 use std::str::FromStr;
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use pyo3::{
-    exceptions::PyRuntimeError,
+    exceptions::{PyRuntimeError, PyValueError},
     prelude::*,
     pyclass::CompareOp,
     types::{PyLong, PyString, PyTuple},
@@ -35,8 +35,9 @@ impl Currency {
         iso4217: u16,
         name: &str,
         currency_type: CurrencyType,
-    ) -> Self {
-        Self::new(code, precision, iso4217, name, currency_type)
+    ) -> PyResult<Self> {
+        std::panic::catch_unwind(|| Self::new(code, precision, iso4217, name, currency_type))
+            .map_err(|e| PyErr::new::<PyValueError, _>(format!("{e:?}")))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -159,6 +160,6 @@ impl Currency {
     #[pyo3(name = "register")]
     #[pyo3(signature = (currency, overwrite = false))]
     fn py_register(currency: Self, overwrite: bool) -> PyResult<()> {
-        Self::register(currency, overwrite).map_err(|e| PyRuntimeError::new_err(e.to_string()))
+        Self::register(currency, overwrite).map_err(to_pyruntime_err)
     }
 }

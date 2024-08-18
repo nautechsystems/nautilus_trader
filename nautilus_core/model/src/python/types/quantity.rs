@@ -22,6 +22,7 @@ use std::{
 
 use nautilus_core::python::{get_pytype_name, to_pytype_err, to_pyvalue_err};
 use pyo3::{
+    exceptions::PyValueError,
     prelude::*,
     pyclass::CompareOp,
     types::{PyFloat, PyLong, PyTuple},
@@ -33,8 +34,9 @@ use crate::types::quantity::Quantity;
 #[pymethods]
 impl Quantity {
     #[new]
-    fn py_new(value: f64, precision: u8) -> Self {
-        Self::new(value, precision)
+    fn py_new(value: f64, precision: u8) -> PyResult<Self> {
+        std::panic::catch_unwind(|| Self::new(value, precision))
+            .map_err(|e| PyErr::new::<PyValueError, _>(format!("{e:?}")))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
