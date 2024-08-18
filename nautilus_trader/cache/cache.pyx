@@ -1725,6 +1725,7 @@ cdef class Cache(CacheFacade):
         self,
         Position position,
         uint64_t ts_snapshot,
+        Money unrealized_pnl=None,
         bint open_only=True,
     ):
         """
@@ -1738,6 +1739,8 @@ cdef class Cache(CacheFacade):
             The position to snapshot the state for.
         ts_snapshot : uint64_t
             UNIX timestamp (nanoseconds) when the snapshot was taken.
+        unrealized_pnl : Money, optional
+            The current unrealized PnL for the position.
         open_only : bool, default True
             If only open positions should be snapshot, this flag helps to avoid race conditions
             where a position is snapshot when no longer open.
@@ -1757,7 +1760,7 @@ cdef class Cache(CacheFacade):
         self._database.snapshot_position_state(
             position,
             ts_snapshot,
-            self.calculate_unrealized_pnl(position),
+            unrealized_pnl,
         )
 
     cpdef void snapshot_order_state(self, Order order):
