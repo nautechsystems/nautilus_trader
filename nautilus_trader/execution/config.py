@@ -20,6 +20,7 @@ from typing import Any
 import msgspec
 
 from nautilus_trader.common.config import NautilusConfig
+from nautilus_trader.common.config import PositiveFloat
 from nautilus_trader.common.config import msgspec_encoding_hook
 from nautilus_trader.common.config import resolve_config_path
 from nautilus_trader.common.config import resolve_path
@@ -35,12 +36,29 @@ class ExecEngineConfig(NautilusConfig, frozen=True):
     ----------
     load_cache : bool, default True
         If the cache should be loaded on initialization.
+    snapshot_orders : bool, default False
+        If order state snapshot lists are persisted to a backing database.
+        Snapshots will be taken at every order state update (when events are applied).
+    snapshot_positions : bool, default False
+        If position state snapshot lists are persisted to a backing database.
+        Snapshots will be taken at position opened, changed and closed (when events are applied).
+        To include the unrealized PnL in the snapshot then quotes for the positions instrument must
+        be available in the cache.
+    snapshot_positions_interval_secs : PositiveFloat, optional
+        The interval (seconds) at which *additional* position state snapshots are persisted to a
+        backing database.
+        If ``None`` then no additional snapshots will be taken.
+        To include unrealized PnL in these snapshots, quotes for the position's instrument must be
+        available in the cache.
     debug : bool, default False
         If debug mode is active (will provide extra debug logging).
 
     """
 
     load_cache: bool = True
+    snapshot_orders: bool = False
+    snapshot_positions: bool = False
+    snapshot_positions_interval_secs: PositiveFloat | None = None
     debug: bool = False
 
 
