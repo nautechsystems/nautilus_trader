@@ -40,6 +40,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
+from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -166,10 +167,10 @@ class TestBinanceFuturesExecutionClient:
             command_id=UUID4(),
             ts_init=0,
         )
-        print(f"submit_order: {submit_order}")
+
         # Act
         self.exec_client.submit_order(submit_order)
-        await asyncio.sleep(0.3)
+        await eventually(lambda: mock_send_request.call_args)
 
         # Assert
         request = mock_send_request.call_args
@@ -225,7 +226,7 @@ class TestBinanceFuturesExecutionClient:
 
         # Act
         self.exec_client.submit_order(submit_order)
-        await asyncio.sleep(0.3)
+        await eventually(lambda: mock_send_request.call_args)
 
         # Assert
         request = mock_send_request.call_args
@@ -289,7 +290,7 @@ class TestBinanceFuturesExecutionClient:
 
         # Act
         self.exec_client.submit_order(submit_order)
-        await asyncio.sleep(0.3)
+        await eventually(lambda: mock_send_request.call_args)
 
         # Assert
         request = mock_send_request.call_args
@@ -356,7 +357,7 @@ class TestBinanceFuturesExecutionClient:
 
         # Act
         self.exec_client.submit_order(submit_order)
-        await asyncio.sleep(0.3)
+        await eventually(lambda: mock_send_request.call_args)
 
         # Assert
         request = mock_send_request.call_args
@@ -428,7 +429,7 @@ class TestBinanceFuturesExecutionClient:
 
         # Act
         self.exec_client.submit_order(submit_order)
-        await asyncio.sleep(0.3)
+        await eventually(lambda: mock_send_request.call_args)
 
         # Assert
         request = mock_send_request.call_args
@@ -495,7 +496,7 @@ class TestBinanceFuturesExecutionClient:
 
         # Act
         self.exec_client.submit_order(submit_order)
-        await asyncio.sleep(0.3)
+        await eventually(lambda: mock_send_request.call_args)
 
         # Assert
         request = mock_send_request.call_args
@@ -561,7 +562,7 @@ class TestBinanceFuturesExecutionClient:
 
         # Act
         self.exec_client.submit_order(submit_order)
-        await asyncio.sleep(0.3)
+        await eventually(lambda: mock_send_request.call_args)
 
         # Assert
         request = mock_send_request.call_args
@@ -633,7 +634,7 @@ class TestBinanceFuturesExecutionClient:
 
         # Act
         self.exec_client.submit_order(submit_order)
-        await asyncio.sleep(0.3)
+        await eventually(lambda: mock_send_request.call_args)
 
         # Assert
         request = mock_send_request.call_args

@@ -40,6 +40,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
+from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -187,10 +188,9 @@ class TestBinanceSpotExecutionClient:
 
         # Act
         self.exec_client.connect()
-        await asyncio.sleep(1)
 
         # Assert
-        assert self.exec_client.is_connected
+        await eventually(lambda: self.exec_client.is_connected)
 
     @pytest.mark.asyncio()
     async def test_submit_unsupported_order_logs_error(self, mocker):
@@ -247,7 +247,7 @@ class TestBinanceSpotExecutionClient:
 
         # Act
         self.exec_client.submit_order(submit_order)
-        await asyncio.sleep(0.3)
+        await eventually(lambda: mock_send_request.call_args)
 
         # Assert
         request = mock_send_request.call_args
@@ -286,7 +286,7 @@ class TestBinanceSpotExecutionClient:
 
         # Act
         self.exec_client.submit_order(submit_order)
-        await asyncio.sleep(0.3)
+        await eventually(lambda: mock_send_request.call_args)
 
         # Assert
         request = mock_send_request.call_args
@@ -327,7 +327,7 @@ class TestBinanceSpotExecutionClient:
 
         # Act
         self.exec_client.submit_order(submit_order)
-        await asyncio.sleep(0.3)
+        await eventually(lambda: mock_send_request.call_args)
 
         # Assert
         request = mock_send_request.call_args
@@ -371,7 +371,7 @@ class TestBinanceSpotExecutionClient:
 
         # Act
         self.exec_client.submit_order(submit_order)
-        await asyncio.sleep(0.3)
+        await eventually(lambda: mock_send_request.call_args)
 
         # Assert
         request = mock_send_request.call_args
@@ -404,7 +404,6 @@ class TestBinanceSpotExecutionClient:
 
         # Act
         self.strategy.query_order(order)
-        await asyncio.sleep(0.3)
 
         # Assert
-        assert mock_query_order.called
+        await eventually(lambda: mock_query_order.called)
