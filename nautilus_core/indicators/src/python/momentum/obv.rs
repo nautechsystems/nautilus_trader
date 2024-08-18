@@ -22,8 +22,8 @@ use crate::{average::MovingAverageType, indicator::Indicator, momentum::obv::OnB
 #[pymethods]
 impl OnBalanceVolume {
     #[new]
-    pub fn py_new(period: usize) -> PyResult<Self> {
-        Self::new(period).map_err(to_pyvalue_err)
+    pub fn py_new(period: usize) -> Self {
+        Self::new(period)
     }
 
     fn __repr__(&self) -> String {

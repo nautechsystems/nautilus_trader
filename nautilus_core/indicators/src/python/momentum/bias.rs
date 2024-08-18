@@ -22,8 +22,8 @@ use crate::{average::MovingAverageType, indicator::Indicator, momentum::bias::Bi
 #[pymethods]
 impl Bias {
     #[new]
-    pub fn py_new(period: usize, ma_type: Option<MovingAverageType>) -> PyResult<Self> {
-        Self::new(period, ma_type).map_err(to_pyvalue_err)
+    pub fn py_new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
+        Self::new(period, ma_type)
     }
 
     fn __repr__(&self) -> String {

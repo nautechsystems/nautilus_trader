@@ -80,15 +80,15 @@ impl Indicator for EfficiencyRatio {
 
 impl EfficiencyRatio {
     /// Creates a new [`EfficiencyRatio`] instance.
-    pub fn new(period: usize, price_type: Option<PriceType>) -> anyhow::Result<Self> {
-        Ok(Self {
+    pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
+        Self {
             period,
             price_type: price_type.unwrap_or(PriceType::Last),
             value: 0.0,
             inputs: Vec::with_capacity(period),
             deltas: Vec::with_capacity(period),
             initialized: false,
-        })
+        }
     }
 
     pub fn update_raw(&mut self, value: f64) {

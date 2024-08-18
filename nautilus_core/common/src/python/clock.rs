@@ -44,9 +44,7 @@ mod tests {
             test_clock.register_default_handler(handler);
 
             let timer_name = "TEST_TIME1";
-            test_clock
-                .set_timer_ns(timer_name, 10, 0.into(), None, None)
-                .unwrap();
+            test_clock.set_timer_ns(timer_name, 10, 0.into(), None, None);
 
             assert_eq!(test_clock.timer_names(), [timer_name]);
             assert_eq!(test_clock.timer_count(), 1);
@@ -64,9 +62,7 @@ mod tests {
             test_clock.register_default_handler(handler);
 
             let timer_name = "TEST_TIME1";
-            test_clock
-                .set_timer_ns(timer_name, 10, 0.into(), None, None)
-                .unwrap();
+            test_clock.set_timer_ns(timer_name, 10, 0.into(), None, None);
             test_clock.cancel_timer(timer_name);
 
             assert!(test_clock.timer_names().is_empty());
@@ -85,9 +81,7 @@ mod tests {
             test_clock.register_default_handler(handler);
 
             let timer_name = "TEST_TIME1";
-            test_clock
-                .set_timer_ns(timer_name, 10, 0.into(), None, None)
-                .unwrap();
+            test_clock.set_timer_ns(timer_name, 10, 0.into(), None, None);
             test_clock.cancel_timers();
 
             assert!(test_clock.timer_names().is_empty());
@@ -106,9 +100,7 @@ mod tests {
             test_clock.register_default_handler(handler);
 
             let timer_name = "TEST_TIME1";
-            test_clock
-                .set_timer_ns(timer_name, 1, 1.into(), Some(UnixNanos::from(3)), None)
-                .unwrap();
+            test_clock.set_timer_ns(timer_name, 1, 1.into(), Some(UnixNanos::from(3)), None);
             test_clock.advance_time(2.into(), true);
 
             assert_eq!(test_clock.timer_names(), [timer_name]);
@@ -126,9 +118,7 @@ mod tests {
             let handler = EventHandler::new(py_append);
             test_clock.register_default_handler(handler);
 
-            test_clock
-                .set_timer_ns("TEST_TIME1", 2, 0.into(), Some(UnixNanos::from(3)), None)
-                .unwrap();
+            test_clock.set_timer_ns("TEST_TIME1", 2, 0.into(), Some(UnixNanos::from(3)), None);
             test_clock.advance_time(3.into(), true);
 
             assert_eq!(test_clock.timer_names().len(), 1);
@@ -147,9 +137,7 @@ mod tests {
             let handler = EventHandler::new(py_append);
             test_clock.register_default_handler(handler);
 
-            test_clock
-                .set_timer_ns("TEST_TIME1", 2, 0.into(), Some(UnixNanos::from(3)), None)
-                .unwrap();
+            test_clock.set_timer_ns("TEST_TIME1", 2, 0.into(), Some(UnixNanos::from(3)), None);
             test_clock.advance_time(3.into(), false);
 
             assert_eq!(test_clock.timer_names().len(), 1);

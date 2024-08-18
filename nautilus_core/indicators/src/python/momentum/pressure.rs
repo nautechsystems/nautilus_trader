@@ -26,8 +26,8 @@ impl Pressure {
         period: usize,
         ma_type: Option<MovingAverageType>,
         atr_floor: Option<f64>,
-    ) -> PyResult<Self> {
-        Self::new(period, ma_type, atr_floor).map_err(to_pyvalue_err)
+    ) -> Self {
+        Self::new(period, ma_type, atr_floor)
     }
 
     fn __repr__(&self) -> String {

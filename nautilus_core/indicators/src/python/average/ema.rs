@@ -28,8 +28,8 @@ use crate::{
 #[pymethods]
 impl ExponentialMovingAverage {
     #[new]
-    fn py_new(period: usize, price_type: Option<PriceType>) -> PyResult<Self> {
-        Self::new(period, price_type).map_err(to_pyvalue_err)
+    fn py_new(period: usize, price_type: Option<PriceType>) -> Self {
+        Self::new(period, price_type)
     }
 
     fn __repr__(&self) -> String {

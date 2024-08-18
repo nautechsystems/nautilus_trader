@@ -22,8 +22,8 @@ use crate::{average::MovingAverageType, indicator::Indicator, momentum::stochast
 #[pymethods]
 impl Stochastics {
     #[new]
-    pub fn py_new(period_k: usize, period_d: usize) -> PyResult<Self> {
-        Self::new(period_k, period_d).map_err(to_pyvalue_err)
+    pub fn py_new(period_k: usize, period_d: usize) -> Self {
+        Self::new(period_k, period_d)
     }
 
     fn __repr__(&self) -> String {

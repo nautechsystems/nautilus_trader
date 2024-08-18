@@ -22,8 +22,8 @@ use crate::{average::MovingAverageType, indicator::Indicator, momentum::bb::Boll
 #[pymethods]
 impl BollingerBands {
     #[new]
-    pub fn py_new(period: usize, k: f64, ma_type: Option<MovingAverageType>) -> PyResult<Self> {
-        Self::new(period, k, ma_type).map_err(to_pyvalue_err)
+    pub fn py_new(period: usize, k: f64, ma_type: Option<MovingAverageType>) -> Self {
+        Self::new(period, k, ma_type)
     }
 
     fn __repr__(&self) -> String {
