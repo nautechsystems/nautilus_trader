@@ -20,7 +20,10 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::python::{get_pytype_name, to_pytype_err, to_pyvalue_err};
+use nautilus_core::{
+    correctness::check_in_range_inclusive_f64,
+    python::{get_pytype_name, to_pytype_err, to_pyvalue_err},
+};
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
@@ -29,14 +32,19 @@ use pyo3::{
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 
-use crate::types::{fixed::fixed_i64_to_f64, price::Price};
+use crate::types::{
+    fixed::{check_fixed_precision, fixed_i64_to_f64},
+    price::{Price, PRICE_MAX, PRICE_MIN},
+};
 
 #[pymethods]
 impl Price {
     #[new]
     fn py_new(value: f64, precision: u8) -> PyResult<Self> {
-        std::panic::catch_unwind(|| Self::new(value, precision))
-            .map_err(|e| PyErr::new::<PyValueError, _>(format!("{e:?}")))
+        check_in_range_inclusive_f64(value, PRICE_MIN, PRICE_MAX, "value")
+            .map_err(to_pyvalue_err)?;
+        check_fixed_precision(precision).map_err(to_pyvalue_err)?;
+        Ok(Self::new(value, precision))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {

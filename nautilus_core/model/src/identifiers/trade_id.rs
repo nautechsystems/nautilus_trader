@@ -25,7 +25,7 @@ use nautilus_core::correctness::{check_in_range_inclusive_usize, check_valid_str
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// The maximum length of ASCII characters for a `TradeId` string value (including null terminator).
-const TRADE_ID_LEN: usize = 37;
+pub const TRADE_ID_LEN: usize = 37;
 
 /// Represents a valid trade match ID (assigned by a trading venue).
 ///
@@ -38,7 +38,7 @@ const TRADE_ID_LEN: usize = 37;
 )]
 pub struct TradeId {
     /// The trade match ID value as a fixed-length C string byte array (includes null terminator).
-    pub(crate) value: [u8; 37], // cbindgen issue using the constant in the array
+    pub(crate) value: [u8; TRADE_ID_LEN],
 }
 
 impl TradeId {

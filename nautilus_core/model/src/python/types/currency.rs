@@ -15,7 +15,10 @@
 
 use std::str::FromStr;
 
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_core::{
+    correctness::check_valid_string,
+    python::{to_pyruntime_err, to_pyvalue_err},
+};
 use pyo3::{
     exceptions::{PyRuntimeError, PyValueError},
     prelude::*,
@@ -24,7 +27,10 @@ use pyo3::{
 };
 use ustr::Ustr;
 
-use crate::{enums::CurrencyType, types::currency::Currency};
+use crate::{
+    enums::CurrencyType,
+    types::{currency::Currency, fixed::check_fixed_precision},
+};
 
 #[pymethods]
 impl Currency {
@@ -36,8 +42,10 @@ impl Currency {
         name: &str,
         currency_type: CurrencyType,
     ) -> PyResult<Self> {
-        std::panic::catch_unwind(|| Self::new(code, precision, iso4217, name, currency_type))
-            .map_err(|e| PyErr::new::<PyValueError, _>(format!("{e:?}")))
+        check_valid_string(code, "code").map_err(to_pyvalue_err)?;
+        check_valid_string(name, "name").map_err(to_pyvalue_err)?;
+        check_fixed_precision(precision).map_err(to_pyvalue_err)?;
+        Ok(Self::new(code, precision, iso4217, name, currency_type))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
