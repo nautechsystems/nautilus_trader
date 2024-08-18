@@ -99,6 +99,7 @@ impl Indicator for BollingerBands {
 
 impl BollingerBands {
     /// Creates a new [`BollingerBands`] instance.
+    #[must_use]
     pub fn new(period: usize, k: f64, ma_type: Option<MovingAverageType>) -> Self {
         Self {
             period,

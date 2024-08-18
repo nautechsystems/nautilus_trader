@@ -66,7 +66,8 @@ pub struct OrderMatchingEngineConfig {
 }
 
 impl OrderMatchingEngineConfig {
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         bar_execution: bool,
         reject_stop_orders: bool,
         support_gtd_orders: bool,
@@ -76,9 +77,9 @@ impl OrderMatchingEngineConfig {
         use_reduce_only: bool,
     ) -> Self {
         Self {
-            support_gtd_orders,
             bar_execution,
             reject_stop_orders,
+            support_gtd_orders,
             support_contingent_orders,
             use_position_ids,
             use_random_ids,

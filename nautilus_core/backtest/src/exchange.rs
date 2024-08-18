@@ -103,7 +103,7 @@ impl SimulatedExchange {
             anyhow::bail!("single-currency account has multiple starting currencies")
         }
         // TODO register and load modules
-        Ok(SimulatedExchange {
+        Ok(Self {
             id: venue,
             oms_type,
             account_type,

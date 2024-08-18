@@ -73,6 +73,7 @@ impl Indicator for OnBalanceVolume {
 
 impl OnBalanceVolume {
     /// Creates a new [`OnBalanceVolume`] instance.
+    #[must_use]
     pub fn new(period: usize) -> Self {
         Self {
             period,

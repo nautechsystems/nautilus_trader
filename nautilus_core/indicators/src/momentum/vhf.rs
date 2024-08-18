@@ -77,6 +77,7 @@ impl Indicator for VerticalHorizontalFilter {
 
 impl VerticalHorizontalFilter {
     /// Creates a new [`VerticalHorizontalFilter`] instance.
+    #[must_use]
     pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
         Self {
             period,

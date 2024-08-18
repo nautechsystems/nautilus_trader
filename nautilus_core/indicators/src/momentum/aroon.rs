@@ -92,6 +92,7 @@ impl Indicator for AroonOscillator {
 
 impl AroonOscillator {
     /// Creates a new [`AroonOscillator`] instance.
+    #[must_use]
     pub fn new(period: usize) -> Self {
         Self {
             period,

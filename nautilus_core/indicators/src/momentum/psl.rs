@@ -74,6 +74,7 @@ impl Indicator for PsychologicalLine {
 
 impl PsychologicalLine {
     /// Creates a new [`PsychologicalLine`] instance.
+    #[must_use]
     pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
         Self {
             period,

@@ -81,6 +81,7 @@ impl Indicator for KeltnerPosition {
 
 impl KeltnerPosition {
     /// Creates a new [`KeltnerPosition`] instance.
+    #[must_use]
     pub fn new(
         period: usize,
         k_multiplier: f64,

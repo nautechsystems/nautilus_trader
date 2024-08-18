@@ -53,6 +53,7 @@ impl Display for WeightedMovingAverage {
 
 impl WeightedMovingAverage {
     /// Creates a new [`WeightedMovingAverage`] instance.
+    #[must_use]
     pub fn new(period: usize, weights: Vec<f64>, price_type: Option<PriceType>) -> Self {
         assert_eq!(
             weights.len(),
@@ -169,7 +170,7 @@ mod tests {
     #[rstest]
     #[should_panic]
     fn test_different_weights_len_and_period_error() {
-        WeightedMovingAverage::new(10, vec![0.5, 0.5, 0.5], None);
+        let _ = WeightedMovingAverage::new(10, vec![0.5, 0.5, 0.5], None);
     }
 
     #[rstest]

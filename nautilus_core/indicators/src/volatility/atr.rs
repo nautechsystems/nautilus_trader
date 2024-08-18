@@ -84,6 +84,7 @@ impl Indicator for AverageTrueRange {
 
 impl AverageTrueRange {
     /// Creates a new [`AverageTrueRange`] instance.
+    #[must_use]
     pub fn new(
         period: usize,
         ma_type: Option<MovingAverageType>,

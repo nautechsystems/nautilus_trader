@@ -70,6 +70,7 @@ impl Indicator for RateOfChange {
 
 impl RateOfChange {
     /// Creates a new [`RateOfChange`] instance.
+    #[must_use]
     pub fn new(period: usize, use_log: Option<bool>) -> Self {
         Self {
             period,

@@ -81,6 +81,7 @@ impl Indicator for KeltnerChannel {
 
 impl KeltnerChannel {
     /// Creates a new [`KeltnerChannel`] instance.
+    #[must_use]
     pub fn new(
         period: usize,
         k_multiplier: f64,

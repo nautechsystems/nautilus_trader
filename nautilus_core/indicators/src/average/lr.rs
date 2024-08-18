@@ -76,6 +76,7 @@ impl Indicator for LinearRegression {
 
 impl LinearRegression {
     /// Creates a new [`LinearRegression`] instance.
+    #[must_use]
     pub fn new(period: usize) -> Self {
         Self {
             period,

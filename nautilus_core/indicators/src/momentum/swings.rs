@@ -89,6 +89,7 @@ impl Indicator for Swings {
 
 impl Swings {
     /// Creates a new [`Swings`] instance.
+    #[must_use]
     pub fn new(period: usize) -> Self {
         Self {
             period,

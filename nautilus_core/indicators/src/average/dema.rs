@@ -88,6 +88,7 @@ impl Indicator for DoubleExponentialMovingAverage {
 
 impl DoubleExponentialMovingAverage {
     /// Creates a new [`DoubleExponentialMovingAverage`] instance.
+    #[must_use]
     pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
         Self {
             period,

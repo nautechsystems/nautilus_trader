@@ -79,6 +79,7 @@ impl Indicator for VolatilityRatio {
 
 impl VolatilityRatio {
     /// Creates a new [`VolatilityRatio`] instance.
+    #[must_use]
     pub fn new(
         fast_period: usize,
         slow_period: usize,

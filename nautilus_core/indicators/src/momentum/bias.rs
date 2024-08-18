@@ -73,6 +73,7 @@ impl Indicator for Bias {
 
 impl Bias {
     /// Creates a new [`Bias`] instance.
+    #[must_use]
     pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
         Self {
             period,
