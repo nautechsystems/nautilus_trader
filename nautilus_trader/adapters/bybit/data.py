@@ -222,7 +222,7 @@ class BybitDataClient(LiveMarketDataClient):
 
     async def _disconnect(self) -> None:
         if self._update_instruments_task:
-            self._log.debug("Cancelling `update_instruments` task")
+            self._log.debug("Canceling task 'update_instruments'")
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
         for ws_client in self._ws_clients.values():
@@ -239,14 +239,14 @@ class BybitDataClient(LiveMarketDataClient):
         try:
             while True:
                 self._log.debug(
-                    f"Scheduled `update_instruments` to run in "
+                    f"Scheduled task 'update_instruments' to run in "
                     f"{self._update_instrument_interval}s",
                 )
                 await asyncio.sleep(self._update_instrument_interval)
                 await self._instrument_provider.load_all_async()
                 self._send_all_instruments_to_data_engine()
         except asyncio.CancelledError:
-            self._log.debug("Canceled `update_instruments` task")
+            self._log.debug("Canceled task 'update_instruments'")
 
     async def _subscribe_order_book_deltas(
         self,
@@ -376,10 +376,13 @@ class BybitDataClient(LiveMarketDataClient):
         self._topic_bar_type.pop(topic, None)
         await ws_client.unsubscribe_klines(bybit_symbol.raw_symbol, interval_str)
 
-    def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
-        bybit_symbol = BybitSymbol(symbol)
-        nautilus_instrument_id: InstrumentId = bybit_symbol.parse_as_nautilus()
-        return nautilus_instrument_id
+    def _get_cached_instrument_id(
+        self,
+        symbol: str,
+        product_type: BybitProductType,
+    ) -> InstrumentId:
+        bybit_symbol = BybitSymbol(f"{symbol}-{product_type.value.upper()}")
+        return bybit_symbol.to_instrument_id()
 
     async def _request(self, data_type: DataType, correlation_id: UUID4) -> None:
         if data_type.type == BybitTickerData:
@@ -595,9 +598,7 @@ class BybitDataClient(LiveMarketDataClient):
 
     def _handle_orderbook(self, product_type: BybitProductType, raw: bytes, topic: str) -> None:
         msg = self._decoder_ws_orderbook.decode(raw)
-        symbol = msg.data.s + f"-{product_type.value.upper()}"
-        instrument_id: InstrumentId = self._get_cached_instrument_id(symbol)
-
+        instrument_id = self._get_cached_instrument_id(msg.data.s, product_type)
         instrument = self._cache.instrument(instrument_id)
         if instrument is None:
             self._log.error(f"Cannot parse order book data: no instrument for {instrument_id}")
@@ -645,10 +646,8 @@ class BybitDataClient(LiveMarketDataClient):
 
         msg = decoder.decode(raw)
         try:
-            symbol = msg.data.symbol + f"-{product_type.value.upper()}"
-            instrument_id: InstrumentId = self._get_cached_instrument_id(symbol)
+            instrument_id = self._get_cached_instrument_id(msg.data.symbol, product_type)
             instrument = self._cache.instrument(instrument_id)
-
             if instrument is None:
                 self._log.error(f"Cannot parse trade data: no instrument for {instrument_id}")
                 return
@@ -697,10 +696,8 @@ class BybitDataClient(LiveMarketDataClient):
         msg = self._decoder_ws_trade.decode(raw)
         try:
             for data in msg.data:
-                symbol = data.s + f"-{product_type.value.upper()}"
-                instrument_id: InstrumentId = self._get_cached_instrument_id(symbol)
+                instrument_id = self._get_cached_instrument_id(data.s, product_type)
                 instrument = self._cache.instrument(instrument_id)
-
                 if instrument is None:
                     self._log.error(f"Cannot parse trade data: no instrument for {instrument_id}")
                     return

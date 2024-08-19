@@ -81,6 +81,7 @@ impl Indicator for KeltnerPosition {
 
 impl KeltnerPosition {
     /// Creates a new [`KeltnerPosition`] instance.
+    #[must_use]
     pub fn new(
         period: usize,
         k_multiplier: f64,
@@ -88,8 +89,8 @@ impl KeltnerPosition {
         ma_type_atr: Option<MovingAverageType>,
         use_previous: Option<bool>,
         atr_floor: Option<f64>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             period,
             k_multiplier,
             ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
@@ -106,9 +107,8 @@ impl KeltnerPosition {
                 ma_type_atr,
                 use_previous,
                 atr_floor,
-            )
-            .unwrap(),
-        })
+            ),
+        }
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64) {

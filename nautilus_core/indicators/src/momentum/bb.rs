@@ -99,8 +99,9 @@ impl Indicator for BollingerBands {
 
 impl BollingerBands {
     /// Creates a new [`BollingerBands`] instance.
-    pub fn new(period: usize, k: f64, ma_type: Option<MovingAverageType>) -> anyhow::Result<Self> {
-        Ok(Self {
+    #[must_use]
+    pub fn new(period: usize, k: f64, ma_type: Option<MovingAverageType>) -> Self {
+        Self {
             period,
             k,
             ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
@@ -111,7 +112,7 @@ impl BollingerBands {
             lower: 0.0,
             ma: MovingAverageFactory::create(ma_type.unwrap_or(MovingAverageType::Simple), period),
             prices: VecDeque::with_capacity(period),
-        })
+        }
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64) {

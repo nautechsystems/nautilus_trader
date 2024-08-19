@@ -267,7 +267,7 @@ class BybitExecutionClient(LiveExecutionClient):
                     report = bybit_order.parse_to_order_status_report(
                         client_order_id=client_order_id,
                         account_id=self.account_id,
-                        instrument_id=bybit_symbol.parse_as_nautilus(),
+                        instrument_id=bybit_symbol.to_instrument_id(),
                         report_id=UUID4(),
                         enum_parser=self._enum_parser,
                         ts_init=self._clock.timestamp_ns(),
@@ -379,7 +379,7 @@ class BybitExecutionClient(LiveExecutionClient):
                     )
                     report = bybit_fill.parse_to_fill_report(
                         account_id=self.account_id,
-                        instrument_id=bybit_symbol.parse_as_nautilus(),
+                        instrument_id=bybit_symbol.to_instrument_id(),
                         report_id=UUID4(),
                         enum_parser=self._enum_parser,
                         ts_init=self._clock.timestamp_ns(),
@@ -401,28 +401,42 @@ class BybitExecutionClient(LiveExecutionClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> list[PositionStatusReport]:
-        self._log.info("Requesting PositionStatusReports...")
         reports: list[PositionStatusReport] = []
 
         try:
-            for product_type in self._product_types:
-                if product_type == BybitProductType.SPOT:
-                    continue  # No positions on spot
-                positions = await self._http_account.query_position_info(product_type)
+            if instrument_id:
+                self._log.info(f"Requesting PositionStatusReport for {instrument_id}")
+                bybit_symbol = BybitSymbol(instrument_id.symbol.value)
+                positions = await self._http_account.query_position_info(
+                    bybit_symbol.product_type,
+                    bybit_symbol.raw_symbol,
+                )
                 for position in positions:
-                    # Uncomment for development
-                    # self._log.info(f"Generating report {position}", LogColor.MAGENTA)
-                    instr: InstrumentId = BybitSymbol(
-                        position.symbol + "-" + product_type.value.upper(),
-                    ).parse_as_nautilus()
                     position_report = position.parse_to_position_status_report(
                         account_id=self.account_id,
-                        instrument_id=instr,
+                        instrument_id=instrument_id,
                         report_id=UUID4(),
                         ts_init=self._clock.timestamp_ns(),
                     )
                     self._log.debug(f"Received {position_report}")
                     reports.append(position_report)
+            else:
+                self._log.info("Requesting PositionStatusReports...")
+                for product_type in self._product_types:
+                    if product_type == BybitProductType.SPOT:
+                        continue  # No positions on spot
+                    positions = await self._http_account.query_position_info(product_type)
+                    for position in positions:
+                        symbol = position.symbol
+                        bybit_symbol = BybitSymbol(f"{symbol}-{product_type.value.upper()}")
+                        position_report = position.parse_to_position_status_report(
+                            account_id=self.account_id,
+                            instrument_id=bybit_symbol.to_instrument_id(),
+                            report_id=UUID4(),
+                            ts_init=self._clock.timestamp_ns(),
+                        )
+                        self._log.debug(f"Received {position_report}")
+                        reports.append(position_report)
         except BybitError as e:
             self._log.error(f"Failed to generate PositionReports: {e}")
 
@@ -432,10 +446,13 @@ class BybitExecutionClient(LiveExecutionClient):
 
         return reports
 
-    def _get_cached_instrument_id(self, symbol: str, category: str) -> InstrumentId:
-        bybit_symbol = BybitSymbol(symbol + f"-{category.upper()}")
-        nautilus_instrument_id: InstrumentId = bybit_symbol.parse_as_nautilus()
-        return nautilus_instrument_id
+    def _get_cached_instrument_id(
+        self,
+        symbol: str,
+        product_type: BybitProductType,
+    ) -> InstrumentId:
+        bybit_symbol = BybitSymbol(f"{symbol}-{product_type.value.upper()}")
+        return bybit_symbol.to_instrument_id()
 
     def _get_cache_active_symbols(self) -> set[str]:
         # Check cache for all active orders

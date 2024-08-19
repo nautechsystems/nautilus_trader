@@ -294,7 +294,9 @@ impl Log for Logger {
     }
 
     fn flush(&self) {
-        self.tx.send(LogEvent::Flush).unwrap();
+        if let Err(e) = self.tx.send(LogEvent::Flush) {
+            eprintln!("Error sending flush log event: {e}");
+        }
     }
 }
 
@@ -348,7 +350,7 @@ impl Logger {
                         .expect("Error spawning `logging` thread"),
                 );
 
-                let max_level = log::LevelFilter::Debug;
+                let max_level = log::LevelFilter::Trace;
                 set_max_level(max_level);
                 if print_config {
                     println!("Logger set as `log` implementation with max level {max_level}");
@@ -458,6 +460,9 @@ pub fn log(level: LogLevel, color: LogColor, component: Ustr, message: &str) {
 
     match level {
         LogLevel::Off => {}
+        LogLevel::Trace => {
+            log::trace!(component = component.to_value(), color = color; "{}", message);
+        }
         LogLevel::Debug => {
             log::debug!(component = component.to_value(), color = color; "{}", message);
         }

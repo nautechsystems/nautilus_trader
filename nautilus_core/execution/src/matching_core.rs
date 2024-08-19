@@ -42,6 +42,8 @@ pub struct OrderMatchingCore {
     pub ask: Option<Price>,
     /// The last price for the matching core.
     pub last: Option<Price>,
+    pub is_bid_initialized: bool,
+    pub is_ask_initialized: bool,
     orders_bid: Vec<PassiveOrderAny>,
     orders_ask: Vec<PassiveOrderAny>,
     trigger_stop_order: Option<fn(&StopOrderAny)>,
@@ -65,6 +67,8 @@ impl OrderMatchingCore {
             bid: None,
             ask: None,
             last: None,
+            is_bid_initialized: false,
+            is_ask_initialized: false,
             orders_bid: Vec::new(),
             orders_ask: Vec::new(),
             trigger_stop_order,
@@ -486,6 +490,9 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None,
+            None,
         );
 
         let result = matching_core.is_stop_matched(&order.into());
@@ -520,6 +527,9 @@ mod tests {
             order_side,
             trigger_price,
             Quantity::from("100"),
+            None,
+            None,
+            None,
             None,
             None,
             None,

@@ -78,6 +78,7 @@ from nautilus_trader.model.events.order cimport OrderTriggered
 from nautilus_trader.model.events.order cimport OrderUpdated
 from nautilus_trader.model.functions cimport liquidity_side_to_str
 from nautilus_trader.model.functions cimport order_type_to_str
+from nautilus_trader.model.functions cimport time_in_force_to_str
 from nautilus_trader.model.identifiers cimport AccountId
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport InstrumentId
@@ -881,7 +882,12 @@ cdef class OrderMatchingEngine:
     cdef void _process_market_order(self, MarketOrder order):
         # Check AT_THE_OPEN/AT_THE_CLOSE time in force
         if order.time_in_force == TimeInForce.AT_THE_OPEN or order.time_in_force == TimeInForce.AT_THE_CLOSE:
-            self._process_auction_market_order(order)
+            self._log.error(
+                f"Market auction for time in force {time_in_force_to_str(order.time_in_force)} "
+                "is not currently supported",
+            )
+            # TODO: This functionality needs reimplementing
+            # self._process_auction_market_order(order)
             return
 
         # Check market exists

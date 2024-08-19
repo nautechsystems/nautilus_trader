@@ -15,8 +15,11 @@
 
 import pytest
 
+from nautilus_trader.adapters.binance.common.enums import BinanceFuturesPositionSide
+from nautilus_trader.adapters.binance.common.enums import BinanceKlineInterval
 from nautilus_trader.adapters.binance.common.enums import BinanceOrderType
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceCandlestick
+from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEnumParser
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesBalanceInfo
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEnumParser
 from nautilus_trader.core.datetime import millis_to_nanos
@@ -26,6 +29,7 @@ from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import OrderType
 from nautilus_trader.model.enums import PriceType
+from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
@@ -33,8 +37,9 @@ BTCUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()
 
 
 class TestBinanceCommonParsing:
-    def __init__(self) -> None:
+    def setup(self):
         self._spot_enum_parser = BinanceSpotEnumParser()
+        self._futures_enum_parser = BinanceFuturesEnumParser()
 
     @pytest.mark.parametrize(
         ("order_type", "expected"),
@@ -60,7 +65,15 @@ class TestBinanceCommonParsing:
         ("resolution", "expected_type"),
         [
             [
-                "1m",
+                BinanceKlineInterval("1s"),
+                BarType(
+                    BTCUSDT_BINANCE.id,
+                    BarSpecification(1, BarAggregation.SECOND, PriceType.LAST),
+                    AggregationSource.EXTERNAL,
+                ),
+            ],
+            [
+                BinanceKlineInterval("1m"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST),
@@ -68,7 +81,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "3m",
+                BinanceKlineInterval("3m"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(3, BarAggregation.MINUTE, PriceType.LAST),
@@ -76,7 +89,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "5m",
+                BinanceKlineInterval("5m"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(5, BarAggregation.MINUTE, PriceType.LAST),
@@ -84,7 +97,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "15m",
+                BinanceKlineInterval("15m"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(15, BarAggregation.MINUTE, PriceType.LAST),
@@ -92,7 +105,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "30m",
+                BinanceKlineInterval("30m"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(30, BarAggregation.MINUTE, PriceType.LAST),
@@ -100,7 +113,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "1h",
+                BinanceKlineInterval("1h"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(1, BarAggregation.HOUR, PriceType.LAST),
@@ -108,7 +121,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "2h",
+                BinanceKlineInterval("2h"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(2, BarAggregation.HOUR, PriceType.LAST),
@@ -116,7 +129,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "4h",
+                BinanceKlineInterval("4h"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(4, BarAggregation.HOUR, PriceType.LAST),
@@ -124,7 +137,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "6h",
+                BinanceKlineInterval("6h"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(6, BarAggregation.HOUR, PriceType.LAST),
@@ -132,7 +145,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "8h",
+                BinanceKlineInterval("8h"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(8, BarAggregation.HOUR, PriceType.LAST),
@@ -140,7 +153,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "12h",
+                BinanceKlineInterval("12h"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(12, BarAggregation.HOUR, PriceType.LAST),
@@ -148,7 +161,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "1d",
+                BinanceKlineInterval("1d"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(1, BarAggregation.DAY, PriceType.LAST),
@@ -156,7 +169,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "3d",
+                BinanceKlineInterval("3d"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(3, BarAggregation.DAY, PriceType.LAST),
@@ -164,7 +177,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "1w",
+                BinanceKlineInterval("1w"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(1, BarAggregation.WEEK, PriceType.LAST),
@@ -172,7 +185,7 @@ class TestBinanceCommonParsing:
                 ),
             ],
             [
-                "1M",
+                BinanceKlineInterval("1M"),
                 BarType(
                     BTCUSDT_BINANCE.id,
                     BarSpecification(1, BarAggregation.MONTH, PriceType.LAST),
@@ -212,6 +225,24 @@ class TestBinanceCommonParsing:
 
         # Assert
         assert bar.bar_type == expected_type
+
+    @pytest.mark.parametrize(
+        ("position_id", "expected"),
+        [
+            [PositionId("P-20240817-BTCUSDT-LONG"), BinanceFuturesPositionSide.LONG],
+            [PositionId("P-20240817-BTCUSDT-SHORT"), BinanceFuturesPositionSide.SHORT],
+            [PositionId("P-20240817-BTCUSDT-BOTH"), BinanceFuturesPositionSide.BOTH],
+        ],
+    )
+    def test_parse_position_id_to_binance_futures_position_side(self, position_id, expected):
+        # Arrange, Act
+        print(position_id)
+        result = self._futures_enum_parser.parse_position_id_to_binance_futures_position_side(
+            position_id,
+        )
+
+        # Assert
+        assert result == expected
 
 
 def test_binance_futures_parse_to_balances() -> None:

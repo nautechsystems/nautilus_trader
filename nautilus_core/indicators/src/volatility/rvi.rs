@@ -93,12 +93,9 @@ impl Indicator for RelativeVolatilityIndex {
 
 impl RelativeVolatilityIndex {
     /// Creates a new [`RelativeVolatilityIndex`] instance.
-    pub fn new(
-        period: usize,
-        scalar: Option<f64>,
-        ma_type: Option<MovingAverageType>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    #[must_use]
+    pub fn new(period: usize, scalar: Option<f64>, ma_type: Option<MovingAverageType>) -> Self {
+        Self {
             period,
             scalar: scalar.unwrap_or(100.0),
             ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
@@ -117,7 +114,7 @@ impl RelativeVolatilityIndex {
             previous_close: 0.0,
             std: 0.0,
             has_inputs: false,
-        })
+        }
     }
 
     pub fn update_raw(&mut self, close: f64) {

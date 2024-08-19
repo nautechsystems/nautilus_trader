@@ -15,6 +15,7 @@
 
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
+from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.rust.model cimport OrderSide
@@ -50,9 +51,16 @@ cdef class ExecutionEngine(Component):
     cdef readonly dict[Venue, ExecutionClient] _routing_map
     cdef readonly dict[StrategyId, OmsType] _oms_overrides
     cdef readonly dict[InstrumentId, StrategyId] _external_order_claims
+    cdef readonly str snapshot_positions_timer_name
 
     cdef readonly bint debug
     """If debug mode is active (will provide extra debug logging).\n\n:returns: `bool`"""
+    cdef readonly bint snapshot_orders
+    """If order state snapshots should be persisted.\n\n:returns: `bool`"""
+    cdef readonly bint snapshot_positions
+    """If position state snapshots should be persisted.\n\n:returns: `bool`"""
+    cdef readonly double snapshot_positions_interval_secs
+    """The interval (seconds) at which additional position state snapshots are persisted.\n\n:returns: `double`"""
     cdef readonly int command_count
     """The total count of commands received by the engine.\n\n:returns: `int`"""
     cdef readonly int event_count
@@ -120,5 +128,6 @@ cdef class ExecutionEngine(Component):
     cpdef void _update_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type)
     cpdef bint _will_flip_position(self, Position position, OrderFilled fill)
     cpdef void _flip_position(self, Instrument instrument, Position position, OrderFilled fill, OmsType oms_type)
-    cpdef void _publish_order_snapshot(self, Order order)
-    cpdef void _publish_position_snapshot(self, Position position)
+    cpdef void _create_order_state_snapshot(self, Order order)
+    cpdef void _create_position_state_snapshot(self, Position position)
+    cpdef void _snapshot_open_position_states(self, TimeEvent event)

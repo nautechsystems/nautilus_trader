@@ -19,7 +19,7 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::correctness::check_valid_string;
+use nautilus_core::correctness::{check_valid_string, FAILED};
 use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
 
@@ -48,18 +48,17 @@ impl Currency {
         iso4217: u16,
         name: &str,
         currency_type: CurrencyType,
-    ) -> anyhow::Result<Self> {
-        check_valid_string(code, "code")?;
-        check_valid_string(name, "name")?;
-        check_fixed_precision(precision)?;
-
-        Ok(Self {
+    ) -> Self {
+        check_valid_string(code, "code").expect(FAILED);
+        check_valid_string(name, "name").expect(FAILED);
+        check_fixed_precision(precision).expect(FAILED);
+        Self {
             code: Ustr::from(code),
             precision,
             iso4217,
             name: Ustr::from(name),
             currency_type,
-        })
+        }
     }
 
     pub fn register(currency: Self, overwrite: bool) -> anyhow::Result<()> {
@@ -142,7 +141,9 @@ impl FromStr for Currency {
 
 impl From<&str> for Currency {
     fn from(input: &str) -> Self {
-        input.parse().unwrap()
+        input
+            .parse()
+            .expect("Currency string representation should be valid")
     }
 }
 
@@ -194,20 +195,19 @@ mod tests {
     #[rstest]
     #[should_panic(expected = "code")]
     fn test_invalid_currency_code() {
-        let _ = Currency::new("", 2, 840, "United States dollar", CurrencyType::Fiat).unwrap();
+        let _ = Currency::new("", 2, 840, "United States dollar", CurrencyType::Fiat);
     }
 
     #[rstest]
     #[should_panic(expected = "Condition failed: `precision` was greater than the maximum ")]
     fn test_invalid_precision() {
         // Precision out of range for fixed
-        let _ = Currency::new("USD", 10, 840, "United States dollar", CurrencyType::Fiat).unwrap();
+        let _ = Currency::new("USD", 10, 840, "United States dollar", CurrencyType::Fiat);
     }
 
     #[rstest]
     fn test_new_for_fiat() {
-        let currency =
-            Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat).unwrap();
+        let currency = Currency::new("AUD", 2, 36, "Australian dollar", CurrencyType::Fiat);
         assert_eq!(currency, currency);
         assert_eq!(currency.code.as_str(), "AUD");
         assert_eq!(currency.precision, 2);
@@ -218,7 +218,7 @@ mod tests {
 
     #[rstest]
     fn test_new_for_crypto() {
-        let currency = Currency::new("ETH", 8, 0, "Ether", CurrencyType::Crypto).unwrap();
+        let currency = Currency::new("ETH", 8, 0, "Ether", CurrencyType::Crypto);
         assert_eq!(currency, currency);
         assert_eq!(currency.code.as_str(), "ETH");
         assert_eq!(currency.precision, 8);
@@ -229,10 +229,8 @@ mod tests {
 
     #[rstest]
     fn test_equality() {
-        let currency1 =
-            Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat).unwrap();
-        let currency2 =
-            Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat).unwrap();
+        let currency1 = Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat);
+        let currency2 = Currency::new("USD", 2, 840, "United States dollar", CurrencyType::Fiat);
         assert_eq!(currency1, currency2);
     }
 

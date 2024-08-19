@@ -51,7 +51,7 @@ impl<'r> FromRow<'r, PgRow> for TradeTickModel {
             .map(|x| x.0)?;
         let trade_id = row
             .try_get::<&str, _>("venue_trade_id")
-            .map(|x| TradeId::from_str(x).unwrap())?;
+            .map(TradeId::from)?;
         let ts_event = row
             .try_get::<String, _>("ts_event")
             .map(|res| UnixNanos::from(res.as_str()))?;

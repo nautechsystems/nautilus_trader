@@ -7,6 +7,11 @@
 
 #define DEPTH10_LEN 10
 
+/**
+ * The maximum length of ASCII characters for a `TradeId` string value (including null terminator).
+ */
+#define TRADE_ID_LEN 37
+
 #define FIXED_PRECISION 9
 
 #define FIXED_SCALAR 1000000000.0
@@ -1008,7 +1013,7 @@ typedef struct TradeId_t {
     /**
      * The trade match ID value as a fixed-length C string byte array (includes null terminator).
      */
-    uint8_t value[37];
+    uint8_t value[TRADE_ID_LEN];
 } TradeId_t;
 
 /**

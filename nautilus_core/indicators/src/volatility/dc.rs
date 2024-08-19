@@ -75,8 +75,9 @@ impl Indicator for DonchianChannel {
 
 impl DonchianChannel {
     /// Creates a new [`DonchianChannel`] instance.
-    pub fn new(period: usize) -> anyhow::Result<Self> {
-        Ok(Self {
+    #[must_use]
+    pub fn new(period: usize) -> Self {
+        Self {
             period,
             upper: 0.0,
             middle: 0.0,
@@ -85,7 +86,7 @@ impl DonchianChannel {
             lower_prices: VecDeque::with_capacity(period),
             has_inputs: false,
             initialized: false,
-        })
+        }
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64) {

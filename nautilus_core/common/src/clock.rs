@@ -19,7 +19,7 @@ use std::{collections::HashMap, ops::Deref};
 
 use chrono::{DateTime, Utc};
 use nautilus_core::{
-    correctness::{check_positive_u64, check_predicate_true, check_valid_string},
+    correctness::{check_positive_u64, check_predicate_true, check_valid_string, FAILED},
     nanos::UnixNanos,
     time::{get_atomic_clock_realtime, AtomicTime},
 };
@@ -69,7 +69,7 @@ pub trait Clock {
         name: &str,
         alert_time_ns: UnixNanos,
         callback: Option<EventHandler>,
-    ) -> anyhow::Result<()>;
+    );
 
     /// Set a `Timer` to start alerting at every interval
     /// between start and stop time. Optional callback gets
@@ -81,7 +81,7 @@ pub trait Clock {
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
         callback: Option<EventHandler>,
-    ) -> anyhow::Result<()>;
+    );
 
     fn next_time_ns(&self, name: &str) -> UnixNanos;
     fn cancel_timer(&mut self, name: &str);
@@ -146,7 +146,9 @@ impl TestClock {
                 let handler = self.callbacks.get(&event.name).cloned().unwrap_or_else(|| {
                     // If callback_py is None, use the default_callback_py
                     // TODO: clone for now
-                    self.default_callback.clone().unwrap()
+                    self.default_callback
+                        .clone()
+                        .expect("Default callback should exist")
                 });
                 create_time_event_handler(event, &handler)
             })
@@ -225,12 +227,13 @@ impl Clock for TestClock {
         name: &str,
         alert_time_ns: UnixNanos,
         callback: Option<EventHandler>,
-    ) -> anyhow::Result<()> {
-        check_valid_string(name, stringify!(name))?;
+    ) {
+        check_valid_string(name, stringify!(name)).expect(FAILED);
         check_predicate_true(
             callback.is_some() | self.default_callback.is_some(),
             "All Python callbacks were `None`",
-        )?;
+        )
+        .expect(FAILED);
 
         let name_ustr = Ustr::from(name);
         match callback {
@@ -244,9 +247,8 @@ impl Clock for TestClock {
             (alert_time_ns - time_ns).into(),
             time_ns,
             Some(alert_time_ns),
-        )?;
+        );
         self.timers.insert(name_ustr, timer);
-        Ok(())
     }
 
     fn set_timer_ns(
@@ -256,13 +258,14 @@ impl Clock for TestClock {
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
         callback: Option<EventHandler>,
-    ) -> anyhow::Result<()> {
-        check_valid_string(name, "name")?;
-        check_positive_u64(interval_ns, stringify!(interval_ns))?;
+    ) {
+        check_valid_string(name, "name").expect(FAILED);
+        check_positive_u64(interval_ns, stringify!(interval_ns)).expect(FAILED);
         check_predicate_true(
             callback.is_some() | self.default_callback.is_some(),
             "All Python callbacks were `None`",
-        )?;
+        )
+        .expect(FAILED);
 
         let name_ustr = Ustr::from(name);
         match callback {
@@ -270,9 +273,8 @@ impl Clock for TestClock {
             None => None,
         };
 
-        let timer = TestTimer::new(name, interval_ns, start_time_ns, stop_time_ns)?;
+        let timer = TestTimer::new(name, interval_ns, start_time_ns, stop_time_ns);
         self.timers.insert(name_ustr, timer);
-        Ok(())
     }
 
     fn next_time_ns(&self, name: &str) -> UnixNanos {
@@ -381,8 +383,8 @@ impl Clock for LiveClock {
         name: &str,
         mut alert_time_ns: UnixNanos,
         callback: Option<EventHandler>,
-    ) -> anyhow::Result<()> {
-        check_valid_string(name, stringify!(name)).unwrap();
+    ) {
+        check_valid_string(name, stringify!(name)).expect(FAILED);
         assert!(
             callback.is_some() | self.default_callback.is_some(),
             "No callbacks provided",
@@ -396,11 +398,10 @@ impl Clock for LiveClock {
         let ts_now = self.get_time_ns();
         alert_time_ns = std::cmp::max(alert_time_ns, ts_now);
         let interval_ns = (alert_time_ns - ts_now).into();
-        let mut timer = LiveTimer::new(name, interval_ns, ts_now, Some(alert_time_ns), callback)?;
+        let mut timer = LiveTimer::new(name, interval_ns, ts_now, Some(alert_time_ns), callback);
 
         timer.start();
         self.timers.insert(Ustr::from(name), timer);
-        Ok(())
     }
 
     fn set_timer_ns(
@@ -410,23 +411,23 @@ impl Clock for LiveClock {
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
         callback: Option<EventHandler>,
-    ) -> anyhow::Result<()> {
-        check_valid_string(name, stringify!(name))?;
-        check_positive_u64(interval_ns, stringify!(interval_ns))?;
+    ) {
+        check_valid_string(name, stringify!(name)).expect(FAILED);
+        check_positive_u64(interval_ns, stringify!(interval_ns)).expect(FAILED);
         check_predicate_true(
             callback.is_some() | self.default_callback.is_some(),
             "No callbacks provided",
-        )?;
+        )
+        .expect(FAILED);
 
         let callback = match callback {
             Some(callback) => callback,
             None => self.default_callback.clone().unwrap(),
         };
 
-        let mut timer = LiveTimer::new(name, interval_ns, start_time_ns, stop_time_ns, callback)?;
+        let mut timer = LiveTimer::new(name, interval_ns, start_time_ns, stop_time_ns, callback);
         timer.start();
         self.timers.insert(Ustr::from(name), timer);
-        Ok(())
     }
 
     fn next_time_ns(&self, name: &str) -> UnixNanos {

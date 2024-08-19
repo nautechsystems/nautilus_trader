@@ -31,6 +31,12 @@ pub trait FeeModel {
     ) -> anyhow::Result<Money>;
 }
 
+#[derive(Clone, Debug)]
+pub enum FeeModelAny {
+    Fixed(FixedFeeModel),
+    MakerTaker(MakerTakerFeeModel),
+}
+
 #[derive(Debug, Clone)]
 pub struct FixedFeeModel {
     commission: Money,
@@ -43,7 +49,7 @@ impl FixedFeeModel {
         if commission.as_f64() < 0.0 {
             anyhow::bail!("Commission must be greater than or equal to zero.")
         }
-        let zero_commission = Money::new(0.0, commission.currency)?;
+        let zero_commission = Money::new(0.0, commission.currency);
         Ok(Self {
             commission,
             zero_commission,
@@ -86,8 +92,8 @@ impl FeeModel for MakerTakerFeeModel {
             Some(LiquiditySide::NoLiquiditySide) | None => anyhow::bail!("Liquidity side not set."),
         };
         match instrument.is_inverse() {
-            true => Ok(Money::new(commission, instrument.base_currency().unwrap())?),
-            false => Ok(Money::new(commission, instrument.quote_currency())?),
+            true => Ok(Money::new(commission, instrument.base_currency().unwrap())),
+            false => Ok(Money::new(commission, instrument.quote_currency())),
         }
     }
 }
@@ -107,7 +113,7 @@ mod tests {
 
     #[rstest]
     fn test_fixed_model_single_fill() {
-        let expected_commission = Money::new(1.0, Currency::USD()).unwrap();
+        let expected_commission = Money::new(1.0, Currency::USD());
         let aud_usd = InstrumentAny::CurrencyPair(audusd_sim());
         let fee_model = FixedFeeModel::new(expected_commission, None).unwrap();
         let market_order = TestOrderStubs::market_order(

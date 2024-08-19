@@ -38,5 +38,5 @@ impl From<Rc<dyn MessageHandler>> for ShareableMessageHandler {
     }
 }
 
-// Message handlers are not expected to be sent across thread boundaries
+// SAFETY: Message handlers cannot be sent across thread boundaries
 unsafe impl Send for ShareableMessageHandler {}

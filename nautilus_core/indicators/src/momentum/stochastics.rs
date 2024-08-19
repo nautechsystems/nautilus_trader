@@ -78,8 +78,9 @@ impl Indicator for Stochastics {
 
 impl Stochastics {
     /// Creates a new [`Stochastics`] instance.
-    pub fn new(period_k: usize, period_d: usize) -> anyhow::Result<Self> {
-        Ok(Self {
+    #[must_use]
+    pub fn new(period_k: usize, period_d: usize) -> Self {
+        Self {
             period_k,
             period_d,
             has_inputs: false,
@@ -90,7 +91,7 @@ impl Stochastics {
             lows: VecDeque::with_capacity(period_k),
             h_sub_l: VecDeque::with_capacity(period_d),
             c_sub_1: VecDeque::with_capacity(period_d),
-        })
+        }
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64) {

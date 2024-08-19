@@ -17,7 +17,7 @@ use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
     correctness::{
-        check_equal_u8, check_positive_i64, check_valid_string, check_valid_string_optional,
+        check_equal_u8, check_positive_i64, check_valid_string, check_valid_string_optional, FAILED,
     },
     nanos::UnixNanos,
 };
@@ -47,9 +47,9 @@ pub struct OptionsContract {
     pub exchange: Option<Ustr>,
     pub underlying: Ustr,
     pub option_kind: OptionKind,
+    pub strike_price: Price,
     pub activation_ns: UnixNanos,
     pub expiration_ns: UnixNanos,
-    pub strike_price: Price,
     pub currency: Currency,
     pub price_precision: u8,
     pub price_increment: Price,
@@ -77,10 +77,10 @@ impl OptionsContract {
         exchange: Option<Ustr>,
         underlying: Ustr,
         option_kind: OptionKind,
-        activation_ns: UnixNanos,
-        expiration_ns: UnixNanos,
         strike_price: Price,
         currency: Currency,
+        activation_ns: UnixNanos,
+        expiration_ns: UnixNanos,
         price_precision: u8,
         price_increment: Price,
         multiplier: Quantity,
@@ -93,18 +93,19 @@ impl OptionsContract {
         margin_maint: Option<Decimal>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
-        check_valid_string_optional(exchange.map(|u| u.as_str()), stringify!(isin))?;
-        check_valid_string(underlying.as_str(), stringify!(underlying))?;
+    ) -> Self {
+        check_valid_string_optional(exchange.map(|u| u.as_str()), stringify!(isin)).expect(FAILED);
+        check_valid_string(underlying.as_str(), stringify!(underlying)).expect(FAILED);
         check_equal_u8(
             price_precision,
             price_increment.precision,
             stringify!(price_precision),
             stringify!(price_increment.precision),
-        )?;
-        check_positive_i64(price_increment.raw, stringify!(price_increment.raw))?;
+        )
+        .expect(FAILED);
+        check_positive_i64(price_increment.raw, stringify!(price_increment.raw)).expect(FAILED);
 
-        Ok(Self {
+        Self {
             id,
             raw_symbol,
             asset_class,
@@ -129,7 +130,7 @@ impl OptionsContract {
             margin_maint: margin_maint.unwrap_or(0.into()),
             ts_event,
             ts_init,
-        })
+        }
     }
 }
 

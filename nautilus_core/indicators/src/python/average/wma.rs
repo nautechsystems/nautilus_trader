@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
+use nautilus_core::{correctness::check_predicate_true, python::to_pyvalue_err};
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
@@ -33,7 +33,12 @@ impl WeightedMovingAverage {
         weights: Vec<f64>,
         price_type: Option<PriceType>,
     ) -> PyResult<Self> {
-        Self::new(period, weights, price_type).map_err(to_pyvalue_err)
+        check_predicate_true(
+            period == weights.len(),
+            "`period` must be equal to `weights` length",
+        )
+        .map_err(to_pyvalue_err);
+        Ok(Self::new(period, weights, price_type))
     }
 
     fn __repr__(&self) -> String {

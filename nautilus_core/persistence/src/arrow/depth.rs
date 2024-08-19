@@ -376,15 +376,15 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
                 for j in 0..DEPTH10_LEN {
                     bids[j] = BookOrder::new(
                         OrderSide::Buy,
-                        Price::from_raw(bid_prices[j].value(i), price_precision).unwrap(),
-                        Quantity::from_raw(bid_sizes[j].value(i), size_precision).unwrap(),
+                        Price::from_raw(bid_prices[j].value(i), price_precision),
+                        Quantity::from_raw(bid_sizes[j].value(i), size_precision),
                         0, // Order ID always zero
                     );
 
                     asks[j] = BookOrder::new(
                         OrderSide::Sell,
-                        Price::from_raw(ask_prices[j].value(i), price_precision).unwrap(),
-                        Quantity::from_raw(ask_sizes[j].value(i), size_precision).unwrap(),
+                        Price::from_raw(ask_prices[j].value(i), price_precision),
+                        Quantity::from_raw(ask_sizes[j].value(i), size_precision),
                         0, // Order ID always zero
                     );
                     bid_count_arr[j] = bid_counts[j].value(i);

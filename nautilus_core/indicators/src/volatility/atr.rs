@@ -84,13 +84,14 @@ impl Indicator for AverageTrueRange {
 
 impl AverageTrueRange {
     /// Creates a new [`AverageTrueRange`] instance.
+    #[must_use]
     pub fn new(
         period: usize,
         ma_type: Option<MovingAverageType>,
         use_previous: Option<bool>,
         value_floor: Option<f64>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             period,
             ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
             use_previous: use_previous.unwrap_or(true),
@@ -101,7 +102,7 @@ impl AverageTrueRange {
             ma: MovingAverageFactory::create(MovingAverageType::Simple, period),
             has_inputs: false,
             initialized: false,
-        })
+        }
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64) {
@@ -154,33 +155,31 @@ mod tests {
 
     #[rstest]
     fn test_name_returns_expected_string() {
-        let atr = AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None).unwrap();
+        let atr = AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None);
         assert_eq!(atr.name(), "AverageTrueRange");
     }
 
     #[rstest]
     fn test_str_repr_returns_expected_string() {
-        let atr = AverageTrueRange::new(10, Some(MovingAverageType::Simple), Some(true), Some(0.0))
-            .unwrap();
+        let atr = AverageTrueRange::new(10, Some(MovingAverageType::Simple), Some(true), Some(0.0));
         assert_eq!(format!("{atr}"), "AverageTrueRange(10,SIMPLE,true,0)");
     }
 
     #[rstest]
     fn test_period() {
-        let atr = AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None).unwrap();
+        let atr = AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None);
         assert_eq!(atr.period, 10);
     }
 
     #[rstest]
     fn test_initialized_without_inputs_returns_false() {
-        let atr = AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None).unwrap();
+        let atr = AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None);
         assert!(!atr.initialized());
     }
 
     #[rstest]
     fn test_initialized_with_required_inputs_returns_true() {
-        let mut atr =
-            AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None).unwrap();
+        let mut atr = AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None);
         for _ in 0..10 {
             atr.update_raw(1.0, 1.0, 1.0);
         }
@@ -189,14 +188,13 @@ mod tests {
 
     #[rstest]
     fn test_value_with_no_inputs_returns_zero() {
-        let atr = AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None).unwrap();
+        let atr = AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None);
         assert_eq!(atr.value, 0.0);
     }
 
     #[rstest]
     fn test_value_with_epsilon_input() {
-        let mut atr =
-            AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None).unwrap();
+        let mut atr = AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None);
         let epsilon = std::f64::EPSILON;
         atr.update_raw(epsilon, epsilon, epsilon);
         assert_eq!(atr.value, 0.0);
@@ -204,24 +202,21 @@ mod tests {
 
     #[rstest]
     fn test_value_with_one_ones_input() {
-        let mut atr =
-            AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None).unwrap();
+        let mut atr = AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None);
         atr.update_raw(1.0, 1.0, 1.0);
         assert_eq!(atr.value, 0.0);
     }
 
     #[rstest]
     fn test_value_with_one_input() {
-        let mut atr =
-            AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None).unwrap();
+        let mut atr = AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None);
         atr.update_raw(1.00020, 1.0, 1.00010);
         assert!(approx_equal(atr.value, 0.0002));
     }
 
     #[rstest]
     fn test_value_with_three_inputs() {
-        let mut atr =
-            AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None).unwrap();
+        let mut atr = AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None);
         atr.update_raw(1.00020, 1.0, 1.00010);
         atr.update_raw(1.00020, 1.0, 1.00010);
         atr.update_raw(1.00020, 1.0, 1.00010);
@@ -230,8 +225,7 @@ mod tests {
 
     #[rstest]
     fn test_value_with_close_on_high() {
-        let mut atr =
-            AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None).unwrap();
+        let mut atr = AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None);
         let mut high = 1.00010;
         let mut low = 1.0;
         for _ in 0..1000 {
@@ -245,8 +239,7 @@ mod tests {
 
     #[rstest]
     fn test_value_with_close_on_low() {
-        let mut atr =
-            AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None).unwrap();
+        let mut atr = AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None);
         let mut high = 1.00010;
         let mut low = 1.0;
         for _ in 0..1000 {
@@ -262,7 +255,7 @@ mod tests {
     fn test_floor_with_ten_ones_inputs() {
         let floor = 0.00005;
         let mut floored_atr =
-            AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, Some(floor)).unwrap();
+            AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, Some(floor));
         for _ in 0..20 {
             floored_atr.update_raw(1.0, 1.0, 1.0);
         }
@@ -273,7 +266,7 @@ mod tests {
     fn test_floor_with_exponentially_decreasing_high_inputs() {
         let floor = 0.00005;
         let mut floored_atr =
-            AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, Some(floor)).unwrap();
+            AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, Some(floor));
         let mut high = 1.00020;
         let low = 1.0;
         let close = 1.0;
@@ -286,8 +279,7 @@ mod tests {
 
     #[rstest]
     fn test_reset_successfully_returns_indicator_to_fresh_state() {
-        let mut atr =
-            AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None).unwrap();
+        let mut atr = AverageTrueRange::new(10, Some(MovingAverageType::Simple), None, None);
         for _ in 0..1000 {
             atr.update_raw(1.00010, 1.0, 1.00005);
         }

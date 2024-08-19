@@ -21,6 +21,7 @@ use std::{
 
 use nautilus_core::python::to_pyvalue_err;
 use pyo3::{
+    exceptions::PyValueError,
     prelude::*,
     pyclass::CompareOp,
     types::{PyString, PyTuple},
@@ -37,8 +38,8 @@ impl InstrumentId {
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
         let tuple: (&PyString, &PyString) = state.extract(py)?;
-        self.symbol = Symbol::new(tuple.0.extract()?).map_err(to_pyvalue_err)?;
-        self.venue = Venue::new(tuple.1.extract()?).map_err(to_pyvalue_err)?;
+        self.symbol = Symbol::new(tuple.0.extract()?);
+        self.venue = Venue::new(tuple.1.extract()?);
         Ok(())
     }
 

@@ -54,7 +54,7 @@ impl CurrencyPair {
         min_notional: Option<Money>,
         max_price: Option<Price>,
         min_price: Option<Price>,
-    ) -> PyResult<Self> {
+    ) -> Self {
         Self::new(
             id,
             raw_symbol,
@@ -78,7 +78,6 @@ impl CurrencyPair {
             ts_event.into(),
             ts_init.into(),
         )
-        .map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

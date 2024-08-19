@@ -16,7 +16,7 @@
 use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
-    correctness::{check_equal_u8, check_positive_i64, check_positive_u64},
+    correctness::{check_equal_u8, check_positive_i64, check_positive_u64, FAILED},
     nanos::UnixNanos,
 };
 use rust_decimal::Decimal;
@@ -91,23 +91,25 @@ impl CryptoPerpetual {
         min_price: Option<Price>,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
+    ) -> Self {
         check_equal_u8(
             price_precision,
             price_increment.precision,
             stringify!(price_precision),
             stringify!(price_increment.precision),
-        )?;
+        )
+        .expect(FAILED);
         check_equal_u8(
             size_precision,
             size_increment.precision,
             stringify!(size_precision),
             stringify!(size_increment.precision),
-        )?;
-        check_positive_i64(price_increment.raw, stringify!(price_increment.raw))?;
-        check_positive_u64(size_increment.raw, stringify!(size_increment.raw))?;
+        )
+        .expect(FAILED);
+        check_positive_i64(price_increment.raw, stringify!(price_increment.raw)).expect(FAILED);
+        check_positive_u64(size_increment.raw, stringify!(size_increment.raw)).expect(FAILED);
 
-        Ok(Self {
+        Self {
             id,
             raw_symbol,
             base_currency,
@@ -131,7 +133,7 @@ impl CryptoPerpetual {
             min_price,
             ts_event,
             ts_init,
-        })
+        }
     }
 }
 
@@ -227,7 +229,7 @@ impl Instrument for CryptoPerpetual {
     }
 
     fn multiplier(&self) -> Quantity {
-        Quantity::new(1.0, 0).unwrap()
+        Quantity::new(1.0, 0)
     }
 
     fn lot_size(&self) -> Option<Quantity> {

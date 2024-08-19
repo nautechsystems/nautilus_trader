@@ -67,17 +67,6 @@ class BinanceFuturesContractStatus(Enum):
 
 
 @unique
-class BinanceFuturesPositionSide(Enum):
-    """
-    Represents a `Binance Futures` position side.
-    """
-
-    BOTH = "BOTH"
-    LONG = "LONG"
-    SHORT = "SHORT"
-
-
-@unique
 class BinanceFuturesWorkingType(Enum):
     """
     Represents a `Binance Futures` working type.

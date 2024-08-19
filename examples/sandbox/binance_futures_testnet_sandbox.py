@@ -57,6 +57,9 @@ async def main():
             reconciliation=True,
             reconciliation_lookback_mins=1440,
             filter_position_reports=True,
+            # snapshot_orders=True,
+            # snapshot_positions=True,
+            # snapshot_positions_interval_secs=5.0,
         ),
         cache=CacheConfig(
             # database=DatabaseConfig(timeout=2),
@@ -73,9 +76,6 @@ async def main():
         #     autotrim_mins=30,
         # ),
         # heartbeat_interval=1.0,
-        # snapshot_orders=True,
-        # snapshot_positions=True,
-        # snapshot_positions_interval=5.0,
         data_clients={
             "BINANCE": BinanceDataClientConfig(
                 api_key=None,  # 'BINANCE_API_KEY' env var

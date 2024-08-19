@@ -77,8 +77,9 @@ impl Indicator for VerticalHorizontalFilter {
 
 impl VerticalHorizontalFilter {
     /// Creates a new [`VerticalHorizontalFilter`] instance.
-    pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> anyhow::Result<Self> {
-        Ok(Self {
+    #[must_use]
+    pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
+        Self {
             period,
             ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
             value: 0.0,
@@ -87,7 +88,7 @@ impl VerticalHorizontalFilter {
             has_inputs: false,
             initialized: false,
             prices: VecDeque::with_capacity(period),
-        })
+        }
     }
 
     pub fn update_raw(&mut self, close: f64) {

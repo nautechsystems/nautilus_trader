@@ -73,8 +73,9 @@ impl Indicator for Bias {
 
 impl Bias {
     /// Creates a new [`Bias`] instance.
-    pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> anyhow::Result<Self> {
-        Ok(Self {
+    #[must_use]
+    pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
+        Self {
             period,
             ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
             value: 0.0,
@@ -83,7 +84,7 @@ impl Bias {
             ma: MovingAverageFactory::create(ma_type.unwrap_or(MovingAverageType::Simple), period),
             has_inputs: false,
             initialized: false,
-        })
+        }
     }
 
     pub fn update_raw(&mut self, close: f64) {
@@ -114,7 +115,7 @@ mod tests {
 
     #[fixture]
     fn bias() -> Bias {
-        Bias::new(10, None).unwrap()
+        Bias::new(10, None)
     }
 
     #[rstest]

@@ -300,15 +300,11 @@ class NautilusKernel:
             clock=self._clock,
             serializer=self._msgbus_serializer,
             database=self._msgbus_db,
-            snapshot_orders=config.snapshot_orders,
-            snapshot_positions=config.snapshot_positions,
             config=config.message_bus,
         )
 
         self._cache = Cache(
             database=cache_db,
-            snapshot_orders=config.snapshot_orders,
-            snapshot_positions=config.snapshot_positions,
             config=config.cache,
         )
 
@@ -1000,7 +996,7 @@ class NautilusKernel:
             return
 
         for task in to_cancel:
-            self._log.warning(f"Canceling pending task {task}")
+            self._log.warning(f"Canceling pending task '{task.get_name()}'")
             task.cancel()
 
         if self.loop and self.loop.is_running():

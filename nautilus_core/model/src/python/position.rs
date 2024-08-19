@@ -40,7 +40,7 @@ impl Position {
     #[new]
     fn py_new(py: Python, instrument: PyObject, fill: OrderFilled) -> PyResult<Self> {
         let instrument_any = pyobject_to_instrument_any(py, instrument)?;
-        Ok(Self::new(&instrument_any, fill).map_err(to_pyvalue_err)?)
+        Ok(Self::new(&instrument_any, fill))
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

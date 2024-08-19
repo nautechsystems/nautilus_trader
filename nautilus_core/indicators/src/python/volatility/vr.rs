@@ -28,9 +28,8 @@ impl VolatilityRatio {
         use_previous: Option<bool>,
         value_floor: Option<f64>,
         ma_type: Option<MovingAverageType>,
-    ) -> PyResult<Self> {
+    ) -> Self {
         Self::new(fast_period, slow_period, ma_type, use_previous, value_floor)
-            .map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {

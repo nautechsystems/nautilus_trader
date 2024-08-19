@@ -73,14 +73,15 @@ impl Indicator for OnBalanceVolume {
 
 impl OnBalanceVolume {
     /// Creates a new [`OnBalanceVolume`] instance.
-    pub fn new(period: usize) -> anyhow::Result<Self> {
-        Ok(Self {
+    #[must_use]
+    pub fn new(period: usize) -> Self {
+        Self {
             period,
             value: 0.0,
             obv: VecDeque::with_capacity(period),
             has_inputs: false,
             initialized: false,
-        })
+        }
     }
 
     pub fn update_raw(&mut self, open: f64, close: f64, volume: f64) {

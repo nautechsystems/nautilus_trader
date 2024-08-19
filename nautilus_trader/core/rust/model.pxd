@@ -7,6 +7,9 @@ cdef extern from "../includes/model.h":
 
     const uintptr_t DEPTH10_LEN # = 10
 
+    # The maximum length of ASCII characters for a `TradeId` string value (including null terminator).
+    const uintptr_t TRADE_ID_LEN # = 37
+
     const uint8_t FIXED_PRECISION # = 9
 
     const double FIXED_SCALAR # = 1000000000.0
@@ -551,7 +554,7 @@ cdef extern from "../includes/model.h":
     # Can correspond to the `TradeID <1003> field` of the FIX protocol.
     cdef struct TradeId_t:
         # The trade match ID value as a fixed-length C string byte array (includes null terminator).
-        uint8_t value[37];
+        uint8_t value[TRADE_ID_LEN];
 
     # Represents a single trade tick in a market.
     cdef struct TradeTick_t:

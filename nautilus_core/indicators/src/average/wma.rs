@@ -15,6 +15,7 @@
 
 use std::fmt::Display;
 
+use nautilus_core::correctness::{check_predicate_true, FAILED};
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
@@ -53,15 +54,14 @@ impl Display for WeightedMovingAverage {
 
 impl WeightedMovingAverage {
     /// Creates a new [`WeightedMovingAverage`] instance.
-    pub fn new(
-        period: usize,
-        weights: Vec<f64>,
-        price_type: Option<PriceType>,
-    ) -> anyhow::Result<Self> {
-        if weights.len() != period {
-            return Err(anyhow::anyhow!("Weights length must be equal to period"));
-        }
-        Ok(Self {
+    #[must_use]
+    pub fn new(period: usize, weights: Vec<f64>, price_type: Option<PriceType>) -> Self {
+        check_predicate_true(
+            period == weights.len(),
+            "`period` must be equal to `weights` length",
+        )
+        .expect(FAILED);
+        Self {
             period,
             weights,
             price_type: price_type.unwrap_or(PriceType::Last),
@@ -69,7 +69,7 @@ impl WeightedMovingAverage {
             inputs: Vec::with_capacity(period),
             initialized: false,
             has_inputs: false,
-        })
+        }
     }
 
     fn weighted_average(&self) -> f64 {
@@ -169,9 +169,9 @@ mod tests {
     }
 
     #[rstest]
+    #[should_panic]
     fn test_different_weights_len_and_period_error() {
-        let wma = WeightedMovingAverage::new(10, vec![0.5, 0.5, 0.5], None);
-        assert!(wma.is_err());
+        let _ = WeightedMovingAverage::new(10, vec![0.5, 0.5, 0.5], None);
     }
 
     #[rstest]
@@ -182,7 +182,7 @@ mod tests {
 
     #[rstest]
     fn test_value_with_two_inputs_equal_weights() {
-        let mut wma = WeightedMovingAverage::new(2, vec![0.5, 0.5], None).unwrap();
+        let mut wma = WeightedMovingAverage::new(2, vec![0.5, 0.5], None);
         wma.update_raw(1.0);
         wma.update_raw(2.0);
         assert_eq!(wma.value, 1.5);
@@ -190,7 +190,7 @@ mod tests {
 
     #[rstest]
     fn test_value_with_four_inputs_equal_weights() {
-        let mut wma = WeightedMovingAverage::new(4, vec![0.25, 0.25, 0.25, 0.25], None).unwrap();
+        let mut wma = WeightedMovingAverage::new(4, vec![0.25, 0.25, 0.25, 0.25], None);
         wma.update_raw(1.0);
         wma.update_raw(2.0);
         wma.update_raw(3.0);

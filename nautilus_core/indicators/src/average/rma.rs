@@ -79,13 +79,12 @@ impl Indicator for WilderMovingAverage {
 
 impl WilderMovingAverage {
     /// Creates a new [`WilderMovingAverage`] instance.
-    pub fn new(period: usize, price_type: Option<PriceType>) -> anyhow::Result<Self> {
-        // Inputs don't require validation, however we return a `Result`
-        // to standardize with other indicators which do need validation.
+    #[must_use]
+    pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
         // The Wilder Moving Average is The Wilder's Moving Average is simply
         // an Exponential Moving Average (EMA) with a modified alpha.
         // alpha = 1 / period
-        Ok(Self {
+        Self {
             period,
             price_type: price_type.unwrap_or(PriceType::Last),
             alpha: 1.0 / (period as f64),
@@ -93,7 +92,7 @@ impl WilderMovingAverage {
             count: 0,
             has_inputs: false,
             initialized: false,
-        })
+        }
     }
 }
 

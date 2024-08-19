@@ -20,7 +20,7 @@ use nautilus_model::data::bar::Bar;
 use crate::indicator::Indicator;
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Default)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.indicators")
@@ -54,11 +54,9 @@ impl Indicator for VolumeWeightedAveragePrice {
     }
 
     fn handle_bar(&mut self, bar: &Bar) {
-        self.update_raw(
-            (&bar.close).into(),
-            (&bar.volume).into(),
-            bar.ts_init.as_f64(),
-        );
+        let typical_price = (bar.close.as_f64() + bar.high.as_f64() + bar.low.as_f64()) / 3.0;
+
+        self.update_raw(typical_price, (&bar.volume).into(), bar.ts_init.as_f64());
     }
 
     fn reset(&mut self) {
@@ -74,15 +72,16 @@ impl Indicator for VolumeWeightedAveragePrice {
 
 impl VolumeWeightedAveragePrice {
     /// Creates a new [`VolumeWeightedAveragePrice`] instance.
-    pub const fn new() -> anyhow::Result<Self> {
-        Ok(Self {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
             value: 0.0,
             has_inputs: false,
             initialized: false,
             price_volume: 0.0,
             volume_total: 0.0,
             day: 0.0,
-        })
+        }
     }
 
     pub fn update_raw(&mut self, price: f64, volume: f64, timestamp: f64) {
@@ -173,7 +172,7 @@ mod tests {
         bar_ethusdt_binance_minute_bid: Bar,
     ) {
         indicator_vwap.handle_bar(&bar_ethusdt_binance_minute_bid);
-        assert_eq!(indicator_vwap.value, 1522.0);
+        assert_eq!(indicator_vwap.value, 1522.333333333333);
         assert!(indicator_vwap.initialized);
     }
 

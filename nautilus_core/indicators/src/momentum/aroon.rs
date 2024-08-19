@@ -92,8 +92,9 @@ impl Indicator for AroonOscillator {
 
 impl AroonOscillator {
     /// Creates a new [`AroonOscillator`] instance.
-    pub fn new(period: usize) -> anyhow::Result<Self> {
-        Ok(Self {
+    #[must_use]
+    pub fn new(period: usize) -> Self {
+        Self {
             period,
             high_inputs: VecDeque::with_capacity(period),
             low_inputs: VecDeque::with_capacity(period),
@@ -103,7 +104,7 @@ impl AroonOscillator {
             count: 0,
             has_inputs: false,
             initialized: false,
-        })
+        }
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64) {
@@ -180,25 +181,25 @@ mod tests {
 
     #[rstest]
     fn test_name_returns_expected_string() {
-        let aroon = AroonOscillator::new(10).unwrap();
+        let aroon = AroonOscillator::new(10);
         assert_eq!(aroon.name(), "AroonOscillator");
     }
 
     #[rstest]
     fn test_period() {
-        let aroon = AroonOscillator::new(10).unwrap();
+        let aroon = AroonOscillator::new(10);
         assert_eq!(aroon.period, 10);
     }
 
     #[rstest]
     fn test_initialized_without_inputs_returns_false() {
-        let aroon = AroonOscillator::new(10).unwrap();
+        let aroon = AroonOscillator::new(10);
         assert!(!aroon.initialized());
     }
 
     #[rstest]
     fn test_initialized_with_required_inputs_returns_true() {
-        let mut aroon = AroonOscillator::new(10).unwrap();
+        let mut aroon = AroonOscillator::new(10);
         for _ in 0..20 {
             aroon.update_raw(110.08, 109.61);
         }
@@ -207,7 +208,7 @@ mod tests {
 
     #[rstest]
     fn test_value_with_one_input() {
-        let mut aroon = AroonOscillator::new(1).unwrap();
+        let mut aroon = AroonOscillator::new(1);
         aroon.update_raw(110.08, 109.61);
         assert_eq!(aroon.aroon_up, 100.0);
         assert_eq!(aroon.aroon_down, 100.0);
@@ -216,7 +217,7 @@ mod tests {
 
     #[rstest]
     fn test_value_with_twenty_inputs() {
-        let mut aroon = AroonOscillator::new(20).unwrap();
+        let mut aroon = AroonOscillator::new(20);
         let inputs = [
             (110.08, 109.61),
             (110.15, 109.91),
@@ -249,7 +250,7 @@ mod tests {
 
     #[rstest]
     fn test_reset_successfully_returns_indicator_to_fresh_state() {
-        let mut aroon = AroonOscillator::new(10).unwrap();
+        let mut aroon = AroonOscillator::new(10);
         for _ in 0..1000 {
             aroon.update_raw(110.08, 109.61);
         }

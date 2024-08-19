@@ -134,14 +134,10 @@ impl DecodeFromRecordBatch for QuoteTick {
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|i| {
-                let bid_price =
-                    Price::from_raw(bid_price_values.value(i), price_precision).unwrap();
-                let ask_price =
-                    Price::from_raw(ask_price_values.value(i), price_precision).unwrap();
-                let bid_size =
-                    Quantity::from_raw(bid_size_values.value(i), size_precision).unwrap();
-                let ask_size =
-                    Quantity::from_raw(ask_size_values.value(i), size_precision).unwrap();
+                let bid_price = Price::from_raw(bid_price_values.value(i), price_precision);
+                let ask_price = Price::from_raw(ask_price_values.value(i), price_precision);
+                let bid_size = Quantity::from_raw(bid_size_values.value(i), size_precision);
+                let ask_size = Quantity::from_raw(ask_size_values.value(i), size_precision);
                 let ts_event = ts_event_values.value(i).into();
                 let ts_init = ts_init_values.value(i).into();
 

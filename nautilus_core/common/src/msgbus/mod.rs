@@ -162,8 +162,9 @@ pub struct MessageBus {
     endpoints: IndexMap<Ustr, ShareableMessageHandler>,
 }
 
-/// Message bus is not meant to be passed between threads
+// SAFETY: Message bus is not meant to be passed between threads
 unsafe impl Send for MessageBus {}
+unsafe impl Sync for MessageBus {}
 
 impl MessageBus {
     /// Creates a new [`MessageBus`] instance.
@@ -184,6 +185,12 @@ impl MessageBus {
             endpoints: IndexMap::new(),
             has_backing: false,
         }
+    }
+
+    /// Returns the message bus instances memory address.
+    #[must_use]
+    pub fn memory_address(&self) -> String {
+        format!("{:?}", std::ptr::from_ref(self))
     }
 
     /// Returns the registered endpoint addresses.
@@ -244,25 +251,37 @@ impl MessageBus {
     }
 
     /// Registers the given `handler` for the `endpoint` address.
-    pub fn register(&mut self, endpoint: &str, handler: ShareableMessageHandler) {
+    pub fn register(&mut self, endpoint: Ustr, handler: ShareableMessageHandler) {
+        log::debug!(
+            "Registering endpoint '{endpoint}' with handler ID {} at {}",
+            handler.0.id(),
+            self.memory_address(),
+        );
         // Updates value if key already exists
-        self.endpoints.insert(Ustr::from(endpoint), handler);
+        self.endpoints.insert(endpoint, handler);
     }
 
     /// Deregisters the given `handler` for the `endpoint` address.
-    pub fn deregister(&mut self, endpoint: &str) {
+    pub fn deregister(&mut self, endpoint: &Ustr) {
+        log::debug!(
+            "Deregistering endpoint '{endpoint}' at {}",
+            self.memory_address()
+        );
         // Removes entry if it exists for endpoint
-        self.endpoints.shift_remove(&Ustr::from(endpoint));
+        self.endpoints.shift_remove(endpoint);
     }
 
     /// Subscribes the given `handler` to the `topic`.
     pub fn subscribe(
         &mut self,
-        topic: &str,
+        topic: Ustr,
         handler: ShareableMessageHandler,
         priority: Option<u8>,
     ) {
-        let topic = Ustr::from(topic);
+        log::debug!(
+            "Subscribing for topic '{topic}' at {}",
+            self.memory_address()
+        );
         let sub = Subscription::new(topic, handler, priority);
 
         if self.subscriptions.contains_key(&sub) {
@@ -287,8 +306,12 @@ impl MessageBus {
     }
 
     /// Unsubscribes the given `handler` from the `topic`.
-    pub fn unsubscribe(&mut self, topic: &str, handler: ShareableMessageHandler) {
-        let sub = Subscription::new(Ustr::from(topic), handler, None);
+    pub fn unsubscribe(&mut self, topic: Ustr, handler: ShareableMessageHandler) {
+        log::debug!(
+            "Unsubscribing for topic '{topic}' at {}",
+            self.memory_address(),
+        );
+        let sub = Subscription::new(topic, handler, None);
         self.subscriptions.shift_remove(&sub);
     }
 
@@ -349,11 +372,17 @@ impl MessageBus {
     }
 
     /// Publish a message to a topic.
-    pub fn publish(&self, topic: &str, message: &dyn Any) {
-        let topic = Ustr::from(topic);
-        let matching_subs = self.matching_subscriptions(&topic);
+    pub fn publish(&self, topic: &Ustr, message: &dyn Any) {
+        log::trace!(
+            "Publishing topic '{topic}' {message:?} {}",
+            self.memory_address()
+        );
+        let matching_subs = self.matching_subscriptions(topic);
+
+        log::trace!("Matched {} subscriptions", matching_subs.len());
 
         for sub in matching_subs {
+            log::trace!("Matched {sub:?}");
             sub.handler.0.handle(message);
         }
     }
@@ -440,11 +469,10 @@ mod tests {
 
     use nautilus_core::uuid::UUID4;
     use rstest::*;
+    use stubs::check_handler_was_called;
 
     use super::*;
-    use crate::msgbus::stubs::{
-        get_call_check_shareable_handler, get_stub_shareable_handler, CallCheckMessageHandler,
-    };
+    use crate::msgbus::stubs::{get_call_check_shareable_handler, get_stub_shareable_handler};
 
     fn stub_msgbus() -> MessageBus {
         MessageBus::new(TraderId::from("trader-001"), UUID4::new(), None, None)
@@ -477,9 +505,7 @@ mod tests {
     #[rstest]
     fn test_is_subscribed_when_no_subscriptions() {
         let msgbus = stub_msgbus();
-
-        let handler_id = Ustr::from("1");
-        let handler = get_stub_shareable_handler(handler_id);
+        let handler = get_stub_shareable_handler(None);
 
         assert!(!msgbus.is_subscribed("my-topic", handler));
     }
@@ -494,60 +520,38 @@ mod tests {
     #[rstest]
     fn test_regsiter_endpoint() {
         let mut msgbus = stub_msgbus();
-        let endpoint = "MyEndpoint";
-
-        let handler_id = Ustr::from("1");
-        let handler = get_stub_shareable_handler(handler_id);
+        let endpoint = Ustr::from("MyEndpoint");
+        let handler = get_stub_shareable_handler(None);
 
         msgbus.register(endpoint, handler);
 
-        assert_eq!(msgbus.endpoints(), vec!["MyEndpoint".to_string()]);
-        assert!(msgbus.get_endpoint(&Ustr::from(endpoint)).is_some());
+        assert_eq!(msgbus.endpoints(), vec![endpoint.to_string()]);
+        assert!(msgbus.get_endpoint(&endpoint).is_some());
     }
 
     #[rstest]
     fn test_endpoint_send() {
         let mut msgbus = stub_msgbus();
         let endpoint = Ustr::from("MyEndpoint");
+        let handler = get_call_check_shareable_handler(None);
 
-        let handler_id = Ustr::from("1");
-        let handler = get_call_check_shareable_handler(handler_id);
-
-        msgbus.register(endpoint.as_str(), handler.clone());
+        msgbus.register(endpoint, handler.clone());
         assert!(msgbus.get_endpoint(&endpoint).is_some());
-
-        // check if the handler called variable is false
-        assert!(!handler
-            .0
-            .as_ref()
-            .as_any()
-            .downcast_ref::<CallCheckMessageHandler>()
-            .unwrap()
-            .was_called());
+        assert!(!check_handler_was_called(handler.clone()));
 
         // Send a message to the endpoint
         msgbus.send(&endpoint, &"Test Message");
-
-        // Check if the handler was called
-        assert!(handler
-            .0
-            .as_ref()
-            .as_any()
-            .downcast_ref::<CallCheckMessageHandler>()
-            .unwrap()
-            .was_called());
+        assert!(check_handler_was_called(handler));
     }
 
     #[rstest]
     fn test_deregsiter_endpoint() {
         let mut msgbus = stub_msgbus();
-        let endpoint = "MyEndpoint";
-
-        let handler_id = Ustr::from("1");
-        let handler = get_stub_shareable_handler(handler_id);
+        let endpoint = Ustr::from("MyEndpoint");
+        let handler = get_stub_shareable_handler(None);
 
         msgbus.register(endpoint, handler);
-        msgbus.deregister(endpoint);
+        msgbus.deregister(&endpoint);
 
         assert!(msgbus.endpoints().is_empty());
     }
@@ -555,55 +559,50 @@ mod tests {
     #[rstest]
     fn test_subscribe() {
         let mut msgbus = stub_msgbus();
-        let topic = "my-topic";
-
-        let handler_id = Ustr::from("1");
-        let handler = get_stub_shareable_handler(handler_id);
+        let topic = Ustr::from("my-topic");
+        let handler = get_stub_shareable_handler(None);
 
         msgbus.subscribe(topic, handler, Some(1));
 
-        assert!(msgbus.has_subscribers(topic));
-        assert_eq!(msgbus.topics(), vec![topic]);
+        assert!(msgbus.has_subscribers(topic.as_str()));
+        assert_eq!(msgbus.topics(), vec![topic.as_str()]);
     }
 
     #[rstest]
     fn test_unsubscribe() {
         let mut msgbus = stub_msgbus();
-        let topic = "my-topic";
-
-        let handler_id = Ustr::from("1");
-        let handler = get_stub_shareable_handler(handler_id);
+        let topic = Ustr::from("my-topic");
+        let handler = get_stub_shareable_handler(None);
 
         msgbus.subscribe(topic, handler.clone(), None);
         msgbus.unsubscribe(topic, handler);
 
-        assert!(!msgbus.has_subscribers(topic));
+        assert!(!msgbus.has_subscribers(topic.as_str()));
         assert!(msgbus.topics().is_empty());
     }
 
     #[rstest]
     fn test_matching_subscriptions() {
         let mut msgbus = stub_msgbus();
-        let topic = "my-topic";
+        let topic = Ustr::from("my-topic");
 
         let handler_id1 = Ustr::from("1");
-        let handler1 = get_stub_shareable_handler(handler_id1);
+        let handler1 = get_stub_shareable_handler(Some(handler_id1));
 
         let handler_id2 = Ustr::from("2");
-        let handler2 = get_stub_shareable_handler(handler_id2);
+        let handler2 = get_stub_shareable_handler(Some(handler_id2));
 
         let handler_id3 = Ustr::from("3");
-        let handler3 = get_stub_shareable_handler(handler_id3);
+        let handler3 = get_stub_shareable_handler(Some(handler_id3));
 
         let handler_id4 = Ustr::from("4");
-        let handler4 = get_stub_shareable_handler(handler_id4);
+        let handler4 = get_stub_shareable_handler(Some(handler_id4));
 
         msgbus.subscribe(topic, handler1, None);
         msgbus.subscribe(topic, handler2, None);
         msgbus.subscribe(topic, handler3, Some(1));
         msgbus.subscribe(topic, handler4, Some(2));
-        let topic_ustr = Ustr::from(topic);
-        let subs = msgbus.matching_subscriptions(&topic_ustr);
+        let subs = msgbus.matching_subscriptions(&topic);
 
         assert_eq!(subs.len(), 4);
         assert_eq!(subs[0].handler_id, handler_id4);

@@ -20,21 +20,31 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::python::{get_pytype_name, to_pytype_err, to_pyvalue_err};
+use nautilus_core::{
+    correctness::check_in_range_inclusive_f64,
+    python::{get_pytype_name, to_pytype_err, to_pyvalue_err},
+};
 use pyo3::{
+    exceptions::PyValueError,
     prelude::*,
     pyclass::CompareOp,
     types::{PyFloat, PyLong, PyTuple},
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 
-use crate::types::{fixed::fixed_i64_to_f64, price::Price};
+use crate::types::{
+    fixed::{check_fixed_precision, fixed_i64_to_f64},
+    price::{Price, PRICE_MAX, PRICE_MIN},
+};
 
 #[pymethods]
 impl Price {
     #[new]
     fn py_new(value: f64, precision: u8) -> PyResult<Self> {
-        Self::new(value, precision).map_err(to_pyvalue_err)
+        check_in_range_inclusive_f64(value, PRICE_MIN, PRICE_MAX, "value")
+            .map_err(to_pyvalue_err)?;
+        check_fixed_precision(precision).map_err(to_pyvalue_err)?;
+        Ok(Self::new(value, precision))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -331,21 +341,21 @@ impl Price {
 
     #[staticmethod]
     #[pyo3(name = "from_raw")]
-    fn py_from_raw(raw: i64, precision: u8) -> PyResult<Self> {
-        Self::from_raw(raw, precision).map_err(to_pyvalue_err)
+    fn py_from_raw(raw: i64, precision: u8) -> Self {
+        Self::from_raw(raw, precision)
     }
 
     #[staticmethod]
     #[pyo3(name = "zero")]
     #[pyo3(signature = (precision = 0))]
-    fn py_zero(precision: u8) -> PyResult<Self> {
-        Self::new(0.0, precision).map_err(to_pyvalue_err)
+    fn py_zero(precision: u8) -> Self {
+        Self::new(0.0, precision)
     }
 
     #[staticmethod]
     #[pyo3(name = "from_int")]
-    fn py_from_int(value: u64) -> PyResult<Self> {
-        Self::new(value as f64, 0).map_err(to_pyvalue_err)
+    fn py_from_int(value: u64) -> Self {
+        Self::new(value as f64, 0)
     }
 
     #[staticmethod]

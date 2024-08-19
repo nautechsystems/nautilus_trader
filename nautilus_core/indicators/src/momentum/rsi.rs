@@ -87,8 +87,9 @@ impl Indicator for RelativeStrengthIndex {
 
 impl RelativeStrengthIndex {
     /// Creates a new [`RelativeStrengthIndex`] instance.
-    pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> anyhow::Result<Self> {
-        Ok(Self {
+    #[must_use]
+    pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
+        Self {
             period,
             ma_type: ma_type.unwrap_or(MovingAverageType::Exponential),
             value: 0.0,
@@ -100,7 +101,7 @@ impl RelativeStrengthIndex {
             average_loss: MovingAverageFactory::create(MovingAverageType::Exponential, period),
             rsi_max: 1.0,
             initialized: false,
-        })
+        }
     }
 
     pub fn update_raw(&mut self, value: f64) {

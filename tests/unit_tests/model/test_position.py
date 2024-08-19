@@ -355,7 +355,7 @@ class TestPosition:
         position = Position(instrument=AUDUSD_SIM, fill=fill)
 
         # Act
-        with pytest.raises(ValueError):
+        with pytest.raises(KeyError):
             position.apply(fill)
 
     def test_position_filled_with_buy_order(self) -> None:

@@ -70,15 +70,16 @@ impl Indicator for RateOfChange {
 
 impl RateOfChange {
     /// Creates a new [`RateOfChange`] instance.
-    pub fn new(period: usize, use_log: Option<bool>) -> anyhow::Result<Self> {
-        Ok(Self {
+    #[must_use]
+    pub fn new(period: usize, use_log: Option<bool>) -> Self {
+        Self {
             period,
             use_log: use_log.unwrap_or(false),
             value: 0.0,
             prices: VecDeque::with_capacity(period),
             has_inputs: false,
             initialized: false,
-        })
+        }
     }
 
     pub fn update_raw(&mut self, price: f64) {

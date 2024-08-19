@@ -20,12 +20,14 @@ import pytest
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.futures.execution import BinanceFuturesExecutionClient
 from nautilus_trader.adapters.binance.futures.providers import BinanceFuturesInstrumentProvider
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.execution.engine import ExecutionEngine
@@ -38,6 +40,7 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.risk.engine import RiskEngine
+from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -47,7 +50,6 @@ from nautilus_trader.trading.strategy import Strategy
 ETHUSDT_PERP_BINANCE = TestInstrumentProvider.ethusdt_perp_binance()
 
 
-@pytest.mark.skip(reason="WIP")
 class TestBinanceFuturesExecutionClient:
     def setup(self):
         # Fixture Setup
@@ -112,6 +114,8 @@ class TestBinanceFuturesExecutionClient:
             cache=self.cache,
             clock=self.clock,
             instrument_provider=self.provider,
+            base_url_ws="",
+            config=BinanceExecClientConfig(),
             account_type=BinanceAccountType.USDT_FUTURE,
         )
 
@@ -125,11 +129,29 @@ class TestBinanceFuturesExecutionClient:
         )
 
     @pytest.mark.asyncio()
-    async def test_submit_market_order(self, mocker):
+    @pytest.mark.parametrize(
+        ("_is_dual_side_position", "position_id", "expected"),
+        [
+            # One-way mode
+            (False, None, "BOTH"),
+            (False, TestIdStubs.position_id(), "BOTH"),
+            (False, TestIdStubs.position_id_long(), "BOTH"),
+            (False, TestIdStubs.position_id_short(), "BOTH"),
+            (False, TestIdStubs.position_id_both(), "BOTH"),
+            # Hedge mode
+            (True, TestIdStubs.position_id_long(), "LONG"),
+            (True, TestIdStubs.position_id_short(), "SHORT"),
+            # (True, TestIdStubs.position_id_both(), "BOTH"),
+        ],
+    )
+    async def test_submit_market_order(self, mocker, _is_dual_side_position, position_id, expected):
         # Arrange
         mock_send_request = mocker.patch(
             target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
         )
+        # For one-way mode: _is_dual_side_position is False
+        # For hedge mode: _is_dual_side_position is True
+        mocker.patch.object(self.exec_client, "_is_dual_side_position", _is_dual_side_position)
 
         order = self.strategy.order_factory.market(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -137,11 +159,10 @@ class TestBinanceFuturesExecutionClient:
             quantity=Quantity.from_int(1),
         )
         self.cache.add_order(order, None)
-
         submit_order = SubmitOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy.id,
-            position_id=None,
+            position_id=position_id,
             order=order,
             command_id=UUID4(),
             ts_init=0,
@@ -149,25 +170,42 @@ class TestBinanceFuturesExecutionClient:
 
         # Act
         self.exec_client.submit_order(submit_order)
-        await asyncio.sleep(0.3)
+        await eventually(lambda: mock_send_request.call_args)
 
         # Assert
-        request = mock_send_request.call_args[0]
-        assert request[0] == "POST"
-        assert request[1] == "/fapi/v1/order"
-        assert request[2]["symbol"] == "ETHUSDT"  # -PERP was stripped
-        assert request[2]["type"] == "MARKET"
-        assert request[2]["side"] == "BUY"
-        assert request[2]["quantity"] == "1"
-        assert request[2]["newClientOrderId"] is not None
-        assert request[2]["recvWindow"] == "5000"
+        request = mock_send_request.call_args
+        assert request[0][0] == HttpMethod.POST
+        assert request[0][1] == "/fapi/v1/order"
+        assert request[1]["payload"]["symbol"] == "ETHUSDT"  # -PERP was stripped
+        assert request[1]["payload"]["type"] == "MARKET"
+        assert request[1]["payload"]["side"] == "BUY"
+        assert request[1]["payload"]["quantity"] == "1"
+        assert request[1]["payload"]["newClientOrderId"] is not None
+        assert request[1]["payload"]["recvWindow"] == "5000"
+        assert request[1]["payload"]["positionSide"] == expected
 
     @pytest.mark.asyncio()
-    async def test_submit_limit_order(self, mocker):
+    @pytest.mark.parametrize(
+        ("_is_dual_side_position", "position_id", "expected"),
+        [
+            # One-way mode
+            (False, None, "BOTH"),
+            (False, TestIdStubs.position_id(), "BOTH"),
+            (False, TestIdStubs.position_id_long(), "BOTH"),
+            (False, TestIdStubs.position_id_short(), "BOTH"),
+            (False, TestIdStubs.position_id_both(), "BOTH"),
+            # Hedge mode
+            (True, TestIdStubs.position_id_long(), "LONG"),
+            (True, TestIdStubs.position_id_short(), "SHORT"),
+            # (True, TestIdStubs.position_id_both(), "BOTH"),
+        ],
+    )
+    async def test_submit_limit_order(self, mocker, _is_dual_side_position, position_id, expected):
         # Arrange
         mock_send_request = mocker.patch(
             target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
         )
+        mocker.patch.object(self.exec_client, "_is_dual_side_position", _is_dual_side_position)
 
         order = self.strategy.order_factory.limit(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -180,7 +218,7 @@ class TestBinanceFuturesExecutionClient:
         submit_order = SubmitOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy.id,
-            position_id=None,
+            position_id=position_id,
             order=order,
             command_id=UUID4(),
             ts_init=0,
@@ -188,26 +226,49 @@ class TestBinanceFuturesExecutionClient:
 
         # Act
         self.exec_client.submit_order(submit_order)
-        await asyncio.sleep(0.3)
+        await eventually(lambda: mock_send_request.call_args)
 
         # Assert
-        request = mock_send_request.call_args[0]
-        assert request[0] == "POST"
-        assert request[1] == "/fapi/v1/order"
-        assert request[2]["symbol"] == "ETHUSDT"  # -PERP was stripped
-        assert request[2]["side"] == "BUY"
-        assert request[2]["type"] == "LIMIT"
-        assert request[2]["quantity"] == "10"
-        assert request[2]["newClientOrderId"] is not None
-        assert request[2]["recvWindow"] == "5000"
-        assert request[2]["signature"] is not None
+        request = mock_send_request.call_args
+        assert request[0][0] == HttpMethod.POST
+        assert request[0][1] == "/fapi/v1/order"
+        assert request[1]["payload"]["symbol"] == "ETHUSDT"  # -PERP was stripped
+        assert request[1]["payload"]["side"] == "BUY"
+        assert request[1]["payload"]["type"] == "LIMIT"
+        assert request[1]["payload"]["quantity"] == "10"
+        assert request[1]["payload"]["newClientOrderId"] is not None
+        assert request[1]["payload"]["recvWindow"] == "5000"
+        assert request[1]["payload"]["signature"] is not None
+        assert request[1]["payload"]["positionSide"] == expected
 
     @pytest.mark.asyncio()
-    async def test_submit_limit_post_only_order(self, mocker):
+    @pytest.mark.parametrize(
+        ("_is_dual_side_position", "position_id", "expected"),
+        [
+            # One-way mode
+            (False, None, "BOTH"),
+            (False, TestIdStubs.position_id(), "BOTH"),
+            (False, TestIdStubs.position_id_long(), "BOTH"),
+            (False, TestIdStubs.position_id_short(), "BOTH"),
+            (False, TestIdStubs.position_id_both(), "BOTH"),
+            # Hedge mode
+            (True, TestIdStubs.position_id_long(), "LONG"),
+            (True, TestIdStubs.position_id_short(), "SHORT"),
+            # (True, TestIdStubs.position_id_both(), "BOTH"),
+        ],
+    )
+    async def test_submit_limit_post_only_order(
+        self,
+        mocker,
+        _is_dual_side_position,
+        position_id,
+        expected,
+    ):
         # Arrange
         mock_send_request = mocker.patch(
             target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
         )
+        mocker.patch.object(self.exec_client, "_is_dual_side_position", _is_dual_side_position)
 
         order = self.strategy.order_factory.limit(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -221,7 +282,7 @@ class TestBinanceFuturesExecutionClient:
         submit_order = SubmitOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy.id,
-            position_id=None,
+            position_id=position_id,
             order=order,
             command_id=UUID4(),
             ts_init=0,
@@ -229,28 +290,52 @@ class TestBinanceFuturesExecutionClient:
 
         # Act
         self.exec_client.submit_order(submit_order)
-        await asyncio.sleep(0.3)
+        await eventually(lambda: mock_send_request.call_args)
 
         # Assert
-        request = mock_send_request.call_args[0]
-        assert request[0] == "POST"
-        assert request[1] == "/fapi/v1/order"
-        assert request[2]["symbol"] == "ETHUSDT"  # -PERP was stripped
-        assert request[2]["side"] == "BUY"
-        assert request[2]["type"] == "LIMIT"
-        assert request[2]["timeInForce"] == "GTX"
-        assert request[2]["quantity"] == "10"
-        assert request[2]["price"] == "10050.80"
-        assert request[2]["newClientOrderId"] is not None
-        assert request[2]["recvWindow"] == "5000"
-        assert request[2]["signature"] is not None
+        request = mock_send_request.call_args
+        assert request[0][0] == HttpMethod.POST
+        assert request[0][1] == "/fapi/v1/order"
+        assert request[1]["payload"]["symbol"] == "ETHUSDT"  # -PERP was stripped
+        assert request[1]["payload"]["side"] == "BUY"
+        assert request[1]["payload"]["type"] == "LIMIT"
+        assert request[1]["payload"]["timeInForce"] == "GTX"
+        assert request[1]["payload"]["quantity"] == "10"
+        assert request[1]["payload"]["price"] == "10050.80"
+        assert request[1]["payload"]["newClientOrderId"] is not None
+        assert request[1]["payload"]["recvWindow"] == "5000"
+        assert request[1]["payload"]["signature"] is not None
+        assert request[1]["payload"]["positionSide"] == expected
 
     @pytest.mark.asyncio()
-    async def test_submit_stop_market_order(self, mocker):
+    @pytest.mark.parametrize(
+        ("_is_dual_side_position", "position_id", "expected"),
+        [
+            # One-way mode
+            (False, None, "BOTH"),
+            (False, TestIdStubs.position_id(), "BOTH"),
+            (False, TestIdStubs.position_id_long(), "BOTH"),
+            (False, TestIdStubs.position_id_short(), "BOTH"),
+            (False, TestIdStubs.position_id_both(), "BOTH"),
+            # Hedge mode
+            (True, TestIdStubs.position_id_long(), "LONG"),
+            (True, TestIdStubs.position_id_short(), "SHORT"),
+            # (True, TestIdStubs.position_id_both(), "BOTH"),
+        ],
+    )
+    async def test_submit_stop_market_order(
+        self,
+        mocker,
+        _is_dual_side_position,
+        position_id,
+        expected,
+    ):
         # Arrange
         mock_send_request = mocker.patch(
             target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
         )
+        mocker.patch.object(self.exec_client, "_is_dual_side_position", _is_dual_side_position)
+        mocker.patch.object(self.exec_client, "_use_reduce_only", not _is_dual_side_position)
 
         order = self.strategy.order_factory.stop_market(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -264,7 +349,7 @@ class TestBinanceFuturesExecutionClient:
         submit_order = SubmitOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy.id,
-            position_id=None,
+            position_id=position_id,
             order=order,
             command_id=UUID4(),
             ts_init=0,
@@ -272,30 +357,56 @@ class TestBinanceFuturesExecutionClient:
 
         # Act
         self.exec_client.submit_order(submit_order)
-        await asyncio.sleep(0.3)
+        await eventually(lambda: mock_send_request.call_args)
 
         # Assert
-        request = mock_send_request.call_args[0]
-        assert request[0] == "POST"
-        assert request[1] == "/fapi/v1/order"
-        assert request[2]["symbol"] == "ETHUSDT"  # -PERP was stripped
-        assert request[2]["side"] == "SELL"
-        assert request[2]["type"] == "STOP_MARKET"
-        assert request[2]["timeInForce"] == "GTC"
-        assert request[2]["quantity"] == "10"
-        assert request[2]["reduceOnly"] == "True"
-        assert request[2]["newClientOrderId"] is not None
-        assert request[2]["stopPrice"] == "10099.00"
-        assert request[2]["workingType"] == "CONTRACT_PRICE"
-        assert request[2]["recvWindow"] == "5000"
-        assert request[2]["signature"] is not None
+        request = mock_send_request.call_args
+        assert request[0][0] == HttpMethod.POST
+        assert request[0][1] == "/fapi/v1/order"
+        assert request[1]["payload"]["symbol"] == "ETHUSDT"  # -PERP was stripped
+        assert request[1]["payload"]["side"] == "SELL"
+        assert request[1]["payload"]["type"] == "STOP_MARKET"
+        assert request[1]["payload"]["timeInForce"] == "GTC"
+        assert request[1]["payload"]["quantity"] == "10"
+        if _is_dual_side_position:
+            assert "reduceOnly" not in request[1]["payload"]
+        else:
+            assert request[1]["payload"]["reduceOnly"] == "True"
+        assert request[1]["payload"]["newClientOrderId"] is not None
+        assert request[1]["payload"]["stopPrice"] == "10099.00"
+        assert request[1]["payload"]["workingType"] == "CONTRACT_PRICE"
+        assert request[1]["payload"]["recvWindow"] == "5000"
+        assert request[1]["payload"]["signature"] is not None
+        assert request[1]["payload"]["positionSide"] == expected
 
     @pytest.mark.asyncio()
-    async def test_submit_stop_limit_order(self, mocker):
+    @pytest.mark.parametrize(
+        ("_is_dual_side_position", "position_id", "expected"),
+        [
+            # One-way mode
+            (False, None, "BOTH"),
+            (False, TestIdStubs.position_id(), "BOTH"),
+            (False, TestIdStubs.position_id_long(), "BOTH"),
+            (False, TestIdStubs.position_id_short(), "BOTH"),
+            (False, TestIdStubs.position_id_both(), "BOTH"),
+            # Hedge mode
+            (True, TestIdStubs.position_id_long(), "LONG"),
+            (True, TestIdStubs.position_id_short(), "SHORT"),
+            # (True, TestIdStubs.position_id_both(), "BOTH"),
+        ],
+    )
+    async def test_submit_stop_limit_order(
+        self,
+        mocker,
+        _is_dual_side_position,
+        position_id,
+        expected,
+    ):
         # Arrange
         mock_send_request = mocker.patch(
             target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
         )
+        mocker.patch.object(self.exec_client, "_is_dual_side_position", _is_dual_side_position)
 
         order = self.strategy.order_factory.stop_limit(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -310,7 +421,7 @@ class TestBinanceFuturesExecutionClient:
         submit_order = SubmitOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy.id,
-            position_id=None,
+            position_id=position_id,
             order=order,
             command_id=UUID4(),
             ts_init=0,
@@ -318,30 +429,53 @@ class TestBinanceFuturesExecutionClient:
 
         # Act
         self.exec_client.submit_order(submit_order)
-        await asyncio.sleep(0.3)
+        await eventually(lambda: mock_send_request.call_args)
 
         # Assert
-        request = mock_send_request.call_args[0]
-        assert request[0] == "POST"
-        assert request[1] == "/fapi/v1/order"
-        assert request[2]["symbol"] == "ETHUSDT"  # -PERP was stripped
-        assert request[2]["side"] == "BUY"
-        assert request[2]["type"] == "STOP"
-        assert request[2]["timeInForce"] == "GTC"
-        assert request[2]["quantity"] == "10"
-        assert request[2]["price"] == "10050.80"
-        assert request[2]["newClientOrderId"] is not None
-        assert request[2]["stopPrice"] == "10050.00"
-        assert request[2]["workingType"] == "MARK_PRICE"
-        assert request[2]["recvWindow"] == "5000"
-        assert request[2]["signature"] is not None
+        request = mock_send_request.call_args
+        assert request[0][0] == HttpMethod.POST
+        assert request[0][1] == "/fapi/v1/order"
+        assert request[1]["payload"]["symbol"] == "ETHUSDT"  # -PERP was stripped
+        assert request[1]["payload"]["side"] == "BUY"
+        assert request[1]["payload"]["type"] == "STOP"
+        assert request[1]["payload"]["timeInForce"] == "GTC"
+        assert request[1]["payload"]["quantity"] == "10"
+        assert request[1]["payload"]["price"] == "10050.80"
+        assert request[1]["payload"]["newClientOrderId"] is not None
+        assert request[1]["payload"]["stopPrice"] == "10050.00"
+        assert request[1]["payload"]["workingType"] == "MARK_PRICE"
+        assert request[1]["payload"]["recvWindow"] == "5000"
+        assert request[1]["payload"]["signature"] is not None
+        assert request[1]["payload"]["positionSide"] == expected
 
     @pytest.mark.asyncio()
-    async def test_submit_market_if_touched_order(self, mocker):
+    @pytest.mark.parametrize(
+        ("_is_dual_side_position", "position_id", "expected"),
+        [
+            # One-way mode
+            (False, None, "BOTH"),
+            (False, TestIdStubs.position_id(), "BOTH"),
+            (False, TestIdStubs.position_id_long(), "BOTH"),
+            (False, TestIdStubs.position_id_short(), "BOTH"),
+            (False, TestIdStubs.position_id_both(), "BOTH"),
+            # Hedge mode
+            (True, TestIdStubs.position_id_long(), "LONG"),
+            (True, TestIdStubs.position_id_short(), "SHORT"),
+            # (True, TestIdStubs.position_id_both(), "BOTH"),
+        ],
+    )
+    async def test_submit_market_if_touched_order(
+        self,
+        mocker,
+        _is_dual_side_position,
+        position_id,
+        expected,
+    ):
         # Arrange
         mock_send_request = mocker.patch(
             target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
         )
+        mocker.patch.object(self.exec_client, "_is_dual_side_position", _is_dual_side_position)
 
         order = self.strategy.order_factory.market_if_touched(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -354,7 +488,7 @@ class TestBinanceFuturesExecutionClient:
         submit_order = SubmitOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy.id,
-            position_id=None,
+            position_id=position_id,
             order=order,
             command_id=UUID4(),
             ts_init=0,
@@ -362,28 +496,51 @@ class TestBinanceFuturesExecutionClient:
 
         # Act
         self.exec_client.submit_order(submit_order)
-        await asyncio.sleep(0.3)
+        await eventually(lambda: mock_send_request.call_args)
 
         # Assert
-        request = mock_send_request.call_args[0]
-        assert request[0] == "POST"
-        assert request[1] == "/fapi/v1/order"
-        assert request[2]["symbol"] == "ETHUSDT"  # -PERP was stripped
-        assert request[2]["side"] == "SELL"
-        assert request[2]["type"] == "TAKE_PROFIT_MARKET"
-        assert request[2]["timeInForce"] == "GTC"
-        assert request[2]["quantity"] == "10"
-        assert request[2]["newClientOrderId"] is not None
-        assert request[2]["stopPrice"] == "10099.00"
-        assert request[2]["recvWindow"] == "5000"
-        assert request[2]["signature"] is not None
+        request = mock_send_request.call_args
+        assert request[0][0] == HttpMethod.POST
+        assert request[0][1] == "/fapi/v1/order"
+        assert request[1]["payload"]["symbol"] == "ETHUSDT"  # -PERP was stripped
+        assert request[1]["payload"]["side"] == "SELL"
+        assert request[1]["payload"]["type"] == "TAKE_PROFIT_MARKET"
+        assert request[1]["payload"]["timeInForce"] == "GTC"
+        assert request[1]["payload"]["quantity"] == "10"
+        assert request[1]["payload"]["newClientOrderId"] is not None
+        assert request[1]["payload"]["stopPrice"] == "10099.00"
+        assert request[1]["payload"]["recvWindow"] == "5000"
+        assert request[1]["payload"]["signature"] is not None
+        assert request[1]["payload"]["positionSide"] == expected
 
     @pytest.mark.asyncio()
-    async def test_submit_limit_if_touched_order(self, mocker):
+    @pytest.mark.parametrize(
+        ("_is_dual_side_position", "position_id", "expected"),
+        [
+            # One-way mode
+            (False, None, "BOTH"),
+            (False, TestIdStubs.position_id(), "BOTH"),
+            (False, TestIdStubs.position_id_long(), "BOTH"),
+            (False, TestIdStubs.position_id_short(), "BOTH"),
+            (False, TestIdStubs.position_id_both(), "BOTH"),
+            # Hedge mode
+            (True, TestIdStubs.position_id_long(), "LONG"),
+            (True, TestIdStubs.position_id_short(), "SHORT"),
+            # (True, TestIdStubs.position_id_both(), "BOTH"),
+        ],
+    )
+    async def test_submit_limit_if_touched_order(
+        self,
+        mocker,
+        _is_dual_side_position,
+        position_id,
+        expected,
+    ):
         # Arrange
         mock_send_request = mocker.patch(
             target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
         )
+        mocker.patch.object(self.exec_client, "_is_dual_side_position", _is_dual_side_position)
 
         order = self.strategy.order_factory.limit_if_touched(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -397,7 +554,7 @@ class TestBinanceFuturesExecutionClient:
         submit_order = SubmitOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy.id,
-            position_id=None,
+            position_id=position_id,
             order=order,
             command_id=UUID4(),
             ts_init=0,
@@ -405,30 +562,54 @@ class TestBinanceFuturesExecutionClient:
 
         # Act
         self.exec_client.submit_order(submit_order)
-        await asyncio.sleep(0.3)
+        await eventually(lambda: mock_send_request.call_args)
 
         # Assert
-        request = mock_send_request.call_args[0]
-        assert request[0] == "POST"
-        assert request[1] == "/fapi/v1/order"
-        assert request[2]["symbol"] == "ETHUSDT"  # -PERP was stripped
-        assert request[2]["side"] == "SELL"
-        assert request[2]["type"] == "TAKE_PROFIT"
-        assert request[2]["timeInForce"] == "GTC"
-        assert request[2]["quantity"] == "10"
-        assert request[2]["price"] == "10050.80"
-        assert request[2]["newClientOrderId"] is not None
-        assert request[2]["stopPrice"] == "10099.00"
-        assert request[2]["workingType"] == "CONTRACT_PRICE"
-        assert request[2]["recvWindow"] == "5000"
-        assert request[2]["signature"] is not None
+        request = mock_send_request.call_args
+        assert request[0][0] == HttpMethod.POST
+        assert request[0][1] == "/fapi/v1/order"
+        assert request[1]["payload"]["symbol"] == "ETHUSDT"  # -PERP was stripped
+        assert request[1]["payload"]["side"] == "SELL"
+        assert request[1]["payload"]["type"] == "TAKE_PROFIT"
+        assert request[1]["payload"]["timeInForce"] == "GTC"
+        assert request[1]["payload"]["quantity"] == "10"
+        assert request[1]["payload"]["price"] == "10050.80"
+        assert request[1]["payload"]["newClientOrderId"] is not None
+        assert request[1]["payload"]["stopPrice"] == "10099.00"
+        assert request[1]["payload"]["workingType"] == "CONTRACT_PRICE"
+        assert request[1]["payload"]["recvWindow"] == "5000"
+        assert request[1]["payload"]["signature"] is not None
+        assert request[1]["payload"]["positionSide"] == expected
 
     @pytest.mark.asyncio()
-    async def test_trailing_stop_market_order(self, mocker):
+    @pytest.mark.parametrize(
+        ("_is_dual_side_position", "position_id", "expected"),
+        [
+            # One-way mode
+            (False, None, "BOTH"),
+            (False, TestIdStubs.position_id(), "BOTH"),
+            (False, TestIdStubs.position_id_long(), "BOTH"),
+            (False, TestIdStubs.position_id_short(), "BOTH"),
+            (False, TestIdStubs.position_id_both(), "BOTH"),
+            # Hedge mode
+            (True, TestIdStubs.position_id_long(), "LONG"),
+            (True, TestIdStubs.position_id_short(), "SHORT"),
+            # (True, TestIdStubs.position_id_both(), "BOTH"),
+        ],
+    )
+    async def test_trailing_stop_market_order(
+        self,
+        mocker,
+        _is_dual_side_position,
+        position_id,
+        expected,
+    ):
         # Arrange
         mock_send_request = mocker.patch(
             target="nautilus_trader.adapters.binance.http.client.BinanceHttpClient.send_request",
         )
+        mocker.patch.object(self.exec_client, "_is_dual_side_position", _is_dual_side_position)
+        mocker.patch.object(self.exec_client, "_use_reduce_only", not _is_dual_side_position)
 
         order = self.strategy.order_factory.trailing_stop_market(
             instrument_id=ETHUSDT_PERP_BINANCE.id,
@@ -445,7 +626,7 @@ class TestBinanceFuturesExecutionClient:
         submit_order = SubmitOrder(
             trader_id=self.trader_id,
             strategy_id=self.strategy.id,
-            position_id=None,
+            position_id=position_id,
             order=order,
             command_id=UUID4(),
             ts_init=0,
@@ -453,21 +634,25 @@ class TestBinanceFuturesExecutionClient:
 
         # Act
         self.exec_client.submit_order(submit_order)
-        await asyncio.sleep(0.3)
+        await eventually(lambda: mock_send_request.call_args)
 
         # Assert
-        request = mock_send_request.call_args[0]
-        assert request[0] == "POST"
-        assert request[1] == "/fapi/v1/order"
-        assert request[2]["symbol"] == "ETHUSDT"  # -PERP was stripped
-        assert request[2]["side"] == "SELL"
-        assert request[2]["type"] == "TRAILING_STOP_MARKET"
-        assert request[2]["timeInForce"] == "GTC"
-        assert request[2]["quantity"] == "10"
-        assert request[2]["reduceOnly"] == "True"
-        assert request[2]["newClientOrderId"] is not None
-        assert request[2]["activationPrice"] == "10000.00"
-        assert request[2]["callbackRate"] == "1"
-        assert request[2]["workingType"] == "MARK_PRICE"
-        assert request[2]["recvWindow"] == "5000"
-        assert request[2]["signature"] is not None
+        request = mock_send_request.call_args
+        assert request[0][0] == HttpMethod.POST
+        assert request[0][1] == "/fapi/v1/order"
+        assert request[1]["payload"]["symbol"] == "ETHUSDT"  # -PERP was stripped
+        assert request[1]["payload"]["side"] == "SELL"
+        assert request[1]["payload"]["type"] == "TRAILING_STOP_MARKET"
+        assert request[1]["payload"]["timeInForce"] == "GTC"
+        assert request[1]["payload"]["quantity"] == "10"
+        if _is_dual_side_position:
+            assert "reduceOnly" not in request[1]["payload"]
+        else:
+            assert request[1]["payload"]["reduceOnly"] == "True"
+        assert request[1]["payload"]["newClientOrderId"] is not None
+        assert request[1]["payload"]["activationPrice"] == "10000.00"
+        assert request[1]["payload"]["callbackRate"] == "1.0"
+        assert request[1]["payload"]["workingType"] == "MARK_PRICE"
+        assert request[1]["payload"]["recvWindow"] == "5000"
+        assert request[1]["payload"]["signature"] is not None
+        assert request[1]["payload"]["positionSide"] == expected

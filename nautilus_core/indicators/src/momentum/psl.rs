@@ -74,8 +74,9 @@ impl Indicator for PsychologicalLine {
 
 impl PsychologicalLine {
     /// Creates a new [`PsychologicalLine`] instance.
-    pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> anyhow::Result<Self> {
-        Ok(Self {
+    #[must_use]
+    pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
+        Self {
             period,
             ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
             value: 0.0,
@@ -84,7 +85,7 @@ impl PsychologicalLine {
             has_inputs: false,
             initialized: false,
             diff: 0.0,
-        })
+        }
     }
 
     pub fn update_raw(&mut self, close: f64) {

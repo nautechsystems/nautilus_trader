@@ -87,12 +87,13 @@ impl Indicator for VariableIndexDynamicAverage {
 
 impl VariableIndexDynamicAverage {
     /// Creates a new [`VariableIndexDynamicAverage`] instance.
+    #[must_use]
     pub fn new(
         period: usize,
         price_type: Option<PriceType>,
         cmo_ma_type: Option<MovingAverageType>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             period,
             price_type: price_type.unwrap_or(PriceType::Last),
             value: 0.0,
@@ -100,9 +101,9 @@ impl VariableIndexDynamicAverage {
             has_inputs: false,
             initialized: false,
             alpha: 2.0 / (period as f64 + 1.0),
-            cmo: ChandeMomentumOscillator::new(period, cmo_ma_type)?,
+            cmo: ChandeMomentumOscillator::new(period, cmo_ma_type),
             cmo_pct: 0.0,
-        })
+        }
     }
 }
 

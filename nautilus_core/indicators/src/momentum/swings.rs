@@ -89,8 +89,9 @@ impl Indicator for Swings {
 
 impl Swings {
     /// Creates a new [`Swings`] instance.
-    pub fn new(period: usize) -> anyhow::Result<Self> {
-        Ok(Self {
+    #[must_use]
+    pub fn new(period: usize) -> Self {
+        Self {
             period,
             high_inputs: VecDeque::with_capacity(period + 1),
             low_inputs: VecDeque::with_capacity(period + 1),
@@ -106,7 +107,7 @@ impl Swings {
             duration: 0,
             since_high: 0,
             since_low: 0,
-        })
+        }
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, timestamp: f64) {

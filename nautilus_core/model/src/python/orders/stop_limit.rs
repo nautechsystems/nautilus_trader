@@ -561,7 +561,7 @@ impl StopLimitOrder {
                 x.and_then(|x| {
                     let extracted = x.extract::<&str>();
                     match extracted {
-                        Ok(item) => Some(item.parse::<OrderListId>().unwrap()),
+                        Ok(item) => Some(OrderListId::from(item)),
                         Err(_) => None,
                     }
                 })
@@ -573,7 +573,7 @@ impl StopLimitOrder {
                 match extracted_str {
                     Ok(item) => Some(
                         item.iter()
-                            .map(|x| x.parse::<ClientOrderId>().unwrap())
+                            .map(|x| ClientOrderId::from(x.as_str()))
                             .collect(),
                     ),
                     Err(_) => None,
@@ -586,7 +586,7 @@ impl StopLimitOrder {
                 x.and_then(|x| {
                     let extracted = x.extract::<&str>();
                     match extracted {
-                        Ok(item) => item.parse::<ClientOrderId>().ok(),
+                        Ok(item) => Some(ClientOrderId::from(item)),
                         Err(_) => None,
                     }
                 })
@@ -598,7 +598,7 @@ impl StopLimitOrder {
                 x.and_then(|x| {
                     let extracted = x.extract::<&str>();
                     match extracted {
-                        Ok(item) => Some(item.parse::<ExecAlgorithmId>().unwrap()),
+                        Ok(item) => Some(ExecAlgorithmId::from(item)),
                         Err(_) => None,
                     }
                 })
@@ -619,7 +619,7 @@ impl StopLimitOrder {
                 x.and_then(|x| {
                     let extracted = x.extract::<&str>();
                     match extracted {
-                        Ok(item) => Some(item.parse::<ClientOrderId>().unwrap()),
+                        Ok(item) => Some(ClientOrderId::from(item)),
                         Err(_) => None,
                     }
                 })

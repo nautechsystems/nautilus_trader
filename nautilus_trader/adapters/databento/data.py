@@ -181,13 +181,13 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     async def _disconnect(self) -> None:
         if self._buffer_mbo_subscriptions_task:
-            self._log.debug("Canceling `buffer_mbo_subscriptions` task")
+            self._log.debug("Canceling task 'buffer_mbo_subscriptions'")
             self._buffer_mbo_subscriptions_task.cancel()
             self._buffer_mbo_subscriptions_task = None
 
         # Cancel update dataset ranges task
         if self._update_dataset_ranges_task:
-            self._log.debug("Canceling `update_dataset_ranges` task")
+            self._log.debug("Canceling task 'update_dataset_ranges'")
             self._update_dataset_ranges_task.cancel()
             self._update_dataset_ranges_task = None
 
@@ -227,7 +227,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             except Exception as e:  # Create specific exception type
                 self._log.error(f"Error updating dataset range: {e}")
             except asyncio.CancelledError:
-                self._log.debug("Canceled `update_dataset_ranges` task")
+                self._log.debug("Canceled task 'update_dataset_ranges'")
                 break
 
     async def _buffer_mbo_subscriptions(self) -> None:
@@ -244,7 +244,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
             await asyncio.gather(*coros)
         except asyncio.CancelledError:
-            self._log.debug("Canceled `buffer_mbo_subscriptions` task")
+            self._log.debug("Canceled task 'buffer_mbo_subscriptions'")
 
     def _get_live_client(self, dataset: Dataset) -> nautilus_pyo3.DatabentoLiveClient:
         # Retrieve or initialize the 'general' live client for the specified dataset

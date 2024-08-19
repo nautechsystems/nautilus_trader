@@ -21,7 +21,7 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::correctness::check_in_range_inclusive_f64;
+use nautilus_core::correctness::{check_in_range_inclusive_f64, FAILED};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
@@ -51,13 +51,13 @@ pub struct Money {
 
 impl Money {
     /// Creates a new [`Money`] instance.
-    pub fn new(amount: f64, currency: Currency) -> anyhow::Result<Self> {
-        check_in_range_inclusive_f64(amount, MONEY_MIN, MONEY_MAX, "amount")?;
+    pub fn new(amount: f64, currency: Currency) -> Self {
+        check_in_range_inclusive_f64(amount, MONEY_MIN, MONEY_MAX, "amount").expect(FAILED);
 
-        Ok(Self {
+        Self {
             raw: f64_to_fixed_i64(amount, currency.precision),
             currency,
-        })
+        }
     }
 
     #[must_use]
@@ -113,7 +113,7 @@ impl FromStr for Money {
         // Parse currency
         let currency = Currency::from_str(parts[1]).map_err(|e: anyhow::Error| e.to_string())?;
 
-        Self::new(amount, currency).map_err(|e: anyhow::Error| e.to_string())
+        Ok(Self::new(amount, currency))
     }
 }
 
@@ -323,8 +323,7 @@ impl<'de> Deserialize<'de> for Money {
         D: Deserializer<'de>,
     {
         let money_str: String = Deserialize::deserialize(deserializer)?;
-        Money::from_str(&money_str)
-            .map_err(|_| serde::de::Error::custom("Failed to parse Money amount"))
+        Ok(Money::from(money_str.as_str()))
     }
 }
 
@@ -341,7 +340,7 @@ mod tests {
 
     #[rstest]
     fn test_debug() {
-        let money = Money::new(1010.12, Currency::USD()).unwrap();
+        let money = Money::new(1010.12, Currency::USD());
         let result = format!("{:?}", money);
         let expected = "Money(1010.12, USD)";
         assert_eq!(result, expected);
@@ -349,7 +348,7 @@ mod tests {
 
     #[rstest]
     fn test_display() {
-        let money = Money::new(1010.12, Currency::USD()).unwrap();
+        let money = Money::new(1010.12, Currency::USD());
         let result = format!("{money}");
         let expected = "1010.12 USD";
         assert_eq!(result, expected);
@@ -358,15 +357,15 @@ mod tests {
     #[rstest]
     #[should_panic]
     fn test_money_different_currency_addition() {
-        let usd = Money::new(1000.0, Currency::USD()).unwrap();
-        let btc = Money::new(1.0, Currency::BTC()).unwrap();
+        let usd = Money::new(1000.0, Currency::USD());
+        let btc = Money::new(1.0, Currency::BTC());
         let _result = usd + btc; // This should panic since currencies are different
     }
 
     #[rstest]
     fn test_money_min_max_values() {
-        let min_money = Money::new(MONEY_MIN, Currency::USD()).unwrap();
-        let max_money = Money::new(MONEY_MAX, Currency::USD()).unwrap();
+        let min_money = Money::new(MONEY_MIN, Currency::USD());
+        let max_money = Money::new(MONEY_MAX, Currency::USD());
         assert_eq!(
             min_money.raw,
             f64_to_fixed_i64(MONEY_MIN, Currency::USD().precision)
@@ -379,14 +378,14 @@ mod tests {
 
     #[rstest]
     fn test_money_addition_f64() {
-        let money = Money::new(1000.0, Currency::USD()).unwrap();
+        let money = Money::new(1000.0, Currency::USD());
         let result = money + 500.0;
         assert_eq!(result, 1500.0);
     }
 
     #[rstest]
     fn test_money_negation() {
-        let money = Money::new(100.0, Currency::USD()).unwrap();
+        let money = Money::new(100.0, Currency::USD());
         let result = -money;
         assert_eq!(result.as_f64(), -100.0);
         assert_eq!(result.currency, Currency::USD().clone());
@@ -394,7 +393,7 @@ mod tests {
 
     #[rstest]
     fn test_money_new_usd() {
-        let money = Money::new(1000.0, Currency::USD()).unwrap();
+        let money = Money::new(1000.0, Currency::USD());
         assert_eq!(money.currency.code.as_str(), "USD");
         assert_eq!(money.currency.precision, 2);
         assert_eq!(money.to_string(), "1000.00 USD");
@@ -405,7 +404,7 @@ mod tests {
 
     #[rstest]
     fn test_money_new_btc() {
-        let money = Money::new(10.3, Currency::BTC()).unwrap();
+        let money = Money::new(10.3, Currency::BTC());
         assert_eq!(money.currency.code.as_str(), "BTC");
         assert_eq!(money.currency.precision, 8);
         assert_eq!(money.to_string(), "10.30000000 BTC");
@@ -414,9 +413,9 @@ mod tests {
 
     #[rstest]
     fn test_money_serialization_deserialization() {
-        let money = Money::new(123.45, Currency::USD()).unwrap();
-        let serialized = serde_json::to_string(&money).unwrap();
-        let deserialized: Money = serde_json::from_str(&serialized).unwrap();
+        let money = Money::new(123.45, Currency::USD());
+        let serialized = serde_json::to_string(&money);
+        let deserialized: Money = serde_json::from_str(&serialized.unwrap()).unwrap();
         assert_eq!(money, deserialized);
     }
 
@@ -425,9 +424,9 @@ mod tests {
     #[case("0x00 USD")] // <-- Invalid float
     #[case("0 US")] // <-- Invalid currency
     #[case("0 USD USD")] // <-- Too many parts
+    #[should_panic]
     fn test_from_str_invalid_input(#[case] input: &str) {
-        let result = Money::from_str(input);
-        assert!(result.is_err());
+        let _ = Money::from(input);
     }
 
     #[rstest]
@@ -440,7 +439,7 @@ mod tests {
         #[case] expected_currency: Currency,
         #[case] expected_dec: Decimal,
     ) {
-        let money = Money::from_str(input).unwrap();
+        let money = Money::from(input);
         assert_eq!(money.currency, expected_currency);
         assert_eq!(money.as_decimal(), expected_dec);
     }

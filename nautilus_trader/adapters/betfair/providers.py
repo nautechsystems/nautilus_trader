@@ -107,7 +107,7 @@ class BetfairInstrumentProvider(InstrumentProvider):
         self._log.info(f"Found {len(markets)} markets, loading metadata")
         market_metadata = await load_markets_metadata(client=self._client, markets=markets)
 
-        self._log.info("Creating instruments..")
+        self._log.info("Creating instruments...")
         instruments = [
             instrument
             for metadata in market_metadata

@@ -574,7 +574,7 @@ cdef class OrderEmulator(Actor):
             return
 
         if self.debug:
-            self._log.info(f"Cancelling order {order.client_order_id!r}", LogColor.MAGENTA)
+            self._log.info(f"Canceling order {order.client_order_id!r}", LogColor.MAGENTA)
 
         # Remove emulation trigger
         order.emulation_trigger = TriggerType.NO_TRIGGER

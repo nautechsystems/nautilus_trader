@@ -98,8 +98,9 @@ impl Indicator for SpreadAnalyzer {
 
 impl SpreadAnalyzer {
     /// Creates a new [`SpreadAnalyzer`] instance.
-    pub fn new(capacity: usize, instrument_id: InstrumentId) -> anyhow::Result<Self> {
-        Ok(Self {
+    #[must_use]
+    pub fn new(capacity: usize, instrument_id: InstrumentId) -> Self {
+        Self {
             capacity,
             instrument_id,
             current: 0.0,
@@ -107,7 +108,7 @@ impl SpreadAnalyzer {
             initialized: false,
             has_inputs: false,
             spreads: Vec::with_capacity(capacity),
-        })
+        }
     }
 }
 

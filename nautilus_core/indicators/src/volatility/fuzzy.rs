@@ -111,20 +111,21 @@ impl Display for FuzzyCandle {
 }
 
 impl FuzzyCandle {
+    #[must_use]
     pub const fn new(
         direction: CandleDirection,
         size: CandleSize,
         body_size: CandleBodySize,
         upper_wick_size: CandleWickSize,
         lower_wick_size: CandleWickSize,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             direction,
             size,
             body_size,
             upper_wick_size,
             lower_wick_size,
-        })
+        }
     }
 }
 
@@ -212,14 +213,15 @@ impl FuzzyCandlesticks {
     /// - Threshold2: f64 : The membership function x threshold2 (> threshold1).
     /// - Threshold3: f64 : The membership function x threshold3 (> threshold2).
     /// - Threshold4: f64 : The membership function x threshold4 (> threshold3).
+    #[must_use]
     pub fn new(
         period: usize,
         threshold1: f64,
         threshold2: f64,
         threshold3: f64,
         threshold4: f64,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             period,
             threshold1,
             threshold2,
@@ -232,8 +234,7 @@ impl FuzzyCandlesticks {
                 CandleBodySize::None,
                 CandleWickSize::None,
                 CandleWickSize::None,
-            )
-            .unwrap(),
+            ),
             has_inputs: false,
             initialized: false,
             lengths: VecDeque::with_capacity(period),
@@ -244,7 +245,7 @@ impl FuzzyCandlesticks {
             last_high: 0.0,
             last_low: 0.0,
             last_close: 0.0,
-        })
+        }
     }
 
     pub fn update_raw(&mut self, open: f64, high: f64, low: f64, close: f64) {
@@ -308,8 +309,7 @@ impl FuzzyCandlesticks {
                 mean_lower_wick_percent,
                 sd_lower_wick_percent,
             ),
-        )
-        .unwrap();
+        );
 
         self.vector = vec![
             self.value.direction as i32,
@@ -331,8 +331,7 @@ impl FuzzyCandlesticks {
             CandleBodySize::None,
             CandleWickSize::None,
             CandleWickSize::None,
-        )
-        .unwrap();
+        );
         self.vector = Vec::new();
         self.last_open = 0.0;
         self.last_high = 0.0;

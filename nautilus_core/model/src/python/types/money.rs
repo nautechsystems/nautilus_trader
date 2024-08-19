@@ -20,7 +20,10 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::python::{get_pytype_name, to_pytype_err, to_pyvalue_err};
+use nautilus_core::{
+    correctness::check_in_range_inclusive_f64,
+    python::{get_pytype_name, to_pytype_err, to_pyvalue_err},
+};
 use pyo3::{
     exceptions::PyValueError,
     prelude::*,
@@ -29,13 +32,18 @@ use pyo3::{
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 
-use crate::types::{currency::Currency, money::Money};
+use crate::types::{
+    currency::Currency,
+    money::{Money, MONEY_MAX, MONEY_MIN},
+};
 
 #[pymethods]
 impl Money {
     #[new]
-    fn py_new(value: f64, currency: Currency) -> PyResult<Self> {
-        Self::new(value, currency).map_err(to_pyvalue_err)
+    fn py_new(amount: f64, currency: Currency) -> PyResult<Self> {
+        check_in_range_inclusive_f64(amount, MONEY_MIN, MONEY_MAX, "amount")
+            .map_err(to_pyvalue_err)?;
+        Ok(Self::new(amount, currency))
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -57,8 +65,8 @@ impl Money {
     }
 
     #[staticmethod]
-    fn _safe_constructor() -> PyResult<Self> {
-        Ok(Self::new(0.0, Currency::AUD()).unwrap()) // Safe default
+    fn _safe_constructor() -> Self {
+        Self::new(0.0, Currency::AUD())
     }
 
     fn __add__(&self, other: PyObject, py: Python) -> PyResult<PyObject> {
@@ -331,8 +339,8 @@ impl Money {
 
     #[staticmethod]
     #[pyo3(name = "zero")]
-    fn py_zero(currency: Currency) -> PyResult<Self> {
-        Self::new(0.0, currency).map_err(to_pyvalue_err)
+    fn py_zero(currency: Currency) -> Self {
+        Self::new(0.0, currency)
     }
 
     #[staticmethod]

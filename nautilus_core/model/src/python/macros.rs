@@ -22,10 +22,9 @@ macro_rules! identifier_for_python {
         impl $ty {
             #[new]
             fn py_new(value: &str) -> PyResult<Self> {
-                match <$ty>::new(value) {
-                    Ok(instance) => Ok(instance),
-                    Err(e) => Err(to_pyvalue_err(e)),
-                }
+                nautilus_core::correctness::check_valid_string(value, stringify!(value))
+                    .map_err(to_pyvalue_err)?;
+                Ok(<$ty>::new(value))
             }
 
             fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -47,7 +46,7 @@ macro_rules! identifier_for_python {
 
             #[staticmethod]
             fn _safe_constructor() -> PyResult<Self> {
-                Ok(<$ty>::from_str("NULL").unwrap()) // Safe default
+                Ok(<$ty>::from("NULL")) // Safe default
             }
 
             fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -85,8 +84,8 @@ macro_rules! identifier_for_python {
 
             #[staticmethod]
             #[pyo3(name = "from_str")]
-            fn py_from_str(value: &str) -> PyResult<Self> {
-                Self::from_str(value).map_err(to_pyvalue_err)
+            fn py_from_str(value: &str) -> Self {
+                Self::from(value)
             }
         }
     };

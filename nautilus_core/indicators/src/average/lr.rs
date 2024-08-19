@@ -76,8 +76,9 @@ impl Indicator for LinearRegression {
 
 impl LinearRegression {
     /// Creates a new [`LinearRegression`] instance.
-    pub fn new(period: usize) -> anyhow::Result<Self> {
-        Ok(Self {
+    #[must_use]
+    pub fn new(period: usize) -> Self {
+        Self {
             period,
             slope: 0.0,
             intercept: 0.0,
@@ -88,7 +89,7 @@ impl LinearRegression {
             inputs: Vec::with_capacity(period),
             has_inputs: false,
             initialized: false,
-        })
+        }
     }
 
     pub fn update_raw(&mut self, close: f64) {

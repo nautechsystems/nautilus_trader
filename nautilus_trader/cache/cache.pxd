@@ -106,14 +106,12 @@ cdef class Cache(CacheFacade):
     cdef set _index_exec_algorithms
     cdef bint _drop_instruments_on_reset
 
+    cdef readonly bint has_backing
+    """If the cache has a database backing.\n\n:returns: `bool`"""
     cdef readonly int tick_capacity
     """The caches tick capacity.\n\n:returns: `int`"""
     cdef readonly int bar_capacity
     """The caches bar capacity.\n\n:returns: `int`"""
-    cdef readonly bint snapshot_orders
-    """If order state snapshots should be persisted.\n\n:returns: `bool`"""
-    cdef readonly bint snapshot_positions
-    """If position state snapshots should be persisted.\n\n:returns: `bool`"""
 
     cpdef void cache_general(self)
     cpdef void cache_currencies(self)
@@ -168,7 +166,7 @@ cdef class Cache(CacheFacade):
     cpdef void add_position_id(self, PositionId position_id, Venue venue, ClientOrderId client_order_id, StrategyId strategy_id)
     cpdef void add_position(self, Position position, OmsType oms_type)
     cpdef void snapshot_position(self, Position position)
-    cpdef void snapshot_position_state(self, Position position, uint64_t ts_snapshot, bint open_only=*)
+    cpdef void snapshot_position_state(self, Position position, uint64_t ts_snapshot, Money unrealized_pnl=*, bint open_only=*)
     cpdef void snapshot_order_state(self, Order order)
 
     cpdef void update_account(self, Account account)

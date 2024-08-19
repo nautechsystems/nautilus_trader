@@ -22,7 +22,8 @@ pub mod position_id;
 use chrono::{DateTime, Datelike, Timelike};
 
 fn get_datetime_tag(unix_ms: u64) -> String {
-    let now_utc = DateTime::from_timestamp_millis(unix_ms as i64).unwrap();
+    let now_utc = DateTime::from_timestamp_millis(unix_ms as i64)
+        .expect("Milliseconds timestamp should be within valid range");
     format!(
         "{}{:02}{:02}-{:02}{:02}{:02}",
         now_utc.year(),

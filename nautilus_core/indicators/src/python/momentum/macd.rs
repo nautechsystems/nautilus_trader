@@ -34,8 +34,8 @@ impl MovingAverageConvergenceDivergence {
         slow_period: usize,
         ma_type: Option<MovingAverageType>,
         price_type: Option<PriceType>,
-    ) -> PyResult<Self> {
-        Self::new(fast_period, slow_period, ma_type, price_type).map_err(to_pyvalue_err)
+    ) -> Self {
+        Self::new(fast_period, slow_period, ma_type, price_type)
     }
 
     fn __repr__(&self) -> String {

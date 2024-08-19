@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.198.0"
+version = "1.199.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -39,7 +39,7 @@ include = [
 requires = [
     "setuptools",
     "poetry-core>=1.9.0",
-    "numpy>=2.0.1",
+    "numpy>=2.1.0",
     "Cython==3.0.11",
     "toml>=0.10.2",
 ]
@@ -52,7 +52,7 @@ generate-setup-file = false
 [tool.poetry.dependencies]
 python = ">=3.10,<3.13"
 cython = "==3.0.11"  # Build dependency (pinned for stability)
-numpy = "^2.0.1"  # Build dependency
+numpy = "^2.1.0"  # Build dependency
 setuptools = ">=72" # Build dependency
 toml = "^0.10.2"  # Build dependency
 click = "^8.1.7"
@@ -62,7 +62,7 @@ pandas = "^2.2.2"
 pyarrow = ">=17.0.0"
 pytz = ">=2024.1.0"
 tqdm = "^4.66.5"
-uvloop = {version = "^0.19.0", markers = "sys_platform != 'win32'"}
+uvloop = {version = "^0.20.0", markers = "sys_platform != 'win32'"}
 
 async-timeout = {version = "^4.0.3", optional = true}
 betfair_parser = {version = "==0.13.0", optional = true}  # Pinned for stability
@@ -84,7 +84,7 @@ docformatter = "^1.7.5"
 mypy = "^1.11.1"
 pandas-stubs = "^2.2.2"
 pre-commit = "^3.8.0"
-ruff = "^0.5.7"
+ruff = "^0.6.1"
 types-pytz = "^2024.1"
 types-requests = "^2.32"
 types-toml = "^0.10.2"
@@ -106,7 +106,7 @@ pytest-xdist = { version = "^3.6.1", extras = ["psutil"] }
 optional = true
 
 [tool.poetry.group.docs.dependencies]
-numpydoc = "^1.7.0"
+numpydoc = "^1.8.0"
 linkify-it-py = "^2.0.3"
 myst-parser = "^3.0.1"
 sphinx_comments = "^0.0.3"

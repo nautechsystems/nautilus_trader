@@ -78,8 +78,9 @@ impl Indicator for DirectionalMovement {
 
 impl DirectionalMovement {
     /// Creates a new [`DirectionalMovement`] instance.
-    pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> anyhow::Result<Self> {
-        Ok(Self {
+    #[must_use]
+    pub fn new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
+        Self {
             period,
             ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
             pos: 0.0,
@@ -96,7 +97,7 @@ impl DirectionalMovement {
             ),
             has_inputs: false,
             initialized: false,
-        })
+        }
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64) {

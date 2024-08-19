@@ -76,10 +76,10 @@ mod serial_tests {
         // 1. first define and add currencies as they are contain foreign keys for instruments
         let mut pg_cache = get_pg_cache_database().await.unwrap();
         // Define currencies
-        let btc = Currency::new("BTC", 8, 0, "BTC", CurrencyType::Crypto).unwrap();
-        let eth = Currency::new("ETH", 2, 0, "ETH", CurrencyType::Crypto).unwrap();
-        let usd = Currency::new("USD", 2, 0, "USD", CurrencyType::Fiat).unwrap();
-        let usdt = Currency::new("USDT", 2, 0, "USDT", CurrencyType::Crypto).unwrap();
+        let btc = Currency::new("BTC", 8, 0, "BTC", CurrencyType::Crypto);
+        let eth = Currency::new("ETH", 2, 0, "ETH", CurrencyType::Crypto);
+        let usd = Currency::new("USD", 2, 0, "USD", CurrencyType::Fiat);
+        let usdt = Currency::new("USDT", 2, 0, "USDT", CurrencyType::Crypto);
         // Insert all the currencies
         pg_cache.add_currency(&btc).unwrap();
         pg_cache.add_currency(&eth).unwrap();
@@ -214,8 +214,8 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_postgres_cache_database_add_order_and_load_indexes() {
-        let client_order_id_1 = ClientOrderId::new("O-19700101-000000-001-001-1").unwrap();
-        let client_order_id_2 = ClientOrderId::new("O-19700101-000000-001-001-2").unwrap();
+        let client_order_id_1 = ClientOrderId::new("O-19700101-000000-001-001-1");
+        let client_order_id_2 = ClientOrderId::new("O-19700101-000000-001-001-2");
         let instrument = currency_pair_ethusdt();
         let mut pg_cache = get_pg_cache_database().await.unwrap();
         let market_order = TestOrderStubs::market_order(
@@ -242,7 +242,7 @@ mod serial_tests {
             .add_instrument(&InstrumentAny::CurrencyPair(instrument))
             .unwrap();
         // Set client id
-        let client_id = ClientId::new("TEST").unwrap();
+        let client_id = ClientId::new("TEST");
         // add orders
         pg_cache.add_order(&market_order, Some(client_id)).unwrap();
         pg_cache.add_order(&limit_order, Some(client_id)).unwrap();
@@ -288,7 +288,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_update_order_for_open_order() {
-        let client_order_id_1 = ClientOrderId::new("O-19700101-000000-001-002-1").unwrap();
+        let client_order_id_1 = ClientOrderId::new("O-19700101-000000-001-002-1");
         let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
         let account = account_id();
         let mut pg_cache = get_pg_cache_database().await.unwrap();
@@ -311,25 +311,22 @@ mod serial_tests {
         market_order.apply(submitted).unwrap();
         pg_cache.update_order(&market_order).unwrap();
 
-        let accepted = TestOrderEventStubs::order_accepted(
-            &market_order,
-            account,
-            VenueOrderId::new("001").unwrap(),
-        );
+        let accepted =
+            TestOrderEventStubs::order_accepted(&market_order, account, VenueOrderId::new("001"));
         market_order.apply(accepted).unwrap();
         pg_cache.update_order(&market_order).unwrap();
 
         let filled = TestOrderEventStubs::order_filled(
             &market_order,
             &instrument,
-            Some(TradeId::new("T-19700101-000000-001-001-1").unwrap()),
+            Some(TradeId::new("T-19700101-000000-001-001-1")),
             None,
             Some(Price::from("100.0")),
             Some(Quantity::from("1.0")),
             None,
             None,
             None,
-            Some(AccountId::new("SIM-001").unwrap()),
+            Some(AccountId::new("SIM-001")),
         );
         market_order.apply(filled).unwrap();
         pg_cache.update_order(&market_order).unwrap();

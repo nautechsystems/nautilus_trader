@@ -78,17 +78,16 @@ impl Indicator for SimpleMovingAverage {
 
 impl SimpleMovingAverage {
     /// Creates a new [`SimpleMovingAverage`] instance.
-    pub fn new(period: usize, price_type: Option<PriceType>) -> anyhow::Result<Self> {
-        // Inputs don't require validation, however we return a `Result`
-        // to standardize with other indicators which do need validation.
-        Ok(Self {
+    #[must_use]
+    pub fn new(period: usize, price_type: Option<PriceType>) -> Self {
+        Self {
             period,
             price_type: price_type.unwrap_or(PriceType::Last),
             value: 0.0,
             count: 0,
             inputs: Vec::with_capacity(period),
             initialized: false,
-        })
+        }
     }
 }
 

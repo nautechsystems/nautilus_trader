@@ -81,12 +81,9 @@ impl Indicator for Pressure {
 
 impl Pressure {
     /// Creates a new [`Pressure`] instance.
-    pub fn new(
-        period: usize,
-        ma_type: Option<MovingAverageType>,
-        atr_floor: Option<f64>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    #[must_use]
+    pub fn new(period: usize, ma_type: Option<MovingAverageType>, atr_floor: Option<f64>) -> Self {
+        Self {
             period,
             ma_type: ma_type.unwrap_or(MovingAverageType::Simple),
             atr_floor: atr_floor.unwrap_or(0.0),
@@ -97,14 +94,14 @@ impl Pressure {
                 Some(MovingAverageType::Exponential),
                 Some(false),
                 atr_floor,
-            )?,
+            ),
             average_volume: MovingAverageFactory::create(
                 ma_type.unwrap_or(MovingAverageType::Simple),
                 period,
             ),
             has_inputs: false,
             initialized: false,
-        })
+        }
     }
 
     pub fn update_raw(&mut self, high: f64, low: f64, close: f64, volume: f64) {

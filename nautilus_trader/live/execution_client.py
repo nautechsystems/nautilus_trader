@@ -179,7 +179,7 @@ class LiveExecutionClient(ExecutionClient):
 
         """
         log_msg = log_msg or coro.__name__
-        self._log.debug(f"Creating task {log_msg}")
+        self._log.debug(f"Creating task '{log_msg}'")
         task = self._loop.create_task(
             coro,
             name=coro.__name__,
@@ -205,7 +205,7 @@ class LiveExecutionClient(ExecutionClient):
         if e:
             tb_str = "".join(traceback.format_exception(type(e), e, e.__traceback__))
             self._log.error(
-                f"Error on `{task.get_name()}`: {task.exception()!r}\n{tb_str}",
+                f"Error on '{task.get_name()}': {task.exception()!r}\n{tb_str}",
             )
         else:
             if actions:
@@ -214,7 +214,7 @@ class LiveExecutionClient(ExecutionClient):
                 except Exception as e:
                     tb_str = "".join(traceback.format_exception(type(e), e, e.__traceback__))
                     self._log.error(
-                        f"Failed triggering action {actions.__name__} on `{task.get_name()}`: "
+                        f"Failed triggering action {actions.__name__} on '{task.get_name()}': "
                         f"{e!r}\n{tb_str}",
                     )
             if success_msg:

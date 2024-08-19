@@ -22,8 +22,8 @@ use crate::{average::MovingAverageType, indicator::Indicator, momentum::roc::Rat
 #[pymethods]
 impl RateOfChange {
     #[new]
-    pub fn py_new(period: usize, use_log: Option<bool>) -> PyResult<Self> {
-        Self::new(period, use_log).map_err(to_pyvalue_err)
+    pub fn py_new(period: usize, use_log: Option<bool>) -> Self {
+        Self::new(period, use_log)
     }
 
     fn __repr__(&self) -> String {

@@ -105,6 +105,7 @@ cdef class Position:
     cdef list events_c(self)
     cdef OrderFilled last_event_c(self)
     cdef TradeId last_trade_id_c(self)
+    cdef bint has_trade_id_c(self, TradeId trade_id)
     cdef int event_count_c(self)
     cdef bint is_long_c(self)
     cdef bint is_short_c(self)

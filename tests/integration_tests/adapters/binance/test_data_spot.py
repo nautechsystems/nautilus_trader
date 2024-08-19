@@ -35,6 +35,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
@@ -123,10 +124,9 @@ class TestBinanceSpotDataClient:
 
         # Act
         self.data_client.connect()
-        await asyncio.sleep(1)
 
         # Assert
-        assert self.data_client.is_connected
+        await eventually(lambda: self.data_client.is_connected)
 
     @pytest.mark.asyncio()
     async def test_disconnect(self, monkeypatch):
@@ -201,7 +201,7 @@ class TestBinanceSpotDataClient:
         )
 
         self.data_client.connect()
-        await asyncio.sleep(1)
+        await eventually(lambda: self.data_client.is_connected)
 
         # Act
         self.data_client.subscribe_instruments()
@@ -243,7 +243,7 @@ class TestBinanceSpotDataClient:
         )
 
         self.data_client.connect()
-        await asyncio.sleep(1)
+        await eventually(lambda: self.data_client.is_connected)
 
         ethusdt = InstrumentId.from_str("ETHUSDT.BINANCE")
 
@@ -271,7 +271,7 @@ class TestBinanceSpotDataClient:
 
         # Assert
         self.data_client._handle_ws_message(raw_book_tick)
-        await asyncio.sleep(1)
+        await eventually(lambda: self.data_engine.data_count)
 
         assert self.data_engine.data_count == 1
         assert len(handler) == 1  # <-- handler received tick
@@ -303,7 +303,7 @@ class TestBinanceSpotDataClient:
 
         # Assert
         self.data_client._handle_ws_message(raw_trade)
-        await asyncio.sleep(1)
+        await eventually(lambda: self.data_engine.data_count)
 
         assert self.data_engine.data_count == 1
         assert len(handler) == 1  # <-- handler received tick
@@ -337,7 +337,7 @@ class TestBinanceSpotDataClient:
 
         # Assert
         self.data_client._handle_ws_message(raw_trade)
-        await asyncio.sleep(1)
+        await eventually(lambda: self.data_engine.data_count)
 
         assert self.data_engine.data_count == 1
         assert len(handler) == 1  # <-- handler received tick

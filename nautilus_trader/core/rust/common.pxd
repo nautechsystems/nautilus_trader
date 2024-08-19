@@ -92,14 +92,16 @@ cdef extern from "../includes/common.h":
     cpdef enum LogLevel:
         # A level lower than all other log levels (off).
         OFF # = 0,
+        # The **TRACE** trace log level. Only available in Rust for debug/development builds.
+        TRACE # = 1,
         # The **DEBUG** debug log level.
-        DEBUG # = 10,
+        DEBUG # = 2,
         # The **INFO** info log level.
-        INFO # = 20,
+        INFO # = 3,
         # The **WARNING** warning log level.
-        WARNING # = 30,
+        WARNING # = 4,
         # The **ERROR** error log level.
-        ERROR # = 40,
+        ERROR # = 5,
 
     # A real-time clock which uses system time.
     #

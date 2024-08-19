@@ -42,20 +42,19 @@ impl OrderList {
         strategy_id: StrategyId,
         orders: Vec<OrderAny>,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
-        check_slice_not_empty(orders.as_slice(), stringify!(orders))?;
+    ) -> Self {
+        check_slice_not_empty(orders.as_slice(), stringify!(orders)).unwrap();
         for order in &orders {
             assert_eq!(instrument_id, order.instrument_id());
             assert_eq!(strategy_id, order.strategy_id());
         }
-
-        Ok(Self {
+        Self {
             id: order_list_id,
             instrument_id,
             strategy_id,
             orders,
             ts_init,
-        })
+        }
     }
 }
 
@@ -132,8 +131,7 @@ mod tests {
             StrategyId::default(),
             orders,
             UnixNanos::default(),
-        )
-        .unwrap();
+        );
 
         assert!(order_list.to_string().starts_with(
             "OrderList(id=OL-001, instrument_id=AUD/USD.SIM, strategy_id=S-001, orders="

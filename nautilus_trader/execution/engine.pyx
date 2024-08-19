@@ -49,9 +49,11 @@ from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport LogColor
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport MessageBus
+from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.common.generators cimport PositionIdGenerator
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.fsm cimport InvalidStateTrigger
+from nautilus_trader.core.rust.core cimport secs_to_nanos
 from nautilus_trader.core.rust.model cimport ContingencyType
 from nautilus_trader.core.rust.model cimport OmsType
 from nautilus_trader.core.rust.model cimport PositionSide
@@ -145,6 +147,14 @@ cdef class ExecutionEngine(Component):
 
         # Settings
         self.debug: bool = config.debug
+        self.snapshot_orders = config.snapshot_orders
+        self.snapshot_positions = config.snapshot_positions
+        self.snapshot_positions_interval_secs = config.snapshot_positions_interval_secs or 0
+        self.snapshot_positions_timer_name = "ExecEngine_SNAPSHOT_POSITIONS"
+
+        self._log.info(f"{config.snapshot_orders=}", LogColor.BLUE)
+        self._log.info(f"{config.snapshot_positions=}", LogColor.BLUE)
+        self._log.info(f"{config.snapshot_positions_interval_secs=}", LogColor.BLUE)
 
         # Counters
         self.command_count: int = 0
@@ -536,12 +546,29 @@ cdef class ExecutionEngine(Component):
         for client in self._clients.values():
             client.start()
 
+        if self.snapshot_positions_interval_secs and self.snapshot_positions_timer_name not in self._clock.timer_names:
+            self._log.info(
+                f"Starting position snapshots timer at {self.snapshot_positions_interval_secs} second intervals",
+            )
+            interval_ns = secs_to_nanos(self.snapshot_positions_interval_secs)
+            self._clock.set_timer_ns(
+                name=self.snapshot_positions_timer_name,
+                interval_ns=interval_ns,
+                start_time_ns=0,  # TBD if should align to nearest second boundary
+                stop_time_ns=0,  # Run as long as execution engine is running
+                callback=self._snapshot_open_position_states,
+            )
+
         self._on_start()
 
     cpdef void _stop(self):
         cdef ExecutionClient client
         for client in self._clients.values():
             client.stop()
+
+        if self.snapshot_positions_interval_secs and self.snapshot_positions_timer_name in self._clock.timer_names:
+            self._log.info(f"Canceling position snapshots timer")
+            self._clock.cancel_timer(self.snapshot_positions_timer_name)
 
         self._on_stop()
 
@@ -711,8 +738,8 @@ cdef class ExecutionEngine(Component):
             topic=f"events.order.{order.strategy_id}",
             msg=denied,
         )
-        if self._msgbus.has_backing and self._msgbus.snapshot_orders:
-            self._publish_order_snapshot(order)
+        if self.snapshot_orders:
+            self._create_order_state_snapshot(order)
 
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
@@ -759,8 +786,8 @@ cdef class ExecutionEngine(Component):
         if not self._cache.order_exists(order.client_order_id):
             # Cache order
             self._cache.add_order(order, command.position_id, command.client_id)
-            if self._msgbus.has_backing and self._msgbus.snapshot_orders:
-                self._publish_order_snapshot(order)
+            if self.snapshot_orders:
+                self._create_order_state_snapshot(order)
 
         cdef Instrument instrument = self._cache.instrument(order.instrument_id)
         if instrument is None:
@@ -790,8 +817,8 @@ cdef class ExecutionEngine(Component):
             if not self._cache.order_exists(order.client_order_id):
                 # Cache order
                 self._cache.add_order(order, command.position_id, command.client_id)
-                if self._msgbus.has_backing and self._msgbus.snapshot_orders:
-                    self._publish_order_snapshot(order)
+                if self.snapshot_orders:
+                    self._create_order_state_snapshot(order)
 
         cdef Instrument instrument = self._cache.instrument(command.instrument_id)
         if instrument is None:
@@ -1019,8 +1046,8 @@ cdef class ExecutionEngine(Component):
             topic=f"events.order.{event.strategy_id}",
             msg=event,
         )
-        if self._msgbus.has_backing and self._msgbus.snapshot_orders:
-            self._publish_order_snapshot(order)
+        if self.snapshot_orders:
+            self._create_order_state_snapshot(order)
 
     cpdef void _handle_order_fill(self, Order order, OrderFilled fill, OmsType oms_type):
         cdef Instrument instrument = self._cache.load_instrument(fill.instrument_id)
@@ -1066,15 +1093,14 @@ cdef class ExecutionEngine(Component):
         if position is None:
             position = Position(instrument, fill)
             self._cache.add_position(position, oms_type)
-            if self._msgbus.has_backing and self._msgbus.snapshot_positions:
-                self._publish_position_snapshot(position)
+            if self.snapshot_positions:
+                self._create_position_state_snapshot(position)
         else:
             try:
+                # Always snapshot opening positions to handle NETTING OMS
                 self._cache.snapshot_position(position)
                 position.apply(fill)
                 self._cache.update_position(position)
-                if self._msgbus.has_backing and self._msgbus.snapshot_positions:
-                    self._publish_position_snapshot(position)
             except KeyError as e:
                 # Protected against duplicate OrderFilled
                 self._log.exception(f"Error on applying {fill!r} to {position!r}", e)
@@ -1103,8 +1129,8 @@ cdef class ExecutionEngine(Component):
             return  # Not re-raising to avoid crashing engine
 
         self._cache.update_position(position)
-        if self._msgbus.has_backing and self._msgbus.snapshot_positions:
-            self._publish_position_snapshot(position)
+        if self.snapshot_positions:
+            self._create_position_state_snapshot(position)
 
         cdef PositionEvent event
         if position.is_closed_c():
@@ -1220,20 +1246,49 @@ cdef class ExecutionEngine(Component):
         # Open flipped position
         self._open_position(instrument, None, fill_split2, oms_type)
 
-    cpdef void _publish_order_snapshot(self, Order order):
-        if self._msgbus.serializer is not None:
+    cpdef void _create_order_state_snapshot(self, Order order):
+        if self.debug:
+            self._log.debug(f"Creating order state snapshot for {order}", LogColor.MAGENTA)
+
+        if self._cache.has_backing:
+            self._cache.snapshot_order_state(order)
+
+        if self._msgbus.has_backing and self._msgbus.serializer is not None:
             self._msgbus.publish_c(
                 topic=f"snapshots:orders:{order.client_order_id.to_str()}",
                 msg=self._msgbus.serializer.serialize(order.to_dict())
             )
 
-    cpdef void _publish_position_snapshot(self, Position position):
-        cdef dict position_state = position.to_dict()
+    cpdef void _create_position_state_snapshot(self, Position position):
+        if self.debug:
+            self._log.debug(f"Creating position state snapshot for {position}", LogColor.MAGENTA)
+
         cdef Money unrealized_pnl = self._cache.calculate_unrealized_pnl(position)
+        cdef dict[str, object] position_state = position.to_dict()
         if unrealized_pnl is not None:
             position_state["unrealized_pnl"] = str(unrealized_pnl)
-        if self._msgbus.serializer is not None:
-            self._msgbus.publish(
+
+        # TODO: Experimental internal message bus publishing
+        self._msgbus.publish_c(
+            topic=f"snapshots.positions.{position.id}",
+            msg=position_state,
+            external_pub=False,
+        )
+
+        if self._cache.has_backing:
+            self._cache.snapshot_position_state(
+                position,
+                position.ts_last,
+                unrealized_pnl,
+            )
+
+        if self._msgbus.has_backing and self._msgbus.serializer is not None:
+            self._msgbus.publish_c(
                 topic=f"snapshots:positions:{position.id}",
                 msg=self._msgbus.serializer.serialize(position_state),
             )
+
+    cpdef void _snapshot_open_position_states(self, TimeEvent event):
+        cdef Position position
+        for position in self._cache.positions_open():
+            self._create_position_state_snapshot(position)
