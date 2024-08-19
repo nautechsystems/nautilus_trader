@@ -15,6 +15,7 @@
 
 use std::fmt::Display;
 
+use nautilus_core::correctness::{check_predicate_true, FAILED};
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
@@ -55,11 +56,11 @@ impl WeightedMovingAverage {
     /// Creates a new [`WeightedMovingAverage`] instance.
     #[must_use]
     pub fn new(period: usize, weights: Vec<f64>, price_type: Option<PriceType>) -> Self {
-        assert_eq!(
-            weights.len(),
-            period,
-            "Weights length must be equal to period"
-        );
+        check_predicate_true(
+            period == weights.len(),
+            "`period` must be equal to `weights` length",
+        )
+        .expect(FAILED);
         Self {
             period,
             weights,
