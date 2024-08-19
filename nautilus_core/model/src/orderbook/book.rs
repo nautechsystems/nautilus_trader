@@ -233,6 +233,17 @@ impl OrderBook {
     }
 
     #[must_use]
+    pub fn get_avg_px_qty_for_exposure(&self, target_exposure: Quantity, order_side: OrderSide) -> (f64, f64) {
+        let levels = match order_side {
+            OrderSide::Buy => &self.asks.levels,
+            OrderSide::Sell => &self.bids.levels,
+            _ => panic!("Invalid `OrderSide` {order_side}"),
+        };
+
+        analysis::get_avg_px_qty_for_exposure(target_exposure, levels)
+    }
+
+    #[must_use]
     pub fn get_quantity_for_price(&self, price: Price, order_side: OrderSide) -> f64 {
         let levels = match order_side {
             OrderSide::Buy => &self.asks.levels,
@@ -401,6 +412,17 @@ mod tests {
 
         assert_eq!(book.get_avg_px_for_quantity(qty, OrderSide::Buy), 0.0);
         assert_eq!(book.get_avg_px_for_quantity(qty, OrderSide::Sell), 0.0);
+    }
+
+    #[rstest]
+    fn test_get_price_for_quantity_no_market() {
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let book = OrderBook::new(BookType::L2_MBP, instrument_id);
+
+        let qty = Quantity::from(1);
+
+        assert_eq!(book.get_avg_px_qty_for_exposure(qty, OrderSide::Buy), (0.0, 0.0));
+        assert_eq!(book.get_avg_px_qty_for_exposure(qty, OrderSide::Sell), (0.0, 0.0));
     }
 
     #[rstest]
