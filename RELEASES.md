@@ -1,6 +1,6 @@
 # NautilusTrader 1.199.0 Beta
 
-Released on TBD (UTC).
+Released on 19th August 2024 (UTC).
 
 ### Enhancements
 - Added `LiveExecEngineConfig.generate_missing_orders` reconciliation config option to align internal and external position states
