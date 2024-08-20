@@ -23,7 +23,7 @@ from nautilus_trader.model.identifiers import Venue
 
 DYDX_VENUE: Final[Venue] = Venue("DYDX")
 FEE_SCALING: Final[int] = 1_000_000
-DEFAULT_CURRENCY: Final[str] = "USDT"
+DEFAULT_CURRENCY: Final[str] = "USDC"
 
 CURRENCY_MAP: Final[dict[str, str]] = {
     "USD": "USDC",
