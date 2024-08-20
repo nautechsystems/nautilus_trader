@@ -440,9 +440,9 @@ pub struct OrderCore {
 
 impl OrderCore {
     /// Creates a new [`OrderCore`] instance.
-    pub fn new(init: OrderInitialized) -> anyhow::Result<Self> {
+    pub fn new(init: OrderInitialized) -> Self {
         let events: Vec<OrderEventAny> = vec![OrderEventAny::Initialized(init.clone())];
-        Ok(Self {
+        Self {
             events,
             commissions: HashMap::new(),
             venue_order_ids: Vec::new(),
@@ -482,7 +482,7 @@ impl OrderCore {
             init_id: init.event_id,
             ts_init: init.ts_event,
             ts_last: init.ts_event,
-        })
+        }
     }
 
     pub fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {

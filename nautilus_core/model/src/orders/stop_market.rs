@@ -122,7 +122,7 @@ impl StopMarketOrder {
             tags,
         );
         Ok(Self {
-            core: OrderCore::new(init_order).unwrap(),
+            core: OrderCore::new(init_order),
             trigger_price,
             trigger_type,
             expire_time,

@@ -94,7 +94,7 @@ impl TrailingStopLimitOrder {
         tags: Option<Vec<Ustr>>,
         init_id: UUID4,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
+    ) -> Self {
         let init_order = OrderInitialized::new(
             trader_id,
             strategy_id,
@@ -130,8 +130,8 @@ impl TrailingStopLimitOrder {
             exec_spawn_id,
             tags,
         );
-        Ok(Self {
-            core: OrderCore::new(init_order).unwrap(),
+        Self {
+            core: OrderCore::new(init_order),
             price,
             trigger_price,
             trigger_type,
@@ -144,7 +144,7 @@ impl TrailingStopLimitOrder {
             trigger_instrument_id,
             is_triggered: false,
             ts_triggered: None,
-        })
+        }
     }
 }
 
@@ -440,6 +440,6 @@ impl From<OrderInitialized> for TrailingStopLimitOrder {
             event.tags,
             event.event_id,
             event.ts_event,
-        ).unwrap() // SAFETY: From can panic
+        )
     }
 }
