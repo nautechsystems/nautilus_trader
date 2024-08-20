@@ -112,9 +112,8 @@ pub fn last_weekday_nanos(year: i32, month: u32, day: u32) -> anyhow::Result<Uni
         6 => 1,     // Saturday, adjust to previous Friday
         _ => 2,     // Sunday, adjust to previous Friday
     });
-
     // Calculate last closest weekday
-    let last_closest = date - TimeDelta::try_days(offset).expect("Invalid offset");
+    let last_closest = date - TimeDelta::days(offset);
 
     // Convert to UNIX nanoseconds
     let unix_timestamp_ns = last_closest
@@ -138,7 +137,7 @@ pub fn is_within_last_24_hours(timestamp_ns: UnixNanos) -> anyhow::Result<bool> 
         .ok_or_else(|| anyhow::anyhow!("Invalid timestamp {timestamp_ns}"))?;
     let now = Utc::now();
 
-    Ok(now.signed_duration_since(timestamp) <= TimeDelta::try_days(1).unwrap())
+    Ok(now.signed_duration_since(timestamp) <= TimeDelta::days(1))
 }
 
 ////////////////////////////////////////////////////////////////////////////////
