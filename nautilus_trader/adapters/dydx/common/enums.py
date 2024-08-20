@@ -32,7 +32,7 @@ from nautilus_trader.model.enums import TimeInForce
 @unique
 class DYDXLiquidity(Enum):
     """
-    Represents a `dYdX` liquidity type.
+    Represents a dYdX liquidity type.
     """
 
     TAKER = "TAKER"
@@ -42,7 +42,7 @@ class DYDXLiquidity(Enum):
 @unique
 class DYDXFillType(Enum):
     """
-    Represents a `dYdX` fill type.
+    Represents a dYdX fill type.
     """
 
     LIMIT = "LIMIT"
@@ -55,7 +55,7 @@ class DYDXFillType(Enum):
 @unique
 class DYDXMarketType(Enum):
     """
-    Represents a `dYdX` market type.
+    Represents a dYdX market type.
     """
 
     PERPETUAL = "PERPETUAL"
@@ -65,7 +65,7 @@ class DYDXMarketType(Enum):
 @unique
 class DYDXPerpetualPositionStatus(Enum):
     """
-    Represents a `dYdX` position status.
+    Represents a dYdX position status.
     """
 
     OPEN = "OPEN"
@@ -76,7 +76,7 @@ class DYDXPerpetualPositionStatus(Enum):
 @unique
 class DYDXOrderStatus(Enum):
     """
-    Represents a `dYdX` order status.
+    Represents a dYdX order status.
     """
 
     OPEN = "OPEN"
@@ -90,7 +90,7 @@ class DYDXOrderStatus(Enum):
 @unique
 class DYDXTimeInForce(Enum):
     """
-    Represents a `dYdX` time in force setting.
+    Represents a dYdX time in force setting.
     """
 
     # GTT represents Good-Til-Time, where an order will first match with existing orders on the book
@@ -112,7 +112,7 @@ class DYDXTimeInForce(Enum):
 @unique
 class DYDXPositionSide(Enum):
     """
-    Represents a `dYdX` position side.
+    Represents a dYdX position side.
     """
 
     LONG = "LONG"
@@ -122,7 +122,7 @@ class DYDXPositionSide(Enum):
 @unique
 class DYDXEndpointType(Enum):
     """
-    Represents a `dYdX` endpoint perpetual market status.
+    Represents a dYdX endpoint perpetual market status.
     """
 
     NONE = "NONE"
@@ -136,7 +136,7 @@ class DYDXEndpointType(Enum):
 @unique
 class DYDXPerpetualMarketStatus(Enum):
     """
-    Represents a `dYdX` endpoint perpetual market status.
+    Represents a dYdX endpoint perpetual market status.
     """
 
     ACTIVE = "ACTIVE"
@@ -150,7 +150,7 @@ class DYDXPerpetualMarketStatus(Enum):
 @unique
 class DYDXPerpetualMarketType(Enum):
     """
-    Represents a `dYdX` endpoint perpetual market type.
+    Represents a dYdX endpoint perpetual market type.
     """
 
     CROSS = "CROSS"

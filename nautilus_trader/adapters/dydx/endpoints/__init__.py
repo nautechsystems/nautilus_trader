@@ -13,5 +13,5 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Define `dYdX` http endpoints.
+Define dYdX http endpoints.
 """

@@ -45,7 +45,7 @@ from nautilus_trader.model.objects import Quantity
 
 class ListPerpetualMarketsGetParams(msgspec.Struct, omit_defaults=True):
     """
-    Represent the `dYdX` list perpetual markets parameters.
+    Represent the dYdX list perpetual markets parameters.
     """
 
     limit: int | None = None
@@ -54,7 +54,7 @@ class ListPerpetualMarketsGetParams(msgspec.Struct, omit_defaults=True):
 
 class DYDXPerpetualMarketResponseObject(msgspec.Struct, forbid_unknown_fields=True):
     """
-    Represent the `dYdX` perpetual market response object.
+    Represent the dYdX perpetual market response object.
     """
 
     clobPairId: str
@@ -161,7 +161,7 @@ class DYDXPerpetualMarketResponseObject(msgspec.Struct, forbid_unknown_fields=Tr
 
 class DYDXListPerpetualMarketsResponse(msgspec.Struct, forbid_unknown_fields=True):
     """
-    Represent the `dYdX` list perpetual markets response object.
+    Represent the dYdX list perpetual markets response object.
     """
 
     markets: dict[str, DYDXPerpetualMarketResponseObject]

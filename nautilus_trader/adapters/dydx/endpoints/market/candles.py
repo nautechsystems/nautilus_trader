@@ -32,7 +32,7 @@ from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 class DYDXCandlesGetParams(msgspec.Struct, omit_defaults=True):
     """
-    Represent the `dYdX` list perpetual markets parameters.
+    Represent the dYdX list perpetual markets parameters.
     """
 
     resolution: DYDXCandlesResolution
@@ -43,7 +43,7 @@ class DYDXCandlesGetParams(msgspec.Struct, omit_defaults=True):
 
 class DYDXCandlesResponse(msgspec.Struct, forbid_unknown_fields=True):
     """
-    Represent the `dYdX` list perpetual markets response object.
+    Represent the dYdX list perpetual markets response object.
     """
 
     candles: list[DYDXCandle]

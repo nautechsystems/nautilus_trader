@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Define the `dYdX` API for calling market endpoints.
+Define the dYdX API for calling market endpoints.
 """
 
 import pandas as pd
@@ -36,7 +36,7 @@ from nautilus_trader.core.correctness import PyCondition
 
 class DYDXMarketHttpAPI:
     """
-    Define the `dYdX` API for calling market endpoints.
+    Define the dYdX API for calling market endpoints.
     """
 
     def __init__(
@@ -45,7 +45,7 @@ class DYDXMarketHttpAPI:
         clock: LiveClock,
     ) -> None:
         """
-        Define the `dYdX` API for calling market endpoints.
+        Define the dYdX API for calling market endpoints.
         """
         PyCondition.not_none(client, "client")
         self.client = client
@@ -60,7 +60,7 @@ class DYDXMarketHttpAPI:
         limit: int | None = None,
     ) -> DYDXListPerpetualMarketsResponse:
         """
-        Fetch all the instruments for the `dYdX` venue.
+        Fetch all the instruments for the dYdX venue.
         """
         return await self._endpoint_instruments.get(
             ListPerpetualMarketsGetParams(ticker=symbol, limit=limit),
@@ -75,7 +75,7 @@ class DYDXMarketHttpAPI:
         end: pd.Timestamp | None = None,
     ) -> DYDXCandlesResponse:
         """
-        Fetch the bars from the `dYdX` venue.
+        Fetch the bars from the dYdX venue.
         """
         start_date = start.to_pydatetime() if start is not None else start
         end_date = end.to_pydatetime() if end is not None else end

@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Provide a data client for the `dYdX` decentralized cypto exchange.
+Provide a data client for the dYdX decentralized cypto exchange.
 """
 
 import asyncio
@@ -62,7 +62,7 @@ if TYPE_CHECKING:
 
 class DYDXDataClient(LiveMarketDataClient):
     """
-    Provide a data client for the `dYdX` decentralized cypto exchange.
+    Provide a data client for the dYdX decentralized cypto exchange.
 
     Parameters
     ----------
@@ -100,7 +100,7 @@ class DYDXDataClient(LiveMarketDataClient):
         name: str | None,
     ) -> None:
         """
-        Provide a data client for the `dYdX` decentralized cypto exchange.
+        Provide a data client for the dYdX decentralized cypto exchange.
         """
         super().__init__(
             loop=loop,

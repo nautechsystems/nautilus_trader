@@ -13,5 +13,5 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Define the `dYdX` market HTTP endpoints.
+Define the dYdX market HTTP endpoints.
 """

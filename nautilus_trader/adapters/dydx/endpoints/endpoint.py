@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Define the base class for `dYdX` endpoints.
+Define the base class for dYdX endpoints.
 """
 
 from typing import Any
@@ -27,7 +27,7 @@ from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 
 class DYDXHttpEndpoint:
     """
-    Define the base class for `dYdX` endpoints.
+    Define the base class for dYdX endpoints.
     """
 
     def __init__(
@@ -37,7 +37,7 @@ class DYDXHttpEndpoint:
         url_path: str | None = None,
     ) -> None:
         """
-        Construct the base class for `dYdX` endpoints.
+        Construct the base class for dYdX endpoints.
         """
         self.client = client
         self.endpoint_type = endpoint_type

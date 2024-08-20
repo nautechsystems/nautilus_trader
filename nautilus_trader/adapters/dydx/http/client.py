@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Provides a `DYDX` asynchronous HTTP client.
+Provides a dYdX asynchronous HTTP client.
 """
 
 import asyncio
@@ -40,7 +40,7 @@ BAD_REQUEST_ERROR_CODE = 400
 
 class DYDXHttpClient:
     """
-    Provide a `DYDX` asynchronous HTTP client.
+    Provide a dYdX asynchronous HTTP client.
 
     Parameters
     ----------
@@ -63,7 +63,7 @@ class DYDXHttpClient:
         ratelimiter_default_quota: Quota | None = None,
     ) -> None:
         """
-        Provide a `dYdX` asynchronous HTTP client.
+        Provide a dYdX asynchronous HTTP client.
         """
         self._clock: LiveClock = clock
         self._log: Logger = Logger(type(self).__name__)

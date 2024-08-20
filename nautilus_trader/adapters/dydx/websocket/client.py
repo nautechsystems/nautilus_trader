@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Provide a `dYdX` streaming WebSocket client.
+Provide a dYdX streaming WebSocket client.
 """
 
 import asyncio
@@ -31,7 +31,7 @@ from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
 
 class DYDXWebsocketClient:
     """
-    Provide a `dYdX` streaming WebSocket client.
+    Provide a dYdX streaming WebSocket client.
 
     Parameters
     ----------
@@ -54,7 +54,7 @@ class DYDXWebsocketClient:
         loop: asyncio.AbstractEventLoop,
     ) -> None:
         """
-        Provide a `dYdX` streaming WebSocket client.
+        Provide a dYdX streaming WebSocket client.
         """
         self._clock = clock
         self._log: Logger = Logger(name=type(self).__name__)

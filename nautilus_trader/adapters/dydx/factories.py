@@ -207,7 +207,7 @@ class DYDXLiveDataClientFactory(LiveDataClientFactory):
 
 class DYDXLiveExecClientFactory(LiveExecClientFactory):
     """
-    Provides a `dYdX` live execution client factory.
+    Provides a dYdX live execution client factory.
     """
 
     @staticmethod

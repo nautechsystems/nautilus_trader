@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Provide an execution client for the `DYDX` decentralized crypto exchange.
+Provide an execution client for the dYdX decentralized crypto exchange.
 """
 
 import asyncio
@@ -139,7 +139,7 @@ class ClientOrderIdHelper:
 
 class DYDXExecutionClient(LiveExecutionClient):
     """
-    Provide an execution client for the `DYDX` decentralized crypto exchange.
+    Provide an execution client for the dYdX decentralized crypto exchange.
 
     Parameters
     ----------
@@ -178,7 +178,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         name: str | None,
     ) -> None:
         """
-        Provide an execution client for the `DYDX` decentralized crypto exchange.
+        Provide an execution client for the dYdX decentralized crypto exchange.
         """
         account_type = AccountType.MARGIN
 

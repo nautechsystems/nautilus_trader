@@ -756,7 +756,7 @@ class DYDXOraclePriceMarket(msgspec.Struct, forbid_unknown_fields=True):
 
 class DYDXTradingPerpetualMarketMessage(msgspec.Struct, forbid_unknown_fields=True):
     """
-    Represent the `dYdX` perpetual market response object.
+    Represent the dYdX perpetual market response object.
     """
 
     id: str | None = None
