@@ -246,7 +246,7 @@ class DYDXWsOrderbookChannelData(msgspec.Struct, forbid_unknown_fields=True):
     clobPairId: str | None = None
     version: str | None = None
 
-    def parse_to_deltas(  # pylint: disable=too-many-arguments,too-many-locals
+    def parse_to_deltas(
         self,
         instrument_id: InstrumentId,
         price_precision: int,
@@ -353,7 +353,7 @@ class DYDXWsOrderbookSnapshotChannelData(msgspec.Struct, forbid_unknown_fields=T
     contents: DYDXWsOrderbookMessageSnapshotContents
     version: str | None = None
 
-    def parse_to_snapshot(  # pylint: disable=too-many-arguments,too-many-locals
+    def parse_to_snapshot(
         self,
         instrument_id: InstrumentId,
         price_precision: int,
@@ -590,7 +590,7 @@ class DYDXWsOrderSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields
     updatedAt: datetime.datetime | None = None
     updatedAtHeight: str | None = None
 
-    def parse_to_order_status_report(  # pylint: disable=too-many-arguments
+    def parse_to_order_status_report(
         self,
         account_id: AccountId,
         client_order_id: ClientOrderId | None,

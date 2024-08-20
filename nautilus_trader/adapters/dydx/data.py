@@ -480,7 +480,7 @@ class DYDXDataClient(LiveMarketDataClient):
         nautilus_instrument_id: InstrumentId = dydx_symbol.to_instrument_id()
         return nautilus_instrument_id
 
-    async def _request_bars(  # pylint: disable=too-many-arguments
+    async def _request_bars(
         self,
         bar_type: BarType,
         limit: int,

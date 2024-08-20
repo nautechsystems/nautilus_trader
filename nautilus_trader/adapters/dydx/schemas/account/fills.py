@@ -63,7 +63,7 @@ class DYDXFillResponse(msgspec.Struct, forbid_unknown_fields=True):
     orderId: str | None = None
     clientMetadata: str | None = None
 
-    def parse_to_fill_report(  # pylint: disable=too-many-arguments
+    def parse_to_fill_report(
         self,
         account_id: AccountId,
         client_order_id: ClientOrderId | None,

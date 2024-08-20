@@ -98,7 +98,7 @@ class DYDXPerpetualPosition(msgspec.Struct, forbid_unknown_fields=True):
             maintenance=Money(Decimal(0), currency),
         )
 
-    def parse_to_position_status_report(  # pylint: disable=too-many-arguments
+    def parse_to_position_status_report(
         self,
         account_id: AccountId,
         report_id: UUID4,

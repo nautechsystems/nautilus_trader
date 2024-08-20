@@ -172,7 +172,7 @@ class OrderBuilder:
 
     """
 
-    def __init__(  # pylint: disable=too-many-arguments
+    def __init__(
         self,
         atomic_resolution: int,
         step_base_quantums: int,

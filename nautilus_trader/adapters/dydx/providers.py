@@ -49,7 +49,7 @@ class DYDXInstrumentProvider(InstrumentProvider):
 
     """
 
-    def __init__(  # pylint: disable=too-many-arguments
+    def __init__(
         self,
         client: DYDXHttpClient,
         grpc_account_client: DYDXAccountGRPCAPI,

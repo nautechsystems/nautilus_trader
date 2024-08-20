@@ -66,7 +66,7 @@ class DYDXMarketHttpAPI:
             ListPerpetualMarketsGetParams(ticker=symbol, limit=limit),
         )
 
-    async def get_candles(  # pylint: disable=too-many-arguments
+    async def get_candles(
         self,
         symbol: str,
         resolution: DYDXCandlesResolution,

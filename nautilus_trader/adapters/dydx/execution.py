@@ -824,7 +824,7 @@ class DYDXExecutionClient(LiveExecutionClient):
 
         return order_builder
 
-    async def _submit_order(self, command: SubmitOrder) -> None:  # pylint: disable=too-many-locals
+    async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
 
         if order.is_closed:

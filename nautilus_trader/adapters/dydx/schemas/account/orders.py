@@ -82,7 +82,7 @@ class DYDXOrderResponse(msgspec.Struct, forbid_unknown_fields=True):
         currency = self.ticker.split("-")[1]
         return CURRENCY_MAP.get(currency, currency)
 
-    def parse_to_order_status_report(  # pylint: disable=too-many-arguments
+    def parse_to_order_status_report(
         self,
         account_id: AccountId,
         client_order_id: ClientOrderId | None,
