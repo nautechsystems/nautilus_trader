@@ -35,7 +35,7 @@ from nautilus_trader.serialization.base import register_serializable_type
 
 class SubscriptionStatus(Enum):
     """
-    Represents a `Betfair` subscription status.
+    Represents a Betfair subscription status.
     """
 
     UNSUBSCRIBED = 0
@@ -123,7 +123,7 @@ class BSPOrderBookDelta(OrderBookDelta):
 
 class BetfairTicker(Data):
     """
-    Represents a `Betfair` ticker.
+    Represents a Betfair ticker.
     """
 
     def __init__(

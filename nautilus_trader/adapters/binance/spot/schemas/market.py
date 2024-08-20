@@ -201,7 +201,7 @@ class BinanceSpotTradeData(msgspec.Struct):
 
 class BinanceSpotTradeMsg(msgspec.Struct):
     """
-    WebSocket message from `Binance` Trade Streams.
+    WebSocket message from Binance Trade Streams.
     """
 
     stream: str

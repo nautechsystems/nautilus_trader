@@ -146,7 +146,7 @@ def get_cached_interactive_brokers_instrument_provider(
 
 class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
     """
-    Provides a `InteractiveBrokers` live data client factory.
+    Provides a InteractiveBrokers live data client factory.
     """
 
     @staticmethod
@@ -215,7 +215,7 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
 
 class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
     """
-    Provides a `InteractiveBrokers` live execution client factory.
+    Provides a InteractiveBrokers live execution client factory.
     """
 
     @staticmethod

@@ -52,7 +52,7 @@ from nautilus_trader.model.objects import Quantity
 
 class BinanceSpotUserMsgData(msgspec.Struct, frozen=True):
     """
-    Inner struct for execution WebSocket messages from `Binance`
+    Inner struct for execution WebSocket messages from Binance.
     """
 
     e: BinanceSpotEventType
@@ -60,7 +60,7 @@ class BinanceSpotUserMsgData(msgspec.Struct, frozen=True):
 
 class BinanceSpotUserMsgWrapper(msgspec.Struct, frozen=True):
     """
-    Provides a wrapper for execution WebSocket messages from `Binance`.
+    Provides a wrapper for execution WebSocket messages from Binance.
     """
 
     stream: str

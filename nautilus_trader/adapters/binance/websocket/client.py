@@ -29,7 +29,7 @@ from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
 
 class BinanceWebSocketClient:
     """
-    Provides a `Binance` streaming WebSocket client.
+    Provides a Binance streaming WebSocket client.
 
     Parameters
     ----------

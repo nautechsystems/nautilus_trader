@@ -78,7 +78,7 @@ from nautilus_trader.model.objects import Quantity
 
 class BinanceCommonDataClient(LiveMarketDataClient):
     """
-    Provides a data client of common methods for the `Binance` exchange.
+    Provides a data client of common methods for the Binance exchange.
 
     Parameters
     ----------

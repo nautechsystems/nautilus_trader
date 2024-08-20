@@ -28,9 +28,9 @@ from nautilus_trader.model.objects import Quantity
 
 class BinanceBar(Bar):
     """
-    Represents an aggregated `Binance` bar.
+    Represents an aggregated Binance bar.
 
-    This data type includes the raw data provided by `Binance`.
+    This data type includes the raw data provided by Binance.
 
     Parameters
     ----------
@@ -141,7 +141,7 @@ class BinanceBar(Bar):
     @staticmethod
     def from_dict(values: dict[str, Any]) -> BinanceBar:
         """
-        Return a `Binance` bar parsed from the given values.
+        Return a Binance bar parsed from the given values.
 
         Parameters
         ----------
@@ -197,9 +197,9 @@ class BinanceBar(Bar):
 
 class BinanceTicker(Data):
     """
-    Represents a `Binance` 24hr statistics ticker.
+    Represents a Binance 24hr statistics ticker.
 
-    This data type includes the raw data provided by `Binance`.
+    This data type includes the raw data provided by Binance.
 
     Parameters
     ----------

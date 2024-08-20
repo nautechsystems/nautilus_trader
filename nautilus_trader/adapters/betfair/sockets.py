@@ -36,7 +36,7 @@ USE_SSL = True
 
 class BetfairStreamClient:
     """
-    Provides a streaming client for `Betfair`.
+    Provides a streaming client for Betfair.
     """
 
     def __init__(
@@ -141,7 +141,7 @@ class BetfairStreamClient:
 
 class BetfairOrderStreamClient(BetfairStreamClient):
     """
-    Provides an order stream client for `Betfair`.
+    Provides an order stream client for Betfair.
     """
 
     def __init__(
@@ -183,7 +183,7 @@ class BetfairOrderStreamClient(BetfairStreamClient):
 
 class BetfairMarketStreamClient(BetfairStreamClient):
     """
-    Provides a `Betfair` market stream client.
+    Provides a Betfair market stream client.
     """
 
     def __init__(

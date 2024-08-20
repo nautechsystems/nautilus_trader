@@ -34,7 +34,7 @@ from nautilus_trader.core.nautilus_pyo3 import Quota
 
 class BinanceHttpClient:
     """
-    Provides a `Binance` asynchronous HTTP client.
+    Provides a Binance asynchronous HTTP client.
 
     Parameters
     ----------

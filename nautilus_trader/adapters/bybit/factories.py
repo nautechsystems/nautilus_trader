@@ -140,7 +140,7 @@ def get_bybit_instrument_provider(
 
 class BybitLiveDataClientFactory(LiveDataClientFactory):
     """
-    Provides a `Bybit` live data client factory.
+    Provides a Bybit live data client factory.
     """
 
     @staticmethod
@@ -213,7 +213,7 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
 
 class BybitLiveExecClientFactory(LiveExecClientFactory):
     """
-    Provides a `Bybit` live execution client factory.
+    Provides a Bybit live execution client factory.
     """
 
     @staticmethod

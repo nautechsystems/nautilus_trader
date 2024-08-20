@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.199.0"
+version = "1.200.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -53,7 +53,7 @@ generate-setup-file = false
 python = ">=3.10,<3.13"
 cython = "==3.0.11"  # Build dependency (pinned for stability)
 numpy = "^2.1.0"  # Build dependency
-setuptools = ">=72" # Build dependency
+setuptools = ">=73" # Build dependency
 toml = "^0.10.2"  # Build dependency
 click = "^8.1.7"
 fsspec = "==2023.6.0"  # Pinned due breaking changes

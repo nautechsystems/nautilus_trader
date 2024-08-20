@@ -87,7 +87,7 @@ from nautilus_trader.model.position import Position
 
 class BinanceCommonExecutionClient(LiveExecutionClient):
     """
-    Execution client providing common functionality for the `Binance` exchanges.
+    Execution client providing common functionality for the Binance exchanges.
 
     Parameters
     ----------

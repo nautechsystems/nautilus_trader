@@ -16,7 +16,7 @@
 
 class BybitError(Exception):
     """
-    The base class for all `Bybit` specific errors.
+    The base class for all Bybit specific errors.
     """
 
     def __init__(self, code, message):
