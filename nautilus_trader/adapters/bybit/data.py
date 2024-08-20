@@ -73,7 +73,7 @@ from nautilus_trader.model.objects import Quantity
 
 class BybitDataClient(LiveMarketDataClient):
     """
-    Provides a data client for the `Bybit` centralized cypto exchange.
+    Provides a data client for the Bybit centralized cypto exchange.
 
     Parameters
     ----------

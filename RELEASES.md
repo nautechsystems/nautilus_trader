@@ -314,7 +314,7 @@ Released on 20th April 2024 (UTC).
 - Fixed `RiskEngine` cumulative notional calculations for margin accounts (was incorrectly using base currency when selling)
 - Fixed selling `Equity` instruments with `CASH` account and `NETTING` OMS incorrectly rejecting (should be able to reduce position)
 - Fixed Databento bars decoding (was incorrectly applying display factor)
-- Fixed `Binance` bar (kline) to use `close_time` for `ts_event` was `opentime` (#1591), thanks for reporting @OnlyC
+- Fixed `BinanceBar` (kline) to use `close_time` for `ts_event` was `opentime` (#1591), thanks for reporting @OnlyC
 - Fixed `AccountMarginExceeded` error condition (margin must actually be exceeded now, and can be zero)
 - Fixed `ParquetDataCatalog` path globbing which was including all paths with substrings of specified instrument IDs
 
@@ -665,7 +665,7 @@ Released on 3rd November 2023 (UTC).
 
 ### Fixes
 - Fixed `ParquetDataCatalog` file writing template, thanks @limx0
-- Fixed `Binance` all orders requests which would omit order reports when using a `start` param
+- Fixed Binance all orders requests which would omit order reports when using a `start` param
 - Fixed managed GTD orders past expiry cancellation on restart (orders were not being canceled)
 - Fixed managed GTD orders cancel timer on order cancel (timers were not being canceled)
 - Fixed `BacktestEngine` logging error with immediate stop (caused by certain timestamps being `None`)
@@ -812,7 +812,7 @@ Released on 31st July 2023 (UTC).
 - Added `Actor.pending_requests()` convenience method
 - Added `USDP` (Pax Dollar) and `TUSD` (TrueUSD) stablecoins
 - Improved `OrderMatchingEngine` handling when no fills (an error is now logged)
-- Improved `Binance` live clients logging
+- Improved Binance live clients logging
 - Upgraded Cython to v3.0.0 stable
 
 ### Breaking Changes
@@ -901,7 +901,7 @@ Released on 19th May 2023 (UTC).
 ### Enhancements
 - Improved handling for backtest account blow-up scenarios (balance negative or margin exceeded)
 - Added `AccountMarginExceeded` exception and refined `AccountBalanceNegative`
-- Various improvements to `Binance` clients error handling and logging
+- Various improvements to Binance clients error handling and logging
 - Improve Binance HTTP error messages
 
 ### Fixes
@@ -2650,7 +2650,7 @@ improved fill modelling assumptions and customizations.
 - `LiveLogger` now exhibits better blocking behavior and logging
 
 ### Fixes
-- Various patches to the `Betfair` adapter
+- Various patches to the Betfair adapter
 - Documentation builds
 
 ---

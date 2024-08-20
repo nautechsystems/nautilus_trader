@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Defines `Binance` Futures specific enums.
+Defines Binance Futures specific enums.
 
 References
 ----------

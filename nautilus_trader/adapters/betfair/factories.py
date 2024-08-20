@@ -120,7 +120,7 @@ def get_cached_betfair_instrument_provider(
 
 class BetfairLiveDataClientFactory(LiveDataClientFactory):
     """
-    Provides a `Betfair` live data client factory.
+    Provides a Betfair live data client factory.
     """
 
     @staticmethod

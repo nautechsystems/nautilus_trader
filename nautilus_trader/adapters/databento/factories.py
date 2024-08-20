@@ -117,7 +117,7 @@ def get_cached_databento_instrument_provider(
 
 class DatabentoLiveDataClientFactory(LiveDataClientFactory):
     """
-    Provides a `Binance` live data client factory.
+    Provides a Binance live data client factory.
     """
 
     @staticmethod

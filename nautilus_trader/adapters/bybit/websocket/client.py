@@ -33,7 +33,7 @@ MAX_ARGS_PER_SUBSCRIPTION_REQUEST = 10
 
 class BybitWebsocketClient:
     """
-    Provides a `Bybit` streaming WebSocket client.
+    Provides a Bybit streaming WebSocket client.
 
     Parameters
     ----------

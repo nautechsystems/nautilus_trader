@@ -123,7 +123,7 @@ class BinanceListenKeyHttp(BinanceHttpEndpoint):
 
 class BinanceUserDataHttpAPI:
     """
-    Provides access to the `Binance` User HTTP REST API.
+    Provides access to the Binance User HTTP REST API.
 
     Parameters
     ----------
