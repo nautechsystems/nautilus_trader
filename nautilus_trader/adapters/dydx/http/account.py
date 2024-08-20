@@ -117,7 +117,7 @@ class DYDXAccountHttpAPI:
         self,
         address: str,
         subaccount_number: int,
-        status: list[DYDXPerpetualPositionStatus] | None = None,
+        status: DYDXPerpetualPositionStatus | None = None,
     ) -> DYDXPerpetualPositionsResponse:
         """
         Fetch the perpetual positions.
