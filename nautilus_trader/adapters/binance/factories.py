@@ -202,7 +202,7 @@ def get_cached_binance_futures_instrument_provider(
 
 class BinanceLiveDataClientFactory(LiveDataClientFactory):
     """
-    Provides a `Binance` live data client factory.
+    Provides a Binance live data client factory.
     """
 
     @staticmethod
@@ -309,7 +309,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
 
 class BinanceLiveExecClientFactory(LiveExecClientFactory):
     """
-    Provides a `Binance` live execution client factory.
+    Provides a Binance live execution client factory.
     """
 
     @staticmethod

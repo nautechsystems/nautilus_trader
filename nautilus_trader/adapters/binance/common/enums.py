@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Defines `Binance` common enums.
+Defines Binance common enums.
 
 References
 ----------
@@ -53,7 +53,7 @@ class BinanceFuturesPositionSide(Enum):
 @unique
 class BinanceRateLimitType(Enum):
     """
-    Represents a `Binance` rate limit type.
+    Represents a Binance rate limit type.
     """
 
     REQUEST_WEIGHT = "REQUEST_WEIGHT"
@@ -64,7 +64,7 @@ class BinanceRateLimitType(Enum):
 @unique
 class BinanceRateLimitInterval(Enum):
     """
-    Represents a `Binance` rate limit interval.
+    Represents a Binance rate limit interval.
     """
 
     SECOND = "SECOND"
@@ -75,7 +75,7 @@ class BinanceRateLimitInterval(Enum):
 @unique
 class BinanceKlineInterval(Enum):
     """
-    Represents a `Binance` kline chart interval.
+    Represents a Binance kline chart interval.
     """
 
     SECOND_1 = "1s"
@@ -99,7 +99,7 @@ class BinanceKlineInterval(Enum):
 @unique
 class BinanceExchangeFilterType(Enum):
     """
-    Represents a `Binance` exchange filter type.
+    Represents a Binance exchange filter type.
     """
 
     EXCHANGE_MAX_NUM_ORDERS = "EXCHANGE_MAX_NUM_ORDERS"
@@ -109,7 +109,7 @@ class BinanceExchangeFilterType(Enum):
 @unique
 class BinanceSymbolFilterType(Enum):
     """
-    Represents a `Binance` symbol filter type.
+    Represents a Binance symbol filter type.
     """
 
     PRICE_FILTER = "PRICE_FILTER"
@@ -130,7 +130,7 @@ class BinanceSymbolFilterType(Enum):
 @unique
 class BinanceAccountType(Enum):
     """
-    Represents a `Binance` account type.
+    Represents a Binance account type.
     """
 
     SPOT = "SPOT"
@@ -169,7 +169,7 @@ class BinanceAccountType(Enum):
 @unique
 class BinanceOrderSide(Enum):
     """
-    Represents a `Binance` order side.
+    Represents a Binance order side.
     """
 
     BUY = "BUY"
@@ -179,7 +179,7 @@ class BinanceOrderSide(Enum):
 @unique
 class BinanceExecutionType(Enum):
     """
-    Represents a `Binance` execution type.
+    Represents a Binance execution type.
     """
 
     NEW = "NEW"
@@ -195,7 +195,7 @@ class BinanceExecutionType(Enum):
 @unique
 class BinanceOrderStatus(Enum):
     """
-    Represents a `Binance` order status.
+    Represents a Binance order status.
     """
 
     NEW = "NEW"
@@ -213,7 +213,7 @@ class BinanceOrderStatus(Enum):
 @unique
 class BinanceTimeInForce(Enum):
     """
-    Represents a `Binance` order time in force.
+    Represents a Binance order time in force.
     """
 
     GTC = "GTC"
@@ -227,7 +227,7 @@ class BinanceTimeInForce(Enum):
 @unique
 class BinanceOrderType(Enum):
     """
-    Represents a `Binance` order type.
+    Represents a Binance order type.
     """
 
     LIMIT = "LIMIT"
@@ -247,7 +247,7 @@ class BinanceOrderType(Enum):
 @unique
 class BinanceSecurityType(Enum):
     """
-    Represents a `Binance` endpoint security type.
+    Represents a Binance endpoint security type.
     """
 
     NONE = "NONE"
@@ -261,7 +261,7 @@ class BinanceSecurityType(Enum):
 @unique
 class BinanceNewOrderRespType(Enum):
     """
-    Represents a `Binance` newOrderRespType.
+    Represents a Binance newOrderRespType.
     """
 
     ACK = "ACK"
@@ -272,7 +272,7 @@ class BinanceNewOrderRespType(Enum):
 @unique
 class BinanceErrorCode(Enum):
     """
-    Represents a `Binance` error code (covers futures).
+    Represents a Binance error code (covers futures).
     """
 
     UNKNOWN = -1000

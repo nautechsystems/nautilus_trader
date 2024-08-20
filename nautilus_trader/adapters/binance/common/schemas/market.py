@@ -336,7 +336,7 @@ class BinanceTickerBook(msgspec.Struct, frozen=True):
 
 class BinanceDataMsgWrapper(msgspec.Struct):
     """
-    Provides a wrapper for data WebSocket messages from `Binance`.
+    Provides a wrapper for data WebSocket messages from Binance.
     """
 
     stream: str | None = None
@@ -380,7 +380,7 @@ class BinanceOrderBookDelta(msgspec.Struct, array_like=True):
 
 class BinanceOrderBookData(msgspec.Struct, frozen=True):
     """
-    WebSocket message 'inner struct' for `Binance` Partial & Diff.
+    WebSocket message 'inner struct' for Binance Partial & Diff.
 
     Book Depth Streams.
 
@@ -452,7 +452,7 @@ class BinanceOrderBookData(msgspec.Struct, frozen=True):
 
 class BinanceOrderBookMsg(msgspec.Struct, frozen=True):
     """
-    WebSocket message from `Binance` Partial & Diff.
+    WebSocket message from Binance Partial & Diff.
 
     Book Depth Streams.
 
@@ -464,7 +464,7 @@ class BinanceOrderBookMsg(msgspec.Struct, frozen=True):
 
 class BinanceQuoteData(msgspec.Struct, frozen=True):
     """
-    WebSocket message from `Binance` Individual Symbol Book Ticker Streams.
+    WebSocket message from Binance Individual Symbol Book Ticker Streams.
     """
 
     s: str  # symbol
@@ -493,7 +493,7 @@ class BinanceQuoteData(msgspec.Struct, frozen=True):
 
 class BinanceQuoteMsg(msgspec.Struct, frozen=True):
     """
-    WebSocket message from `Binance` Individual Symbol Book Ticker Streams.
+    WebSocket message from Binance Individual Symbol Book Ticker Streams.
     """
 
     stream: str
@@ -502,7 +502,7 @@ class BinanceQuoteMsg(msgspec.Struct, frozen=True):
 
 class BinanceAggregatedTradeData(msgspec.Struct, frozen=True):
     """
-    WebSocket message from `Binance` Aggregate Trade Streams.
+    WebSocket message from Binance Aggregate Trade Streams.
     """
 
     e: str  # Event type
@@ -543,7 +543,7 @@ class BinanceAggregatedTradeMsg(msgspec.Struct, frozen=True):
 
 class BinanceTickerData(msgspec.Struct, kw_only=True, frozen=True):
     """
-    WebSocket message from `Binance` 24hr Ticker.
+    WebSocket message from Binance 24hr Ticker.
 
     Fields
     ------
@@ -640,7 +640,7 @@ class BinanceTickerMsg(msgspec.Struct, frozen=True):
 
 class BinanceCandlestick(msgspec.Struct, frozen=True):
     """
-    WebSocket message 'inner struct' for `Binance` Kline/Candlestick Streams.
+    WebSocket message 'inner struct' for Binance Kline/Candlestick Streams.
 
     Fields
     ------
@@ -722,7 +722,7 @@ class BinanceCandlestickData(msgspec.Struct, frozen=True):
 
 class BinanceCandlestickMsg(msgspec.Struct, frozen=True):
     """
-    WebSocket message for `Binance` Kline/Candlestick Streams.
+    WebSocket message for Binance Kline/Candlestick Streams.
     """
 
     stream: str

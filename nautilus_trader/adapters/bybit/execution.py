@@ -90,7 +90,7 @@ from nautilus_trader.model.position import Position
 
 class BybitExecutionClient(LiveExecutionClient):
     """
-    Provides an execution client for the `Bybit` centralized crypto exchange.
+    Provides an execution client for the Bybit centralized crypto exchange.
 
     Parameters
     ----------

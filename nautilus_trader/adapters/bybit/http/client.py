@@ -37,7 +37,7 @@ class ResponseCode(msgspec.Struct):
 
 class BybitHttpClient:
     """
-    Provides a `Bybit` asynchronous HTTP client.
+    Provides a Bybit asynchronous HTTP client.
 
     Parameters
     ----------

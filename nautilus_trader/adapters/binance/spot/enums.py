@@ -13,7 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Defines `Binance` Spot/Margin specific enums.
+Defines Binance Spot/Margin specific enums.
 
 References
 ----------
