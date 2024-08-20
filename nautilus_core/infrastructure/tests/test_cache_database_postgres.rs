@@ -349,13 +349,10 @@ mod serial_tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_and_update_account() {
         let mut pg_cache = get_pg_cache_database().await.unwrap();
-        let mut account = AccountAny::Cash(
-            CashAccount::new(
-                cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD"),
-                false,
-            )
-            .unwrap(),
-        );
+        let mut account = AccountAny::Cash(CashAccount::new(
+            cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD"),
+            false,
+        ));
         let last_event = account.last_event().unwrap();
         if last_event.base_currency.is_some() {
             pg_cache

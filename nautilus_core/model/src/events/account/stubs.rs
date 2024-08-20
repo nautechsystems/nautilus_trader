@@ -41,7 +41,6 @@ pub fn cash_account_state() -> AccountState {
         0.into(),
         Some(Currency::USD()),
     )
-    .unwrap()
 }
 
 #[fixture]
@@ -65,7 +64,6 @@ pub fn cash_account_state_million_usd(
         0.into(),
         Some(Currency::USD()),
     )
-    .unwrap()
 }
 
 #[fixture]
@@ -85,7 +83,6 @@ pub fn cash_account_state_million_usdt() -> AccountState {
         0.into(),
         Some(Currency::USD()),
     )
-    .unwrap()
 }
 
 #[fixture]
@@ -111,7 +108,6 @@ pub fn cash_account_state_multi() -> AccountState {
         0.into(),
         None, // multi cash account
     )
-    .unwrap()
 }
 
 #[fixture]
@@ -137,7 +133,6 @@ pub fn cash_account_state_multi_changed_btc() -> AccountState {
         0.into(),
         None, // multi cash account
     )
-    .unwrap()
 }
 
 #[fixture]
@@ -153,5 +148,4 @@ pub fn margin_account_state() -> AccountState {
         0.into(),
         Some(Currency::USD()),
     )
-    .unwrap()
 }

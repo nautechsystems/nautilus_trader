@@ -25,22 +25,22 @@ use crate::{
 
 #[fixture]
 pub fn margin_account(margin_account_state: AccountState) -> MarginAccount {
-    MarginAccount::new(margin_account_state, true).unwrap()
+    MarginAccount::new(margin_account_state, true)
 }
 
 #[fixture]
 pub fn cash_account(cash_account_state: AccountState) -> CashAccount {
-    CashAccount::new(cash_account_state, true).unwrap()
+    CashAccount::new(cash_account_state, true)
 }
 
 #[fixture]
 pub fn cash_account_million_usd(cash_account_state_million_usd: AccountState) -> CashAccount {
-    CashAccount::new(cash_account_state_million_usd, true).unwrap()
+    CashAccount::new(cash_account_state_million_usd, true)
 }
 
 #[fixture]
 pub fn cash_account_multi(cash_account_state_multi: AccountState) -> CashAccount {
-    CashAccount::new(cash_account_state_multi, true).unwrap()
+    CashAccount::new(cash_account_state_multi, true)
 }
 
 #[must_use]
