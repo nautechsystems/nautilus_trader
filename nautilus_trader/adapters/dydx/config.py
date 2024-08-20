@@ -18,8 +18,6 @@ Define the dYdX configuration classes.
 
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
-from nautilus_trader.config import PositiveFloat
-from nautilus_trader.config import PositiveInt
 
 
 class DYDXDataClientConfig(LiveDataClientConfig, frozen=True):
@@ -37,13 +35,26 @@ class DYDXDataClientConfig(LiveDataClientConfig, frozen=True):
 
 class DYDXExecClientConfig(LiveExecClientConfig, frozen=True):
     """
-    Configuration for ``BybitExecutionClient`` instances.
+    Configuration for ``DYDXExecutionClient`` instances.
 
-    testnet : bool, default False
-        If the client is connecting to the Bybit testnet API.
-    use_gtd : bool, default False
-        If False then GTD time in force will be remapped to GTC
-        (this is useful if managing GTD orders locally).
+    wallet_address : str, optional
+        The dYdX wallet address.
+        If ``None`` then will source `DYDX_WALLET_ADDRESS` or
+        `DYDX_TESTNET_WALLET_ADDRESS` environment variables.
+    subaccount : int, optional
+        The subaccount number.
+        The venue creates subaccount 0 by default.
+    mnemonic : str, optional
+        The mnemonic string which is used to generate the private key.
+        The private key is used to sign transactions like submitting orders.
+        If ``None`` then will source `DYDX_MNEMONIC` or
+        `DYDX_TESTNET_MNEMONIC` environment variables.
+    base_url_http : str, optional
+        The HTTP client custom endpoint override.
+    base_url_ws : str, optional
+        The WebSocket client custom endpoint override.
+    is_testnet : bool, default False
+        If the client is connecting to the dYdX testnet API.
 
     """
 
@@ -53,9 +64,3 @@ class DYDXExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_http: str | None = None
     base_url_ws: str | None = None
     is_testnet: bool = False
-    use_gtd: bool = False
-    use_reduce_only: bool = True
-    use_position_ids: bool = True
-    treat_expired_as_canceled: bool = False
-    max_retries: PositiveInt | None = None
-    retry_delay: PositiveFloat | None = None
