@@ -315,7 +315,7 @@ def test_parse_to_fill_report(fills_response: DYDXFillsResponse) -> None:
         last_qty=Quantity(0.002, 5),
         last_px=Price(3178.5, 4),
         liquidity_side=LiquiditySide.TAKER,
-        commission=Money(Decimal(0.003179), Currency.from_str("USDT")),
+        commission=Money(Decimal(0.003179), Currency.from_str("USDC")),
         report_id=report_id,
         ts_event=1722496165767000000,
         ts_init=1,
