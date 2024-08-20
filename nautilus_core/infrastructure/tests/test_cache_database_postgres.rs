@@ -47,6 +47,13 @@ mod serial_tests {
     };
     use ustr::Ustr;
 
+    pub fn entirely_equal<T: Serialize>(a: T, b: T) {
+        let a_serialized = serde_json::to_string(&a).unwrap();
+        let b_serialized = serde_json::to_string(&b).unwrap();
+
+        assert_eq!(a_serialized, b_serialized);
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_general_object_adds_to_cache() {
         let mut pg_cache = get_pg_cache_database().await.unwrap();

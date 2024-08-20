@@ -159,7 +159,7 @@ where
                     .get(&command.instrument_id().venue)
                     .and_then(|client_id| self.clients.get(client_id))
             })
-            .or_else(|| self.default_client.as_ref())
+            .or(self.default_client.as_ref())
             .expect("No client found");
 
         match command {

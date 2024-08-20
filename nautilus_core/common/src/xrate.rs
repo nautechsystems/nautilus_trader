@@ -80,11 +80,10 @@ pub fn get_exchange_rate(
         let code_rhs = Ustr::from(pieces[1]);
 
         let lhs_rates = exchange_rates.entry(code_lhs).or_default();
-        let rhs_rates = exchange_rates.entry(code_rhs).or_default();
-
         lhs_rates.insert(code_lhs, Decimal::new(1, 0));
         lhs_rates.insert(code_rhs, *quote);
 
+        let rhs_rates = exchange_rates.entry(code_rhs).or_default();
         rhs_rates.insert(code_lhs, Decimal::new(1, 0));
         rhs_rates.insert(code_rhs, *quote);
     }
