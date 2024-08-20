@@ -128,28 +128,21 @@ impl ArcherMovingAveragesTrends {
             self.fast_ma_price.push_back(self.fast_ma.value());
             self.slow_ma_price.push_back(self.slow_ma.value());
 
-            // TODO: Remove unwraps
-            self.long_run = self.fast_ma_price.back().unwrap()
-                - self.fast_ma_price.front().unwrap()
-                > 0.0
-                && self.slow_ma_price.back().unwrap() - self.slow_ma_price.front().unwrap() < 0.0;
+            let fast_back = self.fast_ma.value();
+            let slow_back = self.slow_ma.value();
+            // TODO: Reduce unwraps
+            let fast_front = self.fast_ma_price.front().unwrap();
+            let slow_front = self.slow_ma_price.front().unwrap();
 
-            self.long_run = self.fast_ma_price.back().unwrap()
-                - self.fast_ma_price.front().unwrap()
-                > 0.0
-                && self.slow_ma_price.back().unwrap() - self.slow_ma_price.front().unwrap() > 0.0
-                || self.long_run;
+            self.long_run = fast_back - fast_front > 0.0 && slow_back - slow_front < 0.0;
 
-            self.short_run = self.fast_ma_price.back().unwrap()
-                - self.fast_ma_price.front().unwrap()
-                < 0.0
-                && self.slow_ma_price.back().unwrap() - self.slow_ma_price.front().unwrap() > 0.0;
+            self.long_run =
+                fast_back - fast_front > 0.0 && slow_back - slow_front > 0.0 || self.long_run;
 
-            self.short_run = self.fast_ma_price.back().unwrap()
-                - self.fast_ma_price.front().unwrap()
-                < 0.0
-                && self.slow_ma_price.back().unwrap() - self.slow_ma_price.front().unwrap() < 0.0
-                || self.short_run;
+            self.short_run = fast_back - fast_front < 0.0 && slow_back - slow_front > 0.0;
+
+            self.short_run =
+                fast_back - fast_front < 0.0 && slow_back - slow_front < 0.0 || self.short_run;
         }
 
         // Initialization logic
