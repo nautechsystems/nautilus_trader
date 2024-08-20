@@ -49,6 +49,8 @@ def enum_parser() -> DYDXEnumParser:
     [
         (DYDXOrderType.LIMIT, OrderType.LIMIT),
         (DYDXOrderType.MARKET, OrderType.MARKET),
+        (DYDXOrderType.STOP_LIMIT, OrderType.STOP_LIMIT),
+        (DYDXOrderType.STOP_MARKET, OrderType.STOP_MARKET),
     ],
 )
 def test_parse_order_type(

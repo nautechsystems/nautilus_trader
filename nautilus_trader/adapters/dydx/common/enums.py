@@ -223,6 +223,8 @@ class DYDXEnumParser:
         self.dydx_to_nautilus_order_type = {
             DYDXOrderType.LIMIT: OrderType.LIMIT,
             DYDXOrderType.MARKET: OrderType.MARKET,
+            DYDXOrderType.STOP_LIMIT: OrderType.STOP_LIMIT,
+            DYDXOrderType.STOP_MARKET: OrderType.STOP_MARKET,
         }
 
         self.dydx_to_nautilus_order_side = {
