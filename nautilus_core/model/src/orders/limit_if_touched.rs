@@ -123,8 +123,7 @@ impl LimitIfTouchedOrder {
             exec_algorithm_params,
             exec_spawn_id,
             tags,
-        )
-        .unwrap();
+        );
         Ok(Self {
             core: OrderCore::new(init_order).unwrap(),
             price,

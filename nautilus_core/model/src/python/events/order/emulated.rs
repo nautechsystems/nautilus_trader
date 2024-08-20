@@ -36,7 +36,7 @@ impl OrderEmulated {
         event_id: UUID4,
         ts_event: u64,
         ts_init: u64,
-    ) -> PyResult<Self> {
+    ) -> Self {
         Self::new(
             trader_id,
             strategy_id,
@@ -46,7 +46,6 @@ impl OrderEmulated {
             ts_event.into(),
             ts_init.into(),
         )
-        .map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

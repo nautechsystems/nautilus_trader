@@ -43,7 +43,7 @@ impl OrderUpdated {
         account_id: Option<AccountId>,
         price: Option<Price>,
         trigger_price: Option<Price>,
-    ) -> PyResult<Self> {
+    ) -> Self {
         Self::new(
             trader_id,
             strategy_id,
@@ -59,7 +59,6 @@ impl OrderUpdated {
             price,
             trigger_price,
         )
-        .map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
