@@ -23,7 +23,6 @@ mod serial_tests {
         cache::database::CacheDatabaseAdapter,
         testing::{wait_until, wait_until_async},
     };
-    use nautilus_core::equality::entirely_equal;
     use nautilus_infrastructure::sql::cache_database::get_pg_cache_database;
     use nautilus_model::{
         accounts::{any::AccountAny, cash::CashAccount},
@@ -45,6 +44,7 @@ mod serial_tests {
         orders::stubs::{TestOrderEventStubs, TestOrderStubs},
         types::{currency::Currency, price::Price, quantity::Quantity},
     };
+    use serde::Serialize;
     use ustr::Ustr;
 
     pub fn entirely_equal<T: Serialize>(a: T, b: T) {
