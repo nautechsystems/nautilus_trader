@@ -1390,7 +1390,9 @@ mod tests {
         );
         // Set entry order status to Rejected with proper event
         let rejected_event = OrderRejected::default();
-        entry_order.apply(OrderEventAny::Rejected(rejected_event));
+        entry_order
+            .apply(OrderEventAny::Rejected(rejected_event))
+            .unwrap();
 
         // Create stop loss order
         let stop_order = TestOrderStubs::stop_market_order(
