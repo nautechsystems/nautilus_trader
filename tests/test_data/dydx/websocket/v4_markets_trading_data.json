@@ -1,0 +1,15 @@
+{
+    "channel": "v4_markets",
+    "connection_id": "ff7ec334-3ef1-4eab-b2f9-04f0df7806fc",
+    "contents": {
+        "trading": {
+            "CRO-USD": {
+                "baseOpenInterest": "5100",
+                "id": "67"
+            }
+        }
+    },
+    "message_id": 4,
+    "type": "channel_data",
+    "version": "1.0.0"
+}

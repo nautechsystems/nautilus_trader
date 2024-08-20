@@ -1,0 +1,25 @@
+[
+    {
+        "clientId": "2043599281",
+        "clientMetadata": "1",
+        "clobPairId": "1",
+        "createdAtHeight": "17933806",
+        "goodTilBlock": "17933813",
+        "id": "05009670-3fba-5ec7-8447-efb81a03cd9f",
+        "orderFlags": "0",
+        "postOnly": false,
+        "price": "3335.3",
+        "reduceOnly": false,
+        "side": "BUY",
+        "size": "0.003",
+        "status": "FILLED",
+        "subaccountId": "4484a830-fa43-5b04-ba00-3621a33ef89d",
+        "subaccountNumber": 0,
+        "ticker": "ETH-USD",
+        "timeInForce": "IOC",
+        "totalFilled": "0.003",
+        "type": "LIMIT",
+        "updatedAt": "2024-08-01T07:09:25.767Z",
+        "updatedAtHeight": "17933806"
+    }
+]

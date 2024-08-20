@@ -1,0 +1,26 @@
+{
+    "channel": "v4_subaccounts",
+    "connection_id": "c941e384-e3ac-48a9-8420-a5c39eede3ae",
+    "contents": {
+        "blockHeight": "19079256",
+        "transfers": {
+            "createdAt": "2024-08-16T08:43:22.999Z",
+            "createdAtHeight": "19079256",
+            "recipient": {
+                "address": "dydx14zzueazeh0hj67cghhf9jypslcf9sh2n5k6art"
+            },
+            "sender": {
+                "address": "dydx14zzueazeh0hj67cghhf9jypslcf9sh2n5k6art",
+                "subaccountNumber": 0
+            },
+            "size": "10",
+            "symbol": "USDC",
+            "transactionHash": "C0A42DABFC98F8B51D0F092A9B8EB48BA189B3B77128D8A453FCD69D4365BD9C",
+            "type": "WITHDRAWAL"
+        }
+    },
+    "id": "dydx14zzueazeh0hj67cghhf9jypslcf9sh2n5k6art/0",
+    "message_id": 135,
+    "type": "channel_data",
+    "version": "3.0.0"
+}
