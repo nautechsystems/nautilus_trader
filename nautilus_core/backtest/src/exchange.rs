@@ -138,8 +138,16 @@ impl SimulatedExchange {
         log::info!("Registered ExecutionClient: {client_id}");
     }
 
-    pub fn set_fill_model(&mut self, _fill_model: FillModel) {
-        todo!("set fill model")
+    pub fn set_fill_model(&mut self, fill_model: FillModel) {
+        for (_, matching_engine) in self.matching_engines.iter_mut() {
+            matching_engine.set_fill_model(fill_model.clone());
+            log::info!(
+                "Changed fill model for {} to {}",
+                matching_engine.venue,
+                self.fill_model
+            );
+        }
+        self.fill_model = fill_model;
     }
 
     pub fn set_latency_model(&mut self, _latency_model: LatencyModel) {
@@ -181,6 +189,7 @@ impl SimulatedExchange {
         let matching_engine = OrderMatchingEngine::new(
             instrument,
             self.instruments.len() as u32,
+            self.fill_model.clone(),
             self.book_type,
             self.oms_type,
             self.account_type,
