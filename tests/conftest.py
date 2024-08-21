@@ -36,7 +36,7 @@ def bypass_logging() -> None:
     """
     init_logging(
         level_stdout=LogLevel.DEBUG,
-        bypass=True,  # Set this to False to see logging in tests
+        bypass=False,  # Set this to False to see logging in tests
     )
 
 
