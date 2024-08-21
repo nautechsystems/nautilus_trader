@@ -159,8 +159,8 @@ impl OrderInitialized {
         exec_algorithm_params: Option<HashMap<Ustr, Ustr>>,
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<Vec<Ustr>>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             trader_id,
             strategy_id,
             instrument_id,
@@ -194,7 +194,7 @@ impl OrderInitialized {
             exec_algorithm_params,
             exec_spawn_id,
             tags,
-        })
+        }
     }
 }
 

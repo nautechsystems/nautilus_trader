@@ -75,8 +75,8 @@ impl OrderUpdated {
         account_id: Option<AccountId>,
         price: Option<Price>,
         trigger_price: Option<Price>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             trader_id,
             strategy_id,
             instrument_id,
@@ -90,7 +90,7 @@ impl OrderUpdated {
             account_id,
             price,
             trigger_price,
-        })
+        }
     }
 }
 

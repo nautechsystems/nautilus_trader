@@ -862,8 +862,7 @@ mod tests {
             false,
             Some(PositionId::new("T1")),
             Some(Money::from("0.0 USD")),
-        )
-        .unwrap();
+        );
         position.apply(&fill2);
         let last = Price::from_str("1.0005").unwrap();
 
@@ -1311,8 +1310,7 @@ mod tests {
             false,
             Some(PositionId::from("P-123456")),
             Some(Money::from("0 USD")),
-        )
-        .unwrap();
+        );
 
         position.apply(&fill2);
 
@@ -1336,8 +1334,7 @@ mod tests {
             false,
             Some(PositionId::from("P-123456")),
             Some(Money::from("0 USD")),
-        )
-        .unwrap();
+        );
 
         position.apply(&fill3);
 

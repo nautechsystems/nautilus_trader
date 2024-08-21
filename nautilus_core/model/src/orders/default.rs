@@ -93,7 +93,6 @@ impl Default for LimitIfTouchedOrder {
             UUID4::default(),
             UnixNanos::default(),
         )
-        .unwrap() // SAFETY: Valid default values are used
     }
 }
 
@@ -295,7 +294,6 @@ impl Default for TrailingStopLimitOrder {
             UUID4::default(),
             UnixNanos::default(),
         )
-        .unwrap() // SAFETY: Valid default values are used
     }
 }
 

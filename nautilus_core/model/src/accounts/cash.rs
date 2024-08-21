@@ -47,10 +47,10 @@ pub struct CashAccount {
 
 impl CashAccount {
     /// Creates a new [`CashAccount`] instance.
-    pub fn new(event: AccountState, calculate_account_state: bool) -> anyhow::Result<Self> {
-        Ok(Self {
-            base: BaseAccount::new(event, calculate_account_state)?,
-        })
+    pub fn new(event: AccountState, calculate_account_state: bool) -> Self {
+        Self {
+            base: BaseAccount::new(event, calculate_account_state),
+        }
     }
 
     #[must_use]
@@ -237,9 +237,8 @@ impl Default for CashAccount {
             0.into(),
             0.into(),
             Some(Currency::USD()),
-        )
-        .unwrap();
-        Self::new(init_event, false).unwrap()
+        );
+        Self::new(init_event, false)
     }
 }
 

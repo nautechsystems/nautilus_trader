@@ -53,7 +53,7 @@ impl OrderFilled {
         reconciliation: bool,
         position_id: Option<PositionId>,
         commission: Option<Money>,
-    ) -> PyResult<Self> {
+    ) -> Self {
         Self::new(
             trader_id,
             strategy_id,
@@ -75,7 +75,6 @@ impl OrderFilled {
             position_id,
             commission,
         )
-        .map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

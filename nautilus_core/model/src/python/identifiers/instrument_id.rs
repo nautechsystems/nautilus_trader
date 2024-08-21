@@ -32,8 +32,8 @@ use crate::identifiers::{InstrumentId, Symbol, Venue};
 #[pymethods]
 impl InstrumentId {
     #[new]
-    fn py_new(symbol: Symbol, venue: Venue) -> PyResult<Self> {
-        Ok(Self::new(symbol, venue))
+    fn py_new(symbol: Symbol, venue: Venue) -> Self {
+        Self::new(symbol, venue)
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {

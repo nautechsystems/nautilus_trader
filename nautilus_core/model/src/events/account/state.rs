@@ -58,8 +58,8 @@ impl AccountState {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
         base_currency: Option<Currency>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             account_id,
             account_type,
             base_currency,
@@ -69,7 +69,7 @@ impl AccountState {
             event_id,
             ts_event,
             ts_init,
-        })
+        }
     }
 }
 
