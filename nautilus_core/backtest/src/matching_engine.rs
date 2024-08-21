@@ -53,6 +53,8 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
+use crate::models::fill::FillModel;
+
 /// Configuration for [`OrderMatchingEngine`] instances.
 #[derive(Debug, Clone)]
 pub struct OrderMatchingEngineConfig {
@@ -126,6 +128,7 @@ pub struct OrderMatchingEngine {
     cache: Rc<RefCell<Cache>>,
     book: OrderBook,
     core: OrderMatchingCore,
+    fill_model: FillModel,
     target_bid: Option<Price>,
     target_ask: Option<Price>,
     target_last: Option<Price>,
@@ -145,6 +148,7 @@ impl OrderMatchingEngine {
     pub fn new(
         instrument: InstrumentAny,
         raw_id: u32,
+        fill_model: FillModel,
         book_type: BookType,
         oms_type: OmsType,
         account_type: AccountType,
@@ -165,6 +169,7 @@ impl OrderMatchingEngine {
             venue: instrument.id().venue,
             instrument,
             raw_id,
+            fill_model,
             book_type,
             oms_type,
             account_type,
@@ -203,6 +208,10 @@ impl OrderMatchingEngine {
         self.execution_count = 0;
 
         log::info!("Reset {}", self.instrument.id());
+    }
+
+    pub fn set_fill_model(&mut self, fill_model: FillModel) {
+        self.fill_model = fill_model;
     }
 
     #[must_use]
@@ -923,7 +932,10 @@ mod tests {
     use rstest::{fixture, rstest};
     use ustr::Ustr;
 
-    use crate::matching_engine::{OrderMatchingEngine, OrderMatchingEngineConfig};
+    use crate::{
+        matching_engine::{OrderMatchingEngine, OrderMatchingEngineConfig},
+        models::fill::FillModel,
+    };
 
     static ATOMIC_TIME: LazyLock<AtomicTime> =
         LazyLock::new(|| AtomicTime::new(true, UnixNanos::default()));
@@ -994,6 +1006,7 @@ mod tests {
         OrderMatchingEngine::new(
             instrument,
             1,
+            FillModel::default(),
             BookType::L1_MBP,
             OmsType::Netting,
             account_type.unwrap_or(AccountType::Cash),
