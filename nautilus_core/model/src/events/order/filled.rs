@@ -86,8 +86,8 @@ impl OrderFilled {
         reconciliation: bool,
         position_id: Option<PositionId>,
         commission: Option<Money>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             trader_id,
             strategy_id,
             instrument_id,
@@ -107,7 +107,7 @@ impl OrderFilled {
             reconciliation,
             position_id,
             commission,
-        })
+        }
     }
 
     #[must_use]

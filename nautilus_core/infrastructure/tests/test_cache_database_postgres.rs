@@ -23,7 +23,6 @@ mod serial_tests {
         cache::database::CacheDatabaseAdapter,
         testing::{wait_until, wait_until_async},
     };
-    use nautilus_core::equality::entirely_equal;
     use nautilus_infrastructure::sql::cache_database::get_pg_cache_database;
     use nautilus_model::{
         accounts::{any::AccountAny, cash::CashAccount},
@@ -45,7 +44,15 @@ mod serial_tests {
         orders::stubs::{TestOrderEventStubs, TestOrderStubs},
         types::{currency::Currency, price::Price, quantity::Quantity},
     };
+    use serde::Serialize;
     use ustr::Ustr;
+
+    pub fn entirely_equal<T: Serialize>(a: T, b: T) {
+        let a_serialized = serde_json::to_string(&a).unwrap();
+        let b_serialized = serde_json::to_string(&b).unwrap();
+
+        assert_eq!(a_serialized, b_serialized);
+    }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_general_object_adds_to_cache() {
@@ -349,13 +356,10 @@ mod serial_tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_and_update_account() {
         let mut pg_cache = get_pg_cache_database().await.unwrap();
-        let mut account = AccountAny::Cash(
-            CashAccount::new(
-                cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD"),
-                false,
-            )
-            .unwrap(),
-        );
+        let mut account = AccountAny::Cash(CashAccount::new(
+            cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD"),
+            false,
+        ));
         let last_event = account.last_event().unwrap();
         if last_event.base_currency.is_some() {
             pg_cache

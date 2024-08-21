@@ -75,7 +75,7 @@ impl OrderInitialized {
         exec_algorithm_params: Option<HashMap<String, String>>,
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<Vec<String>>,
-    ) -> PyResult<Self> {
+    ) -> Self {
         Self::new(
             trader_id,
             strategy_id,
@@ -111,7 +111,6 @@ impl OrderInitialized {
             exec_spawn_id,
             tags.map(|vec| vec.iter().map(|s| Ustr::from(&s)).collect()),
         )
-        .map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

@@ -33,12 +33,7 @@ impl WeightedMovingAverage {
         weights: Vec<f64>,
         price_type: Option<PriceType>,
     ) -> PyResult<Self> {
-        check_predicate_true(
-            period == weights.len(),
-            "`period` must be equal to `weights` length",
-        )
-        .map_err(to_pyvalue_err);
-        Ok(Self::new(period, weights, price_type))
+        Self::new_checked(period, weights, price_type).map_err(to_pyvalue_err)
     }
 
     fn __repr__(&self) -> String {

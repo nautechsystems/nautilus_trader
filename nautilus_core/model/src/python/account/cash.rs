@@ -31,8 +31,8 @@ use crate::{
 #[pymethods]
 impl CashAccount {
     #[new]
-    pub fn py_new(event: AccountState, calculate_account_state: bool) -> PyResult<Self> {
-        Self::new(event, calculate_account_state).map_err(to_pyvalue_err)
+    pub fn py_new(event: AccountState, calculate_account_state: bool) -> Self {
+        Self::new(event, calculate_account_state)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

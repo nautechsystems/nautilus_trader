@@ -69,8 +69,8 @@ impl OrderTriggered {
         reconciliation: bool,
         venue_order_id: Option<VenueOrderId>,
         account_id: Option<AccountId>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             trader_id,
             strategy_id,
             instrument_id,
@@ -81,7 +81,7 @@ impl OrderTriggered {
             reconciliation: u8::from(reconciliation),
             venue_order_id,
             account_id,
-        })
+        }
     }
 }
 

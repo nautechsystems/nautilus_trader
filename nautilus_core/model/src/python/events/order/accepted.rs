@@ -39,7 +39,7 @@ impl OrderAccepted {
         ts_event: u64,
         ts_init: u64,
         reconciliation: bool,
-    ) -> PyResult<Self> {
+    ) -> Self {
         Self::new(
             trader_id,
             strategy_id,
@@ -52,7 +52,6 @@ impl OrderAccepted {
             ts_init.into(),
             reconciliation,
         )
-        .map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

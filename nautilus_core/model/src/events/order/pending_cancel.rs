@@ -69,8 +69,8 @@ impl OrderPendingCancel {
         ts_init: UnixNanos,
         reconciliation: bool,
         venue_order_id: Option<VenueOrderId>,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             trader_id,
             strategy_id,
             instrument_id,
@@ -81,7 +81,7 @@ impl OrderPendingCancel {
             ts_init,
             reconciliation: u8::from(reconciliation),
             venue_order_id,
-        })
+        }
     }
 }
 

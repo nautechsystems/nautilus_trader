@@ -62,8 +62,8 @@ impl OrderEmulated {
         event_id: UUID4,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             trader_id,
             strategy_id,
             instrument_id,
@@ -71,7 +71,7 @@ impl OrderEmulated {
             event_id,
             ts_event,
             ts_init,
-        })
+        }
     }
 }
 

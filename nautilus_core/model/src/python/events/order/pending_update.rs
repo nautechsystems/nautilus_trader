@@ -39,7 +39,7 @@ impl OrderPendingUpdate {
         ts_init: u64,
         reconciliation: bool,
         venue_order_id: Option<VenueOrderId>,
-    ) -> PyResult<Self> {
+    ) -> Self {
         Self::new(
             trader_id,
             strategy_id,
@@ -52,7 +52,6 @@ impl OrderPendingUpdate {
             reconciliation,
             venue_order_id,
         )
-        .map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

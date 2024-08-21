@@ -47,14 +47,14 @@ pub struct BaseAccount {
 
 impl BaseAccount {
     /// Creates a new [`BaseAccount`] instance.
-    pub fn new(event: AccountState, calculate_account_state: bool) -> anyhow::Result<Self> {
+    pub fn new(event: AccountState, calculate_account_state: bool) -> Self {
         let mut balances_starting: HashMap<Currency, Money> = HashMap::new();
         let mut balances: HashMap<Currency, AccountBalance> = HashMap::new();
         event.balances.iter().for_each(|balance| {
             balances_starting.insert(balance.currency, balance.total);
             balances.insert(balance.currency, *balance);
         });
-        Ok(Self {
+        Self {
             id: event.account_id,
             account_type: event.account_type,
             base_currency: event.base_currency,
@@ -63,7 +63,7 @@ impl BaseAccount {
             commissions: HashMap::new(),
             balances,
             balances_starting,
-        })
+        }
     }
 
     #[must_use]

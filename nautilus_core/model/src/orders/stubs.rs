@@ -44,8 +44,7 @@ impl TestOrderEventStubs {
             UUID4::new(),
             UnixNanos::default(),
             UnixNanos::default(),
-        )
-        .unwrap();
+        );
         OrderEventAny::Submitted(event)
     }
 
@@ -65,8 +64,7 @@ impl TestOrderEventStubs {
             UnixNanos::default(),
             UnixNanos::default(),
             false,
-        )
-        .unwrap();
+        );
         OrderEventAny::Accepted(event)
     }
 
@@ -118,8 +116,7 @@ impl TestOrderEventStubs {
             false,
             Some(position_id),
             Some(commission),
-        )
-        .unwrap();
+        );
         OrderEventAny::Filled(event)
     }
 }

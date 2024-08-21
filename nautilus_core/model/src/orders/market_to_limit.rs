@@ -114,10 +114,9 @@ impl MarketToLimitOrder {
             exec_algorithm_params,
             exec_spawn_id,
             tags,
-        )
-        .unwrap();
+        );
         Ok(Self {
-            core: OrderCore::new(init_order).unwrap(),
+            core: OrderCore::new(init_order),
             price: None, // Price will be determined on fill
             expire_time,
             is_post_only: post_only,
