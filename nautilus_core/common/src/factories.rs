@@ -131,8 +131,7 @@ impl OrderFactory {
             exec_algorithm_params,
             exec_spawn_id,
             tags,
-        )
-        .unwrap();
+        );
         OrderAny::Market(order)
     }
 }
