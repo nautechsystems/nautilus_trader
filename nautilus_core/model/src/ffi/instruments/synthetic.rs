@@ -88,7 +88,7 @@ pub unsafe extern "C" fn synthetic_instrument_new(
         ts_init.into(),
     );
 
-    SyntheticInstrument_API(Box::new(synth.unwrap()))
+    SyntheticInstrument_API(Box::new(synth))
 }
 
 #[no_mangle]

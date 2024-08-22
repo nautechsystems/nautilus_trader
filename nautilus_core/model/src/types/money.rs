@@ -21,7 +21,7 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::correctness::{check_in_range_inclusive_f64, FAILED};
+use nautilus_core::correctness::check_in_range_inclusive_f64;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize};
 use thousands::Separable;
@@ -50,14 +50,21 @@ pub struct Money {
 }
 
 impl Money {
-    /// Creates a new [`Money`] instance.
-    pub fn new(amount: f64, currency: Currency) -> Self {
-        check_in_range_inclusive_f64(amount, MONEY_MIN, MONEY_MAX, "amount").expect(FAILED);
+    /// Creates a new [`Money`] instance with correctness checking.
+    ///
+    /// Note: PyO3 requires a Result type that stacktrace can be printed for errors.
+    pub fn new_checked(amount: f64, currency: Currency) -> anyhow::Result<Self> {
+        check_in_range_inclusive_f64(amount, MONEY_MIN, MONEY_MAX, "amount")?;
 
-        Self {
+        Ok(Self {
             raw: f64_to_fixed_i64(amount, currency.precision),
             currency,
-        }
+        })
+    }
+
+    /// Creates a new [`Money`] instance.
+    pub fn new(amount: f64, currency: Currency) -> Self {
+        Self::new_checked(amount, currency).expect("Failed to create Money instance")
     }
 
     #[must_use]

@@ -16,7 +16,7 @@
 use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
-    correctness::{check_equal_u8, check_positive_i64, check_positive_u64, FAILED},
+    correctness::{check_equal_u8, check_positive_i64, check_positive_u64},
     nanos::UnixNanos,
 };
 use rust_decimal::Decimal;
@@ -66,7 +66,81 @@ pub struct CryptoFuture {
 }
 
 impl CryptoFuture {
-    /// Creates a new [`CryptoFuture`] instance.
+    /// Creates a new [`CryptoFuture`] instance with correctness checking.
+    ///
+    /// Note: PyO3 requires a Result type that stacktrace can be printed for errors.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_checked(
+        id: InstrumentId,
+        raw_symbol: Symbol,
+        underlying: Currency,
+        quote_currency: Currency,
+        settlement_currency: Currency,
+        is_inverse: bool,
+        activation_ns: UnixNanos,
+        expiration_ns: UnixNanos,
+        price_precision: u8,
+        size_precision: u8,
+        price_increment: Price,
+        size_increment: Quantity,
+        maker_fee: Decimal,
+        taker_fee: Decimal,
+        margin_init: Decimal,
+        margin_maint: Decimal,
+        lot_size: Option<Quantity>,
+        max_quantity: Option<Quantity>,
+        min_quantity: Option<Quantity>,
+        max_notional: Option<Money>,
+        min_notional: Option<Money>,
+        max_price: Option<Price>,
+        min_price: Option<Price>,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> anyhow::Result<Self> {
+        check_equal_u8(
+            price_precision,
+            price_increment.precision,
+            stringify!(price_precision),
+            stringify!(price_increment.precision),
+        )?;
+        check_equal_u8(
+            size_precision,
+            size_increment.precision,
+            stringify!(size_precision),
+            stringify!(size_increment.precision),
+        )?;
+        check_positive_i64(price_increment.raw, stringify!(price_increment.raw))?;
+        check_positive_u64(size_increment.raw, stringify!(size_increment.raw))?;
+
+        Ok(Self {
+            id,
+            raw_symbol,
+            underlying,
+            quote_currency,
+            settlement_currency,
+            is_inverse,
+            activation_ns,
+            expiration_ns,
+            price_precision,
+            size_precision,
+            price_increment,
+            size_increment,
+            maker_fee,
+            taker_fee,
+            margin_init,
+            margin_maint,
+            lot_size: lot_size.unwrap_or(Quantity::from(1)),
+            max_quantity,
+            min_quantity,
+            max_notional,
+            min_notional,
+            max_price,
+            min_price,
+            ts_event,
+            ts_init,
+        })
+    }
+
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,
@@ -95,24 +169,7 @@ impl CryptoFuture {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Self {
-        check_equal_u8(
-            price_precision,
-            price_increment.precision,
-            stringify!(price_precision),
-            stringify!(price_increment.precision),
-        )
-        .expect(FAILED);
-        check_equal_u8(
-            size_precision,
-            size_increment.precision,
-            stringify!(size_precision),
-            stringify!(size_increment.precision),
-        )
-        .expect(FAILED);
-        check_positive_i64(price_increment.raw, stringify!(price_increment.raw)).expect(FAILED);
-        check_positive_u64(size_increment.raw, stringify!(size_increment.raw)).expect(FAILED);
-
-        Self {
+        Self::new_checked(
             id,
             raw_symbol,
             underlying,
@@ -129,7 +186,7 @@ impl CryptoFuture {
             taker_fee,
             margin_init,
             margin_maint,
-            lot_size: lot_size.unwrap_or(Quantity::from(1)),
+            lot_size,
             max_quantity,
             min_quantity,
             max_notional,
@@ -138,7 +195,8 @@ impl CryptoFuture {
             min_price,
             ts_event,
             ts_init,
-        }
+        )
+        .expect("Failed to create CryptoFuture")
     }
 }
 

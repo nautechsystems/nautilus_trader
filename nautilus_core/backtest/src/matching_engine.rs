@@ -1377,30 +1377,27 @@ mod tests {
         let stop_loss_client_order_id = ClientOrderId::from("O-19700101-000000-001-001-2");
 
         // Create entry market order
-        let mut entry_order = OrderAny::Market(
-            MarketOrder::new(
-                TraderId::default(),
-                StrategyId::default(),
-                instrument_es.id(),
-                entry_client_order_id,
-                OrderSide::Buy,
-                Quantity::from("1"),
-                TimeInForce::Gtc,
-                UUID4::new(),
-                UnixNanos::default(),
-                false,
-                false,
-                Some(ContingencyType::Oto), // <- set contingency type to OTO
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            )
-            .unwrap(),
-        );
+        let mut entry_order = OrderAny::Market(MarketOrder::new(
+            TraderId::default(),
+            StrategyId::default(),
+            instrument_es.id(),
+            entry_client_order_id,
+            OrderSide::Buy,
+            Quantity::from("1"),
+            TimeInForce::Gtc,
+            UUID4::new(),
+            UnixNanos::default(),
+            false,
+            false,
+            Some(ContingencyType::Oto), // <- set contingency type to OTO
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ));
         // Set entry order status to Rejected with proper event
         let rejected_event = OrderRejected::default();
         entry_order

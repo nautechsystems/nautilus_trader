@@ -102,8 +102,7 @@ impl<'r> FromRow<'r, PgRow> for QuoteTickModel {
             ask_size,
             ts_event,
             ts_init,
-        )
-        .unwrap();
+        );
         Ok(QuoteTickModel(quote))
     }
 }

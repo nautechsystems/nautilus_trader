@@ -157,8 +157,8 @@ impl TradeTick {
     }
 
     #[staticmethod]
-    fn _safe_constructor() -> PyResult<Self> {
-        Ok(Self::new(
+    fn _safe_constructor() -> Self {
+        Self::new(
             InstrumentId::from("NULL.NULL"),
             Price::zero(0),
             Quantity::zero(0),
@@ -166,9 +166,9 @@ impl TradeTick {
             TradeId::from("NULL"),
             UnixNanos::default(),
             UnixNanos::default(),
-        ))
-        // Safe default
+        )
     }
+
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         match op {
             CompareOp::Eq => self.eq(other).into_py(py),

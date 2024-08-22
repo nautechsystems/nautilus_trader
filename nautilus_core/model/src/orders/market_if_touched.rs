@@ -84,7 +84,7 @@ impl MarketIfTouchedOrder {
         tags: Option<Vec<Ustr>>,
         init_id: UUID4,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
+    ) -> Self {
         let init_order = OrderInitialized::new(
             trader_id,
             strategy_id,
@@ -120,7 +120,7 @@ impl MarketIfTouchedOrder {
             exec_spawn_id,
             tags,
         );
-        Ok(Self {
+        Self {
             core: OrderCore::new(init_order),
             trigger_price,
             trigger_type,
@@ -129,7 +129,7 @@ impl MarketIfTouchedOrder {
             trigger_instrument_id,
             is_triggered: false,
             ts_triggered: None,
-        })
+        }
     }
 }
 
@@ -416,6 +416,6 @@ impl From<OrderInitialized> for MarketIfTouchedOrder {
             event.tags,
             event.event_id,
             event.ts_event,
-        ).unwrap() // SAFETY: From can panic
+        )
     }
 }

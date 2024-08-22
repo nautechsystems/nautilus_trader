@@ -19,6 +19,7 @@ use std::{
     ops::Deref,
 };
 
+use nautilus_core::python::to_pyvalue_err;
 use pyo3::{prelude::*, pyclass::CompareOp, types::PyCapsule};
 
 use super::data_to_pycapsule;
@@ -35,8 +36,8 @@ use crate::{
 #[pymethods]
 impl OrderBookDeltas {
     #[new]
-    fn py_new(instrument_id: InstrumentId, deltas: Vec<OrderBookDelta>) -> Self {
-        Self::new(instrument_id, deltas)
+    fn py_new(instrument_id: InstrumentId, deltas: Vec<OrderBookDelta>) -> PyResult<Self> {
+        Self::new_checked(instrument_id, deltas).map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

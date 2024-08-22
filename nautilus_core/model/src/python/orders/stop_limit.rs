@@ -72,7 +72,7 @@ impl StopLimitOrder {
         exec_algorithm_params: Option<HashMap<String, String>>,
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<Vec<String>>,
-    ) -> PyResult<Self> {
+    ) -> Self {
         let exec_algorithm_params = exec_algorithm_params.map(str_hashmap_to_ustr);
         Self::new(
             trader_id,
@@ -103,7 +103,6 @@ impl StopLimitOrder {
             init_id,
             ts_init.into(),
         )
-        .map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -667,8 +666,7 @@ impl StopLimitOrder {
             tags,
             init_id,
             ts_init.into(),
-        )
-        .unwrap();
+        );
         Ok(stop_limit_order)
     }
 

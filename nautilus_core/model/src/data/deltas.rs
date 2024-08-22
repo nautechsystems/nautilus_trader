@@ -21,7 +21,10 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::{
+    correctness::{check_predicate_true, FAILED},
+    nanos::UnixNanos,
+};
 
 use super::{delta::OrderBookDelta, GetTsInit};
 use crate::identifiers::InstrumentId;
@@ -54,21 +57,32 @@ impl OrderBookDeltas {
     #[allow(clippy::too_many_arguments)]
     #[must_use]
     pub fn new(instrument_id: InstrumentId, deltas: Vec<OrderBookDelta>) -> Self {
-        assert!(!deltas.is_empty(), "`deltas` cannot be empty");
+        Self::new_checked(instrument_id, deltas).expect(FAILED)
+    }
+
+    /// Creates a new [`OrderBookDeltas`] instance with correctness checking.
+    ///
+    /// Note: PyO3 requires a Result type that stacktrace can be printed for errors.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_checked(
+        instrument_id: InstrumentId,
+        deltas: Vec<OrderBookDelta>,
+    ) -> anyhow::Result<Self> {
+        check_predicate_true(!deltas.is_empty(), "`deltas` cannot be empty")?;
         // SAFETY: We asserted `deltas` is not empty
         let last = deltas.last().unwrap();
         let flags = last.flags;
         let sequence = last.sequence;
         let ts_event = last.ts_event;
         let ts_init = last.ts_init;
-        Self {
+        Ok(Self {
             instrument_id,
             deltas,
             flags,
             sequence,
             ts_event,
             ts_init,
-        }
+        })
     }
 }
 
