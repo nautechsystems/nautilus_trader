@@ -4,7 +4,11 @@
 We are currently working on this integration guide.
 :::
 
-dYdX is one of the largest decentralized cryptocurrency exchanges in terms of daily trading volume for crypto derivative products. dYdX runs on smart contracts on the Ethereum blockchain, and allows users to trade with no intermediaries. This integration supports live market data ingestion and order execution with dYdX v4, which is the first version of the protocol to be fully decentralized with no central components.
+dYdX is one of the largest decentralized cryptocurrency exchanges in terms of daily trading volume
+for crypto derivative products. dYdX runs on smart contracts on the Ethereum blockchain, and allows
+users to trade with no intermediaries. This integration supports live market data ingestion and order
+execution with dYdX v4, which is the first version of the protocol to be fully decentralized with no
+central components.
 
 ## Overview
 
@@ -28,11 +32,16 @@ and won't need to necessarily work with these lower level components directly.
 
 ## Symbology
 
-Only perpetual contracts are available on dYdX. To be consistent with other adapters and to be futureproof in case other products become available on dYdX, NautilusTrader appends `-PERP` for all available perpetual symbols. For example, the Bitcoin/USD-C perpetual futures contract is identified as `BTC-USD-PERP`. The quote currency for all markets is USD-C. Therefore, dYdX abbreviates it to USD.
+Only perpetual contracts are available on dYdX. To be consistent with other adapters and to be 
+futureproof in case other products become available on dYdX, NautilusTrader appends `-PERP` for all 
+available perpetual symbols. For example, the Bitcoin/USD-C perpetual futures contract is identified 
+as `BTC-USD-PERP`. The quote currency for all markets is USD-C. Therefore, dYdX abbreviates it to USD.
 
 ## Order types
 
-dYdX offers a flexible combination of trigger types, enabling a broader range of Nautilus orders. However, the execution engine currently only supports submitting market and limit orders. Stop orders and trailing stop orders can be implemented later.
+dYdX offers a flexible combination of trigger types, enabling a broader range of Nautilus orders. 
+However, the execution engine currently only supports submitting market and limit orders. Stop orders 
+and trailing stop orders can be implemented later.
 
 ## Configuration
 
@@ -60,7 +69,7 @@ config = TradingNodeConfig(
     exec_clients={
         "DYDX": {
             "wallet_address": "YOUR_DYDX_WALLET_ADDRESS",
-            "subaccount": "YUUR_DYDYX_SUBACCOUNT_NUMBER"
+            "subaccount": "YOUR_DYDYX_SUBACCOUNT_NUMBER"
             "mnemonic": "YOUR_MNEMONIC",
             "is_testnet": False,
         },
@@ -119,7 +128,7 @@ config = TradingNodeConfig(
     exec_clients={
         "DYDX": {
             "wallet_address": "YOUR_DYDX_WALLET_ADDRESS",
-            "subaccount": "YUUR_DYDYX_SUBACCOUNT_NUMBER"
+            "subaccount": "YOUR_DYDYX_SUBACCOUNT_NUMBER"
             "mnemonic": "YOUR_MNEMONIC",
             "is_testnet": True,
         },
@@ -131,10 +140,10 @@ config = TradingNodeConfig(
 
 Some dYdX instruments are unable to be parsed into Nautilus objects if they
 contain enormous field values beyond what can be handled by the platform.
-In these cases, a _warn and continue_ approach is taken (the instrument will not
-be available).
+In these cases, a _warn and continue_ approach is taken (the instrument will not be available).
 
 ## Order books
 
 Order books can be maintained at full depths or top of the book quotes depending on the
-subscription options. The venue does not provide quote ticks, but the adapter subscribes to order book deltas and sends new quote ticks to the `DataEngine` when the best bid or ask price or size changes.
+subscription options. The venue does not provide quote ticks, but the adapter subscribes to order
+book deltas and sends new quote ticks to the `DataEngine` when the best bid or ask price or size changes.
