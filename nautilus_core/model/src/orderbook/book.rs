@@ -572,8 +572,7 @@ mod tests {
             Quantity::from("99.00000000"),
             0.into(),
             0.into(),
-        )
-        .unwrap();
+        );
 
         update_book_with_quote_tick(&mut book, &quote).unwrap();
 
