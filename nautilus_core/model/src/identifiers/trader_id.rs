@@ -17,7 +17,7 @@
 
 use std::fmt::{Debug, Display, Formatter};
 
-use nautilus_core::correctness::{check_string_contains, check_valid_string, FAILED};
+use nautilus_core::correctness::{check_string_contains, check_valid_string};
 use ustr::Ustr;
 
 /// Represents a valid trader ID.
@@ -41,13 +41,22 @@ impl TraderId {
     /// The reason for the numerical component of the ID is so that order and position IDs
     /// do not collide with those from another node instance.
     ///
+    /// # Errors
+    ///
+    /// Errors if `value` is not a valid string, or does not contain a hyphen '-' separator.
+    pub fn new_checked(value: &str) -> anyhow::Result<Self> {
+        check_valid_string(value, stringify!(value))?;
+        check_string_contains(value, "-", stringify!(value))?;
+        Ok(Self(Ustr::from(value)))
+    }
+
+    /// Creates a new [`TraderId`] instance.
+    ///
     /// # Panics
     ///
     /// Panics if `value` is not a valid string, or does not contain a hyphen '-' separator.
     pub fn new(value: &str) -> Self {
-        check_valid_string(value, stringify!(value)).expect(FAILED);
-        check_string_contains(value, "-", stringify!(value)).expect(FAILED);
-        Self(Ustr::from(value))
+        Self::new_checked(value).expect("Failed to create TraderId")
     }
 
     /// Sets the inner identifier value.
