@@ -14,7 +14,7 @@ which can be used together or separately depending on the user's needs.
 
 - `DYDXHttpClient`: Low-level HTTP API connectivity
 - `DYDXWebSocketClient`: Low-level WebSocket API connectivity
-- `DYDXGRCPAccountClient`: Low-level GRCP API connectivity for account updates
+- `DYDXGRPCAccountClient`: Low-level gRPC API connectivity for account updates
 - `DYDXInstrumentProvider`: Instrument parsing and loading functionality
 - `DYDXDataClient`: A market data feed manager
 - `DYDXExecutionClient`: An account management and trade execution gateway
