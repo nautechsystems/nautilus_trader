@@ -64,7 +64,6 @@ impl OrderBookDeltas {
     ///
     /// Note: PyO3 requires a Result type that stacktrace can be printed for errors.
     #[allow(clippy::too_many_arguments)]
-    #[must_use]
     pub fn new_checked(
         instrument_id: InstrumentId,
         deltas: Vec<OrderBookDelta>,

@@ -41,9 +41,9 @@ impl OrderRejected {
         ts_event: u64,
         ts_init: u64,
         reconciliation: bool,
-    ) -> Self {
-        let reason = Ustr::from_str(reason).unwrap();
-        Self::new(
+    ) -> PyResult<Self> {
+        let reason = Ustr::from_str(reason).map_err(to_pyvalue_err)?;
+        Ok(Self::new(
             trader_id,
             strategy_id,
             instrument_id,
@@ -54,7 +54,7 @@ impl OrderRejected {
             ts_event.into(),
             ts_init.into(),
             reconciliation,
-        )
+        ))
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
