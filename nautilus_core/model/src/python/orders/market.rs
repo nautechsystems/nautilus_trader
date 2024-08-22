@@ -71,7 +71,7 @@ impl MarketOrder {
         tags: Option<Vec<String>>,
     ) -> PyResult<Self> {
         let exec_algorithm_params = exec_algorithm_params.map(str_hashmap_to_ustr);
-        Self::new(
+        Self::new_checked(
             trader_id,
             strategy_id,
             instrument_id,
@@ -520,7 +520,7 @@ impl MarketOrder {
                 }
             })
         })?;
-        let market_order = Self::new(
+        Self::new_checked(
             trader_id,
             strategy_id,
             instrument_id,
@@ -541,8 +541,7 @@ impl MarketOrder {
             exec_spawn_id,
             tags,
         )
-        .unwrap();
-        Ok(market_order)
+        .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "apply")]

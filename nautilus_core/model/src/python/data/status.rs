@@ -100,8 +100,8 @@ impl InstrumentStatus {
         is_trading: Option<bool>,
         is_quoting: Option<bool>,
         is_short_sell_restricted: Option<bool>,
-    ) -> PyResult<Self> {
-        Ok(Self::new(
+    ) -> Self {
+        Self::new(
             instrument_id,
             action,
             ts_event.into(),
@@ -111,7 +111,7 @@ impl InstrumentStatus {
             is_trading,
             is_quoting,
             is_short_sell_restricted,
-        ))
+        )
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

@@ -69,7 +69,7 @@ impl QuoteTick {
         let ts_event: u64 = obj.getattr("ts_event")?.extract()?;
         let ts_init: u64 = obj.getattr("ts_init")?.extract()?;
 
-        Self::new(
+        Self::new_checked(
             instrument_id,
             bid_price,
             ask_price,
@@ -94,7 +94,7 @@ impl QuoteTick {
         ts_event: u64,
         ts_init: u64,
     ) -> PyResult<Self> {
-        Self::new(
+        Self::new_checked(
             instrument_id,
             bid_price,
             ask_price,
@@ -169,7 +169,7 @@ impl QuoteTick {
 
     #[staticmethod]
     fn _safe_constructor() -> PyResult<Self> {
-        Ok(Self::new(
+        Self::new_checked(
             InstrumentId::from("NULL.NULL"),
             Price::zero(0),
             Price::zero(0),
@@ -178,7 +178,7 @@ impl QuoteTick {
             UnixNanos::default(),
             UnixNanos::default(),
         )
-        .unwrap()) // Safe default
+        .map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -293,7 +293,7 @@ impl QuoteTick {
         ts_event: u64,
         ts_init: u64,
     ) -> PyResult<Self> {
-        Self::new(
+        Self::new_checked(
             instrument_id,
             Price::from_raw(bid_price_raw, bid_price_prec),
             Price::from_raw(ask_price_raw, ask_price_prec),

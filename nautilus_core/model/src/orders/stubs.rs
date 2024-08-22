@@ -152,8 +152,7 @@ impl TestOrderStubs {
             None,
             None,
             None,
-        )
-        .unwrap();
+        );
         OrderAny::Market(order)
     }
 
@@ -185,8 +184,7 @@ impl TestOrderStubs {
             None,
             None,
             None,
-        )
-        .unwrap();
+        );
         OrderAny::Market(order)
     }
 
@@ -271,8 +269,7 @@ impl TestOrderStubs {
             None,
             UUID4::new(),
             UnixNanos::default(),
-        )
-        .unwrap();
+        );
         OrderAny::StopMarket(order)
     }
 
@@ -289,36 +286,33 @@ impl TestOrderStubs {
         time_in_force: Option<TimeInForce>,
         linked_order_ids: Option<Vec<ClientOrderId>>,
     ) -> OrderAny {
-        OrderAny::MarketIfTouched(
-            MarketIfTouchedOrder::new(
-                TraderId::default(),
-                StrategyId::default(),
-                instrument_id,
-                client_order_id.unwrap_or_default(),
-                order_side,
-                quantity,
-                trigger_price,
-                trigger_type.unwrap_or(TriggerType::BidAsk),
-                time_in_force.unwrap_or(TimeInForce::Gtc),
-                None,
-                false,
-                false,
-                None,
-                None,
-                None,
-                contingency_type,
-                None,
-                linked_order_ids,
-                None,
-                None,
-                None,
-                None,
-                None,
-                UUID4::new(),
-                UnixNanos::default(),
-            )
-            .unwrap(),
-        )
+        OrderAny::MarketIfTouched(MarketIfTouchedOrder::new(
+            TraderId::default(),
+            StrategyId::default(),
+            instrument_id,
+            client_order_id.unwrap_or_default(),
+            order_side,
+            quantity,
+            trigger_price,
+            trigger_type.unwrap_or(TriggerType::BidAsk),
+            time_in_force.unwrap_or(TimeInForce::Gtc),
+            None,
+            false,
+            false,
+            None,
+            None,
+            None,
+            contingency_type,
+            None,
+            linked_order_ids,
+            None,
+            None,
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        ))
     }
 
     pub fn make_accepted_order(order: &OrderAny) -> OrderAny {

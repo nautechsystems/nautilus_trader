@@ -19,7 +19,7 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::correctness::{check_valid_string, FAILED};
+use nautilus_core::correctness::check_valid_string;
 use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
 
@@ -41,6 +41,28 @@ pub struct Currency {
 }
 
 impl Currency {
+    /// Creates a new [`Currency`] instance with correctness checking.
+    ///
+    /// Note: PyO3 requires a Result type that stacktrace can be printed for errors.
+    pub fn new_checked(
+        code: &str,
+        precision: u8,
+        iso4217: u16,
+        name: &str,
+        currency_type: CurrencyType,
+    ) -> anyhow::Result<Self> {
+        check_valid_string(code, "code")?;
+        check_valid_string(name, "name")?;
+        check_fixed_precision(precision)?;
+        Ok(Self {
+            code: Ustr::from(code),
+            precision,
+            iso4217,
+            name: Ustr::from(name),
+            currency_type,
+        })
+    }
+
     /// Creates a new [`Currency`] instance.
     pub fn new(
         code: &str,
@@ -49,16 +71,8 @@ impl Currency {
         name: &str,
         currency_type: CurrencyType,
     ) -> Self {
-        check_valid_string(code, "code").expect(FAILED);
-        check_valid_string(name, "name").expect(FAILED);
-        check_fixed_precision(precision).expect(FAILED);
-        Self {
-            code: Ustr::from(code),
-            precision,
-            iso4217,
-            name: Ustr::from(name),
-            currency_type,
-        }
+        Self::new_checked(code, precision, iso4217, name, currency_type)
+            .expect("Failed to create new Currency instance")
     }
 
     pub fn register(currency: Self, overwrite: bool) -> anyhow::Result<()> {

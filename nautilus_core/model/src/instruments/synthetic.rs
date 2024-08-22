@@ -48,8 +48,10 @@ pub struct SyntheticInstrument {
 }
 
 impl SyntheticInstrument {
-    /// Creates a new [`SyntheticInstrument`] instance.
-    pub fn new(
+    /// Creates a new [`SyntheticInstrument`] instance with correctness checking.
+    ///
+    /// Note: PyO3 requires a Result type that stacktrace can be printed for errors.
+    pub fn new_checked(
         symbol: Symbol,
         price_precision: u8,
         components: Vec<InstrumentId>,
@@ -79,6 +81,26 @@ impl SyntheticInstrument {
             ts_event,
             ts_init,
         })
+    }
+
+    /// Creates a new [`SyntheticInstrument`] instance
+    pub fn new(
+        symbol: Symbol,
+        price_precision: u8,
+        components: Vec<InstrumentId>,
+        formula: String,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self::new_checked(
+            symbol,
+            price_precision,
+            components,
+            formula,
+            ts_event,
+            ts_init,
+        )
+        .expect("Failed to create synthetic instrument")
     }
 
     #[must_use]

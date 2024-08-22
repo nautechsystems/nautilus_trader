@@ -50,7 +50,6 @@ pub extern "C" fn quote_tick_new(
         ts_event,
         ts_init,
     )
-    .unwrap()
 }
 
 #[no_mangle]
