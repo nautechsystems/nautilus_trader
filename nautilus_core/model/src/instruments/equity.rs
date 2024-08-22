@@ -16,7 +16,7 @@
 use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
-    correctness::{check_equal_u8, check_positive_i64, check_valid_string_optional, FAILED},
+    correctness::{check_equal_u8, check_positive_i64, check_valid_string_optional},
     nanos::UnixNanos,
 };
 use rust_decimal::Decimal;
@@ -59,6 +59,59 @@ pub struct Equity {
 }
 
 impl Equity {
+    /// Creates a new [`Equity`] instance with correctness checking.
+    ///
+    /// Note: PyO3 requires a Result type that stacktrace can be printed for errors.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_checked(
+        id: InstrumentId,
+        raw_symbol: Symbol,
+        isin: Option<Ustr>,
+        currency: Currency,
+        price_precision: u8,
+        price_increment: Price,
+        maker_fee: Option<Decimal>,
+        taker_fee: Option<Decimal>,
+        margin_init: Option<Decimal>,
+        margin_maint: Option<Decimal>,
+        lot_size: Option<Quantity>,
+        max_quantity: Option<Quantity>,
+        min_quantity: Option<Quantity>,
+        max_price: Option<Price>,
+        min_price: Option<Price>,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> anyhow::Result<Self> {
+        check_valid_string_optional(isin.map(|u| u.as_str()), stringify!(isin))?;
+        check_equal_u8(
+            price_precision,
+            price_increment.precision,
+            stringify!(price_precision),
+            stringify!(price_increment.precision),
+        )?;
+        check_positive_i64(price_increment.raw, stringify!(price_increment.raw))?;
+
+        Ok(Self {
+            id,
+            raw_symbol,
+            isin,
+            currency,
+            price_precision,
+            price_increment,
+            maker_fee: maker_fee.unwrap_or(0.into()),
+            taker_fee: taker_fee.unwrap_or(0.into()),
+            margin_init: margin_init.unwrap_or(0.into()),
+            margin_maint: margin_maint.unwrap_or(0.into()),
+            lot_size,
+            max_quantity,
+            min_quantity,
+            max_price,
+            min_price,
+            ts_event,
+            ts_init,
+        })
+    }
+
     /// Creates a new [`Equity`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -80,27 +133,17 @@ impl Equity {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
     ) -> Self {
-        check_valid_string_optional(isin.map(|u| u.as_str()), stringify!(isin)).expect(FAILED);
-        check_equal_u8(
-            price_precision,
-            price_increment.precision,
-            stringify!(price_precision),
-            stringify!(price_increment.precision),
-        )
-        .expect(FAILED);
-        check_positive_i64(price_increment.raw, stringify!(price_increment.raw)).expect(FAILED);
-
-        Self {
+        Self::new_checked(
             id,
             raw_symbol,
             isin,
             currency,
             price_precision,
             price_increment,
-            maker_fee: maker_fee.unwrap_or(0.into()),
-            taker_fee: taker_fee.unwrap_or(0.into()),
-            margin_init: margin_init.unwrap_or(0.into()),
-            margin_maint: margin_maint.unwrap_or(0.into()),
+            maker_fee,
+            taker_fee,
+            margin_init,
+            margin_maint,
             lot_size,
             max_quantity,
             min_quantity,
@@ -108,7 +151,8 @@ impl Equity {
             min_price,
             ts_event,
             ts_init,
-        }
+        )
+        .expect("Failed to create Equity instance")
     }
 }
 

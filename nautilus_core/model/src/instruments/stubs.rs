@@ -47,7 +47,6 @@ impl Default for SyntheticInstrument {
             0.into(),
             0.into(),
         )
-        .unwrap()
     }
 }
 
