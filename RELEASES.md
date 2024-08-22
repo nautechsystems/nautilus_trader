@@ -3,13 +3,14 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Improved error modeling and handling in Rust (#1866), thanks @twitu
+- Implemented `OrderMatchingEngine` in Rust, thanks @filipmacek
 
 ### Breaking Changes
 None
 
 ### Fixes
-None
+- Fixed `OrderBook` memory deallocation in Python finalizer (memory was not being freed on object destruction), thanks for reporting @zeyuhuan
 
 ---
 
