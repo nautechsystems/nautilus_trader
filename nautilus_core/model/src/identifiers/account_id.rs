@@ -20,7 +20,7 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness::{check_string_contains, check_valid_string, FAILED};
+use nautilus_core::correctness::{check_string_contains, check_valid_string};
 use ustr::Ustr;
 
 use super::Venue;
@@ -35,20 +35,31 @@ use super::Venue;
 pub struct AccountId(Ustr);
 
 impl AccountId {
+    /// Creates a new [`AccountId`] instance with correctness checking.
+    ///
+    /// Maximum length is 36 characters.
+    ///
+    /// The unique ID assigned to the trade entity once it is received or matched by
+    /// the exchange or central counterparty.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if `value` is not a valid string, or value length is greater than 36.
+    ///
+    /// Note: PyO3 requires a Result type that stacktrace can be printed for errors.
+    pub fn new_checked(value: &str) -> anyhow::Result<Self> {
+        check_valid_string(value, stringify!(value))?;
+        check_string_contains(value, "-", stringify!(value))?;
+        Ok(Self(Ustr::from(value)))
+    }
+
     /// Creates a new [`AccountId`] instance.
     ///
-    /// Must be correctly formatted with two valid strings either side of a hyphen '-'.
-    /// It is expected an account ID is the name of the issuer with an account number
-    /// separated by a hyphen.
-    ///
-    /// Example: "IB-D02851908".
     /// # Panics
     ///
-    /// Panics if `value` is not a valid string, or does not contain a hyphen '-' separator.
+    /// Panics if `value` is not a valid string, or value length is greater than 36.
     pub fn new(value: &str) -> Self {
-        check_valid_string(value, stringify!(value)).expect(FAILED);
-        check_string_contains(value, "-", stringify!(value)).expect(FAILED);
-        Self(Ustr::from(value))
+        Self::new_checked(value).expect("Failed to create AccountId")
     }
 
     /// Sets the inner identifier value.

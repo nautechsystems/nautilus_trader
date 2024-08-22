@@ -20,7 +20,7 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness::{check_valid_string, FAILED};
+use nautilus_core::correctness::check_valid_string;
 use ustr::Ustr;
 
 /// Represents a valid order list ID (assigned by the Nautilus system).
@@ -33,14 +33,25 @@ use ustr::Ustr;
 pub struct OrderListId(Ustr);
 
 impl OrderListId {
+    /// Creates a new [`OrderListId`] instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// Errors if `value` is not a valid string.
+    ///
+    /// Note: PyO3 requires a Result type that stacktrace can be printed for errors.
+    pub fn new_checked(value: &str) -> anyhow::Result<Self> {
+        check_valid_string(value, stringify!(value))?;
+        Ok(Self(Ustr::from(value)))
+    }
+
     /// Creates a new [`OrderListId`] instance.
     ///
     /// # Panics
     ///
     /// Panics if `value` is not a valid string.
     pub fn new(value: &str) -> Self {
-        check_valid_string(value, stringify!(value)).expect(FAILED);
-        Self(Ustr::from(value))
+        Self::new_checked(value).expect("Failed to create OrderListId")
     }
 
     /// Sets the inner identifier value.

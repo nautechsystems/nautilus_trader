@@ -22,9 +22,7 @@ macro_rules! identifier_for_python {
         impl $ty {
             #[new]
             fn py_new(value: &str) -> PyResult<Self> {
-                nautilus_core::correctness::check_valid_string(value, stringify!(value))
-                    .map_err(to_pyvalue_err)?;
-                Ok(<$ty>::new(value))
+                <$ty>::new_checked(value).map_err(to_pyvalue_err)
             }
 
             fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
