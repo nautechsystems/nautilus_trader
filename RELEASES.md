@@ -9,7 +9,7 @@ None
 None
 
 ### Fixes
-None
+- Fixed `OrderBook` memory deallocation in Python finalizer (memory was not being freed on object destruction), thanks for reporting @zeyuhuan
 
 ---
 
