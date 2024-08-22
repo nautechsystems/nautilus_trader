@@ -1,0 +1,23 @@
+{
+    "channel": "v4_subaccounts",
+    "connection_id": "2454e5fc-fcbb-4e8c-a435-e5f19d5a0180",
+    "contents": {
+        "blockHeight": "19090305",
+        "orders": [
+            {
+                "clientId": "1964904710",
+                "clobPairId": "1",
+                "id": "5a1c10aa-66bb-5cf2-a106-32d6470eb43e",
+                "orderFlags": "0",
+                "removalReason": "ORDER_REMOVAL_REASON_EXPIRED",
+                "status": "CANCELED",
+                "subaccountId": "8586bcf6-1f58-5ec9-a0bc-e53db273e7b0",
+                "ticker": "ETH-USD"
+            }
+        ]
+    },
+    "id": "dydx14zzueazeh0hj67cghhf9jypslcf9sh2n5k6art/0",
+    "message_id": 50,
+    "type": "channel_data",
+    "version": "3.0.0"
+}
