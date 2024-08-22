@@ -20,7 +20,7 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness::check_valid_string;
+use nautilus_core::correctness::{check_valid_string, FAILED};
 use ustr::Ustr;
 
 /// Represents a valid component ID.
@@ -51,7 +51,7 @@ impl ComponentId {
     ///
     /// Panics if `value` is not a valid string.
     pub fn new(value: &str) -> Self {
-        Self::new_checked(value).expect("Failed to create ComponentId")
+        Self::new_checked(value).expect(FAILED)
     }
 
     /// Sets the inner identifier value.

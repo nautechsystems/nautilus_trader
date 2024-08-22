@@ -73,7 +73,7 @@ impl Price {
     }
 
     pub fn new(value: f64, precision: u8) -> Self {
-        Self::new_checked(value, precision).expect("Failed to create new Price instance")
+        Self::new_checked(value, precision).expect(FAILED)
     }
 
     pub fn from_raw(raw: i64, precision: u8) -> Self {

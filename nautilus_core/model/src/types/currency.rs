@@ -19,7 +19,7 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::correctness::check_valid_string;
+use nautilus_core::correctness::{check_valid_string, FAILED};
 use serde::{Deserialize, Serialize, Serializer};
 use ustr::Ustr;
 
@@ -71,8 +71,7 @@ impl Currency {
         name: &str,
         currency_type: CurrencyType,
     ) -> Self {
-        Self::new_checked(code, precision, iso4217, name, currency_type)
-            .expect("Failed to create new Currency instance")
+        Self::new_checked(code, precision, iso4217, name, currency_type).expect(FAILED)
     }
 
     pub fn register(currency: Self, overwrite: bool) -> anyhow::Result<()> {

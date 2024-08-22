@@ -20,7 +20,7 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness::check_valid_string;
+use nautilus_core::correctness::{check_valid_string, FAILED};
 use ustr::Ustr;
 
 /// Represents a valid ticker symbol ID for a tradable instrument.
@@ -51,7 +51,7 @@ impl Symbol {
     ///
     /// Panics if `value` is not a valid string.
     pub fn new(value: &str) -> Self {
-        Self::new_checked(value).expect("Invalid string")
+        Self::new_checked(value).expect(FAILED)
     }
 
     /// Sets the inner identifier value.

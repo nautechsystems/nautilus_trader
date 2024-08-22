@@ -20,7 +20,7 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness::{check_string_contains, check_valid_string};
+use nautilus_core::correctness::{check_string_contains, check_valid_string, FAILED};
 use ustr::Ustr;
 
 use super::Venue;
@@ -37,10 +37,10 @@ pub struct AccountId(Ustr);
 impl AccountId {
     /// Creates a new [`AccountId`] instance with correctness checking.
     ///
-    /// Maximum length is 36 characters.
+    /// Must be correctly formatted with two valid strings either side of a hyphen '-'.
     ///
-    /// The unique ID assigned to the trade entity once it is received or matched by
-    /// the exchange or central counterparty.
+    /// It is expected an account ID is the name of the issuer with an account number
+    /// separated by a hyphen.
     ///
     /// # Errors
     ///
@@ -59,7 +59,7 @@ impl AccountId {
     ///
     /// Panics if `value` is not a valid string, or value length is greater than 36.
     pub fn new(value: &str) -> Self {
-        Self::new_checked(value).expect("Failed to create AccountId")
+        Self::new_checked(value).expect(FAILED)
     }
 
     /// Sets the inner identifier value.
