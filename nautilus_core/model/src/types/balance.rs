@@ -21,6 +21,7 @@ use crate::{
     identifiers::InstrumentId,
     types::{currency::Currency, money::Money},
 };
+use nautilus_core::correctness::check_predicate_true;
 
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[cfg_attr(
@@ -35,16 +36,27 @@ pub struct AccountBalance {
 }
 
 impl AccountBalance {
-    pub fn new(total: Money, locked: Money, free: Money) -> Self {
-        assert!(total == locked + free,
-                "Total balance is not equal to the sum of locked and free balances: {total} != {locked} + {free}"
-            );
-        Self {
+    pub fn new_checked(total: Money, locked: Money, free: Money) -> anyhow::Result<Self> {
+        check_predicate_true(
+            total == locked + free,
+            &format!(
+                "Total balance is not equal to the sum of locked and free balances: {} != {} + {}",
+                total, locked, free
+            ),
+        )?;
+        Ok(Self {
             currency: total.currency,
             total,
             locked,
             free,
-        }
+        })
+    }
+
+    /// Creates a new [`AccountBalance`] instance with correctness checking.
+    ///
+    /// Note: PyO3 requires a Result type that stacktrace can be printed for errors.
+    pub fn new(total: Money, locked: Money, free: Money) -> Self {
+        Self::new_checked(total, locked, free).expect("Failed to create AccountBalance")
     }
 }
 

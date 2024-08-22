@@ -62,13 +62,18 @@ pub struct Price {
 }
 
 impl Price {
-    pub fn new(value: f64, precision: u8) -> Self {
-        check_in_range_inclusive_f64(value, PRICE_MIN, PRICE_MAX, "value").expect(FAILED);
-        check_fixed_precision(precision).expect(FAILED);
-        Self {
+    pub fn new_checked(value: f64, precision: u8) -> anyhow::Result<Self> {
+        check_in_range_inclusive_f64(value, PRICE_MIN, PRICE_MAX, "value")?;
+        check_fixed_precision(precision)?;
+
+        Ok(Self {
             raw: f64_to_fixed_i64(value, precision),
             precision,
-        }
+        })
+    }
+
+    pub fn new(value: f64, precision: u8) -> Self {
+        Self::new_checked(value, precision).expect("Failed to create new Price instance")
     }
 
     pub fn from_raw(raw: i64, precision: u8) -> Self {

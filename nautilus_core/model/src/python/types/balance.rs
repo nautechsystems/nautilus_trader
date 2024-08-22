@@ -31,7 +31,7 @@ use crate::{
 impl AccountBalance {
     #[new]
     fn py_new(total: Money, locked: Money, free: Money) -> PyResult<Self> {
-        Ok(Self::new(total, locked, free))
+        Self::new_checked(total, locked, free).map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -62,12 +62,12 @@ impl AccountBalance {
         let locked_str: &str = dict.get_item("locked")?.unwrap().extract()?;
         let locked: f64 = locked_str.parse::<f64>().unwrap();
         let currency = Currency::from_str(currency).map_err(to_pyvalue_err)?;
-        let account_balance = Self::new(
+        Self::new_checked(
             Money::new(total, currency),
             Money::new(locked, currency),
             Money::new(free, currency),
-        );
-        Ok(account_balance)
+        )
+        .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "to_dict")]
