@@ -139,7 +139,7 @@ impl SimulatedExchange {
     }
 
     pub fn set_fill_model(&mut self, fill_model: FillModel) {
-        for (_, matching_engine) in self.matching_engines.iter_mut() {
+        for matching_engine in self.matching_engines.values_mut() {
             matching_engine.set_fill_model(fill_model.clone());
             log::info!(
                 "Changed fill model for {} to {}",
