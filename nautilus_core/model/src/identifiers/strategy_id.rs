@@ -17,7 +17,7 @@
 
 use std::fmt::{Debug, Display, Formatter};
 
-use nautilus_core::correctness::{check_string_contains, check_valid_string};
+use nautilus_core::correctness::{check_string_contains, check_valid_string, FAILED};
 use ustr::Ustr;
 
 /// The identifier for all 'external' strategy IDs (not local to this system instance).
@@ -61,7 +61,7 @@ impl StrategyId {
     ///
     /// Panics if `value` is not a valid string.
     pub fn new(value: &str) -> Self {
-        Self::new_checked(value).expect("Failed to create StrategyId")
+        Self::new_checked(value).expect(FAILED)
     }
 
     /// Sets the inner identifier value.

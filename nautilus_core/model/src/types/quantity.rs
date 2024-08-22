@@ -68,7 +68,7 @@ impl Quantity {
 
     /// Creates a new [`Quantity`] instance.
     pub fn new(value: f64, precision: u8) -> Self {
-        Self::new_checked(value, precision).expect("Valid input for `Quantity`")
+        Self::new_checked(value, precision).expect(FAILED)
     }
 
     pub fn from_raw(raw: u64, precision: u8) -> Self {

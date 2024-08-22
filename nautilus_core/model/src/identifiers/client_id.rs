@@ -20,7 +20,7 @@ use std::{
     hash::Hash,
 };
 
-use nautilus_core::correctness::check_valid_string;
+use nautilus_core::correctness::{check_valid_string, FAILED};
 use ustr::Ustr;
 
 /// Represents a system client ID.
@@ -51,7 +51,7 @@ impl ClientId {
     ///
     /// Panics if `value` is not a valid string.
     pub fn new(value: &str) -> Self {
-        Self::new_checked(value).expect("Failed to create ClientId")
+        Self::new_checked(value).expect(FAILED)
     }
 
     /// Sets the inner identifier value.

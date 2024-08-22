@@ -15,13 +15,13 @@
 
 use std::fmt::{Debug, Display};
 
+use nautilus_core::correctness::{check_predicate_true, FAILED};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     identifiers::InstrumentId,
     types::{currency::Currency, money::Money},
 };
-use nautilus_core::correctness::check_predicate_true;
 
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[cfg_attr(
@@ -56,7 +56,7 @@ impl AccountBalance {
     ///
     /// Note: PyO3 requires a Result type that stacktrace can be printed for errors.
     pub fn new(total: Money, locked: Money, free: Money) -> Self {
-        Self::new_checked(total, locked, free).expect("Failed to create AccountBalance")
+        Self::new_checked(total, locked, free).expect(FAILED)
     }
 }
 
