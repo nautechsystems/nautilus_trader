@@ -1,0 +1,17 @@
+{
+    "channel": "v4_markets",
+    "connection_id": "36c85c46-69e8-4c1b-85e5-7412a54354a7",
+    "contents": {
+        "oraclePrices": {
+            "JASMY-USD": {
+                "effectiveAt": "2024-08-17T17:24:36.330Z",
+                "effectiveAtHeight": "19182358",
+                "marketId": 87,
+                "oraclePrice": "0.02069413882"
+            }
+        }
+    },
+    "message_id": 11,
+    "type": "channel_data",
+    "version": "1.0.0"
+}
