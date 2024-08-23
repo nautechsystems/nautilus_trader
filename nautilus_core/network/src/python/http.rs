@@ -15,21 +15,69 @@
 
 use std::{
     collections::{hash_map::DefaultHasher, HashMap},
+    error::Error,
+    fmt::Display,
     hash::{Hash, Hasher},
     sync::Arc,
 };
 
 use bytes::Bytes;
 use futures_util::{stream, StreamExt};
+use pyo3::{create_exception, exceptions::PyBaseException};
 use pyo3::{exceptions::PyException, prelude::*, types::PyBytes};
 
 use crate::{
-    http::{
-        HttpClient, HttpClientError, HttpError, HttpMethod, HttpResponse, HttpTimeoutError,
-        InnerHttpClient,
-    },
+    http::{HttpClient, HttpClientError, HttpMethod, HttpResponse, InnerHttpClient},
     ratelimiter::{quota::Quota, RateLimiter},
 };
+
+// #[pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")]
+pub struct HttpError {
+    message: String,
+}
+
+impl From<String> for HttpError {
+    fn from(msg: String) -> Self {
+        Self { message: msg }
+    }
+}
+
+impl Display for HttpError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "HTTP error: {}", self.message)
+    }
+}
+
+// #[pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")]
+pub struct HttpTimeoutError {
+    source: reqwest::Error,
+}
+
+impl HttpTimeoutError {
+    pub fn new(source: reqwest::Error) -> Self {
+        Self { source }
+    }
+}
+
+impl Display for HttpTimeoutError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "HTTP request timed out: {}", self.source)
+    }
+}
+
+create_exception!(module, HttpError, PyBaseException);
+create_exception!(module, HttpTimeoutError, PyBaseException);
+
+impl HttpClientError {
+    pub fn into_py_err(self) -> PyErr {
+        match self {
+            HttpClientError::Error(e) => PyErr::new::<HttpError, _>(e),
+            HttpClientError::TimeoutError(e) => {
+                PyErr::new::<HttpTimeoutError, _>(HttpTimeoutError::new(e))
+            }
+        }
+    }
+}
 
 #[pymethods]
 impl HttpMethod {
@@ -132,18 +180,10 @@ impl HttpClient {
                     key.await;
                 })
                 .await;
-            match client
+            client
                 .send_request(method, url, headers, body_vec, timeout_secs)
                 .await
-            {
-                Ok(res) => Ok(res),
-                Err(HttpClientError::Error(e)) => {
-                    Python::with_gil(|py| Err(PyErr::new::<HttpError, _>(Py::new(py, e).unwrap())))
-                }
-                Err(HttpClientError::TimeoutError(e)) => Python::with_gil(|py| {
-                    Err(PyErr::new::<HttpTimeoutError, _>(Py::new(py, e).unwrap()))
-                }),
-            }
+                .map_err(|e| e.into_py_err())
         })
     }
 }
