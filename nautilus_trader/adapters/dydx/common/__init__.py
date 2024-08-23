@@ -13,5 +13,5 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Common modules for the dydx adapter.
+Common modules for the dYdX adapter.
 """
