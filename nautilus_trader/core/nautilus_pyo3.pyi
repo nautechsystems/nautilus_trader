@@ -2518,6 +2518,12 @@ class PostgresCacheDatabase:
 # Network
 ###################################################################################################
 
+class HttpError(Exception):
+    ...
+
+class HttpTimeoutError(Exception):
+    ...
+
 class HttpClient:
     def __init__(
         self,
