@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-- Added dYdX integration (#1861, #1868), thanks @davidsblom
+- Added dYdX integration (#1861, #1868, #1873), thanks @davidsblom
 - Improved error modeling and handling in Rust (#1866), thanks @twitu
 - Implemented `OrderMatchingEngine` in Rust, thanks @filipmacek
 
