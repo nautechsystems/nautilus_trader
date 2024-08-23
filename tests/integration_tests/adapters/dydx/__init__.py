@@ -13,5 +13,5 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Unit tests for the dydx adapter.
+Unit tests for the dYdX adapter.
 """
