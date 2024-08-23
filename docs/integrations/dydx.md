@@ -69,7 +69,7 @@ config = TradingNodeConfig(
     exec_clients={
         "DYDX": {
             "wallet_address": "YOUR_DYDX_WALLET_ADDRESS",
-            "subaccount": "YOUR_DYDYX_SUBACCOUNT_NUMBER"
+            "subaccount": "YOUR_DYDX_SUBACCOUNT_NUMBER"
             "mnemonic": "YOUR_MNEMONIC",
             "is_testnet": False,
         },
@@ -128,7 +128,7 @@ config = TradingNodeConfig(
     exec_clients={
         "DYDX": {
             "wallet_address": "YOUR_DYDX_WALLET_ADDRESS",
-            "subaccount": "YOUR_DYDYX_SUBACCOUNT_NUMBER"
+            "subaccount": "YOUR_DYDX_SUBACCOUNT_NUMBER"
             "mnemonic": "YOUR_MNEMONIC",
             "is_testnet": True,
         },

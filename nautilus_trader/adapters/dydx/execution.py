@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING
 import msgspec
 import pandas as pd
 from grpc.aio._call import AioRpcError
-from v4_proto.dydxprotocol.clob.order_pb2 import Order
+from v4_proto.dydxprotocol.clob.order_pb2 import Order as DYDXOrder
 
 from nautilus_trader.adapters.dydx.common.constants import DYDX_VENUE
 from nautilus_trader.adapters.dydx.common.credentials import get_mnemonic
@@ -81,6 +81,7 @@ from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.orders import Order
 
 
 if TYPE_CHECKING:
@@ -871,15 +872,15 @@ class DYDXExecutionClient(LiveExecutionClient):
             OrderType.MARKET: DYDXGRPCOrderType.MARKET,
         }
         order_side_map = {
-            OrderSide.NO_ORDER_SIDE: Order.Side.SIDE_UNSPECIFIED,
-            OrderSide.BUY: Order.Side.SIDE_BUY,
-            OrderSide.SELL: Order.Side.SIDE_SELL,
+            OrderSide.NO_ORDER_SIDE: DYDXOrder.Side.SIDE_UNSPECIFIED,
+            OrderSide.BUY: DYDXOrder.Side.SIDE_BUY,
+            OrderSide.SELL: DYDXOrder.Side.SIDE_SELL,
         }
         time_in_force_map = {
-            TimeInForce.GTC: Order.TimeInForce.TIME_IN_FORCE_UNSPECIFIED,
-            TimeInForce.GTD: Order.TimeInForce.TIME_IN_FORCE_UNSPECIFIED,
-            TimeInForce.IOC: Order.TimeInForce.TIME_IN_FORCE_IOC,
-            TimeInForce.FOK: Order.TimeInForce.TIME_IN_FORCE_FILL_OR_KILL,
+            TimeInForce.GTC: DYDXOrder.TimeInForce.TIME_IN_FORCE_UNSPECIFIED,
+            TimeInForce.GTD: DYDXOrder.TimeInForce.TIME_IN_FORCE_UNSPECIFIED,
+            TimeInForce.IOC: DYDXOrder.TimeInForce.TIME_IN_FORCE_IOC,
+            TimeInForce.FOK: DYDXOrder.TimeInForce.TIME_IN_FORCE_FILL_OR_KILL,
         }
 
         try:
