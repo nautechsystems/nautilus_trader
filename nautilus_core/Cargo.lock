@@ -2879,6 +2879,7 @@ dependencies = [
  "reqwest",
  "rstest",
  "serde_json",
+ "thiserror",
  "tokio",
  "tokio-tungstenite",
  "tracing",
