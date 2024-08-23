@@ -14,6 +14,19 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Provides a generic `DataEngine` for all environments.
+//!
+//! The `DataEngine` is the central component of the entire data stack.
+//! The data engines primary responsibility is to orchestrate interactions between
+//! the `DataClient` instances, and the rest of the platform. This includes sending
+//! requests to, and receiving responses from, data endpoints via its registered
+//! data clients.
+//!
+//! The engine employs a simple fan-in fan-out messaging pattern to execute
+//! `DataCommand` type messages, and process `DataResponse` messages or market data
+//! objects.
+//!
+//! Alternative implementations can be written on top of the generic engine - which
+//! just need to override the `execute`, `process`, `send` and `receive` methods.
 
 // Under development
 #![allow(dead_code)]
@@ -48,9 +61,10 @@ use nautilus_model::{
         trade::TradeTick,
         Data, DataType,
     },
-    enums::RecordFlag,
+    enums::{BookType, RecordFlag},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
+    orderbook::book::OrderBook,
 };
 use ustr::Ustr;
 
@@ -86,6 +100,7 @@ pub struct DataEngine {
     msgbus: Rc<RefCell<MessageBus>>,
     clients: IndexMap<ClientId, DataClientAdapter>,
     default_client: Option<DataClientAdapter>,
+    external_clients: HashSet<ClientId>,
     routing_map: IndexMap<Venue, ClientId>,
     // order_book_intervals: HashMap<(InstrumentId, usize), Vec<fn(&OrderBook)>>,  // TODO
     bar_aggregators: Vec<Box<dyn BarAggregator>>, // TODO: dyn for now
@@ -110,6 +125,7 @@ impl DataEngine {
             clients: IndexMap::new(),
             routing_map: IndexMap::new(),
             default_client: None,
+            external_clients: HashSet::new(),
             bar_aggregators: Vec::new(),
             synthetic_quote_feeds: HashMap::new(),
             synthetic_trade_feeds: HashMap::new(),
@@ -117,9 +133,7 @@ impl DataEngine {
             config: config.unwrap_or_default(),
         }
     }
-}
 
-impl DataEngine {
     // pub fn register_catalog(&mut self, catalog: ParquetDataCatalog) {}  TODO: Implement catalog
 
     /// Register the given data `client` with the engine as the default routing client.
@@ -524,6 +538,24 @@ impl DataEngine {
     }
 
     // -- INTERNAL --------------------------------------------------------------------------------
+
+    fn setup_order_book(
+        &self,
+        client: &DataClientAdapter,
+        instrument_id: &InstrumentId,
+        book_type: BookType,
+        only_deltas: bool,
+        managed: bool,
+    ) -> anyhow::Result<()> {
+        let mut cache = self.cache.borrow_mut();
+        if managed && !cache.has_order_book(instrument_id) {
+            let book = OrderBook::new(*instrument_id, book_type);
+            log::debug!("Created {book}");
+            cache.add_order_book(book)?
+        }
+
+        Ok(())
+    }
 
     fn update_order_book(&self, data: &Data) {
         // Only apply data if there is a book being managed,

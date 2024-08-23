@@ -3108,7 +3108,7 @@ mod tests {
 
     #[rstest]
     fn test_order_book_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
-        let mut book = OrderBook::new(BookType::L2_MBP, audusd_sim.id);
+        let mut book = OrderBook::new(audusd_sim.id, BookType::L2_MBP);
         cache.add_order_book(book.clone()).unwrap();
         let result = cache.order_book(&audusd_sim.id);
         assert_eq!(result, Some(&mut book));

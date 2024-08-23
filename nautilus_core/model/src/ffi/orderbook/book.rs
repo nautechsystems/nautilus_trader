@@ -64,7 +64,7 @@ impl DerefMut for OrderBook_API {
 
 #[no_mangle]
 pub extern "C" fn orderbook_new(instrument_id: InstrumentId, book_type: BookType) -> OrderBook_API {
-    OrderBook_API(Box::new(OrderBook::new(book_type, instrument_id)))
+    OrderBook_API(Box::new(OrderBook::new(instrument_id, book_type)))
 }
 
 #[no_mangle]
