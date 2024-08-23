@@ -50,7 +50,7 @@ impl MessageHandler for StubMessageHandler {
 
     fn handle_response(&self, _resp: DataResponse) {}
 
-    fn handle_data(&self, _resp: Data) {}
+    fn handle_data(&self, _data: Data) {}
 
     fn as_any(&self) -> &dyn Any {
         self
@@ -96,7 +96,7 @@ impl MessageHandler for CallCheckMessageHandler {
 
     fn handle_response(&self, _resp: DataResponse) {}
 
-    fn handle_data(&self, _resp: Data) {}
+    fn handle_data(&self, _data: Data) {}
 
     fn as_any(&self) -> &dyn Any {
         self
@@ -155,7 +155,7 @@ impl<T: Clone + 'static> MessageHandler for MessageSavingHandler<T> {
 
     fn handle_response(&self, _resp: DataResponse) {}
 
-    fn handle_data(&self, _resp: Data) {}
+    fn handle_data(&self, _data: Data) {}
 
     fn as_any(&self) -> &dyn Any {
         self
