@@ -74,6 +74,8 @@ class DYDXInstrumentProvider(InstrumentProvider):
         # Http API
         self._http_market = DYDXMarketHttpAPI(client=client, clock=clock)
 
+        self._log_warnings = config.log_warnings if config else True
+
     async def load_all_async(self, filters: dict | None = None) -> None:
         """
         Load all instruments asynchronously, optionally applying filters.
@@ -155,4 +157,5 @@ class DYDXInstrumentProvider(InstrumentProvider):
                 self.add_currency(quote_currency)
                 self.add(instrument)
             except ValueError as e:
-                self._log.warning(f"Unable to parse linear instrument {market.ticker}: {e}")
+                if self._log_warnings:
+                    self._log.warning(f"Unable to parse linear instrument {market.ticker}: {e}")
