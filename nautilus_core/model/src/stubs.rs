@@ -20,7 +20,7 @@ use rust_decimal::prelude::ToPrimitive;
 
 use crate::{
     data::order::BookOrder,
-    enums::{LiquiditySide, OrderSide},
+    enums::{BookType, LiquiditySide, OrderSide},
     identifiers::InstrumentId,
     instruments::{any::InstrumentAny, currency_pair::CurrencyPair, stubs::audusd_sim},
     orderbook::book::OrderBook,
@@ -139,7 +139,7 @@ pub fn stub_order_book_mbp(
     size_increment: f64,
     num_levels: usize,
 ) -> OrderBook {
-    let mut book = OrderBook::new(crate::enums::BookType::L2_MBP, instrument_id);
+    let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
 
     // Generate bids
     for i in 0..num_levels {

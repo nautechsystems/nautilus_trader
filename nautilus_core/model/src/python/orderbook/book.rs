@@ -35,8 +35,8 @@ use crate::{
 #[pymethods]
 impl OrderBook {
     #[new]
-    fn py_new(book_type: BookType, instrument_id: InstrumentId) -> Self {
-        Self::new(book_type, instrument_id)
+    fn py_new(instrument_id: InstrumentId, book_type: BookType) -> Self {
+        Self::new(instrument_id, book_type)
     }
 
     fn __repr__(&self) -> String {

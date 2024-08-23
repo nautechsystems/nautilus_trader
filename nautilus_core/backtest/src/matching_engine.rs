@@ -157,7 +157,7 @@ impl OrderMatchingEngine {
         cache: Rc<RefCell<Cache>>,
         config: OrderMatchingEngineConfig,
     ) -> Self {
-        let book = OrderBook::new(book_type, instrument.id());
+        let book = OrderBook::new(instrument.id(), book_type);
         let core = OrderMatchingCore::new(
             instrument.id(),
             instrument.price_increment(),
