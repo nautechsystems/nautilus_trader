@@ -1107,7 +1107,7 @@ cdef class BacktestEngine:
                     venue.process_bar(data)
                 elif isinstance(data, InstrumentClose):
                     venue = self._venues[data.instrument_id.venue]
-                    venue.process_bar(data)
+                    venue.process_instrument_close(data)
                 elif isinstance(data, InstrumentStatus):
                     venue = self._venues[data.instrument_id.venue]
                     venue.process_instrument_status(data)
