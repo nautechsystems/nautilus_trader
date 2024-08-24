@@ -31,50 +31,14 @@ use crate::{
     ratelimiter::{quota::Quota, RateLimiter},
 };
 
-// #[pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")]
-pub struct HttpError {
-    message: String,
-}
-
-impl From<String> for HttpError {
-    fn from(msg: String) -> Self {
-        Self { message: msg }
-    }
-}
-
-impl Display for HttpError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "HTTP error: {}", self.message)
-    }
-}
-
-// #[pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")]
-pub struct HttpTimeoutError {
-    source: reqwest::Error,
-}
-
-impl HttpTimeoutError {
-    pub fn new(source: reqwest::Error) -> Self {
-        Self { source }
-    }
-}
-
-impl Display for HttpTimeoutError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "HTTP request timed out: {}", self.source)
-    }
-}
-
-create_exception!(module, HttpError, PyBaseException);
-create_exception!(module, HttpTimeoutError, PyBaseException);
+create_exception!(network, HttpError, PyBaseException);
+create_exception!(network, HttpTimeoutError, PyBaseException);
 
 impl HttpClientError {
     pub fn into_py_err(self) -> PyErr {
         match self {
             HttpClientError::Error(e) => PyErr::new::<HttpError, _>(e),
-            HttpClientError::TimeoutError(e) => {
-                PyErr::new::<HttpTimeoutError, _>(HttpTimeoutError::new(e))
-            }
+            HttpClientError::TimeoutError(e) => PyErr::new::<HttpTimeoutError, _>(e.to_string()),
         }
     }
 }
