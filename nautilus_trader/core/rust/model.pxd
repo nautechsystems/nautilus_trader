@@ -1565,14 +1565,14 @@ cdef extern from "../includes/model.h":
     #
     # # Panics
     #
-    # If book type is not `L1_MBP`.
+    # - If book type is not `L1_MBP`.
     void orderbook_update_quote_tick(OrderBook_API *book, const QuoteTick_t *quote);
 
     # Updates the order book with a trade tick.
     #
     # # Panics
     #
-    # If book type is not `L1_MBP`.
+    # - If book type is not `L1_MBP`.
     void orderbook_update_trade_tick(OrderBook_API *book, const TradeTick_t *tick);
 
     CVec orderbook_simulate_fills(const OrderBook_API *book, BookOrder_t order);

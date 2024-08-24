@@ -78,8 +78,8 @@ impl BarBuilder {
     ///
     /// # Panics
     ///
-    /// Panics if `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// Panics if `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// - If `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// - If `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     #[must_use]
     pub fn new(instrument: &InstrumentAny, bar_type: BarType) -> Self {
         correctness::check_equal(
@@ -226,8 +226,8 @@ impl BarAggregatorCore {
     ///
     /// # Panics
     ///
-    /// Panics if `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// Panics if `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// - If `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// - If `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     pub fn new(
         instrument: &InstrumentAny,
         bar_type: BarType,
@@ -279,8 +279,8 @@ impl TickBarAggregator {
     ///
     /// # Panics
     ///
-    /// Panics if `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// Panics if `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// - If `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// - If `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     pub fn new(
         instrument: &InstrumentAny,
         bar_type: BarType,
@@ -318,8 +318,8 @@ impl VolumeBarAggregator {
     ///
     /// # Panics
     ///
-    /// Panics if `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// Panics if `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// - If `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// - If `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     pub fn new(
         instrument: &InstrumentAny,
         bar_type: BarType,
@@ -381,8 +381,8 @@ impl ValueBarAggregator {
     ///
     /// # Panics
     ///
-    /// Panics if `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// Panics if `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// - If `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// - If `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     pub fn new(
         instrument: &InstrumentAny,
         bar_type: BarType,
@@ -462,8 +462,8 @@ where
     ///
     /// # Panics
     ///
-    /// Panics if `instrument.id` is not equal to the `bar_type.instrument_id`.
-    /// Panics if `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
+    /// - If `instrument.id` is not equal to the `bar_type.instrument_id`.
+    /// - If `bar_type.aggregation_source` is not equal to `AggregationSource::Internal`.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         instrument: &InstrumentAny,

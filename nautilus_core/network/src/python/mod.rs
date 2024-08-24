@@ -19,8 +19,9 @@ pub mod http;
 pub mod socket;
 pub mod websocket;
 
-use crate::python::http::{HttpError, HttpTimeoutError};
 use pyo3::prelude::*;
+
+use crate::python::http::{HttpError, HttpTimeoutError};
 
 /// Loaded as nautilus_pyo3.network
 #[pymodule]

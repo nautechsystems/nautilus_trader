@@ -44,6 +44,9 @@ pub struct UUID4 {
 
 impl UUID4 {
     /// Creates a new [`UUID4`] instance.
+    ///
+    /// Generates a new UUID version 4, which is based on random or pseudo-random numbers.
+    /// The UUID is stored as a fixed-length C string byte array.
     #[must_use]
     pub fn new() -> Self {
         let uuid = Uuid::new_v4();
@@ -68,6 +71,9 @@ impl UUID4 {
 impl FromStr for UUID4 {
     type Err = uuid::Error;
 
+    /// Attempts to create a UUID4 from a string representation.
+    ///
+    /// The string should be a valid UUID in the standard format (e.g., "6ba7b810-9dad-11d1-80b4-00c04fd430c8").
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let uuid = Uuid::try_parse(s)?;
         let c_string = CString::new(uuid.to_string()).expect("`CString` conversion failed");
@@ -80,13 +86,20 @@ impl FromStr for UUID4 {
 }
 
 impl From<&str> for UUID4 {
-    fn from(input: &str) -> Self {
-        input.parse().expect("Input should be a valid UUID")
+    /// Creates a UUID4 from a string.
+    ///
+    /// # Panics
+    ///
+    /// - If the `value` string is not a valid UUID.
+    fn from(value: &str) -> Self {
+        value.parse().expect("`value` should be a valid UUID")
     }
 }
 
 impl Default for UUID4 {
     /// Creates a new default [`UUID4`] instance.
+    ///
+    /// The default UUID4 is simply a newly generated UUID version 4.
     fn default() -> Self {
         Self::new()
     }

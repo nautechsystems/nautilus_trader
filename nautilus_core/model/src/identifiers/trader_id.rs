@@ -54,7 +54,7 @@ impl TraderId {
     ///
     /// # Panics
     ///
-    /// Panics if `value` is not a valid string, or does not contain a hyphen '-' separator.
+    /// - If `value` is not a valid string, or does not contain a hyphen '-' separator.
     pub fn new(value: &str) -> Self {
         Self::new_checked(value).expect(FAILED)
     }
