@@ -52,7 +52,10 @@ pub struct Money {
 impl Money {
     /// Creates a new [`Money`] instance with correctness checking.
     ///
-    /// Note: PyO3 requires a Result type that stacktrace can be printed for errors.
+    /// Ensures `amount` is within the valid representable range for `Money`.
+    /// If a correctness check fails, an `Error` is returned.
+    ///
+    /// Note: PyO3 requires a `Result` type that stacktrace can be printed for errors.
     pub fn new_checked(amount: f64, currency: Currency) -> anyhow::Result<Self> {
         check_in_range_inclusive_f64(amount, MONEY_MIN, MONEY_MAX, "amount")?;
 
@@ -63,6 +66,10 @@ impl Money {
     }
 
     /// Creates a new [`Money`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a correctness check fails. See [`new_checked`] for more details.
     pub fn new(amount: f64, currency: Currency) -> Self {
         Self::new_checked(amount, currency).expect(FAILED)
     }

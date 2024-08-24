@@ -55,7 +55,10 @@ pub struct Quantity {
 impl Quantity {
     /// Creates a new [`Quantity`] instance with correctness checking.
     ///
-    /// Note: PyO3 requires a Result type that stacktrace can be printed for errors.
+    /// Ensures `value` is within the valid representable range for `Quantity`, and that
+    /// `precision` is valid within range. If a correctness check fails, an `Error` is returned.
+    ///
+    /// Note: PyO3 requires a `Result` type that stacktrace can be printed for errors.
     pub fn new_checked(value: f64, precision: u8) -> anyhow::Result<Self> {
         check_in_range_inclusive_f64(value, QUANTITY_MIN, QUANTITY_MAX, "value")?;
         check_fixed_precision(precision)?;
@@ -67,6 +70,10 @@ impl Quantity {
     }
 
     /// Creates a new [`Quantity`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a correctness check fails. See [`new_checked`] for more details.
     pub fn new(value: f64, precision: u8) -> Self {
         Self::new_checked(value, precision).expect(FAILED)
     }

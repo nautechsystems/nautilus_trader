@@ -43,7 +43,10 @@ pub struct Currency {
 impl Currency {
     /// Creates a new [`Currency`] instance with correctness checking.
     ///
-    /// Note: PyO3 requires a Result type that stacktrace can be printed for errors.
+    /// Ensures `code` and `name` are valid strings, and `precison` is valid within range.
+    /// If a correctness check fails, an `Error` is returned.
+    ///
+    /// Note: PyO3 requires a `Result` type that stacktrace can be printed for errors.
     pub fn new_checked(
         code: &str,
         precision: u8,
@@ -64,6 +67,10 @@ impl Currency {
     }
 
     /// Creates a new [`Currency`] instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a correctness check fails. See [`new_checked`] for more details.
     pub fn new(
         code: &str,
         precision: u8,
