@@ -87,12 +87,22 @@ pub enum HttpClientError {
     Error(String),
 
     #[error("HTTP request timed out: {0}")]
-    TimeoutError(#[from] reqwest::Error),
+    TimeoutError(String),
+}
+
+impl From<reqwest::Error> for HttpClientError {
+    fn from(source: reqwest::Error) -> Self {
+        if source.is_timeout() {
+            Self::TimeoutError(source.to_string())
+        } else {
+            Self::Error(source.to_string())
+        }
+    }
 }
 
 impl From<String> for HttpClientError {
-    fn from(source: String) -> Self {
-        Self::Error(source)
+    fn from(value: String) -> Self {
+        Self::Error(value)
     }
 }
 
@@ -144,32 +154,22 @@ impl InnerHttpClient {
             Some(b) => request_builder
                 .body(b)
                 .build()
-                .map_err(|e| HttpClientError::from(e.to_string()))?,
-            None => request_builder
-                .build()
-                .map_err(|e| HttpClientError::from(e.to_string()))?,
+                .map_err(HttpClientError::from)?,
+            None => request_builder.build().map_err(HttpClientError::from)?,
         };
 
         tracing::trace!("{request:?}");
 
-        let response = self.client.execute(request).await.map_err(|e| {
-            if e.is_timeout() {
-                // Timeout error
-                HttpClientError::from(e)
-            } else {
-                e.to_string().into()
-            }
-        })?;
-
-        self.to_response(response)
+        let response = self
+            .client
+            .execute(request)
             .await
-            .map_err(|e| e.to_string().into())
+            .map_err(HttpClientError::from)?;
+
+        self.to_response(response).await
     }
 
-    pub async fn to_response(
-        &self,
-        response: Response,
-    ) -> Result<HttpResponse, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn to_response(&self, response: Response) -> Result<HttpResponse, HttpClientError> {
         tracing::trace!("{response:?}");
 
         let headers: HashMap<String, String> = self
@@ -180,7 +180,7 @@ impl InnerHttpClient {
             .map(|(k, v)| (k.clone(), v.to_owned()))
             .collect();
         let status = response.status().as_u16();
-        let body = response.bytes().await?;
+        let body = response.bytes().await.map_err(HttpClientError::from)?;
 
         Ok(HttpResponse {
             status,
