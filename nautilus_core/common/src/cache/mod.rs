@@ -2574,15 +2574,15 @@ impl Cache {
         let mut bar_types = self
             .bars
             .keys()
-            .filter(|bar_type| bar_type.aggregation_source == aggregation_source)
+            .filter(|bar_type| bar_type.aggregation_source() == aggregation_source)
             .collect::<Vec<&BarType>>();
 
         if let Some(instrument_id) = instrument_id {
-            bar_types.retain(|bar_type| &bar_type.instrument_id == instrument_id);
+            bar_types.retain(|bar_type| bar_type.instrument_id() == *instrument_id);
         }
 
         if let Some(price_type) = price_type {
-            bar_types.retain(|bar_type| &bar_type.spec.price_type == price_type);
+            bar_types.retain(|bar_type| &bar_type.spec().price_type == price_type);
         }
 
         bar_types

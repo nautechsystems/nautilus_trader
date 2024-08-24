@@ -585,13 +585,36 @@ cdef extern from "../includes/model.h":
 
     # Represents a bar type including the instrument ID, bar specification and
     # aggregation source.
-    cdef struct BarType_t:
+    cpdef enum BarType_t_Tag:
+        STANDARD_BAR,
+        COMPOSITE_BAR,
+
+    cdef struct StandardBar_Body:
         # The bar types instrument ID.
         InstrumentId_t instrument_id;
         # The bar types specification.
         BarSpecification_t spec;
         # The bar types aggregation source.
         AggregationSource aggregation_source;
+
+    cdef struct CompositeBar_Body:
+        # The bar types instrument ID.
+        InstrumentId_t instrument_id;
+        # The bar types specification.
+        BarSpecification_t spec;
+        # The bar types aggregation source.
+        AggregationSource aggregation_source;
+        # The composite bar types instrument ID.
+        InstrumentId_t composite_instrument_id;
+        # The composite bar types specification.
+        BarSpecification_t composite_spec;
+        # The composite bar types aggregation source.
+        AggregationSource composite_aggregation_source;
+
+    cdef struct BarType_t:
+        BarType_t_Tag tag;
+        StandardBar_Body STANDARD_BAR;
+        CompositeBar_Body COMPOSITE_BAR;
 
     # Represents an aggregated bar.
     cdef struct Bar_t:
@@ -812,6 +835,30 @@ cdef extern from "../includes/model.h":
     BarType_t bar_type_new(InstrumentId_t instrument_id,
                            BarSpecification_t spec,
                            uint8_t aggregation_source);
+
+    BarType_t bar_type_new_composite(InstrumentId_t instrument_id,
+                                     BarSpecification_t spec,
+                                     AggregationSource aggregation_source,
+                                     InstrumentId_t composite_instrument_id,
+                                     BarSpecification_t composite_spec,
+                                     AggregationSource composite_aggregation_source);
+
+    BarType_t bar_type_from_bar_types(const BarType_t *standard_bar,
+                                      const BarType_t *composite_bar);
+
+    uint8_t bar_type_is_standard(const BarType_t *bar_type);
+
+    uint8_t bar_type_is_composite(const BarType_t *bar_type);
+
+    BarType_t bar_type_standard(const BarType_t *bar_type);
+
+    BarType_t bar_type_composite(const BarType_t *bar_type);
+
+    InstrumentId_t bar_type_instrument_id(const BarType_t *bar_type);
+
+    BarSpecification_t bar_type_spec(const BarType_t *bar_type);
+
+    AggregationSource bar_type_aggregation_source(const BarType_t *bar_type);
 
     # Returns any [`BarType`] parsing error from the provided C string pointer.
     #

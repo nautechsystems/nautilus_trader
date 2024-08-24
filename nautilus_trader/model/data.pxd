@@ -21,6 +21,7 @@ from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.core cimport CVec
+from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport Bar_t
 from nautilus_trader.core.rust.model cimport BarSpecification_t
@@ -142,6 +143,11 @@ cdef class BarType:
 
     cpdef bint is_externally_aggregated(self)
     cpdef bint is_internally_aggregated(self)
+
+    cpdef bint is_standard(self)
+    cpdef bint is_composite(self)
+    cpdef BarType standard(self)
+    cpdef BarType composite(self)
 
 
 cdef class Bar(Data):

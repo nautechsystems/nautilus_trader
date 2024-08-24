@@ -46,8 +46,8 @@ pub trait BarAggregator {
     /// Updates the aggregator with the given quote.
     fn handle_quote_tick(&mut self, quote: QuoteTick) {
         self.update(
-            quote.extract_price(self.bar_type().spec.price_type),
-            quote.extract_size(self.bar_type().spec.price_type),
+            quote.extract_price(self.bar_type().spec().price_type),
+            quote.extract_size(self.bar_type().spec().price_type),
             quote.ts_event,
         );
     }
@@ -84,13 +84,13 @@ impl BarBuilder {
     pub fn new(instrument: &InstrumentAny, bar_type: BarType) -> Self {
         correctness::check_equal(
             instrument.id(),
-            bar_type.instrument_id,
+            bar_type.instrument_id(),
             "instrument.id",
             "bar_type.instrument_id",
         )
         .expect(FAILED);
         correctness::check_equal(
-            bar_type.aggregation_source,
+            bar_type.aggregation_source(),
             AggregationSource::Internal,
             "bar_type.aggregation_source",
             "AggregationSource::Internal",
@@ -302,7 +302,7 @@ impl BarAggregator for TickBarAggregator {
     fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
         self.core.apply_update(price, size, ts_event);
 
-        if self.core.builder.count >= self.core.bar_type.spec.step {
+        if self.core.builder.count >= self.core.bar_type.spec().step {
             self.core.build_now_and_send();
         }
     }
@@ -341,7 +341,7 @@ impl BarAggregator for VolumeBarAggregator {
     #[allow(unused_assignments)] // Temp for development
     fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos) {
         let mut raw_size_update = size.raw;
-        let raw_step = (self.core.bar_type.spec.step as f64 * FIXED_SCALAR) as u64;
+        let raw_step = (self.core.bar_type.spec().step as f64 * FIXED_SCALAR) as u64;
         let mut raw_size_diff = 0;
 
         while raw_size_update > 0 {
@@ -413,14 +413,14 @@ impl BarAggregator for ValueBarAggregator {
 
         while size_update > 0.0 {
             let value_update = price.as_f64() * size_update;
-            if self.cum_value + value_update < self.core.bar_type.spec.step as f64 {
+            if self.cum_value + value_update < self.core.bar_type.spec().step as f64 {
                 self.cum_value += value_update;
                 self.core
                     .apply_update(price, Quantity::new(size_update, size.precision), ts_event);
                 break;
             }
 
-            let value_diff = self.core.bar_type.spec.step as f64 - self.cum_value;
+            let value_diff = self.core.bar_type.spec().step as f64 - self.cum_value;
             let size_diff = size_update * (value_diff / value_update);
             self.core
                 .apply_update(price, Quantity::new(size_diff, size.precision), ts_event);

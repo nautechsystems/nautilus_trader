@@ -293,7 +293,7 @@ fn test_bar_query() {
     let ticks: Vec<Data> = query_result.collect();
 
     if let Data::Bar(b) = &ticks[0] {
-        assert_eq!("ADABTC.BINANCE", b.bar_type.instrument_id.to_string());
+        assert_eq!("ADABTC.BINANCE", b.bar_type.instrument_id().to_string());
     } else {
         panic!("Invalid test");
     }
