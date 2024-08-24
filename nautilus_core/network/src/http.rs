@@ -84,67 +84,25 @@ pub struct HttpClient {
 #[derive(thiserror::Error, Debug)]
 pub enum HttpClientError {
     #[error("HTTP error occurred: {0}")]
-    Error(#[from] HttpError),
+    Error(String),
 
     #[error("HTTP request timed out: {0}")]
-    TimeoutError(#[from] HttpTimeoutError),
+    TimeoutError(String),
 }
 
-#[derive(Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
-)]
-pub struct HttpError {
-    message: String,
-}
-
-impl HttpError {
-    pub fn new(source: reqwest::Error) -> Self {
-        Self {
-            message: source.to_string(),
-        }
-    }
-
-    pub fn from_str(msg: &str) -> Self {
-        Self {
-            message: msg.to_string(),
+impl From<reqwest::Error> for HttpClientError {
+    fn from(source: reqwest::Error) -> Self {
+        if source.is_timeout() {
+            Self::TimeoutError(source.to_string())
+        } else {
+            Self::Error(source.to_string())
         }
     }
 }
 
-impl Display for HttpError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "HTTP error: {}", self.message)
-    }
-}
-
-impl std::error::Error for HttpError {}
-
-#[derive(Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
-)]
-pub struct HttpTimeoutError {
-    source: reqwest::Error,
-}
-
-impl HttpTimeoutError {
-    pub fn new(source: reqwest::Error) -> Self {
-        Self { source }
-    }
-}
-
-impl Display for HttpTimeoutError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "HTTP request timed out: {}", self.source)
-    }
-}
-
-impl Error for HttpTimeoutError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(&self.source)
+impl From<String> for HttpClientError {
+    fn from(value: String) -> Self {
+        Self::Error(value)
     }
 }
 
@@ -172,17 +130,17 @@ impl InnerHttpClient {
         timeout_secs: Option<u64>,
     ) -> Result<HttpResponse, HttpClientError> {
         let reqwest_url = Url::parse(url.as_str())
-            .map_err(|e| HttpError::from_str(&format!("URL parse error: {}", e)))?;
+            .map_err(|e| HttpClientError::from(format!("URL parse error: {}", e)))?;
 
         let mut header_map = HeaderMap::new();
         for (header_key, header_value) in &headers {
             let key = HeaderName::from_bytes(header_key.as_bytes())
-                .map_err(|e| HttpError::from_str(&format!("Invalid header name: {}", e)))?;
+                .map_err(|e| HttpClientError::from(format!("Invalid header name: {}", e)))?;
             let _ = header_map.insert(
                 key,
                 header_value
                     .parse()
-                    .map_err(|e| HttpError::from_str(&format!("Invalid header value: {}", e)))?,
+                    .map_err(|e| HttpClientError::from(format!("Invalid header value: {}", e)))?,
             );
         }
 
@@ -193,29 +151,25 @@ impl InnerHttpClient {
         }
 
         let request = match body {
-            Some(b) => request_builder.body(b).build().map_err(HttpError::new)?,
-            None => request_builder.build().map_err(HttpError::new)?,
+            Some(b) => request_builder
+                .body(b)
+                .build()
+                .map_err(HttpClientError::from)?,
+            None => request_builder.build().map_err(HttpClientError::from)?,
         };
 
         tracing::trace!("{request:?}");
 
-        let response = self.client.execute(request).await.map_err(|e| {
-            if e.is_timeout() {
-                HttpClientError::TimeoutError(HttpTimeoutError::new(e))
-            } else {
-                HttpClientError::Error(HttpError::new(e))
-            }
-        })?;
+        let response = self
+            .client
+            .execute(request)
+            .await
+            .map_err(HttpClientError::from)?;
 
-        self.to_response(response).await.map_err(|e| {
-            HttpClientError::Error(HttpError::from_str(&format!("Response error: {}", e)))
-        })
+        self.to_response(response).await
     }
 
-    pub async fn to_response(
-        &self,
-        response: Response,
-    ) -> Result<HttpResponse, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn to_response(&self, response: Response) -> Result<HttpResponse, HttpClientError> {
         tracing::trace!("{response:?}");
 
         let headers: HashMap<String, String> = self
@@ -226,7 +180,7 @@ impl InnerHttpClient {
             .map(|(k, v)| (k.clone(), v.to_owned()))
             .collect();
         let status = response.status().as_u16();
-        let body = response.bytes().await?;
+        let body = response.bytes().await.map_err(HttpClientError::from)?;
 
         Ok(HttpResponse {
             status,

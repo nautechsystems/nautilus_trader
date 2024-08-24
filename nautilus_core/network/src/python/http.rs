@@ -15,21 +15,33 @@
 
 use std::{
     collections::{hash_map::DefaultHasher, HashMap},
+    error::Error,
+    fmt::Display,
     hash::{Hash, Hasher},
     sync::Arc,
 };
 
 use bytes::Bytes;
 use futures_util::{stream, StreamExt};
+use pyo3::{create_exception, exceptions::PyBaseException};
 use pyo3::{exceptions::PyException, prelude::*, types::PyBytes};
 
 use crate::{
-    http::{
-        HttpClient, HttpClientError, HttpError, HttpMethod, HttpResponse, HttpTimeoutError,
-        InnerHttpClient,
-    },
+    http::{HttpClient, HttpClientError, HttpMethod, HttpResponse, InnerHttpClient},
     ratelimiter::{quota::Quota, RateLimiter},
 };
+
+create_exception!(network, HttpError, PyBaseException);
+create_exception!(network, HttpTimeoutError, PyBaseException);
+
+impl HttpClientError {
+    pub fn into_py_err(self) -> PyErr {
+        match self {
+            HttpClientError::Error(e) => PyErr::new::<HttpError, _>(e),
+            HttpClientError::TimeoutError(e) => PyErr::new::<HttpTimeoutError, _>(e.to_string()),
+        }
+    }
+}
 
 #[pymethods]
 impl HttpMethod {
@@ -132,18 +144,10 @@ impl HttpClient {
                     key.await;
                 })
                 .await;
-            match client
+            client
                 .send_request(method, url, headers, body_vec, timeout_secs)
                 .await
-            {
-                Ok(res) => Ok(res),
-                Err(HttpClientError::Error(e)) => {
-                    Python::with_gil(|py| Err(PyErr::new::<HttpError, _>(Py::new(py, e).unwrap())))
-                }
-                Err(HttpClientError::TimeoutError(e)) => Python::with_gil(|py| {
-                    Err(PyErr::new::<HttpTimeoutError, _>(Py::new(py, e).unwrap()))
-                }),
-            }
+                .map_err(|e| e.into_py_err())
         })
     }
 }
