@@ -36,11 +36,17 @@ pub struct AccountBalance {
 }
 
 impl AccountBalance {
+    /// Creates a new [`AccountBalance`] instance with correctness checking.
+    ///
+    /// Ensures `total` balance is correctly calculated (summing to `locked` + `free`).
+    /// If a correctness check fails, an `Error` is returned.
+    ///
+    /// Note: PyO3 requires a `Result` type that stacktrace can be printed for errors.
     pub fn new_checked(total: Money, locked: Money, free: Money) -> anyhow::Result<Self> {
         check_predicate_true(
             total == locked + free,
             &format!(
-                "Total balance is not equal to the sum of locked and free balances: {} != {} + {}",
+                "total balance is not equal to the sum of locked and free balances: {} != {} + {}",
                 total, locked, free
             ),
         )?;
@@ -52,9 +58,11 @@ impl AccountBalance {
         })
     }
 
-    /// Creates a new [`AccountBalance`] instance with correctness checking.
+    /// Creates a new [`AccountBalance`] instance.
     ///
-    /// Note: PyO3 requires a Result type that stacktrace can be printed for errors.
+    /// # Panics
+    ///
+    /// Panics if a correctness check fails. See [`new_checked`] for more details.
     pub fn new(total: Money, locked: Money, free: Money) -> Self {
         Self::new_checked(total, locked, free).expect(FAILED)
     }
