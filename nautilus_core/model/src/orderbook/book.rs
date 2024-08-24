@@ -26,13 +26,13 @@ use crate::{
     },
     enums::{BookAction, BookType, OrderSide, OrderSideSpecified},
     identifiers::InstrumentId,
-    orderbook::{error::BookIntegrityError, ladder::Ladder},
+    orderbook::ladder::Ladder,
     types::{price::Price, quantity::Quantity},
 };
 
-/// Provides a performant, generic, multi-purpose order book.
+/// Provides a high-performance, versatile order book.
 ///
-/// Can handle the following granularity data:
+/// Capable of handling various levels of data granularity:
 /// - MBO (market by order) / L3
 /// - MBP (market by price) / L2 aggregated order per level
 /// - MBP (market by price) / L1 top-of-book only
@@ -237,10 +237,9 @@ impl OrderBook {
 
     #[must_use]
     pub fn get_avg_px_for_quantity(&self, qty: Quantity, order_side: OrderSide) -> f64 {
-        let levels = match order_side {
-            OrderSide::Buy => &self.asks.levels,
-            OrderSide::Sell => &self.bids.levels,
-            _ => panic!("Invalid `OrderSide` {order_side}"),
+        let levels = match order_side.as_specified() {
+            OrderSideSpecified::Buy => &self.asks.levels,
+            OrderSideSpecified::Sell => &self.bids.levels,
         };
 
         analysis::get_avg_px_for_quantity(qty, levels)
@@ -248,10 +247,9 @@ impl OrderBook {
 
     #[must_use]
     pub fn get_quantity_for_price(&self, price: Price, order_side: OrderSide) -> f64 {
-        let levels = match order_side {
-            OrderSide::Buy => &self.asks.levels,
-            OrderSide::Sell => &self.bids.levels,
-            _ => panic!("Invalid `OrderSide` {order_side}"),
+        let levels = match order_side.as_specified() {
+            OrderSideSpecified::Buy => &self.asks.levels,
+            OrderSideSpecified::Sell => &self.bids.levels,
         };
 
         analysis::get_quantity_for_price(price, order_side, levels)
@@ -259,10 +257,9 @@ impl OrderBook {
 
     #[must_use]
     pub fn simulate_fills(&self, order: &BookOrder) -> Vec<(Price, Quantity)> {
-        match order.side {
-            OrderSide::Buy => self.asks.simulate_fills(order),
-            OrderSide::Sell => self.bids.simulate_fills(order),
-            _ => panic!("{}", BookIntegrityError::NoOrderSide),
+        match order.side.as_specified() {
+            OrderSideSpecified::Buy => self.asks.simulate_fills(order),
+            OrderSideSpecified::Sell => self.bids.simulate_fills(order),
         }
     }
 
