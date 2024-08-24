@@ -5,12 +5,24 @@
 #include <stdint.h>
 #include <Python.h>
 
+/**
+ * Number of milliseconds in one second.
+ */
 #define MILLISECONDS_IN_SECOND 1000
 
+/**
+ * Number of nanoseconds in one second.
+ */
 #define NANOSECONDS_IN_SECOND 1000000000
 
+/**
+ * Number of nanoseconds in one millisecond.
+ */
 #define NANOSECONDS_IN_MILLISECOND 1000000
 
+/**
+ * Number of nanoseconds in one microsecond.
+ */
 #define NANOSECONDS_IN_MICROSECOND 1000
 
 /**

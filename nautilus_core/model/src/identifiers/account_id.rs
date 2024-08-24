@@ -57,7 +57,7 @@ impl AccountId {
     ///
     /// # Panics
     ///
-    /// Panics if `value` is not a valid string, or value length is greater than 36.
+    /// - If `value` is not a valid string, or value length is greater than 36.
     pub fn new(value: &str) -> Self {
         Self::new_checked(value).expect(FAILED)
     }

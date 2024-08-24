@@ -70,7 +70,7 @@ impl Currency {
     ///
     /// # Panics
     ///
-    /// Panics if a correctness check fails. See [`new_checked`] for more details.
+    /// - If a correctness check fails. See [`new_checked`] for more details.
     pub fn new(
         code: &str,
         precision: u8,

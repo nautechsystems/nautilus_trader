@@ -24,11 +24,19 @@ use chrono::{
 
 use crate::nanos::UnixNanos;
 
+/// Number of milliseconds in one second.
 pub const MILLISECONDS_IN_SECOND: u64 = 1_000;
+
+/// Number of nanoseconds in one second.
 pub const NANOSECONDS_IN_SECOND: u64 = 1_000_000_000;
+
+/// Number of nanoseconds in one millisecond.
 pub const NANOSECONDS_IN_MILLISECOND: u64 = 1_000_000;
+
+/// Number of nanoseconds in one microsecond.
 pub const NANOSECONDS_IN_MICROSECOND: u64 = 1_000;
 
+/// List of weekdays (Monday to Friday).
 pub const WEEKDAYS: [Weekday; 5] = [
     Weekday::Mon,
     Weekday::Tue,

@@ -49,7 +49,7 @@ impl ExecAlgorithmId {
     ///
     /// # Panics
     ///
-    /// Panics if `value` is not a valid string.
+    /// - If `value` is not a valid string.
     pub fn new(value: &str) -> Self {
         Self::new_checked(value).expect(FAILED)
     }
