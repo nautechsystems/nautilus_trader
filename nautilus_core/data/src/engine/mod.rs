@@ -563,7 +563,7 @@ impl DataEngine {
         if managed && !cache.has_order_book(instrument_id) {
             let book = OrderBook::new(*instrument_id, book_type);
             log::debug!("Created {book}");
-            cache.add_order_book(book)?
+            cache.add_order_book(book)?;
         }
 
         if !self.subscribed_order_book_deltas().contains(instrument_id) {
@@ -571,9 +571,9 @@ impl DataEngine {
         }
 
         if client.handles_order_book_deltas {
-            client.subscribe_order_book_deltas(instrument_id, book_type, depth)?
+            client.subscribe_order_book_deltas(instrument_id, book_type, depth)?;
         } else if client.handles_order_book_snapshots {
-            client.subscribe_order_book_snapshots(instrument_id, book_type, depth)?
+            client.subscribe_order_book_snapshots(instrument_id, book_type, depth)?;
         } else {
             anyhow::bail!("Cannot subscribe order book for {instrument_id}: client does not handle book subscriptions");
         }
@@ -583,7 +583,7 @@ impl DataEngine {
         let topic = msgbus.switchboard.get_deltas_topic(*instrument_id);
         let handler = ShareableMessageHandler(Rc::new(BookDataHandler {
             id: Ustr::from(stringify!(update_order_book)),
-            engine_ref: self.handler_ref.clone().expect(UNINITIALIZED).clone(),
+            engine_ref: self.handler_ref.clone().expect(UNINITIALIZED),
         }));
 
         if !msgbus.is_subscribed(topic.as_str(), handler.clone()) {
@@ -651,7 +651,7 @@ impl MessageHandler for BookDataHandler {
     fn handle(&self, message: &dyn Any) {}
     fn handle_response(&self, _resp: DataResponse) {}
     fn handle_data(&self, data: Data) {
-        self.engine_ref.borrow_mut().update_order_book(&data)
+        self.engine_ref.borrow_mut().update_order_book(&data);
     }
     fn as_any(&self) -> &dyn Any {
         self
