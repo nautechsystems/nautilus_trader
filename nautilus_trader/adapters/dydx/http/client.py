@@ -146,7 +146,7 @@ class DYDXHttpClient:
                         headers=self._headers,
                         body=msgspec.json.encode(payload) if payload else None,
                         keys=ratelimiter_keys,
-                        timeout_secs=1,
+                        timeout_secs=timeout_secs,
                     )
                     done = True
                 except HttpTimeoutError as e:
