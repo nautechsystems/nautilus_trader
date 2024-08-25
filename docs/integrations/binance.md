@@ -298,9 +298,8 @@ To use Binance Future Hedge mode, you need to follow the three items below:
 ## Order books
 
 Order books can be maintained at full or partial depths depending on the
-subscription options. WebSocket stream throttling is different between
-Spot and Futures exchanges, Nautilus will automatically use the highest streaming
-rate possible:
+subscription. WebSocket stream throttling is different between Spot and Futures exchanges,
+Nautilus will use the highest streaming rate possible:
 
 - Spot 100ms
 - Futures 0ms (unthrottled)
