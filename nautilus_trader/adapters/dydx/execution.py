@@ -1058,11 +1058,17 @@ class DYDXExecutionClient(LiveExecutionClient):
             )
             return
 
+        dydx_order_tags = self._parse_order_tags(order=order)
+        order_flags = OrderFlags.SHORT_TERM
+
+        if dydx_order_tags.is_short_term_order is False:
+            order_flags = OrderFlags.LONG_TERM
+
         order_id = order_builder.create_order_id(
             address=self._wallet_address,
             subaccount_number=self._subaccount,
             client_id=client_order_id_int,
-            order_flags=OrderFlags.SHORT_TERM,
+            order_flags=order_flags,
         )
 
         if self._wallet is None:
