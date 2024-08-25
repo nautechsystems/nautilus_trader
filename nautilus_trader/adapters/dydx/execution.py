@@ -1083,4 +1083,4 @@ class DYDXExecutionClient(LiveExecutionClient):
         )
 
         if response.tx_response.code != 0:
-            self._log.error(f"Failed to cancel the order: {response.raw_log}")
+            self._log.error(f"Failed to cancel the order: {response}")
