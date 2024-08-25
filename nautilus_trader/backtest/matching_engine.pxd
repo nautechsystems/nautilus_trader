@@ -39,6 +39,7 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport BookOrder
+from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport QuoteTick
@@ -79,6 +80,7 @@ cdef class OrderMatchingEngine:
     cdef OrderBook _closing_auction_book
     cdef FillModel _fill_model
     cdef FeeModel _fee_model
+    cdef InstrumentClose _instrument_close
     # cdef object _auction_match_algo
     cdef bint _instrument_has_expiration
     cdef bint _bar_execution
@@ -146,6 +148,7 @@ cdef class OrderMatchingEngine:
     cpdef void process_bar(self, Bar bar)
     cpdef void process_status(self, MarketStatusAction status)
     cpdef void process_auction_book(self, OrderBook book)
+    cpdef void process_instrument_close(self, InstrumentClose close)
     cdef void _process_trade_ticks_from_bar(self, Bar bar)
     cdef void _process_quote_ticks_from_bar(self)
 
