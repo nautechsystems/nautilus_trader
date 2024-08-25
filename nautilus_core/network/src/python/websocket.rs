@@ -31,6 +31,7 @@ use crate::{
     websocket::{WebSocketClient, WebSocketConfig},
 };
 
+/// Python exception class for websocket errors.
 create_exception!(network, WebSocketClientError, PyException);
 
 fn websocket_to_pyerr(e: tokio_tungstenite::tungstenite::Error) -> PyErr {
