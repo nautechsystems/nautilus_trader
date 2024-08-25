@@ -669,9 +669,9 @@ cdef class BarType:
                 self.aggregation_source,
             )
         else:
-            composite_bar_type = self.composite()
+            composite = self.composite()
             spec = self.spec
-            spec_composite = composite_bar_type.spec
+            spec_composite = composite.spec
 
             return (
                 self.instrument_id.value,
@@ -680,11 +680,11 @@ cdef class BarType:
                 spec.price_type,
                 self.aggregation_source,
 
-                composite_bar_type.instrument_id.value,
+                composite.instrument_id.value,
                 spec_composite.step,
                 spec_composite.aggregation,
                 spec_composite.price_type,
-                composite_bar_type.aggregation_source
+                composite.aggregation_source
             )
 
     def __setstate__(self, state):
@@ -870,12 +870,12 @@ cdef class BarType:
         )
 
     @staticmethod
-    def from_bar_types(BarType standard_bar, BarType composite_bar) -> BarType:
-        return BarType.from_mem_c(bar_type_from_bar_types(&standard_bar._mem, &composite_bar._mem))
+    def from_bar_types(BarType standard, BarType composite) -> BarType:
+        return BarType.from_mem_c(bar_type_from_bar_types(&standard._mem, &composite._mem))
 
     cpdef bint is_standard(self):
         """
-        Return a value indicating whether the bar type corresponds to BarType::StandardBar in rust.
+        Return a value indicating whether the bar type corresponds to BarType::Standard in rust.
 
         Returns
         -------
@@ -886,7 +886,7 @@ cdef class BarType:
 
     cpdef bint is_composite(self):
         """
-        Return a value indicating whether the bar type corresponds to BarType::CompositeBar in rust.
+        Return a value indicating whether the bar type corresponds to BarType::Composite in rust.
 
         Returns
         -------

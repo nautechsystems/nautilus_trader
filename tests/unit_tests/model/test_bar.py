@@ -723,8 +723,8 @@ class TestBar:
     def test_bar_type_composite_parse_valid(self):
         input_str = "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL"
         bar_type = BarType.from_str(input_str)
-        standard_bar_type = bar_type.standard()
-        composite_bar_type = bar_type.composite()
+        standard = bar_type.standard()
+        composite = bar_type.composite()
         composite_input = "BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL"
 
         assert bar_type.instrument_id == InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
@@ -737,22 +737,22 @@ class TestBar:
         assert bar_type == BarType.from_str(input_str)
         assert bar_type.is_composite()
 
-        assert standard_bar_type.instrument_id == InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
-        assert standard_bar_type.spec == BarSpecification(
+        assert standard.instrument_id == InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
+        assert standard.spec == BarSpecification(
             step=2,
             aggregation=BarAggregation.MINUTE,
             price_type=PriceType.LAST,
         )
-        assert standard_bar_type.aggregation_source == AggregationSource.INTERNAL
-        assert standard_bar_type.is_standard()
+        assert standard.aggregation_source == AggregationSource.INTERNAL
+        assert standard.is_standard()
 
-        assert composite_bar_type.instrument_id == InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
-        assert composite_bar_type.spec == BarSpecification(
+        assert composite.instrument_id == InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
+        assert composite.spec == BarSpecification(
             step=1,
             aggregation=BarAggregation.MINUTE,
             price_type=PriceType.LAST,
         )
-        assert composite_bar_type.aggregation_source == AggregationSource.EXTERNAL
-        assert composite_bar_type == BarType.from_str(composite_input)
-        assert composite_bar_type.is_standard()
-        assert bar_type == BarType.from_bar_types(standard_bar_type, composite_bar_type)
+        assert composite.aggregation_source == AggregationSource.EXTERNAL
+        assert composite == BarType.from_str(composite_input)
+        assert composite.is_standard()
+        assert bar_type == BarType.from_bar_types(standard, composite)

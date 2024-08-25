@@ -586,10 +586,10 @@ cdef extern from "../includes/model.h":
     # Represents a bar type including the instrument ID, bar specification and
     # aggregation source.
     cpdef enum BarType_t_Tag:
-        STANDARD_BAR,
-        COMPOSITE_BAR,
+        STANDARD,
+        COMPOSITE,
 
-    cdef struct StandardBar_Body:
+    cdef struct Standard_Body:
         # The bar types instrument ID.
         InstrumentId_t instrument_id;
         # The bar types specification.
@@ -597,7 +597,7 @@ cdef extern from "../includes/model.h":
         # The bar types aggregation source.
         AggregationSource aggregation_source;
 
-    cdef struct CompositeBar_Body:
+    cdef struct Composite_Body:
         # The bar types instrument ID.
         InstrumentId_t instrument_id;
         # The bar types specification.
@@ -613,8 +613,8 @@ cdef extern from "../includes/model.h":
 
     cdef struct BarType_t:
         BarType_t_Tag tag;
-        StandardBar_Body STANDARD_BAR;
-        CompositeBar_Body COMPOSITE_BAR;
+        Standard_Body STANDARD;
+        Composite_Body COMPOSITE;
 
     # Represents an aggregated bar.
     cdef struct Bar_t:
@@ -843,8 +843,7 @@ cdef extern from "../includes/model.h":
                                      BarSpecification_t composite_spec,
                                      AggregationSource composite_aggregation_source);
 
-    BarType_t bar_type_from_bar_types(const BarType_t *standard_bar,
-                                      const BarType_t *composite_bar);
+    BarType_t bar_type_from_bar_types(const BarType_t *standard, const BarType_t *composite);
 
     uint8_t bar_type_is_standard(const BarType_t *bar_type);
 

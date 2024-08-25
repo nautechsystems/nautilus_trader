@@ -150,7 +150,7 @@ impl Display for BarSpecification {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub enum BarType {
-    StandardBar {
+    Standard {
         /// The bar types instrument ID.
         instrument_id: InstrumentId,
         /// The bar types specification.
@@ -158,7 +158,7 @@ pub enum BarType {
         /// The bar types aggregation source.
         aggregation_source: AggregationSource,
     },
-    CompositeBar {
+    Composite {
         /// The bar types instrument ID.
         instrument_id: InstrumentId,
         /// The bar types specification.
@@ -183,7 +183,7 @@ impl BarType {
         spec: BarSpecification,
         aggregation_source: AggregationSource,
     ) -> Self {
-        Self::StandardBar {
+        Self::Standard {
             instrument_id,
             spec,
             aggregation_source,
@@ -199,7 +199,7 @@ impl BarType {
         composite_spec: BarSpecification,
         composite_aggregation_source: AggregationSource,
     ) -> Self {
-        Self::CompositeBar {
+        Self::Composite {
             instrument_id,
             spec,
             aggregation_source,
@@ -210,36 +210,36 @@ impl BarType {
         }
     }
 
-    pub fn from_bar_types(standard_bar: &Self, composite_bar: &Self) -> Self {
-        Self::CompositeBar {
-            instrument_id: standard_bar.instrument_id(),
-            spec: standard_bar.spec(),
-            aggregation_source: standard_bar.aggregation_source(),
+    pub fn from_bar_types(standard: &Self, composite: &Self) -> Self {
+        Self::Composite {
+            instrument_id: standard.instrument_id(),
+            spec: standard.spec(),
+            aggregation_source: standard.aggregation_source(),
 
-            composite_instrument_id: composite_bar.instrument_id(),
-            composite_spec: composite_bar.spec(),
-            composite_aggregation_source: composite_bar.aggregation_source(),
+            composite_instrument_id: composite.instrument_id(),
+            composite_spec: composite.spec(),
+            composite_aggregation_source: composite.aggregation_source(),
         }
     }
 
     pub fn is_standard(&self) -> bool {
         match &self {
-            BarType::StandardBar { .. } => true,
-            BarType::CompositeBar { .. } => false,
+            BarType::Standard { .. } => true,
+            BarType::Composite { .. } => false,
         }
     }
 
     pub fn is_composite(&self) -> bool {
         match &self {
-            BarType::StandardBar { .. } => false,
-            BarType::CompositeBar { .. } => true,
+            BarType::Standard { .. } => false,
+            BarType::Composite { .. } => true,
         }
     }
 
     pub fn standard(&self) -> Self {
         match &self {
-            &&b @ BarType::StandardBar { .. } => b,
-            BarType::CompositeBar {
+            &&b @ BarType::Standard { .. } => b,
+            BarType::Composite {
                 instrument_id,
                 spec,
                 aggregation_source,
@@ -253,8 +253,8 @@ impl BarType {
 
     pub fn composite(&self) -> Self {
         match &self {
-            &&b @ BarType::StandardBar { .. } => b, // case shouldn't be used if is_composite is called before
-            BarType::CompositeBar {
+            &&b @ BarType::Standard { .. } => b, // case shouldn't be used if is_composite is called before
+            BarType::Composite {
                 instrument_id: _,
                 spec: _,
                 aggregation_source: _,
@@ -272,23 +272,24 @@ impl BarType {
 
     pub fn instrument_id(&self) -> InstrumentId {
         match &self {
-            BarType::StandardBar { instrument_id, .. }
-            | BarType::CompositeBar { instrument_id, .. } => *instrument_id,
+            BarType::Standard { instrument_id, .. } | BarType::Composite { instrument_id, .. } => {
+                *instrument_id
+            }
         }
     }
 
     pub fn spec(&self) -> BarSpecification {
         match &self {
-            BarType::StandardBar { spec, .. } | BarType::CompositeBar { spec, .. } => *spec,
+            BarType::Standard { spec, .. } | BarType::Composite { spec, .. } => *spec,
         }
     }
 
     pub fn aggregation_source(&self) -> AggregationSource {
         match &self {
-            BarType::StandardBar {
+            BarType::Standard {
                 aggregation_source, ..
             }
-            | BarType::CompositeBar {
+            | BarType::Composite {
                 aggregation_source, ..
             } => *aggregation_source,
         }
@@ -308,10 +309,10 @@ impl FromStr for BarType {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let parts: Vec<&str> = s.split('@').collect();
-        let bar_type_str = parts[0];
-        let composite_bar_type_str = parts.get(1);
+        let standard = parts[0];
+        let composite_str = parts.get(1);
 
-        let pieces: Vec<&str> = bar_type_str.rsplitn(5, '-').collect();
+        let pieces: Vec<&str> = standard.rsplitn(5, '-').collect();
         let rev_pieces: Vec<&str> = pieces.into_iter().rev().collect();
         if rev_pieces.len() != 5 {
             return Err(BarTypeParseError {
@@ -351,7 +352,7 @@ impl FromStr for BarType {
                 position: 4,
             })?;
 
-        if let Some(composite_str) = composite_bar_type_str {
+        if let Some(composite_str) = composite_str {
             let composite_pieces: Vec<&str> = composite_str.rsplitn(5, '-').collect();
             let rev_composite_pieces: Vec<&str> = composite_pieces.into_iter().rev().collect();
             if rev_composite_pieces.len() != 5 {
@@ -398,7 +399,7 @@ impl FromStr for BarType {
                     position: 9,
                 })?;
 
-            Ok(Self::CompositeBar {
+            Ok(Self::Composite {
                 instrument_id,
                 spec: BarSpecification {
                     step,
@@ -416,7 +417,7 @@ impl FromStr for BarType {
                 composite_aggregation_source,
             })
         } else {
-            Ok(Self::StandardBar {
+            Ok(Self::Standard {
                 instrument_id,
                 spec: BarSpecification {
                     step,
@@ -438,14 +439,14 @@ impl From<&str> for BarType {
 impl Display for BarType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match &self {
-            BarType::StandardBar {
+            BarType::Standard {
                 instrument_id,
                 spec,
                 aggregation_source,
             } => {
                 write!(f, "{}-{}-{}", instrument_id, spec, aggregation_source)
             }
-            BarType::CompositeBar {
+            BarType::Composite {
                 instrument_id,
                 spec,
                 aggregation_source,
@@ -617,7 +618,7 @@ mod tests {
         #[case] step: usize,
         #[case] expected: TimeDelta,
     ) {
-        let bar_type = BarType::StandardBar {
+        let bar_type = BarType::Standard {
             instrument_id: InstrumentId::from("BTCUSDT-PERP.BINANCE"),
             spec: BarSpecification {
                 step,
@@ -649,7 +650,7 @@ mod tests {
         #[case] step: usize,
         #[case] expected: UnixNanos,
     ) {
-        let bar_type = BarType::StandardBar {
+        let bar_type = BarType::Standard {
             instrument_id: InstrumentId::from("BTCUSDT-PERP.BINANCE"),
             spec: BarSpecification {
                 step,
@@ -743,7 +744,7 @@ mod tests {
         #[case] step: usize,
         #[case] expected: DateTime<Utc>,
     ) {
-        let bar_type = BarType::StandardBar {
+        let bar_type = BarType::Standard {
             instrument_id: InstrumentId::from("BTCUSDT-PERP.BINANCE"),
             spec: BarSpecification {
                 step,
@@ -793,6 +794,7 @@ mod tests {
     fn test_bar_type_composite_parse_valid() {
         let input = "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL";
         let bar_type = BarType::from(input);
+        let standard = bar_type.standard();
 
         assert_eq!(
             bar_type.instrument_id(),
@@ -811,44 +813,39 @@ mod tests {
         assert!(bar_type.is_composite());
 
         assert_eq!(
-            bar_type.standard().instrument_id(),
+            standard.instrument_id(),
             InstrumentId::from("BTCUSDT-PERP.BINANCE")
         );
         assert_eq!(
-            bar_type.standard().spec(),
+            standard.spec(),
             BarSpecification {
                 step: 2,
                 aggregation: BarAggregation::Minute,
                 price_type: PriceType::Last,
             }
         );
-        assert_eq!(
-            bar_type.standard().aggregation_source(),
-            AggregationSource::Internal
-        );
-        assert!(bar_type.standard().is_standard());
+        assert_eq!(standard.aggregation_source(), AggregationSource::Internal);
+        assert!(standard.is_standard());
 
-        let composite_bar_type = bar_type.composite();
+        let composite = bar_type.composite();
         let composite_input = "BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL";
 
         assert_eq!(
-            composite_bar_type.instrument_id(),
+            composite.instrument_id(),
             InstrumentId::from("BTCUSDT-PERP.BINANCE")
         );
         assert_eq!(
-            composite_bar_type.spec(),
+            composite.spec(),
             BarSpecification {
                 step: 1,
                 aggregation: BarAggregation::Minute,
                 price_type: PriceType::Last,
             }
         );
-        assert_eq!(
-            composite_bar_type.aggregation_source(),
-            AggregationSource::External
-        );
-        assert_eq!(composite_bar_type, BarType::from(composite_input));
-        assert!(composite_bar_type.is_standard());
+        assert_eq!(composite.aggregation_source(), AggregationSource::External);
+        assert_eq!(composite, BarType::from(composite_input));
+        assert!(composite.is_standard());
+        assert_eq!(bar_type, BarType::from_bar_types(&standard, &composite));
     }
 
     #[rstest]
@@ -1008,17 +1005,17 @@ mod tests {
             aggregation: BarAggregation::Minute,
             price_type: PriceType::Bid,
         };
-        let bar_type1 = BarType::StandardBar {
+        let bar_type1 = BarType::Standard {
             instrument_id: instrument_id1,
             spec: bar_spec,
             aggregation_source: AggregationSource::External,
         };
-        let bar_type2 = BarType::StandardBar {
+        let bar_type2 = BarType::Standard {
             instrument_id: instrument_id1,
             spec: bar_spec,
             aggregation_source: AggregationSource::External,
         };
-        let bar_type3 = BarType::StandardBar {
+        let bar_type3 = BarType::Standard {
             instrument_id: instrument_id2,
             spec: bar_spec,
             aggregation_source: AggregationSource::External,
@@ -1049,22 +1046,22 @@ mod tests {
             aggregation: BarAggregation::Minute,
             price_type: PriceType::Bid,
         };
-        let bar_type1 = BarType::StandardBar {
+        let bar_type1 = BarType::Standard {
             instrument_id: instrument_id1,
             spec: bar_spec,
             aggregation_source: AggregationSource::External,
         };
-        let bar_type2 = BarType::StandardBar {
+        let bar_type2 = BarType::Standard {
             instrument_id: instrument_id1,
             spec: bar_spec,
             aggregation_source: AggregationSource::External,
         };
-        let bar_type3 = BarType::StandardBar {
+        let bar_type3 = BarType::Standard {
             instrument_id: instrument_id2,
             spec: bar_spec,
             aggregation_source: AggregationSource::External,
         };
-        let bar_type4 = BarType::CompositeBar {
+        let bar_type4 = BarType::Composite {
             instrument_id: instrument_id2,
             spec: bar_spec2,
             aggregation_source: AggregationSource::Internal,
@@ -1092,7 +1089,7 @@ mod tests {
             aggregation: BarAggregation::Minute,
             price_type: PriceType::Bid,
         };
-        let bar_type = BarType::StandardBar {
+        let bar_type = BarType::Standard {
             instrument_id,
             spec: bar_spec,
             aggregation_source: AggregationSource::External,

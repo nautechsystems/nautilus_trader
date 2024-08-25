@@ -95,7 +95,7 @@ pub extern "C" fn bar_type_new(
     let aggregation_source = AggregationSource::from_repr(aggregation_source as usize)
         .expect("Error converting enum from integer");
 
-    BarType::StandardBar {
+    BarType::Standard {
         instrument_id,
         spec,
         aggregation_source,
@@ -123,11 +123,8 @@ pub extern "C" fn bar_type_new_composite(
 }
 
 #[no_mangle]
-pub extern "C" fn bar_type_from_bar_types(
-    standard_bar: &BarType,
-    composite_bar: &BarType,
-) -> BarType {
-    BarType::from_bar_types(standard_bar, composite_bar)
+pub extern "C" fn bar_type_from_bar_types(standard: &BarType, composite: &BarType) -> BarType {
+    BarType::from_bar_types(standard, composite)
 }
 
 #[no_mangle]
