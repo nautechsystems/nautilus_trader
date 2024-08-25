@@ -2730,6 +2730,7 @@ dependencies = [
  "criterion",
  "heck 0.5.0",
  "iai",
+ "indexmap 2.4.0",
  "pretty_assertions",
  "pyo3",
  "rmp-serde",
