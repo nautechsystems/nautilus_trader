@@ -244,6 +244,35 @@ class OrderBuilder:
     ) -> Order:
         """
         Create a new Order instance.
+
+        order_id : OrderId
+            OrderId protobuf message.
+        order_type: DYDXGRPCOrderType
+            Order type enum: LIMIT, MARKET, STOP_LIMIT, TAKE_PROFIT_LIMIT,
+            STOP_MARKET or TAKE_PROFIT_MARKET.
+        side : Order.Side
+            The side of the order.
+        size : float
+            The size of the order.
+        price : float
+            The price of the limit order. Set to 0 for market orders.
+        time_in_force : Order.TimeInForce
+            Time in force setting for the order.
+            Options: GTT (Good-Til-Time), FOK (Fill-Or-Kill), IOC (Immediate-Or-Cancel)
+        post_only : bool, default False
+            Ensures that the order will only be added to the order book if it does
+            not immediately fill against an existing order in the order book.
+            In other words, a post-only limit order will only be placed if it can
+            be added as a maker order and not as a taker order.
+        good_til_block : int, optional
+            The block height when the order expires if it is not yet filled.
+        good_til_block_time : int, optional
+            The time in seconds since the epoch when the order expired if it is
+            not yet filled.
+        execution : OrderExecution, default OrderExecution.DEFAULT
+            OrderExecution enum: DEFAULT, IOC, FOK or POST_ONLY
+        conditional_order_trigger_subticks : int, default value is 0.
+
         """
         order_time_in_force = OrderHelper.calculate_time_in_force(
             order_type,

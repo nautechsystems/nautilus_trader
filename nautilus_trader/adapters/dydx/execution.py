@@ -27,6 +27,7 @@ import pandas as pd
 from grpc.aio._call import AioRpcError
 from v4_proto.dydxprotocol.clob.order_pb2 import Order as DYDXOrder
 
+from nautilus_trader.adapters.dydx.common.common import DYDXOrderTags
 from nautilus_trader.adapters.dydx.common.constants import DYDX_VENUE
 from nautilus_trader.adapters.dydx.common.credentials import get_mnemonic
 from nautilus_trader.adapters.dydx.common.credentials import get_wallet_address
@@ -56,6 +57,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
@@ -825,6 +827,19 @@ class DYDXExecutionClient(LiveExecutionClient):
 
         return order_builder
 
+    def _parse_order_tags(self, order: Order) -> DYDXOrderTags:
+        """
+        Parse the order tags to submit short term and long term orders.
+        """
+        result = DYDXOrderTags()
+
+        if order.tags is not None:
+            for order_tag in order.tags:
+                if order_tag.startswith("DYDXOrderTags:"):
+                    result = DYDXOrderTags.parse(order_tag.replace("DYDXOrderTags:", ""))
+
+        return result
+
     async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
 
@@ -861,11 +876,39 @@ class DYDXExecutionClient(LiveExecutionClient):
             client_order_id=order.client_order_id,
         )
 
+        dydx_order_tags = self._parse_order_tags(order=order)
+        order_flags = OrderFlags.SHORT_TERM
+        good_till_date_secs: int | None = None
+        good_til_block: int | None = None
+
+        if dydx_order_tags.is_short_term_order:
+            try:
+                latest_block = await self._grpc_account.latest_block_height()
+            except AioRpcError as e:
+                rejection_reason = f"Failed to submit the order while retrieve the latest block height: code {e.code} {e.details}"
+                self._log.error(rejection_reason)
+
+                self.generate_order_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=rejection_reason,
+                    ts_event=self._clock.timestamp_ns(),
+                )
+                return
+
+            good_til_block = latest_block + dydx_order_tags.num_blocks_open
+        else:
+            order_flags = OrderFlags.LONG_TERM
+            good_till_date_secs = (
+                int(nanos_to_secs(order.expire_time_ns)) if order.expire_time_ns else None
+            )
+
         order_id = order_builder.create_order_id(
             address=self._wallet_address,
             subaccount_number=self._subaccount,
             client_id=client_order_id_int,
-            order_flags=OrderFlags.SHORT_TERM,
+            order_flags=order_flags,
         )
         order_type_map = {
             OrderType.LIMIT: DYDXGRPCOrderType.LIMIT,
@@ -882,21 +925,6 @@ class DYDXExecutionClient(LiveExecutionClient):
             TimeInForce.IOC: DYDXOrder.TimeInForce.TIME_IN_FORCE_IOC,
             TimeInForce.FOK: DYDXOrder.TimeInForce.TIME_IN_FORCE_FILL_OR_KILL,
         }
-
-        try:
-            latest_block = await self._grpc_account.latest_block_height()
-        except AioRpcError as e:
-            rejection_reason = f"Failed to submit the order while retrieve the latest block height: code {e.code} {e.details}"
-            self._log.error(rejection_reason)
-
-            self.generate_order_rejected(
-                strategy_id=order.strategy_id,
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                reason=rejection_reason,
-                ts_event=self._clock.timestamp_ns(),
-            )
-            return
 
         price = 0
 
@@ -928,7 +956,8 @@ class DYDXExecutionClient(LiveExecutionClient):
             time_in_force=time_in_force_map[order.time_in_force],
             reduce_only=order.is_reduce_only,
             post_only=order.is_post_only,
-            good_til_block=latest_block + 20,
+            good_til_block=good_til_block,
+            good_til_block_time=good_till_date_secs,
         )
 
         if self._wallet is None:
@@ -1029,11 +1058,19 @@ class DYDXExecutionClient(LiveExecutionClient):
             )
             return
 
+        dydx_order_tags = self._parse_order_tags(order=order)
+        order_flags = OrderFlags.SHORT_TERM
+        good_til_block_time: int | None = None
+
+        if dydx_order_tags.is_short_term_order is False:
+            order_flags = OrderFlags.LONG_TERM
+            good_til_block_time = int(nanos_to_secs(self._clock.timestamp_ns())) + 120
+
         order_id = order_builder.create_order_id(
             address=self._wallet_address,
             subaccount_number=self._subaccount,
             client_id=client_order_id_int,
-            order_flags=OrderFlags.SHORT_TERM,
+            order_flags=order_flags,
         )
 
         if self._wallet is None:
@@ -1045,7 +1082,8 @@ class DYDXExecutionClient(LiveExecutionClient):
             wallet=self._wallet,
             order_id=order_id,
             good_til_block=current_block + 10,
+            good_til_block_time=good_til_block_time,
         )
 
         if response.tx_response.code != 0:
-            self._log.error(f"Failed to cancel the order: {response.raw_log}")
+            self._log.error(f"Failed to cancel the order: {response}")
