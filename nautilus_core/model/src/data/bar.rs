@@ -39,6 +39,7 @@ use crate::{
 ///
 /// # Panics
 ///
+/// This function panics:
 /// - If the aggregation method of the given `bar_type` is not time based.
 pub fn get_bar_interval(bar_type: &BarType) -> TimeDelta {
     let spec = bar_type.spec();
@@ -57,6 +58,7 @@ pub fn get_bar_interval(bar_type: &BarType) -> TimeDelta {
 ///
 /// # Panics
 ///
+/// This function panics:
 /// - If the aggregation method of the given `bar_type` is not time based.
 pub fn get_bar_interval_ns(bar_type: &BarType) -> UnixNanos {
     let interval_ns = get_bar_interval(bar_type)

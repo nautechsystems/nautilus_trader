@@ -69,6 +69,7 @@ impl AccountBalance {
     ///
     /// # Panics
     ///
+    /// This function panics:
     /// - If a correctness check fails. See [`AccountBalance::new_checked`] for more details.
     pub fn new(total: Money, locked: Money, free: Money) -> Self {
         Self::new_checked(total, locked, free).expect(FAILED)

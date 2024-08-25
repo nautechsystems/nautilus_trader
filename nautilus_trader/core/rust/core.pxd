@@ -73,6 +73,7 @@ cdef extern from "../includes/core.h":
     #
     # # Panics
     #
+    # This function panics:
     # - If `ptr` is null.
     uint8_t precision_from_cstr(const char *ptr);
 
@@ -84,6 +85,7 @@ cdef extern from "../includes/core.h":
     #
     # # Panics
     #
+    # This function panics:
     # - If `ptr` is null.
     uint8_t min_increment_precision_from_cstr(const char *ptr);
 
@@ -95,6 +97,7 @@ cdef extern from "../includes/core.h":
     #
     # # Panics
     #
+    # This function panics:
     # - If `ptr` is null.
     void cstr_drop(const char *ptr);
 
@@ -108,6 +111,7 @@ cdef extern from "../includes/core.h":
     #
     # # Panics
     #
+    # This function panics:
     # - If `ptr` cannot be cast to a valid C string.
     UUID4_t uuid4_from_cstr(const char *ptr);
 

@@ -78,6 +78,7 @@ impl Money {
     ///
     /// # Panics
     ///
+    /// This function panics:
     /// - If a correctness check fails. See [`Money::new_checked`] for more details.
     pub fn new(amount: f64, currency: Currency) -> Self {
         Self::new_checked(amount, currency).expect(FAILED)

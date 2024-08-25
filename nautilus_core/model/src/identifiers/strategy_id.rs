@@ -46,6 +46,7 @@ impl StrategyId {
     ///
     /// # Panics
     ///
+    /// This function panics:
     /// - If `value` is not a valid string, or does not contain a hyphen '-' separator.
     pub fn new_checked(value: &str) -> anyhow::Result<Self> {
         check_valid_string(value, stringify!(value))?;
@@ -59,6 +60,7 @@ impl StrategyId {
     ///
     /// # Panics
     ///
+    /// This function panics:
     /// - If `value` is not a valid string.
     pub fn new(value: &str) -> Self {
         Self::new_checked(value).expect(FAILED)

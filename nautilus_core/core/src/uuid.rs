@@ -90,6 +90,7 @@ impl From<&str> for UUID4 {
     ///
     /// # Panics
     ///
+    /// This function panics:
     /// - If the `value` string is not a valid UUID.
     fn from(value: &str) -> Self {
         value.parse().expect("`value` should be a valid UUID")
