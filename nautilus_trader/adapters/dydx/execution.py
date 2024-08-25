@@ -1060,9 +1060,11 @@ class DYDXExecutionClient(LiveExecutionClient):
 
         dydx_order_tags = self._parse_order_tags(order=order)
         order_flags = OrderFlags.SHORT_TERM
+        good_til_block_time: int | None = None
 
         if dydx_order_tags.is_short_term_order is False:
             order_flags = OrderFlags.LONG_TERM
+            good_til_block_time = nanos_to_secs(self._clock.timestamp_ns()) + 120
 
         order_id = order_builder.create_order_id(
             address=self._wallet_address,
@@ -1080,6 +1082,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             wallet=self._wallet,
             order_id=order_id,
             good_til_block=current_block + 10,
+            good_til_block_time=good_til_block_time,
         )
 
         if response.tx_response.code != 0:
