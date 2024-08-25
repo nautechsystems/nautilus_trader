@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Represents a quantity with a non-negative value.
+
 use std::{
     cmp::Ordering,
     fmt::{Debug, Display},
@@ -41,6 +43,16 @@ pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
 /// The minimum valid quantity value which can be represented.
 pub const QUANTITY_MIN: f64 = 0.0;
 
+/// Represents a quantity with a non-negative value.
+///
+/// Capable of storing either a whole number (no decimal places) of 'contracts'
+/// or 'shares' (instruments denominated in whole units) or a decimal value
+/// containing decimal places for instruments denominated in fractional units.
+///
+/// Handles up to 9 decimals of precision.
+///
+/// - `QUANTITY_MAX` = 18_446_744_073
+/// - `QUANTITY_MIN` = 0
 #[repr(C)]
 #[derive(Clone, Copy, Default, Eq)]
 #[cfg_attr(
@@ -48,7 +60,10 @@ pub const QUANTITY_MIN: f64 = 0.0;
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct Quantity {
+    /// The raw quantity as an unsigned 64-bit integer.
+    /// Represents the unscaled value, with `precision` defining the number of decimal places.
     pub raw: u64,
+    /// The number of decimal places, with a maximum precision of 9.
     pub precision: u8,
 }
 
@@ -73,7 +88,7 @@ impl Quantity {
     ///
     /// # Panics
     ///
-    /// - If a correctness check fails. See [`new_checked`] for more details.
+    /// - If a correctness check fails. See [`Quantity::new_checked`] for more details.
     pub fn new(value: f64, precision: u8) -> Self {
         Self::new_checked(value, precision).expect(FAILED)
     }

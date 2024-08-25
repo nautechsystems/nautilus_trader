@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Represents an account balance denominated in a particular currency.
+
 use std::fmt::{Debug, Display};
 
 use nautilus_core::correctness::{check_predicate_true, FAILED};
@@ -23,15 +25,20 @@ use crate::{
     types::{currency::Currency, money::Money},
 };
 
+/// Represents an account balance denominated in a particular currency.
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct AccountBalance {
+    /// The account balance currency.
     pub currency: Currency,
+    /// The total account balance.
     pub total: Money,
+    /// The account balance locked (assigned to pending orders).
     pub locked: Money,
+    /// The account balance free for trading.
     pub free: Money,
 }
 
@@ -62,7 +69,7 @@ impl AccountBalance {
     ///
     /// # Panics
     ///
-    /// - If a correctness check fails. See [`new_checked`] for more details.
+    /// - If a correctness check fails. See [`AccountBalance::new_checked`] for more details.
     pub fn new(total: Money, locked: Money, free: Money) -> Self {
         Self::new_checked(total, locked, free).expect(FAILED)
     }

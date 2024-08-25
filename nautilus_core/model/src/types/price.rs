@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Represents a price in a market.
+
 use std::{
     cmp::Ordering,
     fmt::{Debug, Display},
@@ -50,6 +52,16 @@ pub const ERROR_PRICE: Price = Price {
     precision: 0,
 };
 
+/// Represents a price in a market.
+///
+/// The number of decimal places may vary. For certain asset classes, prices may
+/// have negative values. For example, prices for options instruments can be
+/// negative under certain conditions.
+///
+/// Handles up to 9 decimals of precision.
+///
+///  - `PRICE_MAX` = 9_223_372_036
+///  - `PRICE_MIN` = -9_223_372_036
 #[repr(C)]
 #[derive(Clone, Copy, Default, Eq)]
 #[cfg_attr(
@@ -57,7 +69,10 @@ pub const ERROR_PRICE: Price = Price {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct Price {
+    /// The raw price as a signed 64-bit integer.
+    /// Represents the unscaled value, with `precision` defining the number of decimal places.
     pub raw: i64,
+    /// The number of decimal places, with a maximum precision of 9.
     pub precision: u8,
 }
 
@@ -82,7 +97,7 @@ impl Price {
     ///
     /// # Panics
     ///
-    /// - If a correctness check fails. See [`new_checked`] for more details.
+    /// - If a correctness check fails. See [`Price::new_checked`] for more details.
     pub fn new(value: f64, precision: u8) -> Self {
         Self::new_checked(value, precision).expect(FAILED)
     }
