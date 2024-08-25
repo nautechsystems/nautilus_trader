@@ -3,7 +3,8 @@
 Released on TBD (UTC).
 
 ### Enhancements
-- Added dYdX integration (#1861, #1868, #1873), thanks @davidsblom
+- Added dYdX integration (#1861, #1868, #1873, #1874, #1875), thanks @davidsblom
+- Added composite bar types, bars aggregating from other bar types (#1859), thanks @faysou
 - Added `InstrumentClose` functionality for `OrderMatchingEngine`, thanks @limx0
 - Improved error modeling and handling in Rust (#1866), thanks @twitu
 - Improved `HttpClient` error handling and exceptions (#1872), thanks @twitu
