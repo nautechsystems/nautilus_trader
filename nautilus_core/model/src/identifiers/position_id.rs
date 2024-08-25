@@ -40,7 +40,9 @@ impl PositionId {
     /// This function returns an error:
     /// - If `value` is not a valid string.
     ///
-    /// Note: PyO3 requires a Result type that stacktrace can be printed for errors.
+    /// # Notes
+    ///
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     pub fn new_checked(value: &str) -> anyhow::Result<Self> {
         check_valid_string(value, stringify!(value))?;
         Ok(Self(Ustr::from(value)))

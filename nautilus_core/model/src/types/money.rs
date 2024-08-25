@@ -69,7 +69,7 @@ impl Money {
     ///
     /// # Notes
     ///
-    /// PyO3 requires a `Result` type that stacktrace can be printed for errors.
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     pub fn new_checked(amount: f64, currency: Currency) -> anyhow::Result<Self> {
         check_in_range_inclusive_f64(amount, MONEY_MIN, MONEY_MAX, "amount")?;
 
