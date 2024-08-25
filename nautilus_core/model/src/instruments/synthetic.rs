@@ -50,7 +50,9 @@ pub struct SyntheticInstrument {
 impl SyntheticInstrument {
     /// Creates a new [`SyntheticInstrument`] instance with correctness checking.
     ///
-    /// Note: PyO3 requires a Result type that stacktrace can be printed for errors.
+    /// # Notes
+    ///
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     pub fn new_checked(
         symbol: Symbol,
         price_precision: u8,

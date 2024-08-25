@@ -48,7 +48,9 @@ impl AccountId {
     /// - If `value` is not a valid string.
     /// - If `value` length is greater than 36.
     ///
-    /// Note: PyO3 requires a Result type that stacktrace can be printed for errors.
+    /// # Notes
+    ///
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     pub fn new_checked(value: &str) -> anyhow::Result<Self> {
         check_valid_string(value, stringify!(value))?;
         check_string_contains(value, "-", stringify!(value))?;

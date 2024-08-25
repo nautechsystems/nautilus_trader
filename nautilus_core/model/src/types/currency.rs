@@ -64,7 +64,7 @@ impl Currency {
     ///
     /// # Notes
     ///
-    /// PyO3 requires a `Result` type that stacktrace can be printed for errors.
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     pub fn new_checked(
         code: &str,
         precision: u8,

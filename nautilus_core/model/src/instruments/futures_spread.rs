@@ -69,7 +69,9 @@ pub struct FuturesSpread {
 impl FuturesSpread {
     /// Creates a new [`FuturesSpread`] instance with correctness checking.
     ///
-    /// Note: PyO3 requires a Result type that stacktrace can be printed for errors.
+    /// # Notes
+    ///
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     #[allow(clippy::too_many_arguments)]
     pub fn new_checked(
         id: InstrumentId,

@@ -87,7 +87,7 @@ impl Price {
     ///
     /// # Notes
     ///
-    /// PyO3 requires a `Result` type that stacktrace can be printed for errors.
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     pub fn new_checked(value: f64, precision: u8) -> anyhow::Result<Self> {
         check_in_range_inclusive_f64(value, PRICE_MIN, PRICE_MAX, "value")?;
         check_fixed_precision(precision)?;
