@@ -1064,7 +1064,7 @@ class DYDXExecutionClient(LiveExecutionClient):
 
         if dydx_order_tags.is_short_term_order is False:
             order_flags = OrderFlags.LONG_TERM
-            good_til_block_time = nanos_to_secs(self._clock.timestamp_ns()) + 120
+            good_til_block_time = int(nanos_to_secs(self._clock.timestamp_ns())) + 120
 
         order_id = order_builder.create_order_id(
             address=self._wallet_address,
