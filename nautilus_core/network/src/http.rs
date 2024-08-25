@@ -72,6 +72,7 @@ pub struct HttpResponse {
     pub(crate) body: Bytes,
 }
 
+/// A high-performance, rate-limited `HttpClient` for HTTP requests.
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
