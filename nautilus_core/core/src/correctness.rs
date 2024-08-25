@@ -30,6 +30,8 @@ use std::{
     hash::Hash,
 };
 
+use indexmap::IndexMap;
+
 /// A message prefix that can be used with calls to `expect` or other assertion-related functions.
 ///
 /// This constant provides a standard message that can be used to indicate a failure condition
@@ -292,6 +294,50 @@ where
 pub fn check_key_in_map<K, V>(
     key: &K,
     map: &HashMap<K, V>,
+    key_name: &str,
+    map_name: &str,
+) -> anyhow::Result<()>
+where
+    K: Hash,
+    K: std::cmp::Eq,
+    K: std::fmt::Display,
+{
+    if !map.contains_key(key) {
+        anyhow::bail!(
+            "the '{key_name}' key {key} was not in the '{map_name}' map `&<{}, {}>`",
+            std::any::type_name::<K>(),
+            std::any::type_name::<V>(),
+        )
+    }
+    Ok(())
+}
+
+/// Checks the `key` is **not** in the `map`.
+pub fn check_key_not_in_index_map<K, V>(
+    key: &K,
+    map: &IndexMap<K, V>,
+    key_name: &str,
+    map_name: &str,
+) -> anyhow::Result<()>
+where
+    K: Hash,
+    K: std::cmp::Eq,
+    K: std::fmt::Display,
+{
+    if map.contains_key(key) {
+        anyhow::bail!(
+            "the '{key_name}' key {key} was already in the '{map_name}' map `&<{}, {}>`",
+            std::any::type_name::<K>(),
+            std::any::type_name::<V>(),
+        )
+    }
+    Ok(())
+}
+
+/// Checks the `key` is in the `map`.
+pub fn check_key_in_index_map<K, V>(
+    key: &K,
+    map: &IndexMap<K, V>,
     key_name: &str,
     map_name: &str,
 ) -> anyhow::Result<()>
@@ -670,9 +716,9 @@ mod tests {
     }
 
     #[rstest]
-    #[case(&HashMap::<u32, u32>::new(), 5, "key", "map", true)] // Empty map
-    #[case(&HashMap::from([(1, 10), (2, 20)]), 1, "key", "map", false)] // Key exists
-    #[case(&HashMap::from([(1, 10), (2, 20)]), 5, "key", "map", true)] // Key doesn't exist
+    #[case(&HashMap::<u32, u32>::new(), 5, "key", "map", true)] // empty map
+    #[case(&HashMap::from([(1, 10), (2, 20)]), 1, "key", "map", false)] // key exists
+    #[case(&HashMap::from([(1, 10), (2, 20)]), 5, "key", "map", true)] // key doesn't exist
     fn test_check_key_not_in_map(
         #[case] map: &HashMap<u32, u32>,
         #[case] key: u32,
@@ -685,9 +731,9 @@ mod tests {
     }
 
     #[rstest]
-    #[case(&HashMap::<u32, u32>::new(), 5, "key", "map", false)] // Empty map
-    #[case(&HashMap::from([(1, 10), (2, 20)]), 1, "key", "map", true)] // Key exists
-    #[case(&HashMap::from([(1, 10), (2, 20)]), 5, "key", "map", false)] // Key doesn't exist
+    #[case(&HashMap::<u32, u32>::new(), 5, "key", "map", false)] // empty map
+    #[case(&HashMap::from([(1, 10), (2, 20)]), 1, "key", "map", true)] // key exists
+    #[case(&HashMap::from([(1, 10), (2, 20)]), 5, "key", "map", false)] // key doesn't exist
     fn test_check_key_in_map(
         #[case] map: &HashMap<u32, u32>,
         #[case] key: u32,
@@ -696,6 +742,36 @@ mod tests {
         #[case] expected: bool,
     ) {
         let result = check_key_in_map(&key, map, key_name, map_name).is_ok();
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(&IndexMap::<u32, u32>::new(), 5, "key", "map", true)] // empty map
+    #[case(&IndexMap::from([(1, 10), (2, 20)]), 1, "key", "map", false)] // key exists
+    #[case(&IndexMap::from([(1, 10), (2, 20)]), 5, "key", "map", true)] // key doesn't exist
+    fn test_check_key_not_in_index_map(
+        #[case] map: &IndexMap<u32, u32>,
+        #[case] key: u32,
+        #[case] key_name: &str,
+        #[case] map_name: &str,
+        #[case] expected: bool,
+    ) {
+        let result = check_key_not_in_index_map(&key, map, key_name, map_name).is_ok();
+        assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case(&IndexMap::<u32, u32>::new(), 5, "key", "map", false)] // empty map
+    #[case(&IndexMap::from([(1, 10), (2, 20)]), 1, "key", "map", true)] // key exists
+    #[case(&IndexMap::from([(1, 10), (2, 20)]), 5, "key", "map", false)] // key doesn't exist
+    fn test_check_key_in_index_map(
+        #[case] map: &IndexMap<u32, u32>,
+        #[case] key: u32,
+        #[case] key_name: &str,
+        #[case] map_name: &str,
+        #[case] expected: bool,
+    ) {
+        let result = check_key_in_index_map(&key, map, key_name, map_name).is_ok();
         assert_eq!(result, expected);
     }
 
