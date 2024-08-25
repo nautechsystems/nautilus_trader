@@ -63,14 +63,14 @@ pub enum Data {
 
 impl Data {
     /// Returns the instrument ID for the data.
-    pub fn instrument_id(&self) -> &InstrumentId {
+    pub fn instrument_id(&self) -> InstrumentId {
         match self {
-            Self::Delta(delta) => &delta.instrument_id,
-            Self::Deltas(deltas) => &deltas.instrument_id,
-            Self::Depth10(depth) => &depth.instrument_id,
-            Self::Quote(quote) => &quote.instrument_id,
-            Self::Trade(trade) => &trade.instrument_id,
-            Self::Bar(bar) => &bar.bar_type.instrument_id,
+            Self::Delta(delta) => delta.instrument_id,
+            Self::Deltas(deltas) => deltas.instrument_id,
+            Self::Depth10(depth) => depth.instrument_id,
+            Self::Quote(quote) => quote.instrument_id,
+            Self::Trade(trade) => trade.instrument_id,
+            Self::Bar(bar) => bar.bar_type.instrument_id(),
         }
     }
 

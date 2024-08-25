@@ -92,7 +92,7 @@ pub fn bar_ethusdt_binance_minute_bid(#[default("1522")] close_price: &str) -> B
         aggregation: BarAggregation::Minute,
         price_type: PriceType::Bid,
     };
-    let bar_type = BarType {
+    let bar_type = BarType::Standard {
         instrument_id,
         spec: bar_spec,
         aggregation_source: AggregationSource::External,

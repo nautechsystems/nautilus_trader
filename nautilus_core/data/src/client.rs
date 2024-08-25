@@ -647,7 +647,7 @@ impl DataClientAdapter {
         DataResponse::new(
             correlation_id,
             self.client_id,
-            bar_type.instrument_id.venue,
+            bar_type.instrument_id().venue,
             data_type,
             data,
             self.clock.timestamp_ns(),

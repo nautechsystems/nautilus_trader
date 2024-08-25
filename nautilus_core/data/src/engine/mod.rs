@@ -606,7 +606,7 @@ impl DataEngine {
             .cache
             .as_ref()
             .borrow_mut()
-            .order_book(data.instrument_id())
+            .order_book(&data.instrument_id())
         {
             match data {
                 Data::Delta(delta) => book.apply_delta(delta),

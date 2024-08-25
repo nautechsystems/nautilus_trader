@@ -94,11 +94,72 @@ pub extern "C" fn bar_type_new(
 ) -> BarType {
     let aggregation_source = AggregationSource::from_repr(aggregation_source as usize)
         .expect("Error converting enum from integer");
-    BarType {
+
+    BarType::Standard {
         instrument_id,
         spec,
         aggregation_source,
     }
+}
+
+#[no_mangle]
+pub extern "C" fn bar_type_new_composite(
+    instrument_id: InstrumentId,
+    spec: BarSpecification,
+    aggregation_source: AggregationSource,
+
+    composite_instrument_id: InstrumentId,
+    composite_spec: BarSpecification,
+    composite_aggregation_source: AggregationSource,
+) -> BarType {
+    BarType::new_composite(
+        instrument_id,
+        spec,
+        aggregation_source,
+        composite_instrument_id,
+        composite_spec,
+        composite_aggregation_source,
+    )
+}
+
+#[no_mangle]
+pub extern "C" fn bar_type_from_bar_types(standard: &BarType, composite: &BarType) -> BarType {
+    BarType::from_bar_types(standard, composite)
+}
+
+#[no_mangle]
+pub extern "C" fn bar_type_is_standard(bar_type: &BarType) -> u8 {
+    bar_type.is_standard() as u8
+}
+
+#[no_mangle]
+pub extern "C" fn bar_type_is_composite(bar_type: &BarType) -> u8 {
+    bar_type.is_composite() as u8
+}
+
+#[no_mangle]
+pub extern "C" fn bar_type_standard(bar_type: &BarType) -> BarType {
+    bar_type.standard()
+}
+
+#[no_mangle]
+pub extern "C" fn bar_type_composite(bar_type: &BarType) -> BarType {
+    bar_type.composite()
+}
+
+#[no_mangle]
+pub extern "C" fn bar_type_instrument_id(bar_type: &BarType) -> InstrumentId {
+    bar_type.instrument_id()
+}
+
+#[no_mangle]
+pub extern "C" fn bar_type_spec(bar_type: &BarType) -> BarSpecification {
+    bar_type.spec()
+}
+
+#[no_mangle]
+pub extern "C" fn bar_type_aggregation_source(bar_type: &BarType) -> AggregationSource {
+    bar_type.aggregation_source()
 }
 
 /// Returns any [`BarType`] parsing error from the provided C string pointer.
