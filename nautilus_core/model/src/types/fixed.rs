@@ -37,7 +37,7 @@ pub fn check_fixed_precision(precision: u8) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Converts an `f64` value to a fixed-point `i64` representation with a specified precision.
+/// Converts an `f64` value to a raw fixed-point `i64` representation with a specified precision.
 ///
 /// # Panics
 ///
