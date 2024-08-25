@@ -22,7 +22,7 @@ from nautilus_trader.model.tick_scheme.base cimport round_up
 
 cdef class FixedTickScheme(TickScheme):
     """
-    Represents a Fixed precision tick scheme such as for Forex or Crypto.
+    Represents a fixed precision tick scheme such as for Forex or Crypto.
 
     Parameters
     ----------

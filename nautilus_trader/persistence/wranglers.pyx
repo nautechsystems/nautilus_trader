@@ -203,7 +203,7 @@ cdef class OrderBookDeltaDataWrangler:
             `ts_init` value. Can be used to represent/simulate latency between
             the data source and the Nautilus system.
         is_raw : bool, default False
-            If the data is scaled to the Nautilus fixed precision.
+            If the data is scaled to Nautilus fixed-point values.
 
         Raises
         ------
@@ -425,7 +425,7 @@ cdef class QuoteTickDataWrangler:
             The random seed for shuffling order of high and low ticks from bar
             data. If random_seed is ``None`` then won't shuffle.
         is_raw : bool, default False
-            If the data is scaled to the Nautilus fixed precision.
+            If the data is scaled to Nautilus fixed-point values.
         timestamp_is_close : bool, default True
             If bar timestamps are at the close.
             If True then open, high, low timestamps are offset before the close timestamp.
@@ -595,7 +595,7 @@ cdef class TradeTickDataWrangler:
             `ts_init` value. Can be used to represent/simulate latency between
             the data source and the Nautilus system.
         is_raw : bool, default False
-            If the data is scaled to the Nautilus fixed precision.
+            If the data is scaled to Nautilus fixed-point values.
 
         Raises
         ------
@@ -662,7 +662,7 @@ cdef class TradeTickDataWrangler:
             The random seed for shuffling order of high and low ticks from bar
             data. If random_seed is ``None`` then won't shuffle.
         is_raw : bool, default False
-            If the data is scaled to the Nautilus fixed precision.
+            If the data is scaled to Nautilus fixed-point.
         timestamp_is_close : bool, default True
             If bar timestamps are at the close.
             If True then open, high, low timestamps are offset before the close timestamp.

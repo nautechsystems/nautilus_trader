@@ -394,14 +394,14 @@ cdef class Quantity:
     @staticmethod
     def from_raw(int64_t raw, uint8_t precision) -> Quantity:
         """
-        Return a quantity from the given `raw` fixed precision integer and `precision`.
+        Return a quantity from the given `raw` fixed-point integer and `precision`.
 
         Handles up to 9 decimals of precision.
 
         Parameters
         ----------
         raw : int64_t
-            The raw fixed precision quantity value.
+            The raw fixed-point quantity value.
         precision : uint8_t
             The precision for the quantity. Use a precision of 0 for whole numbers
             (no fractional units).
@@ -794,14 +794,14 @@ cdef class Price:
     @staticmethod
     def from_raw(int64_t raw, uint8_t precision) -> Price:
         """
-        Return a price from the given `raw` fixed precision integer and `precision`.
+        Return a price from the given `raw` fixed-point integer and `precision`.
 
         Handles up to 9 decimals of precision.
 
         Parameters
         ----------
         raw : int64_t
-            The raw fixed precision price value.
+            The raw fixed-point price value.
         precision : uint8_t
             The precision for the price. Use a precision of 0 for whole numbers
             (no fractional units).
@@ -1156,12 +1156,12 @@ cdef class Money:
     @staticmethod
     def from_raw(int64_t raw, Currency currency) -> Money:
         """
-        Return money from the given `raw` fixed precision integer and `currency`.
+        Return money from the given `raw` fixed-point integer and `currency`.
 
         Parameters
         ----------
         raw : int64_t
-            The raw fixed precision money amount.
+            The raw fixed-point money amount.
         currency : Currency
             The currency of the money.
 

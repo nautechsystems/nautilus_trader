@@ -1760,11 +1760,11 @@ cdef class BookOrder:
         side : OrderSide {``BUY``, ``SELL``}
             The order side.
         price_raw : int64_t
-            The order raw price (as a scaled fixed precision integer).
+            The order raw price (as a scaled fixed-point integer).
         price_prec : uint8_t
             The order price precision.
         size_raw : uint64_t
-            The order raw size (as a scaled fixed precision integer).
+            The order raw size (as a scaled fixed-point integer).
         size_prec : uint8_t
             The order size precision.
         order_id : uint64_t
@@ -2246,11 +2246,11 @@ cdef class OrderBookDelta(Data):
         side : OrderSide {``BUY``, ``SELL``}
             The order side.
         price_raw : int64_t
-            The order raw price (as a scaled fixed precision integer).
+            The order raw price (as a scaled fixed-point integer).
         price_prec : uint8_t
             The order price precision.
         size_raw : uint64_t
-            The order raw size (as a scaled fixed precision integer).
+            The order raw size (as a scaled fixed-point integer).
         size_prec : uint8_t
             The order size precision.
         order_id : uint64_t
@@ -3894,17 +3894,17 @@ cdef class QuoteTick(Data):
         instrument_id : InstrumentId
             The quotes instrument ID.
         bid_price_raw : int64_t
-            The raw top-of-book bid price (as a scaled fixed precision integer).
+            The raw top-of-book bid price (as a scaled fixed-point integer).
         ask_price_raw : int64_t
-            The raw top-of-book ask price (as a scaled fixed precision integer).
+            The raw top-of-book ask price (as a scaled fixed-point integer).
         bid_price_prec : uint8_t
             The bid price precision.
         ask_price_prec : uint8_t
             The ask price precision.
         bid_size_raw : uint64_t
-            The raw top-of-book bid size (as a scaled fixed precision integer).
+            The raw top-of-book bid size (as a scaled fixed-point integer).
         ask_size_raw : uint64_t
-            The raw top-of-book ask size (as a scaled fixed precision integer).
+            The raw top-of-book ask size (as a scaled fixed-point integer).
         bid_size_prec : uint8_t
             The bid size precision.
         ask_size_prec : uint8_t
@@ -4495,11 +4495,11 @@ cdef class TradeTick(Data):
         instrument_id : InstrumentId
             The trade instrument ID.
         price_raw : int64_t
-            The traded raw price (as a scaled fixed precision integer).
+            The traded raw price (as a scaled fixed-point integer).
         price_prec : uint8_t
             The traded price precision.
         size_raw : uint64_t
-            The traded raw size (as a scaled fixed precision integer).
+            The traded raw size (as a scaled fixed-point integer).
         size_prec : uint8_t
             The traded size precision.
         aggressor_side : AggressorSide
