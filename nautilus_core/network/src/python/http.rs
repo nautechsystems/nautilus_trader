@@ -23,8 +23,7 @@ use std::{
 
 use bytes::Bytes;
 use futures_util::{stream, StreamExt};
-use pyo3::{create_exception, exceptions::PyBaseException};
-use pyo3::{exceptions::PyException, prelude::*, types::PyBytes};
+use pyo3::{create_exception, exceptions::PyException, prelude::*, types::PyBytes};
 
 use crate::{
     http::{HttpClient, HttpClientError, HttpMethod, HttpResponse, InnerHttpClient},
