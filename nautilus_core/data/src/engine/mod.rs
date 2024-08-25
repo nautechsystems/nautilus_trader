@@ -14,6 +14,19 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Provides a generic `DataEngine` for all environments.
+//!
+//! The `DataEngine` is the central component of the entire data stack.
+//! The data engines primary responsibility is to orchestrate interactions between
+//! the `DataClient` instances, and the rest of the platform. This includes sending
+//! requests to, and receiving responses from, data endpoints via its registered
+//! data clients.
+//!
+//! The engine employs a simple fan-in fan-out messaging pattern to execute
+//! `DataCommand` type messages, and process `DataResponse` messages or market data
+//! objects.
+//!
+//! Alternative implementations can be written on top of the generic engine - which
+//! just need to override the `execute`, `process`, `send` and `receive` methods.
 
 // Under development
 #![allow(dead_code)]
@@ -36,7 +49,10 @@ use nautilus_common::{
     clock::Clock,
     logging::{RECV, RES},
     messages::data::{DataRequest, DataResponse, SubscriptionCommand},
-    msgbus::{handler::MessageHandler, MessageBus},
+    msgbus::{
+        handler::{MessageHandler, ShareableMessageHandler},
+        MessageBus,
+    },
 };
 use nautilus_model::{
     data::{
@@ -48,13 +64,16 @@ use nautilus_model::{
         trade::TradeTick,
         Data, DataType,
     },
-    enums::RecordFlag,
+    enums::{BookType, RecordFlag},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
+    orderbook::book::OrderBook,
 };
 use ustr::Ustr;
 
 use crate::{aggregation::BarAggregator, client::DataClientAdapter};
+
+const UNINITIALIZED: &str = "`DataEngine` was not initialized before use";
 
 pub struct DataEngineConfig {
     pub time_bars_build_with_no_updates: bool,
@@ -86,12 +105,15 @@ pub struct DataEngine {
     msgbus: Rc<RefCell<MessageBus>>,
     clients: IndexMap<ClientId, DataClientAdapter>,
     default_client: Option<DataClientAdapter>,
+    external_clients: HashSet<ClientId>,
     routing_map: IndexMap<Venue, ClientId>,
     // order_book_intervals: HashMap<(InstrumentId, usize), Vec<fn(&OrderBook)>>,  // TODO
     bar_aggregators: Vec<Box<dyn BarAggregator>>, // TODO: dyn for now
     synthetic_quote_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     synthetic_trade_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     buffered_deltas_map: HashMap<InstrumentId, Vec<OrderBookDelta>>,
+    handler_ref: Option<Rc<RefCell<Self>>>,
+    msgbus_priority: u8,
     config: DataEngineConfig,
 }
 
@@ -110,16 +132,17 @@ impl DataEngine {
             clients: IndexMap::new(),
             routing_map: IndexMap::new(),
             default_client: None,
+            external_clients: HashSet::new(),
             bar_aggregators: Vec::new(),
             synthetic_quote_feeds: HashMap::new(),
             synthetic_trade_feeds: HashMap::new(),
             buffered_deltas_map: HashMap::new(),
+            handler_ref: None,   // Assigned at system initialization
+            msgbus_priority: 10, // High-priority for built-in component
             config: config.unwrap_or_default(),
         }
     }
-}
 
-impl DataEngine {
     // pub fn register_catalog(&mut self, catalog: ParquetDataCatalog) {}  TODO: Implement catalog
 
     /// Register the given data `client` with the engine as the default routing client.
@@ -525,6 +548,57 @@ impl DataEngine {
 
     // -- INTERNAL --------------------------------------------------------------------------------
 
+    #[allow(clippy::too_many_arguments)]
+    fn setup_order_book(
+        &mut self,
+        client: &mut DataClientAdapter,
+        command: SubscriptionCommand, // TODO: Setup for commands and clients
+        instrument_id: &InstrumentId,
+        book_type: BookType,
+        depth: Option<usize>,
+        only_deltas: bool,
+        managed: bool,
+    ) -> anyhow::Result<()> {
+        let mut cache = self.cache.borrow_mut();
+        if managed && !cache.has_order_book(instrument_id) {
+            let book = OrderBook::new(*instrument_id, book_type);
+            log::debug!("Created {book}");
+            cache.add_order_book(book)?;
+        }
+
+        if !self.subscribed_order_book_deltas().contains(instrument_id) {
+            client.execute(command);
+        }
+
+        if client.handles_order_book_deltas {
+            client.subscribe_order_book_deltas(instrument_id, book_type, depth)?;
+        } else if client.handles_order_book_snapshots {
+            client.subscribe_order_book_snapshots(instrument_id, book_type, depth)?;
+        } else {
+            anyhow::bail!("Cannot subscribe order book for {instrument_id}: client does not handle book subscriptions");
+        }
+
+        // Set up subscriptions
+        let mut msgbus = self.msgbus.borrow_mut();
+        let topic = msgbus.switchboard.get_deltas_topic(*instrument_id);
+        let handler = ShareableMessageHandler(Rc::new(BookDataHandler {
+            id: Ustr::from(stringify!(update_order_book)),
+            engine_ref: self.handler_ref.clone().expect(UNINITIALIZED),
+        }));
+
+        if !msgbus.is_subscribed(topic.as_str(), handler.clone()) {
+            msgbus.subscribe(topic, handler.clone(), Some(self.msgbus_priority));
+        }
+
+        let topic = msgbus.switchboard.get_depth_topic(*instrument_id);
+
+        if !only_deltas && !msgbus.is_subscribed(topic.as_str(), handler.clone()) {
+            msgbus.subscribe(topic, handler, Some(self.msgbus_priority));
+        }
+
+        Ok(())
+    }
+
     fn update_order_book(&self, data: &Data) {
         // Only apply data if there is a book being managed,
         // as it may be being managed manually.
@@ -532,7 +606,7 @@ impl DataEngine {
             .cache
             .as_ref()
             .borrow_mut()
-            .order_book(data.instrument_id())
+            .order_book(&data.instrument_id())
         {
             match data {
                 Data::Delta(delta) => book.apply_delta(delta),
@@ -546,7 +620,7 @@ impl DataEngine {
 
 pub struct SubscriptionCommandHandler {
     id: Ustr,
-    data_engine: Rc<RefCell<DataEngine>>,
+    engine_ref: Rc<RefCell<DataEngine>>,
 }
 
 impl MessageHandler for SubscriptionCommandHandler {
@@ -555,10 +629,30 @@ impl MessageHandler for SubscriptionCommandHandler {
     }
 
     fn handle(&self, message: &dyn Any) {
-        self.data_engine.borrow_mut().execute(message);
+        self.engine_ref.borrow_mut().execute(message);
     }
     fn handle_response(&self, _resp: DataResponse) {}
-    fn handle_data(&self, _resp: Data) {}
+    fn handle_data(&self, _data: Data) {}
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+pub struct BookDataHandler {
+    id: Ustr,
+    engine_ref: Rc<RefCell<DataEngine>>,
+}
+
+impl MessageHandler for BookDataHandler {
+    fn id(&self) -> Ustr {
+        self.id
+    }
+
+    fn handle(&self, message: &dyn Any) {}
+    fn handle_response(&self, _resp: DataResponse) {}
+    fn handle_data(&self, data: Data) {
+        self.engine_ref.borrow_mut().update_order_book(&data);
+    }
     fn as_any(&self) -> &dyn Any {
         self
     }
@@ -682,7 +776,7 @@ mod tests {
         clock: Box<TestClock>,
     ) -> DataClientAdapter {
         let client = Box::new(MockDataClient::new(cache, msgbus, client_id, venue));
-        DataClientAdapter::new(client_id, venue, client, clock)
+        DataClientAdapter::new(client_id, venue, true, true, client, clock)
     }
 
     #[rstest]
@@ -710,7 +804,7 @@ mod tests {
         let endpoint = switchboard.data_engine_execute;
         let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
             id: endpoint,
-            data_engine: data_engine.clone(),
+            engine_ref: data_engine.clone(),
         }));
         msgbus.borrow_mut().register(endpoint, handler);
         msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
@@ -750,7 +844,7 @@ mod tests {
         let endpoint = switchboard.data_engine_execute;
         let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
             id: endpoint,
-            data_engine: data_engine.clone(),
+            engine_ref: data_engine.clone(),
         }));
         msgbus.borrow_mut().register(endpoint, handler);
         msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
@@ -790,7 +884,7 @@ mod tests {
         let endpoint = switchboard.data_engine_execute;
         let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
             id: endpoint,
-            data_engine: data_engine.clone(),
+            engine_ref: data_engine.clone(),
         }));
         msgbus.borrow_mut().register(endpoint, handler);
         msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
@@ -829,7 +923,7 @@ mod tests {
         let endpoint = switchboard.data_engine_execute;
         let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
             id: endpoint,
-            data_engine: data_engine.clone(),
+            engine_ref: data_engine.clone(),
         }));
         msgbus.borrow_mut().register(endpoint, handler);
         msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
@@ -868,7 +962,7 @@ mod tests {
         let endpoint = switchboard.data_engine_execute;
         let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
             id: endpoint,
-            data_engine: data_engine.clone(),
+            engine_ref: data_engine.clone(),
         }));
         msgbus.borrow_mut().register(endpoint, handler);
         msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
@@ -907,7 +1001,7 @@ mod tests {
         let endpoint = switchboard.data_engine_execute;
         let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
             id: endpoint,
-            data_engine: data_engine.clone(),
+            engine_ref: data_engine.clone(),
         }));
         msgbus.borrow_mut().register(endpoint, handler);
         msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
@@ -947,7 +1041,7 @@ mod tests {
         let endpoint = switchboard.data_engine_execute;
         let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
             id: endpoint,
-            data_engine: data_engine.clone(),
+            engine_ref: data_engine.clone(),
         }));
         msgbus.borrow_mut().register(endpoint, handler);
         msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
@@ -984,7 +1078,7 @@ mod tests {
         let endpoint = switchboard.data_engine_execute;
         let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
             id: endpoint,
-            data_engine: data_engine.clone(),
+            engine_ref: data_engine.clone(),
         }));
         msgbus.borrow_mut().register(endpoint, handler);
         msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
@@ -1038,7 +1132,7 @@ mod tests {
         let endpoint = switchboard.data_engine_execute;
         let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
             id: endpoint,
-            data_engine: data_engine.clone(),
+            engine_ref: data_engine.clone(),
         }));
         msgbus.borrow_mut().register(endpoint, handler);
         msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
@@ -1088,7 +1182,7 @@ mod tests {
         let endpoint = switchboard.data_engine_execute;
         let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
             id: endpoint,
-            data_engine: data_engine.clone(),
+            engine_ref: data_engine.clone(),
         }));
         msgbus.borrow_mut().register(endpoint, handler);
         msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
@@ -1140,7 +1234,7 @@ mod tests {
         let endpoint = switchboard.data_engine_execute;
         let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
             id: endpoint,
-            data_engine: data_engine.clone(),
+            engine_ref: data_engine.clone(),
         }));
         msgbus.borrow_mut().register(endpoint, handler);
         msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
@@ -1190,7 +1284,7 @@ mod tests {
         let endpoint = switchboard.data_engine_execute;
         let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
             id: endpoint,
-            data_engine: data_engine.clone(),
+            engine_ref: data_engine.clone(),
         }));
         msgbus.borrow_mut().register(endpoint, handler);
         msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
@@ -1241,7 +1335,7 @@ mod tests {
         let endpoint = switchboard.data_engine_execute;
         let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
             id: endpoint,
-            data_engine: data_engine.clone(),
+            engine_ref: data_engine.clone(),
         }));
         msgbus.borrow_mut().register(endpoint, handler);
         msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
@@ -1293,7 +1387,7 @@ mod tests {
         let endpoint = switchboard.data_engine_execute;
         let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
             id: endpoint,
-            data_engine: data_engine.clone(),
+            engine_ref: data_engine.clone(),
         }));
         msgbus.borrow_mut().register(endpoint, handler);
         msgbus.borrow().send(&endpoint, &cmd as &dyn Any);

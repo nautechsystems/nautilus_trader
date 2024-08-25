@@ -10,6 +10,20 @@ users to trade with no intermediaries. This integration supports live market dat
 execution with dYdX v4, which is the first version of the protocol to be fully decentralized with no
 central components.
 
+## Installation
+
+To install the latest nautilus-trader package along with the `dydx` dependencies using pip, execute:
+
+```
+pip install -U "nautilus_trader[dydx]"
+```
+
+For installation via poetry, use:
+
+```
+poetry add "nautilus_trader[dydx]"
+```
+
 ## Overview
 
 The following documentation assumes a trader is setting up for both live market

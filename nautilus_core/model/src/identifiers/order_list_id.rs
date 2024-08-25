@@ -37,7 +37,8 @@ impl OrderListId {
     ///
     /// # Errors
     ///
-    /// Errors if `value` is not a valid string.
+    /// This function returns an error:
+    /// - If `value` is not a valid string.
     ///
     /// Note: PyO3 requires a Result type that stacktrace can be printed for errors.
     pub fn new_checked(value: &str) -> anyhow::Result<Self> {
@@ -49,7 +50,8 @@ impl OrderListId {
     ///
     /// # Panics
     ///
-    /// Panics if `value` is not a valid string.
+    /// This function panics:
+    /// - If `value` is not a valid string.
     pub fn new(value: &str) -> Self {
         Self::new_checked(value).expect(FAILED)
     }

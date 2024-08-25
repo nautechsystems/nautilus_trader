@@ -12,8 +12,14 @@
  */
 #define TRADE_ID_LEN 37
 
+/**
+ * The maximum fixed-point precision.
+ */
 #define FIXED_PRECISION 9
 
+/**
+ * The scalar value corresponding to the maximum precision (10^9).
+ */
 #define FIXED_SCALAR 1000000000.0
 
 /**
@@ -788,9 +794,9 @@ typedef enum TriggerType {
 typedef struct Level Level;
 
 /**
- * Provides a performant, generic, multi-purpose order book.
+ * Provides a high-performance, versatile order book.
  *
- * Can handle the following granularity data:
+ * Capable of handling various levels of data granularity:
  * - MBO (market by order) / L3
  * - MBP (market by price) / L2 aggregated order per level
  * - MBP (market by price) / L1 top-of-book only
@@ -840,13 +846,51 @@ typedef struct InstrumentId_t {
     struct Venue_t venue;
 } InstrumentId_t;
 
+/**
+ * Represents a price in a market.
+ *
+ * The number of decimal places may vary. For certain asset classes, prices may
+ * have negative values. For example, prices for options instruments can be
+ * negative under certain conditions.
+ *
+ * Handles up to 9 decimals of precision.
+ *
+ *  - `PRICE_MAX` = 9_223_372_036
+ *  - `PRICE_MIN` = -9_223_372_036
+ */
 typedef struct Price_t {
+    /**
+     * The raw price as a signed 64-bit integer.
+     * Represents the unscaled value, with `precision` defining the number of decimal places.
+     */
     int64_t raw;
+    /**
+     * The number of decimal places, with a maximum precision of 9.
+     */
     uint8_t precision;
 } Price_t;
 
+/**
+ * Represents a quantity with a non-negative value.
+ *
+ * Capable of storing either a whole number (no decimal places) of 'contracts'
+ * or 'shares' (instruments denominated in whole units) or a decimal value
+ * containing decimal places for instruments denominated in fractional units.
+ *
+ * Handles up to 9 decimals of precision.
+ *
+ * - `QUANTITY_MAX` = 18_446_744_073
+ * - `QUANTITY_MIN` = 0
+ */
 typedef struct Quantity_t {
+    /**
+     * The raw quantity as an unsigned 64-bit integer.
+     * Represents the unscaled value, with `precision` defining the number of decimal places.
+     */
     uint64_t raw;
+    /**
+     * The number of decimal places, with a maximum precision of 9.
+     */
     uint8_t precision;
 } Quantity_t;
 
@@ -1073,7 +1117,12 @@ typedef struct BarSpecification_t {
  * Represents a bar type including the instrument ID, bar specification and
  * aggregation source.
  */
-typedef struct BarType_t {
+typedef enum BarType_t_Tag {
+    STANDARD,
+    COMPOSITE,
+} BarType_t_Tag;
+
+typedef struct Standard_Body {
     /**
      * The bar types instrument ID.
      */
@@ -1086,6 +1135,41 @@ typedef struct BarType_t {
      * The bar types aggregation source.
      */
     enum AggregationSource aggregation_source;
+} Standard_Body;
+
+typedef struct Composite_Body {
+    /**
+     * The bar types instrument ID.
+     */
+    struct InstrumentId_t instrument_id;
+    /**
+     * The bar types specification.
+     */
+    struct BarSpecification_t spec;
+    /**
+     * The bar types aggregation source.
+     */
+    enum AggregationSource aggregation_source;
+    /**
+     * The composite bar types instrument ID.
+     */
+    struct InstrumentId_t composite_instrument_id;
+    /**
+     * The composite bar types specification.
+     */
+    struct BarSpecification_t composite_spec;
+    /**
+     * The composite bar types aggregation source.
+     */
+    enum AggregationSource composite_aggregation_source;
+} Composite_Body;
+
+typedef struct BarType_t {
+    BarType_t_Tag tag;
+    union {
+        Standard_Body STANDARD;
+        Composite_Body COMPOSITE;
+    };
 } BarType_t;
 
 /**
@@ -1347,16 +1431,49 @@ typedef struct Level_API {
     struct Level *_0;
 } Level_API;
 
+/**
+ * Represents a medium of exchange in a specified denomination with a fixed decimal precision.
+ *
+ * Handles up to 9 decimals of precision.
+ */
 typedef struct Currency_t {
+    /**
+     * The currency code as an alpha-3 string (e.g., "USD", "EUR").
+     */
     char* code;
+    /**
+     * The currency decimal precision.
+     */
     uint8_t precision;
+    /**
+     * The currency code (ISO 4217).
+     */
     uint16_t iso4217;
+    /**
+     * The full name of the currency.
+     */
     char* name;
+    /**
+     * The currency type, indicating its category (e.g. Fiat, Crypto).
+     */
     enum CurrencyType currency_type;
 } Currency_t;
 
+/**
+ * Represents an amount of money in a specified currency denomination.
+ *
+ * - `MONEY_MAX` = 9_223_372_036
+ * - `MONEY_MIN` = -9_223_372_036
+ */
 typedef struct Money_t {
+    /**
+     * The raw monetary amount as a signed 64-bit integer.
+     * Represents the unscaled amount, with `currency.precision` defining the number of decimal places.
+     */
     int64_t raw;
+    /**
+     * The currency denomination associated with the monetary amount.
+     */
     struct Currency_t currency;
 } Money_t;
 
@@ -1400,6 +1517,30 @@ uint8_t bar_specification_ge(const struct BarSpecification_t *lhs,
 struct BarType_t bar_type_new(struct InstrumentId_t instrument_id,
                               struct BarSpecification_t spec,
                               uint8_t aggregation_source);
+
+struct BarType_t bar_type_new_composite(struct InstrumentId_t instrument_id,
+                                        struct BarSpecification_t spec,
+                                        enum AggregationSource aggregation_source,
+                                        struct InstrumentId_t composite_instrument_id,
+                                        struct BarSpecification_t composite_spec,
+                                        enum AggregationSource composite_aggregation_source);
+
+struct BarType_t bar_type_from_bar_types(const struct BarType_t *standard,
+                                         const struct BarType_t *composite);
+
+uint8_t bar_type_is_standard(const struct BarType_t *bar_type);
+
+uint8_t bar_type_is_composite(const struct BarType_t *bar_type);
+
+struct BarType_t bar_type_standard(const struct BarType_t *bar_type);
+
+struct BarType_t bar_type_composite(const struct BarType_t *bar_type);
+
+struct InstrumentId_t bar_type_instrument_id(const struct BarType_t *bar_type);
+
+struct BarSpecification_t bar_type_spec(const struct BarType_t *bar_type);
+
+enum AggregationSource bar_type_aggregation_source(const struct BarType_t *bar_type);
 
 /**
  * Returns any [`BarType`] parsing error from the provided C string pointer.
@@ -2274,7 +2415,8 @@ double orderbook_get_quantity_for_price(struct OrderBook_API *book,
  *
  * # Panics
  *
- * If book type is not `L1_MBP`.
+ * This function panics:
+ * - If book type is not `L1_MBP`.
  */
 void orderbook_update_quote_tick(struct OrderBook_API *book, const struct QuoteTick_t *quote);
 
@@ -2283,7 +2425,8 @@ void orderbook_update_quote_tick(struct OrderBook_API *book, const struct QuoteT
  *
  * # Panics
  *
- * If book type is not `L1_MBP`.
+ * This function panics:
+ * - If book type is not `L1_MBP`.
  */
 void orderbook_update_trade_tick(struct OrderBook_API *book, const struct TradeTick_t *tick);
 

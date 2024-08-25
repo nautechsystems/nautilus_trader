@@ -89,7 +89,7 @@ cdef class BarBuilder:
             f"{self.volume})"
         )
 
-    cpdef void set_partial(self, Bar partial_bar):
+    cpdef void set_partial(self, Bar partial_bar, bint run_once = True):
         """
         Set the initial values for a partially completed bar.
 
@@ -101,10 +101,11 @@ cdef class BarBuilder:
             The partial bar with values to set.
 
         """
-        if self._partial_set:
+        if self._partial_set and run_once:
             return  # Already updated
 
-        self._open = partial_bar.open
+        if self._open is None:
+            self._open = partial_bar.open
 
         if self._high is None or partial_bar.high > self._high:
             self._high = partial_bar.high
@@ -112,12 +113,12 @@ cdef class BarBuilder:
         if self._low is None or partial_bar.low < self._low:
             self._low = partial_bar.low
 
-        if self._close is None:
+        if self._close is None or not run_once:
             self._close = partial_bar.close
 
-        self.volume = partial_bar.volume
+        self.volume = Quantity(self.volume + partial_bar.volume, self.size_precision)
 
-        if self.ts_last == 0:
+        if self.ts_last == 0 or not run_once:
             self.ts_last = partial_bar.ts_init
 
         self._partial_set = True
@@ -302,7 +303,21 @@ cdef class BarAggregator:
                 ts_event=tick.ts_event,
             )
 
-    cpdef void set_partial(self, Bar partial_bar):
+    cpdef void handle_bar(self, Bar bar):
+        """
+        Update the aggregator with the given bar.
+
+        Parameters
+        ----------
+        bar : Bar
+            The bar for the update.
+
+        """
+        Condition.not_none(bar, "bar")
+
+        self.set_partial(bar, False)
+
+    cpdef void set_partial(self, Bar partial_bar, bint run_once = True):
         """
         Set the initial values for a partially completed bar.
 
@@ -314,7 +329,7 @@ cdef class BarAggregator:
             The partial bar with values to set.
 
         """
-        self._builder.set_partial(partial_bar)
+        self._builder.set_partial(partial_bar, run_once)
 
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
         raise NotImplementedError("method `_apply_update` must be implemented in the subclass")  # pragma: no cover

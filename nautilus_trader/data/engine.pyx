@@ -1690,8 +1690,8 @@ cdef class DataEngine(Component):
                 f"no instrument found for {bar_type.instrument_id}",
             )
 
+        # Create aggregator
         if bar_type.spec.is_time_aggregated():
-            # Create aggregator
             aggregator = TimeBarAggregator(
                 instrument=instrument,
                 bar_type=bar_type,
@@ -1734,7 +1734,15 @@ cdef class DataEngine(Component):
         self._log.debug(f"Added {aggregator} for {bar_type} bars")
 
         # Subscribe to required data
-        if bar_type.spec.price_type == PriceType.LAST:
+        if bar_type.is_composite():
+            composite_bar_type = bar_type.composite()
+
+            self._msgbus.subscribe(
+                topic=f"data.bars.{composite_bar_type}",
+                handler=aggregator.handle_bar,
+            )
+            self._handle_subscribe_bars(client, composite_bar_type, False)
+        elif bar_type.spec.price_type == PriceType.LAST:
             self._msgbus.subscribe(
                 topic=f"data.trades"
                       f".{bar_type.instrument_id.venue}"
@@ -1765,8 +1773,16 @@ cdef class DataEngine(Component):
         if isinstance(aggregator, TimeBarAggregator):
             aggregator.stop()
 
-        # Unsubscribe from update ticks
-        if bar_type.spec.price_type == PriceType.LAST:
+        # Unsubscribe from market data updates
+        if bar_type.is_composite():
+            composite_bar_type = bar_type.composite()
+
+            self._msgbus.unsubscribe(
+                topic=f"data.bars.{composite_bar_type}",
+                handler=aggregator.handle_bar,
+            )
+            self._handle_unsubscribe_bars(client, composite_bar_type)
+        elif bar_type.spec.price_type == PriceType.LAST:
             self._msgbus.unsubscribe(
                 topic=f"data.trades"
                       f".{bar_type.instrument_id.venue}"

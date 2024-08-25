@@ -29,8 +29,10 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
+from nautilus_trader.core.nautilus_pyo3 import HttpError
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 from nautilus_trader.core.nautilus_pyo3 import HttpResponse
+from nautilus_trader.core.nautilus_pyo3 import HttpTimeoutError
 from nautilus_trader.core.nautilus_pyo3 import Quota
 
 
@@ -147,8 +149,7 @@ class DYDXHttpClient:
                         timeout_secs=timeout_secs,
                     )
                     done = True
-                except Exception as e:
-                    # Exception thrown by Rust code. Most probably caused by a timeout.
+                except HttpTimeoutError as e:
                     if retry_counter < max_tries - 1:
                         sleep_duration_ms = randint(  # noqa: S311
                             initial_sleep_duration_ms,
@@ -162,6 +163,9 @@ class DYDXHttpClient:
                     else:
                         self._log.error(f"Failed to perform HTTP request: {e}")
                         raise
+                except HttpError:
+                    self._log.error("Failed to perform HTTP request: {e}")
+                    raise
 
         if BAD_REQUEST_ERROR_CODE <= response.status < INTERNAL_SERVER_ERROR_CODE:
             raise DYDXError(

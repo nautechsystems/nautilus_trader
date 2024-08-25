@@ -59,15 +59,24 @@ from nautilus_trader.core.rust.model cimport bar_specification_lt
 from nautilus_trader.core.rust.model cimport bar_specification_new
 from nautilus_trader.core.rust.model cimport bar_specification_to_cstr
 from nautilus_trader.core.rust.model cimport bar_to_cstr
+from nautilus_trader.core.rust.model cimport bar_type_aggregation_source
 from nautilus_trader.core.rust.model cimport bar_type_check_parsing
+from nautilus_trader.core.rust.model cimport bar_type_composite
 from nautilus_trader.core.rust.model cimport bar_type_eq
+from nautilus_trader.core.rust.model cimport bar_type_from_bar_types
 from nautilus_trader.core.rust.model cimport bar_type_from_cstr
 from nautilus_trader.core.rust.model cimport bar_type_ge
 from nautilus_trader.core.rust.model cimport bar_type_gt
 from nautilus_trader.core.rust.model cimport bar_type_hash
+from nautilus_trader.core.rust.model cimport bar_type_instrument_id
+from nautilus_trader.core.rust.model cimport bar_type_is_composite
+from nautilus_trader.core.rust.model cimport bar_type_is_standard
 from nautilus_trader.core.rust.model cimport bar_type_le
 from nautilus_trader.core.rust.model cimport bar_type_lt
 from nautilus_trader.core.rust.model cimport bar_type_new
+from nautilus_trader.core.rust.model cimport bar_type_new_composite
+from nautilus_trader.core.rust.model cimport bar_type_spec
+from nautilus_trader.core.rust.model cimport bar_type_standard
 from nautilus_trader.core.rust.model cimport bar_type_to_cstr
 from nautilus_trader.core.rust.model cimport book_order_debug_to_cstr
 from nautilus_trader.core.rust.model cimport book_order_eq
@@ -649,25 +658,69 @@ cdef class BarType:
         )
 
     def __getstate__(self):
-        return (
-            self.instrument_id.value,
-            self._mem.spec.step,
-            self._mem.spec.aggregation,
-            self._mem.spec.price_type,
-            self._mem.aggregation_source
-        )
+        if self.is_standard():
+            spec = self.spec
+
+            return (
+                self.instrument_id.value,
+                spec.step,
+                spec.aggregation,
+                spec.price_type,
+                self.aggregation_source,
+            )
+        else:
+            composite = self.composite()
+            spec = self.spec
+            spec_composite = composite.spec
+
+            return (
+                self.instrument_id.value,
+                spec.step,
+                spec.aggregation,
+                spec.price_type,
+                self.aggregation_source,
+
+                composite.instrument_id.value,
+                spec_composite.step,
+                spec_composite.aggregation,
+                spec_composite.price_type,
+                composite.aggregation_source
+            )
 
     def __setstate__(self, state):
-        cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
-        self._mem = bar_type_new(
-            instrument_id._mem,
-            bar_specification_new(
-                state[1],
-                state[2],
-                state[3]
-            ),
-            state[4],
-        )
+        if len(state) == 5:
+            instrument_id = InstrumentId.from_str_c(state[0])
+
+            self._mem = bar_type_new(
+                instrument_id._mem,
+                bar_specification_new(
+                    state[1],
+                    state[2],
+                    state[3]
+                ),
+                state[4],
+            )
+        else:
+            instrument_id = InstrumentId.from_str_c(state[0])
+            composite_instrument_id = InstrumentId.from_str_c(state[5])
+
+            self._mem = bar_type_new_composite(
+                instrument_id._mem,
+                bar_specification_new(
+                    state[1],
+                    state[2],
+                    state[3]
+                ),
+                state[4],
+
+                composite_instrument_id._mem,
+                bar_specification_new(
+                    state[6],
+                    state[7],
+                    state[8]
+                ),
+                state[9],
+            )
 
     cdef str to_str(self):
         return cstr_to_pystr(bar_type_to_cstr(&self._mem))
@@ -706,7 +759,7 @@ cdef class BarType:
         InstrumentId
 
         """
-        return InstrumentId.from_mem_c(self._mem.instrument_id)
+        return InstrumentId.from_mem_c(bar_type_instrument_id(&self._mem))
 
     @property
     def spec(self) -> BarSpecification:
@@ -718,7 +771,7 @@ cdef class BarType:
         BarSpecification
 
         """
-        return BarSpecification.from_mem_c(self._mem.spec)
+        return BarSpecification.from_mem_c(bar_type_spec(&self._mem))
 
     @property
     def aggregation_source(self) -> AggregationSource:
@@ -730,7 +783,7 @@ cdef class BarType:
         AggregationSource
 
         """
-        return self._mem.aggregation_source
+        return bar_type_aggregation_source(&self._mem)
 
     @staticmethod
     cdef BarType from_mem_c(BarType_t mem):
@@ -793,6 +846,64 @@ cdef class BarType:
 
         """
         return self.aggregation_source == AggregationSource.INTERNAL
+
+    @staticmethod
+    def new_composite(
+        InstrumentId instrument_id,
+        BarSpecification bar_spec,
+        AggregationSource aggregation_source,
+
+        InstrumentId composite_instrument_id,
+        BarSpecification composite_bar_spec,
+        AggregationSource composite_aggregation_source,
+    ) -> BarType:
+        return BarType.from_mem_c(
+            bar_type_new_composite(
+                instrument_id._mem,
+                bar_spec._mem,
+                aggregation_source,
+
+                composite_instrument_id._mem,
+                composite_bar_spec._mem,
+                composite_aggregation_source,
+            )
+        )
+
+    @staticmethod
+    def from_bar_types(BarType standard, BarType composite) -> BarType:
+        return BarType.from_mem_c(bar_type_from_bar_types(&standard._mem, &composite._mem))
+
+    cpdef bint is_standard(self):
+        """
+        Return a value indicating whether the bar type corresponds to BarType::Standard in rust.
+
+        Returns
+        -------
+        bool
+
+        """
+        return bar_type_is_standard(&self._mem)
+
+    cpdef bint is_composite(self):
+        """
+        Return a value indicating whether the bar type corresponds to BarType::Composite in rust.
+
+        Returns
+        -------
+        bool
+
+        """
+        return bar_type_is_composite(&self._mem)
+
+    cpdef BarType standard(self):
+        cdef BarType bar_type = BarType.__new__(BarType)
+        bar_type._mem = bar_type_standard(&self._mem)
+        return bar_type
+
+    cpdef BarType  composite(self):
+        cdef BarType bar_type = BarType.__new__(BarType)
+        bar_type._mem = bar_type_composite(&self._mem)
+        return bar_type
 
 
 cdef class Bar(Data):
@@ -862,12 +973,10 @@ cdef class Bar(Data):
         self.is_revision = is_revision
 
     def __getstate__(self):
-        return (
-            self.bar_type.instrument_id.value,
-            self._mem.bar_type.spec.step,
-            self._mem.bar_type.spec.aggregation,
-            self._mem.bar_type.spec.price_type,
-            self._mem.bar_type.aggregation_source,
+        bar_type = BarType.from_mem_c(self._mem.bar_type)
+        bart_type_state = bar_type.__getstate__()
+
+        return bart_type_state + (
             self._mem.open.raw,
             self._mem.high.raw,
             self._mem.low.raw,
@@ -880,27 +989,61 @@ cdef class Bar(Data):
         )
 
     def __setstate__(self, state):
-        cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
-        self._mem = bar_new_from_raw(
-            bar_type_new(
-                instrument_id._mem,
-                bar_specification_new(
-                    state[1],
-                    state[2],
-                    state[3],
+        if len(state) == 14:
+            instrument_id = InstrumentId.from_str_c(state[0])
+
+            self._mem = bar_new_from_raw(
+                bar_type_new(
+                    instrument_id._mem,
+                    bar_specification_new(
+                        state[1],
+                        state[2],
+                        state[3],
+                    ),
+                    state[4],
                 ),
-                state[4],
-            ),
-            state[5],
-            state[6],
-            state[7],
-            state[8],
-            state[9],
-            state[10],
-            state[11],
-            state[12],
-            state[13],
-        )
+                state[5],
+                state[6],
+                state[7],
+                state[8],
+                state[9],
+                state[10],
+                state[11],
+                state[12],
+                state[13],
+            )
+        else:
+            instrument_id = InstrumentId.from_str_c(state[0])
+            composite_instrument_id = InstrumentId.from_str_c(state[5])
+
+            self._mem = bar_new_from_raw(
+                bar_type_new_composite(
+                    instrument_id._mem,
+                    bar_specification_new(
+                        state[1],
+                        state[2],
+                        state[3]
+                    ),
+                    state[4],
+
+                    composite_instrument_id._mem,
+                    bar_specification_new(
+                        state[6],
+                        state[7],
+                        state[8]
+                    ),
+                    state[9],
+                ),
+                state[10],
+                state[11],
+                state[12],
+                state[13],
+                state[14],
+                state[15],
+                state[16],
+                state[17],
+                state[18],
+            )
 
     def __eq__(self, Bar other) -> bool:
         return self.to_str() == other.to_str()

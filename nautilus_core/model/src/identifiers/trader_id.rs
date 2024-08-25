@@ -43,7 +43,8 @@ impl TraderId {
     ///
     /// # Errors
     ///
-    /// Errors if `value` is not a valid string, or does not contain a hyphen '-' separator.
+    /// This function returns an error:
+    /// - If `value` is not a valid string, or does not contain a hyphen '-' separator.
     pub fn new_checked(value: &str) -> anyhow::Result<Self> {
         check_valid_string(value, stringify!(value))?;
         check_string_contains(value, "-", stringify!(value))?;
@@ -54,7 +55,8 @@ impl TraderId {
     ///
     /// # Panics
     ///
-    /// Panics if `value` is not a valid string, or does not contain a hyphen '-' separator.
+    /// This function panics:
+    /// - If `value` is not a valid string, or does not contain a hyphen '-' separator.
     pub fn new(value: &str) -> Self {
         Self::new_checked(value).expect(FAILED)
     }

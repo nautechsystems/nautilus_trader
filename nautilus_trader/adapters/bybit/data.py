@@ -309,12 +309,6 @@ class BybitDataClient(LiveMarketDataClient):
         ws_client = self._ws_clients[bybit_symbol.product_type]
         await ws_client.subscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
 
-    def _is_subscribed_to_order_book(self, instrument_id: InstrumentId) -> bool:
-        return (
-            instrument_id
-            in self.subscribed_order_book_snapshots() + self.subscribed_order_book_deltas()
-        )
-
     async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
         ws_client = self._ws_clients[bybit_symbol.product_type]

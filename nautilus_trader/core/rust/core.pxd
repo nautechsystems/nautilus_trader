@@ -4,12 +4,16 @@ from libc.stdint cimport uint8_t, uint64_t, uintptr_t
 
 cdef extern from "../includes/core.h":
 
+    # Number of milliseconds in one second.
     const uint64_t MILLISECONDS_IN_SECOND # = 1000
 
+    # Number of nanoseconds in one second.
     const uint64_t NANOSECONDS_IN_SECOND # = 1000000000
 
+    # Number of nanoseconds in one millisecond.
     const uint64_t NANOSECONDS_IN_MILLISECOND # = 1000000
 
+    # Number of nanoseconds in one microsecond.
     const uint64_t NANOSECONDS_IN_MICROSECOND # = 1000
 
     # `CVec` is a C compatible struct that stores an opaque pointer to a block of
@@ -69,6 +73,7 @@ cdef extern from "../includes/core.h":
     #
     # # Panics
     #
+    # This function panics:
     # - If `ptr` is null.
     uint8_t precision_from_cstr(const char *ptr);
 
@@ -80,6 +85,7 @@ cdef extern from "../includes/core.h":
     #
     # # Panics
     #
+    # This function panics:
     # - If `ptr` is null.
     uint8_t min_increment_precision_from_cstr(const char *ptr);
 
@@ -91,6 +97,7 @@ cdef extern from "../includes/core.h":
     #
     # # Panics
     #
+    # This function panics:
     # - If `ptr` is null.
     void cstr_drop(const char *ptr);
 
@@ -104,6 +111,7 @@ cdef extern from "../includes/core.h":
     #
     # # Panics
     #
+    # This function panics:
     # - If `ptr` cannot be cast to a valid C string.
     UUID4_t uuid4_from_cstr(const char *ptr);
 

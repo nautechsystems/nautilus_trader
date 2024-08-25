@@ -1188,7 +1188,7 @@ cdef class Cache(CacheFacade):
 
         bars.appendleft(bar)
 
-        cdef PriceType price_type = <PriceType>bar._mem.bar_type.spec.price_type
+        cdef PriceType price_type = bar.bar_type.spec.price_type
         if price_type == PriceType.BID:
             self._bars_bid[bar.bar_type.instrument_id] = bar
         elif price_type == PriceType.ASK:
@@ -1306,7 +1306,7 @@ cdef class Cache(CacheFacade):
             cached_bars.appendleft(bar)
 
         bar = bars[-1]
-        cdef PriceType price_type = <PriceType>bar._mem.bar_type.spec.price_type
+        cdef PriceType price_type = bar.bar_type.spec.price_type
         if price_type == PriceType.BID:
             self._bars_bid[bar.bar_type.instrument_id] = bar
         elif price_type == PriceType.ASK:
