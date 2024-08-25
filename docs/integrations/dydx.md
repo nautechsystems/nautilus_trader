@@ -61,7 +61,8 @@ and trailing stop orders can be implemented later.
 
 dYdX makes a distinction between short-term orders and long-term orders (or stateful orders).
 Short-term orders are meant to be placed immediately and belongs in the same block the order was received.
-These orders stay in-memory up to 20 blocks, with only their fill amount and expiry block height being committed to state. Short-term orders are mainly intended for use by market makers with high throughput or for market orders.
+These orders stay in-memory up to 20 blocks, with only their fill amount and expiry block height being committed to state.
+Short-term orders are mainly intended for use by market makers with high throughput or for market orders.
 
 By default, all orders are sent as short-term orders. To construct long-term orders, you can attach a tag to
 an order like this:
@@ -200,6 +201,6 @@ In these cases, a _warn and continue_ approach is taken (the instrument will not
 
 ## Order books
 
-Order books can be maintained at full depths or top of the book quotes depending on the
-subscription options. The venue does not provide quote ticks, but the adapter subscribes to order
-book deltas and sends new quote ticks to the `DataEngine` when the best bid or ask price or size changes.
+Order books can be maintained at full depth or top-of-book quotes depending on the
+subscription. The venue does not provide quote ticks, but the adapter subscribes to order
+book deltas and sends new quote ticks to the `DataEngine` when there is a top-of-book price or size change.
