@@ -811,7 +811,7 @@ cdef class SimulatedExchange:
 
     cpdef void process_instrument_close(self, InstrumentClose close):
         """
-        Process the exchanges market for the given instrument close..
+        Process the exchanges market for the given instrument close.
 
         Parameters
         ----------
