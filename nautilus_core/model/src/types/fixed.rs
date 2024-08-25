@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Functions for handling fixed-precision arithmetic.
+//! Functions for handling fixed-point arithmetic.
 //!
 //! This module provides constants and functions that enforce a fixed-point precision strategy,
 //! ensuring consistent precision and scaling across various types and calculations.
