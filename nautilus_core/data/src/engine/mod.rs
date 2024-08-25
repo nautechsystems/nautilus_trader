@@ -54,6 +54,7 @@ use nautilus_common::{
         MessageBus,
     },
 };
+use nautilus_core::correctness::{check_key_in_index_map, check_key_not_in_index_map, FAILED};
 use nautilus_model::{
     data::{
         bar::{Bar, BarType},
@@ -294,7 +295,15 @@ impl DataEngine {
     }
 
     /// Registers a new [`DataClientAdapter`]
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If a client with the same client ID has already been registered.
     pub fn register_client(&mut self, client: DataClientAdapter, routing: Option<Venue>) {
+        check_key_not_in_index_map(&client.client_id, &self.clients, "client_id", "clients")
+            .expect(FAILED);
+
         if let Some(routing) = routing {
             self.routing_map.insert(routing, client.client_id());
             log::info!("Set client {} routing for {routing}", client.client_id());
@@ -305,11 +314,13 @@ impl DataEngine {
     }
 
     /// Deregisters a [`DataClientAdapter`]
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If a client with the same client ID has not been registered.
     pub fn deregister_client(&mut self, client_id: &ClientId) {
-        // TODO: We could return a `Result` but then this is part of system wiring and instead of
-        // propagating results all over the place it may be cleaner to just immediately fail
-        // for these sorts of design-time errors?
-        // correctness::check_key_in_map(&client_id, &self.clients, "client_id", "clients").unwrap();
+        check_key_in_index_map(client_id, &self.clients, "client_id", "clients").expect(FAILED);
 
         self.clients.shift_remove(client_id);
         log::info!("Deregistered client {client_id}");
@@ -446,7 +457,29 @@ impl DataEngine {
     }
 
     fn handle_deltas(&mut self, deltas: OrderBookDeltas) {
-        // TODO: Manage book
+        let deltas = if self.config.buffer_deltas {
+            let buffer_deltas = self
+                .buffered_deltas_map
+                .entry(deltas.instrument_id)
+                .or_default();
+            buffer_deltas.extend(deltas.deltas);
+
+            let mut is_last_delta = false;
+            for delta in buffer_deltas.iter_mut() {
+                if RecordFlag::F_LAST.matches(delta.flags) {
+                    is_last_delta = true;
+                }
+            }
+
+            if !is_last_delta {
+                return;
+            }
+
+            // TODO: Improve efficiency, the FFI API will go along with Cython
+            OrderBookDeltas::new(deltas.instrument_id, buffer_deltas.clone())
+        } else {
+            deltas
+        };
 
         let mut msgbus = self.msgbus.borrow_mut();
         let topic = msgbus.switchboard.get_deltas_topic(deltas.instrument_id);
@@ -454,8 +487,6 @@ impl DataEngine {
     }
 
     fn handle_depth10(&mut self, depth: OrderBookDepth10) {
-        // TODO: Manage book
-
         let mut msgbus = self.msgbus.borrow_mut();
         let topic = msgbus.switchboard.get_depth_topic(depth.instrument_id);
         msgbus.publish(&topic, &depth as &dyn Any); // TODO: Optimize
@@ -552,7 +583,7 @@ impl DataEngine {
     fn setup_order_book(
         &mut self,
         client: &mut DataClientAdapter,
-        command: SubscriptionCommand, // TODO: Setup for commands and clients
+        command: SubscriptionCommand, // TODO: How are we handling commands and clients?
         instrument_id: &InstrumentId,
         book_type: BookType,
         depth: Option<usize>,
@@ -612,7 +643,7 @@ impl DataEngine {
                 Data::Delta(delta) => book.apply_delta(delta),
                 Data::Deltas(deltas) => book.apply_deltas(deltas),
                 Data::Depth10(depth) => book.apply_depth(depth),
-                _ => log::error!("Invalid data type for book update"),
+                _ => log::error!("Invalid data type for book update, was {data:?}"),
             }
         }
     }
