@@ -34,6 +34,7 @@ use reqwest::{
 
 use crate::ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter};
 
+/// Represents the HTTP methods supported by the `HttpClient`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(
     feature = "python",
@@ -60,91 +61,67 @@ impl Into<Method> for HttpMethod {
     }
 }
 
-/// HttpResponse contains relevant data from a HTTP request.
+/// Represents the response from an HTTP request.
+///
+/// This struct encapsulates the status, headers, and body of an HTTP response,
+/// providing easy access to the key components of the response.
 #[derive(Clone, Debug)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
 )]
 pub struct HttpResponse {
+    /// The HTTP status code returned by the server.
     pub status: u16,
+    /// The headers returned by the server as a map of key-value pairs.
     pub(crate) headers: HashMap<String, String>,
+    /// The body of the response as raw bytes.
     pub(crate) body: Bytes,
 }
 
+/// A high-performance HTTP client with rate limiting and timeout capabilities.
+///
+/// This struct is designed to handle HTTP requests efficiently, providing
+/// support for rate limiting, timeouts, and custom headers. The client is
+/// built on top of `reqwest` and can be used for both synchronous and
+/// asynchronous HTTP requests.
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
 )]
 pub struct HttpClient {
+    /// The rate limiter to control the request rate.
     pub(crate) rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
+    /// The underlying HTTP client used to make requests.
     pub(crate) client: InnerHttpClient,
 }
 
+/// Represents errors that can occur when using the `HttpClient`.
+///
+/// This enum provides variants for general HTTP errors and timeout errors,
+/// allowing for more granular error handling.
 #[derive(thiserror::Error, Debug)]
 pub enum HttpClientError {
     #[error("HTTP error occurred: {0}")]
-    Error(#[from] HttpError),
+    Error(String),
 
     #[error("HTTP request timed out: {0}")]
-    TimeoutError(#[from] HttpTimeoutError),
+    TimeoutError(String),
 }
 
-#[derive(Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
-)]
-pub struct HttpError {
-    message: String,
-}
-
-impl HttpError {
-    pub fn new(source: reqwest::Error) -> Self {
-        Self {
-            message: source.to_string(),
-        }
-    }
-
-    pub fn from_str(msg: &str) -> Self {
-        Self {
-            message: msg.to_string(),
+impl From<reqwest::Error> for HttpClientError {
+    fn from(source: reqwest::Error) -> Self {
+        if source.is_timeout() {
+            Self::TimeoutError(source.to_string())
+        } else {
+            Self::Error(source.to_string())
         }
     }
 }
 
-impl Display for HttpError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "HTTP error: {}", self.message)
-    }
-}
-
-impl std::error::Error for HttpError {}
-
-#[derive(Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
-)]
-pub struct HttpTimeoutError {
-    source: reqwest::Error,
-}
-
-impl HttpTimeoutError {
-    pub fn new(source: reqwest::Error) -> Self {
-        Self { source }
-    }
-}
-
-impl Display for HttpTimeoutError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "HTTP request timed out: {}", self.source)
-    }
-}
-
-impl Error for HttpTimeoutError {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        Some(&self.source)
+impl From<String> for HttpClientError {
+    fn from(value: String) -> Self {
+        Self::Error(value)
     }
 }
 
@@ -163,6 +140,15 @@ pub struct InnerHttpClient {
 }
 
 impl InnerHttpClient {
+    /// Sends an HTTP request with the specified method, URL, headers, and body.
+    ///
+    /// # Parameters
+    ///
+    /// - `method`: The HTTP method to use (e.g., GET, POST).
+    /// - `url`: The URL to send the request to.
+    /// - `headers`: A map of header key-value pairs to include in the request.
+    /// - `body`: An optional body for the request, represented as a byte vector.
+    /// - `timeout_secs`: An optional timeout for the request in seconds.
     pub async fn send_request(
         &self,
         method: Method,
@@ -172,17 +158,17 @@ impl InnerHttpClient {
         timeout_secs: Option<u64>,
     ) -> Result<HttpResponse, HttpClientError> {
         let reqwest_url = Url::parse(url.as_str())
-            .map_err(|e| HttpError::from_str(&format!("URL parse error: {}", e)))?;
+            .map_err(|e| HttpClientError::from(format!("URL parse error: {}", e)))?;
 
         let mut header_map = HeaderMap::new();
         for (header_key, header_value) in &headers {
             let key = HeaderName::from_bytes(header_key.as_bytes())
-                .map_err(|e| HttpError::from_str(&format!("Invalid header name: {}", e)))?;
+                .map_err(|e| HttpClientError::from(format!("Invalid header name: {}", e)))?;
             let _ = header_map.insert(
                 key,
                 header_value
                     .parse()
-                    .map_err(|e| HttpError::from_str(&format!("Invalid header value: {}", e)))?,
+                    .map_err(|e| HttpClientError::from(format!("Invalid header value: {}", e)))?,
             );
         }
 
@@ -193,29 +179,26 @@ impl InnerHttpClient {
         }
 
         let request = match body {
-            Some(b) => request_builder.body(b).build().map_err(HttpError::new)?,
-            None => request_builder.build().map_err(HttpError::new)?,
+            Some(b) => request_builder
+                .body(b)
+                .build()
+                .map_err(HttpClientError::from)?,
+            None => request_builder.build().map_err(HttpClientError::from)?,
         };
 
         tracing::trace!("{request:?}");
 
-        let response = self.client.execute(request).await.map_err(|e| {
-            if e.is_timeout() {
-                HttpClientError::TimeoutError(HttpTimeoutError::new(e))
-            } else {
-                HttpClientError::Error(HttpError::new(e))
-            }
-        })?;
+        let response = self
+            .client
+            .execute(request)
+            .await
+            .map_err(HttpClientError::from)?;
 
-        self.to_response(response).await.map_err(|e| {
-            HttpClientError::Error(HttpError::from_str(&format!("Response error: {}", e)))
-        })
+        self.to_response(response).await
     }
 
-    pub async fn to_response(
-        &self,
-        response: Response,
-    ) -> Result<HttpResponse, Box<dyn std::error::Error + Send + Sync>> {
+    /// Converts a `reqwest::Response` into an `HttpResponse`.
+    pub async fn to_response(&self, response: Response) -> Result<HttpResponse, HttpClientError> {
         tracing::trace!("{response:?}");
 
         let headers: HashMap<String, String> = self
@@ -226,7 +209,7 @@ impl InnerHttpClient {
             .map(|(k, v)| (k.clone(), v.to_owned()))
             .collect();
         let status = response.status().as_u16();
-        let body = response.bytes().await?;
+        let body = response.bytes().await.map_err(HttpClientError::from)?;
 
         Ok(HttpResponse {
             status,
@@ -238,6 +221,8 @@ impl InnerHttpClient {
 
 impl Default for InnerHttpClient {
     /// Creates a new default [`InnerHttpClient`] instance.
+    ///
+    /// The default client is initialized with an empty list of header keys and a new `reqwest::Client`.
     fn default() -> Self {
         let client = reqwest::Client::new();
         Self {

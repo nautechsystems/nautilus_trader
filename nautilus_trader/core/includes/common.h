@@ -258,28 +258,34 @@ typedef struct LogGuard_API {
 
 /**
  * Represents a time event occurring at the event timestamp.
+ *
+ * A `TimeEvent` carries metadata such as the event's name, a unique event ID,
+ * and timestamps indicating when the event was scheduled to occur and when it was initialized.
  */
 typedef struct TimeEvent_t {
     /**
-     * The event name.
+     * The event name, identifying the nature or purpose of the event.
      */
     char* name;
     /**
-     * The event ID.
+     * The unique identifier for the event.
      */
     UUID4_t event_id;
     /**
-     * The message category
+     * UNIX timestamp (nanoseconds) when the event occurred.
      */
     uint64_t ts_event;
     /**
-     * UNIX timestamp (nanoseconds) when the object was initialized.
+     * UNIX timestamp (nanoseconds) when the instance was initialized.
      */
     uint64_t ts_init;
 } TimeEvent_t;
 
 /**
  * Represents a time event and its associated handler.
+ *
+ * `TimeEventHandler` associates a `TimeEvent` with a callback function that is triggered
+ * when the event's timestamp is reached.
  */
 typedef struct TimeEventHandler_t {
     /**
@@ -432,8 +438,8 @@ uintptr_t live_clock_timer_count(struct LiveClock_API *clock);
  *
  * # Panics
  *
- * - Panics if `name` is not a valid string.
- * - Panics if `callback_ptr` is NULL and no default callback has been assigned on the clock.
+ * - If `name` is not a valid string.
+ * - If `callback_ptr` is NULL and no default callback has been assigned on the clock.
  */
 void live_clock_set_time_alert(struct LiveClock_API *clock,
                                const char *name_ptr,
@@ -448,8 +454,8 @@ void live_clock_set_time_alert(struct LiveClock_API *clock,
  *
  * # Panics
  *
- * - Panics if `name` is not a valid string.
- * - Panics if `callback_ptr` is NULL and no default callback has been assigned on the clock.
+ * - If `name` is not a valid string.
+ * - If `callback_ptr` is NULL and no default callback has been assigned on the clock.
  */
 void live_clock_set_timer(struct LiveClock_API *clock,
                           const char *name_ptr,

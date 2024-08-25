@@ -65,8 +65,10 @@ from nautilus_trader.execution.trailing cimport TrailingStopCalculator
 from nautilus_trader.model.book cimport OrderBook
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport BookOrder
+from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderCancelRejected
@@ -190,6 +192,7 @@ cdef class OrderMatchingEngine:
         self.market_status = MarketStatus.OPEN
 
         self._instrument_has_expiration = instrument.instrument_class in EXPIRING_INSTRUMENT_TYPES
+        self._instrument_close = None
         self._bar_execution = bar_execution
         self._reject_stop_orders = reject_stop_orders
         self._support_gtd_orders = support_gtd_orders
@@ -553,6 +556,24 @@ cdef class OrderMatchingEngine:
         #     # Market closed - nothing to do for now
         #     # TODO - should we implement some sort of closing price message here?
         #     self.market_status = status
+
+    cpdef void process_instrument_close(self, InstrumentClose close):
+        """
+        Process the instrument close.
+
+        Parameters
+        ----------
+        close : InstrumentClose
+            The close price to process.
+
+        """
+        if close.instrument_id != self.instrument.id:
+            self._log.warning(f"Received instrument close for unknown instrument_id: {close.instrument_id}")
+            return
+
+        if close.close_type == InstrumentCloseType.CONTRACT_EXPIRED:
+            self._instrument_close = close
+            self.iterate(close.ts_init)
 
     cpdef void process_auction_book(self, OrderBook book):
         Condition.not_none(book, "book")
@@ -1334,7 +1355,7 @@ cdef class OrderMatchingEngine:
         self._has_targets = False
 
         # Instrument expiration
-        if self._instrument_has_expiration and timestamp_ns >= self.instrument.expiration_ns:
+        if (self._instrument_has_expiration and timestamp_ns >= self.instrument.expiration_ns) or self._instrument_close is not None:
             self._log.info(f"{self.instrument.id} reached expiration")
 
             # Cancel all open orders

@@ -44,6 +44,7 @@ from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport SubmitOrderList
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.model.book cimport OrderBook
+from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
@@ -807,6 +808,32 @@ cdef class SimulatedExchange:
             matching_engine = self._matching_engines[data.instrument_id]
 
         matching_engine.process_status(data.action)
+
+    cpdef void process_instrument_close(self, InstrumentClose close):
+        """
+        Process the exchanges market for the given instrument close.
+
+        Parameters
+        ----------
+        close : InstrumentClose
+            The instrument close to process.
+
+        """
+        Condition.not_none(close, "close")
+
+        cdef SimulationModule module
+        for module in self.modules:
+            module.pre_process(close)
+
+        cdef OrderMatchingEngine matching_engine = self._matching_engines.get(close.instrument_id)
+        if matching_engine is None:
+            instrument = self.cache.instrument(close.instrument_id)
+            if instrument is None:
+                raise RuntimeError(f"No matching engine found for {close.instrument_id}")
+            self.add_instrument(instrument)
+            matching_engine = self._matching_engines[close.instrument_id]
+
+        matching_engine.process_instrument_close(close)
 
     cpdef void process(self, uint64_t ts_now):
         """

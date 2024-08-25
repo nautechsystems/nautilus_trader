@@ -84,6 +84,7 @@ from nautilus_trader.model.events.position cimport PositionEvent
 from nautilus_trader.model.events.position cimport PositionOpened
 from nautilus_trader.model.functions cimport oms_type_from_str
 from nautilus_trader.model.functions cimport order_side_to_str
+from nautilus_trader.model.functions cimport order_status_to_str
 from nautilus_trader.model.functions cimport position_side_to_str
 from nautilus_trader.model.identifiers cimport ClientOrderId
 from nautilus_trader.model.identifiers cimport ExecAlgorithmId
@@ -771,7 +772,11 @@ cdef class Strategy(Actor):
         """
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
-        Condition.equal(order.status_c(), OrderStatus.INITIALIZED, "order", "order_status")
+        if order._fsm.state != OrderStatus.INITIALIZED:  # Check predicate first for efficiency
+            Condition.true(
+                order.status_c() == OrderStatus.INITIALIZED,
+                f"Invalid order status on submit: expected 'INITIALIZED', was '{order.status_string_c()}'",
+            )
 
         # Publish initialized event
         self._msgbus.publish_c(

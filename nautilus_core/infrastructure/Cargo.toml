@@ -39,7 +39,7 @@ redis = { version = "0.26.1", features = [
     "tls-rustls",
     "tls-rustls-webpki-roots",
 ], optional = true }
-sqlx = { version = "0.8.0", features = [
+sqlx = { version = "0.8.1", features = [
     "postgres",
     "runtime-tokio",
     "json"

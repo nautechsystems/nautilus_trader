@@ -67,21 +67,21 @@ impl DataClient for BacktestDataClient {
     // -- COMMAND HANDLERS ---------------------------------------------------------------------------
 
     /// Parse command and call specific function
-    fn subscribe(&mut self, _data_type: DataType) -> anyhow::Result<()> {
+    fn subscribe(&mut self, _data_type: &DataType) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_instruments(&mut self, _venue: Option<Venue>) -> anyhow::Result<()> {
+    fn subscribe_instruments(&mut self, _venue: Option<&Venue>) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_instrument(&mut self, _instrument_id: InstrumentId) -> anyhow::Result<()> {
+    fn subscribe_instrument(&mut self, _instrument_id: &InstrumentId) -> anyhow::Result<()> {
         Ok(())
     }
 
     fn subscribe_order_book_deltas(
         &mut self,
-        _instrument_id: InstrumentId,
+        _instrument_id: &InstrumentId,
         _book_type: BookType,
         _depth: Option<usize>,
     ) -> anyhow::Result<()> {
@@ -90,73 +90,79 @@ impl DataClient for BacktestDataClient {
 
     fn subscribe_order_book_snapshots(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_id: &InstrumentId,
         book_type: BookType,
         depth: Option<usize>,
     ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_quote_ticks(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+    fn subscribe_quote_ticks(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_trade_ticks(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+    fn subscribe_trade_ticks(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_bars(&mut self, bar_type: BarType) -> anyhow::Result<()> {
+    fn subscribe_bars(&mut self, bar_type: &BarType) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_instrument_status(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+    fn subscribe_instrument_status(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn subscribe_instrument_close(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+    fn subscribe_instrument_close(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe(&mut self, data_type: DataType) -> anyhow::Result<()> {
+    fn unsubscribe(&mut self, data_type: &DataType) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_instruments(&mut self, venue: Option<Venue>) -> anyhow::Result<()> {
+    fn unsubscribe_instruments(&mut self, venue: Option<&Venue>) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_instrument(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+    fn unsubscribe_instrument(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_order_book_deltas(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+    fn unsubscribe_order_book_deltas(
+        &mut self,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
     fn unsubscribe_order_book_snapshots(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_id: &InstrumentId,
     ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_quote_ticks(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+    fn unsubscribe_quote_ticks(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_trade_ticks(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+    fn unsubscribe_trade_ticks(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_bars(&mut self, bar_type: BarType) -> anyhow::Result<()> {
+    fn unsubscribe_bars(&mut self, bar_type: &BarType) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_instrument_status(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+    fn unsubscribe_instrument_status(
+        &mut self,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn unsubscribe_instrument_close(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+    fn unsubscribe_instrument_close(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()> {
         Ok(())
     }
 

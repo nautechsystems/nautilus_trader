@@ -23,10 +23,9 @@ use std::{
 
 use nautilus_core::nanos::UnixNanos;
 
-use super::error::BookIntegrityError;
 use crate::{
     data::order::{BookOrder, OrderId},
-    enums::OrderSide,
+    enums::{OrderSide, OrderSideSpecified},
     orderbook::level::Level,
     types::{price::Price, quantity::Quantity},
 };
@@ -63,10 +62,9 @@ impl PartialEq for BookPrice {
 
 impl Ord for BookPrice {
     fn cmp(&self, other: &Self) -> Ordering {
-        match self.side {
-            OrderSide::Buy => other.value.cmp(&self.value),
-            OrderSide::Sell => self.value.cmp(&other.value),
-            _ => panic!("{}", BookIntegrityError::NoOrderSide),
+        match self.side.as_specified() {
+            OrderSideSpecified::Buy => other.value.cmp(&self.value),
+            OrderSideSpecified::Sell => self.value.cmp(&other.value),
         }
     }
 }

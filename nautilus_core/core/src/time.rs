@@ -61,7 +61,8 @@ pub fn duration_since_unix_epoch() -> Duration {
 /// This struct provides thread-safe access to a stored nanosecond time value,
 /// useful for when concurrent access to time information is required.
 ///
-/// Fields:
+/// # Fields
+///
 /// - `realtime`: Indicates whether the clock is operating in real-time mode.
 ///    When `true`, the clock reflects real-world time progression. When `false`,
 ///    the clock is in a manual or static mode, allowing for controlled time setting.
@@ -154,10 +155,12 @@ impl AtomicTime {
         UnixNanos::from(time)
     }
 
+    /// Switches the clock to real-time mode.
     pub fn make_realtime(&self) {
         self.realtime.store(true, Ordering::Relaxed);
     }
 
+    /// Switches the clock to static mode.
     pub fn make_static(&self) {
         self.realtime.store(false, Ordering::Relaxed);
     }

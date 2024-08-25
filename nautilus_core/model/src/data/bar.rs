@@ -39,7 +39,7 @@ use crate::{
 ///
 /// # Panics
 ///
-/// Panics if the aggregation method of the given `bar_type` is not time based.
+/// - If the aggregation method of the given `bar_type` is not time based.
 pub fn get_bar_interval(bar_type: &BarType) -> TimeDelta {
     match bar_type.spec.aggregation {
         BarAggregation::Millisecond => TimeDelta::milliseconds(bar_type.spec.step as i64),
@@ -55,7 +55,7 @@ pub fn get_bar_interval(bar_type: &BarType) -> TimeDelta {
 ///
 /// # Panics
 ///
-/// Panics if the aggregation method of the given `bar_type` is not time based.
+/// - If the aggregation method of the given `bar_type` is not time based.
 pub fn get_bar_interval_ns(bar_type: &BarType) -> UnixNanos {
     let interval_ns = get_bar_interval(bar_type)
         .num_nanoseconds()

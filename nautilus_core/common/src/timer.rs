@@ -50,21 +50,26 @@ use crate::{handlers::EventHandler, runtime::get_runtime};
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
 )]
 /// Represents a time event occurring at the event timestamp.
+///
+/// A `TimeEvent` carries metadata such as the event's name, a unique event ID,
+/// and timestamps indicating when the event was scheduled to occur and when it was initialized.
 pub struct TimeEvent {
-    /// The event name.
+    /// The event name, identifying the nature or purpose of the event.
     pub name: Ustr,
-    /// The event ID.
+    /// The unique identifier for the event.
     pub event_id: UUID4,
-    /// The message category
+    /// UNIX timestamp (nanoseconds) when the event occurred.
     pub ts_event: UnixNanos,
-    /// UNIX timestamp (nanoseconds) when the object was initialized.
+    /// UNIX timestamp (nanoseconds) when the instance was initialized.
     pub ts_init: UnixNanos,
 }
 
 impl TimeEvent {
     /// Creates a new [`TimeEvent`] instance.
     ///
-    /// Assumes `name` is a valid string.
+    /// # Safety
+    ///
+    /// - Assumes `name` is a valid string.
     #[must_use]
     pub const fn new(name: Ustr, event_id: UUID4, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
         Self {
@@ -95,6 +100,9 @@ impl PartialEq for TimeEvent {
 #[repr(C)]
 #[derive(Clone, Debug)]
 /// Represents a time event and its associated handler.
+///
+/// `TimeEventHandler` associates a `TimeEvent` with a callback function that is triggered
+/// when the event's timestamp is reached.
 pub struct TimeEventHandler {
     /// The time event.
     pub event: TimeEvent,
@@ -123,11 +131,18 @@ impl Ord for TimeEventHandler {
 }
 
 /// A test timer for user with a `TestClock`.
+///
+/// `TestTimer` simulates time progression in a controlled environment,
+/// allowing for precise control over event generation in test scenarios.
 #[derive(Clone, Copy, Debug)]
 pub struct TestTimer {
+    /// The name of the timer.
     pub name: Ustr,
+    /// The interval between timer events in nanoseconds.
     pub interval_ns: NonZeroU64,
+    /// The start time of the timer in UNIX nanoseconds.
     pub start_time_ns: UnixNanos,
+    /// The optional stop time of the timer in UNIX nanoseconds.
     pub stop_time_ns: Option<UnixNanos>,
     next_time_ns: UnixNanos,
     is_expired: bool,
@@ -135,6 +150,10 @@ pub struct TestTimer {
 
 impl TestTimer {
     /// Creates a new [`TestTimer`] instance.
+    ///
+    /// # Panics
+    ///
+    /// - If `name` is not a valid string.
     #[must_use]
     pub fn new(
         name: &str,
@@ -181,6 +200,8 @@ impl TestTimer {
     /// Advance the test timer forward to the given time, generating a sequence
     /// of events. A [`TimeEvent`] is appended for each time a next event is
     /// <= the given `to_time_ns`.
+    ///
+    /// This allows testing of multiple time intervals within a single step.
     pub fn advance(&mut self, to_time_ns: UnixNanos) -> impl Iterator<Item = TimeEvent> + '_ {
         let advances = to_time_ns
             .saturating_sub(self.next_time_ns.as_u64() - self.interval_ns.get())
@@ -189,6 +210,8 @@ impl TestTimer {
     }
 
     /// Cancels the timer (the timer will not generate an event).
+    ///
+    /// Used to stop the timer before its scheduled stop time.
     pub fn cancel(&mut self) {
         self.is_expired = true;
     }
@@ -226,10 +249,17 @@ impl Iterator for TestTimer {
 }
 
 /// A live timer for use with a `LiveClock`.
+///
+/// `LiveTimer` triggers events at specified intervals in a real-time environment,
+/// using Tokio's async runtime to handle scheduling and execution.
 pub struct LiveTimer {
+    /// The name of the timer.
     pub name: Ustr,
+    /// The start time of the timer in UNIX nanoseconds.
     pub interval_ns: NonZeroU64,
+    /// The start time of the timer in UNIX nanoseconds.
     pub start_time_ns: UnixNanos,
+    /// The optional stop time of the timer in UNIX nanoseconds.
     pub stop_time_ns: Option<UnixNanos>,
     next_time_ns: Arc<AtomicU64>,
     is_expired: Arc<AtomicBool>,
@@ -239,6 +269,11 @@ pub struct LiveTimer {
 
 impl LiveTimer {
     /// Creates a new [`LiveTimer`] instance.
+    ///
+    /// # Panics
+    ///
+    /// - If `name` is not a valid string.
+    /// - If `interval_ns` is zero.
     #[must_use]
     pub fn new(
         name: &str,
@@ -265,18 +300,25 @@ impl LiveTimer {
     }
 
     /// Returns the next time in UNIX nanoseconds when the timer will fire.
+    ///
+    /// Provides the scheduled time for the next event based on the current state of the timer.
     #[must_use]
     pub fn next_time_ns(&self) -> UnixNanos {
         UnixNanos::from(self.next_time_ns.load(atomic::Ordering::SeqCst))
     }
 
     /// Returns whether the timer is expired.
+    ///
+    /// An expired timer will not trigger any further events.
     #[must_use]
     pub fn is_expired(&self) -> bool {
         self.is_expired.load(atomic::Ordering::SeqCst)
     }
 
     /// Starts the timer.
+    ///
+    /// Time events will begin triggering at the specified intervals.
+    /// The generated events are handled by the provided callback function.
     pub fn start(&mut self) {
         let event_name = self.name;
         let stop_time_ns = self.stop_time_ns;
