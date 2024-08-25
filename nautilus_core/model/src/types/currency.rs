@@ -82,6 +82,7 @@ impl Currency {
     ///
     /// # Panics
     ///
+    /// This function panics:
     /// - If a correctness check fails. See [`Currency::new_checked`] for more details.
     pub fn new(
         code: &str,

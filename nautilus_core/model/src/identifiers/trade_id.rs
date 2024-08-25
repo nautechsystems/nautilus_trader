@@ -51,7 +51,9 @@ impl TradeId {
     ///
     /// # Errors
     ///
-    /// Returns an error if `value` is not a valid string, or value length is greater than 36.
+    /// This function returns an error:
+    /// - If `value` is not a valid string.
+    /// - If `value` length is greater than 36.
     pub fn new_checked(value: &str) -> anyhow::Result<Self> {
         // check that string is non-empty and within the expected length
         check_in_range_inclusive_usize(value.len(), 1, TRADE_ID_LEN, stringify!(value))?;
@@ -67,6 +69,7 @@ impl TradeId {
     ///
     /// # Panics
     ///
+    /// This function panics:
     /// - If `value` is not a valid string, or value length is greater than 36.
     pub fn new(value: &str) -> Self {
         Self::new_checked(value).expect(FAILED)

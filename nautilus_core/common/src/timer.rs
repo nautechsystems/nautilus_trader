@@ -153,6 +153,7 @@ impl TestTimer {
     ///
     /// # Panics
     ///
+    /// This function panics:
     /// - If `name` is not a valid string.
     #[must_use]
     pub fn new(
@@ -272,6 +273,7 @@ impl LiveTimer {
     ///
     /// # Panics
     ///
+    /// This function panics:
     /// - If `name` is not a valid string.
     /// - If `interval_ns` is zero.
     #[must_use]

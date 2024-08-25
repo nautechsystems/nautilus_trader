@@ -57,6 +57,7 @@ pub fn check_predicate_false(predicate: bool, fail_msg: &str) -> anyhow::Result<
 ///
 /// # Errors
 ///
+/// This function returns an error:
 /// - If `s` is an empty string.
 /// - If `s` consists solely of whitespace characters.
 /// - If `s` contains one or more non-ASCII characters.
@@ -87,6 +88,7 @@ pub fn check_valid_string(s: &str, param: &str) -> anyhow::Result<()> {
 ///
 /// # Errors
 ///
+/// This function returns an error:
 /// - If `s` is an empty string.
 /// - If `s` consists solely of whitespace characters.
 /// - If `s` contains one or more non-ASCII characters.

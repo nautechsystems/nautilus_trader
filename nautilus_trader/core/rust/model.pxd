@@ -1654,6 +1654,7 @@ cdef extern from "../includes/model.h":
     #
     # # Panics
     #
+    # This function panics:
     # - If book type is not `L1_MBP`.
     void orderbook_update_quote_tick(OrderBook_API *book, const QuoteTick_t *quote);
 
@@ -1661,6 +1662,7 @@ cdef extern from "../includes/model.h":
     #
     # # Panics
     #
+    # This function panics:
     # - If book type is not `L1_MBP`.
     void orderbook_update_trade_tick(OrderBook_API *book, const TradeTick_t *tick);
 
