@@ -487,7 +487,7 @@ cdef class OrderMatchingEngine:
             return  # Can only process an L1 book with bars
 
         cdef BarType bar_type = bar.bar_type
-        if bar_type._mem.aggregation_source == AggregationSource.INTERNAL:
+        if bar_type.aggregation_source == AggregationSource.INTERNAL:
             return  # Do not process internally aggregated bars
 
         cdef InstrumentId instrument_id = bar_type.instrument_id

@@ -80,17 +80,14 @@ impl BarSpecification {
 #[pymethods]
 impl BarType {
     #[new]
-    #[pyo3(signature = (instrument_id, spec, aggregation_source = AggregationSource::External))]
+    #[pyo3(signature = (instrument_id, spec, aggregation_source = AggregationSource::External)
+    )]
     fn py_new(
         instrument_id: InstrumentId,
         spec: BarSpecification,
         aggregation_source: AggregationSource,
     ) -> Self {
-        Self {
-            instrument_id,
-            spec,
-            aggregation_source,
-        }
+        Self::new(instrument_id, spec, aggregation_source)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

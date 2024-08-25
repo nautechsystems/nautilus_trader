@@ -1117,7 +1117,12 @@ typedef struct BarSpecification_t {
  * Represents a bar type including the instrument ID, bar specification and
  * aggregation source.
  */
-typedef struct BarType_t {
+typedef enum BarType_t_Tag {
+    STANDARD,
+    COMPOSITE,
+} BarType_t_Tag;
+
+typedef struct Standard_Body {
     /**
      * The bar types instrument ID.
      */
@@ -1130,6 +1135,41 @@ typedef struct BarType_t {
      * The bar types aggregation source.
      */
     enum AggregationSource aggregation_source;
+} Standard_Body;
+
+typedef struct Composite_Body {
+    /**
+     * The bar types instrument ID.
+     */
+    struct InstrumentId_t instrument_id;
+    /**
+     * The bar types specification.
+     */
+    struct BarSpecification_t spec;
+    /**
+     * The bar types aggregation source.
+     */
+    enum AggregationSource aggregation_source;
+    /**
+     * The composite bar types instrument ID.
+     */
+    struct InstrumentId_t composite_instrument_id;
+    /**
+     * The composite bar types specification.
+     */
+    struct BarSpecification_t composite_spec;
+    /**
+     * The composite bar types aggregation source.
+     */
+    enum AggregationSource composite_aggregation_source;
+} Composite_Body;
+
+typedef struct BarType_t {
+    BarType_t_Tag tag;
+    union {
+        Standard_Body STANDARD;
+        Composite_Body COMPOSITE;
+    };
 } BarType_t;
 
 /**
@@ -1477,6 +1517,30 @@ uint8_t bar_specification_ge(const struct BarSpecification_t *lhs,
 struct BarType_t bar_type_new(struct InstrumentId_t instrument_id,
                               struct BarSpecification_t spec,
                               uint8_t aggregation_source);
+
+struct BarType_t bar_type_new_composite(struct InstrumentId_t instrument_id,
+                                        struct BarSpecification_t spec,
+                                        enum AggregationSource aggregation_source,
+                                        struct InstrumentId_t composite_instrument_id,
+                                        struct BarSpecification_t composite_spec,
+                                        enum AggregationSource composite_aggregation_source);
+
+struct BarType_t bar_type_from_bar_types(const struct BarType_t *standard,
+                                         const struct BarType_t *composite);
+
+uint8_t bar_type_is_standard(const struct BarType_t *bar_type);
+
+uint8_t bar_type_is_composite(const struct BarType_t *bar_type);
+
+struct BarType_t bar_type_standard(const struct BarType_t *bar_type);
+
+struct BarType_t bar_type_composite(const struct BarType_t *bar_type);
+
+struct InstrumentId_t bar_type_instrument_id(const struct BarType_t *bar_type);
+
+struct BarSpecification_t bar_type_spec(const struct BarType_t *bar_type);
+
+enum AggregationSource bar_type_aggregation_source(const struct BarType_t *bar_type);
 
 /**
  * Returns any [`BarType`] parsing error from the provided C string pointer.

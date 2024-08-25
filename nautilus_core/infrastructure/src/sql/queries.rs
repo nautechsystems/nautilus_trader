@@ -680,11 +680,11 @@ impl DatabaseQueries {
                 instrument_id = $1, step = $2, bar_aggregation = $3::bar_aggregation, price_type = $4::price_type, aggregation_source = $5::aggregation_source,
                 open = $6, high = $7, low = $8, close = $9, volume = $10, ts_event = $11, ts_init = $12, updated_at = CURRENT_TIMESTAMP
         "#)
-            .bind(bar.bar_type.instrument_id.to_string())
-            .bind(bar.bar_type.spec.step as i32)
-            .bind(BarAggregationModel(bar.bar_type.spec.aggregation))
-            .bind(PriceTypeModel(bar.bar_type.spec.price_type))
-            .bind(AggregationSourceModel(bar.bar_type.aggregation_source))
+            .bind(bar.bar_type.instrument_id().to_string())
+            .bind(bar.bar_type.spec().step as i32)
+            .bind(BarAggregationModel(bar.bar_type.spec().aggregation))
+            .bind(PriceTypeModel(bar.bar_type.spec().price_type))
+            .bind(AggregationSourceModel(bar.bar_type.aggregation_source()))
             .bind(bar.open.to_string())
             .bind(bar.high.to_string())
             .bind(bar.low.to_string())
