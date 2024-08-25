@@ -57,6 +57,48 @@ dYdX offers a flexible combination of trigger types, enabling a broader range of
 However, the execution engine currently only supports submitting market and limit orders. Stop orders 
 and trailing stop orders can be implemented later.
 
+## Short-term and long-term orders
+
+dYdX makes a distinction between short-term orders and long-term orders (or stateful orders).
+Short-term orders are meant to be placed immediately and belongs in the same block the order was received.
+These orders stay in-memory up to 20 blocks, with only their fill amount and expiry block height being committed to state. Short-term orders are mainly intended for use by market makers with high throughput or for market orders.
+
+By default, all orders are sent as short-term orders. To construct long-term orders, you can attach a tag to
+an order like this:
+
+```python
+from nautilus_trader.adapters.dydx.common.common import DYDXOrderTags
+
+order: LimitOrder = self.order_factory.limit(
+    instrument_id=self.instrument_id,
+    order_side=OrderSide.BUY,
+    quantity=self.instrument.make_qty(self.trade_size),
+    price=self.instrument.make_price(price),
+    time_in_force=TimeInForce.GTD,
+    expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
+    post_only=True,
+    emulation_trigger=self.emulation_trigger,
+    tags=[DYDXOrderTags(is_short_term_order=False).value],
+)
+```
+
+To specify the number of blocks that an order is active:
+```python
+from nautilus_trader.adapters.dydx.common.common import DYDXOrderTags
+
+order: LimitOrder = self.order_factory.limit(
+    instrument_id=self.instrument_id,
+    order_side=OrderSide.BUY,
+    quantity=self.instrument.make_qty(self.trade_size),
+    price=self.instrument.make_price(price),
+    time_in_force=TimeInForce.GTD,
+    expire_time=self.clock.utc_now() + pd.Timedelta(seconds=5),
+    post_only=True,
+    emulation_trigger=self.emulation_trigger,
+    tags=[DYDXOrderTags(is_short_term_order=True, num_blocks_open=5).value],
+)
+```
+
 ## Configuration
 
 The product types for each client must be specified in the configurations.
