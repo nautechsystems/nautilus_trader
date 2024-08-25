@@ -55,10 +55,16 @@ pub struct Currency {
 impl Currency {
     /// Creates a new [`Currency`] instance with correctness checking.
     ///
-    /// Ensures `code` and `name` are valid strings, and `precison` is valid within range.
-    /// If a correctness check fails, an `Error` is returned.
+    /// # Errors
     ///
-    /// Note: PyO3 requires a `Result` type that stacktrace can be printed for errors.
+    /// This function returns an error:
+    /// - If `code` is not a valid string.
+    /// - If `name` is not a valid string.
+    /// - If `precision` is invalid outside the valid representable range [0, 9].
+    ///
+    /// # Notes
+    ///
+    /// PyO3 requires a `Result` type that stacktrace can be printed for errors.
     pub fn new_checked(
         code: &str,
         precision: u8,
@@ -94,6 +100,15 @@ impl Currency {
         Self::new_checked(code, precision, iso4217, name, currency_type).expect(FAILED)
     }
 
+    /// Register the given `currency` in the internal currency map.
+    ///
+    /// - If `overwrite` is `true`, any existing currency will be replaced.
+    /// - If `overwrite` is `false` and the currency already exists, the operation is a no-op.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error:
+    /// - If there is a failure acquiring the lock on the currency map.
     pub fn register(currency: Self, overwrite: bool) -> anyhow::Result<()> {
         let mut map = CURRENCY_MAP
             .lock()
@@ -109,16 +124,38 @@ impl Currency {
         Ok(())
     }
 
+    /// Checks if the currency identified by the given `code` is a fiat currency.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error:
+    /// - If a currency with the given `code` does not exist.
+    /// - If there is a failure acquiring the lock on the currency map.
     pub fn is_fiat(code: &str) -> anyhow::Result<bool> {
         let currency = Self::from_str(code)?;
         Ok(currency.currency_type == CurrencyType::Fiat)
     }
 
+    /// Checks if the currency identified by the given `code` is a cryptocurrency.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error:
+    /// - If a currency with the given `code` does not exist.
+    /// - If there is a failure acquiring the lock on the currency map.
     pub fn is_crypto(code: &str) -> anyhow::Result<bool> {
         let currency = Self::from_str(code)?;
         Ok(currency.currency_type == CurrencyType::Crypto)
     }
 
+    /// Checks if the currency identified by the given `code` is a commodity (such as a precious
+    /// metal).
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error:
+    /// - If a currency with the given `code` does not exist.
+    /// - If there is a failure acquiring the lock on the currency map.
     pub fn is_commodity_backed(code: &str) -> anyhow::Result<bool> {
         let currency = Self::from_str(code)?;
         Ok(currency.currency_type == CurrencyType::CommodityBacked)
