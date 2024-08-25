@@ -10,8 +10,10 @@ cdef extern from "../includes/model.h":
     # The maximum length of ASCII characters for a `TradeId` string value (including null terminator).
     const uintptr_t TRADE_ID_LEN # = 37
 
+    # The maximum fixed-point precision.
     const uint8_t FIXED_PRECISION # = 9
 
+    # The scalar value corresponding to the maximum precision (10^9).
     const double FIXED_SCALAR # = 1000000000.0
 
     # The maximum valid money amount which can be represented.
@@ -456,12 +458,38 @@ cdef extern from "../includes/model.h":
         # The instruments trading venue.
         Venue_t venue;
 
+    # Represents a price in a market.
+    #
+    # The number of decimal places may vary. For certain asset classes, prices may
+    # have negative values. For example, prices for options instruments can be
+    # negative under certain conditions.
+    #
+    # Handles up to 9 decimals of precision.
+    #
+    #  - `PRICE_MAX` = 9_223_372_036
+    #  - `PRICE_MIN` = -9_223_372_036
     cdef struct Price_t:
+        # The raw price as a signed 64-bit integer.
+        # Represents the unscaled value, with `precision` defining the number of decimal places.
         int64_t raw;
+        # The number of decimal places, with a maximum precision of 9.
         uint8_t precision;
 
+    # Represents a quantity with a non-negative value.
+    #
+    # Capable of storing either a whole number (no decimal places) of 'contracts'
+    # or 'shares' (instruments denominated in whole units) or a decimal value
+    # containing decimal places for instruments denominated in fractional units.
+    #
+    # Handles up to 9 decimals of precision.
+    #
+    # - `QUANTITY_MAX` = 18_446_744_073
+    # - `QUANTITY_MIN` = 0
     cdef struct Quantity_t:
+        # The raw quantity as an unsigned 64-bit integer.
+        # Represents the unscaled value, with `precision` defining the number of decimal places.
         uint64_t raw;
+        # The number of decimal places, with a maximum precision of 9.
         uint8_t precision;
 
     # Represents an order in a book.
@@ -770,15 +798,30 @@ cdef extern from "../includes/model.h":
     cdef struct Level_API:
         Level *_0;
 
+    # Represents a medium of exchange in a specified denomination with a fixed decimal precision.
+    #
+    # Handles up to 9 decimals of precision.
     cdef struct Currency_t:
+        # The currency code as an alpha-3 string (e.g., "USD", "EUR").
         char* code;
+        # The currency decimal precision.
         uint8_t precision;
+        # The currency code (ISO 4217).
         uint16_t iso4217;
+        # The full name of the currency.
         char* name;
+        # The currency type, indicating its category (e.g. Fiat, Crypto).
         CurrencyType currency_type;
 
+    # Represents an amount of money in a specified currency denomination.
+    #
+    # - `MONEY_MAX` = 9_223_372_036
+    # - `MONEY_MIN` = -9_223_372_036
     cdef struct Money_t:
+        # The raw monetary amount as a signed 64-bit integer.
+        # Represents the unscaled amount, with `currency.precision` defining the number of decimal places.
         int64_t raw;
+        # The currency denomination associated with the monetary amount.
         Currency_t currency;
 
     const BookOrder_t NULL_ORDER # = <BookOrder_t>{ OrderSide_NoOrderSide, <Price_t>{ 0, 0 }, <Quantity_t>{ 0, 0 }, 0 }

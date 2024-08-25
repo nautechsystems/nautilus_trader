@@ -13,6 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Represents a medium of exchange in a specified denomination with a fixed decimal precision.
+//!
+//! Handles up to 9 decimals of precision.
+
 use std::{
     fmt::{Debug, Display, Formatter},
     hash::{Hash, Hasher},
@@ -26,6 +30,9 @@ use ustr::Ustr;
 use super::fixed::check_fixed_precision;
 use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
 
+/// Represents a medium of exchange in a specified denomination with a fixed decimal precision.
+///
+/// Handles up to 9 decimals of precision.
 #[repr(C)]
 #[derive(Clone, Copy, Eq)]
 #[cfg_attr(
@@ -33,10 +40,15 @@ use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct Currency {
+    /// The currency code as an alpha-3 string (e.g., "USD", "EUR").
     pub code: Ustr,
+    /// The currency decimal precision.
     pub precision: u8,
+    /// The currency code (ISO 4217).
     pub iso4217: u16,
+    /// The full name of the currency.
     pub name: Ustr,
+    /// The currency type, indicating its category (e.g. Fiat, Crypto).
     pub currency_type: CurrencyType,
 }
 
@@ -70,7 +82,7 @@ impl Currency {
     ///
     /// # Panics
     ///
-    /// - If a correctness check fails. See [`new_checked`] for more details.
+    /// - If a correctness check fails. See [`Currency::new_checked`] for more details.
     pub fn new(
         code: &str,
         precision: u8,

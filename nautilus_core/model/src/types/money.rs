@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Represents an amount of money in a specified currency denomination.
+
 use std::{
     cmp::Ordering,
     fmt::{Debug, Display},
@@ -38,6 +40,10 @@ pub const MONEY_MAX: f64 = 9_223_372_036.0;
 /// The minimum valid money amount which can be represented.
 pub const MONEY_MIN: f64 = -9_223_372_036.0;
 
+/// Represents an amount of money in a specified currency denomination.
+///
+/// - `MONEY_MAX` = 9_223_372_036
+/// - `MONEY_MIN` = -9_223_372_036
 #[repr(C)]
 #[derive(Clone, Copy, Eq)]
 #[cfg_attr(
@@ -45,7 +51,10 @@ pub const MONEY_MIN: f64 = -9_223_372_036.0;
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct Money {
+    /// The raw monetary amount as a signed 64-bit integer.
+    /// Represents the unscaled amount, with `currency.precision` defining the number of decimal places.
     pub raw: i64,
+    /// The currency denomination associated with the monetary amount.
     pub currency: Currency,
 }
 
@@ -69,7 +78,7 @@ impl Money {
     ///
     /// # Panics
     ///
-    /// - If a correctness check fails. See [`new_checked`] for more details.
+    /// - If a correctness check fails. See [`Money::new_checked`] for more details.
     pub fn new(amount: f64, currency: Currency) -> Self {
         Self::new_checked(amount, currency).expect(FAILED)
     }
