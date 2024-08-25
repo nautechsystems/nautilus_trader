@@ -811,14 +811,12 @@ cdef class SimulatedExchange:
 
     cpdef void process_instrument_close(self, InstrumentClose close):
         """
-        Process the exchanges market for the given bar.
-
-        Market dynamics are simulated by auctioning open orders.
+        Process the exchanges market for the given instrument close..
 
         Parameters
         ----------
-        bar : Bar
-            The bar to process.
+        close : InstrumentClose
+            The instrument close to process.
 
         """
         Condition.not_none(close, "close")

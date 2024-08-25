@@ -80,7 +80,7 @@ cdef class OrderMatchingEngine:
     cdef OrderBook _closing_auction_book
     cdef FillModel _fill_model
     cdef FeeModel _fee_model
-    cdef InstrumentClose _instrument_expiry_message
+    cdef InstrumentClose _instrument_close
     # cdef object _auction_match_algo
     cdef bint _instrument_has_expiration
     cdef bint _bar_execution
