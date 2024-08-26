@@ -22,7 +22,7 @@ use std::{
 use futures::SinkExt;
 use futures_util::{stream, StreamExt};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
-use pyo3::{exceptions::PyException, prelude::*, types::PyBytes};
+use pyo3::{create_exception, exceptions::PyException, prelude::*, types::PyBytes};
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::{
@@ -30,6 +30,13 @@ use crate::{
     ratelimiter::{quota::Quota, RateLimiter},
     websocket::{WebSocketClient, WebSocketConfig},
 };
+
+/// Python exception class for websocket errors.
+create_exception!(network, WebSocketClientError, PyException);
+
+fn websocket_to_pyerr(e: tokio_tungstenite::tungstenite::Error) -> PyErr {
+    PyErr::new::<WebSocketClientError, _>(e.to_string())
+}
 
 #[pymethods]
 impl WebSocketConfig {
@@ -77,7 +84,7 @@ impl WebSocketClient {
                 post_disconnection,
             )
             .await
-            .map_err(to_pyruntime_err)
+            .map_err(websocket_to_pyerr)
         })
     }
 
@@ -117,7 +124,7 @@ impl WebSocketClient {
             guard
                 .send(Message::Binary(data))
                 .await
-                .map_err(to_pyruntime_err)
+                .map_err(websocket_to_pyerr)
         })
     }
 
@@ -139,7 +146,7 @@ impl WebSocketClient {
             guard
                 .send(Message::Text(data))
                 .await
-                .map_err(to_pyruntime_err)
+                .map_err(websocket_to_pyerr)
         })
     }
 
@@ -162,7 +169,7 @@ impl WebSocketClient {
             guard
                 .send(Message::Pong(data))
                 .await
-                .map_err(to_pyruntime_err)
+                .map_err(websocket_to_pyerr)
         })
     }
 

@@ -23,20 +23,17 @@ use std::{
 
 use bytes::Bytes;
 use futures_util::{stream, StreamExt};
-use pyo3::{
-    create_exception,
-    exceptions::{PyBaseException, PyException},
-    prelude::*,
-    types::PyBytes,
-};
+use pyo3::{create_exception, exceptions::PyException, prelude::*, types::PyBytes};
 
 use crate::{
     http::{HttpClient, HttpClientError, HttpMethod, HttpResponse, InnerHttpClient},
     ratelimiter::{quota::Quota, RateLimiter},
 };
 
-create_exception!(network, HttpError, PyBaseException);
-create_exception!(network, HttpTimeoutError, PyBaseException);
+/// Python exception class for generic HTTP errors.
+create_exception!(network, HttpError, PyException);
+/// Python exception class for generic HTTP timeout errors.
+create_exception!(network, HttpTimeoutError, PyException);
 
 impl HttpClientError {
     pub fn into_py_err(self) -> PyErr {
@@ -94,6 +91,21 @@ impl HttpClient {
     /// `keyed_quota`: A list of string quota pairs that gives quota for specific key values.
     /// `default_quota`: The default rate limiting quota for any request.
     /// Default quota is optional and no quota is passthrough.
+    ///
+    /// Rate limiting can be configured on a per-endpoint basis by passing
+    /// key-value pairs of endpoint URLs and their respective quotas.
+    ///
+    /// For /foo -> 10 reqs/sec configure limit with ("foo", Quota.rate_per_second(10))
+    ///
+    /// Hierarchical rate limiting can be achieved by configuring the quotas for
+    /// each level.
+    ///
+    /// For /foo/bar -> 10 reqs/sec and /foo -> 20 reqs/sec configure limits for
+    /// keys "foo/bar" and "foo" respectively.
+    ///
+    /// When a request is made the URL should be split into all the keys within it.
+    ///
+    /// For request /foo/bar, should pass keys ["foo/bar", "foo"] for rate limiting.
     #[new]
     #[pyo3(signature = (header_keys = Vec::new(), keyed_quotas = Vec::new(), default_quota = None))]
     #[must_use]
@@ -123,6 +135,12 @@ impl HttpClient {
     /// `headers`: The header key value pairs in the request.
     /// `body`: The bytes sent in the body of request.
     /// `keys`: The keys used for rate limiting the request.
+    ///
+    /// # Example
+    ///
+    /// When a request is made the URL should be split into all relevant keys within it.
+    ///
+    /// For request /foo/bar, should pass keys ["foo/bar", "foo"] for rate limiting.
     #[pyo3(name = "request")]
     fn py_request<'py>(
         &self,
