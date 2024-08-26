@@ -19,9 +19,9 @@ pub mod http;
 pub mod socket;
 pub mod websocket;
 
-use pyo3::prelude::*;
-
 use crate::python::http::{HttpError, HttpTimeoutError};
+use crate::python::websocket::WebSocketClientError;
+use pyo3::{prelude::*, PyTypeCheck, PyTypeInfo};
 
 /// Loaded as nautilus_pyo3.network
 #[pymodule]
@@ -36,9 +36,16 @@ pub fn network(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::socket::SocketConfig>()?;
 
     // Add error classes
-    m.add("HttpError", m.py().get_type_bound::<HttpError>())?;
     m.add(
-        "HttpTimeoutError",
+        <WebSocketClientError as PyTypeCheck>::NAME,
+        m.py().get_type_bound::<WebSocketClientError>(),
+    )?;
+    m.add(
+        <HttpError as PyTypeCheck>::NAME,
+        m.py().get_type_bound::<HttpError>(),
+    )?;
+    m.add(
+        <HttpTimeoutError as PyTypeCheck>::NAME,
         m.py().get_type_bound::<HttpTimeoutError>(),
     )?;
 
