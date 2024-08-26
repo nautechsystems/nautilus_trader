@@ -251,6 +251,10 @@ class BacktestRunConfig(NautilusConfig, frozen=True):
         The backtest engine configuration (the core system kernel).
     batch_size_bytes : optional
         The batch block size in bytes (will then run in streaming mode).
+    dispose_on_completion : bool, default True
+        If the backtest engine should be disposed on completion of the run.
+        If True, then will drop both data and all state.
+        If False, then will only drop data.
 
     """
 
@@ -258,6 +262,7 @@ class BacktestRunConfig(NautilusConfig, frozen=True):
     data: list[BacktestDataConfig]
     engine: BacktestEngineConfig | None = None
     batch_size_bytes: int | None = None
+    dispose_on_completion: bool = True
 
 
 class SimulationModuleConfig(ActorConfig, frozen=True):

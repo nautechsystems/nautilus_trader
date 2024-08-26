@@ -6,8 +6,9 @@ Released on TBD (UTC).
 - Added dYdX integration (#1861, #1868, #1873, #1874, #1875, #1877), thanks @davidsblom
 - Added composite bar types, bars aggregating from other bar types (#1859), thanks @faysou
 - Added `InstrumentClose` functionality for `OrderMatchingEngine`, thanks @limx0
+- Added `BacktestRunConfig.dispose_on_completion` config setting to control post-run disposal behavior for each internal backtest engine (`True` by default to retain current behavior)
 - Improved error modeling and handling in Rust (#1866), thanks @twitu
-- Improved `HttpClient` error handling and exceptions (#1872), thanks @twitu
+- Improved `HttpClient` error handling and added `HttpClientError` exception for Python (#1872), thanks @twitu
 - Implemented `OrderMatchingEngine` in Rust, thanks @filipmacek
 
 ### Breaking Changes
@@ -118,7 +119,7 @@ Released on 5th July 2024 (UTC).
 ### Enhancements
 - Added `request_order_book_snapshot` method (#1745), thanks @graceyangfan
 - Added order book data validation for `BacktestNode` when a venue `book_type` is `L2_MBP` or `L3_MBO`
-- Added Bybit demo account support (set `is_demo` to True in configs)
+- Added Bybit demo account support (set `is_demo` to `True` in configs)
 - Added Bybit stop order types (`STOP_MARKET`, `STOP_LIMIT`, `MARKET_IF_TOUCHED`, `LIMIT_IF_TOUCHED`, `TRAILING_STOP_MARKET`)
 - Added Binance venue option for adapter configurations (#1738), thanks @DevRoss
 - Added Betfair amend order quantity support (#1687 and #1751), thanks @imemo88 and @limx0
@@ -1054,7 +1055,7 @@ Released on 18th February 2023 (UTC).
 ### Enhancements
 - Complete overhaul and improvements to Binance adapter(s), thanks @poshcoe
 - Added Binance aggregated trades functionality with `use_agg_trade_ticks`, thanks @poshcoe
-- Added `time_bars_timestamp_on_close` option for configurable bar timestamping (true by default)
+- Added `time_bars_timestamp_on_close` option for configurable bar timestamping (`True` by default)
 - Added `OrderFactory.generate_client_order_id()` (calls internal generator)
 - Added `OrderFactory.generate_order_list_id()` (calls internal generator)
 - Added `OrderFactory.create_list(...)` as easier method for creating order lists
