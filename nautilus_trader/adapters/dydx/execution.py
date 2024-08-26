@@ -55,6 +55,7 @@ from nautilus_trader.adapters.dydx.websocket.client import DYDXWebsocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
+from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
@@ -62,6 +63,7 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
@@ -840,9 +842,27 @@ class DYDXExecutionClient(LiveExecutionClient):
 
         return result
 
-    async def _submit_order(self, command: SubmitOrder) -> None:
-        order = command.order
+    async def _submit_order_list(self, command: SubmitOrderList) -> None:
+        """
+        Submit a batch of orders at once.
 
+        dYdX does not support sending a batch of orders at once, but this method ensures
+        that the wallet sequence number is correctly incremented when sending multiple
+        orders at once.
+
+        In case orders are canceled and submitted in parallel, the wallet sequence
+        number is sometimes incorrect resulting in rejected orders or rejected cancels.
+
+        """
+        self._log.debug(f"Submit {len(command.order_list.orders)} orders", LogColor.CYAN)
+
+        for order in command.order_list.orders:
+            await self._submit_order_single(order=order)
+
+    async def _submit_order_single(self, order) -> None:
+        """
+        Submit a single order.
+        """
         if order.is_closed:
             self._log.warning(f"Order {order} is already closed")
             return
@@ -878,7 +898,7 @@ class DYDXExecutionClient(LiveExecutionClient):
 
         dydx_order_tags = self._parse_order_tags(order=order)
         order_flags = OrderFlags.SHORT_TERM
-        good_till_date_secs: int | None = None
+        good_til_date_secs: int | None = None
         good_til_block: int | None = None
 
         if dydx_order_tags.is_short_term_order:
@@ -900,7 +920,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             good_til_block = latest_block + dydx_order_tags.num_blocks_open
         else:
             order_flags = OrderFlags.LONG_TERM
-            good_till_date_secs = (
+            good_til_date_secs = (
                 int(nanos_to_secs(order.expire_time_ns)) if order.expire_time_ns else None
             )
 
@@ -957,7 +977,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             reduce_only=order.is_reduce_only,
             post_only=order.is_post_only,
             good_til_block=good_til_block,
-            good_til_block_time=good_till_date_secs,
+            good_til_block_time=good_til_date_secs,
         )
 
         if self._wallet is None:
@@ -1002,6 +1022,9 @@ class DYDXExecutionClient(LiveExecutionClient):
                 reason=rejection_reason,
                 ts_event=self._clock.timestamp_ns(),
             )
+
+    async def _submit_order(self, command: SubmitOrder) -> None:
+        await self._submit_order_single(order=command.order)
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         await self._cancel_order_single(
@@ -1060,11 +1083,13 @@ class DYDXExecutionClient(LiveExecutionClient):
 
         dydx_order_tags = self._parse_order_tags(order=order)
         order_flags = OrderFlags.SHORT_TERM
-        good_til_block_time: int | None = None
+        good_til_date_secs: int | None = None
 
         if dydx_order_tags.is_short_term_order is False:
             order_flags = OrderFlags.LONG_TERM
-            good_til_block_time = int(nanos_to_secs(self._clock.timestamp_ns())) + 120
+            good_til_date_secs = (
+                int(nanos_to_secs(order.expire_time_ns)) if order.expire_time_ns else None
+            )
 
         order_id = order_builder.create_order_id(
             address=self._wallet_address,
@@ -1082,7 +1107,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             wallet=self._wallet,
             order_id=order_id,
             good_til_block=current_block + 10,
-            good_til_block_time=good_til_block_time,
+            good_til_block_time=good_til_date_secs,
         )
 
         if response.tx_response.code != 0:
