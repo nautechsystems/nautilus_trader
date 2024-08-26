@@ -2564,6 +2564,9 @@ class Quota:
     @classmethod
     def rate_per_hour(cls, max_burst: int) -> Quota: ...
 
+class WebSocketClientError(Exception):
+    ...
+
 class WebSocketConfig:
     def __init__(
         self,
