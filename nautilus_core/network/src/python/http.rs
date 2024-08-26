@@ -32,6 +32,7 @@ use crate::{
 
 /// Python exception class for generic HTTP errors.
 create_exception!(network, HttpError, PyException);
+
 /// Python exception class for generic HTTP timeout errors.
 create_exception!(network, HttpTimeoutError, PyException);
 

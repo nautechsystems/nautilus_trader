@@ -34,7 +34,7 @@ use crate::{
 /// Python exception class for websocket errors.
 create_exception!(network, WebSocketClientError, PyException);
 
-fn websocket_to_pyerr(e: tokio_tungstenite::tungstenite::Error) -> PyErr {
+fn to_websocket_pyerr(e: tokio_tungstenite::tungstenite::Error) -> PyErr {
     PyErr::new::<WebSocketClientError, _>(e.to_string())
 }
 
@@ -84,7 +84,7 @@ impl WebSocketClient {
                 post_disconnection,
             )
             .await
-            .map_err(websocket_to_pyerr)
+            .map_err(to_websocket_pyerr)
         })
     }
 
@@ -124,7 +124,7 @@ impl WebSocketClient {
             guard
                 .send(Message::Binary(data))
                 .await
-                .map_err(websocket_to_pyerr)
+                .map_err(to_websocket_pyerr)
         })
     }
 
@@ -146,7 +146,7 @@ impl WebSocketClient {
             guard
                 .send(Message::Text(data))
                 .await
-                .map_err(websocket_to_pyerr)
+                .map_err(to_websocket_pyerr)
         })
     }
 
@@ -169,7 +169,7 @@ impl WebSocketClient {
             guard
                 .send(Message::Pong(data))
                 .await
-                .map_err(websocket_to_pyerr)
+                .map_err(to_websocket_pyerr)
         })
     }
 
