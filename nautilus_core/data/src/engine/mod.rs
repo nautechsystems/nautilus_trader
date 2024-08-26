@@ -31,6 +31,7 @@
 // Under development
 #![allow(dead_code)]
 #![allow(unused_variables)]
+#![allow(unused_assignments)]
 
 pub mod runner;
 
@@ -38,6 +39,7 @@ use std::{
     any::Any,
     cell::RefCell,
     collections::{HashMap, HashSet},
+    num::NonZeroU64,
     ops::Deref,
     rc::Rc,
     sync::Arc,
@@ -49,12 +51,13 @@ use nautilus_common::{
     clock::Clock,
     logging::{RECV, RES},
     messages::data::{DataRequest, DataResponse, SubscriptionCommand},
-    msgbus::{
-        handler::{MessageHandler, ShareableMessageHandler},
-        MessageBus,
-    },
+    msgbus::{handler::MessageHandler, MessageBus},
+    timer::TimeEvent,
 };
-use nautilus_core::correctness::{check_key_in_index_map, check_key_not_in_index_map, FAILED};
+use nautilus_core::{
+    correctness::{check_key_in_index_map, check_key_not_in_index_map, FAILED},
+    datetime::{millis_to_nanos, NANOSECONDS_IN_MILLISECOND, NANOSECONDS_IN_SECOND},
+};
 use nautilus_model::{
     data::{
         bar::{Bar, BarType},
@@ -108,7 +111,7 @@ pub struct DataEngine {
     default_client: Option<DataClientAdapter>,
     external_clients: HashSet<ClientId>,
     routing_map: IndexMap<Venue, ClientId>,
-    // order_book_intervals: HashMap<(InstrumentId, usize), Vec<fn(&OrderBook)>>,  // TODO
+    order_book_intervals: HashMap<NonZeroU64, HashSet<InstrumentId>>,
     bar_aggregators: Vec<Box<dyn BarAggregator>>, // TODO: dyn for now
     synthetic_quote_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     synthetic_trade_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
@@ -131,9 +134,10 @@ impl DataEngine {
             cache,
             msgbus,
             clients: IndexMap::new(),
-            routing_map: IndexMap::new(),
             default_client: None,
             external_clients: HashSet::new(),
+            routing_map: IndexMap::new(),
+            order_book_intervals: HashMap::new(),
             bar_aggregators: Vec::new(),
             synthetic_quote_feeds: HashMap::new(),
             synthetic_trade_feeds: HashMap::new(),
@@ -329,26 +333,35 @@ impl DataEngine {
     pub fn execute(&mut self, msg: &dyn Any) {
         if let Some(cmd) = msg.downcast_ref::<SubscriptionCommand>() {
             match cmd.data_type.type_name() {
-                stringify!(OrderBookDelta) => {
-                    // TODO: Check not synthetic
-                    // TODO: Setup order book
-                }
-                stringify!(OrderBook) => {
-                    // TODO: Check not synthetic
-                    // TODO: Setup timer at interval
-                    // TODO: Setup order book
-                }
-                type_name => log::error!("Cannot handle request, type {type_name} is unrecognized"),
+                stringify!(OrderBookDelta) => self.handle_subscribe_book_deltas(cmd),
+                stringify!(OrderBook) => self.handle_subscribe_book_snapshots(cmd),
+                // stringify!(QuoteTick) => self.handle_subscribe_quote_ticks(cmd),
+                // stringify!(TradeTick) => self.handle_subscribe_trade_ticks(cmd),
+                // stringify!(Bar) => self.handle_subscribe_bars(cmd),
+                type_name => Err(anyhow::anyhow!(
+                    "Cannot handle subscription, type `{type_name}` is unrecognized"
+                )),
             }
+            .unwrap_or_else(|e| log::error!("{e}"));
 
             if let Some(client) = self.get_client_mut(&cmd.client_id, &cmd.venue) {
                 client.execute(cmd.clone());
+
+                // TBD if we want to do the below instead
+                // if client.handles_order_book_deltas {
+                //     client.subscribe_order_book_deltas(instrument_id, book_type, depth)?;
+                // } else if client.handles_order_book_snapshots {
+                //     client.subscribe_order_book_snapshots(instrument_id, book_type, depth)?;
+                // } else {
+                //     anyhow::bail!("Cannot subscribe order book for {instrument_id}: client does not handle book subscriptions");
+                // }
+                // client.execute(command);
             } else {
                 log::error!(
                     "Cannot handle command: no client found for {}",
                     cmd.client_id
                 );
-            }
+            };
         } else {
             log::error!("Invalid message type received: {msg:?}");
         }
@@ -547,6 +560,87 @@ impl DataEngine {
         msgbus.publish(&topic, &bar as &dyn Any); // TODO: Optimize
     }
 
+    // -- SUBSCRIPTION HANDLERS -------------------------------------------------------------------
+
+    fn handle_subscribe_book_deltas(
+        &mut self,
+        command: &SubscriptionCommand,
+    ) -> anyhow::Result<()> {
+        let data_type = command.data_type.clone();
+        let instrument_id = data_type.instrument_id();
+        let book_type = data_type.book_type();
+        let depth = data_type.depth();
+        let managed = data_type.managed();
+
+        if let Some(instrument_id) = instrument_id {
+            if instrument_id.is_synthetic() {
+                anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDelta` data");
+            }
+
+            if self.subscribed_order_book_deltas().contains(&instrument_id) {
+                return Ok(());
+            }
+
+            self.setup_order_book(&instrument_id, book_type, depth, true, managed)?;
+
+            Ok(())
+        } else {
+            anyhow::bail!("Invalid order book deltas subscription: did not contain an `instrument_id`, {data_type}");
+        }
+    }
+
+    fn handle_subscribe_book_snapshots(
+        &mut self,
+        command: &SubscriptionCommand,
+    ) -> anyhow::Result<()> {
+        let data_type = command.data_type.clone();
+        let instrument_id = data_type.instrument_id();
+        let book_type = data_type.book_type();
+        let depth = data_type.depth();
+        let interval_ms = data_type.interval_ms();
+        let managed = data_type.managed();
+
+        if let Some(instrument_id) = instrument_id {
+            if instrument_id.is_synthetic() {
+                anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDelta` data");
+            }
+
+            if self.subscribed_order_book_deltas().contains(&instrument_id) {
+                return Ok(());
+            }
+
+            // TODO: Setup timer at interval
+            if !self.order_book_intervals.contains_key(&interval_ms) {
+                let timer_name = format!("OrderBook|{interval_ms}");
+                let interval_ns = millis_to_nanos(interval_ms.get() as f64);
+                let now_ns = self.clock.timestamp_ns().as_u64();
+                let mut start_time_ns = now_ns - (now_ns % interval_ns);
+
+                if start_time_ns - NANOSECONDS_IN_MILLISECOND <= now_ns {
+                    start_time_ns += NANOSECONDS_IN_SECOND; // Add one second
+                }
+
+                // let callback = SafeTimeEventCallback {
+                //     callback: Box::new(move |event| self.snapshot_order_book(event)),
+                // };
+                //
+                // self.clock.set_timer_ns(
+                //     timer_name.as_str(),
+                //     interval_ns,
+                //     start_time_ns,
+                //     None,
+                //     handler,
+                // )
+            }
+
+            self.setup_order_book(&instrument_id, book_type, depth, true, managed)?;
+
+            Ok(())
+        } else {
+            anyhow::bail!("Invalid order book deltas subscription: did not contain an `instrument_id`, {data_type}");
+        }
+    }
+
     // -- RESPONSE HANDLERS -----------------------------------------------------------------------
 
     fn handle_instruments(&self, instruments: Arc<Vec<InstrumentAny>>) {
@@ -582,50 +676,44 @@ impl DataEngine {
     #[allow(clippy::too_many_arguments)]
     fn setup_order_book(
         &mut self,
-        client: &mut DataClientAdapter,
-        command: SubscriptionCommand, // TODO: How are we handling commands and clients?
         instrument_id: &InstrumentId,
         book_type: BookType,
         depth: Option<usize>,
         only_deltas: bool,
         managed: bool,
     ) -> anyhow::Result<()> {
-        let mut cache = self.cache.borrow_mut();
-        if managed && !cache.has_order_book(instrument_id) {
-            let book = OrderBook::new(*instrument_id, book_type);
-            log::debug!("Created {book}");
-            cache.add_order_book(book)?;
+        {
+            let mut cache = self.cache.borrow_mut();
+            if managed && !cache.has_order_book(instrument_id) {
+                let book = OrderBook::new(*instrument_id, book_type);
+                log::debug!("Created {book}");
+                cache.add_order_book(book)?;
+            }
         }
 
-        if !self.subscribed_order_book_deltas().contains(instrument_id) {
-            client.execute(command);
-        }
-
-        if client.handles_order_book_deltas {
-            client.subscribe_order_book_deltas(instrument_id, book_type, depth)?;
-        } else if client.handles_order_book_snapshots {
-            client.subscribe_order_book_snapshots(instrument_id, book_type, depth)?;
-        } else {
-            anyhow::bail!("Cannot subscribe order book for {instrument_id}: client does not handle book subscriptions");
-        }
-
-        // Set up subscriptions
-        let mut msgbus = self.msgbus.borrow_mut();
-        let topic = msgbus.switchboard.get_deltas_topic(*instrument_id);
-        let handler = ShareableMessageHandler(Rc::new(BookDataHandler {
-            id: Ustr::from(stringify!(update_order_book)),
-            engine_ref: self.handler_ref.clone().expect(UNINITIALIZED),
-        }));
-
-        if !msgbus.is_subscribed(topic.as_str(), handler.clone()) {
-            msgbus.subscribe(topic, handler.clone(), Some(self.msgbus_priority));
-        }
-
-        let topic = msgbus.switchboard.get_depth_topic(*instrument_id);
-
-        if !only_deltas && !msgbus.is_subscribed(topic.as_str(), handler.clone()) {
-            msgbus.subscribe(topic, handler, Some(self.msgbus_priority));
-        }
+        // TODO: TBD based on ShareableMessageHandler
+        // let handler_ref = self.handler_ref.clone().expect(UNINITIALIZED);
+        //
+        // {
+        //     let mut msgbus = self.msgbus.borrow_mut();
+        //
+        //     // Set up subscriptions
+        //     let topic = msgbus.switchboard.get_deltas_topic(*instrument_id);
+        //     let handler = ShareableMessageHandler(Rc::new(BookDataHandler {
+        //         id: Ustr::from(stringify!(update_order_book)),
+        //         engine_ref: handler_ref,
+        //     }));
+        //
+        //     if !msgbus.is_subscribed(topic.as_str(), handler.clone()) {
+        //         msgbus.subscribe(topic, handler.clone(), Some(self.msgbus_priority));
+        //     }
+        //
+        //     let topic = msgbus.switchboard.get_depth_topic(*instrument_id);
+        //
+        //     if !only_deltas && !msgbus.is_subscribed(topic.as_str(), handler.clone()) {
+        //         msgbus.subscribe(topic, handler, Some(self.msgbus_priority));
+        //     }
+        // }
 
         Ok(())
     }
@@ -646,6 +734,10 @@ impl DataEngine {
                 _ => log::error!("Invalid data type for book update, was {data:?}"),
             }
         }
+    }
+
+    fn snapshot_order_book(&self, event: TimeEvent) {
+        todo!()
     }
 }
 
@@ -861,6 +953,7 @@ mod tests {
         let metadata = indexmap! {
             "instrument_id".to_string() => audusd_sim.id.to_string(),
             "book_type".to_string() => BookType::L3_MBO.to_string(),
+            "managed".to_string() => "true".to_string(),
         };
         let data_type = DataType::new(stringify!(OrderBookDelta), Some(metadata));
         let cmd = SubscriptionCommand::new(
@@ -901,6 +994,7 @@ mod tests {
         let metadata = indexmap! {
             "instrument_id".to_string() => audusd_sim.id.to_string(),
             "book_type".to_string() => BookType::L2_MBP.to_string(),
+            "managed".to_string() => "true".to_string(),
         };
         let data_type = DataType::new(stringify!(OrderBookDeltas), Some(metadata));
         let cmd = SubscriptionCommand::new(
@@ -1149,6 +1243,7 @@ mod tests {
         let metadata = indexmap! {
             "instrument_id".to_string() => audusd_sim.id.to_string(),
             "book_type".to_string() => BookType::L3_MBO.to_string(),
+            "managed".to_string() => "true".to_string(),
         };
         let data_type = DataType::new(stringify!(OrderBookDelta), Some(metadata));
         let cmd = SubscriptionCommand::new(
@@ -1199,6 +1294,7 @@ mod tests {
         let metadata = indexmap! {
             "instrument_id".to_string() => audusd_sim.id.to_string(),
             "book_type".to_string() => BookType::L3_MBO.to_string(),
+            "managed".to_string() => "true".to_string(),
         };
         let data_type = DataType::new(stringify!(OrderBookDeltas), Some(metadata));
         let cmd = SubscriptionCommand::new(
@@ -1251,6 +1347,7 @@ mod tests {
         let metadata = indexmap! {
             "instrument_id".to_string() => audusd_sim.id.to_string(),
             "book_type".to_string() => BookType::L3_MBO.to_string(),
+            "managed".to_string() => "true".to_string(),
         };
         let data_type = DataType::new(stringify!(OrderBookDepth10), Some(metadata));
         let cmd = SubscriptionCommand::new(
