@@ -251,8 +251,8 @@ impl DataClientAdapter {
     }
 
     fn subscribe_instrument(&mut self, command: SubscriptionCommand) {
-        let instrument_id = command.data_type.parse_instrument_id_from_metadata();
-        let venue = command.data_type.parse_venue_from_metadata();
+        let instrument_id = command.data_type.instrument_id();
+        let venue = command.data_type.venue();
 
         if let Some(instrument_id) = instrument_id {
             // TODO: consider using insert_with once it stabilizes
@@ -278,8 +278,8 @@ impl DataClientAdapter {
     }
 
     fn unsubscribe_instrument(&mut self, command: SubscriptionCommand) {
-        let instrument_id = command.data_type.parse_instrument_id_from_metadata();
-        let venue = command.data_type.parse_venue_from_metadata();
+        let instrument_id = command.data_type.instrument_id();
+        let venue = command.data_type.venue();
 
         if let Some(instrument_id) = instrument_id {
             if self.subscriptions_instrument.contains(&instrument_id) {
@@ -305,11 +305,11 @@ impl DataClientAdapter {
     fn subscribe_order_book_deltas(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
-            .parse_instrument_id_from_metadata()
+            .instrument_id()
             .expect("Error on subscribe: no 'instrument_id' in metadata");
 
-        let book_type = command.data_type.parse_book_type_from_metadata();
-        let depth = command.data_type.parse_depth_from_metadata();
+        let book_type = command.data_type.book_type();
+        let depth = command.data_type.depth();
 
         if !self.subscriptions_order_book_delta.contains(&instrument_id) {
             self.client
@@ -323,7 +323,7 @@ impl DataClientAdapter {
     fn unsubscribe_order_book_deltas(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
-            .parse_instrument_id_from_metadata()
+            .instrument_id()
             .expect("Error on subscribe: no 'instrument_id' in metadata");
 
         if self.subscriptions_order_book_delta.contains(&instrument_id) {
@@ -338,11 +338,11 @@ impl DataClientAdapter {
     fn subscribe_snapshots(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
-            .parse_instrument_id_from_metadata()
+            .instrument_id()
             .expect("Error on subscribe: no 'instrument_id' in metadata");
 
-        let book_type = command.data_type.parse_book_type_from_metadata();
-        let depth = command.data_type.parse_depth_from_metadata();
+        let book_type = command.data_type.book_type();
+        let depth = command.data_type.depth();
 
         if !self
             .subscriptions_order_book_snapshot
@@ -359,7 +359,7 @@ impl DataClientAdapter {
     fn unsubscribe_snapshots(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
-            .parse_instrument_id_from_metadata()
+            .instrument_id()
             .expect("Error on subscribe: no 'instrument_id' in metadata");
 
         if self
@@ -378,7 +378,7 @@ impl DataClientAdapter {
     fn subscribe_quote_ticks(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
-            .parse_instrument_id_from_metadata()
+            .instrument_id()
             .expect("Error on subscribe: no 'instrument_id' in metadata");
 
         if !self.subscriptions_quote_tick.contains(&instrument_id) {
@@ -392,7 +392,7 @@ impl DataClientAdapter {
     fn unsubscribe_quote_ticks(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
-            .parse_instrument_id_from_metadata()
+            .instrument_id()
             .expect("Error on subscribe: no 'instrument_id' in metadata");
 
         if self.subscriptions_quote_tick.contains(&instrument_id) {
@@ -406,7 +406,7 @@ impl DataClientAdapter {
     fn unsubscribe_trade_ticks(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
-            .parse_instrument_id_from_metadata()
+            .instrument_id()
             .expect("Error on subscribe: no 'instrument_id' in metadata");
 
         if self.subscriptions_trade_tick.contains(&instrument_id) {
@@ -420,7 +420,7 @@ impl DataClientAdapter {
     fn subscribe_trade_ticks(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
-            .parse_instrument_id_from_metadata()
+            .instrument_id()
             .expect("Error on subscribe: no 'instrument_id' in metadata");
 
         if !self.subscriptions_trade_tick.contains(&instrument_id) {
@@ -432,7 +432,7 @@ impl DataClientAdapter {
     }
 
     fn subscribe_bars(&mut self, command: SubscriptionCommand) {
-        let bar_type = command.data_type.parse_bar_type_from_metadata();
+        let bar_type = command.data_type.bar_type();
 
         if !self.subscriptions_bar.contains(&bar_type) {
             self.client
@@ -443,7 +443,7 @@ impl DataClientAdapter {
     }
 
     fn unsubscribe_bars(&mut self, command: SubscriptionCommand) {
-        let bar_type = command.data_type.parse_bar_type_from_metadata();
+        let bar_type = command.data_type.bar_type();
 
         if self.subscriptions_bar.contains(&bar_type) {
             self.client
@@ -485,11 +485,11 @@ impl DataClientAdapter {
 
     #[must_use]
     pub fn request(&self, req: DataRequest) -> DataResponse {
-        let instrument_id = req.data_type.parse_instrument_id_from_metadata();
-        let venue = req.data_type.parse_venue_from_metadata();
-        let start = req.data_type.parse_start_from_metadata();
-        let end = req.data_type.parse_end_from_metadata();
-        let limit = req.data_type.parse_limit_from_metadata();
+        let instrument_id = req.data_type.instrument_id();
+        let venue = req.data_type.venue();
+        let start = req.data_type.start();
+        let end = req.data_type.end();
+        let limit = req.data_type.limit();
 
         match req.data_type.type_name() {
             stringify!(InstrumentAny) => match (instrument_id, venue) {
@@ -537,7 +537,7 @@ impl DataClientAdapter {
                 self.handle_trade_ticks(&instrument_id, trades, req.correlation_id)
             }
             stringify!(Bar) => {
-                let bar_type = req.data_type.parse_bar_type_from_metadata();
+                let bar_type = req.data_type.bar_type();
                 let bars =
                     self.client
                         .request_bars(req.correlation_id, bar_type, start, end, limit);

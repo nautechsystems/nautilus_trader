@@ -29,6 +29,7 @@ pub mod trade;
 use std::{
     fmt::{Debug, Display},
     hash::{Hash, Hasher},
+    num::NonZeroU64,
     str::FromStr,
 };
 
@@ -194,64 +195,157 @@ impl DataType {
         self.topic.as_str()
     }
 
-    pub fn parse_instrument_id_from_metadata(&self) -> Option<InstrumentId> {
-        let metadata = self.metadata.as_ref().expect("metadata was None");
+    /// Returns an [`Option<InstrumentId>`] from the metadata.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If there is no metadata.
+    /// - If the `instrument_id` value contained in the metadata is invalid.
+    pub fn instrument_id(&self) -> Option<InstrumentId> {
+        let metadata = self.metadata.as_ref().expect("metadata was `None`");
         let instrument_id = metadata.get("instrument_id")?;
-        Some(InstrumentId::from_str(instrument_id).expect("Invalid `InstrumentId`"))
+        Some(
+            InstrumentId::from_str(instrument_id)
+                .expect("Invalid `InstrumentId` for 'instrument_id'"),
+        )
     }
 
-    pub fn parse_venue_from_metadata(&self) -> Option<Venue> {
-        let metadata = self.metadata.as_ref().expect("metadata was None");
+    /// Returns an [`Option<Venue>`] from the metadata.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If there is no metadata.
+    /// - If the `venue` value contained in the metadata is invalid.
+    pub fn venue(&self) -> Option<Venue> {
+        let metadata = self.metadata.as_ref().expect("metadata was `None`");
         let venue_str = metadata.get("venue")?;
         Some(Venue::from(venue_str.as_str()))
     }
 
-    pub fn parse_bar_type_from_metadata(&self) -> BarType {
-        let metadata = self.metadata.as_ref().expect("metadata was None");
+    /// Returns a [`BarType`] from the metadata.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If there is no metadata.
+    /// - If the metadata does not contain a `bar_type`.
+    /// - If the `bar_type` value contained in the metadata is invalid.
+    pub fn bar_type(&self) -> BarType {
+        let metadata = self.metadata.as_ref().expect("metadata was `None`");
         let bar_type_str = metadata
             .get("bar_type")
             .expect("No 'bar_type' found in metadata");
-        BarType::from_str(bar_type_str).expect("Invalid `BarType`")
+        BarType::from_str(bar_type_str).expect("Invalid `BarType` for 'bar_type'")
     }
 
-    pub fn parse_start_from_metadata(&self) -> Option<UnixNanos> {
+    /// Returns an [`Option<UnixNanos>`] start from the metadata.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If there is no metadata.
+    /// - If the `start` value contained in the metadata is invalid.
+    pub fn start(&self) -> Option<UnixNanos> {
         let metadata = self.metadata.as_ref()?;
         let start_str = metadata.get("start")?;
-        Some(UnixNanos::from_str(start_str).expect("Invalid `UnixNanos`"))
+        Some(UnixNanos::from_str(start_str).expect("Invalid `UnixNanos` for 'start'"))
     }
 
-    pub fn parse_end_from_metadata(&self) -> Option<UnixNanos> {
+    /// Returns an [`Option<UnixNanos>`] end from the metadata.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If there is no metadata.
+    /// - If the `end` value contained in the metadata is invalid.
+    pub fn end(&self) -> Option<UnixNanos> {
         let metadata = self.metadata.as_ref()?;
         let end_str = metadata.get("end")?;
-        Some(UnixNanos::from_str(end_str).expect("Invalid `UnixNanos`"))
+        Some(UnixNanos::from_str(end_str).expect("Invalid `UnixNanos` for 'end'"))
     }
 
-    pub fn parse_limit_from_metadata(&self) -> Option<usize> {
+    /// Returns an [`Option<usize>`] limit from the metadata.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If there is no metadata.
+    /// - If the `limit` value contained in the metadata is invalid.
+    pub fn limit(&self) -> Option<usize> {
         let metadata = self.metadata.as_ref()?;
         let depth_str = metadata.get("limit")?;
         Some(
             depth_str
                 .parse::<usize>()
-                .expect("Invalid `usize` for limit"),
+                .expect("Invalid `usize` for 'limit'"),
         )
     }
 
-    pub fn parse_book_type_from_metadata(&self) -> BookType {
-        let metadata = self.metadata.as_ref().expect("metadata was None");
+    /// Returns a [`BookType`] from the metadata.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If there is no metadata.
+    /// - If the `book_type` value contained in the metadata is invalid.
+    pub fn book_type(&self) -> BookType {
+        let metadata = self.metadata.as_ref().expect("metadata was `None`");
         let book_type_str = metadata
             .get("book_type")
             .expect("'book_type' not found in metadata");
-        BookType::from_str(book_type_str).expect("Invalid `BookType`")
+        BookType::from_str(book_type_str).expect("Invalid `BookType` for 'book_type'")
     }
 
-    pub fn parse_depth_from_metadata(&self) -> Option<usize> {
+    /// Returns an [`Option<usize>`] depth from the metadata.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If there is no metadata.
+    /// - If the `depth` value contained in the metadata is invalid.
+    pub fn depth(&self) -> Option<usize> {
         let metadata = self.metadata.as_ref()?;
         let depth_str = metadata.get("depth")?;
         Some(
             depth_str
                 .parse::<usize>()
-                .expect("Invalid `usize` for depth"),
+                .expect("Invalid `usize` for 'depth'"),
         )
+    }
+
+    /// Returns a [`NonZeroU64`] interval (milliseconds) from the metadata.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If there is no metadata.
+    /// - If the `interval_ms` value contained in the metadata is invalid.
+    pub fn interval_ms(&self) -> NonZeroU64 {
+        let metadata = self.metadata.as_ref().expect("metadata was `None`");
+        let interval_ms_str = metadata
+            .get("interval_ms")
+            .expect("No 'interval_ms' in metadata");
+
+        interval_ms_str
+            .parse::<NonZeroU64>()
+            .expect("Invalid `NonZeroU64` for 'interval_ms'")
+    }
+
+    /// Returns a [`bool`] from the metadata indicating whether the book should be managed.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If there is no metadata.
+    /// - If the `managed` value contained in the metadata is invalid.
+    pub fn managed(&self) -> bool {
+        let metadata = self.metadata.as_ref().expect("metadata was `None`");
+        let managed_str = metadata.get("managed").expect("No 'managed' in metadata");
+        managed_str
+            .parse::<bool>()
+            .expect("Invalid `bool` for 'managed'")
     }
 }
 
@@ -462,7 +556,7 @@ mod tests {
         let data_type = DataType::new("InstrumentAny", metadata);
 
         assert_eq!(
-            data_type.parse_instrument_id_from_metadata().unwrap(),
+            data_type.instrument_id().unwrap(),
             InstrumentId::from_str(instrument_id_str).unwrap()
         );
     }
@@ -478,10 +572,7 @@ mod tests {
         );
         let data_type = DataType::new(stringify!(InstrumentAny), metadata);
 
-        assert_eq!(
-            data_type.parse_venue_from_metadata().unwrap(),
-            Venue::new(venue_str)
-        );
+        assert_eq!(data_type.venue().unwrap(), Venue::new(venue_str));
     }
 
     #[rstest]
@@ -496,7 +587,7 @@ mod tests {
         let data_type = DataType::new(stringify!(BarType), metadata);
 
         assert_eq!(
-            data_type.parse_bar_type_from_metadata(),
+            data_type.bar_type(),
             BarType::from_str(bar_type_str).unwrap()
         );
     }
@@ -512,10 +603,7 @@ mod tests {
         );
         let data_type = DataType::new(stringify!(TradeTick), metadata);
 
-        assert_eq!(
-            data_type.parse_start_from_metadata().unwrap(),
-            UnixNanos::from(start_ns),
-        );
+        assert_eq!(data_type.start().unwrap(), UnixNanos::from(start_ns),);
     }
 
     #[rstest]
@@ -529,10 +617,7 @@ mod tests {
         );
         let data_type = DataType::new(stringify!(TradeTick), metadata);
 
-        assert_eq!(
-            data_type.parse_end_from_metadata().unwrap(),
-            UnixNanos::from(end_ns),
-        );
+        assert_eq!(data_type.end().unwrap(), UnixNanos::from(end_ns),);
     }
 
     #[rstest]
@@ -546,7 +631,7 @@ mod tests {
         );
         let data_type = DataType::new(stringify!(TradeTick), metadata);
 
-        assert_eq!(data_type.parse_limit_from_metadata().unwrap(), limit);
+        assert_eq!(data_type.limit().unwrap(), limit);
     }
 
     #[rstest]
@@ -561,7 +646,7 @@ mod tests {
         let data_type = DataType::new(stringify!(OrderBookDelta), metadata);
 
         assert_eq!(
-            data_type.parse_book_type_from_metadata(),
+            data_type.book_type(),
             BookType::from_str(book_type_str).unwrap()
         );
     }
@@ -577,6 +662,6 @@ mod tests {
         );
         let data_type = DataType::new(stringify!(OrderBookDeltas), metadata);
 
-        assert_eq!(data_type.parse_depth_from_metadata().unwrap(), depth);
+        assert_eq!(data_type.depth().unwrap(), depth);
     }
 }
