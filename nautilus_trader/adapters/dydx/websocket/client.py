@@ -18,6 +18,7 @@ Provide a dYdX streaming WebSocket client.
 
 import asyncio
 from collections.abc import Callable
+from typing import Any
 
 import msgspec
 
@@ -26,6 +27,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClient
+from nautilus_trader.core.nautilus_pyo3 import WebSocketClientError
 from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
 
 
@@ -132,7 +134,11 @@ class DYDXWebsocketClient:
             self._log.warning("Cannot disconnect: not connected.")
             return
 
-        await self._client.disconnect()
+        try:
+            await self._client.disconnect()
+        except WebSocketClientError as e:
+            self._log.error(f"Failed to close websocket connection: {e}")
+
         self._client = None  # Dispose (will go out of scope)
 
         self._log.info(f"Disconnected from {self._base_url}", LogColor.BLUE)
@@ -151,9 +157,9 @@ class DYDXWebsocketClient:
             return
 
         self._subscriptions.add(subscription)
-        sub = {"type": "subscribe", "channel": "v4_trades", "id": symbol}
+        msg = {"type": "subscribe", "channel": "v4_trades", "id": symbol}
         self._log.debug(f"Subscribe to {symbol} trade ticks")
-        await self._client.send(msgspec.json.encode(sub))
+        await self._send(msg)
 
     async def subscribe_order_book(self, symbol: str) -> None:
         """
@@ -169,9 +175,9 @@ class DYDXWebsocketClient:
             return
 
         self._subscriptions.add(subscription)
-        sub = {"type": "subscribe", "channel": "v4_orderbook", "id": symbol}
+        msg = {"type": "subscribe", "channel": "v4_orderbook", "id": symbol}
         self._log.debug(f"Subscribe to {symbol} order book")
-        await self._client.send(msgspec.json.encode(sub))
+        await self._send(msg)
 
     async def subscribe_klines(self, symbol: str, interval: DYDXCandlesResolution) -> None:
         """
@@ -187,8 +193,8 @@ class DYDXWebsocketClient:
             return
 
         self._subscriptions.add(subscription)
-        sub = {"type": "subscribe", "channel": "v4_candles", "id": f"{symbol}/{interval.value}"}
-        await self._client.send(msgspec.json.encode(sub))
+        msg = {"type": "subscribe", "channel": "v4_candles", "id": f"{symbol}/{interval.value}"}
+        await self._send(msg)
 
     async def subscribe_markets(self) -> None:
         """
@@ -204,8 +210,8 @@ class DYDXWebsocketClient:
             return
 
         self._subscriptions.add((subscription, ""))
-        sub = {"type": "subscribe", "channel": "v4_markets"}
-        await self._client.send(msgspec.json.encode(sub))
+        msg = {"type": "subscribe", "channel": "v4_markets"}
+        await self._send(msg)
 
     async def subscribe_account_update(self, wallet_address: str, subaccount_number: int) -> None:
         """
@@ -225,8 +231,8 @@ class DYDXWebsocketClient:
             return
 
         self._subscriptions.add(subscription)
-        sub = {"type": "subscribe", "channel": channel, "id": channel_id}
-        await self._client.send(msgspec.json.encode(sub))
+        msg = {"type": "subscribe", "channel": channel, "id": channel_id}
+        await self._send(msg)
 
     async def unsubscribe_account_update(self, wallet_address: str, subaccount_number: int) -> None:
         """
@@ -245,8 +251,8 @@ class DYDXWebsocketClient:
             return
 
         self._subscriptions.remove(subscription)
-        sub = {"type": "unsubscribe", "channel": channel, "id": channel_id}
-        await self._client.send(msgspec.json.encode(sub))
+        msg = {"type": "unsubscribe", "channel": channel, "id": channel_id}
+        await self._send(msg)
 
     async def unsubscribe_trades(self, symbol: str) -> None:
         """
@@ -262,8 +268,8 @@ class DYDXWebsocketClient:
             return
 
         self._subscriptions.remove(subscription)
-        sub = {"type": "unsubscribe", "channel": "v4_trades", "id": symbol}
-        await self._client.send(msgspec.json.encode(sub))
+        msg = {"type": "unsubscribe", "channel": "v4_trades", "id": symbol}
+        await self._send(msg)
 
     async def unsubscribe_order_book(self, symbol: str) -> None:
         """
@@ -279,8 +285,8 @@ class DYDXWebsocketClient:
             return
 
         self._subscriptions.remove(subscription)
-        sub = {"type": "unsubscribe", "channel": "v4_orderbook", "id": symbol}
-        await self._client.send(msgspec.json.encode(sub))
+        msg = {"type": "unsubscribe", "channel": "v4_orderbook", "id": symbol}
+        await self._send(msg)
 
     async def unsubscribe_klines(self, symbol: str, interval: DYDXCandlesResolution) -> None:
         """
@@ -296,8 +302,8 @@ class DYDXWebsocketClient:
             return
 
         self._subscriptions.remove(subscription)
-        sub = {"type": "unsubscribe", "channel": "v4_candles", "id": f"{symbol}/{interval.value}"}
-        await self._client.send(msgspec.json.encode(sub))
+        msg = {"type": "unsubscribe", "channel": "v4_candles", "id": f"{symbol}/{interval.value}"}
+        await self._send(msg)
 
     async def unsubscribe_markets(self) -> None:
         """
@@ -313,8 +319,8 @@ class DYDXWebsocketClient:
             return
 
         self._subscriptions.remove(subscription)
-        sub = {"type": "unsubscribe", "channel": "v4_markets"}
-        await self._client.send(msgspec.json.encode(sub))
+        msg = {"type": "unsubscribe", "channel": "v4_markets"}
+        await self._send(msg)
 
     async def _subscribe_all(self) -> None:
         """
@@ -325,5 +331,17 @@ class DYDXWebsocketClient:
             return
 
         for subscription in self._subscriptions:
-            sub = {"type": "subscribe", "channel": subscription[0], "id": subscription[1]}
-            await self._client.send(msgspec.json.encode(sub))
+            msg = {"type": "subscribe", "channel": subscription[0], "id": subscription[1]}
+            await self._send(msg)
+
+    async def _send(self, msg: dict[str, Any]) -> None:
+        if self._client is None:
+            self._log.error(f"Cannot send message {msg}: not connected")
+            return
+
+        self._log.debug(f"SENDING: {msg}")
+
+        try:
+            await self._client.send_text(msgspec.json.encode(msg).decode())
+        except WebSocketClientError as e:
+            self._log.error(f"Failed to send websocket message: {e}")
