@@ -386,8 +386,10 @@ class DYDXAccountGRPCAPI:
             The response from the broadcast.
 
         """
+        account = await self.get_account(wallet.address)
+        wallet.sequence = account.sequence
+
         response = await self.broadcast(self._transaction_builder.build(wallet, message), mode)
-        wallet.sequence += 1
         return response
 
     async def broadcast(
