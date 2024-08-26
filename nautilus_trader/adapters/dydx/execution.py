@@ -850,6 +850,9 @@ class DYDXExecutionClient(LiveExecutionClient):
         that the wallet sequence number is correctly incremented when sending multiple
         orders at once.
 
+        In case orders are canceled and submitted in parallel, the wallet sequence
+        number is sometimes incorrect resulting in rejected orders or rejected cancels.
+
         """
         self._log.debug(f"Submit {len(command.order_list.orders)} orders", LogColor.CYAN)
 
