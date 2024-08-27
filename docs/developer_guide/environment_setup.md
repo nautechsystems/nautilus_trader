@@ -23,15 +23,15 @@ The following steps are for UNIX-like systems, and only need to be completed onc
 
        pre-commit install
 
-3. In case of large recompiles for small changes, configure the `PYO3_PYTHON` variable in `nautilus_core/.cargo/config.toml` with the path to the Python interpreter in the poetry managed environment. This is primarily useful for Rust developers working on core and experience frequent recompiles from IDE/rust analyzer based `cargo check`.
+3. In case of large recompiles for small changes, configure the `PYO3_PYTHON` variable in `nautilus_trader/.cargo/config.toml` with the path to the Python interpreter in the poetry managed environment. This is primarily useful for Rust developers working on core and experience frequent recompiles from IDE/rust analyzer based `cargo check`.
 
     ```
     poetry shell
     PYTHON_PATH=$(which python)
-    echo -e "\n[env]\nPYO3_PYTHON = \"$PYTHON_PATH\"" >> nautilus_core/.cargo/config.toml
+    echo -e "\n[env]\nPYO3_PYTHON = \"$PYTHON_PATH\"" >> .cargo/config.toml
     ```
 
-    Since `.cargo/config.toml` is a tracked file, configure git to skip local modifications to it with `git update-index --skip-worktree nautilus_core/.cargo/config.toml`. Git will still pull remote modifications. To push modifications track local modifications using `git update-index --no-skip-worktree nautilus_core/.cargo/config.toml`.
+    Since `.cargo/config.toml` is a tracked file, configure git to skip local modifications to it with `git update-index --skip-worktree .cargo/config.toml`. Git will still pull remote modifications. To push modifications track local modifications using `git update-index --no-skip-worktree .cargo/config.toml`.
     
     The git hack is needed till [local cargo config](https://github.com/rust-lang/cargo/issues/7723) feature is merged.
 
