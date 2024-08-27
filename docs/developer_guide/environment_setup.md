@@ -31,7 +31,7 @@ The following steps are for UNIX-like systems, and only need to be completed onc
     echo -e "\n[env]\nPYO3_PYTHON = \"$PYTHON_PATH\"" >> .cargo/config.toml
     ```
 
-    Since `.cargo/config.toml` is a tracked file, configure git to skip local modifications to it with `git update-index --skip-worktree nautilus_core/.cargo/config.toml`. Git will still pull remote modifications. To push modifications track local modifications using `git update-index --no-skip-worktree nautilus_core/.cargo/config.toml`.
+    Since `.cargo/config.toml` is a tracked file, configure git to skip local modifications to it with `git update-index --skip-worktree .cargo/config.toml`. Git will still pull remote modifications. To push modifications track local modifications using `git update-index --no-skip-worktree .cargo/config.toml`.
     
     The git hack is needed till [local cargo config](https://github.com/rust-lang/cargo/issues/7723) feature is merged.
 
