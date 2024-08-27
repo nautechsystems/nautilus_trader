@@ -97,7 +97,7 @@ def test_parse_order_side(
         (DYDXOrderStatus.FILLED, OrderStatus.FILLED),
         (DYDXOrderStatus.CANCELED, OrderStatus.CANCELED),
         (DYDXOrderStatus.BEST_EFFORT_CANCELED, OrderStatus.PENDING_CANCEL),
-        (DYDXOrderStatus.BEST_EFFORT_OPENED, OrderStatus.PENDING_UPDATE),
+        (DYDXOrderStatus.BEST_EFFORT_OPENED, OrderStatus.SUBMITTED),
     ],
 )
 def test_parse_order_status(
