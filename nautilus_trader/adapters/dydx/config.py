@@ -18,6 +18,8 @@ Define the dYdX configuration classes.
 
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
+from nautilus_trader.config import PositiveFloat
+from nautilus_trader.config import PositiveInt
 
 
 class DYDXDataClientConfig(LiveDataClientConfig, frozen=True):
@@ -55,6 +57,12 @@ class DYDXExecClientConfig(LiveExecClientConfig, frozen=True):
         The WebSocket client custom endpoint override.
     is_testnet : bool, default False
         If the client is connecting to the dYdX testnet API.
+    max_retries : PositiveInt, optional
+        The maximum number of times a submit request will be retried.
+    initial_retry_delay_secs : PositiveFloat, optional
+        The initial delay (seconds) between retries.
+    max_retry_delay_secs : PositiveFloat, optional
+        The maximum delay (seconds) between retries
 
     """
 
@@ -64,3 +72,6 @@ class DYDXExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_http: str | None = None
     base_url_ws: str | None = None
     is_testnet: bool = False
+    max_retries: PositiveInt | None = None
+    initial_retry_delay_secs: PositiveFloat | None = None
+    max_retry_delay_secs: PositiveFloat | None = None
