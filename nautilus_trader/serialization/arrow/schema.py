@@ -155,7 +155,7 @@ NAUTILUS_ARROW_SCHEMA = {
             "exec_algorithm_id": pa.string(),
             "exec_algorithm_params": pa.binary(),
             "exec_spawn_id": pa.string(),
-            "tags": pa.string(),
+            "tags": pa.list_(pa.string()),
             "event_id": pa.string(),
             "ts_init": pa.uint64(),
             "reconciliation": pa.bool_(),
