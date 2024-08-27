@@ -461,7 +461,7 @@ def test_account_channel_data_new_order_opened() -> None:
         order_side=OrderSide.BUY,
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.IOC,
-        order_status=OrderStatus.PENDING_UPDATE,
+        order_status=OrderStatus.SUBMITTED,
         price=Price(2791.6, 4),
         quantity=Quantity(0.002, 5),
         filled_qty=Quantity(0, 5),
