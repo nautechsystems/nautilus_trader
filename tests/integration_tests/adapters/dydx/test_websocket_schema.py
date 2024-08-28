@@ -808,6 +808,20 @@ def test_orderbook(instrument_id: InstrumentId) -> None:
     # Prepare
     expected_num_deltas = 1
     decoder = msgspec.json.Decoder(DYDXWsOrderbookChannelData)
+    expected_delta = OrderBookDelta(
+        instrument_id=instrument_id,
+        action=BookAction.DELETE,
+        order=BookOrder(
+            side=OrderSide.BUY,
+            price=Price(Decimal("65920"), 0),
+            size=Quantity(Decimal("0"), 4),
+            order_id=0,
+        ),
+        flags=RecordFlag.F_LAST,
+        sequence=0,
+        ts_event=0,
+        ts_init=1,
+    )
 
     with Path("tests/test_data/dydx/websocket/v4_orderbook.json").open() as file_reader:
         msg = decoder.decode(file_reader.read())
@@ -818,13 +832,18 @@ def test_orderbook(instrument_id: InstrumentId) -> None:
         price_precision=0,
         size_precision=5,
         ts_event=0,
-        ts_init=0,
+        ts_init=1,
     )
 
     # Assert
     assert len(deltas.deltas) == expected_num_deltas
     assert deltas.deltas[0].order.size == 0
     assert deltas.deltas[0].action == BookAction.DELETE
+    assert deltas.deltas[0].ts_event == expected_delta.ts_event
+    assert deltas.deltas[0].ts_init == expected_delta.ts_init
+    assert deltas.deltas[0].order.size == expected_delta.order.size
+    assert deltas.deltas[0].order.price == expected_delta.order.price
+    assert deltas.deltas[0] == expected_delta
 
     for delta_id, delta in enumerate(deltas.deltas):
         if delta_id < len(deltas.deltas) - 1:
