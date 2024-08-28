@@ -1182,9 +1182,9 @@ checksum = "e8566979429cf69b49a5c740c60791108e86440e8be149bbea4fe54d2c32d6e2"
 
 [[package]]
 name = "databento"
-version = "0.12.0"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2516b7d929c6f0a387498e79f9e649ab1d87f14c017088a9bea9b3d5e945c36"
+checksum = "301ca93b890dadb1cb022c4e341c362c4fa529effb0ee99508b50f30d02373f7"
 dependencies = [
  "dbn",
  "futures",
@@ -1512,9 +1512,9 @@ dependencies = [
 
 [[package]]
 name = "dbn"
-version = "0.20.0"
+version = "0.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "95ac27c726a4800a82e8fdd8c23a9f0bafee04209246bfc308ddb7fda43e4fc8"
+checksum = "5a90702f28b07e5a367d580677400cad0646084b9345017fd4c2c8b1af809705"
 dependencies = [
  "async-compression",
  "csv",
@@ -1532,9 +1532,9 @@ dependencies = [
 
 [[package]]
 name = "dbn-macros"
-version = "0.20.0"
+version = "0.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6091a880ff055532b81592b3c5fcb7e9038a8f5bdd7e552dea3d6e266379ed60"
+checksum = "e0a9a3831bcc4c75f2456f8c2b7eb8937b4f787f9204610748db16748f045a00"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -4064,9 +4064,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "0.38.34"
+version = "0.38.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70dc5ec042f7a43c4a73241207cecc9873a06d45debb38b329f8541d85c2730f"
+checksum = "a85d50532239da68e9addb745ba38ff4612a242c1c7ceea689c4bc7c2f43c36f"
 dependencies = [
  "bitflags 2.6.0",
  "errno",
@@ -4134,9 +4134,9 @@ checksum = "fc0a2ce646f8655401bb81e7927b812614bd5d91dbc968696be50603510fcaf0"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.102.6"
+version = "0.102.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e6b52d4fda176fd835fdc55a835d4a89b8499cad995885a21149d5ad62f852e"
+checksum = "84678086bd54edf2b415183ed7a94d0efb049f1b646a33e22a36f3794be6ae56"
 dependencies = [
  "ring",
  "rustls-pki-types",
@@ -5063,7 +5063,7 @@ dependencies = [
 
 [[package]]
 name = "tokio-tungstenite"
-version = "0.23.0"
+version = "0.23.1"
 dependencies = [
  "futures-util",
  "log",
@@ -5236,9 +5236,9 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tungstenite"
-version = "0.23.0"
+version = "0.24.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e2e2ce1e47ed2994fd43b04c8f618008d4cabdd5ee34027cf14f9d918edd9c8"
+checksum = "18e5b8366ee7a95b16d32197d0b2604b43a0be89dc5fac9f8e96ccafbaedda8a"
 dependencies = [
  "byteorder",
  "bytes",
