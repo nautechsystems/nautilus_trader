@@ -8,7 +8,7 @@ license = "MIT"
 homepage = "https://github.com/snapview/tokio-tungstenite"
 documentation = "https://docs.rs/tokio-tungstenite/0.19.0"
 repository = "https://github.com/snapview/tokio-tungstenite"
-version = "0.23.0"
+version = "0.23.1"
 edition = "2018"
 rust-version = "1.63"
 include = ["examples/**/*", "src/**/*", "LICENSE", "README.md", "CHANGELOG.md"]
@@ -28,12 +28,12 @@ __rustls-tls = ["rustls", "rustls-pki-types", "tokio-rustls", "stream", "tungste
 stream = []
 
 [dependencies]
-log = "0.4.17"
+log = "0.4.22"
 futures-util = { version = "0.3.30", default-features = false, features = ["sink", "std"] }
 tokio = { workspace = true }
 
 [dependencies.tungstenite]
-version = "0.23.0"
+version = "0.24.0"
 default-features = false
 
 [dependencies.native-tls-crate]
