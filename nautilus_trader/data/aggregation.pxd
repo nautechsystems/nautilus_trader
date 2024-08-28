@@ -51,8 +51,9 @@ cdef class BarBuilder:
     cdef Price _close
     cdef Quantity volume
 
-    cpdef void set_partial(self, Bar partial_bar, bint run_once=*)
+    cpdef void set_partial(self, Bar partial_bar)
     cpdef void update(self, Price price, Quantity size, uint64_t ts_event)
+    cpdef void update_bar(self, Bar bar)
     cpdef void reset(self)
     cpdef Bar build_now(self)
     cpdef Bar build(self, uint64_t ts_event, uint64_t ts_init)
@@ -70,8 +71,9 @@ cdef class BarAggregator:
     cpdef void handle_quote_tick(self, QuoteTick tick)
     cpdef void handle_trade_tick(self, TradeTick tick)
     cpdef void handle_bar(self, Bar bar)
-    cpdef void set_partial(self, Bar partial_bar, bint run_once=*)
+    cpdef void set_partial(self, Bar partial_bar)
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event)
+    cdef void _apply_update_bar(self, Bar bar)
     cdef void _build_now_and_send(self)
     cdef void _build_and_send(self, uint64_t ts_event, uint64_t ts_init)
 
