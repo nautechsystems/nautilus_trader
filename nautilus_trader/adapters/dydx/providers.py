@@ -110,7 +110,7 @@ class DYDXInstrumentProvider(InstrumentProvider):
         try:
             fee_tier = await self._grpc_account.get_user_fee_tier(address=self._wallet_address)
         except AioRpcError as e:
-            self._log.error(f"Failed to get the user fee tier: code {e.code} {e.details}")
+            self._log.error(f"Failed to get the user fee tier: {e}")
             return
 
         for instrument_id in instrument_ids:
@@ -142,7 +142,7 @@ class DYDXInstrumentProvider(InstrumentProvider):
             try:
                 fee_tier = await self._grpc_account.get_user_fee_tier(address=self._wallet_address)
             except AioRpcError as e:
-                self._log.error(f"Failed to get the user fee tier: code {e.code} {e.details}")
+                self._log.error(f"Failed to get the user fee tier: {e}")
                 return
 
         maker_fee = Decimal(fee_tier.tier.maker_fee_ppm) / FEE_SCALING
