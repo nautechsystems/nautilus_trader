@@ -123,6 +123,52 @@ impl BarType {
     fn py_from_str(value: &str) -> PyResult<Self> {
         Self::from_str(value).map_err(to_pyvalue_err)
     }
+
+    #[staticmethod]
+    #[pyo3(name = "new_composite")]
+    fn py_new_composite(
+        instrument_id: InstrumentId,
+        spec: BarSpecification,
+        aggregation_source: AggregationSource,
+        composite_instrument_id: InstrumentId,
+        composite_spec: BarSpecification,
+        composite_aggregation_source: AggregationSource,
+    ) -> Self {
+        Self::new_composite(
+            instrument_id,
+            spec,
+            aggregation_source,
+            composite_instrument_id,
+            composite_spec,
+            composite_aggregation_source,
+        )
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "from_bar_types")]
+    fn py_from_bar_types(standard: &Self, composite: &Self) -> Self {
+        Self::from_bar_types(standard, composite)
+    }
+
+    #[pyo3(name = "is_standard")]
+    fn py_is_standard(&self) -> bool {
+        self.is_standard()
+    }
+
+    #[pyo3(name = "is_composite")]
+    fn py_is_composite(&self) -> bool {
+        self.is_composite()
+    }
+
+    #[pyo3(name = "standard")]
+    fn py_standard(&self) -> Self {
+        self.standard()
+    }
+
+    #[pyo3(name = "composite")]
+    fn py_composite(&self) -> Self {
+        self.composite()
+    }
 }
 
 impl Bar {

@@ -89,7 +89,7 @@ cdef class BarBuilder:
             f"{self.volume})"
         )
 
-    cpdef void set_partial(self, Bar partial_bar, bint run_once = True):
+    cpdef void set_partial(self, Bar partial_bar):
         """
         Set the initial values for a partially completed bar.
 
@@ -101,11 +101,10 @@ cdef class BarBuilder:
             The partial bar with values to set.
 
         """
-        if self._partial_set and run_once:
+        if self._partial_set:
             return  # Already updated
 
-        if self._open is None:
-            self._open = partial_bar.open
+        self._open = partial_bar.open
 
         if self._high is None or partial_bar.high > self._high:
             self._high = partial_bar.high
@@ -113,12 +112,12 @@ cdef class BarBuilder:
         if self._low is None or partial_bar.low < self._low:
             self._low = partial_bar.low
 
-        if self._close is None or not run_once:
+        if self._close is None:
             self._close = partial_bar.close
 
-        self.volume = Quantity(self.volume + partial_bar.volume, self.size_precision)
+        self.volume = partial_bar.volume
 
-        if self.ts_last == 0 or not run_once:
+        if self.ts_last == 0:
             self.ts_last = partial_bar.ts_init
 
         self._partial_set = True
@@ -160,6 +159,40 @@ cdef class BarBuilder:
         self.volume._mem.raw += size._mem.raw
         self.count += 1
         self.ts_last = ts_event
+
+    cpdef void update_bar(self, Bar bar):
+        """
+        Update the bar builder.
+
+        Parameters
+        ----------
+        bar : Bar
+            The update Bar.
+
+        """
+        Condition.not_none(bar, "bar")
+
+        # TODO: What happens if the first bar updates before a partial bar is applied?
+        if bar.ts_init < self.ts_last:
+            return  # Not applicable
+
+        if self._open is None:
+            # Initialize builder
+            self._open = bar.open
+            self._high = bar.high
+            self._low = bar.low
+            self.initialized = True
+        else:
+            if bar.high > self._high:
+                self._high = bar.high
+
+            if bar.low < self._low:
+                self._low = bar.low
+
+        self._close = bar.close
+        self.volume._mem.raw += bar._mem.volume.raw
+        self.count += 1
+        self.ts_last = bar.ts_init
 
     cpdef void reset(self):
         """
@@ -315,9 +348,10 @@ cdef class BarAggregator:
         """
         Condition.not_none(bar, "bar")
 
-        self.set_partial(bar, False)
+        if not self._await_partial:
+            self._apply_update_bar(bar)
 
-    cpdef void set_partial(self, Bar partial_bar, bint run_once = True):
+    cpdef void set_partial(self, Bar partial_bar):
         """
         Set the initial values for a partially completed bar.
 
@@ -329,10 +363,13 @@ cdef class BarAggregator:
             The partial bar with values to set.
 
         """
-        self._builder.set_partial(partial_bar, run_once)
+        self._builder.set_partial(partial_bar)
 
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
-        raise NotImplementedError("method `_apply_update` must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `_apply_update` must be implemented in the subclass")
+
+    cdef void _apply_update_bar(self, Bar bar):
+        raise NotImplementedError("method `_apply_update` must be implemented in the subclass") # pragma: no cover
 
     cdef void _build_now_and_send(self):
         cdef Bar bar = self._builder.build_now()
@@ -740,6 +777,9 @@ cdef class TimeBarAggregator(BarAggregator):
             # Reset flag and clear stored close
             self._build_on_next_tick = False
             self._stored_close_ns = 0
+
+    cdef void _apply_update_bar(self, Bar bar):
+        self._builder.update_bar(bar)
 
     cpdef void _build_bar(self, TimeEvent event):
         if not self._builder.initialized:
