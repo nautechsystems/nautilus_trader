@@ -163,8 +163,8 @@ class DYDXHttpClient:
                     else:
                         self._log.error(f"Failed to perform HTTP request: {e}")
                         raise
-                except HttpError:
-                    self._log.error("Failed to perform HTTP request: {e}")
+                except HttpError as e:
+                    self._log.error(f"Failed to perform HTTP request: {e}")
                     raise
 
         if BAD_REQUEST_ERROR_CODE <= response.status < INTERNAL_SERVER_ERROR_CODE:

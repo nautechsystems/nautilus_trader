@@ -18,6 +18,7 @@ Instrument provider for the dYdX venue.
 
 from decimal import Decimal
 
+from grpc.aio._call import AioRpcError
 from v4_proto.dydxprotocol.feetiers import query_pb2 as fee_tier_query
 
 from nautilus_trader.adapters.dydx.common.constants import DYDX_VENUE
@@ -106,7 +107,11 @@ class DYDXInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading instruments {instrument_ids}{filters_str}.")
 
-        fee_tier = await self._grpc_account.get_user_fee_tier(address=self._wallet_address)
+        try:
+            fee_tier = await self._grpc_account.get_user_fee_tier(address=self._wallet_address)
+        except AioRpcError as e:
+            self._log.error(f"Failed to get the user fee tier: {e}")
+            return
 
         for instrument_id in instrument_ids:
             await self._load_instruments(
@@ -134,7 +139,11 @@ class DYDXInstrumentProvider(InstrumentProvider):
         markets = await self._http_market.fetch_instruments(symbol=symbol)
 
         if fee_tier is None:
-            fee_tier = await self._grpc_account.get_user_fee_tier(address=self._wallet_address)
+            try:
+                fee_tier = await self._grpc_account.get_user_fee_tier(address=self._wallet_address)
+            except AioRpcError as e:
+                self._log.error(f"Failed to get the user fee tier: {e}")
+                return
 
         maker_fee = Decimal(fee_tier.tier.maker_fee_ppm) / FEE_SCALING
         taker_fee = Decimal(fee_tier.tier.taker_fee_ppm) / FEE_SCALING
