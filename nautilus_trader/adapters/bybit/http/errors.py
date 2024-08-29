@@ -15,8 +15,23 @@
 
 
 class BybitError(Exception):
-    def __init__(self, status, message, headers) -> None:
+    """
+    The base class for all Bybit specific errors.
+    """
+
+    def __init__(
+        self,
+        code: int | None,
+        message: str | None,
+    ) -> None:
         super().__init__(message)
-        self.status = status
+        self.code = code
         self.message = message
-        self.headers = headers
+
+
+class BybitKeyExpiredError(BybitError):
+    code = 33004
+    message = "Your api key has expired."
+
+    def __init__(self):
+        super().__init__(self.code, self.message)
