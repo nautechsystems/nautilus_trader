@@ -1151,13 +1151,13 @@ typedef struct Composite_Body {
      */
     enum AggregationSource aggregation_source;
     /**
-     * The composite bar types instrument ID.
+     * The composite step for binning samples for bar aggregation.
      */
-    struct InstrumentId_t composite_instrument_id;
+    uintptr_t composite_step;
     /**
-     * The composite bar types specification.
+     * The composite type of bar aggregation.
      */
-    struct BarSpecification_t composite_spec;
+    uint8_t composite_aggregation;
     /**
      * The composite bar types aggregation source.
      */
@@ -1521,12 +1521,9 @@ struct BarType_t bar_type_new(struct InstrumentId_t instrument_id,
 struct BarType_t bar_type_new_composite(struct InstrumentId_t instrument_id,
                                         struct BarSpecification_t spec,
                                         enum AggregationSource aggregation_source,
-                                        struct InstrumentId_t composite_instrument_id,
-                                        struct BarSpecification_t composite_spec,
+                                        uintptr_t composite_step,
+                                        uint8_t composite_aggregation,
                                         enum AggregationSource composite_aggregation_source);
-
-struct BarType_t bar_type_from_bar_types(const struct BarType_t *standard,
-                                         const struct BarType_t *composite);
 
 uint8_t bar_type_is_standard(const struct BarType_t *bar_type);
 
