@@ -36,9 +36,8 @@ impl RedisMessageBusDatabase {
     }
 
     #[pyo3(name = "publish")]
-    fn py_publish(&self, topic: String, payload: Vec<u8>) -> PyResult<()> {
+    fn py_publish(&self, topic: String, payload: Vec<u8>) {
         self.publish(topic, Bytes::from(payload))
-            .map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "stream")]
@@ -61,8 +60,8 @@ impl RedisMessageBusDatabase {
     }
 
     #[pyo3(name = "close")]
-    fn py_close(&mut self) -> PyResult<()> {
-        self.close().map_err(to_pyruntime_err)
+    fn py_close(&mut self) {
+        self.close()
     }
 }
 
