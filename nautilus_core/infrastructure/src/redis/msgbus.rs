@@ -26,9 +26,12 @@ use std::{
 
 use bytes::Bytes;
 use futures::stream::Stream;
-use nautilus_common::msgbus::{
-    database::{BusMessage, DatabaseConfig, MessageBusConfig, MessageBusDatabaseAdapter},
-    CLOSE_TOPIC,
+use nautilus_common::{
+    msgbus::{
+        database::{BusMessage, DatabaseConfig, MessageBusConfig, MessageBusDatabaseAdapter},
+        CLOSE_TOPIC,
+    },
+    runtime::get_runtime,
 };
 use nautilus_core::{
     time::{duration_since_unix_epoch, get_atomic_clock_realtime},
@@ -43,6 +46,8 @@ use crate::redis::{create_redis_connection, get_stream_key};
 
 const MSGBUS_PUBLISH: &str = "msgbus-publish";
 const MSGBUS_STREAM: &str = "msgbus-stream";
+const MSGBUS_HEARTBEAT: &str = "msgbus-heartbeat";
+const HEARTBEAT_TOPIC: &str = "health:heartbeat";
 const TRIM_BUFFER_SECONDS: u64 = 60;
 
 type RedisStreamBulk = Vec<HashMap<String, Vec<HashMap<String, redis::Value>>>>;
@@ -59,6 +64,8 @@ pub struct RedisMessageBusDatabase {
     stream_rx: Option<tokio::sync::mpsc::Receiver<BusMessage>>,
     stream_handle: Option<std::thread::JoinHandle<anyhow::Result<()>>>,
     stream_signal: Arc<AtomicBool>,
+    heartbeat_handle: Option<tokio::task::JoinHandle<()>>,
+    heartbeat_signal: Arc<AtomicBool>,
 }
 
 impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
@@ -111,6 +118,22 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
             (None, None)
         };
 
+        // Create heartbeat task
+        let heartbeat_signal = Arc::new(AtomicBool::new(false));
+        let heartbeat_handle = if let Some(heartbeat_interval_secs) = config.heartbeat_interval_secs
+        {
+            let signal = heartbeat_signal.clone();
+            let pub_tx_clone = pub_tx.clone();
+
+            Some(get_runtime().spawn(async move {
+                if let Err(e) = run_heartbeat(heartbeat_interval_secs, signal, pub_tx_clone).await {
+                    tracing::error!("Error spawning '{MSGBUS_HEARTBEAT}' task: {e}");
+                }
+            }))
+        } else {
+            None
+        };
+
         Ok(Self {
             trader_id,
             instance_id,
@@ -119,6 +142,8 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
             stream_rx,
             stream_handle,
             stream_signal,
+            heartbeat_handle,
+            heartbeat_signal,
         })
     }
 
@@ -136,6 +161,7 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
         tracing::debug!("Closing message bus database adapter");
 
         self.stream_signal.store(true, Ordering::Relaxed);
+        self.heartbeat_signal.store(true, Ordering::Relaxed);
 
         let msg = BusMessage {
             topic: CLOSE_TOPIC.to_string(),
@@ -147,17 +173,27 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
 
         if let Some(handle) = self.pub_handle.take() {
             tracing::debug!("Joining '{MSGBUS_PUBLISH}' thread");
-            if let Err(e) = handle.join().map_err(|e| anyhow::anyhow!("{:?}", e)) {
+            if let Err(e) = handle.join() {
                 tracing::error!("Error joining '{MSGBUS_PUBLISH}' thread: {:?}", e);
             }
         }
 
         if let Some(handle) = self.stream_handle.take() {
             tracing::debug!("Joining '{MSGBUS_STREAM}' thread");
-            if let Err(e) = handle.join().map_err(|e| anyhow::anyhow!("{:?}", e)) {
+            if let Err(e) = handle.join() {
                 tracing::error!("Error joining '{MSGBUS_STREAM}' thread: {:?}", e);
             }
         }
+
+        if let Some(handle) = self.heartbeat_handle.take() {
+            tracing::debug!("Awaiting '{MSGBUS_HEARTBEAT}' task");
+
+            // TODO: Refactoring towards tokio tasks
+            if let Err(e) = get_runtime().block_on(handle) {
+                tracing::error!("Error awaiting '{MSGBUS_HEARTBEAT}' task: {:?}", e);
+            }
+        }
+
         Ok(())
     }
 }
@@ -313,7 +349,7 @@ pub fn stream_messages(
     stream_keys: Vec<String>,
     stream_signal: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
-    tracing::debug!("Starting message streaming");
+    tracing::info!("Starting message streaming");
     let mut con = create_redis_connection(MSGBUS_STREAM, config)?;
 
     let stream_keys = &stream_keys
@@ -332,7 +368,7 @@ pub fn stream_messages(
 
     'outer: loop {
         if stream_signal.load(Ordering::Relaxed) {
-            tracing::debug!("Received terminate signal");
+            tracing::debug!("Received streaming terminate signal");
             break;
         }
         let result: Result<RedisStreamBulk, _> =
@@ -371,7 +407,8 @@ pub fn stream_messages(
             }
         }
     }
-    tracing::debug!("Completed message streaming");
+
+    tracing::info!("Stopped message streaming");
     Ok(())
 }
 
@@ -401,6 +438,36 @@ fn decode_bus_message(stream_msg: &redis::Value) -> anyhow::Result<BusMessage> {
     } else {
         anyhow::bail!("Invalid stream message format: {:?}", stream_msg)
     }
+}
+
+async fn run_heartbeat(
+    heartbeat_interval_secs: u16,
+    signal: Arc<AtomicBool>,
+    pub_tx: std::sync::mpsc::Sender<BusMessage>,
+) -> anyhow::Result<()> {
+    tracing::info!("Starting heartbeat at {heartbeat_interval_secs} second intervals");
+    let interval = Duration::from_secs(heartbeat_interval_secs as u64);
+
+    loop {
+        tokio::time::sleep(interval).await;
+
+        if signal.load(std::sync::atomic::Ordering::Relaxed) {
+            tracing::debug!("Received heartbeat terminate signal");
+            break;
+        }
+
+        let heartbeat = BusMessage {
+            topic: HEARTBEAT_TOPIC.to_string(),
+            payload: Bytes::from(chrono::Utc::now().to_rfc3339().into_bytes()),
+        };
+
+        if let Err(e) = pub_tx.send(heartbeat) {
+            tracing::error!("Error sending heartbeat: {e}")
+        }
+    }
+
+    tracing::info!("Stopped heartbeat");
+    Ok(())
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -716,5 +783,30 @@ mod serial_tests {
 
         // Close the message bus database (test should not hang)
         db.close().unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_heartbeat_task() {
+        let (tx, rx) = std::sync::mpsc::channel::<BusMessage>();
+        let signal = Arc::new(AtomicBool::new(false));
+
+        // Start the heartbeat task with a short interval
+        let handle = tokio::spawn(run_heartbeat(1, signal.clone(), tx));
+
+        // Wait for a few heartbeats
+        tokio::time::sleep(Duration::from_secs(3)).await;
+
+        // Stop the heartbeat task
+        signal.store(true, Ordering::Relaxed);
+        handle.await.unwrap().unwrap();
+
+        // Ensure heartbeats were sent
+        let heartbeats: Vec<_> = rx.try_iter().collect();
+        assert!(heartbeats.len() > 0);
+
+        for hb in heartbeats {
+            assert_eq!(hb.topic, HEARTBEAT_TOPIC);
+        }
     }
 }

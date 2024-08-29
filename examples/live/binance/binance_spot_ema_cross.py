@@ -60,8 +60,8 @@ config_node = TradingNodeConfig(
     #     timestamps_as_iso8601=True,
     #     # types_filter=[QuoteTick],
     #     autotrim_mins=1,
+    #     heartbeat_interval_secs=1,
     # ),
-    # heartbeat_interval=1.0,
     data_clients={
         "BINANCE": BinanceDataClientConfig(
             api_key=None,  # 'BINANCE_API_KEY' env var

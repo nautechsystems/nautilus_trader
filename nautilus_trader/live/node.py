@@ -91,7 +91,6 @@ class TradingNode:
 
         # Async tasks
         self._task_streaming: asyncio.Future | None = None
-        self._task_heartbeats: asyncio.Task | None = None
 
     @property
     def trader_id(self) -> TraderId:
@@ -331,10 +330,6 @@ class TradingNode:
                 self._task_streaming = asyncio.ensure_future(
                     self.kernel.msgbus_database.stream(self.publish_bus_message),
                 )
-            if self._config.heartbeat_interval:
-                self._task_heartbeats = asyncio.create_task(
-                    self.maintain_heartbeat(self._config.heartbeat_interval),
-                )
 
             await asyncio.gather(*tasks)
         except asyncio.CancelledError as e:
@@ -398,11 +393,6 @@ class TradingNode:
             self.kernel.logger.info("Canceling task 'streaming'")
             self._task_streaming.cancel()
             self._task_streaming = None
-
-        if self._task_heartbeats:
-            self.kernel.logger.info("Canceling task 'heartbeats'")
-            self._task_heartbeats.cancel()
-            self._task_heartbeats = None
 
         await self.kernel.stop_async()
 

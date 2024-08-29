@@ -77,8 +77,8 @@ config_node = TradingNodeConfig(
     #     stream_per_topic=False,
     #     # types_filter=[QuoteTick],
     #     autotrim_mins=30,
+    #     heartbeat_interval_secs=1,
     # ),
-    # heartbeat_interval=1.0,
     data_clients={
         "BYBIT": BybitDataClientConfig(
             api_key=None,  # 'BYBIT_API_KEY' env var

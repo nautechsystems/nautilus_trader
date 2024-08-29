@@ -13,7 +13,8 @@ Released on TBD (UTC).
 - Implemented `OrderMatchingEngine` in Rust, thanks @filipmacek
 
 ### Breaking Changes
-None
+- Renamed `heartbeat_interval` to `heartbeat_interval_secs` (more explicitly indicates time units)
+- Moved `heartbeat_interval_secs` config setting to `MessageBusConfig` (the message bus handles external stream processing)
 
 ### Fixes
 - Fixed `OrderBook` memory deallocation in Python finalizer (memory was not being freed on object destruction), thanks for reporting @zeyuhuan

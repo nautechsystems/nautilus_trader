@@ -72,8 +72,8 @@ config_node = TradingNodeConfig(
     #     stream_per_topic=False,
     #     external_streams=["bybit"],
     #     autotrim_mins=30,
+    #     heartbeat_interval_secs=1,
     # ),
-    # heartbeat_interval=1.0,
     # streaming=StreamingConfig(catalog_path="catalog"),
     data_clients={
         "BINANCE": BinanceDataClientConfig(

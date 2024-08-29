@@ -119,6 +119,7 @@ pub struct MessageBusConfig {
     pub stream_per_topic: bool,
     pub external_streams: Option<Vec<String>>,
     pub types_filter: Option<Vec<String>>,
+    pub heartbeat_interval_secs: Option<u16>,
 }
 
 impl Default for MessageBusConfig {
@@ -136,6 +137,7 @@ impl Default for MessageBusConfig {
             stream_per_topic: true,
             external_streams: None,
             types_filter: None,
+            heartbeat_interval_secs: None,
         }
     }
 }
