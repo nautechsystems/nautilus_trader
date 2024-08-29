@@ -2257,7 +2257,11 @@ cdef class MessageBus:
             The type to add for streaming.
 
         """
+        Condition.not_none(cls, "cls")
+
         self._streaming_types.add(cls)
+
+        self._log.debug(f"Added streaming type {cls}")
 
     cpdef void send(self, str endpoint, msg: Any):
         """
