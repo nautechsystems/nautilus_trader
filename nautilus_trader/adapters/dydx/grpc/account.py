@@ -23,6 +23,7 @@ import bech32
 import ecdsa
 import google
 import grpc
+import msgspec
 from bip_utils import Bip39SeedGenerator
 from bip_utils import Bip44
 from bip_utils import Bip44Coins
@@ -213,9 +214,28 @@ class DYDXAccountGRPCAPI:
         Define the account GRPC API endpoints.
         """
         self._channel_url = channel_url
+
+        grpc_service_config = msgspec.json.encode(
+            {
+                "methodConfig": [
+                    {
+                        "name": [{}],  # match all RPCs
+                        "retryPolicy": {
+                            "maxAttempts": 5,
+                            "initialBackoff": "0.1s",
+                            "maxBackoff": "10s",
+                            "backoffMultiplier": 2,
+                            "retryableStatusCodes": ["UNAVAILABLE"],
+                        },
+                    },
+                ],
+            },
+        ).decode()
+
         self._channel: grpc.aio.Channel = grpc.aio.secure_channel(
             target=self._channel_url,
             credentials=grpc.ssl_channel_credentials(),
+            options=[("grpc.service_config", grpc_service_config)],
         )
         self._transaction_builder = transaction_builder
 
