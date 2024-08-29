@@ -332,6 +332,8 @@ class MessageBusConfig(NautilusConfig, frozen=True):
         payloads on the internal message bus.
     types_filter : list[type], optional
         A list of serializable types **not** to publish externally.
+    heartbeat_interval_secs : PositiveInt, optional
+        The heartbeat interval (seconds) to use for trading node health.
 
     """
 
@@ -347,6 +349,7 @@ class MessageBusConfig(NautilusConfig, frozen=True):
     stream_per_topic: bool = True
     external_streams: list[str] | None = None
     types_filter: list[type] | None = None
+    heartbeat_interval_secs: PositiveInt | None = None
 
 
 class InstrumentProviderConfig(NautilusConfig, frozen=True):

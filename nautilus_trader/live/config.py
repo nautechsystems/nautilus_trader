@@ -22,7 +22,6 @@ from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.config import NautilusConfig
 from nautilus_trader.common.config import NonNegativeInt
-from nautilus_trader.common.config import PositiveFloat
 from nautilus_trader.common.config import PositiveInt
 from nautilus_trader.common.config import resolve_config_path
 from nautilus_trader.common.config import resolve_path
@@ -211,8 +210,6 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
         The data client configurations.
     exec_clients : dict[str, ImportableConfig | LiveExecClientConfig], optional
         The execution client configurations.
-    heartbeat_interval : PositiveFloat, optional
-        The heartbeat interval (seconds) to use for trading node health.
 
     """
 
@@ -223,4 +220,3 @@ class TradingNodeConfig(NautilusKernelConfig, frozen=True):
     exec_engine: LiveExecEngineConfig = LiveExecEngineConfig()
     data_clients: dict[str, LiveDataClientConfig] = {}
     exec_clients: dict[str, LiveExecClientConfig] = {}
-    heartbeat_interval: PositiveFloat | None = None
