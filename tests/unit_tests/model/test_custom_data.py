@@ -46,6 +46,7 @@ def test_customdata_decorator_dict() -> None:
 
     # Assert
     assert data_dict == {
+        "type": "GreeksTestData",
         "instrument_id": "ES.GLBX",
         "delta": 0.0,
         "ts_event": 1,
