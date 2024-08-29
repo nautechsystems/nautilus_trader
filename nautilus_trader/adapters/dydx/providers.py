@@ -107,11 +107,12 @@ class DYDXInstrumentProvider(InstrumentProvider):
         filters_str = "..." if not filters else f" with filters {filters}..."
         self._log.info(f"Loading instruments {instrument_ids}{filters_str}.")
 
+        fee_tier: fee_tier_query.QueryUserFeeTierResponse | None = None
+
         try:
             fee_tier = await self._grpc_account.get_user_fee_tier(address=self._wallet_address)
         except AioRpcError as e:
-            self._log.error(f"Failed to get the user fee tier: {e}")
-            return
+            self._log.warning(f"Failed to get the user fee tier: {e}")
 
         for instrument_id in instrument_ids:
             await self._load_instruments(
@@ -137,16 +138,16 @@ class DYDXInstrumentProvider(InstrumentProvider):
         fee_tier: fee_tier_query.QueryUserFeeTierResponse | None = None,
     ) -> None:
         markets = await self._http_market.fetch_instruments(symbol=symbol)
+        maker_fee = Decimal("0")
+        taker_fee = Decimal("0")
 
         if fee_tier is None:
             try:
                 fee_tier = await self._grpc_account.get_user_fee_tier(address=self._wallet_address)
+                maker_fee = Decimal(fee_tier.tier.maker_fee_ppm) / FEE_SCALING
+                taker_fee = Decimal(fee_tier.tier.taker_fee_ppm) / FEE_SCALING
             except AioRpcError as e:
-                self._log.error(f"Failed to get the user fee tier: {e}")
-                return
-
-        maker_fee = Decimal(fee_tier.tier.maker_fee_ppm) / FEE_SCALING
-        taker_fee = Decimal(fee_tier.tier.taker_fee_ppm) / FEE_SCALING
+                self._log.error(f"Failed to get the user fee tier: {e}. Set fees to zero.")
 
         for market in markets.markets.values():
             try:
