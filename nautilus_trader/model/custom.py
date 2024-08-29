@@ -66,6 +66,8 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
             def to_dict(self) -> dict[str, Any]:
                 result = {attr: getattr(self, attr) for attr in self.__annotations__}
 
+                result["type"] = str(cls.__name__)
+
                 if hasattr(self, "instrument_id"):
                     result["instrument_id"] = self.instrument_id.value
 
@@ -80,6 +82,8 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
 
             @classmethod
             def from_dict(cls, data: dict[str, Any]) -> cls:
+                data.pop("type", None)
+
                 if "instrument_id" in data:
                     data["instrument_id"] = InstrumentId.from_str(data["instrument_id"])
 
@@ -119,6 +123,7 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
 
         if "_schema" not in cls.__dict__:
             type_mapping = {
+                "type": pa.string(),
                 "InstrumentId": pa.string(),
                 "str": pa.string(),
                 "bool": pa.bool_(),
