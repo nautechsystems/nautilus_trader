@@ -3,8 +3,8 @@
 Released on TBD (UTC).
 
 ### Enhancements
-- Added dYdX integration (#1861, #1868, #1873, #1874, #1875, #1877, #1879, #1880, #1882), thanks @davidsblom
-- Added composite bar types, bars aggregated from other bar types (#1859), thanks @faysou
+- Added dYdX integration (#1861, #1868, #1873, #1874, #1875, #1877, #1879, #1880, #1882, #1886, #1887), thanks @davidsblom
+- Added composite bar types, bars aggregated from other bar types (#1859, #1885), thanks @faysou
 - Added `InstrumentClose` functionality for `OrderMatchingEngine`, thanks @limx0
 - Added `BacktestRunConfig.dispose_on_completion` config setting to control post-run disposal behavior for each internal backtest engine (`True` by default to retain current behavior)
 - Improved error modeling and handling in Rust (#1866), thanks @twitu
