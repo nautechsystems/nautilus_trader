@@ -515,7 +515,7 @@ class BybitExecutionClient(LiveExecutionClient):
     async def _modify_order(self, command: ModifyOrder) -> None:
         order: Order | None = self._cache.order(command.client_order_id)
         if order is None:
-            self._log.error(f"{command.client_order_id!r} not found to cancel")
+            self._log.error(f"{command.client_order_id!r} not found in cache")
             return
 
         if order.is_closed:
@@ -563,7 +563,7 @@ class BybitExecutionClient(LiveExecutionClient):
     async def _cancel_order(self, command: CancelOrder) -> None:
         order: Order | None = self._cache.order(command.client_order_id)
         if order is None:
-            self._log.error(f"{command.client_order_id!r} not found to cancel")
+            self._log.error(f"{command.client_order_id!r} not found in cache")
             return
 
         if order.is_closed:
