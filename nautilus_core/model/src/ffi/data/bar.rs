@@ -108,23 +108,18 @@ pub extern "C" fn bar_type_new_composite(
     spec: BarSpecification,
     aggregation_source: AggregationSource,
 
-    composite_instrument_id: InstrumentId,
-    composite_spec: BarSpecification,
+    composite_step: usize,
+    composite_aggregation: BarAggregation,
     composite_aggregation_source: AggregationSource,
 ) -> BarType {
     BarType::new_composite(
         instrument_id,
         spec,
         aggregation_source,
-        composite_instrument_id,
-        composite_spec,
+        composite_step,
+        composite_aggregation,
         composite_aggregation_source,
     )
-}
-
-#[no_mangle]
-pub extern "C" fn bar_type_from_bar_types(standard: &BarType, composite: &BarType) -> BarType {
-    BarType::from_bar_types(standard, composite)
 }
 
 #[no_mangle]

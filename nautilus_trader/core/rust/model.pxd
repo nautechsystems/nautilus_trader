@@ -632,10 +632,10 @@ cdef extern from "../includes/model.h":
         BarSpecification_t spec;
         # The bar types aggregation source.
         AggregationSource aggregation_source;
-        # The composite bar types instrument ID.
-        InstrumentId_t composite_instrument_id;
-        # The composite bar types specification.
-        BarSpecification_t composite_spec;
+        # The composite step for binning samples for bar aggregation.
+        uintptr_t composite_step;
+        # The composite type of bar aggregation.
+        uint8_t composite_aggregation;
         # The composite bar types aggregation source.
         AggregationSource composite_aggregation_source;
 
@@ -882,11 +882,9 @@ cdef extern from "../includes/model.h":
     BarType_t bar_type_new_composite(InstrumentId_t instrument_id,
                                      BarSpecification_t spec,
                                      AggregationSource aggregation_source,
-                                     InstrumentId_t composite_instrument_id,
-                                     BarSpecification_t composite_spec,
+                                     uintptr_t composite_step,
+                                     uint8_t composite_aggregation,
                                      AggregationSource composite_aggregation_source);
-
-    BarType_t bar_type_from_bar_types(const BarType_t *standard, const BarType_t *composite);
 
     uint8_t bar_type_is_standard(const BarType_t *bar_type);
 

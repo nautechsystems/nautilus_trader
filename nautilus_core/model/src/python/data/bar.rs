@@ -130,24 +130,18 @@ impl BarType {
         instrument_id: InstrumentId,
         spec: BarSpecification,
         aggregation_source: AggregationSource,
-        composite_instrument_id: InstrumentId,
-        composite_spec: BarSpecification,
+        composite_step: usize,
+        composite_aggregation: BarAggregation,
         composite_aggregation_source: AggregationSource,
     ) -> Self {
         Self::new_composite(
             instrument_id,
             spec,
             aggregation_source,
-            composite_instrument_id,
-            composite_spec,
+            composite_step,
+            composite_aggregation,
             composite_aggregation_source,
         )
-    }
-
-    #[staticmethod]
-    #[pyo3(name = "from_bar_types")]
-    fn py_from_bar_types(standard: &Self, composite: &Self) -> Self {
-        Self::from_bar_types(standard, composite)
     }
 
     #[pyo3(name = "is_standard")]

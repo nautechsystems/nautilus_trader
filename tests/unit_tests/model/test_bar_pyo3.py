@@ -640,7 +640,7 @@ class TestBar:
         assert unpickled == bar
 
     def test_bar_type_composite_parse_valid(self):
-        input_str = "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL"
+        input_str = "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL"
         bar_type = BarType.from_str(input_str)
         standard = bar_type.standard()
         composite = bar_type.composite()
@@ -674,4 +674,3 @@ class TestBar:
         assert composite.aggregation_source == AggregationSource.EXTERNAL
         assert composite == BarType.from_str(composite_input)
         assert composite.is_standard()
-        assert bar_type == BarType.from_bar_types(standard, composite)
