@@ -168,10 +168,10 @@ pub enum BarType {
         /// The bar types aggregation source.
         aggregation_source: AggregationSource,
 
-        /// The composite bar types instrument ID.
-        composite_instrument_id: InstrumentId,
-        /// The composite bar types specification.
-        composite_spec: BarSpecification,
+        /// The composite step for binning samples for bar aggregation.
+        composite_step: usize,
+        /// The composite type of bar aggregation.
+        composite_aggregation: BarAggregation,
         /// The composite bar types aggregation source.
         composite_aggregation_source: AggregationSource,
     },
@@ -197,8 +197,8 @@ impl BarType {
         spec: BarSpecification,
         aggregation_source: AggregationSource,
 
-        composite_instrument_id: InstrumentId,
-        composite_spec: BarSpecification,
+        composite_step: usize,
+        composite_aggregation: BarAggregation,
         composite_aggregation_source: AggregationSource,
     ) -> Self {
         Self::Composite {
@@ -206,21 +206,9 @@ impl BarType {
             spec,
             aggregation_source,
 
-            composite_instrument_id,
-            composite_spec,
+            composite_step,
+            composite_aggregation,
             composite_aggregation_source,
-        }
-    }
-
-    pub fn from_bar_types(standard: &Self, composite: &Self) -> Self {
-        Self::Composite {
-            instrument_id: standard.instrument_id(),
-            spec: standard.spec(),
-            aggregation_source: standard.aggregation_source(),
-
-            composite_instrument_id: composite.instrument_id(),
-            composite_spec: composite.spec(),
-            composite_aggregation_source: composite.aggregation_source(),
         }
     }
 
@@ -245,10 +233,7 @@ impl BarType {
                 instrument_id,
                 spec,
                 aggregation_source,
-
-                composite_instrument_id: _,
-                composite_spec: _,
-                composite_aggregation_source: _,
+                ..
             } => Self::new(*instrument_id, *spec, *aggregation_source),
         }
     }
@@ -257,16 +242,16 @@ impl BarType {
         match &self {
             &&b @ BarType::Standard { .. } => b, // case shouldn't be used if is_composite is called before
             BarType::Composite {
-                instrument_id: _,
-                spec: _,
+                instrument_id,
+                spec,
                 aggregation_source: _,
 
-                composite_instrument_id,
-                composite_spec,
+                composite_step,
+                composite_aggregation,
                 composite_aggregation_source,
             } => Self::new(
-                *composite_instrument_id,
-                *composite_spec,
+                *instrument_id,
+                BarSpecification::new(*composite_step, *composite_aggregation, spec.price_type),
                 *composite_aggregation_source,
             ),
         }
@@ -355,9 +340,9 @@ impl FromStr for BarType {
             })?;
 
         if let Some(composite_str) = composite_str {
-            let composite_pieces: Vec<&str> = composite_str.rsplitn(5, '-').collect();
+            let composite_pieces: Vec<&str> = composite_str.rsplitn(3, '-').collect();
             let rev_composite_pieces: Vec<&str> = composite_pieces.into_iter().rev().collect();
-            if rev_composite_pieces.len() != 5 {
+            if rev_composite_pieces.len() != 3 {
                 return Err(BarTypeParseError {
                     input: s.to_string(),
                     token: String::new(),
@@ -365,59 +350,41 @@ impl FromStr for BarType {
                 });
             }
 
-            let composite_instrument_id =
-                InstrumentId::from_str(rev_composite_pieces[0]).map_err(|_| BarTypeParseError {
-                    input: s.to_string(),
-                    token: rev_composite_pieces[0].to_string(),
-                    position: 5,
-                })?;
-
             let composite_step =
-                rev_composite_pieces[1]
+                rev_composite_pieces[0]
                     .parse()
                     .map_err(|_| BarTypeParseError {
                         input: s.to_string(),
-                        token: rev_composite_pieces[1].to_string(),
-                        position: 6,
+                        token: rev_composite_pieces[0].to_string(),
+                        position: 5,
                     })?;
             let composite_aggregation =
-                BarAggregation::from_str(rev_composite_pieces[2]).map_err(|_| {
+                BarAggregation::from_str(rev_composite_pieces[1]).map_err(|_| {
                     BarTypeParseError {
                         input: s.to_string(),
-                        token: rev_composite_pieces[2].to_string(),
-                        position: 7,
+                        token: rev_composite_pieces[1].to_string(),
+                        position: 6,
                     }
                 })?;
-            let composite_price_type =
-                PriceType::from_str(rev_composite_pieces[3]).map_err(|_| BarTypeParseError {
-                    input: s.to_string(),
-                    token: rev_composite_pieces[3].to_string(),
-                    position: 8,
-                })?;
-            let composite_aggregation_source = AggregationSource::from_str(rev_composite_pieces[4])
+            let composite_aggregation_source = AggregationSource::from_str(rev_composite_pieces[2])
                 .map_err(|_| BarTypeParseError {
                     input: s.to_string(),
-                    token: rev_composite_pieces[4].to_string(),
-                    position: 9,
+                    token: rev_composite_pieces[2].to_string(),
+                    position: 7,
                 })?;
 
-            Ok(Self::Composite {
+            Ok(Self::new_composite(
                 instrument_id,
-                spec: BarSpecification {
+                BarSpecification {
                     step,
                     aggregation,
                     price_type,
                 },
                 aggregation_source,
-
-                composite_instrument_id,
-                composite_spec: BarSpecification {
-                    step: composite_step,
-                    aggregation: composite_aggregation,
-                    price_type: composite_price_type,
-                },
+                composite_step,
+                composite_aggregation,
                 composite_aggregation_source,
-            })
+            ))
         } else {
             Ok(Self::Standard {
                 instrument_id,
@@ -452,8 +419,9 @@ impl Display for BarType {
                 instrument_id,
                 spec,
                 aggregation_source,
-                composite_instrument_id,
-                composite_spec,
+
+                composite_step,
+                composite_aggregation,
                 composite_aggregation_source,
             } => {
                 write!(
@@ -462,9 +430,9 @@ impl Display for BarType {
                     instrument_id,
                     spec,
                     aggregation_source,
-                    composite_instrument_id,
-                    composite_spec,
-                    composite_aggregation_source
+                    *composite_step,
+                    *composite_aggregation,
+                    *composite_aggregation_source
                 )
             }
         }
@@ -794,7 +762,7 @@ mod tests {
 
     #[rstest]
     fn test_bar_type_composite_parse_valid() {
-        let input = "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL";
+        let input = "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL";
         let bar_type = BarType::from(input);
         let standard = bar_type.standard();
 
@@ -847,15 +815,6 @@ mod tests {
         assert_eq!(composite.aggregation_source(), AggregationSource::External);
         assert_eq!(composite, BarType::from(composite_input));
         assert!(composite.is_standard());
-        assert_eq!(bar_type, BarType::from_bar_types(&standard, &composite));
-    }
-
-    #[rstest]
-    fn test_bar_type_is_composite() {
-        let input = "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL";
-        let bar_type = BarType::from(input);
-
-        assert!(bar_type.is_composite());
     }
 
     #[rstest]
@@ -924,7 +883,7 @@ mod tests {
 
     #[rstest]
     fn test_bar_type_parse_invalid_token_pos_5() {
-        let input = "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@INVALID-1-MINUTE-LAST-EXTERNAL";
+        let input = "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@INVALID-MINUTE-EXTERNAL";
         let result = BarType::from_str(input);
 
         assert!(result.is_err());
@@ -938,7 +897,7 @@ mod tests {
 
     #[rstest]
     fn test_bar_type_parse_invalid_token_pos_6() {
-        let input = "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@BTCUSDT-PERP.BINANCE-INVALID-MINUTE-LAST-EXTERNAL";
+        let input = "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@1-INVALID-EXTERNAL";
         let result = BarType::from_str(input);
 
         assert!(result.is_err());
@@ -952,7 +911,7 @@ mod tests {
 
     #[rstest]
     fn test_bar_type_parse_invalid_token_pos_7() {
-        let input = "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@BTCUSDT-PERP.BINANCE-1-INVALID-LAST-EXTERNAL";
+        let input = "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@1-MINUTE-INVALID";
         let result = BarType::from_str(input);
 
         assert!(result.is_err());
@@ -960,34 +919,6 @@ mod tests {
             result.unwrap_err().to_string(),
             format!(
                 "Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 7"
-            )
-        );
-    }
-
-    #[rstest]
-    fn test_bar_type_parse_invalid_token_pos_8() {
-        let input = "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@BTCUSDT-PERP.BINANCE-1-MINUTE-INVALID-EXTERNAL";
-        let result = BarType::from_str(input);
-
-        assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            format!(
-                "Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 8"
-            )
-        );
-    }
-
-    #[rstest]
-    fn test_bar_type_parse_invalid_token_pos_9() {
-        let input = "BTCUSDT-PERP.BINANCE-2-MINUTE-LAST-INTERNAL@BTCUSDT-PERP.BINANCE-1-MINUTE-LAST-INVALID";
-        let result = BarType::from_str(input);
-
-        assert!(result.is_err());
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            format!(
-                "Error parsing `BarType` from '{input}', invalid token: 'INVALID' at position 9"
             )
         );
     }
@@ -1068,8 +999,8 @@ mod tests {
             spec: bar_spec2,
             aggregation_source: AggregationSource::Internal,
 
-            composite_instrument_id: instrument_id2,
-            composite_spec: bar_spec,
+            composite_step: 1,
+            composite_aggregation: BarAggregation::Minute,
             composite_aggregation_source: AggregationSource::External,
         };
 

@@ -63,7 +63,6 @@ from nautilus_trader.core.rust.model cimport bar_type_aggregation_source
 from nautilus_trader.core.rust.model cimport bar_type_check_parsing
 from nautilus_trader.core.rust.model cimport bar_type_composite
 from nautilus_trader.core.rust.model cimport bar_type_eq
-from nautilus_trader.core.rust.model cimport bar_type_from_bar_types
 from nautilus_trader.core.rust.model cimport bar_type_from_cstr
 from nautilus_trader.core.rust.model cimport bar_type_ge
 from nautilus_trader.core.rust.model cimport bar_type_gt
@@ -680,10 +679,8 @@ cdef class BarType:
                 spec.price_type,
                 self.aggregation_source,
 
-                composite.instrument_id.value,
                 spec_composite.step,
                 spec_composite.aggregation,
-                spec_composite.price_type,
                 composite.aggregation_source
             )
 
@@ -713,13 +710,9 @@ cdef class BarType:
                 ),
                 state[4],
 
-                composite_instrument_id._mem,
-                bar_specification_new(
-                    state[6],
-                    state[7],
-                    state[8]
-                ),
-                state[9],
+                state[5],
+                state[6],
+                state[7],
             )
 
     cdef str to_str(self):
@@ -853,8 +846,8 @@ cdef class BarType:
         BarSpecification bar_spec,
         AggregationSource aggregation_source,
 
-        InstrumentId composite_instrument_id,
-        BarSpecification composite_bar_spec,
+        int composite_step,
+        BarAggregation composite_aggregation,
         AggregationSource composite_aggregation_source,
     ) -> BarType:
         return BarType.from_mem_c(
@@ -863,15 +856,11 @@ cdef class BarType:
                 bar_spec._mem,
                 aggregation_source,
 
-                composite_instrument_id._mem,
-                composite_bar_spec._mem,
+                composite_step,
+                composite_aggregation,
                 composite_aggregation_source,
             )
         )
-
-    @staticmethod
-    def from_bar_types(BarType standard, BarType composite) -> BarType:
-        return BarType.from_mem_c(bar_type_from_bar_types(&standard._mem, &composite._mem))
 
     cpdef bint is_standard(self):
         """
@@ -1014,7 +1003,6 @@ cdef class Bar(Data):
             )
         else:
             instrument_id = InstrumentId.from_str_c(state[0])
-            composite_instrument_id = InstrumentId.from_str_c(state[5])
 
             self._mem = bar_new_from_raw(
                 bar_type_new_composite(
@@ -1026,14 +1014,12 @@ cdef class Bar(Data):
                     ),
                     state[4],
 
-                    composite_instrument_id._mem,
-                    bar_specification_new(
-                        state[6],
-                        state[7],
-                        state[8]
-                    ),
-                    state[9],
+                    state[5],
+                    state[6],
+                    state[7]
                 ),
+                state[8],
+                state[9],
                 state[10],
                 state[11],
                 state[12],
@@ -1041,8 +1027,6 @@ cdef class Bar(Data):
                 state[14],
                 state[15],
                 state[16],
-                state[17],
-                state[18],
             )
 
     def __eq__(self, Bar other) -> bool:

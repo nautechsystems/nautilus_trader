@@ -1384,8 +1384,8 @@ class TestTimeBarAggregator:
             instrument_id,
             bar_spec3,
             AggregationSource.INTERNAL,
-            instrument_id,
-            bar_spec1,
+            bar_spec1.step,
+            bar_spec1.aggregation,
             AggregationSource.EXTERNAL,
         )
         aggregator = TimeBarAggregator(
