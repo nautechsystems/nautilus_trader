@@ -436,7 +436,12 @@ class DYDXDataClient(LiveMarketDataClient):
             return
 
         dydx_symbol = DYDXSymbol(instrument_id.symbol.value)
-        await self._ws_client.subscribe_order_book(dydx_symbol.raw_symbol)
+
+        # Check if the websocket client is already subscribed.
+        subscription = ("v4_orderbook", dydx_symbol.raw_symbol)
+
+        if not self._ws_client.has_subscription(subscription):
+            await self._ws_client.subscribe_order_book(dydx_symbol.raw_symbol)
 
     async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         self._log.debug(
@@ -446,10 +451,15 @@ class DYDXDataClient(LiveMarketDataClient):
         book_type = BookType.L2_MBP
         self._books[instrument_id] = OrderBook(instrument_id, book_type)
 
-        await self._subscribe_order_book_deltas(
-            instrument_id=instrument_id,
-            book_type=book_type,
-        )
+        # Check if the websocket client is already subscribed.
+        dydx_symbol = DYDXSymbol(instrument_id.symbol.value)
+        subscription = ("v4_orderbook", dydx_symbol.raw_symbol)
+
+        if not self._ws_client.has_subscription(subscription):
+            await self._subscribe_order_book_deltas(
+                instrument_id=instrument_id,
+                book_type=book_type,
+            )
 
     async def _subscribe_bars(self, bar_type: BarType) -> None:
         self._log.info(f"Subscribe to {bar_type} bars")
@@ -465,10 +475,22 @@ class DYDXDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
         dydx_symbol = DYDXSymbol(instrument_id.symbol.value)
-        await self._ws_client.unsubscribe_order_book(dydx_symbol.raw_symbol)
+
+        # Check if the websocket client is subscribed.
+        subscription = ("v4_orderbook", dydx_symbol.raw_symbol)
+
+        if self._ws_client.has_subscription(subscription):
+            await self._ws_client.unsubscribe_order_book(dydx_symbol.raw_symbol)
 
     async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
-        await self._unsubscribe_order_book_deltas(instrument_id=instrument_id)
+        dydx_symbol = DYDXSymbol(instrument_id.symbol.value)
+
+        # Check if the websocket client is subscribed.
+        subscription = ("v4_orderbook", dydx_symbol.raw_symbol)
+
+        if self._ws_client.has_subscription(subscription):
+
+            await self._unsubscribe_order_book_deltas(instrument_id=instrument_id)
 
     async def _unsubscribe_bars(self, bar_type: BarType) -> None:
         dydx_symbol = DYDXSymbol(bar_type.instrument_id.symbol.value)
