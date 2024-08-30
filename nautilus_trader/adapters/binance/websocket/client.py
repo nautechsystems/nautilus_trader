@@ -536,6 +536,6 @@ class BinanceWebSocketClient:
         self._log.debug(f"SENDING: {msg}")
 
         try:
-            await self._client.send_text(msgspec.json.encode(msg).decode())
+            await self._client.send_text(msgspec.json.encode(msg))
         except WebSocketClientError as e:
             self._log.error(str(e))
