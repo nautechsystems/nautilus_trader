@@ -403,7 +403,7 @@ pub fn stream_messages(
         }
     }
 
-    tracing::info!("Stopped message streaming");
+    tracing::debug!("Stopped message streaming");
     Ok(())
 }
 
@@ -468,7 +468,7 @@ async fn run_heartbeat(
         }
     }
 
-    tracing::info!("Stopped heartbeat");
+    tracing::debug!("Stopped heartbeat");
 }
 
 fn create_heartbeat_msg() -> BusMessage {
