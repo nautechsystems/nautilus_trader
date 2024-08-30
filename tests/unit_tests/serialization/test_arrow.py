@@ -76,6 +76,7 @@ class TestArrowSerializer:
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
+            tags=["tag-01", "tag-02", "tag-03"],
         )
         self.order_submitted = copy.copy(self.order)
         self.order_submitted.apply(TestEventStubs.order_submitted(self.order))

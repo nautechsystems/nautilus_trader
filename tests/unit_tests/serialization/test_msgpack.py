@@ -186,6 +186,7 @@ class TestMsgSpecSerializer:
             price=Price(1.00000, precision=5),
             time_in_force=TimeInForce.GTD,
             expire_time_ns=1_000_000_000 * 60,
+            tags=["tag-01", "tag-02", "tag-03"],
             init_id=UUID4(),
             ts_init=0,
         )
