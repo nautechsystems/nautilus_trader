@@ -775,28 +775,6 @@ cdef class ClientOrderId(Identifier):
     cdef str to_str(self):
         return ustr_to_pystr(self._mem._0)
 
-    cpdef bint is_this_trader(self, TraderId trader_id):
-        """
-        Return whether this client order ID is for the given trader ID instance.
-
-        Will compare the given `trader_id.get_tag()` with this identifier.
-
-        Parameters
-        ----------
-        trader_id : TraderId
-            The trader ID to compare with.
-
-        Returns
-        -------
-        bool
-            True if for this instance, else false.
-
-        """
-        cdef list parts = self.to_str().split("-", maxsplit=4)
-        if len(parts) < 4:
-            return False
-        return parts[3] == trader_id.get_tag()
-
 
 cdef class VenueOrderId(Identifier):
     """
