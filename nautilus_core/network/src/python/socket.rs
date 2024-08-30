@@ -56,9 +56,9 @@ impl SocketConfig {
 impl SocketClient {
     /// Create a socket client.
     ///
-    /// # Safety
+    /// # Errors
     ///
-    /// - Throws an Exception if it is unable to make socket connection
+    /// - Throws an Exception if it is unable to make socket connection.
     #[staticmethod]
     #[pyo3(name = "connect")]
     fn py_connect(
@@ -115,7 +115,7 @@ impl SocketClient {
 
     /// Send bytes data to the connection.
     ///
-    /// # Safety
+    /// # Errors
     ///
     /// - Throws an Exception if it is not able to send data.
     #[pyo3(name = "send")]

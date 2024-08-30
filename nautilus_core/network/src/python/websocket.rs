@@ -108,7 +108,7 @@ impl WebSocketClient {
 
     /// Send bytes data to the server.
     ///
-    /// # Safety
+    /// # Errors
     ///
     /// - Raises PyRuntimeError if not able to send data.
     #[pyo3(name = "send")]
@@ -117,7 +117,7 @@ impl WebSocketClient {
         data: Vec<u8>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        tracing::debug!("Sending bytes {:?}", data);
+        tracing::debug!("Sending binary: {:?}", data);
         let writer = slf.writer.clone();
         pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
             let mut guard = writer.lock().await;
@@ -128,17 +128,18 @@ impl WebSocketClient {
         })
     }
 
-    /// Send text data to the server.
+    /// Send UTF-8 encoded bytes as texy data to the server.
     ///
-    /// # Safety
+    /// # Errors
     ///
     /// - Raises PyRuntimeError if not able to send data.
     #[pyo3(name = "send_text")]
     fn py_send_text<'py>(
         slf: PyRef<'_, Self>,
-        data: String,
+        data: Vec<u8>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
+        let data = String::from_utf8(data).map_err(to_pyvalue_err)?;
         tracing::debug!("Sending text: {}", data);
         let writer = slf.writer.clone();
         pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
@@ -152,7 +153,7 @@ impl WebSocketClient {
 
     /// Send pong bytes data to the server.
     ///
-    /// # Safety
+    /// # Errors
     ///
     /// - Raises PyRuntimeError if not able to send data.
     #[pyo3(name = "send_pong")]

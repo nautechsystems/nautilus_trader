@@ -10,11 +10,13 @@ Released on TBD (UTC).
 - Improved error modeling and handling in Rust (#1866), thanks @twitu
 - Improved `HttpClient` error handling and added `HttpClientError` exception for Python (#1872), thanks @twitu
 - Improved `WebSocketClient` error handling and added `WebSocketClientError` exception for Python (#1876), thanks @twitu
+- Improved `WebSocketClient.send_text` efficiency (now accepts UTF-8 encoded bytes, rather than a Python string)
 - Implemented `OrderMatchingEngine` in Rust, thanks @filipmacek
 
 ### Breaking Changes
 - Renamed `heartbeat_interval` to `heartbeat_interval_secs` (more explicitly indicates time units)
 - Moved `heartbeat_interval_secs` config setting to `MessageBusConfig` (the message bus handles external stream processing)
+- Changed `WebSocketClient.send_text(...)` to take `data` as `bytes` rather than `str`
 
 ### Fixes
 - Fixed `OrderBook` memory deallocation in Python finalizer (memory was not being freed on object destruction), thanks for reporting @zeyuhuan
