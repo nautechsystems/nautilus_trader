@@ -128,7 +128,7 @@ impl WebSocketClient {
         })
     }
 
-    /// Send UTF-8 encoded bytes as texy data to the server.
+    /// Send UTF-8 encoded bytes as text data to the server.
     ///
     /// # Errors
     ///
