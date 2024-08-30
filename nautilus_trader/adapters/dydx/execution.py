@@ -390,7 +390,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             order = self._cache.order(client_order_id)
 
         if order is None:
-            message = "Cannot find order `{client_order_id}`"
+            message = f"Cannot find order {client_order_id!r}"
             self._log.error(message)
             return None
 
