@@ -159,7 +159,8 @@ When messages are published on the message bus, they are serialized and written 
 for the message bus is configured and enabled. To prevent flooding the stream with data like high-frequency 
 quotes, you may filter out certain types of messages from external publication.
 
-To enable this filtering mechanism, pass a list of `type` objects to the `types_filter` parameter in the message bus configuration, specifying which types of messages should be excluded from external publication.
+To enable this filtering mechanism, pass a list of `type` objects to the `types_filter` parameter in the message bus configuration,
+specifying which types of messages should be excluded from external publication.
 
 ```python
 from nautilus_trader.config import MessageBusConfig
