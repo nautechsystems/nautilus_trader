@@ -981,7 +981,7 @@ cdef class DataEngine(Component):
 
         if bar_type.is_internally_aggregated():
             # Internal aggregation
-            if bar_type not in self._bar_aggregators:
+            if bar_type.standard() not in self._bar_aggregators:
                 self._start_bar_aggregator(client, bar_type, await_partial)
         else:
             # External aggregation
@@ -1194,7 +1194,7 @@ cdef class DataEngine(Component):
 
         if bar_type.is_internally_aggregated():
             # Internal aggregation
-            if bar_type in self._bar_aggregators:
+            if bar_type.standard() in self._bar_aggregators:
                 self._stop_bar_aggregator(client, bar_type)
         else:
             # External aggregation
@@ -1730,7 +1730,7 @@ cdef class DataEngine(Component):
         aggregator.set_await_partial(await_partial)
 
         # Add aggregator
-        self._bar_aggregators[bar_type] = aggregator
+        self._bar_aggregators[bar_type.standard()] = aggregator
         self._log.debug(f"Added {aggregator} for {bar_type} bars")
 
         # Subscribe to required data
@@ -1762,7 +1762,7 @@ cdef class DataEngine(Component):
             self._handle_subscribe_quote_ticks(client, bar_type.instrument_id)
 
     cpdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type):
-        cdef aggregator = self._bar_aggregators.get(bar_type)
+        cdef aggregator = self._bar_aggregators.get(bar_type.standard())
         if aggregator is None:
             self._log.warning(
                 f"Cannot stop bar aggregator: "
@@ -1800,7 +1800,7 @@ cdef class DataEngine(Component):
             self._handle_unsubscribe_quote_ticks(client, bar_type.instrument_id)
 
         # Remove from aggregators
-        del self._bar_aggregators[bar_type]
+        del self._bar_aggregators[bar_type.standard()]
 
     cpdef void _update_synthetics_with_quote(self, list synthetics, QuoteTick update):
         cdef SyntheticInstrument synthetic
