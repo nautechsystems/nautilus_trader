@@ -610,7 +610,7 @@ cdef class TimeBarAggregator(BarAggregator):
     ):
         super().__init__(
             instrument=instrument,
-            bar_type=bar_type,
+            bar_type=bar_type.standard(),
             handler=handler,
         )
 
@@ -626,6 +626,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self._cached_update = None
         self._build_with_no_updates = build_with_no_updates
         self._timestamp_on_close = timestamp_on_close
+        self._add_delay = bar_type.is_composite() and bar_type.composite().is_internally_aggregated()
 
         if interval_type == "left-open":
             self._is_left_open = True
@@ -701,6 +702,9 @@ cdef class TimeBarAggregator(BarAggregator):
                 f"Aggregation type not supported for time bars, "
                 f"was {bar_aggregation_to_str(self.bar_type.spec.aggregation)}",
             )
+
+        if self._add_delay:
+            start_time += timedelta(microseconds=10)
 
         return start_time
 

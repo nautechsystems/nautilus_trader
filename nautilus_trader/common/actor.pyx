@@ -1400,7 +1400,7 @@ cdef class Actor(Component):
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.bars.{bar_type}",
+            topic=f"data.bars.{bar_type.standard()}",
             handler=self.handle_bar,
         )
 
