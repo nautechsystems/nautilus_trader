@@ -19,6 +19,7 @@ Define the schemas for the GetOrders endpoint.
 # ruff: noqa: N815
 
 import datetime
+from decimal import Decimal
 
 import msgspec
 
@@ -86,6 +87,8 @@ class DYDXOrderResponse(msgspec.Struct, forbid_unknown_fields=True):
         self,
         account_id: AccountId,
         client_order_id: ClientOrderId | None,
+        price_precision: int,
+        size_precision: int,
         report_id: UUID4,
         enum_parser: DYDXEnumParser,
         ts_init: int,
@@ -94,9 +97,9 @@ class DYDXOrderResponse(msgspec.Struct, forbid_unknown_fields=True):
         Create an order status report from the order message.
         """
         filled_qty = (
-            Quantity.from_str(self.totalFilled)
+            Quantity(Decimal(self.totalFilled), size_precision)
             if self.totalFilled is not None
-            else Quantity.from_str("0")
+            else Quantity(Decimal("0"), size_precision)
         )
         ts_last = dt_to_unix_nanos(self.updatedAt) if self.updatedAt is not None else ts_init
 
@@ -109,8 +112,8 @@ class DYDXOrderResponse(msgspec.Struct, forbid_unknown_fields=True):
             order_type=enum_parser.parse_dydx_order_type(self.type),
             time_in_force=enum_parser.parse_dydx_time_in_force(self.timeInForce),
             order_status=enum_parser.parse_dydx_order_status(self.status),
-            price=Price.from_str(self.price),
-            quantity=Quantity.from_str(self.size),
+            price=Price(Decimal(self.price), price_precision),
+            quantity=Quantity(Decimal(self.size), size_precision),
             filled_qty=filled_qty,
             post_only=self.postOnly,
             reduce_only=self.reduceOnly,
