@@ -473,7 +473,7 @@ class DYDXExecutionClient(LiveExecutionClient):
                     )
                     return []
 
-                # We us the updatedAt property to filter the orders since the
+                # We use the updatedAt property to filter the orders since the
                 # createdAt property does not exist. createdAtBlockHeight is
                 # available, but a mapping between block height and datetime is missing.
                 if (
