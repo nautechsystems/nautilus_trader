@@ -430,6 +430,30 @@ def test_list_perpetual_markets(
     assert len(list_perpetual_markets_response.markets) == expected_num_markets
 
 
+def test_list_perpetual_markets_null_oracle_price() -> None:
+    """
+    Test decoding the /v4/perpetualMarkets endpoint with a null oracle price.
+    """
+    # Prepare
+    expected_num_markets = 101
+    decoder = msgspec.json.Decoder(DYDXListPerpetualMarketsResponse)
+
+    # Act
+    with Path(
+        "tests/test_data/dydx/http/list_perpetual_markets_empty_oracle_price.json",
+    ).open() as file_reader:
+        list_perpetual_markets_response = decoder.decode(file_reader.read())
+
+    # Assert
+    assert len(list_perpetual_markets_response.markets) == expected_num_markets
+    assert (
+        list_perpetual_markets_response.markets[
+            "BUFFI,UNISWAP_V3,0X4C1B1302220D7DE5C22B495E78B72F2DD2457D45-USD"
+        ].oraclePrice
+        is None
+    )
+
+
 def test_list_perpetual_markets_base_currency(
     list_perpetual_markets_response: DYDXListPerpetualMarketsResponse,
 ) -> None:
