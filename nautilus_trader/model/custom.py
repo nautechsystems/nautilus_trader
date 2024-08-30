@@ -123,7 +123,6 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
 
         if "_schema" not in cls.__dict__:
             type_mapping = {
-                "type": pa.string(),
                 "InstrumentId": pa.string(),
                 "str": pa.string(),
                 "bool": pa.bool_(),
@@ -138,6 +137,7 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
                     for attr in cls.__annotations__
                 }
                 | {
+                    "type": pa.string(),
                     "ts_event": pa.int64(),
                     "ts_init": pa.int64(),
                 },
