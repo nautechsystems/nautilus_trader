@@ -462,7 +462,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             )
 
             for dydx_order in dydx_orders:
-                current_instrument_id = DYDXSymbol(self.ticker).to_instrument_id()
+                current_instrument_id = DYDXSymbol(dydx_order.ticker).to_instrument_id()
                 instrument = self._cache.instrument(current_instrument_id)
 
                 if instrument is None:
@@ -527,11 +527,12 @@ class DYDXExecutionClient(LiveExecutionClient):
                         "Venue order ID not set by venue. Unable to retrieve ClientOrderId",
                     )
 
-                instrument = self._cache.instrument(instrument_id)
+                current_instrument_id = DYDXSymbol(dydx_fill.market).to_instrument_id()
+                instrument = self._cache.instrument(current_instrument_id)
 
                 if instrument is None:
                     self._log.error(
-                        f"Cannot handle fill event: instrument {instrument_id} not found",
+                        f"Cannot handle fill event: instrument {current_instrument_id} not found",
                     )
                     return []
 
