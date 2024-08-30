@@ -118,9 +118,6 @@ class BybitHttpClient:
         else:
             headers = self._headers
 
-        # Uncomment for development
-        # self._log.info(f"{url_path=}, {payload=}", LogColor.MAGENTA)
-
         response: HttpResponse = await self._client.request(
             http_method,
             url,

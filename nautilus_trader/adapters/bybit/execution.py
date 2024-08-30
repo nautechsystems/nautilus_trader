@@ -843,8 +843,6 @@ class BybitExecutionClient(LiveExecutionClient):
         )
 
     def _handle_ws_message(self, raw: bytes) -> None:
-        # Uncomment for development
-        # self._log.info(str(json.dumps(msgspec.json.decode(raw), indent=4)), color=LogColor.MAGENTA)
         try:
             ws_message = self._decoder_ws_msg_general.decode(raw)
             if ws_message.op == BYBIT_PONG:

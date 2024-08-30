@@ -94,7 +94,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         config: BinanceExecClientConfig,
         account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURE,
         name: str | None = None,
-    ):
+    ) -> None:
         PyCondition.true(
             account_type.is_futures,
             "account_type was not USDT_FUTURE or COIN_FUTURE",
@@ -270,12 +270,9 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
     # -- WEBSOCKET EVENT HANDLERS --------------------------------------------------------------------
 
     def _handle_user_ws_message(self, raw: bytes) -> None:
-        # TODO: Uncomment for development
-        # self._log.info(str(json.dumps(msgspec.json.decode(raw), indent=4)), color=LogColor.MAGENTA)
         wrapper = self._decoder_futures_user_msg_wrapper.decode(raw)
         if not wrapper.stream or not wrapper.data:
-            # Control message response
-            return
+            return  # Control message response
         try:
             self._futures_user_ws_handlers[wrapper.data.e](raw)
         except Exception as e:

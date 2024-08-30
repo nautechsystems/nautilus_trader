@@ -86,7 +86,7 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
         config: BinanceExecClientConfig,
         account_type: BinanceAccountType = BinanceAccountType.SPOT,
         name: str | None = None,
-    ):
+    ) -> None:
         PyCondition.true(
             account_type.is_spot_or_margin,
             "account_type was not SPOT, MARGIN or ISOLATED_MARGIN",
@@ -212,8 +212,6 @@ class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
     # -- WEBSOCKET EVENT HANDLERS --------------------------------------------------------------------
 
     def _handle_user_ws_message(self, raw: bytes) -> None:
-        # TODO: Uncomment for development
-        # self._log.info(str(json.dumps(msgspec.json.decode(raw), indent=4)), color=LogColor.MAGENTA)
         wrapper = self._decoder_spot_user_msg_wrapper.decode(raw)
         try:
             self._spot_user_ws_handlers[wrapper.data.e](raw)
