@@ -311,7 +311,7 @@ dependencies = [
  "arrow-schema",
  "chrono",
  "half",
- "indexmap 2.4.0",
+ "indexmap 2.5.0",
  "lexical-core",
  "num",
  "serde",
@@ -1236,7 +1236,7 @@ dependencies = [
  "glob",
  "half",
  "hashbrown 0.14.5",
- "indexmap 2.4.0",
+ "indexmap 2.5.0",
  "itertools 0.12.1",
  "log",
  "num_cpus",
@@ -1396,7 +1396,7 @@ dependencies = [
  "datafusion-expr",
  "datafusion-physical-expr",
  "hashbrown 0.14.5",
- "indexmap 2.4.0",
+ "indexmap 2.5.0",
  "itertools 0.12.1",
  "log",
  "paste",
@@ -1425,7 +1425,7 @@ dependencies = [
  "half",
  "hashbrown 0.14.5",
  "hex",
- "indexmap 2.4.0",
+ "indexmap 2.5.0",
  "itertools 0.12.1",
  "log",
  "paste",
@@ -1483,7 +1483,7 @@ dependencies = [
  "futures",
  "half",
  "hashbrown 0.14.5",
- "indexmap 2.4.0",
+ "indexmap 2.5.0",
  "itertools 0.12.1",
  "log",
  "once_cell",
@@ -1947,7 +1947,7 @@ dependencies = [
  "futures-core",
  "futures-sink",
  "http",
- "indexmap 2.4.0",
+ "indexmap 2.5.0",
  "slab",
  "tokio",
  "tokio-util",
@@ -2242,9 +2242,9 @@ dependencies = [
 
 [[package]]
 name = "indexmap"
-version = "2.4.0"
+version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "93ead53efc7ea8ed3cfb0c79fc8023fbb782a5432b52830b6518941cebe6505c"
+checksum = "68b900aa2f7301e21c36462b170ee99994de34dff39a4a6a528e80e7376d07e5"
 dependencies = [
  "equivalent",
  "hashbrown 0.14.5",
@@ -2609,7 +2609,7 @@ dependencies = [
  "criterion",
  "databento",
  "fallible-streaming-iterator",
- "indexmap 2.4.0",
+ "indexmap 2.5.0",
  "itoa",
  "nautilus-common",
  "nautilus-core",
@@ -2637,7 +2637,7 @@ dependencies = [
  "anyhow",
  "chrono",
  "criterion",
- "indexmap 2.4.0",
+ "indexmap 2.5.0",
  "nautilus-common",
  "nautilus-core",
  "nautilus-model",
@@ -2697,7 +2697,7 @@ dependencies = [
  "bytes",
  "cbindgen",
  "chrono",
- "indexmap 2.4.0",
+ "indexmap 2.5.0",
  "itertools 0.12.1",
  "log",
  "nautilus-core",
@@ -2730,7 +2730,7 @@ dependencies = [
  "criterion",
  "heck 0.5.0",
  "iai",
- "indexmap 2.4.0",
+ "indexmap 2.5.0",
  "pretty_assertions",
  "pyo3",
  "rmp-serde",
@@ -2749,7 +2749,7 @@ dependencies = [
  "chrono",
  "criterion",
  "derive_builder",
- "indexmap 2.4.0",
+ "indexmap 2.5.0",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -2774,7 +2774,7 @@ dependencies = [
  "anyhow",
  "criterion",
  "derive_builder",
- "indexmap 2.4.0",
+ "indexmap 2.5.0",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -2845,7 +2845,7 @@ dependencies = [
  "evalexpr",
  "float-cmp",
  "iai",
- "indexmap 2.4.0",
+ "indexmap 2.5.0",
  "nautilus-core",
  "once_cell",
  "pyo3",
@@ -3329,7 +3329,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4c5cc86750666a3ed20bdaf5ca2a0344f9c67674cae0515bec2da16fbaa47db"
 dependencies = [
  "fixedbitset",
- "indexmap 2.4.0",
+ "indexmap 2.5.0",
 ]
 
 [[package]]
@@ -4501,7 +4501,7 @@ dependencies = [
  "hashbrown 0.14.5",
  "hashlink",
  "hex",
- "indexmap 2.4.0",
+ "indexmap 2.5.0",
  "log",
  "memchr",
  "once_cell",
@@ -4981,9 +4981,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.39.3"
+version = "1.40.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9babc99b9923bfa4804bd74722ff02c0381021eafa4db9949217e3be8e84fff5"
+checksum = "e2b070231665d27ad9ec9b8df639893f46727666c6767db40317fbe920a5d998"
 dependencies = [
  "backtrace",
  "bytes",
@@ -5113,7 +5113,7 @@ version = "0.22.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "583c44c02ad26b0c3f3066fe629275e50627026c51ac2e595cca4c230ce1ce1d"
 dependencies = [
- "indexmap 2.4.0",
+ "indexmap 2.5.0",
  "toml_datetime",
  "winnow",
 ]
@@ -5541,9 +5541,9 @@ dependencies = [
 
 [[package]]
 name = "webpki-roots"
-version = "0.26.3"
+version = "0.26.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd7c23921eeb1713a4e851530e9b9756e4fb0e89978582942612524cf09f01cd"
+checksum = "0bd24728e5af82c6c4ec1b66ac4844bdf8156257fccda846ec58b42cd0cdbe6a"
 dependencies = [
  "rustls-pki-types",
 ]

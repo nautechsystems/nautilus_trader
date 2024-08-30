@@ -32,7 +32,7 @@ bytes = { version = "1.7.1", features = ["serde"] }
 chrono = "0.4.38"
 derive_builder = "0.20.1"
 futures = "0.3.30"
-indexmap = { version = "2.4.0", features = ["serde"] }
+indexmap = { version = "2.5.0", features = ["serde"] }
 itertools = "0.12.1"
 itoa = "1.0.11"
 once_cell = "1.19.0"
@@ -50,7 +50,7 @@ strum = { version = "0.26.3", features = ["derive"] }
 thiserror = "1.0.63"
 thousands = "0.2.0"
 tracing = "0.1.40"
-tokio = { version = "1.39.3", features = ["full"] }
+tokio = { version = "1.40.0", features = ["full"] }
 ustr = { version = "1.0.0", features = ["serde"] }
 uuid = { version = "1.10.0", features = ["v4"] }
 

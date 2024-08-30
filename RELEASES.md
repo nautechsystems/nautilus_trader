@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-- Added dYdX integration (#1861, #1868, #1873, #1874, #1875, #1877, #1879, #1880, #1882, #1886, #1887, #1890), thanks @davidsblom
+- Added dYdX integration (#1861, #1868, #1873, #1874, #1875, #1877, #1879, #1880, #1882, #1886, #1887, #1890, #1891, #1896), thanks @davidsblom
 - Added composite bar types, bars aggregated from other bar types (#1859, #1885, #1888), thanks @faysou
 - Added `InstrumentClose` functionality for `OrderMatchingEngine`, thanks @limx0
 - Added `BacktestRunConfig.dispose_on_completion` config setting to control post-run disposal behavior for each internal backtest engine (`True` by default to retain current behavior)
@@ -12,6 +12,7 @@ Released on TBD (UTC).
 - Improved `WebSocketClient` error handling and added `WebSocketClientError` exception for Python (#1876), thanks @twitu
 - Improved `WebSocketClient.send_text` efficiency (now accepts UTF-8 encoded bytes, rather than a Python string)
 - Implemented `OrderMatchingEngine` in Rust, thanks @filipmacek
+- Upgraded `tokio` crate to v1.40.0
 
 ### Breaking Changes
 - Renamed `heartbeat_interval` to `heartbeat_interval_secs` (more explicitly indicates time units)
