@@ -1650,13 +1650,13 @@ testing-docutils = ["pygments", "pytest (>=8,<9)", "pytest-param-files (>=0.6.0,
 
 [[package]]
 name = "nautilus-ibapi"
-version = "10.19.2"
+version = "10.19.4"
 description = "Python IB API"
 optional = true
 python-versions = ">=3.9"
 files = [
-    {file = "nautilus_ibapi-10.19.2-py3-none-any.whl", hash = "sha256:79fad8aad2fb2c6903e61e88fd7dcf9a84a9269b1c51af752531f0320a661373"},
-    {file = "nautilus_ibapi-10.19.2.tar.gz", hash = "sha256:201604efbfe08c2b8c69e57037de4fa49e6679d83211643553c4534681f26a0a"},
+    {file = "nautilus_ibapi-10.19.4-py3-none-any.whl", hash = "sha256:61f40762a0a18ef6fee57212c7092d5f42c22f72cf3a08c052cb2be68af4f413"},
+    {file = "nautilus_ibapi-10.19.4.tar.gz", hash = "sha256:fdfae46b9de577d8b7a396c6345c3b60391155f999c80b0c4021968016685aae"},
 ]
 
 [[package]]
@@ -3028,4 +3028,4 @@ ib = ["async-timeout", "defusedxml", "nautilus_ibapi"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<3.13"
-content-hash = "69d5535d9e9d812ec0fa9829ea288f69068e53b6894e82c0c39e6914e8f577ff"
+content-hash = "2999123b6489acd1d1bb6b2c2c59814de9f97fd697c3e0365633770b6aa390f3"
