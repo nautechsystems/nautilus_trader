@@ -783,7 +783,6 @@ cdef class TimeBarAggregator(BarAggregator):
             self._stored_close_ns = 0
 
     cdef void _apply_update_bar(self, Bar bar):
-        #self._log.warning(str(bar))
         self._builder.update_bar(bar)
 
     cpdef void _build_bar(self, TimeEvent event):

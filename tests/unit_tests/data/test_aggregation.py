@@ -1439,7 +1439,7 @@ class TestTimeBarAggregator:
         # Assert
         bar = handler[0]
         assert len(handler) == 1
-        assert bar.bar_type == bar_type
+        assert bar.bar_type == bar_type.standard()
         assert bar.open == Price.from_str("1.00005")
         assert bar.high == Price.from_str("1.00020")
         assert bar.low == Price.from_str("1.00003")
