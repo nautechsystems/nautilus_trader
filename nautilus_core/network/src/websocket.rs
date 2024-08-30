@@ -163,7 +163,7 @@ impl WebSocketClientInner {
             loop {
                 match reader.next().await {
                     Some(Ok(Message::Binary(data))) => {
-                        tracing::debug!("Received message <binary>");
+                        tracing::trace!("Received message <binary>");
                         if let Err(e) =
                             Python::with_gil(|py| handler.call1(py, (PyBytes::new(py, &data),)))
                         {
@@ -173,7 +173,7 @@ impl WebSocketClientInner {
                         continue;
                     }
                     Some(Ok(Message::Text(data))) => {
-                        tracing::debug!("Received message: {data}");
+                        tracing::trace!("Received message: {data}");
                         if let Err(e) = Python::with_gil(|py| {
                             handler.call1(py, (PyBytes::new(py, data.as_bytes()),))
                         }) {
@@ -184,7 +184,7 @@ impl WebSocketClientInner {
                     }
                     Some(Ok(Message::Ping(ping))) => {
                         let payload = String::from_utf8(ping.clone()).expect("Invalid payload");
-                        tracing::debug!("Received ping: {payload}",);
+                        tracing::trace!("Received ping: {payload}",);
                         if let Some(ref handler) = ping_handler {
                             if let Err(e) =
                                 Python::with_gil(|py| handler.call1(py, (PyBytes::new(py, &ping),)))
@@ -196,7 +196,7 @@ impl WebSocketClientInner {
                         continue;
                     }
                     Some(Ok(Message::Pong(_))) => {
-                        tracing::debug!("Received pong");
+                        tracing::trace!("Received pong");
                     }
                     Some(Ok(Message::Close(_))) => {
                         tracing::error!("Received close message - terminating");
