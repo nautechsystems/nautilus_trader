@@ -26,6 +26,7 @@ from libc.stdint cimport uint64_t
 from nautilus_trader.accounting.accounts.base cimport Account
 from nautilus_trader.accounting.factory cimport AccountFactory
 from nautilus_trader.cache.facade cimport CacheDatabaseFacade
+from nautilus_trader.common.config import msgspec_encoding_hook
 from nautilus_trader.common.actor cimport Actor
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.datetime cimport format_iso8601
@@ -159,7 +160,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
         self._backing = nautilus_pyo3.RedisCacheDatabase(
             trader_id=nautilus_pyo3.TraderId(trader_id.value),
             instance_id=nautilus_pyo3.UUID4(instance_id.value),
-            config_json=msgspec.json.encode(config),
+            config_json=msgspec.json.encode(config, enc_hook=msgspec_encoding_hook),
         )
 
 # -- COMMANDS -------------------------------------------------------------------------------------
