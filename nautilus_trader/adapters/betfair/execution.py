@@ -186,7 +186,9 @@ class BetfairExecutionClient(LiveExecutionClient):
 
     async def _disconnect(self) -> None:
         # Shutdown account updates
-        self.account_state_task.cancel()
+        if self.account_state_task:
+            self._log.debug("Canceling task 'account_state'")
+            self.account_state_task.cancel()
 
         # Close socket
         self._log.info("Closing streaming socket")
@@ -429,7 +431,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             return
 
         self._log.debug(f"result={result}")
-        for report in result.instruction_reports:
+        for report in result.instruction_reports or []:
             if result.status == ExecutionReportStatus.FAILURE:
                 reason = f"{result.error_code.name} ({result.error_code.__doc__})"
                 self._log.warning(f"Submit failed - {reason}")
@@ -550,7 +552,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         self._log.debug(f"result={result}")
 
-        for report in result.instruction_reports:
+        for report in result.instruction_reports or []:
             if report.status in {ExecutionReportStatus.FAILURE, InstructionReportStatus.FAILURE}:
                 reason = f"{result.error_code.name} ({result.error_code.__doc__})"
                 self._log.warning(f"replace failed - {reason}")
@@ -623,7 +625,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         self._log.debug(f"result={result}")
 
-        for report in result.instruction_reports:
+        for report in result.instruction_reports or []:
             if report.status in {ExecutionReportStatus.FAILURE, InstructionReportStatus.FAILURE}:
                 reason = f"{result.error_code.name} ({result.error_code.__doc__})"
                 self._log.warning(f"size reduction failed - {reason}")
@@ -679,7 +681,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._log.debug(f"result={result}")
 
         # Parse response
-        for report in result.instruction_reports:
+        for report in result.instruction_reports or []:
             venue_order_id = VenueOrderId(str(report.instruction.bet_id))
             if report.status == InstructionReportStatus.FAILURE:
                 reason = f"{report.error_code.name}: {report.error_code.__doc__}"
