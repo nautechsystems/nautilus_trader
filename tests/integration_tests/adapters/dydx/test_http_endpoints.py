@@ -312,8 +312,8 @@ def test_parse_to_fill_report(fills_response: DYDXFillsResponse) -> None:
         account_id=account_id,
         instrument_id=DYDXSymbol("ETH-USD").to_instrument_id(),
         order_side=OrderSide.BUY,
-        last_qty=Quantity(0.002, 5),
-        last_px=Price(3178.5, 4),
+        last_qty=Quantity(0.002, 8),
+        last_px=Price(3178.5, 7),
         liquidity_side=LiquiditySide.TAKER,
         commission=Money(Decimal(0.003179), Currency.from_str("USDC")),
         report_id=report_id,
@@ -327,6 +327,8 @@ def test_parse_to_fill_report(fills_response: DYDXFillsResponse) -> None:
         client_order_id=ClientOrderId("client-05009670-3fba-5ec7-8447-efb81a03cd9f"),
         report_id=report_id,
         enum_parser=DYDXEnumParser(),
+        size_precision=8,
+        price_precision=7,
         ts_init=1,
     )
 
@@ -338,7 +340,9 @@ def test_parse_to_fill_report(fills_response: DYDXFillsResponse) -> None:
     assert result.instrument_id == expected_result.instrument_id
     assert result.order_side == expected_result.order_side
     assert result.last_qty == expected_result.last_qty
+    assert result.last_qty.precision == expected_result.last_qty.precision
     assert result.last_px == expected_result.last_px
+    assert result.last_px.precision == expected_result.last_px.precision
     assert result.liquidity_side == expected_result.liquidity_side
     assert result.commission == expected_result.commission
     assert result.id == expected_result.id
@@ -379,6 +383,8 @@ def test_order_parse_to_order_status_report(order_response: DYDXOrderResponse) -
     result = order_response.parse_to_order_status_report(
         account_id=account_id,
         client_order_id=ClientOrderId("2043599281"),
+        price_precision=4,
+        size_precision=5,
         report_id=report_id,
         enum_parser=DYDXEnumParser(),
         ts_init=1,
@@ -394,8 +400,13 @@ def test_order_parse_to_order_status_report(order_response: DYDXOrderResponse) -
     assert result.time_in_force == expected_result.time_in_force
     assert result.order_status == expected_result.order_status
     assert result.price == expected_result.price
+    assert result.price is not None
+    assert expected_result.price is not None
+    assert result.price.precision == expected_result.price.precision
     assert result.quantity == expected_result.quantity
+    assert result.quantity.precision == expected_result.quantity.precision
     assert result.filled_qty == expected_result.filled_qty
+    assert result.filled_qty.precision == expected_result.filled_qty.precision
     assert result.avg_px == expected_result.avg_px
     assert result.post_only is expected_result.post_only
     assert result.reduce_only is expected_result.reduce_only

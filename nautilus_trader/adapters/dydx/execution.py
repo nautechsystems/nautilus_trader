@@ -300,6 +300,14 @@ class DYDXExecutionClient(LiveExecutionClient):
         )
         result = None
 
+        instrument = self._cache.instrument(instrument_id)
+
+        if instrument is None:
+            self._log.error(
+                f"Cannot create order status report: instrument {instrument_id} not found",
+            )
+            return None
+
         if venue_order_id is None:
             dydx_orders = await self._http_account.get_orders(
                 address=self._wallet_address,
@@ -317,6 +325,8 @@ class DYDXExecutionClient(LiveExecutionClient):
                     result = dydx_order.parse_to_order_status_report(
                         account_id=self.account_id,
                         client_order_id=current_client_order_id,
+                        price_precision=instrument.price_precision,
+                        size_precision=instrument.size_precision,
                         report_id=UUID4(),
                         enum_parser=self._enum_parser,
                         ts_init=self._clock.timestamp_ns(),
@@ -331,6 +341,8 @@ class DYDXExecutionClient(LiveExecutionClient):
             result = dydx_order.parse_to_order_status_report(
                 account_id=self.account_id,
                 client_order_id=client_order_id,
+                price_precision=instrument.price_precision,
+                size_precision=instrument.size_precision,
                 report_id=UUID4(),
                 enum_parser=self._enum_parser,
                 ts_init=self._clock.timestamp_ns(),
@@ -437,18 +449,35 @@ class DYDXExecutionClient(LiveExecutionClient):
         self._log.info("Requesting OrderStatusReports...")
         reports: list[OrderStatusReport] = []
 
+        symbol = None
+
+        if instrument_id is not None:
+            symbol = instrument_id.symbol.value.removesuffix("-PERP")
+
         try:
             dydx_orders = await self._http_account.get_orders(
                 address=self._wallet_address,
                 subaccount_number=self._subaccount,
+                symbol=symbol,
             )
 
             for dydx_order in dydx_orders:
+                current_instrument_id = DYDXSymbol(dydx_order.ticker).to_instrument_id()
+                instrument = self._cache.instrument(current_instrument_id)
+
+                if instrument is None:
+                    self._log.error(
+                        f"Cannot handle fill event: instrument {current_instrument_id} not found",
+                    )
+                    return []
+
                 report = dydx_order.parse_to_order_status_report(
                     account_id=self.account_id,
                     client_order_id=self._client_order_id_generator.get_client_order_id(
                         int(dydx_order.clientId),
                     ),
+                    price_precision=instrument.price_precision,
+                    size_precision=instrument.size_precision,
                     report_id=UUID4(),
                     enum_parser=self._enum_parser,
                     ts_init=self._clock.timestamp_ns(),
@@ -498,9 +527,20 @@ class DYDXExecutionClient(LiveExecutionClient):
                         "Venue order ID not set by venue. Unable to retrieve ClientOrderId",
                     )
 
+                current_instrument_id = DYDXSymbol(dydx_fill.market).to_instrument_id()
+                instrument = self._cache.instrument(current_instrument_id)
+
+                if instrument is None:
+                    self._log.error(
+                        f"Cannot handle fill event: instrument {current_instrument_id} not found",
+                    )
+                    return []
+
                 report = dydx_fill.parse_to_fill_report(
                     account_id=self.account_id,
                     client_order_id=client_order_id,
+                    price_precision=instrument.price_precision,
+                    size_precision=instrument.size_precision,
                     report_id=UUID4(),
                     enum_parser=self._enum_parser,
                     ts_init=self._clock.timestamp_ns(),
