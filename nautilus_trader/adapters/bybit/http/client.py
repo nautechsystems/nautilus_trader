@@ -131,10 +131,9 @@ class BybitHttpClient:
 
         # First check for server error
         if 400 <= response.status < 500:
-            error_resp = self._decoder_response.decode(response.body) if response.body else None
             raise BybitError(
-                code=error_resp.retCode if error_resp else None,
-                message=error_resp.retMsg if error_resp else None,
+                code=response.status,
+                message=msgspec.json.decode(response.body) if response.body else None,
             )
 
         bybit_resp: BybitResponse = self._decoder_response.decode(response.body)
