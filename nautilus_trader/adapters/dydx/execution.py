@@ -450,6 +450,8 @@ class DYDXExecutionClient(LiveExecutionClient):
         reports: list[OrderStatusReport] = []
 
         symbol = None
+        start_dt = start.to_pydatetime() if start is not None else None
+        end_dt = end.to_pydatetime() if end is not None else None
 
         if instrument_id is not None:
             symbol = instrument_id.symbol.value.removesuffix("-PERP")
@@ -470,6 +472,23 @@ class DYDXExecutionClient(LiveExecutionClient):
                         f"Cannot handle fill event: instrument {current_instrument_id} not found",
                     )
                     return []
+
+                # We use the updatedAt property to filter the orders since the
+                # createdAt property does not exist. createdAtBlockHeight is
+                # available, but a mapping between block height and datetime is missing.
+                if (
+                    start_dt is not None
+                    and dydx_order.updatedAt is not None
+                    and dydx_order.updatedAt < start_dt
+                ):
+                    continue  # Filter start on the Nautilus side
+
+                if (
+                    end_dt is not None
+                    and dydx_order.updatedAt is not None
+                    and dydx_order.updatedAt > end_dt
+                ):
+                    continue  # Filter end on the Nautilus side
 
                 report = dydx_order.parse_to_order_status_report(
                     account_id=self.account_id,
@@ -506,6 +525,8 @@ class DYDXExecutionClient(LiveExecutionClient):
         reports: list[FillReport] = []
 
         symbol = None
+        start_dt = start.to_pydatetime() if start is not None else None
+        end_dt = end.to_pydatetime() if end is not None else None
 
         if instrument_id is not None:
             symbol = instrument_id.symbol.value.removesuffix("-PERP")
@@ -515,6 +536,7 @@ class DYDXExecutionClient(LiveExecutionClient):
                 address=self._wallet_address,
                 subaccount_number=self._subaccount,
                 symbol=symbol,
+                created_before_or_at=end_dt,
             )
 
             for dydx_fill in dydx_fills.fills:
@@ -535,6 +557,13 @@ class DYDXExecutionClient(LiveExecutionClient):
                         f"Cannot handle fill event: instrument {current_instrument_id} not found",
                     )
                     return []
+
+                if (
+                    start_dt is not None
+                    and dydx_fill.createdAt is not None
+                    and dydx_fill.createdAt < start_dt
+                ):
+                    continue  # Filter start on the Nautilus side
 
                 report = dydx_fill.parse_to_fill_report(
                     account_id=self.account_id,

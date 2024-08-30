@@ -16,6 +16,9 @@
 Define the account HTTP API endpoints.
 """
 
+import datetime
+
+from nautilus_trader.adapters.dydx.common.enums import DYDXMarketType
 from nautilus_trader.adapters.dydx.common.enums import DYDXOrderSide
 from nautilus_trader.adapters.dydx.common.enums import DYDXOrderStatus
 from nautilus_trader.adapters.dydx.common.enums import DYDXOrderType
@@ -118,6 +121,8 @@ class DYDXAccountHttpAPI:
         address: str,
         subaccount_number: int,
         status: DYDXPerpetualPositionStatus | None = None,
+        limit: int | None = None,
+        created_before_or_at: datetime.datetime | None = None,
     ) -> DYDXPerpetualPositionsResponse:
         """
         Fetch the perpetual positions.
@@ -127,6 +132,8 @@ class DYDXAccountHttpAPI:
                 address=address,
                 subaccountNumber=subaccount_number,
                 status=status,
+                limit=limit,
+                createdBeforeOrAt=created_before_or_at,
             ),
         )
 
@@ -179,6 +186,10 @@ class DYDXAccountHttpAPI:
         address: str,
         subaccount_number: int,
         symbol: str | None = None,
+        market_type: DYDXMarketType | None = None,
+        limit: int | None = None,
+        created_before_or_at: datetime.datetime | None = None,
+        page: int | None = None,
     ) -> DYDXFillsResponse:
         """
         Fetch the fills.
@@ -188,5 +199,9 @@ class DYDXAccountHttpAPI:
                 address=address,
                 subaccountNumber=subaccount_number,
                 market=symbol,
+                marketType=market_type,
+                limit=limit,
+                createdBeforeOrAt=created_before_or_at,
+                page=page,
             ),
         )
