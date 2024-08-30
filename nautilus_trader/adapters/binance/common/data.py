@@ -950,12 +950,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     # -- WEBSOCKET HANDLERS ---------------------------------------------------------------------------------
 
     def _handle_ws_message(self, raw: bytes) -> None:
-        # TODO: Uncomment for development
-        # self._log.info(str(raw), LogColor.CYAN)
         wrapper = self._decoder_data_msg_wrapper.decode(raw)
         if not wrapper.stream:
-            # Control message response
-            return
+            return  # Control message response
         try:
             handled = False
             for handler in self._ws_handlers:
