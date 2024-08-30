@@ -60,7 +60,6 @@ class DYDXPerpetualMarketResponseObject(msgspec.Struct, forbid_unknown_fields=Tr
     clobPairId: str
     ticker: str
     status: DYDXPerpetualMarketStatus
-    oraclePrice: str
     priceChange24H: str
     volume24H: str
     trades24H: int
@@ -76,6 +75,7 @@ class DYDXPerpetualMarketResponseObject(msgspec.Struct, forbid_unknown_fields=Tr
     subticksPerTick: int
     marketType: DYDXPerpetualMarketType
     baseOpenInterest: str
+    oraclePrice: str | None = None
     openInterestLowerCap: str | None = None
     openInterestUpperCap: str | None = None
 
