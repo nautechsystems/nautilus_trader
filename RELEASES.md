@@ -18,6 +18,7 @@ Released on TBD (UTC).
 
 ### Fixes
 - Fixed `OrderBook` memory deallocation in Python finalizer (memory was not being freed on object destruction), thanks for reporting @zeyuhuan
+- Fixed `Order` tags serialization (was not concatenating to a single string), thanks for reporting @DevRoss
 
 ---
 

@@ -525,7 +525,7 @@ cdef class OrderInitialized(OrderEvent):
         cdef str parent_order_id_str = values["parent_order_id"]
         cdef str exec_algorithm_id_str = values["exec_algorithm_id"]
         cdef str exec_spawn_id_str = values["exec_spawn_id"]
-        tags = values["tags"]
+        cdef str tags = values["tags"]
         return OrderInitialized(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -548,7 +548,7 @@ cdef class OrderInitialized(OrderEvent):
             exec_algorithm_id=ExecAlgorithmId(exec_algorithm_id_str) if exec_algorithm_id_str is not None else None,
             exec_algorithm_params=values["exec_algorithm_params"],
             exec_spawn_id=ClientOrderId(exec_spawn_id_str) if exec_spawn_id_str is not None else None,
-            tags=tags.split(",") if isinstance(tags, str) else tags,
+            tags=tags.split(",") if tags is not None else None,
             event_id=UUID4(values["event_id"]),
             ts_init=values["ts_init"],
             reconciliation=values.get("reconciliation", False),
@@ -581,7 +581,7 @@ cdef class OrderInitialized(OrderEvent):
             "exec_algorithm_id": obj.exec_algorithm_id.value if obj.exec_algorithm_id is not None else None,
             "exec_algorithm_params": obj.exec_algorithm_params,
             "exec_spawn_id": obj.exec_spawn_id.value if obj.exec_spawn_id is not None else None,
-            "tags": obj.tags,
+            "tags": ",".join(obj.tags) if obj.tags is not None else None,
             "event_id": obj.id.value,
             "ts_init": obj.ts_init,
             "ts_event": obj.ts_init,
