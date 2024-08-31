@@ -22,7 +22,6 @@ import msgspec
 
 import nautilus_trader
 from nautilus_trader.adapters.bybit.http.errors import BybitError
-from nautilus_trader.adapters.bybit.http.errors import BybitKeyExpiredError
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
@@ -126,20 +125,15 @@ class BybitHttpClient:
             ratelimiter_keys,
         )
 
-        # First check for server error
-        if 400 <= response.status < 500:
+        if response.status >= 400:
             raise BybitError(
                 code=response.status,
                 message=msgspec.json.decode(response.body) if response.body else None,
             )
 
         bybit_resp: BybitResponse = self._decoder_response.decode(response.body)
-
-        # Then check for error inside response
         if bybit_resp.retCode == 0:
             return response.body
-        elif bybit_resp.retCode == BybitKeyExpiredError.code:
-            raise BybitKeyExpiredError
         else:
             raise BybitError(code=bybit_resp.retCode, message=bybit_resp.retMsg)
 

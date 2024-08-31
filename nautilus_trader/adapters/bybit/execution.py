@@ -59,6 +59,7 @@ from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
+from nautilus_trader.live.retry import RetryManagerPool
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OmsType
@@ -182,7 +183,7 @@ class BybitExecutionClient(LiveExecutionClient):
             loop=loop,
         )
 
-        # Http API
+        # HTTP API
         self._http_account = BybitAccountHttpAPI(
             client=client,
             clock=clock,
@@ -212,18 +213,20 @@ class BybitExecutionClient(LiveExecutionClient):
 
         # Hot caches
         self._instrument_ids: dict[str, InstrumentId] = {}
-        self._generate_order_status_retries: dict[ClientOrderId, int] = {}
-        self._order_retries: dict[ClientOrderId, int] = {}
         self._pending_trailing_stops: dict[ClientOrderId, Order] = {}
 
+        self._retry_manager_pool = RetryManagerPool(
+            pool_size=100,
+            max_retries=config.max_retries or 0,
+            retry_delay=config.retry_delay or 0.0,
+            exc_types=(BybitError,),
+            logger=self._log,
+        )
+
     async def _connect(self) -> None:
-        # Update account state
         await self._update_account_state()
 
-        # Connect to websocket
         await self._ws_client.connect()
-
-        # Subscribe account updates
         await self._ws_client.subscribe_executions_update()
         await self._ws_client.subscribe_orders_update()
 
@@ -303,14 +306,6 @@ class BybitExecutionClient(LiveExecutionClient):
                 self._log.warning("Cannot query with client order ID for trailing stops")
                 client_order_id = None
 
-        retries = self._generate_order_status_retries.get(client_order_id, 0)
-        if retries > 3:
-            self._log.error(
-                f"Reached maximum retries 3/3 for generating OrderStatusReport for "
-                f"{repr(client_order_id) if client_order_id else ''} "
-                f"{repr(venue_order_id) if venue_order_id else ''}",
-            )
-            return None
         self._log.info(
             f"Generating OrderStatusReport for "
             f"{repr(client_order_id) if client_order_id else ''} "
@@ -512,53 +507,7 @@ class BybitExecutionClient(LiveExecutionClient):
             except Exception as e:
                 self._log.error(f"Failed to generate AccountState: {e}")
 
-    async def _modify_order(self, command: ModifyOrder) -> None:
-        order: Order | None = self._cache.order(command.client_order_id)
-        if order is None:
-            self._log.error(f"{command.client_order_id!r} not found in cache")
-            return
-
-        if order.is_closed:
-            self._log.warning(
-                f"ModifyOrder command for {command.client_order_id!r} when order already {order.status_string()} "
-                "(will not send to exchange)",
-            )
-            return
-
-        bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
-        client_order_id = command.client_order_id.value
-        venue_order_id = str(command.venue_order_id) if command.venue_order_id else None
-        price = str(command.price) if command.price else None
-        trigger_price = str(command.trigger_price) if command.trigger_price else None
-        quantity = str(command.quantity) if command.quantity else None
-
-        while True:
-            try:
-                await self._http_account.amend_order(
-                    bybit_symbol.product_type,
-                    bybit_symbol.raw_symbol,
-                    client_order_id=client_order_id,
-                    venue_order_id=venue_order_id,
-                    trigger_price=trigger_price,
-                    quantity=quantity,
-                    price=price,
-                )
-                self._order_retries.pop(command.client_order_id, None)
-                break  # Successful request
-            except BybitError as e:
-                self._log.error(repr(e))
-                # error_code = BybitError(e.message["code"])
-
-                retries = self._order_retries.get(command.client_order_id, 0) + 1
-                self._order_retries[command.client_order_id] = retries
-                # if not self._should_retry(error_code, retries):
-                #     break
-
-                self._log.warning(
-                    f"Retrying modify {command.client_order_id!r} "
-                    f"{retries}/{self._max_retries} in {self._retry_delay}s",
-                )
-                await asyncio.sleep(self._retry_delay)
+    # -- COMMAND HANDLERS -------------------------------------------------------------------------
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         order: Order | None = self._cache.order(command.client_order_id)
@@ -568,7 +517,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         if order.is_closed:
             self._log.warning(
-                f"CancelOrder command for {command.client_order_id!r} when order already {order.status_string()} "
+                f"`CancelOrder` command for {command.client_order_id!r} when order already {order.status_string()} "
                 "(will not send to exchange)",
             )
             return
@@ -577,31 +526,20 @@ class BybitExecutionClient(LiveExecutionClient):
         client_order_id = command.client_order_id.value
         venue_order_id = str(command.venue_order_id) if command.venue_order_id else None
 
-        while True:
-            try:
-                await self._http_account.cancel_order(
-                    bybit_symbol.product_type,
-                    bybit_symbol.raw_symbol,
-                    client_order_id=client_order_id,
-                    venue_order_id=venue_order_id,
-                )
-                self._order_retries.pop(command.client_order_id, None)
-                break  # Successful request
-            except BybitError as e:
-                self._log.error(repr(e))
-                # error_code = BybitError(e.message["code"])
+        retry_manager = await self._retry_manager_pool.acquire(
+            description=type(command).__name__,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
+        )
 
-                retries = self._order_retries.get(command.client_order_id, 0) + 1
-                self._order_retries[command.client_order_id] = retries
-
-                # if not self._should_retry(error_code, retries):
-                #     break
-
-                self._log.warning(
-                    f"Retrying cancel {command.client_order_id!r} "
-                    f"{retries}/{self._max_retries} in {self._retry_delay}s",
-                )
-                await asyncio.sleep(self._retry_delay)
+        await retry_manager.run(
+            self._http_account.cancel_order,
+            bybit_symbol.product_type,
+            bybit_symbol.raw_symbol,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
+        )
+        await self._retry_manager_pool.release(retry_manager)
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
@@ -643,11 +581,51 @@ class BybitExecutionClient(LiveExecutionClient):
         for order in open_orders_strategy:
             cancel_batch.append(order)
 
-        await self._http_account.batch_cancel_orders(
+        retry_manager = await self._retry_manager_pool.acquire(description=type(command).__name__)
+        await retry_manager.run(
+            self._http_account.batch_cancel_orders,
             product_type=bybit_symbol.product_type,
             symbol=bybit_symbol.raw_symbol,
             orders=cancel_batch,
         )
+        await self._retry_manager_pool.release(retry_manager)
+
+    async def _modify_order(self, command: ModifyOrder) -> None:
+        order: Order | None = self._cache.order(command.client_order_id)
+        if order is None:
+            self._log.error(f"{command.client_order_id!r} not found in cache")
+            return
+
+        if order.is_closed:
+            self._log.warning(
+                f"`ModifyOrder` command for {command.client_order_id!r} when order already {order.status_string()} "
+                "(will not send to exchange)",
+            )
+            return
+
+        bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
+        client_order_id = command.client_order_id.value
+        venue_order_id = str(command.venue_order_id) if command.venue_order_id else None
+        price = str(command.price) if command.price else None
+        trigger_price = str(command.trigger_price) if command.trigger_price else None
+        quantity = str(command.quantity) if command.quantity else None
+
+        retry_manager = await self._retry_manager_pool.acquire(
+            description=type(command).__name__,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
+        )
+        await retry_manager.run(
+            self._http_account.amend_order,
+            bybit_symbol.product_type,
+            bybit_symbol.raw_symbol,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
+            trigger_price=trigger_price,
+            quantity=quantity,
+            price=price,
+        )
+        await self._retry_manager_pool.release(retry_manager)
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
@@ -668,16 +646,13 @@ class BybitExecutionClient(LiveExecutionClient):
             client_order_id=order.client_order_id,
             ts_event=self._clock.timestamp_ns(),
         )
-        while True:
-            try:
-                await self._submit_order_methods[order.order_type](order)
-                self._order_retries.pop(order.client_order_id, None)
-                break
-            except KeyError:
-                raise RuntimeError(f"unsupported order type, was {order.order_type}")
-            except BybitError as e:
-                self._log.error(repr(e))
-                break
+
+        retry_manager = await self._retry_manager_pool.acquire(
+            description=type(command).__name__,
+            client_order_id=command.order.client_order_id,
+        )
+        await retry_manager.run(self._submit_order_methods[order.order_type], order)
+        await self._retry_manager_pool.release(retry_manager)
 
     def _check_order_validity(self, order: Order, product_type: BybitProductType) -> bool:
         # Check post only
