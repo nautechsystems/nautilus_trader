@@ -144,7 +144,7 @@ impl WebSocketClientInner {
                         None => guard.send(Message::Ping(vec![])).await,
                     };
                     match guard_send_response {
-                        Ok(()) => tracing::debug!("Sent ping"),
+                        Ok(()) => tracing::trace!("Sent ping"),
                         Err(e) => tracing::error!("Error sending ping: {e}"),
                     }
                 }
