@@ -461,7 +461,8 @@ async fn run_heartbeat(
             _ = heartbeat_timer.tick() => {
                 let heartbeat = create_heartbeat_msg();
                 if let Err(e) = pub_tx.send(heartbeat) {
-                    tracing::error!("Error sending heartbeat: {e}");
+                    // We expect an error if the channel is closed during shutdown
+                    tracing::debug!("Error sending heartbeat: {e}");
                 }
             },
             _ = check_timer.tick() => {}
