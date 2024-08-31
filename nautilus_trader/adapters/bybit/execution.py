@@ -233,6 +233,9 @@ class BybitExecutionClient(LiveExecutionClient):
     async def _disconnect(self) -> None:
         await self._ws_client.disconnect()
 
+    def _stop(self) -> None:
+        self._retry_manager_pool.shutdown()
+
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
     async def generate_order_status_reports(

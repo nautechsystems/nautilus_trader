@@ -99,6 +99,7 @@ cdef class ExecutionEngine(Component):
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
+    cpdef void stop_clients(self)
     cpdef void load_cache(self)
     cpdef void execute(self, TradingCommand command)
     cpdef void process(self, OrderEvent event)
