@@ -100,12 +100,11 @@ async def test_retry_manager_pool_acquire_and_release(mock_logger):
         logger=mock_logger,
     )
 
-    # Act
+    # Act, Assert
     async with pool as retry_manager:
         assert isinstance(retry_manager, RetryManager)
         assert len(pool._pool) == pool_size - 1
 
-    # Assert
     assert len(pool._pool) == pool_size
 
 
@@ -121,11 +120,34 @@ async def test_retry_manager_pool_create_new_when_empty(mock_logger):
         logger=mock_logger,
     )
 
-    # Act
+    # Act, Assert
     async with pool as retry_manager1:
         async with pool as retry_manager2:
             # Ensure new manager was created as pool empty
             assert retry_manager1 is not retry_manager2
 
-    # Assert
     assert len(pool._pool) == pool_size
+
+
+@pytest.mark.asyncio
+async def test_retry_manager_with_retry_check(mock_logger):
+    # Arrange
+    def retry_check(exception):
+        return "Retry" in str(exception)
+
+    retry_manager = RetryManager(
+        max_retries=3,
+        retry_delay_secs=0.1,
+        exc_types=(Exception,),
+        logger=mock_logger,
+        retry_check=retry_check,
+    )
+    mock_func = AsyncMock(side_effect=[Exception("Do not retry"), Exception("Retry Error"), None])
+
+    # Act
+    await retry_manager.run(name="Test Operation", details=["ID123"], func=mock_func)
+
+    # Assert
+    assert mock_func.await_count == 1
+    assert mock_logger.warning.call_count == 1
+    mock_logger.error.assert_called_once()

@@ -5,8 +5,10 @@ Released on TBD (UTC).
 ### Enhancements
 - Added dYdX integration (#1861, #1868, #1873, #1874, #1875, #1877, #1879, #1880, #1882, #1886, #1887, #1890, #1891, #1896), thanks @davidsblom
 - Added composite bar types, bars aggregated from other bar types (#1859, #1885, #1888), thanks @faysou
+- Added `RetryManagerPool` to abstract common retry functionality for all adapters
 - Added `InstrumentClose` functionality for `OrderMatchingEngine`, thanks @limx0
 - Added `BacktestRunConfig.dispose_on_completion` config setting to control post-run disposal behavior for each internal backtest engine (`True` by default to retain current behavior)
+- Added `recv_window_ms` config setting for `BinanceExecClientConfig`
 - Improved error modeling and handling in Rust (#1866), thanks @twitu
 - Improved `HttpClient` error handling and added `HttpClientError` exception for Python (#1872), thanks @twitu
 - Improved `WebSocketClient` error handling and added `WebSocketClientError` exception for Python (#1876), thanks @twitu

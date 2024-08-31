@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from collections.abc import Callable
 
 from nautilus_trader.common.component import Logger
 
@@ -28,10 +29,13 @@ class RetryManager:
         The maximum number of retries before failure.
     retry_delay_secs : float
         The delay (seconds) between retry attempts.
-    exc_types : tuple[Type[BaseException], ...]
-        The exception types to handle for retries.
     logger : Logger
         The logger for the manager.
+    exc_types : tuple[Type[BaseException], ...]
+        The exception types to handle for retries.
+    retry_check : Callable[[BaseException], None], optional
+        A function that performs additional checks on the exception.
+        If the function returns `False`, a retry will not be attempted.
 
     """
 
@@ -39,13 +43,15 @@ class RetryManager:
         self,
         max_retries: int,
         retry_delay_secs: float,
-        exc_types: tuple[type[BaseException], ...],
         logger: Logger,
+        exc_types: tuple[type[BaseException], ...],
+        retry_check: Callable[[BaseException], bool] | None = None,
     ) -> None:
         self.max_retries = max_retries
         self.retry_delay_secs = retry_delay_secs
         self.retries = 0
         self.exc_types = exc_types
+        self.retry_check = retry_check
         self.log = logger
 
         self.name: str | None = None
@@ -85,7 +91,11 @@ class RetryManager:
                 return  # Successful request
             except self.exc_types as e:
                 self.log.warning(repr(e))
-                if not self.max_retries or self.retries >= self.max_retries:
+                if (
+                    (self.retry_check and not self.retry_check(e))
+                    or not self.max_retries
+                    or self.retries >= self.max_retries
+                ):
                     self._log_error()
                     self.result = False
                     self.message = str(e)
@@ -130,6 +140,23 @@ class RetryManager:
 class RetryManagerPool:
     """
     Provides a pool of `RetryManager`s.
+
+    Parameters
+    ----------
+    pool_size : int
+        The size of the retry manager pool.
+    max_retries : int
+        The maximum number of retries before failure.
+    retry_delay_secs : float
+        The delay (seconds) between retry attempts.
+    logger : Logger
+        The logger for retry managers.
+    exc_types : tuple[Type[BaseException], ...]
+        The exception types to handle for retries.
+    retry_check : Callable[[BaseException], None], optional
+        A function that performs additional checks on the exception.
+        If the function returns `False`, a retry will not be attempted.
+
     """
 
     def __init__(
@@ -137,13 +164,15 @@ class RetryManagerPool:
         pool_size: int,
         max_retries: int,
         retry_delay_secs: float,
-        exc_types: tuple[type[BaseException], ...],
         logger: Logger,
+        exc_types: tuple[type[BaseException], ...],
+        retry_check: Callable[[BaseException], bool] | None = None,
     ) -> None:
         self.max_retries = max_retries
         self.retry_delay_secs = retry_delay_secs
-        self.exc_types = exc_types
         self.logger = logger
+        self.exc_types = exc_types
+        self.retry_check = retry_check
         self.pool_size = pool_size
         self._pool: list[RetryManager] = [self._create_manager() for _ in range(pool_size)]
         self._lock = asyncio.Lock()
@@ -153,8 +182,9 @@ class RetryManagerPool:
         return RetryManager(
             max_retries=self.max_retries,
             retry_delay_secs=self.retry_delay_secs,
-            exc_types=self.exc_types,
             logger=self.logger,
+            exc_types=self.exc_types,
+            retry_check=self.retry_check,
         )
 
     async def __aenter__(self) -> RetryManager:
