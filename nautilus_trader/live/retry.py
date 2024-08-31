@@ -52,6 +52,7 @@ class RetryManager:
         self.retries = 0
         self.exc_types = exc_types
         self.retry_check = retry_check
+        self.cancel_event = asyncio.Event()
         self.log = logger
 
         self.name: str | None = None
@@ -59,6 +60,9 @@ class RetryManager:
         self.details_str: str | None = None
         self.result: bool = False
         self.message: str | None = None
+
+    def __repr__(self) -> str:
+        return f"<{type(self).__name__}(name='{self.name}', details={self.details}) at {hex(id(self))}>"
 
     async def run(self, name: str, details: list[object] | None, func, *args, **kwargs):
         """
@@ -84,26 +88,40 @@ class RetryManager:
         self.name = name
         self.details = details
 
-        while True:
-            try:
-                await func(*args, **kwargs)
-                self.result = True
-                return  # Successful request
-            except self.exc_types as e:
-                self.log.warning(repr(e))
-                if (
-                    (self.retry_check and not self.retry_check(e))
-                    or not self.max_retries
-                    or self.retries >= self.max_retries
-                ):
-                    self._log_error()
-                    self.result = False
-                    self.message = str(e)
-                    return  # Operation failed
+        try:
+            while True:
+                if self.cancel_event.is_set():
+                    self._cancel()
+                    return
 
-                self.retries += 1
-                self._log_retry()
-                await asyncio.sleep(self.retry_delay_secs)
+                try:
+                    await func(*args, **kwargs)
+                    self.result = True
+                    return  # Successful request
+                except self.exc_types as e:
+                    self.log.warning(repr(e))
+                    if (
+                        (self.retry_check and not self.retry_check(e))
+                        or not self.max_retries
+                        or self.retries >= self.max_retries
+                    ):
+                        self._log_error()
+                        self.result = False
+                        self.message = str(e)
+                        return  # Operation failed
+
+                    self.retries += 1
+                    self._log_retry()
+                    await asyncio.sleep(self.retry_delay_secs)
+        except asyncio.CancelledError:
+            self._cancel()
+
+    def cancel(self) -> None:
+        """
+        Cancel the retry operation.
+        """
+        self.log.debug(f"Canceling {self!r}")
+        self.cancel_event.set()
 
     def clear(self) -> None:
         """
@@ -115,6 +133,11 @@ class RetryManager:
         self.details_str = None
         self.result = False
         self.message = None
+
+    def _cancel(self) -> None:
+        self.log.warning(f"Canceled retry for '{self.name}'")
+        self.result = False
+        self.message = "Canceled retry"
 
     def _log_retry(self) -> None:
         self.log.warning(
@@ -177,6 +200,7 @@ class RetryManagerPool:
         self._pool: list[RetryManager] = [self._create_manager() for _ in range(pool_size)]
         self._lock = asyncio.Lock()
         self._current_manager: RetryManager | None = None
+        self._active_managers: set[RetryManager] = set()
 
     def _create_manager(self) -> RetryManager:
         return RetryManager(
@@ -211,6 +235,20 @@ class RetryManagerPool:
             # Drop reference to avoid lingering state issues
             self._current_manager = None
 
+    def shutdown(self) -> None:
+        """
+        Gracefully shuts down the retry manager pool, ensuring all active retry managers
+        are canceled.
+
+        This method should be called when the component using the pool is stopped, to
+        ensure that all resources are released in an orderly manner.
+
+        """
+        self.logger.info("Shutting down retry manager pool")
+        for retry_manager in self._active_managers:
+            retry_manager.cancel()
+        self._active_managers.clear()
+
     async def acquire(self) -> RetryManager:
         """
         Acquire a `RetryManager` from the pool, or creates a new one if the pool is
@@ -222,7 +260,9 @@ class RetryManagerPool:
 
         """
         async with self._lock:
-            return self._pool.pop() if self._pool else self._create_manager()
+            retry_manager = self._pool.pop() if self._pool else self._create_manager()
+            self._active_managers.add(retry_manager)
+            return retry_manager
 
     async def release(self, retry_manager: RetryManager) -> None:
         """
@@ -236,7 +276,9 @@ class RetryManagerPool:
             The manager to be returned to the pool.
 
         """
+        retry_manager.clear()
+        self._active_managers.discard(retry_manager)
+
         async with self._lock:
             if len(self._pool) < self.pool_size:
-                retry_manager.clear()
                 self._pool.append(retry_manager)

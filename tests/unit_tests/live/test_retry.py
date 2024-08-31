@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import asyncio
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
@@ -28,6 +29,27 @@ def mock_logger():
     return MagicMock(spec=Logger)
 
 
+def test_retry_manager_repr():
+    # Arrange
+    name = "submit_order"
+    details: list[object] = ["O-123456", "123"]
+    retry_manager = RetryManager(
+        max_retries=3,
+        retry_delay_secs=0.1,
+        logger=MagicMock(),
+        exc_types=(Exception,),
+    )
+    retry_manager.name = name
+    retry_manager.details = details
+
+    # Act
+    repr_str = repr(retry_manager)
+
+    # Assert
+    assert repr_str.startswith(f"<RetryManager(name='{name}', details={details}) at ")
+    assert repr_str.endswith(f"{hex(id(retry_manager))}>")
+
+
 @pytest.mark.asyncio
 async def test_retry_manager_successful_run(mock_logger):
     # Arrange
@@ -40,7 +62,7 @@ async def test_retry_manager_successful_run(mock_logger):
     mock_func = AsyncMock()
 
     # Act
-    await retry_manager.run(name="Test Operation", details=None, func=mock_func)
+    await retry_manager.run(name="test", details=None, func=mock_func)
 
     # Assert
     mock_func.assert_awaited_once()
@@ -60,7 +82,7 @@ async def test_retry_manager_with_retries(mock_logger):
     mock_func = AsyncMock(side_effect=[Exception("Test Error"), Exception("Test Error"), None])
 
     # Act
-    await retry_manager.run(name="Test Operation", details=["ID123"], func=mock_func)
+    await retry_manager.run(name="test", details=["ID123"], func=mock_func)
 
     # Assert
     assert mock_func.await_count == 3
@@ -80,7 +102,7 @@ async def test_retry_manager_exhausts_retries(mock_logger):
     mock_func = AsyncMock(side_effect=Exception("Test Error"))
 
     # Act
-    await retry_manager.run(name="Test Operation", details=["ID123"], func=mock_func)
+    await retry_manager.run(name="test", details=["ID123"], func=mock_func)
 
     # Assert
     assert mock_func.await_count == 3
@@ -145,9 +167,70 @@ async def test_retry_manager_with_retry_check(mock_logger):
     mock_func = AsyncMock(side_effect=[Exception("Do not retry"), Exception("Retry Error"), None])
 
     # Act
-    await retry_manager.run(name="Test Operation", details=["ID123"], func=mock_func)
+    await retry_manager.run(name="test", details=["ID123"], func=mock_func)
 
     # Assert
     assert mock_func.await_count == 1
     assert mock_logger.warning.call_count == 1
     mock_logger.error.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_retry_manager_cancellation(mock_logger):
+    # Arrange
+    retry_manager = RetryManager(
+        max_retries=5,
+        retry_delay_secs=0.5,
+        logger=mock_logger,
+        exc_types=(Exception,),
+    )
+    mock_func = AsyncMock(side_effect=Exception("Test Error"))
+
+    async def cancel_after_delay():
+        await asyncio.sleep(1)
+        retry_manager.cancel()
+
+    # Act
+    task = asyncio.create_task(cancel_after_delay())
+    await retry_manager.run(name="test", details=["ID123"], func=mock_func)
+
+    # Assert
+    assert 1 <= mock_func.await_count < 5  # Aborts retry operation
+    mock_logger.warning.assert_called_with("Canceled retry for 'test'")
+    assert retry_manager.result is False
+    assert retry_manager.message == "Canceled retry"
+    task.cancel()
+
+
+@pytest.mark.asyncio
+async def test_retry_manager_pool_shutdown(mock_logger):
+    # Arrange
+    pool_size = 2
+    pool = RetryManagerPool(
+        pool_size=pool_size,
+        max_retries=3,
+        retry_delay_secs=0.1,
+        exc_types=(Exception,),
+        logger=mock_logger,
+    )
+
+    async with pool as retry_manager:
+
+        async def long_running_task():
+            await retry_manager.run(
+                name="long_running",
+                details=["O-123"],
+                func=AsyncMock(side_effect=Exception("Test Error")),
+            )
+
+        task = asyncio.create_task(long_running_task())
+
+        # Act
+        await asyncio.sleep(0.2)
+        pool.shutdown()
+
+        # Assert
+        await task
+        assert len(pool._pool) == 1
+        assert retry_manager.result is False
+        assert retry_manager.message == "Canceled retry"
