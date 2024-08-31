@@ -33,7 +33,7 @@ async def test_retry_manager_successful_run(mock_logger):
     # Arrange
     retry_manager = RetryManager(
         max_retries=3,
-        retry_delay=0.1,
+        retry_delay_secs=0.1,
         exc_types=(Exception,),
         logger=mock_logger,
     )
@@ -53,7 +53,7 @@ async def test_retry_manager_with_retries(mock_logger):
     # Arrange
     retry_manager = RetryManager(
         max_retries=3,
-        retry_delay=0.1,
+        retry_delay_secs=0.1,
         exc_types=(Exception,),
         logger=mock_logger,
     )
@@ -73,7 +73,7 @@ async def test_retry_manager_exhausts_retries(mock_logger):
     # Arrange
     retry_manager = RetryManager(
         max_retries=2,
-        retry_delay=0.1,
+        retry_delay_secs=0.1,
         exc_types=(Exception,),
         logger=mock_logger,
     )
@@ -95,7 +95,7 @@ async def test_retry_manager_pool_acquire_and_release(mock_logger):
     pool = RetryManagerPool(
         pool_size=pool_size,
         max_retries=2,
-        retry_delay=0.1,
+        retry_delay_secs=0.1,
         exc_types=(Exception,),
         logger=mock_logger,
     )
@@ -116,7 +116,7 @@ async def test_retry_manager_pool_create_new_when_empty(mock_logger):
     pool = RetryManagerPool(
         pool_size=pool_size,
         max_retries=2,
-        retry_delay=0.1,
+        retry_delay_secs=0.1,
         exc_types=(Exception,),
         logger=mock_logger,
     )
