@@ -526,20 +526,16 @@ class BybitExecutionClient(LiveExecutionClient):
         client_order_id = command.client_order_id.value
         venue_order_id = str(command.venue_order_id) if command.venue_order_id else None
 
-        retry_manager = await self._retry_manager_pool.acquire(
-            description=type(command).__name__,
-            client_order_id=client_order_id,
-            venue_order_id=venue_order_id,
-        )
-
-        await retry_manager.run(
-            self._http_account.cancel_order,
-            bybit_symbol.product_type,
-            bybit_symbol.raw_symbol,
-            client_order_id=client_order_id,
-            venue_order_id=venue_order_id,
-        )
-        await self._retry_manager_pool.release(retry_manager)
+        async with self._retry_manager_pool as retry_manager:
+            await retry_manager.run(
+                type(command).__name__,
+                [client_order_id, venue_order_id],
+                self._http_account.cancel_order,
+                bybit_symbol.product_type,
+                bybit_symbol.raw_symbol,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+            )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
@@ -581,14 +577,15 @@ class BybitExecutionClient(LiveExecutionClient):
         for order in open_orders_strategy:
             cancel_batch.append(order)
 
-        retry_manager = await self._retry_manager_pool.acquire(description=type(command).__name__)
-        await retry_manager.run(
-            self._http_account.batch_cancel_orders,
-            product_type=bybit_symbol.product_type,
-            symbol=bybit_symbol.raw_symbol,
-            orders=cancel_batch,
-        )
-        await self._retry_manager_pool.release(retry_manager)
+        async with self._retry_manager_pool as retry_manager:
+            await retry_manager.run(
+                type(command).__name__,
+                None,
+                self._http_account.batch_cancel_orders,
+                product_type=bybit_symbol.product_type,
+                symbol=bybit_symbol.raw_symbol,
+                orders=cancel_batch,
+            )
 
     async def _modify_order(self, command: ModifyOrder) -> None:
         order: Order | None = self._cache.order(command.client_order_id)
@@ -610,22 +607,19 @@ class BybitExecutionClient(LiveExecutionClient):
         trigger_price = str(command.trigger_price) if command.trigger_price else None
         quantity = str(command.quantity) if command.quantity else None
 
-        retry_manager = await self._retry_manager_pool.acquire(
-            description=type(command).__name__,
-            client_order_id=client_order_id,
-            venue_order_id=venue_order_id,
-        )
-        await retry_manager.run(
-            self._http_account.amend_order,
-            bybit_symbol.product_type,
-            bybit_symbol.raw_symbol,
-            client_order_id=client_order_id,
-            venue_order_id=venue_order_id,
-            trigger_price=trigger_price,
-            quantity=quantity,
-            price=price,
-        )
-        await self._retry_manager_pool.release(retry_manager)
+        async with self._retry_manager_pool as retry_manager:
+            await retry_manager.run(
+                type(command).__name__,
+                [client_order_id, venue_order_id],
+                self._http_account.amend_order,
+                bybit_symbol.product_type,
+                bybit_symbol.raw_symbol,
+                client_order_id=client_order_id,
+                venue_order_id=venue_order_id,
+                trigger_price=trigger_price,
+                quantity=quantity,
+                price=price,
+            )
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
@@ -647,12 +641,13 @@ class BybitExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
-        retry_manager = await self._retry_manager_pool.acquire(
-            description=type(command).__name__,
-            client_order_id=command.order.client_order_id,
-        )
-        await retry_manager.run(self._submit_order_methods[order.order_type], order)
-        await self._retry_manager_pool.release(retry_manager)
+        async with self._retry_manager_pool as retry_manager:
+            await retry_manager.run(
+                type(command).__name__,
+                [command.order.client_order_id],
+                self._submit_order_methods[order.order_type],
+                order,
+            )
 
     def _check_order_validity(self, order: Order, product_type: BybitProductType) -> bool:
         # Check post only
