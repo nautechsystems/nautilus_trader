@@ -106,6 +106,7 @@ cdef class DataEngine(Component):
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
+    cpdef void stop_clients(self)
     cpdef void execute(self, DataCommand command)
     cpdef void process(self, Data data)
     cpdef void request(self, DataRequest request)

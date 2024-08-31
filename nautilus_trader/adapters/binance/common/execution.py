@@ -255,6 +255,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         """
         return self._treat_expired_as_canceled
 
+    def _stop(self) -> None:
+        self._retry_manager_pool.shutdown()
+
     async def _connect(self) -> None:
         try:
             # Initialize instrument provider

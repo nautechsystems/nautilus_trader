@@ -542,7 +542,6 @@ cdef class ExecutionEngine(Component):
 # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     cpdef void _start(self):
-        cdef ExecutionClient client
         for client in self._clients.values():
             client.start()
 
@@ -562,10 +561,6 @@ cdef class ExecutionEngine(Component):
         self._on_start()
 
     cpdef void _stop(self):
-        cdef ExecutionClient client
-        for client in self._clients.values():
-            client.stop()
-
         if self.snapshot_positions_interval_secs and self.snapshot_positions_timer_name in self._clock.timer_names:
             self._log.info(f"Canceling position snapshots timer")
             self._clock.cancel_timer(self.snapshot_positions_timer_name)
@@ -588,6 +583,13 @@ cdef class ExecutionEngine(Component):
             client.dispose()
 
 # -- COMMANDS -------------------------------------------------------------------------------------
+
+    cpdef void stop_clients(self):
+        """
+        Stop the registered clients.
+        """
+        for client in self._clients.values():
+            client.stop()
 
     cpdef void load_cache(self):
         """

@@ -509,17 +509,12 @@ cdef class DataEngine(Component):
 # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     cpdef void _start(self):
-        cdef DataClient client
         for client in self._clients.values():
             client.start()
 
         self._on_start()
 
     cpdef void _stop(self):
-        cdef DataClient client
-        for client in self._clients.values():
-            client.stop()
-
         for aggregator in self._bar_aggregators.values():
             if isinstance(aggregator, TimeBarAggregator):
                 aggregator.stop()
@@ -553,6 +548,13 @@ cdef class DataEngine(Component):
         self._clock.cancel_timers()
 
 # -- COMMANDS -------------------------------------------------------------------------------------
+
+    cpdef void stop_clients(self):
+        """
+        Stop the registered clients.
+        """
+        for client in self._clients.values():
+            client.stop()
 
     cpdef void execute(self, DataCommand command):
         """
@@ -609,6 +611,7 @@ cdef class DataEngine(Component):
         Condition.not_none(response, "response")
 
         self._handle_response(response)
+
 
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 

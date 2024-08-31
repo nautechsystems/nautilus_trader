@@ -897,6 +897,8 @@ class NautilusKernel:
         """
         self._log.info("STOPPING")
 
+        self._stop_clients()
+
         if self._controller:
             self._controller.stop()
 
@@ -932,6 +934,8 @@ class NautilusKernel:
             raise RuntimeError("no event loop has been assigned to the kernel")
 
         self._log.info("STOPPING")
+
+        self._stop_clients()
 
         if self._trader.is_running:
             self._trader.stop()
@@ -1054,6 +1058,10 @@ class NautilusKernel:
     def _disconnect_clients(self) -> None:
         self._data_engine.disconnect()
         self._exec_engine.disconnect()
+
+    def _stop_clients(self) -> None:
+        self._data_engine.stop_clients()
+        self._exec_engine.stop_clients()
 
     def _initialize_portfolio(self) -> None:
         self._portfolio.initialize_orders()
