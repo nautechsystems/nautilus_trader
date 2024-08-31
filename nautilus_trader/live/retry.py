@@ -57,8 +57,10 @@ class RetryManager:
         self.name: str | None = None
         self.details: list[object] | None = None
         self.details_str: str | None = None
+        self.result: bool = False
+        self.message: str | None = None
 
-    async def run(self, name: str, details: list[object] | None, func, *args, **kwargs) -> None:
+    async def run(self, name: str, details: list[object] | None, func, *args, **kwargs):
         """
         Execute the given `func` with retry management.
 
@@ -85,11 +87,14 @@ class RetryManager:
         while True:
             try:
                 await func(*args, **kwargs)
+                self.result = True
                 return  # Successful request
             except self.exc_types as e:
                 self.log.warning(repr(e))
                 if not self.max_retries or self.retries >= self.max_retries:
                     self._log_error()
+                    self.result = False
+                    self.message = str(e)
                     return  # Operation failed
 
                 self.retries += 1
@@ -104,6 +109,8 @@ class RetryManager:
         self.name = None
         self.details = None
         self.details_str = None
+        self.result = False
+        self.message = None
 
     def _log_retry(self) -> None:
         self.log.warning(
