@@ -77,7 +77,11 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     max_retries : PositiveInt, optional
         The maximum number of times a submit, cancel or modify order request will be retried.
     retry_delay : PositiveFloat, optional
-        The delay (seconds) between retries.
+        The delay (seconds) between retries. Short delays with frequent retries may result in account bans.
+
+    Warnings
+    --------
+    A short `retry_delay` with frequent retries may result in account bans.
 
     """
 

@@ -14,6 +14,10 @@
 # -------------------------------------------------------------------------------------------------
 
 
+from nautilus_trader.adapters.binance.common.constants import BINANCE_RETRY_ERRORS
+from nautilus_trader.adapters.binance.common.enums import BinanceErrorCode
+
+
 class BinanceError(Exception):
     """
     The base class for all Binance specific errors.
@@ -42,3 +46,24 @@ class BinanceClientError(BinanceError):
 
     def __init__(self, status, message, headers):
         super().__init__(status, message, headers)
+
+
+def should_retry(error: BaseException) -> bool:
+    """
+    Determine if a retry should be attempted based on the error code.
+
+    Parameters
+    ----------
+    error : BaseException
+        The Binance error to check.
+
+    Returns
+    -------
+    bool
+        True if should retry, otherwise False.
+
+    """
+    if isinstance(error, BinanceError):
+        error_code = BinanceErrorCode(error.message["code"])
+        return error_code in BINANCE_RETRY_ERRORS
+    return False

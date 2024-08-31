@@ -35,6 +35,7 @@ from nautilus_trader.adapters.binance.http.account import BinanceAccountHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.adapters.binance.http.error import BinanceError
+from nautilus_trader.adapters.binance.http.error import should_retry
 from nautilus_trader.adapters.binance.http.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.http.user import BinanceUserDataHttpAPI
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
@@ -163,6 +164,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._use_reduce_only: bool = config.use_reduce_only
         self._use_position_ids: bool = config.use_position_ids
         self._treat_expired_as_canceled: bool = config.treat_expired_as_canceled
+        self._recv_window = config.recv_window_ms
         self._max_retries: int = config.max_retries or 0
         self._retry_delay: float = config.retry_delay or 1.0
         self._log.info(f"Account type: {self._binance_account_type.value}", LogColor.BLUE)
@@ -181,7 +183,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         # Enum parser
         self._enum_parser = enum_parser
 
-        # Http API
+        # HTTP API
         self._http_client = client
         self._http_account = account
         self._http_market = market
@@ -212,19 +214,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             OrderType.TRAILING_STOP_MARKET: self._submit_trailing_stop_market_order,
         }
 
-        # Retry logic (hard coded for now)
-        self._retry_errors: set[BinanceErrorCode] = {
-            BinanceErrorCode.DISCONNECTED,
-            BinanceErrorCode.TOO_MANY_REQUESTS,  # Short retry delays may result in bans
-            BinanceErrorCode.TIMEOUT,
-            BinanceErrorCode.SERVER_BUSY,
-            BinanceErrorCode.INVALID_TIMESTAMP,
-            BinanceErrorCode.CANCEL_REJECTED,
-            BinanceErrorCode.ME_RECVWINDOW_REJECT,
-        }
-
-        self._recv_window = 5_000
-
         # Hot caches
         self._instrument_ids: dict[str, InstrumentId] = {}
         self._generate_order_status_retries: dict[ClientOrderId, int] = {}
@@ -233,8 +222,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             pool_size=100,
             max_retries=config.max_retries or 0,
             retry_delay_secs=config.retry_delay or 0.0,
-            exc_types=(BinanceError,),
             logger=self._log,
+            exc_types=(BinanceError,),
+            retry_check=should_retry,
         )
 
         self._log.info(f"Base url HTTP {self._http_client.base_url}", LogColor.BLUE)
@@ -597,15 +587,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
     def _check_order_validity(self, order: Order) -> None:
         # Implement in child class
         raise NotImplementedError
-
-    def _should_retry(self, error_code: BinanceErrorCode, retries: int) -> bool:
-        if (
-            error_code not in self._retry_errors
-            or not self._max_retries
-            or retries > self._max_retries
-        ):
-            return False
-        return True
 
     def _determine_time_in_force(self, order: Order) -> BinanceTimeInForce:
         time_in_force = self._enum_parser.parse_internal_time_in_force(order.time_in_force)
