@@ -16,8 +16,6 @@
 import asyncio
 
 from nautilus_trader.common.component import Logger
-from nautilus_trader.model.identifiers import ClientOrderId
-from nautilus_trader.model.identifiers import VenueOrderId
 
 
 class RetryManager:
@@ -45,58 +43,87 @@ class RetryManager:
 
     def __init__(
         self,
-        description: str,
-        exc_types: tuple[type[BaseException], ...],
-        logger: Logger,
         max_retries: int,
         retry_delay: float,
-        client_order_id: ClientOrderId | None = None,
-        venue_order_id: VenueOrderId | None = None,
+        exc_types: tuple[type[BaseException], ...],
+        logger: Logger,
     ) -> None:
-        self.description = description
-        self.exc_types = exc_types
-        self.client_order_id = client_order_id
-        self.venue_order_id = venue_order_id
         self.max_retries = max_retries
         self.retry_delay = retry_delay
         self.retries = 0
+        self.exc_types = exc_types
         self.log = logger
 
-    async def run(self, func, *args, **kwargs) -> None:
+        self.name: str | None = None
+        self.details: list[object] | None = None
+        self.details_str: str | None = None
+
+    async def run(self, name: str, details: list[object] | None, func, *args, **kwargs) -> None:
         """
         Execute the given `func` with retry management.
 
         If an exception in `self.exc_types` is raised, a warning is logged, and the function is
         retried after a delay until the maximum retries are reached, at which point an error is logged.
 
+        Parameters
+        ----------
+        name : str
+            The name of the operation to run.
+        details : list[object], optional
+            The operation details such as identifiers.
+        func : Awaitable
+            The function to execute.
+        args : Any
+            Positional arguments to pass to the function `func`.
+        kwargs : Any
+            Keyword arguments to pass to the function `func`.
+
         """
+        self.name = name
+        self.details = details
+
         while True:
             try:
                 await func(*args, **kwargs)
                 return  # Successful request
             except self.exc_types as e:
                 self.log.warning(repr(e))
-                if self._should_retry():
-                    await asyncio.sleep(self.retry_delay)
-                    continue
-                return  # Operation failed
+                if not self.max_retries or self.retries >= self.max_retries:
+                    self._log_error()
+                    return  # Operation failed
 
-    def _should_retry(self) -> bool:
-        if not self.max_retries or self.retries > self.max_retries:
-            self.log.error(
-                f"Failed on '{self.description}': "
-                f"{repr(self.client_order_id) if self.client_order_id else ''} "
-                f"{repr(self.venue_order_id) if self.venue_order_id else ''}",
-            )
-            return False
+                self.retries += 1
+                self._log_retry()
+                await asyncio.sleep(self.retry_delay)
 
-        self.retries += 1
+    def clear(self) -> None:
+        """
+        Clear all state from this retry manager.
+        """
+        self.retries = 0
+        self.name = None
+        self.details = None
+        self.details_str = None
+
+    def _log_retry(self) -> None:
         self.log.warning(
-            f"Retrying {self.retries}/{self.max_retries} for '{self.description}' in {self.retry_delay}s: "
-            f"{repr(self.client_order_id) if self.client_order_id else ''} "
-            f"{repr(self.venue_order_id) if self.venue_order_id else ''}",
+            f"Retrying {self.retries}/{self.max_retries} for '{self.name}' "
+            f"in {self.retry_delay}s{self._details_str()}",
         )
-        return True
+
+    def _log_error(self) -> None:
+        self.log.error(
+            f"Failed on '{self.name}'{self._details_str()}",
+        )
+
+    def _details_str(self) -> str:
+        if not self.details:
+            return ""
+
+        if not self.details_str:
+            self.details_str = ": " + ", ".join([repr(x) for x in self.details])
+
+        return self.details_str
 
 
 class RetryManagerPool:
@@ -119,22 +146,41 @@ class RetryManagerPool:
         self.pool_size = pool_size
         self._pool: list[RetryManager] = [self._create_manager() for _ in range(pool_size)]
         self._lock = asyncio.Lock()
+        self._current_manager: RetryManager | None = None
 
     def _create_manager(self) -> RetryManager:
         return RetryManager(
-            description="",
-            exc_types=self.exc_types,
-            logger=self.logger,
             max_retries=self.max_retries,
             retry_delay=self.retry_delay,
+            exc_types=self.exc_types,
+            logger=self.logger,
         )
 
-    async def acquire(
-        self,
-        description: str,
-        client_order_id: ClientOrderId | None = None,
-        venue_order_id: VenueOrderId | None = None,
-    ) -> RetryManager:
+    async def __aenter__(self) -> RetryManager:
+        """
+        Asynchronous context manager entry.
+
+        Acquires a `RetryManager` from the pool.
+
+        """
+        self._current_manager = await self.acquire()
+        return self._current_manager
+
+    async def __aexit__(self, exc_type, exc_value, traceback) -> None:
+        """
+        Asynchronous context manager exit.
+
+        Releases the `RetryManager` back into the pool.
+
+        """
+        try:
+            if self._current_manager:
+                await self.release(self._current_manager)
+        finally:
+            # Drop reference to avoid lingering state issues
+            self._current_manager = None
+
+    async def acquire(self) -> RetryManager:
         """
         Acquire a `RetryManager` from the pool, or creates a new one if the pool is
         empty.
@@ -154,21 +200,13 @@ class RetryManagerPool:
 
         """
         async with self._lock:
-            if self._pool:
-                retry_manager = self._pool.pop()
-            else:
-                retry_manager = self._create_manager()
-
-            retry_manager.retries = 0
-            retry_manager.description = description
-            retry_manager.client_order_id = client_order_id
-            retry_manager.venue_order_id = venue_order_id
-
-        return retry_manager
+            return self._pool.pop() if self._pool else self._create_manager()
 
     async def release(self, retry_manager: RetryManager) -> None:
         """
-        Release the given `RetryManager` back into the pool.
+        Release the given `retry_manager` back into the pool.
+
+        If the pool is already full, the `retry_manager` will be dropped.
 
         Parameters
         ----------
@@ -178,8 +216,5 @@ class RetryManagerPool:
         """
         async with self._lock:
             if len(self._pool) < self.pool_size:
-                retry_manager.retries = 0
-                retry_manager.description = ""
-                retry_manager.client_order_id = None
-                retry_manager.venue_order_id = None
+                retry_manager.clear()
                 self._pool.append(retry_manager)
