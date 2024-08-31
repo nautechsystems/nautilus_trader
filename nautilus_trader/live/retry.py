@@ -24,32 +24,26 @@ class RetryManager:
 
     Parameters
     ----------
-    description : str
-        The description for the operation.
-    exc_types : tuple[Type[BaseException], ...]
-        The exception types to handle for retries.
     max_retries : int
         The maximum number of retries before failure.
     retry_delay_secs : float
         The delay (seconds) between retry attempts.
+    exc_types : tuple[Type[BaseException], ...]
+        The exception types to handle for retries.
     logger : Logger
         The logger for the manager.
-    client_order_id : ClientOrderId, optional
-        The client order ID for the operation.
-    venue_order_id : VenueOrderId, optional
-        The venue order ID for the operation.
 
     """
 
     def __init__(
         self,
         max_retries: int,
-        retry_delay: float,
+        retry_delay_secs: float,
         exc_types: tuple[type[BaseException], ...],
         logger: Logger,
     ) -> None:
         self.max_retries = max_retries
-        self.retry_delay = retry_delay
+        self.retry_delay_secs = retry_delay_secs
         self.retries = 0
         self.exc_types = exc_types
         self.log = logger
@@ -99,7 +93,7 @@ class RetryManager:
 
                 self.retries += 1
                 self._log_retry()
-                await asyncio.sleep(self.retry_delay)
+                await asyncio.sleep(self.retry_delay_secs)
 
     def clear(self) -> None:
         """
@@ -115,7 +109,7 @@ class RetryManager:
     def _log_retry(self) -> None:
         self.log.warning(
             f"Retrying {self.retries}/{self.max_retries} for '{self.name}' "
-            f"in {self.retry_delay}s{self._details_str()}",
+            f"in {self.retry_delay_secs}s{self._details_str()}",
         )
 
     def _log_error(self) -> None:
@@ -142,12 +136,12 @@ class RetryManagerPool:
         self,
         pool_size: int,
         max_retries: int,
-        retry_delay: float,
+        retry_delay_secs: float,
         exc_types: tuple[type[BaseException], ...],
         logger: Logger,
     ) -> None:
         self.max_retries = max_retries
-        self.retry_delay = retry_delay
+        self.retry_delay_secs = retry_delay_secs
         self.exc_types = exc_types
         self.logger = logger
         self.pool_size = pool_size
@@ -158,7 +152,7 @@ class RetryManagerPool:
     def _create_manager(self) -> RetryManager:
         return RetryManager(
             max_retries=self.max_retries,
-            retry_delay=self.retry_delay,
+            retry_delay_secs=self.retry_delay_secs,
             exc_types=self.exc_types,
             logger=self.logger,
         )
@@ -191,15 +185,6 @@ class RetryManagerPool:
         """
         Acquire a `RetryManager` from the pool, or creates a new one if the pool is
         empty.
-
-        Parameters
-        ----------
-        description : str
-            The description for the operation.
-        client_order_id : ClientOrderId, optional
-            The client order ID for the operation.
-        venue_order_id : VenueOrderId, optional
-            The venue order ID for the operation.
 
         Returns
         -------

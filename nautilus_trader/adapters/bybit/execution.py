@@ -218,7 +218,7 @@ class BybitExecutionClient(LiveExecutionClient):
         self._retry_manager_pool = RetryManagerPool(
             pool_size=100,
             max_retries=config.max_retries or 0,
-            retry_delay=config.retry_delay or 0.0,
+            retry_delay_secs=config.retry_delay or 0.0,
             exc_types=(BybitError,),
             logger=self._log,
         )
