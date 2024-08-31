@@ -75,7 +75,7 @@ config_node = TradingNodeConfig(
     #     use_trader_id=False,
     #     use_instance_id=False,
     #     stream_per_topic=False,
-    #     # types_filter=[QuoteTick],
+    #     types_filter=[QuoteTick],
     #     autotrim_mins=30,
     #     heartbeat_interval_secs=1,
     # ),
@@ -100,6 +100,8 @@ config_node = TradingNodeConfig(
             product_types=[product_type],
             demo=False,  # If client uses the demo API
             testnet=False,  # If client uses the testnet API
+            max_retries=3,
+            retry_delay=1.0,
         ),
     },
     timeout_connection=20.0,

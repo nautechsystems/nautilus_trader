@@ -105,7 +105,7 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
         Binance treats cancels with certain combinations of order type and time in force as expired
         events. This config option allows you to treat these uniformally as cancels.
     max_retries : PositiveInt, optional
-        The maximum number of times a submit or cancel order request will be retried.
+        The maximum number of times a submit, cancel or modify order request will be retried.
     retry_delay : PositiveFloat, optional
         The delay (seconds) between retries.
     venue : Venue, default BINANCE_VENUE

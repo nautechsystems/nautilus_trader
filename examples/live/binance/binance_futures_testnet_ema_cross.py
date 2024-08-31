@@ -87,6 +87,8 @@ config_node = TradingNodeConfig(
             testnet=True,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),
             use_position_ids=False,
+            max_retries=3,
+            retry_delay=1.0,
         ),
     },
     timeout_connection=30.0,

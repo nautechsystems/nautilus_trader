@@ -69,6 +69,8 @@ config_node = TradingNodeConfig(
             instrument_provider=InstrumentProviderConfig(load_all=True),
             use_position_ids=False,
             use_reduce_only=False,  # Must be disabled for Hedge mode
+            max_retries=3,
+            retry_delay=1.0,
         ),
     },
     timeout_connection=30.0,

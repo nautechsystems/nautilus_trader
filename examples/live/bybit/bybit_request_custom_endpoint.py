@@ -113,6 +113,8 @@ config_node = TradingNodeConfig(
             product_types=[BybitProductType.LINEAR],
             instrument_provider=InstrumentProviderConfig(load_all=True),
             testnet=True,
+            max_retries=3,
+            retry_delay=1.0,
         ),
     },
     timeout_connection=20.0,

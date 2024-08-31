@@ -528,7 +528,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         async with self._retry_manager_pool as retry_manager:
             await retry_manager.run(
-                type(command).__name__,
+                "cancel_order",
                 [client_order_id, venue_order_id],
                 self._http_account.cancel_order,
                 bybit_symbol.product_type,
@@ -579,7 +579,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         async with self._retry_manager_pool as retry_manager:
             await retry_manager.run(
-                type(command).__name__,
+                "cancel_all_orders",
                 None,
                 self._http_account.batch_cancel_orders,
                 product_type=bybit_symbol.product_type,
@@ -609,7 +609,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         async with self._retry_manager_pool as retry_manager:
             await retry_manager.run(
-                type(command).__name__,
+                "modify_order",
                 [client_order_id, venue_order_id],
                 self._http_account.amend_order,
                 bybit_symbol.product_type,
@@ -643,11 +643,19 @@ class BybitExecutionClient(LiveExecutionClient):
 
         async with self._retry_manager_pool as retry_manager:
             await retry_manager.run(
-                type(command).__name__,
+                "submit_order",
                 [command.order.client_order_id],
                 self._submit_order_methods[order.order_type],
                 order,
             )
+            if not retry_manager.result:
+                self.generate_order_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=retry_manager.message,
+                    ts_event=self._clock.timestamp_ns(),
+                )
 
     def _check_order_validity(self, order: Order, product_type: BybitProductType) -> bool:
         # Check post only
