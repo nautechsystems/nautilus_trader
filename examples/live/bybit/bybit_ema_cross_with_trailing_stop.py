@@ -73,6 +73,8 @@ config_node = TradingNodeConfig(
             instrument_provider=InstrumentProviderConfig(load_all=True),
             product_types=[product_type],
             testnet=False,  # If client uses the testnet
+            max_retries=3,
+            retry_delay=1.0,
         ),
     },
     timeout_connection=30.0,

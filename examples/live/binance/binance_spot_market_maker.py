@@ -22,8 +22,6 @@ from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
 from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
 from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
 from nautilus_trader.cache.config import CacheConfig
-from nautilus_trader.common.config import DatabaseConfig
-from nautilus_trader.common.config import MessageBusConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
@@ -61,17 +59,17 @@ config_node = TradingNodeConfig(
         buffer_interval_ms=100,
         flush_on_start=False,
     ),
-    message_bus=MessageBusConfig(
-        database=DatabaseConfig(),
-        encoding="json",
-        timestamps_as_iso8601=True,
-        buffer_interval_ms=100,
-        streams_prefix="quoters",
-        use_instance_id=False,
-        # types_filter=[QuoteTick],
-        autotrim_mins=30,
-        heartbeat_interval_secs=1,
-    ),
+    # message_bus=MessageBusConfig(
+    #     database=DatabaseConfig(),
+    #     encoding="json",
+    #     timestamps_as_iso8601=True,
+    #     buffer_interval_ms=100,
+    #     streams_prefix="quoters",
+    #     use_instance_id=False,
+    #     types_filter=[QuoteTick],
+    #     autotrim_mins=30,
+    #     heartbeat_interval_secs=1,
+    # ),
     # streaming=StreamingConfig(catalog_path="catalog"),
     data_clients={
         "BINANCE": BinanceDataClientConfig(
@@ -95,6 +93,8 @@ config_node = TradingNodeConfig(
             us=False,  # If client is for Binance US
             testnet=False,  # If client uses the testnet
             instrument_provider=InstrumentProviderConfig(load_all=True),
+            max_retries=3,
+            retry_delay=1.0,
         ),
     },
     timeout_connection=30.0,

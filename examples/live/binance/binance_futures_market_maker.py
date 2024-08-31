@@ -65,6 +65,8 @@ config_node = TradingNodeConfig(
             # api_secret=os.getenv("BINANCE_FUTURES_API_SECRET"),
             account_type=BinanceAccountType.USDT_FUTURE,
             instrument_provider=InstrumentProviderConfig(load_all=True),
+            max_retries=3,
+            retry_delay=1.0,
         ),
     },
     timeout_connection=30.0,
