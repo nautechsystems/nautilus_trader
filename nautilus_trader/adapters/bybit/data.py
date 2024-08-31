@@ -124,10 +124,6 @@ class BybitDataClient(LiveMarketDataClient):
             instrument_provider=instrument_provider,
         )
 
-        # Hot cache
-        self._instrument_ids: dict[str, InstrumentId] = {}
-        self._last_quotes: dict[InstrumentId, QuoteTick] = {}
-
         # HTTP API
         self._http_market = BybitMarketHttpAPI(
             client=client,
@@ -168,6 +164,10 @@ class BybitDataClient(LiveMarketDataClient):
             endpoint="bybit.data.tickers",
             handler=self.complete_fetch_tickers_task,
         )
+
+        # Hot caches
+        self._instrument_ids: dict[str, InstrumentId] = {}
+        self._last_quotes: dict[InstrumentId, QuoteTick] = {}
 
     async def fetch_send_tickers(
         self,
@@ -217,8 +217,6 @@ class BybitDataClient(LiveMarketDataClient):
         self._log.info("Initializing websocket connections")
         for ws_client in self._ws_clients.values():
             await ws_client.connect()
-
-        self._log.info("Data client connected")
 
     async def _disconnect(self) -> None:
         if self._update_instruments_task:
