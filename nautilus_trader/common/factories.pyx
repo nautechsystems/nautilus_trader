@@ -1142,7 +1142,7 @@ cdef class OrderFactory:
             The entry order trigger price (STOP).
         entry_price : Price, optional
             The entry order price (LIMIT).
-        sl_trigger_price : Price, optional
+        sl_trigger_price : Price
             The stop-loss child order trigger price (STOP).
         tp_trigger_price : Price, optional
             The take-profit child order trigger price (STOP).
