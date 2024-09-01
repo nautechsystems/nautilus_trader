@@ -42,12 +42,11 @@ use streams::StreamReadOptions;
 use super::{await_handle, REDIS_MINID, REDIS_XTRIM};
 use crate::redis::{create_redis_connection, get_stream_key};
 
-// Task and connection names
 const MSGBUS_PUBLISH: &str = "msgbus-publish";
 const MSGBUS_STREAM: &str = "msgbus-stream";
 const MSGBUS_HEARTBEAT: &str = "msgbus-heartbeat";
 const HEARTBEAT_TOPIC: &str = "health:heartbeat";
-const TRIM_BUFFER_SECONDS: u64 = 60;
+const TRIM_BUFFER_SECS: u64 = 60;
 
 type RedisStreamBulk = Vec<HashMap<String, Vec<HashMap<String, redis::Value>>>>;
 
@@ -56,7 +55,9 @@ type RedisStreamBulk = Vec<HashMap<String, Vec<HashMap<String, redis::Value>>>>;
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.infrastructure")
 )]
 pub struct RedisMessageBusDatabase {
+    /// The trader ID for this message bus database.
     pub trader_id: TraderId,
+    /// The instance ID for this message bus database.
     pub instance_id: UUID4,
     pub_tx: tokio::sync::mpsc::UnboundedSender<BusMessage>,
     pub_handle: Option<tokio::task::JoinHandle<()>>,
@@ -70,6 +71,7 @@ pub struct RedisMessageBusDatabase {
 impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
     type DatabaseType = RedisMessageBusDatabase;
 
+    /// Creates a new [`RedisMessageBusDatabase`] instance.
     fn new(
         trader_id: TraderId,
         instance_id: UUID4,
@@ -135,15 +137,21 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
         })
     }
 
+    /// Returns whether the message bus database adapter publishing channel is closed.
+    #[must_use]
+    fn is_closed(&self) -> bool {
+        self.pub_tx.is_closed()
+    }
+
+    /// Publishes a message with the given `topic` and `payload`.
     fn publish(&self, topic: String, payload: Bytes) {
         let msg = BusMessage { topic, payload };
         if let Err(e) = self.pub_tx.send(msg) {
-            // This will occur for now when the Python task
-            // blindly attempts to publish to a closed channel.
-            log::debug!("Failed to send message: {}", e);
+            log::error!("Failed to send message: {}", e);
         }
     }
 
+    /// Closes the message bus database adapter.
     fn close(&mut self) {
         log::debug!("Closing message bus database adapter");
 
@@ -168,6 +176,7 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
 }
 
 impl RedisMessageBusDatabase {
+    /// Gets the stream receiver for this instance.
     pub fn get_stream_receiver(
         &mut self,
     ) -> anyhow::Result<tokio::sync::mpsc::Receiver<BusMessage>> {
@@ -176,6 +185,7 @@ impl RedisMessageBusDatabase {
             .ok_or_else(|| anyhow::anyhow!("Stream receiver already taken"))
     }
 
+    /// Streams messages arriving on the stream receiver channel.
     pub fn stream(
         mut stream_rx: tokio::sync::mpsc::Receiver<BusMessage>,
     ) -> impl Stream<Item = BusMessage> + 'static {
@@ -290,7 +300,7 @@ fn drain_buffer(
         // Autotrim stream
         let last_trim_ms = last_trim_index.entry(stream_key.clone()).or_insert(0); // Remove clone
         let unix_duration_now = duration_since_unix_epoch();
-        let trim_buffer = Duration::from_secs(TRIM_BUFFER_SECONDS);
+        let trim_buffer = Duration::from_secs(TRIM_BUFFER_SECS);
 
         // Improve efficiency of this by batching
         if *last_trim_ms < (unix_duration_now - trim_buffer).as_millis() as usize {

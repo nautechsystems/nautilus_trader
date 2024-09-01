@@ -2509,7 +2509,7 @@ cdef class MessageBus:
 
         # Publish externally (if configured)
         cdef bytes payload_bytes
-        if external_pub and self._database is not None and self.serializer is not None:
+        if external_pub and self._database is not None and not self._database.is_closed() and self.serializer is not None:
             if isinstance(msg, self._publishable_types):
                 if isinstance(msg, bytes):
                     payload_bytes = msg

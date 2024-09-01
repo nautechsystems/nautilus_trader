@@ -157,6 +157,7 @@ pub trait MessageBusDatabaseAdapter {
         instance_id: UUID4,
         config: MessageBusConfig,
     ) -> anyhow::Result<Self::DatabaseType>;
+    fn is_closed(&self) -> bool;
     fn publish(&self, topic: String, payload: Bytes);
     fn close(&mut self);
 }
