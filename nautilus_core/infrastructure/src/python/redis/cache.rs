@@ -34,13 +34,13 @@ impl RedisCacheDatabase {
     }
 
     #[pyo3(name = "close")]
-    fn py_close(&mut self) -> PyResult<()> {
-        self.close().map_err(to_pyruntime_err)
+    fn py_close(&mut self) {
+        self.close()
     }
 
     #[pyo3(name = "flushdb")]
-    fn py_flushdb(&mut self) -> PyResult<()> {
-        self.flushdb().map_err(to_pyruntime_err)
+    fn py_flushdb(&mut self) {
+        self.flushdb()
     }
 
     #[pyo3(name = "keys")]

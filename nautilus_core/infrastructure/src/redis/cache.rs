@@ -16,8 +16,6 @@
 use std::{
     collections::{HashMap, VecDeque},
     str::FromStr,
-    sync::mpsc::{channel, Receiver, Sender, TryRecvError},
-    thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
 
@@ -25,6 +23,7 @@ use bytes::Bytes;
 use nautilus_common::{
     cache::{database::CacheDatabaseAdapter, CacheConfig},
     enums::SerializationEncoding,
+    runtime::get_runtime,
 };
 use nautilus_core::{correctness::check_slice_not_empty, nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
@@ -46,7 +45,7 @@ use ustr::Ustr;
 use super::{REDIS_DELIMITER, REDIS_FLUSHDB};
 use crate::redis::create_redis_connection;
 
-// Thread and connection name constants
+// Task and connection names
 const CACHE_READ: &str = "cache-read";
 const CACHE_WRITE: &str = "cache-write";
 
@@ -89,7 +88,7 @@ pub enum DatabaseOperation {
     Close,
 }
 
-/// Represents a database command to be performed which may be executed in another thread.
+/// Represents a database command to be performed which may be executed in a task.
 #[derive(Clone, Debug)]
 pub struct DatabaseCommand {
     /// The database operation type.
@@ -130,8 +129,8 @@ pub struct RedisCacheDatabase {
     pub trader_id: TraderId,
     trader_key: String,
     con: Connection,
-    tx: Sender<DatabaseCommand>,
-    handle: Option<JoinHandle<()>>,
+    tx: tokio::sync::mpsc::UnboundedSender<DatabaseCommand>,
+    handle: tokio::task::JoinHandle<()>,
 }
 
 impl RedisCacheDatabase {
@@ -147,50 +146,48 @@ impl RedisCacheDatabase {
             .ok_or_else(|| anyhow::anyhow!("No database config"))?;
         let con = create_redis_connection(CACHE_READ, db_config.clone())?;
 
-        let (tx, rx) = channel::<DatabaseCommand>();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<DatabaseCommand>();
         let trader_key = get_trader_key(trader_id, instance_id, &config);
         let trader_key_clone = trader_key.clone();
 
-        let handle = std::thread::Builder::new()
-            .name(CACHE_WRITE.to_string())
-            .spawn(move || {
-                Self::process_commands(rx, trader_key_clone, config.clone());
-            })
-            .expect("Error spawning '{CACHE_WRITE}' thread");
+        let handle = get_runtime().spawn(async move {
+            process_commands(rx, trader_key_clone, config.clone())
+                .await
+                .expect("Error spawning '{CACHE_WRITE}' task")
+        });
 
         Ok(RedisCacheDatabase {
             trader_id,
             trader_key,
             con,
             tx,
-            handle: Some(handle),
+            handle,
         })
     }
 
-    pub fn close(&mut self) -> anyhow::Result<()> {
-        tracing::debug!("Closing cache database adapter");
-        self.tx
-            .send(DatabaseCommand::close())
-            .map_err(anyhow::Error::new)?;
-
-        if let Some(handle) = self.handle.take() {
-            tracing::debug!("Joining '{CACHE_WRITE}' thread");
-            handle.join().map_err(|e| anyhow::anyhow!("{:?}", e))
-        } else {
-            Err(anyhow::anyhow!("Cache database already shutdown"))
+    pub fn close(&mut self) {
+        log::debug!("Closing cache database adapter");
+        if let Err(e) = self.tx.send(DatabaseCommand::close()) {
+            log::debug!("Error sending close message: {e:?}")
         }
+
+        log::debug!("Awaiting '{CACHE_WRITE}' task");
+        tokio::task::block_in_place(|| {
+            if let Err(e) = get_runtime().block_on(&mut self.handle) {
+                log::error!("Error awaiting '{CACHE_WRITE}' task: {:?}", e);
+            }
+        });
     }
 
-    pub fn flushdb(&mut self) -> anyhow::Result<()> {
-        match redis::cmd(REDIS_FLUSHDB).query::<()>(&mut self.con) {
-            Ok(_) => Ok(()),
-            Err(e) => Err(e.into()),
+    pub fn flushdb(&mut self) {
+        if let Err(e) = redis::cmd(REDIS_FLUSHDB).query::<()>(&mut self.con) {
+            log::error!("Failed to flush database: {:?}", e);
         }
     }
 
     pub fn keys(&mut self, pattern: &str) -> anyhow::Result<Vec<String>> {
         let pattern = format!("{}{REDIS_DELIMITER}{}", self.trader_key, pattern);
-        tracing::debug!("Querying keys: {pattern}");
+        log::debug!("Querying keys: {pattern}");
         match self.con.keys(pattern) {
             Ok(keys) => Ok(keys),
             Err(e) => Err(e.into()),
@@ -239,42 +236,51 @@ impl RedisCacheDatabase {
             Err(e) => anyhow::bail!("{FAILED_TX_CHANNEL}: {e}"),
         }
     }
+}
 
-    fn process_commands(rx: Receiver<DatabaseCommand>, trader_key: String, config: CacheConfig) {
-        let mut con = create_redis_connection(CACHE_WRITE, config.database.unwrap()).unwrap();
+async fn process_commands(
+    mut rx: tokio::sync::mpsc::UnboundedReceiver<DatabaseCommand>,
+    trader_key: String,
+    config: CacheConfig,
+) -> anyhow::Result<()> {
+    tracing::debug!("Starting cache processing");
+    let db_config = config
+        .database
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("No database config"))?;
+    let mut con = create_redis_connection(CACHE_WRITE, db_config.clone())?;
 
-        // Buffering
-        let mut buffer: VecDeque<DatabaseCommand> = VecDeque::new();
-        let mut last_drain = Instant::now();
-        let recv_interval = Duration::from_millis(1);
-        let buffer_interval = Duration::from_millis(config.buffer_interval_ms.unwrap_or(0) as u64);
+    // Buffering
+    let mut buffer: VecDeque<DatabaseCommand> = VecDeque::new();
+    let mut last_drain = Instant::now();
+    let buffer_interval = Duration::from_millis(config.buffer_interval_ms.unwrap_or(0) as u64);
 
-        loop {
-            if last_drain.elapsed() >= buffer_interval && !buffer.is_empty() {
-                drain_buffer(&mut con, &trader_key, &mut buffer);
-                last_drain = Instant::now();
-            } else {
-                // Continue to receive and handle messages until channel is hung up
-                match rx.try_recv() {
-                    Ok(msg) => {
-                        if let DatabaseOperation::Close = msg.op_type {
-                            // Close receiver end of the channel
-                            drop(rx);
-                            break;
-                        }
-                        buffer.push_back(msg)
+    loop {
+        if last_drain.elapsed() >= buffer_interval && !buffer.is_empty() {
+            drain_buffer(&mut con, &trader_key, &mut buffer);
+            last_drain = Instant::now();
+        } else {
+            // Continue to receive and handle messages until channel is hung up
+            match rx.recv().await {
+                Some(msg) => {
+                    if let DatabaseOperation::Close = msg.op_type {
+                        // Close receiver end of the channel
+                        drop(rx);
+                        break;
                     }
-                    Err(TryRecvError::Empty) => thread::sleep(recv_interval),
-                    Err(TryRecvError::Disconnected) => break, // Channel hung up
+                    buffer.push_back(msg)
                 }
+                None => break, // Channel hung up
             }
         }
-
-        // Drain any remaining messages
-        if !buffer.is_empty() {
-            drain_buffer(&mut con, &trader_key, &mut buffer);
-        }
     }
+
+    // Drain any remaining messages
+    if !buffer.is_empty() {
+        drain_buffer(&mut con, &trader_key, &mut buffer);
+    }
+
+    Ok(())
 }
 
 fn drain_buffer(conn: &mut Connection, trader_key: &str, buffer: &mut VecDeque<DatabaseCommand>) {
@@ -377,7 +383,7 @@ fn insert(
     key: &str,
     value: Vec<Bytes>,
 ) -> anyhow::Result<()> {
-    check_slice_not_empty(value.as_slice(), stringify!(value)).unwrap();
+    check_slice_not_empty(value.as_slice(), stringify!(value))?;
 
     match collection {
         INDEX => insert_index(pipe, key, &value),
@@ -502,7 +508,7 @@ fn update(
     key: &str,
     value: Vec<Bytes>,
 ) -> anyhow::Result<()> {
-    check_slice_not_empty(value.as_slice(), stringify!(value)).unwrap();
+    check_slice_not_empty(value.as_slice(), stringify!(value))?;
 
     match collection {
         ACCOUNTS => {
@@ -653,11 +659,11 @@ pub struct RedisCacheDatabaseAdapter {
 #[allow(dead_code)] // Under development
 #[allow(unused)] // Under development
 impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
-    fn close(&mut self) -> anyhow::Result<()> {
+    fn close(&mut self) {
         self.database.close()
     }
 
-    fn flush(&mut self) -> anyhow::Result<()> {
+    fn flush(&mut self) {
         self.database.flushdb()
     }
 
@@ -678,7 +684,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
                     currencies.insert(currency_code, currency);
                 }
                 None => {
-                    tracing::error!("Currency not found: {currency_code}");
+                    log::error!("Currency not found: {currency_code}");
                 }
             }
         }
@@ -697,7 +703,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
                     instruments.insert(instrument_id, instrument);
                 }
                 None => {
-                    tracing::error!("Instrument not found: {instrument_id}");
+                    log::error!("Instrument not found: {instrument_id}");
                 }
             }
         }
@@ -730,7 +736,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
                     accounts.insert(account_id, account);
                 }
                 None => {
-                    tracing::error!("Account not found: {account_id}");
+                    log::error!("Account not found: {account_id}");
                 }
             }
         }
@@ -750,7 +756,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
                     orders.insert(client_order_id, order);
                 }
                 None => {
-                    tracing::error!("Order not found: {client_order_id}");
+                    log::error!("Order not found: {client_order_id}");
                 }
             }
         }
