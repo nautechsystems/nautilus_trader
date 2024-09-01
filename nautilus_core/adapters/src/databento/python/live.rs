@@ -24,7 +24,6 @@ use nautilus_model::{
 };
 use pyo3::prelude::*;
 use time::OffsetDateTime;
-use tokio::sync::mpsc;
 
 use crate::databento::{
     live::{DatabentoFeedHandler, LiveCommand, LiveMessage},
@@ -45,8 +44,8 @@ pub struct DatabentoLiveClient {
     pub is_running: bool,
     #[pyo3(get)]
     pub is_closed: bool,
-    cmd_tx: mpsc::UnboundedSender<LiveCommand>,
-    cmd_rx: Option<mpsc::UnboundedReceiver<LiveCommand>>,
+    cmd_tx: tokio::sync::mpsc::UnboundedSender<LiveCommand>,
+    cmd_rx: Option<tokio::sync::mpsc::UnboundedReceiver<LiveCommand>>,
     buffer_size: usize,
     publisher_venue_map: IndexMap<u16, Venue>,
 }
@@ -58,7 +57,7 @@ impl DatabentoLiveClient {
     }
 
     async fn process_messages(
-        mut msg_rx: mpsc::Receiver<LiveMessage>,
+        mut msg_rx: tokio::sync::mpsc::Receiver<LiveMessage>,
         callback: PyObject,
         callback_pyo3: PyObject,
     ) -> PyResult<()> {
@@ -132,7 +131,7 @@ impl DatabentoLiveClient {
             .map(|p| (p.publisher_id, Venue::from(p.venue.as_str())))
             .collect::<IndexMap<u16, Venue>>();
 
-        let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<LiveCommand>();
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<LiveCommand>();
 
         // Hard coded to a reasonable size for now
         let buffer_size = 100_000;
@@ -194,7 +193,7 @@ impl DatabentoLiveClient {
 
         self.is_running = true;
 
-        let (msg_tx, msg_rx) = mpsc::channel::<LiveMessage>(self.buffer_size);
+        let (msg_tx, msg_rx) = tokio::sync::mpsc::channel::<LiveMessage>(self.buffer_size);
 
         // Consume the receiver
         // SAFETY: We guard the client from being started more than once with the

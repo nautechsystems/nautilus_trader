@@ -37,7 +37,7 @@ use nautilus_model::{
     instruments::any::InstrumentAny,
 };
 use tokio::{
-    sync::mpsc::{self, error::TryRecvError},
+    sync::mpsc::error::TryRecvError,
     time::{timeout, Duration},
 };
 
@@ -77,8 +77,8 @@ pub enum LiveMessage {
 pub struct DatabentoFeedHandler {
     key: String,
     dataset: String,
-    cmd_rx: mpsc::UnboundedReceiver<LiveCommand>,
-    msg_tx: mpsc::Sender<LiveMessage>,
+    cmd_rx: tokio::sync::mpsc::UnboundedReceiver<LiveCommand>,
+    msg_tx: tokio::sync::mpsc::Sender<LiveMessage>,
     publisher_venue_map: IndexMap<PublisherId, Venue>,
     replay: bool,
 }
@@ -89,8 +89,8 @@ impl DatabentoFeedHandler {
     pub const fn new(
         key: String,
         dataset: String,
-        rx: mpsc::UnboundedReceiver<LiveCommand>,
-        tx: mpsc::Sender<LiveMessage>,
+        rx: tokio::sync::mpsc::UnboundedReceiver<LiveCommand>,
+        tx: tokio::sync::mpsc::Sender<LiveMessage>,
         publisher_venue_map: IndexMap<PublisherId, Venue>,
     ) -> Self {
         Self {
