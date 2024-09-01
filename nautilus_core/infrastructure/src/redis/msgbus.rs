@@ -776,7 +776,7 @@ mod serial_tests {
     }
 
     #[rstest]
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_heartbeat_task() {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<BusMessage>();
         let signal = Arc::new(AtomicBool::new(false));

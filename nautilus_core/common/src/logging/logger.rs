@@ -13,17 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::HashMap,
-    env,
-    fmt::Display,
-    str::FromStr,
-    sync::{
-        atomic::Ordering,
-        mpsc::{channel, Receiver, SendError, Sender},
-    },
-    thread::JoinHandle,
-};
+use std::{collections::HashMap, env, fmt::Display, str::FromStr, sync::atomic::Ordering};
 
 use indexmap::IndexMap;
 use log::{
@@ -44,6 +34,7 @@ use super::{LOGGING_BYPASSED, LOGGING_REALTIME};
 use crate::{
     enums::{LogColor, LogLevel},
     logging::writer::{FileWriter, FileWriterConfig, LogWriter, StderrWriter, StdoutWriter},
+    runtime::get_runtime,
 };
 
 #[cfg_attr(
@@ -151,14 +142,14 @@ impl LoggerConfig {
 
 /// A high-performance logger utilizing a MPSC channel under the hood.
 ///
-/// A separate thead is spawned at initialization which receives [`LogEvent`] structs over the
+/// A separate task is spawned at initialization which receives [`LogEvent`] structs over the
 /// channel.
 #[derive(Debug)]
 pub struct Logger {
     /// Configure maximum levels for components and IO.
     pub config: LoggerConfig,
-    /// Send log events to a different thread.
-    tx: Sender<LogEvent>,
+    /// Send log events to a separate task.
+    tx: tokio::sync::mpsc::UnboundedSender<LogEvent>,
 }
 
 /// Represents a type of log event.
@@ -287,17 +278,29 @@ impl Log for Logger {
                 component,
                 message: format!("{}", record.args()),
             };
-            if let Err(SendError(LogEvent::Log(line))) = self.tx.send(LogEvent::Log(line)) {
-                eprintln!("Error sending log event: {line}");
+
+            // Check if channel closed first so we can log the line without cloning
+            if self.tx.is_closed() {
+                log_send_error(line.to_string());
+            } else if let Err(e) = self.tx.send(LogEvent::Log(line)) {
+                log_send_error(e.to_string());
             }
         }
     }
 
     fn flush(&self) {
         if let Err(e) = self.tx.send(LogEvent::Flush) {
-            eprintln!("Error sending flush log event: {e}");
+            log_flush_error(e.to_string());
         }
     }
+}
+
+fn log_send_error(msg: String) {
+    eprintln!("Error sending log event: {msg}");
+}
+
+fn log_flush_error(msg: String) {
+    eprintln!("Error sending flush log event: {msg}");
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -319,7 +322,7 @@ impl Logger {
         config: LoggerConfig,
         file_config: FileWriterConfig,
     ) -> LogGuard {
-        let (tx, rx) = channel::<LogEvent>();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<LogEvent>();
 
         let logger = Self {
             tx,
@@ -332,23 +335,19 @@ impl Logger {
             println!("Logger initialized with {config:?} {file_config:?}");
         }
 
-        let mut handle: Option<JoinHandle<()>> = None;
+        let mut handle: Option<tokio::task::JoinHandle<()>> = None;
         match set_boxed_logger(Box::new(logger)) {
             Ok(()) => {
-                handle = Some(
-                    std::thread::Builder::new()
-                        .name("logging".to_string())
-                        .spawn(move || {
-                            Self::handle_messages(
-                                trader_id.to_string(),
-                                instance_id.to_string(),
-                                config,
-                                file_config,
-                                rx,
-                            );
-                        })
-                        .expect("Error spawning `logging` thread"),
-                );
+                handle = Some(get_runtime().spawn(async move {
+                    Self::handle_messages(
+                        trader_id.to_string(),
+                        instance_id.to_string(),
+                        config,
+                        file_config,
+                        rx,
+                    )
+                    .await;
+                }));
 
                 let max_level = log::LevelFilter::Trace;
                 set_max_level(max_level);
@@ -364,15 +363,15 @@ impl Logger {
         LogGuard::new(handle)
     }
 
-    fn handle_messages(
+    async fn handle_messages(
         trader_id: String,
         instance_id: String,
         config: LoggerConfig,
         file_config: FileWriterConfig,
-        rx: Receiver<LogEvent>,
+        mut rx: tokio::sync::mpsc::UnboundedReceiver<LogEvent>,
     ) {
         if config.print_config {
-            println!("Logger thread `handle_messages` initialized");
+            println!("Logger task `handle_messages` initialized");
         }
 
         let LoggerConfig {
@@ -397,7 +396,7 @@ impl Logger {
         };
 
         // Continue to receive and handle log events until channel is hung up
-        while let Ok(event) = rx.recv() {
+        while let Some(event) = rx.recv().await {
             match event {
                 LogEvent::Flush => {
                     break;
@@ -484,13 +483,13 @@ pub fn log(level: LogLevel, color: LogColor, component: Ustr, message: &str) {
 )]
 #[derive(Debug)]
 pub struct LogGuard {
-    handle: Option<JoinHandle<()>>,
+    handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl LogGuard {
     /// Creates a new [`LogGuard`] instance.
     #[must_use]
-    pub const fn new(handle: Option<JoinHandle<()>>) -> Self {
+    pub const fn new(handle: Option<tokio::task::JoinHandle<()>>) -> Self {
         Self { handle }
     }
 }
@@ -505,8 +504,15 @@ impl Default for LogGuard {
 impl Drop for LogGuard {
     fn drop(&mut self) {
         log::logger().flush();
+
         if let Some(handle) = self.handle.take() {
-            handle.join().expect("Error joining logging handle");
+            tokio::task::block_in_place(|| {
+                get_runtime().block_on(async {
+                    if let Err(e) = handle.await {
+                        eprintln!("Error awaiting logging task: {e:?}");
+                    }
+                });
+            });
         }
     }
 }
@@ -585,7 +591,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_logging_to_file() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_logging_to_file() {
         let config = LoggerConfig {
             fileout_level: LevelFilter::Debug,
             ..Default::default()
@@ -649,7 +656,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_log_component_level_filtering() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_log_component_level_filtering() {
         let config = LoggerConfig::from_spec("stdout=Info;fileout=Debug;RiskEngine=Error");
 
         let temp_dir = tempdir().expect("Failed to create temporary directory");
@@ -703,7 +711,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_logging_to_file_in_json_format() {
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_logging_to_file_in_json_format() {
         let config =
             LoggerConfig::from_spec("stdout=Info;is_colored;fileout=Debug;RiskEngine=Info");
 
