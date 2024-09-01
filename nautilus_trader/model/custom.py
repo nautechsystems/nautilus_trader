@@ -19,6 +19,7 @@ from typing import Any
 import msgspec
 import pyarrow as pa
 
+from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.serialization.arrow.serializer import register_arrow
 from nautilus_trader.serialization.base import register_serializable_type
@@ -73,6 +74,7 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
 
                 result["ts_event"] = self._ts_event
                 result["ts_init"] = self._ts_init
+                result["date"] = int(unix_nanos_to_dt(result["ts_event"]).strftime("%Y%m%d"))
 
                 return result
 
@@ -83,6 +85,7 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
             @classmethod
             def from_dict(cls, data: dict[str, Any]) -> cls:
                 data.pop("type", None)
+                data.pop("date", None)
 
                 if "instrument_id" in data:
                     data["instrument_id"] = InstrumentId.from_str(data["instrument_id"])
@@ -140,6 +143,7 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
                     "type": pa.string(),
                     "ts_event": pa.int64(),
                     "ts_init": pa.int64(),
+                    "date": pa.int32(),
                 },
             )
 
