@@ -515,6 +515,10 @@ cdef class DataEngine(Component):
         self._on_start()
 
     cpdef void _stop(self):
+        for client in self._clients.values():
+            if client.is_running:
+                client.stop()
+
         for aggregator in self._bar_aggregators.values():
             if isinstance(aggregator, TimeBarAggregator):
                 aggregator.stop()
