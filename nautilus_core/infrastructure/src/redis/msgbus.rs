@@ -39,9 +39,10 @@ use nautilus_model::identifiers::TraderId;
 use redis::*;
 use streams::StreamReadOptions;
 
-use super::{REDIS_MINID, REDIS_XTRIM};
+use super::{await_handle, REDIS_MINID, REDIS_XTRIM};
 use crate::redis::{create_redis_connection, get_stream_key};
 
+// Task and connection names
 const MSGBUS_PUBLISH: &str = "msgbus-publish";
 const MSGBUS_STREAM: &str = "msgbus-stream";
 const MSGBUS_HEARTBEAT: &str = "msgbus-heartbeat";
@@ -186,15 +187,6 @@ impl RedisMessageBusDatabase {
     }
 
     pub async fn close_async(&mut self) {
-        async fn await_handle(handle: Option<tokio::task::JoinHandle<()>>, task_name: &str) {
-            if let Some(handle) = handle {
-                tracing::debug!("Awaiting '{}'", task_name);
-                if let Err(e) = handle.await {
-                    log::error!("Error awaiting '{}' task: {:?}", task_name, e);
-                }
-            }
-        }
-
         await_handle(self.pub_handle.take(), MSGBUS_PUBLISH).await;
         await_handle(self.stream_handle.take(), MSGBUS_STREAM).await;
         await_handle(self.heartbeat_handle.take(), MSGBUS_HEARTBEAT).await;

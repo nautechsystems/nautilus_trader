@@ -327,11 +327,11 @@ pub async fn get_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
 #[allow(dead_code)]
 #[allow(unused)]
 impl CacheDatabaseAdapter for PostgresCacheDatabase {
-    fn close(&mut self) -> anyhow::Result<()> {
+    fn close(&mut self) {
         todo!()
     }
 
-    fn flush(&mut self) -> anyhow::Result<()> {
+    fn flush(&mut self) {
         todo!()
     }
 
