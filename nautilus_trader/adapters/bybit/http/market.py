@@ -188,16 +188,3 @@ class BybitMarketHttpAPI:
                 break
             start = next_start_time
         return all_bars
-
-    # async def get_risk_limits(self):
-    #     params = {"category": "linear"}
-    #     try:
-    #         raw: bytes = await self.client.send_request(
-    #             http_method=HttpMethod.GET,
-    #             url_path=self._get_url("risk-limit"),
-    #             payload=params,
-    #         )
-    #         decoded = self._decoder_risk_limit.decode(raw)
-    #         return decoded.result.list
-    #     except Exception as e:
-    #         print(e)
