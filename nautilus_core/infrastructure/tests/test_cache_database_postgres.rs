@@ -19,10 +19,7 @@ mod serial_tests {
     use std::{collections::HashSet, time::Duration};
 
     use bytes::Bytes;
-    use nautilus_common::{
-        cache::database::CacheDatabaseAdapter,
-        testing::{wait_until, wait_until_async},
-    };
+    use nautilus_common::{cache::database::CacheDatabaseAdapter, testing::wait_until};
     use nautilus_infrastructure::sql::cache_database::get_pg_cache_database;
     use nautilus_model::{
         accounts::{any::AccountAny, cash::CashAccount},
@@ -61,15 +58,14 @@ mod serial_tests {
         pg_cache
             .add(String::from("test_id"), test_id_value.clone())
             .unwrap();
-        wait_until_async(
-            || async {
-                let result = pg_cache.load().await.unwrap();
+        wait_until(
+            || {
+                let result = pg_cache.load().unwrap();
                 result.keys().len() > 0
             },
             Duration::from_secs(2),
-        )
-        .await;
-        let result = pg_cache.load().await.unwrap();
+        );
+        let result = pg_cache.load().unwrap();
         assert_eq!(result.keys().len(), 1);
         assert_eq!(
             result.keys().cloned().collect::<Vec<String>>(),
