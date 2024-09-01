@@ -113,7 +113,10 @@ class ClientOrderIdHelper:
         """
         Generate a unique client order ID integer and save it in the Cache.
         """
-        client_order_id_int = secrets.randbelow(MAX_CLIENT_ID)
+        try:
+            client_order_id_int = int(client_order_id.value)
+        except ValueError:
+            client_order_id_int = secrets.randbelow(MAX_CLIENT_ID)
 
         # Store the generated client order ID integer in the cache for later lookup.
         # MAX_CLIENT_ID is 2**32 - 1 which can be represented by 32 bits, i.e. 4 bytes.
@@ -129,12 +132,17 @@ class ClientOrderIdHelper:
         """
         Retrieve the ClientOrderId integer from the cache.
         """
-        value = self._cache.get(client_order_id.value)
+        result = None
 
-        if value is not None:
-            return int.from_bytes(value, byteorder="big")
+        try:
+            result = int(client_order_id.value)
+        except ValueError:
+            value = self._cache.get(client_order_id.value)
 
-        return None
+            if value is not None:
+                result = int.from_bytes(value, byteorder="big")
+
+        return result
 
     def get_client_order_id(self, client_order_id_int: int) -> ClientOrderId:
         """
