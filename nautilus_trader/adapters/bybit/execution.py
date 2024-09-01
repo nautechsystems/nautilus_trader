@@ -35,6 +35,7 @@ from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.http.account import BybitAccountHttpAPI
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.errors import BybitError
+from nautilus_trader.adapters.bybit.http.errors import should_retry
 from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
 from nautilus_trader.adapters.bybit.schemas.common import BybitWsSubscriptionMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BYBIT_PONG
@@ -219,8 +220,9 @@ class BybitExecutionClient(LiveExecutionClient):
             pool_size=100,
             max_retries=config.max_retries or 0,
             retry_delay_secs=config.retry_delay or 0.0,
-            exc_types=(BybitError,),
             logger=self._log,
+            exc_types=(BybitError,),
+            retry_check=should_retry,
         )
 
     async def _connect(self) -> None:
