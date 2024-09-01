@@ -42,7 +42,6 @@ use tokio::{
 use ustr::Ustr;
 
 use crate::sql::{
-    models::general::GeneralRow,
     pg::{
         connect_pg, delete_nautilus_postgres_tables, get_postgres_connect_options,
         PostgresConnectOptions, PostgresConnectOptionsBuilder,
@@ -277,23 +276,6 @@ impl PostgresCacheDatabase {
             drain_buffer(&pool, &mut buffer).await;
         }
     }
-
-    pub async fn load(&self) -> Result<HashMap<String, Vec<u8>>, sqlx::Error> {
-        let query = sqlx::query_as::<_, GeneralRow>("SELECT * FROM general");
-        let result = query.fetch_all(&self.pool).await;
-        match result {
-            Ok(rows) => {
-                let mut cache: HashMap<String, Vec<u8>> = HashMap::new();
-                for row in rows {
-                    cache.insert(row.id, row.value);
-                }
-                Ok(cache)
-            }
-            Err(e) => {
-                panic!("Failed to load general table: {e}")
-            }
-        }
-    }
 }
 
 pub async fn reset_pg_database(pg_options: Option<PostgresConnectOptions>) -> anyhow::Result<()> {
@@ -336,7 +318,29 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn load(&mut self) -> anyhow::Result<HashMap<String, Bytes>> {
-        todo!()
+        let pool = self.pool.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load(&pool).await;
+            match result {
+                Ok(items) => {
+                    let mapping = items
+                        .into_iter()
+                        .map(|(k, v)| (k, Bytes::from(v)))
+                        .collect();
+                    if let Err(e) = tx.send(mapping) {
+                        log::error!("Failed to send general items: {:?}", e);
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to load general items: {:?}", e);
+                    if let Err(e) = tx.send(HashMap::new()) {
+                        log::error!("Failed to send empty general items: {:?}", e);
+                    }
+                }
+            }
+        });
+        Ok(rx.recv()?)
     }
 
     fn load_currencies(&mut self) -> anyhow::Result<HashMap<Ustr, Currency>> {

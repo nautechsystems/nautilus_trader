@@ -54,8 +54,9 @@ impl PostgresCacheDatabase {
 
     #[pyo3(name = "load")]
     fn py_load(slf: PyRef<'_, Self>) -> PyResult<HashMap<String, Vec<u8>>> {
-        let result = get_runtime().block_on(async { slf.load().await });
-        result.map_err(to_pyruntime_err)
+        get_runtime()
+            .block_on(async { DatabaseQueries::load(&slf.pool).await })
+            .map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "load_currency")]
