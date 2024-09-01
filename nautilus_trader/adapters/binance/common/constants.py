@@ -25,7 +25,8 @@ BINANCE_VENUE: Final[Venue] = Venue("BINANCE")
 BINANCE_MIN_CALLBACK_RATE: Final[Decimal] = Decimal("0.1")
 BINANCE_MAX_CALLBACK_RATE: Final[Decimal] = Decimal("10.0")
 
-# Set of Binance error codes for which Nautilus will attempt retries
+# Set of Binance error codes for which Nautilus will attempt retries,
+# potentially temporary conditions where a retry might make sense.
 BINANCE_RETRY_ERRORS: set[BinanceErrorCode] = {
     BinanceErrorCode.DISCONNECTED,
     BinanceErrorCode.TOO_MANY_REQUESTS,  # Short retry delays may result in bans

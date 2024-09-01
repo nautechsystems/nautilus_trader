@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 from nautilus_trader.adapters.binance.common.constants import BINANCE_RETRY_ERRORS
 from nautilus_trader.adapters.binance.common.enums import BinanceErrorCode
 
