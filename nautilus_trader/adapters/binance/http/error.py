@@ -54,7 +54,7 @@ def should_retry(error: BaseException) -> bool:
     Parameters
     ----------
     error : BaseException
-        The Binance error to check.
+        The error to check.
 
     Returns
     -------
