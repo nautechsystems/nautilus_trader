@@ -1106,6 +1106,8 @@ cdef class OrderFactory:
         OrderType entry_order_type = OrderType.MARKET,
         OrderType tp_order_type = OrderType.LIMIT,
         TimeInForce time_in_force = TimeInForce.GTC,
+        TimeInForce sl_time_in_force = TimeInForce.GTC,
+        TimeInForce tp_time_in_force = TimeInForce.GTC,
         datetime expire_time = None,
         bint entry_post_only = False,
         bint tp_post_only = True,
@@ -1127,8 +1129,6 @@ cdef class OrderFactory:
         Create a bracket order with optional entry of take-profit order types.
 
         The stop-loss order will always be ``STOP_MARKET``.
-        The bracketing stop-loss and take-profit orders will have a time in force
-        of ``GTC``.
 
         Parameters
         ----------
@@ -1152,8 +1152,12 @@ cdef class OrderFactory:
             The entry order type.
         tp_order_type : OrderType {``LIMIT``, ``LIMIT_IF_TOUCHED``, ``MARKET_IF_TOUCHED``}, default ``LIMIT``
             The take-profit order type.
-        time_in_force : TimeInForce {``DAY``, ``GTC``}, optional
+        time_in_force : TimeInForce, default ``GTC``
             The entry orders time in force.
+        sl_time_in_force : TimeInForce, default ``GTC``
+            The stop-loss orders time in force.
+        tp_time_in_force : TimeInForce, default ``GTC``
+            The take-profit orders time in force.
         expire_time : datetime, optional
             The order expiration (for ``GTD`` orders).
         entry_post_only : bool, default False
@@ -1214,7 +1218,7 @@ cdef class OrderFactory:
                 quantity=quantity,
                 init_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
-                time_in_force=TimeInForce.GTC,
+                time_in_force=time_in_force,
                 quote_quantity=quote_quantity,
                 contingency_type=ContingencyType.OTO,
                 order_list_id=order_list_id,
@@ -1322,7 +1326,7 @@ cdef class OrderFactory:
                 price=tp_price,
                 init_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
-                time_in_force=TimeInForce.GTC,
+                time_in_force=tp_time_in_force,
                 post_only=tp_post_only,
                 reduce_only=True,
                 quote_quantity=quote_quantity,
@@ -1351,7 +1355,7 @@ cdef class OrderFactory:
                 trigger_type=TriggerType.DEFAULT,
                 init_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
-                time_in_force=TimeInForce.GTC,
+                time_in_force=tp_time_in_force,
                 post_only=tp_post_only,
                 reduce_only=True,
                 quote_quantity=quote_quantity,
@@ -1379,7 +1383,7 @@ cdef class OrderFactory:
                 trigger_type=TriggerType.DEFAULT,
                 init_id=UUID4(),
                 ts_init=self._clock.timestamp_ns(),
-                time_in_force=TimeInForce.GTC,
+                time_in_force=tp_time_in_force,
                 reduce_only=True,
                 quote_quantity=quote_quantity,
                 emulation_trigger=emulation_trigger,
@@ -1410,7 +1414,7 @@ cdef class OrderFactory:
             trigger_type=TriggerType.DEFAULT,
             init_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
-            time_in_force=TimeInForce.GTC,
+            time_in_force=sl_time_in_force,
             reduce_only=True,
             quote_quantity=quote_quantity,
             emulation_trigger=emulation_trigger,

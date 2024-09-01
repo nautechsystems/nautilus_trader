@@ -9,6 +9,7 @@ Released on TBD (UTC).
 - Added `InstrumentClose` functionality for `OrderMatchingEngine`, thanks @limx0
 - Added `BacktestRunConfig.dispose_on_completion` config setting to control post-run disposal behavior for each internal backtest engine (`True` by default to retain current behavior)
 - Added `recv_window_ms` config setting for `BinanceExecClientConfig`
+- Added `sl_time_in_force` and `tp_time_in_force` parameters to `OrderFactory.bracket(...)` method
 - Implemented `BybitExecutionClient` retry logic for `submit_order`, `modify_order`, `cancel_order` and `cancel_all_orders`
 - Improved error modeling and handling in Rust (#1866), thanks @twitu
 - Improved `HttpClient` error handling and added `HttpClientError` exception for Python (#1872), thanks @twitu
