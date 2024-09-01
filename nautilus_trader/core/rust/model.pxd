@@ -847,6 +847,7 @@ cdef extern from "../includes/model.h":
         # The currency denomination associated with the monetary amount.
         Currency_t currency;
 
+    # Represents a NULL book order (used with the `Clear` action or where an order is not specified).
     const BookOrder_t NULL_ORDER # = <BookOrder_t>{ OrderSide_NoOrderSide, <Price_t>{ 0, 0 }, <Quantity_t>{ 0, 0 }, 0 }
 
     # The sentinel `Price` representing errors (this will be removed when Cython is gone).

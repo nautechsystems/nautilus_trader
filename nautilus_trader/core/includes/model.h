@@ -1477,6 +1477,9 @@ typedef struct Money_t {
     struct Currency_t currency;
 } Money_t;
 
+/**
+ * Represents a NULL book order (used with the `Clear` action or where an order is not specified).
+ */
 #define NULL_ORDER (BookOrder_t){ .side = OrderSide_NoOrderSide, .price = (Price_t){ .raw = 0, .precision = 0 }, .size = (Quantity_t){ .raw = 0, .precision = 0 }, .order_id = 0 }
 
 /**

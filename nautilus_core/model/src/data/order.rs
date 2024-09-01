@@ -31,6 +31,7 @@ use crate::{
 
 pub type OrderId = u64;
 
+/// Represents a NULL book order (used with the `Clear` action or where an order is not specified).
 pub const NULL_ORDER: BookOrder = BookOrder {
     side: OrderSide::NoOrderSide,
     price: Price {
@@ -75,16 +76,19 @@ impl BookOrder {
         }
     }
 
+    /// Returns a [`BookPrice`] from this order.
     #[must_use]
     pub fn to_book_price(&self) -> BookPrice {
         BookPrice::new(self.price, self.side)
     }
 
+    /// Returns the order exposure as an `f64`.
     #[must_use]
     pub fn exposure(&self) -> f64 {
         self.price.as_f64() * self.size.as_f64()
     }
 
+    /// Returns the signed order exposure as an `f64`.
     #[must_use]
     pub fn signed_size(&self) -> f64 {
         match self.side {
