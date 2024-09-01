@@ -248,6 +248,8 @@ cdef class OrderFactory:
         OrderType entry_order_type=*,
         OrderType tp_order_type=*,
         TimeInForce time_in_force=*,
+        TimeInForce tp_time_in_force=*,
+        TimeInForce sl_time_in_force=*,
         datetime expire_time=*,
         bint entry_post_only=*,
         bint tp_post_only=*,
