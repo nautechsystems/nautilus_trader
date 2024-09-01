@@ -16,6 +16,7 @@ Released on TBD (UTC).
 - Improved `HttpClient` error handling and added `HttpClientError` exception for Python (#1872), thanks @twitu
 - Improved `WebSocketClient` error handling and added `WebSocketClientError` exception for Python (#1876), thanks @twitu
 - Improved `WebSocketClient.send_text` efficiency (now accepts UTF-8 encoded bytes, rather than a Python string)
+- Refactored `RedisMessageBusDatabase` to tokio tasks
 - Upgraded `tokio` crate to v1.40.0
 
 ### Breaking Changes
