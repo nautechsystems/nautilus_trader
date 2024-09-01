@@ -18,6 +18,7 @@ Released on TBD (UTC).
 - Improved `WebSocketClient.send_text` efficiency (now accepts UTF-8 encoded bytes, rather than a Python string)
 - Refactored `RedisMessageBusDatabase` to tokio tasks
 - Refactored `RedisCacheDatabase` to tokio tasks
+- Refactored `Logger` to tokio tasks
 - Upgraded `tokio` crate to v1.40.0
 
 ### Breaking Changes
