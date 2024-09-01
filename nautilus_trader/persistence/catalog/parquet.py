@@ -756,6 +756,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         instance_id: UUID4,
         data_cls: type,
         other_catalog: ParquetDataCatalog | None = None,
+        **kwargs: Any,
     ) -> None:
         table_name = class_to_filename(data_cls)
         feather_file = Path(self.path) / "backtest" / instance_id / f"{table_name}.feather"
@@ -763,7 +764,5 @@ class ParquetDataCatalog(BaseDataCatalog):
         feather_table = self._read_feather_file(feather_file)
         custom_data_list = self._handle_table_nautilus(feather_table, data_cls)
 
-        if other_catalog is not None:
-            other_catalog.write_data(custom_data_list)
-        else:
-            self.write_data(custom_data_list)
+        used_catalog = self if other_catalog is None else other_catalog
+        used_catalog.write_data(custom_data_list, **kwargs)

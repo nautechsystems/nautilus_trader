@@ -51,6 +51,7 @@ def test_customdata_decorator_dict() -> None:
         "delta": 0.0,
         "ts_event": 1,
         "ts_init": 2,
+        "date": 19700101,
     }
 
 
