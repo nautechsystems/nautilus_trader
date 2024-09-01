@@ -55,32 +55,30 @@ use ustr::Ustr;
 use crate::{enums::SerializationEncoding, msgbus::database::DatabaseConfig};
 
 /// Configuration for `Cache` instances.
-///
-/// # Parameters
-///
-/// - `database`: The configuration for the cache backing database.
-/// - `encoding`: The encoding for database operations, controls the type of serializer used. Options are `"msgpack"` and `"json"`. Default is `"msgpack"`.
-/// - `timestamps_as_iso8601`: If timestamps should be persisted as ISO 8601 strings. If `false`, they will be persisted as UNIX nanoseconds. Default is `false`.
-/// - `buffer_interval_ms`: The buffer interval (milliseconds) between pipelined/batched transactions. The recommended range is [10, 1000] milliseconds, with a good compromise being 100 milliseconds.
-/// - `use_trader_prefix`: If a 'trader-' prefix is used for keys. Default is `true`.
-/// - `use_instance_id`: If the trader's instance ID is used for keys. Default is `false`.
-/// - `flush_on_start`: If the database should be flushed on start. Default is `false`.
-/// - `drop_instruments_on_reset`: If instrument data should be dropped from the cache's memory on reset. Default is `true`.
-/// - `tick_capacity`: The maximum length for internal tick deques. Default is `10_000`.
-/// - `bar_capacity`: The maximum length for internal bar deques. Default is `10_000`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CacheConfig {
+    /// The configuration for the cache backing database.
     pub database: Option<DatabaseConfig>,
+    /// The encoding for database operations, controls the type of serializer used.
     pub encoding: SerializationEncoding,
+    /// If timestamps should be persisted as ISO 8601 strings.
     pub timestamps_as_iso8601: bool,
+    /// The buffer interval (milliseconds) between pipelined/batched transactions.
     pub buffer_interval_ms: Option<usize>,
+    /// If a 'trader-' prefix is used for keys.
     pub use_trader_prefix: bool,
+    /// If the trader's instance ID is used for keys.
     pub use_instance_id: bool,
+    /// If the database should be flushed on start.
     pub flush_on_start: bool,
+    /// If instrument data should be dropped from the cache's memory on reset.
     pub drop_instruments_on_reset: bool,
+    /// The maximum length for internal tick deques.
     pub tick_capacity: usize,
+    /// The maximum length for internal bar deques.
     pub bar_capacity: usize,
+    /// If market data should be persisted to disk.
     pub save_market_data: bool,
 }
 

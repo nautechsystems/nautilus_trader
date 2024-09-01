@@ -42,24 +42,26 @@ pub const CLOSE_TOPIC: &str = "CLOSE";
 //
 // This is an internal class intended to be used by the message bus to organize
 // topics and their subscribers.
+//
+/// # Warnings
+///
+/// Assigning priority handling is an advanced feature which *shouldn't
+/// normally be needed by most users*. **Only assign a higher priority to the
+/// subscription if you are certain of what you're doing**. If an inappropriate
+/// priority is assigned then the handler may receive messages before core
+/// system components have been able to process necessary calculations and
+/// produce potential side effects for logically sound behavior.
 #[derive(Clone)]
 pub struct Subscription {
+    /// The shareable message handler for the subscription.
     pub handler: ShareableMessageHandler,
     /// Store a copy of the handler ID for faster equality checks.
     pub handler_id: Ustr,
+    /// The topic for the subscription.
     pub topic: Ustr,
-    /// The priority for the subscription determines the ordering of
-    /// handlers receiving messages being processed, higher priority
-    /// handlers will receive messages before lower priority handlers.
-    ///
-    /// # Warnings
-    ///
-    /// Assigning priority handling is an advanced feature which *shouldn't
-    /// normally be needed by most users*. **Only assign a higher priority to the
-    /// subscription if you are certain of what you're doing**. If an inappropriate
-    /// priority is assigned then the handler may receive messages before core
-    /// system components have been able to process necessary calculations and
-    /// produce potential side effects for logically sound behavior.
+    /// The priority for the subscription determines the ordering of handlers receiving
+    /// messages being processed, higher priority handlers will receive messages before
+    /// lower priority handlers.
     pub priority: u8,
 }
 

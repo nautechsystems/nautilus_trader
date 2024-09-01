@@ -142,8 +142,6 @@ pub struct InnerHttpClient {
 impl InnerHttpClient {
     /// Sends an HTTP request with the specified method, URL, headers, and body.
     ///
-    /// # Parameters
-    ///
     /// - `method`: The HTTP method to use (e.g., GET, POST).
     /// - `url`: The URL to send the request to.
     /// - `headers`: A map of header key-value pairs to include in the request.

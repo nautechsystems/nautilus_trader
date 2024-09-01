@@ -54,7 +54,7 @@ pub fn get_bar_interval(bar_type: &BarType) -> TimeDelta {
     }
 }
 
-/// Returns the bar interval as a `TimeDelta`.
+/// Returns the bar interval as `UnixNanos`.
 ///
 /// # Panics
 ///
@@ -192,6 +192,7 @@ impl BarType {
         }
     }
 
+    /// Creates a new composite [`BarType`] instance.
     pub fn new_composite(
         instrument_id: InstrumentId,
         spec: BarSpecification,
@@ -212,6 +213,7 @@ impl BarType {
         }
     }
 
+    /// Returns whether this instance is a standard bar type.
     pub fn is_standard(&self) -> bool {
         match &self {
             BarType::Standard { .. } => true,
@@ -219,6 +221,7 @@ impl BarType {
         }
     }
 
+    /// Returns whether this instance is a composite bar type.
     pub fn is_composite(&self) -> bool {
         match &self {
             BarType::Standard { .. } => false,
@@ -226,6 +229,7 @@ impl BarType {
         }
     }
 
+    /// Returns the standard bar type component.
     pub fn standard(&self) -> Self {
         match &self {
             &&b @ BarType::Standard { .. } => b,
@@ -238,6 +242,7 @@ impl BarType {
         }
     }
 
+    /// Returns any composite bar type component.
     pub fn composite(&self) -> Self {
         match &self {
             &&b @ BarType::Standard { .. } => b, // case shouldn't be used if is_composite is called before
@@ -257,6 +262,7 @@ impl BarType {
         }
     }
 
+    /// Returns the [`InstrumentId`] for this bar type.
     pub fn instrument_id(&self) -> InstrumentId {
         match &self {
             BarType::Standard { instrument_id, .. } | BarType::Composite { instrument_id, .. } => {
@@ -265,12 +271,14 @@ impl BarType {
         }
     }
 
+    /// Returns the [`BarSpecification`] for this bar type.
     pub fn spec(&self) -> BarSpecification {
         match &self {
             BarType::Standard { spec, .. } | BarType::Composite { spec, .. } => *spec,
         }
     }
 
+    /// Returns the [`AggregationSource`] for this bar type.
     pub fn aggregation_source(&self) -> AggregationSource {
         match &self {
             BarType::Standard {
