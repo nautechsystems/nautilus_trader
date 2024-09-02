@@ -62,6 +62,7 @@ from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import SubmitOrder
@@ -1150,6 +1151,30 @@ class DYDXExecutionClient(LiveExecutionClient):
             instrument_id=command.instrument_id,
             client_order_id=command.client_order_id,
         )
+
+    async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
+        # Check open orders for the strategy
+        open_orders_strategy: list[Order] = self._cache.orders_open(strategy_id=command.strategy_id)
+        open_order_ids = {order.client_order_id for order in open_orders_strategy}
+
+        # Filter orders that are actually open
+        valid_cancels: list[CancelOrder] = []
+
+        for cancel in command.cancels:
+            if cancel.client_order_id in open_order_ids:
+                valid_cancels.append(cancel)
+            else:
+                self._log.warning(f"{cancel.client_order_id!r} not open for cancel")
+
+        if not valid_cancels:
+            self._log.warning("No orders open for batch cancel")
+            return
+
+        for order in valid_cancels:
+            await self._cancel_order_single(
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+            )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         open_orders_strategy: list[Order] = self._cache.orders_open(
