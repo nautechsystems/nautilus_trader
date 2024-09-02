@@ -19,7 +19,6 @@ Released on TBD (UTC).
 - Improved `@customdataclass` decorator with `date` field (#1900), thanks @faysou
 - Refactored `RedisMessageBusDatabase` to tokio tasks
 - Refactored `RedisCacheDatabase` to tokio tasks
-- Refactored `Logger` to tokio tasks
 - Upgraded `tokio` crate to v1.40.0
 
 ### Breaking Changes
