@@ -64,7 +64,6 @@ from nautilus_trader.adapters.bybit.schemas.position import BybitPositionStruct
 from nautilus_trader.adapters.bybit.schemas.trade import BybitExecution
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.model.orders import Order
 
 
 # fmt: on
@@ -364,23 +363,12 @@ class BybitAccountHttpAPI:
     async def batch_cancel_orders(
         self,
         product_type: BybitProductType,
-        symbol: str,
-        orders: list[Order],
+        cancel_orders: list[BybitBatchCancelOrder],
     ) -> list[Any]:
-        request: list[BybitBatchCancelOrder] = []
-
-        for order in orders:
-            request.append(
-                BybitBatchCancelOrder(
-                    symbol=symbol,
-                    orderId=order.venue_order_id.value if order.venue_order_id else None,
-                    orderLinkId=order.client_order_id.value,
-                ),
-            )
         response = await self._endpoint_batch_cancel_order.post(
             BybitBatchCancelOrderPostParams(
                 category=product_type,
-                request=request,
+                request=cancel_orders,
             ),
         )
         return response.result.list
