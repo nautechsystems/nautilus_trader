@@ -628,9 +628,9 @@ cdef class BarType:
     Parameters
     ----------
     instrument_id : InstrumentId
-        The bar types instrument ID.
+        The bar type's instrument ID.
     bar_spec : BarSpecification
-        The bar types specification.
+        The bar type's specification.
     aggregation_source : AggregationSource, default EXTERNAL
         The bar type aggregation source. If ``INTERNAL`` the `DataEngine`
         will subscribe to the necessary ticks and aggregate bars accordingly.
