@@ -32,6 +32,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitTpSlMode
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerDirection
 from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
+from nautilus_trader.adapters.bybit.endpoints.trade.batch_cancel_order import BybitBatchCancelOrder
 from nautilus_trader.adapters.bybit.http.account import BybitAccountHttpAPI
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.errors import BybitError
@@ -52,6 +53,7 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
@@ -542,54 +544,60 @@ class BybitExecutionClient(LiveExecutionClient):
                 venue_order_id=venue_order_id,
             )
 
+    async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
+        # https://bybit-exchange.github.io/docs/v5/order/batch-cancel
+
+        bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
+        product_type = bybit_symbol.product_type
+        max_batch = 20 if product_type == BybitProductType.OPTION else 10
+
+        # Check open orders for instrument
+        open_order_ids = self._cache.client_order_ids_open(instrument_id=command.instrument_id)
+
+        # Filter orders that are actually open
+        valid_cancels: list[(CancelOrder)] = []
+        for cancel in command.cancels:
+            if cancel.client_order_id in open_order_ids:
+                valid_cancels.append(cancel)
+                continue
+            self._log.warning(f"{cancel.client_order_id!r} not open for cancel")
+
+        if not valid_cancels:
+            self._log.warning(f"No orders open for {command.instrument_id} batch cancel")
+            return
+
+        for i in range(0, len(valid_cancels), max_batch):
+            batch_cancels = valid_cancels[i : i + max_batch]
+            cancel_orders: list[BybitBatchCancelOrder] = []
+
+            for cancel in batch_cancels:
+                cancel_orders.append(
+                    BybitBatchCancelOrder(
+                        symbol=bybit_symbol.raw_symbol,
+                        orderId=cancel.venue_order_id.value if cancel.venue_order_id else None,
+                        orderLinkId=cancel.client_order_id.value,
+                    ),
+                )
+
+            async with self._retry_manager_pool as retry_manager:
+                await retry_manager.run(
+                    "batch_cancel_orders",
+                    None,
+                    self._http_account.batch_cancel_orders,
+                    product_type=product_type,
+                    cancel_orders=cancel_orders,
+                )
+
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
-
-        if bybit_symbol.product_type == BybitProductType.INVERSE:
-            # Batch cancel not implemented for INVERSE
-            self._log.warning(
-                f"Batch cancel not implemented for INVERSE, "
-                f"canceling all for symbol {command.instrument_id.symbol.value}",
-            )
-            await self._http_account.cancel_all_orders(
-                bybit_symbol.product_type,
-                bybit_symbol.raw_symbol,
-            )
-            return
-
-        open_orders_strategy: list[Order] = self._cache.orders_open(
-            instrument_id=command.instrument_id,
-            strategy_id=command.strategy_id,
-        )
-
-        # Check total orders for instrument
-        open_orders_total_count = self._cache.orders_open_count(
-            instrument_id=command.instrument_id,
-        )
-        if open_orders_total_count > 10:
-            # This could be reimplemented later to group requests into batches of 10
-            self._log.warning(
-                f"Total {command.instrument_id.symbol.value} orders open exceeds 10, "
-                f"is {open_orders_total_count}: canceling all for symbol",
-            )
-            await self._http_account.cancel_all_orders(
-                bybit_symbol.product_type,
-                bybit_symbol.raw_symbol,
-            )
-            return
-
-        cancel_batch: list[Order] = []
-        for order in open_orders_strategy:
-            cancel_batch.append(order)
 
         async with self._retry_manager_pool as retry_manager:
             await retry_manager.run(
                 "cancel_all_orders",
                 None,
-                self._http_account.batch_cancel_orders,
+                self._http_account.cancel_all_orders,
                 product_type=bybit_symbol.product_type,
                 symbol=bybit_symbol.raw_symbol,
-                orders=cancel_batch,
             )
 
     async def _modify_order(self, command: ModifyOrder) -> None:
@@ -635,8 +643,6 @@ class BybitExecutionClient(LiveExecutionClient):
         bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
         if not self._check_order_validity(order, bybit_symbol.product_type):
             return
-
-        self._log.debug(f"Submitting order {order}")
 
         # Generate order submitted event, to ensure correct ordering of event
         self.generate_order_submitted(
