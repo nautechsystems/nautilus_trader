@@ -42,6 +42,8 @@ use crate::{
     logging::writer::{FileWriter, FileWriterConfig, LogWriter, StderrWriter, StdoutWriter},
 };
 
+const LOGGING: &str = "logging";
+
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
@@ -333,7 +335,7 @@ impl Logger {
             Ok(()) => {
                 handle = Some(
                     std::thread::Builder::new()
-                        .name("logging".to_string())
+                        .name(LOGGING.to_string())
                         .spawn(move || {
                             Self::handle_messages(
                                 trader_id.to_string(),
@@ -343,7 +345,7 @@ impl Logger {
                                 rx,
                             );
                         })
-                        .expect("Error spawning `logging` thread"),
+                        .expect("Error spawning thread '{LOGGING}'"),
                 );
 
                 let max_level = log::LevelFilter::Trace;
@@ -367,10 +369,6 @@ impl Logger {
         file_config: FileWriterConfig,
         rx: std::sync::mpsc::Receiver<LogEvent>,
     ) {
-        if config.print_config {
-            println!("Logger `handle_messages` initialized");
-        }
-
         let LoggerConfig {
             stdout_level,
             fileout_level,

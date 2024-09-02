@@ -210,6 +210,7 @@ pub async fn publish_messages(
     config: MessageBusConfig,
 ) -> anyhow::Result<()> {
     tracing::debug!("Starting message publishing");
+
     let db_config = config
         .database
         .as_ref()

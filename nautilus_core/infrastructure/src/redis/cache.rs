@@ -244,6 +244,7 @@ async fn process_commands(
     config: CacheConfig,
 ) -> anyhow::Result<()> {
     tracing::debug!("Starting cache processing");
+
     let db_config = config
         .database
         .as_ref()
@@ -280,6 +281,7 @@ async fn process_commands(
         drain_buffer(&mut con, &trader_key, &mut buffer);
     }
 
+    tracing::debug!("Stopped cache processing");
     Ok(())
 }
 
