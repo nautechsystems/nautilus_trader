@@ -268,7 +268,7 @@ class DYDXAccountGRPCAPI:
 
         if not response.account.Unpack(account):
             message = "Failed to unpack account"
-            raise DYDXGRPCError(message)
+            raise DYDXGRPCError(code=None, message=message)
 
         return account
 
@@ -355,7 +355,15 @@ class DYDXAccountGRPCAPI:
             The response from the transaction broadcast.
 
         """
-        return await self.broadcast_message(wallet, MsgPlaceOrder(order=order))
+        response = await self.broadcast_message(wallet, MsgPlaceOrder(order=order))
+
+        is_success = response.tx_response.code == 0
+
+        if not is_success:
+            message = f"Failed to place the order: {response}"
+            raise DYDXGRPCError(code=response.tx_response.code, message=message)
+
+        return response
 
     async def cancel_order(
         self,
@@ -384,7 +392,15 @@ class DYDXAccountGRPCAPI:
             good_til_block=good_til_block,
             good_til_block_time=good_til_block_time,
         )
-        return await self.broadcast_message(wallet, message)
+        response = await self.broadcast_message(wallet, message)
+
+        is_success = response.tx_response.code == 0
+
+        if not is_success:
+            message = f"Failed to cancel the order: {response}"
+            raise DYDXGRPCError(code=response.tx_response.code, message=message)
+
+        return response
 
     async def broadcast_message(
         self,
