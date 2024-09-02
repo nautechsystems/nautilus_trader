@@ -260,7 +260,14 @@ class RetryManagerPool:
 
         """
         async with self._lock:
-            retry_manager = self._pool.pop() if self._pool else self._create_manager()
+            if self._pool:
+                # Pop the most recently used manager and clear its state
+                retry_manager = self._pool.pop()
+                retry_manager.clear()
+            else:
+                # Create new manager if pool is empty
+                retry_manager = self._create_manager()
+
             self._active_managers.add(retry_manager)
             return retry_manager
 
@@ -276,9 +283,12 @@ class RetryManagerPool:
             The manager to be returned to the pool.
 
         """
-        retry_manager.clear()
-        self._active_managers.discard(retry_manager)
-
         async with self._lock:
+            self._active_managers.discard(retry_manager)
             if len(self._pool) < self.pool_size:
+                # Append the manager to the pool without clearing its state,
+                # state is cleared on acquisition to avoid potential race conditions.
                 self._pool.append(retry_manager)
+            else:
+                # Pool already at capacity
+                self.logger.debug(f"Discarding extra {retry_manager!r}")
