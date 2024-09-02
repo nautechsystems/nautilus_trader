@@ -163,7 +163,7 @@ cancellation of orders. It is a crucial component of the adapter that interacts 
 trading system to manage and execute trades.
 
 ```python
-from nautilus_trader.execution.messages import CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder
+from nautilus_trader.execution.messages import BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder
 from nautilus_trader.execution.reports import FillReport, OrderStatusReport, PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.model.identifiers import ClientOrderId, InstrumentId, VenueOrderId
@@ -190,6 +190,9 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         raise NotImplementedError("method `_cancel_all_orders` must be implemented in the subclass")
+
+    async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
+        raise NotImplementedError("method `_batch_cancel_orders` must be implemented in the subclass")  
 
     async def generate_order_status_report(
         self, instrument_id: InstrumentId, client_order_id: ClientOrderId | None = None, venue_order_id: VenueOrderId | None = None
@@ -218,7 +221,8 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
 - `_submit_order`: Submits a new order to the venue
 - `_modify_order`: Modifies an existing order on the venue
 - `_cancel_order`: Cancels a specific order on the venue
-- `_cancel_all_orders`: Cancels all orders on the venue
+- `_cancel_all_orders`: Cancels all orders for an instrument on the venue
+- `_batch_cancel_orders`: Cancels a batch of orders for an instrument on the venue
 - `generate_order_status_report`: Generates a report for a specific order on the venue
 - `generate_order_status_reports`: Generates reports for all orders on the venue
 - `generate_fill_reports`: Generates reports for filled orders on the venue
