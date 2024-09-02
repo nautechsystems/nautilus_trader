@@ -33,6 +33,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitTriggerDirection
 from nautilus_trader.adapters.bybit.common.symbol import BybitSymbol
 from nautilus_trader.adapters.bybit.config import BybitExecClientConfig
 from nautilus_trader.adapters.bybit.endpoints.trade.batch_cancel_order import BybitBatchCancelOrder
+from nautilus_trader.adapters.bybit.endpoints.trade.batch_place_order import BybitBatchPlaceOrder
 from nautilus_trader.adapters.bybit.http.account import BybitAccountHttpAPI
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.errors import BybitError
@@ -58,6 +59,7 @@ from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
 from nautilus_trader.execution.messages import SubmitOrder
+from nautilus_trader.execution.messages import SubmitOrderList
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
@@ -668,6 +670,9 @@ class BybitExecutionClient(LiveExecutionClient):
                     ts_event=self._clock.timestamp_ns(),
                 )
 
+    async def _submit_order_list(self, command: SubmitOrderList) -> None:
+        self._log.error(f"Cannot execute {command}: not yet implemented for Bybit")
+
     def _check_order_validity(self, order: Order, product_type: BybitProductType) -> bool:
         # Check post only
         if order.is_post_only and order.order_type != OrderType.LIMIT:
@@ -1063,3 +1068,19 @@ class BybitExecutionClient(LiveExecutionClient):
                     )
         except Exception as e:
             self._log.error(repr(e))
+
+    def create_limit_batch_order(self, order: LimitOrder) -> BybitBatchPlaceOrder:
+        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
+        time_in_force = self._determine_time_in_force(order)
+        order_side = self._enum_parser.parse_nautilus_order_side(order.side)
+        return BybitBatchPlaceOrder(
+            symbol=bybit_symbol.raw_symbol,
+            side=order_side,
+            orderType=BybitOrderType.LIMIT,
+            qty=str(order.quantity),
+            marketUnit="baseCoin" if not order.is_quote_quantity else "quoteCoin",
+            price=str(order.price),
+            timeInForce=time_in_force,
+            orderLinkId=str(order.client_order_id),
+            reduceOnly=order.is_reduce_only if order.is_reduce_only else None,
+        )
