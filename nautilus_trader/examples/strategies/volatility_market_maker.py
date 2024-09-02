@@ -364,6 +364,10 @@ class VolatilityMarketMaker(Strategy):
         self.cancel_all_orders(self.instrument_id)
         self.close_all_positions(self.instrument_id)
 
+        # open_orders = self.cache.orders_open(instrument_id=self.instrument_id)
+        # if open_orders:
+        #     self.cancel_orders(open_orders)
+
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)
         self.unsubscribe_quote_ticks(self.instrument_id)
