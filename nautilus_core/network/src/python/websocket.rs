@@ -106,6 +106,21 @@ impl WebSocketClient {
         })
     }
 
+    /// Check if the client is still alive.
+    ///
+    /// Even if the connection is disconnected the client will still be alive
+    /// and trying to reconnect. Only when reconnect fails the client will
+    /// terminate.
+    ///
+    /// This is particularly useful for checking why a `send` failed. It could
+    /// be because the connection disconnected and the client is still alive
+    /// and reconnecting. In such cases the send can be retried after some
+    /// delay.
+    #[pyo3(name = "is_alive")]
+    fn py_is_alive(slf: PyRef<'_, Self>) -> bool {
+        !slf.controller_task.is_finished()
+    }
+
     /// Send bytes data to the server.
     ///
     /// # Errors
@@ -172,21 +187,6 @@ impl WebSocketClient {
                 .await
                 .map_err(to_websocket_pyerr)
         })
-    }
-
-    /// Check if the client is still alive.
-    ///
-    /// Even if the connection is disconnected the client will still be alive
-    /// and trying to reconnect. Only when reconnect fails the client will
-    /// terminate.
-    ///
-    /// This is particularly useful for checking why a `send` failed. It could
-    /// be because the connection disconnected and the client is still alive
-    /// and reconnecting. In such cases the send can be retried after some
-    /// delay.
-    #[getter]
-    fn is_alive(slf: PyRef<'_, Self>) -> bool {
-        !slf.controller_task.is_finished()
     }
 }
 
