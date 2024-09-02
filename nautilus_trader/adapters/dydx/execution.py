@@ -1167,7 +1167,7 @@ class DYDXExecutionClient(LiveExecutionClient):
                 self._log.warning(f"{cancel.client_order_id!r} not open for cancel")
 
         if not valid_cancels:
-            self._log.warning(f"No orders open for {command.instrument_id} batch cancel")
+            self._log.warning("No orders open for batch cancel")
             return
 
         for order in valid_cancels:
