@@ -34,9 +34,9 @@ const REDIS_FLUSHDB: &str = "FLUSHDB";
 
 async fn await_handle(handle: Option<tokio::task::JoinHandle<()>>, task_name: &str) {
     if let Some(handle) = handle {
-        tracing::debug!("Awaiting '{task_name}'");
+        tracing::debug!("Awaiting task '{task_name}'");
         if let Err(e) = handle.await {
-            log::error!("Error awaiting '{task_name}' task: {e:?}");
+            log::error!("Error awaiting task '{task_name}': {e:?}");
         }
     }
 }
