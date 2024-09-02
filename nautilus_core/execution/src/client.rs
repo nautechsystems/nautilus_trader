@@ -19,15 +19,24 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use nautilus_common::cache::Cache;
-use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
+use std::{cell::RefCell, rc::Rc};
+
+use nautilus_common::{cache::Cache, msgbus::MessageBus};
+use nautilus_core::{nanos::UnixNanos, time::AtomicTime, uuid::UUID4};
 use nautilus_model::{
     accounts::any::AccountAny,
     enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderType},
-    events::{account::state::AccountState, order::OrderEventAny},
+    events::{
+        account::state::AccountState,
+        order::{
+            OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderExpired,
+            OrderFilled, OrderModifyRejected, OrderRejected, OrderSubmitted, OrderTriggered,
+            OrderUpdated,
+        },
+    },
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, Venue,
-        VenueOrderId,
+        AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
+        TraderId, Venue, VenueOrderId,
     },
     types::{
         balance::{AccountBalance, MarginBalance},
@@ -44,6 +53,7 @@ use crate::messages::{
 };
 
 pub struct ExecutionClient {
+    pub trader_id: TraderId,
     pub client_id: ClientId,
     pub venue: Venue,
     pub oms_type: OmsType,
@@ -52,7 +62,8 @@ pub struct ExecutionClient {
     pub base_currency: Option<Currency>,
     pub is_connected: bool,
     clock: &'static AtomicTime,
-    cache: &'static Cache,
+    cache: Rc<RefCell<Cache>>,
+    msgbus: Rc<RefCell<MessageBus>>,
 }
 
 impl ExecutionClient {
@@ -95,7 +106,18 @@ impl ExecutionClient {
         ts_event: UnixNanos,
         // info:  TODO: Need to double check the use case here
     ) -> anyhow::Result<()> {
-        todo!();
+        let account_state = AccountState::new(
+            self.account_id,
+            self.account_type,
+            balances,
+            margins,
+            reported,
+            UUID4::new(),
+            ts_event,
+            self.clock.get_time_ns(),
+            self.base_currency,
+        );
+        self.send_account_state(account_state)
     }
 
     pub fn generate_order_submitted(
@@ -105,7 +127,17 @@ impl ExecutionClient {
         client_order_id: ClientOrderId,
         ts_event: UnixNanos,
     ) {
-        todo!();
+        let event = OrderSubmitted::new(
+            self.trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            self.account_id,
+            UUID4::new(),
+            ts_event,
+            self.clock.get_time_ns(),
+        );
+        self.send_order_event(OrderEventAny::Submitted(event));
     }
 
     pub fn generate_order_rejected(
@@ -116,7 +148,19 @@ impl ExecutionClient {
         reason: &str,
         ts_event: UnixNanos,
     ) {
-        todo!();
+        let event = OrderRejected::new(
+            self.trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            self.account_id,
+            reason.into(),
+            UUID4::new(),
+            ts_event,
+            self.clock.get_time_ns(),
+            false,
+        );
+        self.send_order_event(OrderEventAny::Rejected(event));
     }
 
     pub fn generate_order_accepted(
@@ -125,10 +169,21 @@ impl ExecutionClient {
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
         venue_order_id: VenueOrderId,
-        reason: &str,
         ts_event: UnixNanos,
     ) {
-        todo!();
+        let event = OrderAccepted::new(
+            self.trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            self.account_id,
+            UUID4::new(),
+            ts_event,
+            self.clock.get_time_ns(),
+            false,
+        );
+        self.send_order_event(OrderEventAny::Accepted(event));
     }
 
     pub fn generate_order_modify_rejected(
@@ -140,7 +195,20 @@ impl ExecutionClient {
         reason: &str,
         ts_event: UnixNanos,
     ) {
-        todo!();
+        let event = OrderModifyRejected::new(
+            self.trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            reason.into(),
+            UUID4::new(),
+            ts_event,
+            self.clock.get_time_ns(),
+            false,
+            Some(venue_order_id),
+            Some(self.account_id),
+        );
+        self.send_order_event(OrderEventAny::ModifyRejected(event));
     }
 
     pub fn generate_order_cancel_rejected(
@@ -152,7 +220,20 @@ impl ExecutionClient {
         reason: &str,
         ts_event: UnixNanos,
     ) {
-        todo!();
+        let event = OrderCancelRejected::new(
+            self.trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            reason.into(),
+            UUID4::new(),
+            ts_event,
+            self.clock.get_time_ns(),
+            false,
+            Some(venue_order_id),
+            Some(self.account_id),
+        );
+        self.send_order_event(OrderEventAny::CancelRejected(event));
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -169,7 +250,37 @@ impl ExecutionClient {
         ts_event: UnixNanos,
         venue_order_id_modified: bool,
     ) {
-        todo!();
+        if !venue_order_id_modified {
+            let cache = self.cache.as_ref().borrow();
+            let existing_order_result = cache.venue_order_id(&client_order_id);
+            if let Some(existing_order) = existing_order_result {
+                if *existing_order != venue_order_id {
+                    log::error!(
+                        "Existing venue order id {} does not match provided venue order id {}",
+                        existing_order,
+                        venue_order_id
+                    );
+                }
+            }
+        }
+
+        let event = OrderUpdated::new(
+            self.trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            quantity,
+            UUID4::new(),
+            ts_event,
+            self.clock.get_time_ns(),
+            false,
+            Some(venue_order_id),
+            Some(self.account_id),
+            Some(price),
+            trigger_price,
+        );
+
+        self.send_order_event(OrderEventAny::Updated(event));
     }
 
     pub fn generate_order_canceled(
@@ -180,7 +291,20 @@ impl ExecutionClient {
         venue_order_id: VenueOrderId,
         ts_event: UnixNanos,
     ) {
-        todo!();
+        let event = OrderCanceled::new(
+            self.trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            UUID4::new(),
+            ts_event,
+            self.clock.get_time_ns(),
+            false,
+            Some(venue_order_id),
+            Some(self.account_id),
+        );
+
+        self.send_order_event(OrderEventAny::Canceled(event));
     }
 
     pub fn generate_order_triggered(
@@ -191,7 +315,20 @@ impl ExecutionClient {
         venue_order_id: VenueOrderId,
         ts_event: UnixNanos,
     ) {
-        todo!();
+        let event = OrderTriggered::new(
+            self.trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            UUID4::new(),
+            ts_event,
+            self.clock.get_time_ns(),
+            false,
+            Some(venue_order_id),
+            Some(self.account_id),
+        );
+
+        self.send_order_event(OrderEventAny::Triggered(event));
     }
 
     pub fn generate_order_expired(
@@ -202,7 +339,20 @@ impl ExecutionClient {
         venue_order_id: VenueOrderId,
         ts_event: UnixNanos,
     ) {
-        todo!();
+        let event = OrderExpired::new(
+            self.trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            UUID4::new(),
+            ts_event,
+            self.clock.get_time_ns(),
+            false,
+            Some(venue_order_id),
+            Some(self.account_id),
+        );
+
+        self.send_order_event(OrderEventAny::Expired(event));
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -223,10 +373,32 @@ impl ExecutionClient {
         liquidity_side: LiquiditySide,
         ts_event: UnixNanos,
     ) {
-        todo!();
+        let event = OrderFilled::new(
+            self.trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            self.account_id,
+            trade_id,
+            order_side,
+            order_type,
+            last_qty,
+            last_px,
+            quote_currency,
+            liquidity_side,
+            UUID4::new(),
+            ts_event,
+            self.clock.get_time_ns(),
+            false,
+            Some(venue_position_id),
+            Some(commission),
+        );
+
+        self.send_order_event(OrderEventAny::Filled(event));
     }
 
-    fn send_account_state(&self, account_state: AccountState) {
+    fn send_account_state(&self, account_state: AccountState) -> anyhow::Result<()> {
         todo!()
     }
 
