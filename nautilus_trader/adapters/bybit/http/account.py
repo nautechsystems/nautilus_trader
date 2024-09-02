@@ -37,7 +37,9 @@ from nautilus_trader.adapters.bybit.endpoints.trade.batch_amend_order import Byb
 from nautilus_trader.adapters.bybit.endpoints.trade.batch_cancel_order import BybitBatchCancelOrder
 from nautilus_trader.adapters.bybit.endpoints.trade.batch_cancel_order import BybitBatchCancelOrderEndpoint
 from nautilus_trader.adapters.bybit.endpoints.trade.batch_cancel_order import BybitBatchCancelOrderPostParams
+from nautilus_trader.adapters.bybit.endpoints.trade.batch_place_order import BybitBatchPlaceOrder
 from nautilus_trader.adapters.bybit.endpoints.trade.batch_place_order import BybitBatchPlaceOrderEndpoint
+from nautilus_trader.adapters.bybit.endpoints.trade.batch_place_order import BybitBatchPlaceOrderPostParams
 from nautilus_trader.adapters.bybit.endpoints.trade.cancel_all_orders import BybitCancelAllOrdersEndpoint
 from nautilus_trader.adapters.bybit.endpoints.trade.cancel_all_orders import BybitCancelAllOrdersPostParams
 from nautilus_trader.adapters.bybit.endpoints.trade.cancel_order import BybitCancelOrderEndpoint
@@ -356,6 +358,19 @@ class BybitAccountHttpAPI:
             BybitCancelAllOrdersPostParams(
                 category=product_type,
                 symbol=symbol,
+            ),
+        )
+        return response.result.list
+
+    async def batch_place_orders(
+        self,
+        product_type: BybitProductType,
+        submit_orders: list[BybitBatchPlaceOrder],
+    ) -> list[Any]:
+        response = await self._endpoint_batch_place_order.post(
+            BybitBatchPlaceOrderPostParams(
+                category=product_type,
+                request=submit_orders,
             ),
         )
         return response.result.list

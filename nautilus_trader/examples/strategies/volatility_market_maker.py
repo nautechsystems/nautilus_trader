@@ -307,6 +307,8 @@ class VolatilityMarketMaker(Strategy):
 
         self.buy_order = order
         self.submit_order(order)
+        # order_list = self.order_factory.create_list([order])
+        # self.submit_order_list(order_list)
 
     def create_sell_order(self, last: QuoteTick) -> None:
         """
@@ -331,6 +333,8 @@ class VolatilityMarketMaker(Strategy):
 
         self.sell_order = order
         self.submit_order(order)
+        # order_list = self.order_factory.create_list([order])
+        # self.submit_order_list(order_list)
 
     def on_event(self, event: Event) -> None:
         """

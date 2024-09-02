@@ -31,7 +31,6 @@ from nautilus_trader.examples.strategies.ema_cross_bracket_algo import EMACrossB
 from nautilus_trader.live.config import LiveRiskEngineConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.data import BarType
-from nautilus_trader.model.identifiers import ExecAlgorithmId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 
@@ -47,7 +46,7 @@ trade_size = Decimal("0.010")
 # Configure the trading node
 config_node = TradingNodeConfig(
     trader_id=TraderId("TESTER-001"),
-    logging=LoggingConfig(log_level="INFO"),
+    logging=LoggingConfig(log_level="INFO", use_pyo3=True),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
         reconciliation_lookback_mins=1440,
@@ -75,7 +74,7 @@ config_node = TradingNodeConfig(
             api_secret=None,  # 'BYBIT_API_SECRET' env var
             base_url_http=None,  # Override with custom endpoint
             instrument_provider=InstrumentProviderConfig(load_all=True),
-            # product_types=[product_type],  # Will load all instruments
+            product_types=[product_type],  # Will load all instruments
             testnet=False,  # If client uses the testnet
         ),
     },
@@ -112,9 +111,6 @@ strat_config = EMACrossBracketAlgoConfig(
     slow_ema_period=20,
     bracket_distance_atr=1.0,
     trade_size=trade_size,
-    emulation_trigger="BID_ASK",
-    entry_exec_algorithm_id=ExecAlgorithmId("TWAP"),
-    entry_exec_algorithm_params={"horizon_secs": 5.0, "interval_secs": 0.5},
 )
 
 # Instantiate your strategy and execution algorithm

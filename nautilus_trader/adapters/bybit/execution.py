@@ -671,7 +671,54 @@ class BybitExecutionClient(LiveExecutionClient):
                 )
 
     async def _submit_order_list(self, command: SubmitOrderList) -> None:
-        self._log.error(f"Cannot execute {command}: not yet implemented for Bybit")
+        bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
+        product_type = bybit_symbol.product_type
+        max_batch = 20 if product_type == BybitProductType.OPTION else 10
+
+        for i in range(0, len(command.order_list.orders), max_batch):
+            batch_submits = command.order_list.orders[i : i + max_batch]
+            submit_orders: list[BybitBatchPlaceOrder] = []
+
+            for order in batch_submits:
+                if not self._check_order_validity(order, product_type):
+                    self._log.error(f"Error on {command}")
+                    return  # Do not submit batch
+
+                match order.order_type:
+                    case OrderType.MARKET:
+                        batch_order = self._create_market_batch_order(order)
+                    case OrderType.LIMIT:
+                        batch_order = self._create_limit_batch_order(order)
+                    case OrderType.LIMIT_IF_TOUCHED:
+                        batch_order = self._create_limit_if_touched_batch_order(order)
+                    case OrderType.STOP_MARKET:
+                        batch_order = self._create_stop_market_batch_order(order)
+                    case OrderType.MARKET_IF_TOUCHED:
+                        batch_order = self._create_market_if_touched_batch_order(order)
+                    case _:
+                        self._log.error(f"Unsupported order type for 'submit_order_list': {order}")
+                        self._log.error(f"Error on {command}")
+                        return
+
+                submit_orders.append(batch_order)
+
+            now_ns = self._clock.timestamp_ns()
+            for order in batch_submits:
+                self.generate_order_submitted(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    ts_event=now_ns,
+                )
+
+            async with self._retry_manager_pool as retry_manager:
+                await retry_manager.run(
+                    "submit_order_list",
+                    None,
+                    self._http_account.batch_place_orders,
+                    product_type=product_type,
+                    submit_orders=submit_orders,
+                )
 
     def _check_order_validity(self, order: Order, product_type: BybitProductType) -> bool:
         # Check post only
@@ -1069,7 +1116,28 @@ class BybitExecutionClient(LiveExecutionClient):
         except Exception as e:
             self._log.error(repr(e))
 
-    def create_limit_batch_order(self, order: LimitOrder) -> BybitBatchPlaceOrder:
+    def _create_market_batch_order(
+        self,
+        order: MarketOrder,
+    ) -> BybitBatchPlaceOrder:
+        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
+        time_in_force = self._determine_time_in_force(order)
+        order_side = self._enum_parser.parse_nautilus_order_side(order.side)
+        return BybitBatchPlaceOrder(
+            symbol=bybit_symbol.raw_symbol,
+            side=order_side,
+            orderType=BybitOrderType.MARKET,
+            qty=str(order.quantity),
+            marketUnit="baseCoin" if not order.is_quote_quantity else "quoteCoin",
+            timeInForce=time_in_force,
+            orderLinkId=str(order.client_order_id),
+            reduceOnly=order.is_reduce_only if order.is_reduce_only else None,
+        )
+
+    def _create_limit_batch_order(
+        self,
+        order: LimitOrder,
+    ) -> BybitBatchPlaceOrder:
         bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
         time_in_force = self._determine_time_in_force(order)
         order_side = self._enum_parser.parse_nautilus_order_side(order.side)
@@ -1083,4 +1151,89 @@ class BybitExecutionClient(LiveExecutionClient):
             timeInForce=time_in_force,
             orderLinkId=str(order.client_order_id),
             reduceOnly=order.is_reduce_only if order.is_reduce_only else None,
+        )
+
+    def _create_limit_if_touched_batch_order(
+        self,
+        order: LimitIfTouchedOrder,
+    ) -> BybitBatchPlaceOrder:
+        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
+        product_type = bybit_symbol.product_type
+        time_in_force = self._determine_time_in_force(order)
+        order_side = self._enum_parser.parse_nautilus_order_side(order.side)
+        trigger_direction = self._enum_parser.parse_trigger_direction(order.order_type, order.side)
+        trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
+        return BybitBatchPlaceOrder(
+            symbol=bybit_symbol.raw_symbol,
+            side=order_side,
+            orderType=BybitOrderType.MARKET,
+            qty=str(order.quantity),
+            marketUnit="baseCoin" if not order.is_quote_quantity else "quoteCoin",
+            price=str(order.price),
+            timeInForce=time_in_force,
+            orderLinkId=order.client_order_id.value,
+            reduceOnly=order.reduce_only,
+            tpslMode=BybitTpSlMode.PARTIAL if product_type != BybitProductType.SPOT else None,
+            triggerPrice=str(order.trigger_price),
+            triggerDirection=trigger_direction,
+            triggerBy=trigger_type,
+            takeProfit=str(order.trigger_price) if product_type == BybitProductType.SPOT else None,
+            tpTriggerBy=trigger_type if product_type != BybitProductType.SPOT else None,
+            tpLimitPrice=str(order.price) if product_type != BybitProductType.SPOT else None,
+            tpOrderType=BybitOrderType.LIMIT,
+        )
+
+    def _create_stop_market_batch_order(
+        self,
+        order: MarketOrder,
+    ) -> BybitBatchPlaceOrder:
+        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
+        product_type = bybit_symbol.product_type
+        time_in_force = self._determine_time_in_force(order)
+        order_side = self._enum_parser.parse_nautilus_order_side(order.side)
+        trigger_direction = self._enum_parser.parse_trigger_direction(order.order_type, order.side)
+        trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
+        return BybitBatchPlaceOrder(
+            symbol=bybit_symbol.raw_symbol,
+            side=order_side,
+            orderType=BybitOrderType.MARKET,
+            qty=str(order.quantity),
+            marketUnit="baseCoin" if not order.is_quote_quantity else "quoteCoin",
+            timeInForce=time_in_force,
+            orderLinkId=str(order.client_order_id),
+            reduceOnly=order.is_reduce_only if order.is_reduce_only else None,
+            closeOnTrigger=True,  # Conservative for stop-loss orders
+            tpslMode=BybitTpSlMode.FULL if product_type != BybitProductType.SPOT else None,
+            stopLoss=str(order.trigger_price) if product_type == BybitProductType.SPOT else None,
+            triggerDirection=trigger_direction if product_type != BybitProductType.SPOT else None,
+            slTriggerBy=trigger_type if product_type != BybitProductType.SPOT else None,
+            slOrderType=BybitOrderType.MARKET,
+        )
+
+    def _create_market_if_touched_batch_order(
+        self,
+        order: MarketOrder,
+    ) -> BybitBatchPlaceOrder:
+        bybit_symbol = BybitSymbol(order.instrument_id.symbol.value)
+        product_type = bybit_symbol.product_type
+        time_in_force = self._determine_time_in_force(order)
+        order_side = self._enum_parser.parse_nautilus_order_side(order.side)
+        trigger_direction = self._enum_parser.parse_trigger_direction(order.order_type, order.side)
+        trigger_type = self._enum_parser.parse_nautilus_trigger_type(order.trigger_type)
+        return BybitBatchPlaceOrder(
+            symbol=bybit_symbol.raw_symbol,
+            side=order_side,
+            orderType=BybitOrderType.MARKET,
+            qty=str(order.quantity),
+            marketUnit="baseCoin" if not order.is_quote_quantity else "quoteCoin",
+            timeInForce=time_in_force,
+            orderLinkId=str(order.client_order_id),
+            reduceOnly=order.is_reduce_only if order.is_reduce_only else None,
+            tpslMode=BybitTpSlMode.FULL if product_type != BybitProductType.SPOT else None,
+            triggerPrice=(
+                str(order.trigger_price) if product_type == BybitProductType.SPOT else None
+            ),
+            triggerDirection=trigger_direction if product_type != BybitProductType.SPOT else None,
+            slTriggerBy=trigger_type if product_type != BybitProductType.SPOT else None,
+            slOrderType=BybitOrderType.MARKET,
         )
