@@ -89,7 +89,7 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
         let pub_handle = Some(get_runtime().spawn(async move {
             publish_messages(pub_rx, trader_id, instance_id, config_clone)
                 .await
-                .expect("Error spawning '{MSGBUS_PUBLISH}' task");
+                .expect("Error spawning task '{MSGBUS_PUBLISH}'}");
         }));
 
         // Conditionally create stream task and channel if external streams configured
@@ -100,10 +100,10 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
             let (stream_tx, stream_rx) = tokio::sync::mpsc::channel::<BusMessage>(100_000);
             (
                 Some(stream_rx),
-                Some(tokio::spawn(async move {
+                Some(get_runtime().spawn(async move {
                     stream_messages(stream_tx, db_config, external_streams, stream_signal_clone)
                         .await
-                        .expect("Error spawning '{MSGBUS_STREAM}' task");
+                        .expect("Error spawning task '{MSGBUS_STREAM}'}");
                 })),
             )
         } else {
