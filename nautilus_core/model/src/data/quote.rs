@@ -92,8 +92,8 @@ impl QuoteTick {
     /// # Errors
     ///
     /// This function returns an error if:
-    /// - `bid_price.precision` does not equal `ask_price.precision`
-    /// - `bid_size.precision` does not equal `ask_size.precision`
+    /// - `bid_price.precision` does not equal `ask_price.precision`.
+    /// - `bid_size.precision` does not equal `ask_size.precision`.
     ///
     /// # Notes
     ///
@@ -112,15 +112,13 @@ impl QuoteTick {
             ask_price.precision,
             "bid_price.precision",
             "ask_price.precision",
-        )
-        .expect(FAILED);
+        )?;
         check_equal_u8(
             bid_size.precision,
             ask_size.precision,
             "bid_size.precision",
             "ask_size.precision",
-        )
-        .expect(FAILED);
+        )?;
         Ok(Self {
             instrument_id,
             bid_price,
