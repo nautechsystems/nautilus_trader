@@ -278,6 +278,8 @@ impl WebSocketClientInner {
     /// shutdown or will receive a `Close` frame which will finish it. There
     /// might be some delay between the connection being closed and the client
     /// detecting.
+    #[inline]
+    #[must_use]
     pub fn is_alive(&self) -> bool {
         !self.read_task.is_finished()
     }

@@ -64,7 +64,7 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
 
         if "to_dict" not in cls.__dict__:
 
-            def to_dict(self) -> dict[str, Any]:
+            def to_dict(self, to_arrow=False) -> dict[str, Any]:
                 result = {attr: getattr(self, attr) for attr in self.__annotations__}
 
                 result["type"] = str(cls.__name__)
@@ -74,7 +74,9 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
 
                 result["ts_event"] = self._ts_event
                 result["ts_init"] = self._ts_init
-                result["date"] = int(unix_nanos_to_dt(result["ts_event"]).strftime("%Y%m%d"))
+
+                if to_arrow:
+                    result["date"] = int(unix_nanos_to_dt(result["ts_event"]).strftime("%Y%m%d"))
 
                 return result
 
@@ -112,7 +114,7 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
         if "to_arrow" not in cls.__dict__:
 
             def to_arrow(self) -> pa.RecordBatch:
-                return pa.RecordBatch.from_pylist([self.to_dict()], schema=cls._schema)
+                return pa.RecordBatch.from_pylist([self.to_dict(to_arrow=True)], schema=cls._schema)
 
             cls.to_arrow = to_arrow
 

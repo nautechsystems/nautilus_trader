@@ -153,26 +153,26 @@ impl Display for BarSpecification {
 )]
 pub enum BarType {
     Standard {
-        /// The bar types instrument ID.
+        /// The bar type's instrument ID.
         instrument_id: InstrumentId,
-        /// The bar types specification.
+        /// The bar type's specification.
         spec: BarSpecification,
-        /// The bar types aggregation source.
+        /// The bar type's aggregation source.
         aggregation_source: AggregationSource,
     },
     Composite {
-        /// The bar types instrument ID.
+        /// The bar type's instrument ID.
         instrument_id: InstrumentId,
-        /// The bar types specification.
+        /// The bar type's specification.
         spec: BarSpecification,
-        /// The bar types aggregation source.
+        /// The bar type's aggregation source.
         aggregation_source: AggregationSource,
 
         /// The composite step for binning samples for bar aggregation.
         composite_step: usize,
         /// The composite type of bar aggregation.
         composite_aggregation: BarAggregation,
-        /// The composite bar types aggregation source.
+        /// The composite bar type's aggregation source.
         composite_aggregation_source: AggregationSource,
     },
 }

@@ -108,8 +108,8 @@ impl SocketClient {
     /// be because the connection disconnected and the client is still alive
     /// and reconnecting. In such cases the send can be retried after some
     /// delay
-    #[getter]
-    fn is_alive(slf: PyRef<'_, Self>) -> bool {
+    #[pyo3(name = "is_alive")]
+    fn py_is_alive(slf: PyRef<'_, Self>) -> bool {
         !slf.controller_task.is_finished()
     }
 
