@@ -22,9 +22,10 @@ class DYDXGRPCError(Exception):
     Define the class for all dYdX specific errors thrown by the GRPC client.
     """
 
-    def __init__(self, message: str) -> None:
+    def __init__(self, code: int | None, message: str) -> None:
         """
         Define the class for all dYdX specific errors thrown by the GRPC client.
         """
         super().__init__(message)
+        self.code = code
         self.message = message
