@@ -16,6 +16,7 @@
 Implement the client for GRPC account endpoints.
 """
 
+import asyncio
 import hashlib
 from functools import partial
 
@@ -238,6 +239,7 @@ class DYDXAccountGRPCAPI:
             options=[("grpc.service_config", grpc_service_config)],
         )
         self._transaction_builder = transaction_builder
+        self._lock = asyncio.Lock()
 
     async def connect(self) -> None:
         """
@@ -422,11 +424,10 @@ class DYDXAccountGRPCAPI:
             The response from the broadcast.
 
         """
-        account = await self.get_account(wallet.address)
-        wallet.sequence = account.sequence
-
-        response = await self.broadcast(self._transaction_builder.build(wallet, message), mode)
-        return response
+        async with self._lock:
+            response = await self.broadcast(self._transaction_builder.build(wallet, message), mode)
+            wallet.sequence += 1
+            return response
 
     async def broadcast(
         self,
