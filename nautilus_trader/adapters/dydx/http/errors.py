@@ -18,6 +18,8 @@ Define a dYdX exception.
 
 from typing import Any
 
+from grpc.aio._call import AioRpcError
+
 from nautilus_trader.adapters.dydx.grpc.errors import DYDXGRPCError
 
 
@@ -51,6 +53,13 @@ def should_retry(error: BaseException) -> bool:
         True if should retry, otherwise False.
 
     """
-    if isinstance(error, DYDXError) or isinstance(error, DYDXGRPCError):
+    if isinstance(error, DYDXGRPCError):
         return True
+
+    if isinstance(error, AioRpcError):
+        return True
+
+    if isinstance(error, DYDXError):
+        return True
+
     return False

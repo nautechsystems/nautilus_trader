@@ -269,7 +269,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             max_retries=config.max_retries or 0,
             retry_delay_secs=config.retry_delay or 1.0,
             logger=self._log,
-            exc_types=(DYDXError, DYDXGRPCError),
+            exc_types=(DYDXError, DYDXGRPCError, AioRpcError),
             retry_check=should_retry,
         )
 
