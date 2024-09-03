@@ -43,9 +43,17 @@ def test_customdata_decorator_dict() -> None:
 
     # Act
     data_dict = data.to_dict()
+    data_dict_to_arrow = data.to_dict(to_arrow=True)
 
     # Assert
     assert data_dict == {
+        "type": "GreeksTestData",
+        "instrument_id": "ES.GLBX",
+        "delta": 0.0,
+        "ts_event": 1,
+        "ts_init": 2,
+    }
+    assert data_dict_to_arrow == {
         "type": "GreeksTestData",
         "instrument_id": "ES.GLBX",
         "delta": 0.0,
