@@ -58,11 +58,9 @@ class DYDXExecClientConfig(LiveExecClientConfig, frozen=True):
     is_testnet : bool, default False
         If the client is connecting to the dYdX testnet API.
     max_retries : PositiveInt, optional
-        The maximum number of times a submit request will be retried.
-    initial_retry_delay_secs : PositiveFloat, optional
-        The initial delay (seconds) between retries.
-    max_retry_delay_secs : PositiveFloat, optional
-        The maximum delay (seconds) between retries
+        The maximum number of times a submit, cancel or modify order request will be retried.
+    retry_delay : PositiveFloat, optional
+        The delay (seconds) between retries. Short delays with frequent retries may result in account bans.
 
     """
 
@@ -73,5 +71,4 @@ class DYDXExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_ws: str | None = None
     is_testnet: bool = False
     max_retries: PositiveInt | None = None
-    initial_retry_delay_secs: PositiveFloat | None = None
-    max_retry_delay_secs: PositiveFloat | None = None
+    retry_delay: PositiveFloat | None = None
