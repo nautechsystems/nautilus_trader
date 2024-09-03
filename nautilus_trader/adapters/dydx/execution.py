@@ -98,9 +98,6 @@ if TYPE_CHECKING:
     from nautilus_trader.model.objects import Currency
 
 
-ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODE = 32
-
-
 class ClientOrderIdHelper:
     """
     Generate integer client order IDs.

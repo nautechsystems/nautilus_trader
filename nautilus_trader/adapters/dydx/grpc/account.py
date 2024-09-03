@@ -59,6 +59,7 @@ from v4_proto.dydxprotocol.clob.tx_pb2 import MsgPlaceOrder
 from v4_proto.dydxprotocol.feetiers import query_pb2 as fee_tier_query
 from v4_proto.dydxprotocol.feetiers import query_pb2_grpc as fee_tier_query_grpc
 
+from nautilus_trader.adapters.dydx.common.constants import ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODE
 from nautilus_trader.adapters.dydx.grpc.errors import DYDXGRPCError
 
 
@@ -427,6 +428,13 @@ class DYDXAccountGRPCAPI:
         async with self._lock:
             response = await self.broadcast(self._transaction_builder.build(wallet, message), mode)
             wallet.sequence += 1
+
+            # The sequence number is not correct. Retrieve it from the gRPC channel.
+            # The retry manager can retry the transaction.
+            if response.tx_response.code == ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODE:
+                account = await self.get_account(wallet.address)
+                wallet.sequence = account.sequence
+
             return response
 
     async def broadcast(
