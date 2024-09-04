@@ -19,6 +19,7 @@ from typing import Any
 import msgspec
 import pyarrow as pa
 
+from nautilus_trader.core.datetime import format_iso8601
 from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.serialization.arrow.serializer import register_arrow
@@ -28,9 +29,13 @@ from nautilus_trader.serialization.base import register_serializable_type
 def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
     def wrapper(cls):  # noqa: C901 (too complex)
         create_init = False
+        create_repr = False
 
         if cls.__init__ is object.__init__:
             create_init = True
+
+        if cls.__repr__ is object.__repr__:
+            create_repr = True
 
         cls = dataclass(cls, **kwargs)
 
@@ -45,6 +50,21 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
                 self._ts_init = ts_init
 
             cls.__init__ = __init__
+
+        if create_repr:
+            # cls.fields_init allows to use positional arguments for parameters other than ts_event and ts_init
+            cls.fields_repr = cls.__repr__
+
+            def __repr__(self):
+                repr = self.fields_repr()
+                time_repr = (
+                    f", ts_event={format_iso8601(unix_nanos_to_dt(self._ts_event))}, "
+                    + f"ts_init={format_iso8601(unix_nanos_to_dt(self._ts_init))})"
+                )
+
+                return repr[:-1] + time_repr
+
+            cls.__repr__ = __repr__
 
         if "ts_event" not in cls.__dict__:
 
@@ -67,11 +87,10 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
             def to_dict(self, to_arrow=False) -> dict[str, Any]:
                 result = {attr: getattr(self, attr) for attr in self.__annotations__}
 
-                result["type"] = str(cls.__name__)
-
                 if hasattr(self, "instrument_id"):
                     result["instrument_id"] = self.instrument_id.value
 
+                result["type"] = str(cls.__name__)
                 result["ts_event"] = self._ts_event
                 result["ts_init"] = self._ts_init
 
