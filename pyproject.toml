@@ -77,6 +77,7 @@ pycryptodome = {version = "^3.20.0", optional = true}
 
 [tool.poetry.extras]
 betfair = ["betfair_parser"]
+binance = ["pycryptodome"]
 docker = ["docker"]
 dydx = ["v4-proto", "bech32", "ecdsa", "bip-utils", "pycryptodome"]
 ib = ["nautilus_ibapi", "async-timeout", "defusedxml"]
