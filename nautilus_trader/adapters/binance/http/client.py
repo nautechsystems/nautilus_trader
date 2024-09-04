@@ -16,9 +16,13 @@
 import hashlib
 import hmac
 import urllib.parse
+from base64 import b64encode
 from typing import Any
 
 import msgspec
+from Crypto.Hash import SHA256
+from Crypto.Signature import pkcs1_15
+from nacl.signing import SigningKey
 
 import nautilus_trader
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
@@ -50,6 +54,12 @@ class BinanceHttpClient:
         The keyed rate limiter quotas for the client.
     ratelimiter_quota : Quota, optional
         The default rate limiter quota for the client.
+    key_type : str, optional
+        The type of API key (HMAC, RSA, Ed25519).
+    rsa_private_key : str, optional
+        The RSA private key for RSA signing.
+    ed25519_private_key : str, optional
+        The Ed25519 private key for Ed25519 signing.
 
     """
 
@@ -61,6 +71,9 @@ class BinanceHttpClient:
         base_url: str,
         ratelimiter_quotas: list[tuple[str, Quota]] | None = None,
         ratelimiter_default_quota: Quota | None = None,
+        key_type: str = "HMAC",
+        rsa_private_key: str | None = None,
+        ed25519_private_key: str | None = None,
     ) -> None:
         self._clock: LiveClock = clock
         self._log: Logger = Logger(type(self).__name__)
@@ -68,6 +81,10 @@ class BinanceHttpClient:
 
         self._base_url: str = base_url
         self._secret: str = secret
+        self._key_type: str = key_type
+        self.PRIVATE_KEY: str | None = rsa_private_key
+        self.ED25519_PRIVATE_KEY: str | None = ed25519_private_key
+
         self._headers: dict[str, Any] = {
             "Content-Type": "application/json",
             "User-Agent": nautilus_trader.USER_AGENT,
@@ -119,8 +136,30 @@ class BinanceHttpClient:
         return urllib.parse.urlencode(params)
 
     def _get_sign(self, data: str) -> str:
+        if self._key_type == "HMAC":
+            return self._hmac_sign(data)
+        elif self._key_type == "RSA":
+            return self._rsa_signature(data)
+        elif self._key_type == "Ed25519":
+            return self._ed25519_signature(data)
+        else:
+            raise ValueError("Unsupported key type")
+
+    def _hmac_sign(self, data: str) -> str:
         m = hmac.new(self._secret.encode(), data.encode(), hashlib.sha256)
         return m.hexdigest()
+
+    def _rsa_signature(self, query_string: str) -> str:
+        assert self.PRIVATE_KEY
+        h = SHA256.new(query_string.encode("utf-8"))
+        signature = pkcs1_15.new(self.PRIVATE_KEY).sign(h)
+        return b64encode(signature).decode()
+
+    def _ed25519_signature(self, query_string: str) -> str:
+        assert self.ED25519_PRIVATE_KEY
+        signing_key = SigningKey(self.ED25519_PRIVATE_KEY.encode())
+        signed_message = signing_key.sign(query_string.encode())
+        return b64encode(signed_message.signature).decode()
 
     async def sign_request(
         self,
