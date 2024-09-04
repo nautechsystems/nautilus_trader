@@ -82,8 +82,8 @@ class BinanceHttpClient:
         self._base_url: str = base_url
         self._secret: str = secret
         self._key_type: str = key_type
-        self.PRIVATE_KEY: str | None = rsa_private_key
-        self.ED25519_PRIVATE_KEY: str | None = ed25519_private_key
+        self._rsa_private_key: str | None = rsa_private_key
+        self._ed25519_private_key: str | None = ed25519_private_key
 
         self._headers: dict[str, Any] = {
             "Content-Type": "application/json",
@@ -136,28 +136,29 @@ class BinanceHttpClient:
         return urllib.parse.urlencode(params)
 
     def _get_sign(self, data: str) -> str:
-        if self._key_type == "HMAC":
-            return self._hmac_sign(data)
-        elif self._key_type == "RSA":
-            return self._rsa_signature(data)
-        elif self._key_type == "Ed25519":
-            return self._ed25519_signature(data)
-        else:
-            raise ValueError("Unsupported key type")
+        match self._key_type:
+            case "HMAC":
+                return self._hmac_sign(data)
+            case "RSA":
+                return self._rsa_signature(data)
+            case "Ed25519":
+                return self._ed25519_signature(data)
+            case _:
+                raise ValueError(f"Unsupported key type, was {self._key_type}")
 
     def _hmac_sign(self, data: str) -> str:
         m = hmac.new(self._secret.encode(), data.encode(), hashlib.sha256)
         return m.hexdigest()
 
     def _rsa_signature(self, query_string: str) -> str:
-        assert self.PRIVATE_KEY
-        h = SHA256.new(query_string.encode("utf-8"))
-        signature = pkcs1_15.new(self.PRIVATE_KEY).sign(h)
+        assert self._rsa_private_key
+        h = SHA256.new(query_string.encode())
+        signature = pkcs1_15.new(self._rsa_private_key).sign(h)
         return b64encode(signature).decode()
 
     def _ed25519_signature(self, query_string: str) -> str:
-        assert self.ED25519_PRIVATE_KEY
-        signing_key = SigningKey(self.ED25519_PRIVATE_KEY.encode())
+        assert self._ed25519_private_key
+        signing_key = SigningKey(self._ed25519_private_key.encode())
         signed_message = signing_key.sign(query_string.encode())
         return b64encode(signed_message.signature).decode()
 

@@ -5,6 +5,10 @@ of daily trading volume, and open interest of crypto assets and crypto
 derivative products. This integration supports live market data ingest and order
 execution with Binance.
 
+## Installation
+
+The Binance integration requires the `pycryptodome` package to be installed for signing RSA and Ed25519 API key types.
+
 ## Overview
 
 The following documentation assumes a trader is setting up for both live market
