@@ -4,7 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added dYdX integration (#1861, #1868, #1873, #1874, #1875, #1877, #1879, #1880, #1882, #1886, #1887, #1890, #1891, #1896, #1901), thanks @davidsblom
-- Added composite bar types, bars aggregated from other bar types (#1859, #1885, #1888), thanks @faysou
+- Added composite bar types, bars aggregated from other bar types (#1859, #1885, #1888, #1894, #1905), thanks @faysou
 - Added `RetryManagerPool` to abstract common retry functionality for all adapters
 - Added `InstrumentClose` functionality for `OrderMatchingEngine`, thanks @limx0
 - Added `BacktestRunConfig.dispose_on_completion` config setting to control post-run disposal behavior for each internal backtest engine (`True` by default to retain current behavior)
@@ -17,7 +17,7 @@ Released on TBD (UTC).
 - Improved `HttpClient` error handling and added `HttpClientError` exception for Python (#1872), thanks @twitu
 - Improved `WebSocketClient` error handling and added `WebSocketClientError` exception for Python (#1876), thanks @twitu
 - Improved `WebSocketClient.send_text` efficiency (now accepts UTF-8 encoded bytes, rather than a Python string)
-- Improved `@customdataclass` decorator with `date` field (#1900), thanks @faysou
+- Improved `@customdataclass` decorator with `date` field and refined `__repr__` (#1900, #1906), thanks @faysou
 - Refactored `RedisMessageBusDatabase` to tokio tasks
 - Refactored `RedisCacheDatabase` to tokio tasks
 - Upgraded `tokio` crate to v1.40.0
