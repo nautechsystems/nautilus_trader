@@ -11,6 +11,7 @@ Released on TBD (UTC).
 - Added `recv_window_ms` config setting for `BinanceExecClientConfig`
 - Added `sl_time_in_force` and `tp_time_in_force` parameters to `OrderFactory.bracket(...)` method
 - Added custom `client_order_id` parameters to `OrderFactory` methods
+- Added support for Binance RSA and Ed25519 API key types, thanks @NextThread
 - Implemented `BybitExecutionClient` retry logic for `submit_order`, `modify_order`, `cancel_order` and `cancel_all_orders`
 - Improved error modeling and handling in Rust (#1866), thanks @twitu
 - Improved `HttpClient` error handling and added `HttpClientError` exception for Python (#1872), thanks @twitu
