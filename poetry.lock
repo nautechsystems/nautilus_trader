@@ -3024,6 +3024,7 @@ multidict = ">=4.0"
 
 [extras]
 betfair = ["betfair_parser"]
+binance = ["pycryptodome"]
 docker = ["docker"]
 dydx = ["bech32", "bip-utils", "ecdsa", "pycryptodome", "v4-proto"]
 ib = ["async-timeout", "defusedxml", "nautilus_ibapi"]
@@ -3031,4 +3032,4 @@ ib = ["async-timeout", "defusedxml", "nautilus_ibapi"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.10,<3.13"
-content-hash = "2999123b6489acd1d1bb6b2c2c59814de9f97fd697c3e0365633770b6aa390f3"
+content-hash = "1959d00c77970a86c61db8e34b4c4133314691cbb17c4976c78ddc6c56c93e95"
