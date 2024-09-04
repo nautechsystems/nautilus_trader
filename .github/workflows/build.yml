@@ -22,7 +22,6 @@ jobs:
     env:
       BUILD_MODE: debug
       RUST_BACKTRACE: 1
-      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python  # Temporary work around
     services:
       redis:
         image: redis
