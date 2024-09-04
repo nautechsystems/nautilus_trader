@@ -24,9 +24,6 @@ class GreeksTestData(Data):
     instrument_id: InstrumentId = InstrumentId.from_str("ES.GLBX")
     delta: float = 0.0
 
-    def __repr__(self):
-        return f"GreeksTestData(instrument_id={self.instrument_id}, delta={self.delta:.2f}, ts_event={self.ts_event}, ts_init={self._ts_init})"
-
 
 def test_customdata_decorator_properties() -> None:
     # Arrange, Act
@@ -47,20 +44,34 @@ def test_customdata_decorator_dict() -> None:
 
     # Assert
     assert data_dict == {
-        "type": "GreeksTestData",
         "instrument_id": "ES.GLBX",
         "delta": 0.0,
+        "type": "GreeksTestData",
         "ts_event": 1,
         "ts_init": 2,
     }
     assert data_dict_to_arrow == {
-        "type": "GreeksTestData",
         "instrument_id": "ES.GLBX",
         "delta": 0.0,
+        "type": "GreeksTestData",
         "ts_event": 1,
         "ts_init": 2,
         "date": 19700101,
     }
+
+
+def test_customdata_repr() -> None:
+    # Arrange
+    data = GreeksTestData(ts_event=1715248800000000000, ts_init=1715248860000000000)
+
+    # Act
+    repr = str(data)
+
+    # Assert
+    assert (
+        repr
+        == "GreeksTestData(instrument_id=InstrumentId('ES.GLBX'), delta=0.0, ts_event=2024-05-09T10:00:00.000Z, ts_init=2024-05-09T10:01:00.000Z)"
+    )
 
 
 def test_customdata_decorator_dict_identity() -> None:
