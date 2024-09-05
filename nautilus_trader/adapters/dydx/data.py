@@ -170,7 +170,7 @@ class DYDXDataClient(LiveMarketDataClient):
             self._update_instruments_task = None
 
         if self._resubscribe_orderbook_task:
-            self._log.debug("Cancelling `resubscribe_orderbooks` task")
+            self._log.debug("Cancelling `resubscribe_orderbook` task")
             self._resubscribe_orderbook_task.cancel()
             self._resubscribe_orderbook_task = None
 
