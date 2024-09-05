@@ -141,7 +141,7 @@ class DYDXDataClient(LiveMarketDataClient):
         self._topic_bar_type: dict[str, BarType] = {}
 
         self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
-        self._update_orderbook_interval: int = 30  # Once every 30 seconds (hardcode)
+        self._update_orderbook_interval: int = 60  # Once every 60 seconds (hardcode)
         self._update_instruments_task: asyncio.Task | None = None
         self._resubscribe_orderbook_task: asyncio.Task | None = None
         self._last_quotes: dict[InstrumentId, QuoteTick] = {}
