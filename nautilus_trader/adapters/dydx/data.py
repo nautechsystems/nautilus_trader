@@ -535,7 +535,9 @@ class DYDXDataClient(LiveMarketDataClient):
 
         # Check if the websocket client is subscribed.
         subscription = ("v4_orderbook", dydx_symbol.raw_symbol)
-        self._orderbook_subscriptions.remove(dydx_symbol.raw_symbol)
+
+        if dydx_symbol.raw_symbol in self._orderbook_subscriptions:
+            self._orderbook_subscriptions.remove(dydx_symbol.raw_symbol)
 
         if self._ws_client.has_subscription(subscription):
             await self._ws_client.unsubscribe_order_book(dydx_symbol.raw_symbol)
