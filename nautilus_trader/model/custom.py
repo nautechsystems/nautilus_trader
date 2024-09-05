@@ -52,7 +52,6 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
             cls.__init__ = __init__
 
         if create_repr:
-            # cls.fields_init allows to use positional arguments for parameters other than ts_event and ts_init
             cls.fields_repr = cls.__repr__
 
             def __repr__(self):
