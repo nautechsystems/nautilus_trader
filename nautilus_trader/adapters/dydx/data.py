@@ -156,6 +156,7 @@ class DYDXDataClient(LiveMarketDataClient):
 
         self._send_all_instruments_to_data_engine()
         self._update_instruments_task = self.create_task(self._update_instruments())
+        self._resubscribe_orderbook_task = self.create_task(self._resubscribe_orderbook())
 
         self._log.info("Initializing websocket connection")
         await self._ws_client.connect()
