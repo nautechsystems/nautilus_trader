@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-- Added dYdX integration (#1861, #1868, #1873, #1874, #1875, #1877, #1879, #1880, #1882, #1886, #1887, #1890, #1891, #1896, #1901, #1903, #1907, #1910, #1911), thanks @davidsblom
+- Added dYdX integration (#1861, #1868, #1873, #1874, #1875, #1877, #1879, #1880, #1882, #1886, #1887, #1890, #1891, #1896, #1901, #1903, #1907, #1910, #1911, #1913), thanks @davidsblom
 - Added composite bar types, bars aggregated from other bar types (#1859, #1885, #1888, #1894, #1905), thanks @faysou
 - Added `RetryManagerPool` to abstract common retry functionality for all adapters
 - Added `InstrumentClose` functionality for `OrderMatchingEngine`, thanks @limx0
@@ -11,7 +11,7 @@ Released on TBD (UTC).
 - Added `recv_window_ms` config setting for `BinanceExecClientConfig`
 - Added `sl_time_in_force` and `tp_time_in_force` parameters to `OrderFactory.bracket(...)` method
 - Added custom `client_order_id` parameters to `OrderFactory` methods
-- Added support for Binance RSA and Ed25519 API key types, thanks @NextThread
+- Added support for Binance RSA and Ed25519 API key types (#1908), thanks @NextThread
 - Added `multiplier` parameter for `CryptoPerpetual` (default 1)
 - Implemented `BybitExecutionClient` retry logic for `submit_order`, `modify_order`, `cancel_order` and `cancel_all_orders`
 - Improved error modeling and handling in Rust (#1866), thanks @twitu
