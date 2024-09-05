@@ -661,7 +661,7 @@ class TestTickBarAggregator:
             handler.append,
         )
 
-        # Setup data
+        # Set up data
         wrangler = QuoteTickDataWrangler(instrument)
         provider = TestDataProvider()
         ticks = wrangler.process(provider.read_csv_ticks("truefx/audusd-ticks.csv")[:1000])
@@ -1198,7 +1198,7 @@ class TestVolumeBarAggregator:
             handler.append,
         )
 
-        # Setup data
+        # Set up data
         wrangler = QuoteTickDataWrangler(instrument)
         provider = TestDataProvider()
         ticks = wrangler.process(
@@ -1585,7 +1585,7 @@ class TestTestValueBarAggregator:
             handler.append,
         )
 
-        # Setup data
+        # Set up data
         wrangler = QuoteTickDataWrangler(AUDUSD_SIM)
         provider = TestDataProvider()
         ticks = wrangler.process(

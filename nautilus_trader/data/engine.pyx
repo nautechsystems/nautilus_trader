@@ -872,7 +872,7 @@ cdef class DataEngine(Component):
                     kwargs=metadata.get("kwargs"),
                 )
 
-        # Setup subscriptions
+        # Set up subscriptions
         cdef str topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol}"
 
         if not self._msgbus.is_subscribed(
@@ -1123,7 +1123,7 @@ cdef class DataEngine(Component):
             self._log.error("Cannot unsubscribe from synthetic instrument `OrderBook` data")
             return
 
-        # Setup topics
+        # Set up topics
         cdef str deltas_topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol}"
         cdef str depth_topic = f"data.book.depth.{instrument_id.venue}.{instrument_id.symbol}"
         cdef str snapshots_topic = f"data.book.snapshots.{instrument_id.venue}.{instrument_id.symbol}"

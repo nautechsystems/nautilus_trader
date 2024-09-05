@@ -379,7 +379,7 @@ impl Logger {
 
         let trader_id_cache = Ustr::from(&trader_id);
 
-        // Setup std I/O buffers
+        // Set up std I/O buffers
         let mut stdout_writer = StdoutWriter::new(stdout_level, is_colored);
         let mut stderr_writer = StderrWriter::new(is_colored);
 

@@ -2133,7 +2133,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        # Setup market
+        # Set up market
         tick = QuoteTick(
             instrument_id=AUDUSD_SIM.id,
             bid_price=Price.from_str("0.80000"),
@@ -2188,7 +2188,7 @@ class TestExecutionEngine:
         # Arrange
         self.exec_engine.start()
 
-        # Setup market
+        # Set up market
         tick = TradeTick(
             instrument_id=AUDUSD_SIM.id,
             price=Price.from_str("0.80005"),

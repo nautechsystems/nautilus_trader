@@ -234,7 +234,7 @@ class TWAPExecAlgorithm(ExecAlgorithm):
 
         self.submit_order(spawned_order)
 
-        # Setup timer
+        # Set up timer
         self.clock.set_timer(
             name=order.client_order_id.value,
             interval=timedelta(seconds=interval_secs),

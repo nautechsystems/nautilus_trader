@@ -87,7 +87,7 @@ def get_cached_binance_http_client(
     secret = secret or get_api_secret(account_type, is_testnet)
     default_http_base_url = get_http_base_url(account_type, is_testnet, is_us)
 
-    # Setup rate limit quotas
+    # Set up rate limit quotas
     if account_type.is_spot:
         # Spot
         ratelimiter_default_quota = Quota.rate_per_minute(6000)

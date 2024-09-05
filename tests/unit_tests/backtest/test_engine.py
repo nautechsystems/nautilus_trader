@@ -97,7 +97,7 @@ class TestBacktestEngine:
             fill_model=FillModel(),
         )
 
-        # Setup data
+        # Set up data
         wrangler = QuoteTickDataWrangler(self.usdjpy)
         provider = TestDataProvider()
         ticks = wrangler.process_bar_data(
@@ -560,7 +560,7 @@ class TestBacktestEngineData:
         assert self.engine.data[1] == operations2
 
     def test_add_quote_ticks_adds_to_engine(self):
-        # Arrange, Setup data
+        # Arrange - set up data
         self.engine.add_instrument(AUDUSD_SIM)
         wrangler = QuoteTickDataWrangler(AUDUSD_SIM)
         provider = TestDataProvider()
@@ -650,7 +650,7 @@ class TestBacktestWithAddedBars:
         self.engine = BacktestEngine(config=config)
         self.venue = Venue("SIM")
 
-        # Setup venue
+        # Set up venue
         self.engine.add_venue(
             venue=self.venue,
             oms_type=OmsType.HEDGING,
@@ -659,7 +659,7 @@ class TestBacktestWithAddedBars:
             starting_balances=[Money(1_000_000, USD)],
         )
 
-        # Setup data
+        # Set up data
         bid_bar_type = BarType(
             instrument_id=GBPUSD_SIM.id,
             bar_spec=TestDataStubs.bar_spec_1min_bid(),

@@ -168,7 +168,7 @@ mod tests {
             let server = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let port = TcpListener::local_addr(&server).unwrap().port();
 
-            // Setup test server
+            // Set up test server
             let handle = task::spawn(async move {
                 // Keep listening for new connections
                 loop {

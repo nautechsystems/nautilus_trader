@@ -87,7 +87,7 @@ class TestBacktestAcceptanceTestsUSDJPY:
 
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
-        # Setup data
+        # Set up data
         wrangler = QuoteTickDataWrangler(instrument=self.usdjpy)
         provider = TestDataProvider()
         ticks = wrangler.process_bar_data(
@@ -211,7 +211,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsInternal:
 
         self.gbpusd = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
-        # Setup data
+        # Set up data
         wrangler = QuoteTickDataWrangler(self.gbpusd)
         provider = TestDataProvider()
         ticks = wrangler.process_bar_data(
@@ -333,7 +333,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
 
         self.gbpusd = TestInstrumentProvider.default_fx_ccy("GBP/USD")
 
-        # Setup wranglers
+        # Set up wranglers
         bid_wrangler = BarDataWrangler(
             bar_type=BarType.from_str("GBP/USD.SIM-1-MINUTE-BID-EXTERNAL"),
             instrument=self.gbpusd,
@@ -343,7 +343,7 @@ class TestBacktestAcceptanceTestsGBPUSDBarsExternal:
             instrument=self.gbpusd,
         )
 
-        # Setup data
+        # Set up data
         provider = TestDataProvider()
 
         # Build externally aggregated bars
@@ -500,7 +500,7 @@ class TestBacktestAcceptanceTestsAUDUSD:
         self.engine = BacktestEngine(config=config)
         self.venue = Venue("SIM")
 
-        # Setup venue
+        # Set up venue
         provider = TestDataProvider()
         interest_rate_data = provider.read_csv("short-term-interest.csv")
         config = FXRolloverInterestConfig(interest_rate_data)
@@ -515,7 +515,7 @@ class TestBacktestAcceptanceTestsAUDUSD:
             modules=[fx_rollover_interest],
         )
 
-        # Setup data
+        # Set up data
         self.audusd = TestInstrumentProvider.default_fx_ccy("AUD/USD")
         wrangler = QuoteTickDataWrangler(self.audusd)
         ticks = wrangler.process(provider.read_csv_ticks("truefx/audusd-ticks.csv"))
@@ -582,7 +582,7 @@ class TestBacktestAcceptanceTestsETHUSDT:
         self.engine = BacktestEngine(config=config)
         self.venue = Venue("BINANCE")
 
-        # Setup venue
+        # Set up venue
         self.engine.add_venue(
             venue=self.venue,
             oms_type=OmsType.NETTING,
@@ -640,7 +640,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
         self.engine = BacktestEngine(config=config)
         self.venue = Venue("BETFAIR")
 
-        # Setup venue
+        # Set up venue
         self.engine.add_venue(
             venue=self.venue,
             account_type=AccountType.MARGIN,
@@ -650,7 +650,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
             book_type=BookType.L2_MBP,
         )
 
-        # Setup data
+        # Set up data
         data = BetfairDataProvider.betfair_feed_parsed(market_id="1.166811431")
         instruments = [d for d in data if isinstance(d, BettingInstrument)]
         assert instruments
