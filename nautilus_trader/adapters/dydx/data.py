@@ -35,6 +35,7 @@ from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsCandlesSubscribedData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsMarketChannelData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsMarketSubscribedData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsMessageGeneral
+from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsOrderbookBatchedData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsOrderbookChannelData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsOrderbookSnapshotChannelData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsTradeChannelData
@@ -117,6 +118,7 @@ class DYDXDataClient(LiveMarketDataClient):
         # Decoders
         self._decoder_ws_msg_general = msgspec.json.Decoder(DYDXWsMessageGeneral)
         self._decoder_ws_orderbook = msgspec.json.Decoder(DYDXWsOrderbookChannelData)
+        self._decoder_ws_orderbook_batched = msgspec.json.Decoder(DYDXWsOrderbookBatchedData)
         self._decoder_ws_orderbook_snapshot = msgspec.json.Decoder(
             DYDXWsOrderbookSnapshotChannelData,
         )
@@ -190,6 +192,7 @@ class DYDXDataClient(LiveMarketDataClient):
         callbacks: dict[tuple[str | None, str | None], Callable[[bytes], None]] = {
             ("v4_orderbook", "channel_data"): self._handle_orderbook,
             ("v4_orderbook", "subscribed"): self._handle_orderbook_snapshot,
+            ("v4_orderbook", "channel_batch_data"): self._handle_orderbook_batched,
             ("v4_trades", "channel_data"): self._handle_trade,
             ("v4_trades", "subscribed"): self._handle_trade_subscribed,
             ("v4_candles", "channel_data"): self._handle_kline,
@@ -255,6 +258,32 @@ class DYDXDataClient(LiveMarketDataClient):
     def _handle_orderbook(self, raw: bytes) -> None:
         try:
             msg: DYDXWsOrderbookChannelData = self._decoder_ws_orderbook.decode(raw)
+
+            symbol = msg.id
+            instrument_id: InstrumentId = self._get_cached_instrument_id(symbol)
+
+            instrument = self._cache.instrument(instrument_id)
+
+            if instrument is None:
+                self._log.error(f"Cannot parse orderbook data: no instrument for {instrument_id}")
+                return
+
+            deltas = msg.parse_to_deltas(
+                instrument_id=instrument_id,
+                price_precision=instrument.price_precision,
+                size_precision=instrument.size_precision,
+                ts_event=self._clock.timestamp_ns(),
+                ts_init=self._clock.timestamp_ns(),
+            )
+
+            self._handle_deltas(instrument_id=instrument_id, deltas=deltas)
+
+        except Exception as e:
+            self._log.error(f"Failed to parse orderbook: {raw.decode()} with error {e}")
+
+    def _handle_orderbook_batched(self, raw: bytes) -> None:
+        try:
+            msg = self._decoder_ws_orderbook_batched.decode(raw)
 
             symbol = msg.id
             instrument_id: InstrumentId = self._get_cached_instrument_id(symbol)
