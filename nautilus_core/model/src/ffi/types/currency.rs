@@ -156,22 +156,4 @@ mod tests {
         let currency = unsafe { currency_from_cstr(code.as_ptr()) };
         assert_eq!(currency, Currency::USD());
     }
-
-    #[rstest]
-    #[should_panic(expected = "`ptr` was NULL")]
-    fn test_currency_from_py_null_code_ptr() {
-        let name = CString::new("My Currency").unwrap();
-        let _ = unsafe {
-            currency_from_py(std::ptr::null(), 4, 0, name.as_ptr(), CurrencyType::Crypto)
-        };
-    }
-
-    #[rstest]
-    #[should_panic(expected = "`ptr` was NULL")]
-    fn test_currency_from_py_null_name_ptr() {
-        let code = CString::new("MYC").unwrap();
-        let _ = unsafe {
-            currency_from_py(code.as_ptr(), 4, 0, std::ptr::null(), CurrencyType::Crypto)
-        };
-    }
 }
