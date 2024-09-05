@@ -141,8 +141,11 @@ class DYDXDataClient(LiveMarketDataClient):
         self._topic_bar_type: dict[str, BarType] = {}
 
         self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
+        self._update_orderbook_interval: int = 30  # Once every 30 seconds (hardcode)
         self._update_instruments_task: asyncio.Task | None = None
+        self._resubscribe_orderbook_task: asyncio.Task | None = None
         self._last_quotes: dict[InstrumentId, QuoteTick] = {}
+        self._orderbook_subscriptions: set[str] = set()
 
         # Hot caches
         self._bars: dict[BarType, Bar] = {}
@@ -165,6 +168,11 @@ class DYDXDataClient(LiveMarketDataClient):
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
 
+        if self._resubscribe_orderbook_task:
+            self._log.debug("Cancelling `resubscribe_orderbooks` task")
+            self._resubscribe_orderbook_task.cancel()
+            self._resubscribe_orderbook_task = None
+
         await self._ws_client.disconnect()
 
         self._log.info("Data client disconnected")
@@ -180,6 +188,24 @@ class DYDXDataClient(LiveMarketDataClient):
                 self._send_all_instruments_to_data_engine()
         except asyncio.CancelledError:
             self._log.debug("Canceled `update_instruments` task")
+
+    async def _resubscribe_orderbook(self) -> None:
+        """
+        Resubscribe to the orderbook every 30 seconds to ensure it does not become
+        outdated.
+        """
+        try:
+            while True:
+                self._log.debug(
+                    f"Scheduled `resubscribe_order_book` to run in {self._update_orderbook_interval}s",
+                )
+                await asyncio.sleep(self._update_orderbook_interval)
+
+                for symbol in self._orderbook_subscriptions:
+                    await self._ws_client.unsubscribe_order_book(symbol)
+                    await self._ws_client.subscribe_order_book(symbol)
+        except asyncio.CancelledError:
+            self._log.debug("Canceled `resubscribe_orderbook` task")
 
     def _send_all_instruments_to_data_engine(self) -> None:
         for instrument in self._instrument_provider.get_all().values():
@@ -468,6 +494,7 @@ class DYDXDataClient(LiveMarketDataClient):
 
         # Check if the websocket client is already subscribed.
         subscription = ("v4_orderbook", dydx_symbol.raw_symbol)
+        self._orderbook_subscriptions.add(dydx_symbol.raw_symbol)
 
         if not self._ws_client.has_subscription(subscription):
             await self._ws_client.subscribe_order_book(dydx_symbol.raw_symbol)
@@ -507,6 +534,7 @@ class DYDXDataClient(LiveMarketDataClient):
 
         # Check if the websocket client is subscribed.
         subscription = ("v4_orderbook", dydx_symbol.raw_symbol)
+        self._orderbook_subscriptions.remove(dydx_symbol.raw_symbol)
 
         if self._ws_client.has_subscription(subscription):
             await self._ws_client.unsubscribe_order_book(dydx_symbol.raw_symbol)
@@ -518,7 +546,6 @@ class DYDXDataClient(LiveMarketDataClient):
         subscription = ("v4_orderbook", dydx_symbol.raw_symbol)
 
         if self._ws_client.has_subscription(subscription):
-
             await self._unsubscribe_order_book_deltas(instrument_id=instrument_id)
 
     async def _unsubscribe_bars(self, bar_type: BarType) -> None:
