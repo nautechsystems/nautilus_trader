@@ -192,8 +192,8 @@ class DYDXDataClient(LiveMarketDataClient):
 
     async def _resubscribe_orderbook(self) -> None:
         """
-        Resubscribe to the orderbook every 30 seconds to ensure it does not become
-        outdated.
+        Resubscribe to the orderbook on a fixed interval `update_orderbook_interval` to
+        ensure it does not become outdated.
         """
         try:
             while True:
