@@ -35,6 +35,7 @@ from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsCandlesSubscribedData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsMarketChannelData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsMarketSubscribedData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsMessageGeneral
+from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsOrderbookBatchedData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsOrderbookChannelData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsOrderbookSnapshotChannelData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsTradeChannelData
@@ -117,6 +118,7 @@ class DYDXDataClient(LiveMarketDataClient):
         # Decoders
         self._decoder_ws_msg_general = msgspec.json.Decoder(DYDXWsMessageGeneral)
         self._decoder_ws_orderbook = msgspec.json.Decoder(DYDXWsOrderbookChannelData)
+        self._decoder_ws_orderbook_batched = msgspec.json.Decoder(DYDXWsOrderbookBatchedData)
         self._decoder_ws_orderbook_snapshot = msgspec.json.Decoder(
             DYDXWsOrderbookSnapshotChannelData,
         )
@@ -139,8 +141,11 @@ class DYDXDataClient(LiveMarketDataClient):
         self._topic_bar_type: dict[str, BarType] = {}
 
         self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
+        self._update_orderbook_interval: int = 60  # Once every 60 seconds (hardcode)
         self._update_instruments_task: asyncio.Task | None = None
+        self._resubscribe_orderbook_task: asyncio.Task | None = None
         self._last_quotes: dict[InstrumentId, QuoteTick] = {}
+        self._orderbook_subscriptions: set[str] = set()
 
         # Hot caches
         self._bars: dict[BarType, Bar] = {}
@@ -151,6 +156,7 @@ class DYDXDataClient(LiveMarketDataClient):
 
         self._send_all_instruments_to_data_engine()
         self._update_instruments_task = self.create_task(self._update_instruments())
+        self._resubscribe_orderbook_task = self.create_task(self._resubscribe_orderbook())
 
         self._log.info("Initializing websocket connection")
         await self._ws_client.connect()
@@ -162,6 +168,11 @@ class DYDXDataClient(LiveMarketDataClient):
             self._log.debug("Cancelling `update_instruments` task")
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
+
+        if self._resubscribe_orderbook_task:
+            self._log.debug("Cancelling `resubscribe_orderbooks` task")
+            self._resubscribe_orderbook_task.cancel()
+            self._resubscribe_orderbook_task = None
 
         await self._ws_client.disconnect()
 
@@ -179,6 +190,24 @@ class DYDXDataClient(LiveMarketDataClient):
         except asyncio.CancelledError:
             self._log.debug("Canceled `update_instruments` task")
 
+    async def _resubscribe_orderbook(self) -> None:
+        """
+        Resubscribe to the orderbook on a fixed interval `update_orderbook_interval` to
+        ensure it does not become outdated.
+        """
+        try:
+            while True:
+                self._log.debug(
+                    f"Scheduled `resubscribe_order_book` to run in {self._update_orderbook_interval}s",
+                )
+                await asyncio.sleep(self._update_orderbook_interval)
+
+                for symbol in self._orderbook_subscriptions:
+                    await self._ws_client.unsubscribe_order_book(symbol)
+                    await self._ws_client.subscribe_order_book(symbol)
+        except asyncio.CancelledError:
+            self._log.debug("Canceled `resubscribe_orderbook` task")
+
     def _send_all_instruments_to_data_engine(self) -> None:
         for instrument in self._instrument_provider.get_all().values():
             self._handle_data(instrument)
@@ -190,6 +219,7 @@ class DYDXDataClient(LiveMarketDataClient):
         callbacks: dict[tuple[str | None, str | None], Callable[[bytes], None]] = {
             ("v4_orderbook", "channel_data"): self._handle_orderbook,
             ("v4_orderbook", "subscribed"): self._handle_orderbook_snapshot,
+            ("v4_orderbook", "channel_batch_data"): self._handle_orderbook_batched,
             ("v4_trades", "channel_data"): self._handle_trade,
             ("v4_trades", "subscribed"): self._handle_trade_subscribed,
             ("v4_candles", "channel_data"): self._handle_kline,
@@ -255,6 +285,32 @@ class DYDXDataClient(LiveMarketDataClient):
     def _handle_orderbook(self, raw: bytes) -> None:
         try:
             msg: DYDXWsOrderbookChannelData = self._decoder_ws_orderbook.decode(raw)
+
+            symbol = msg.id
+            instrument_id: InstrumentId = self._get_cached_instrument_id(symbol)
+
+            instrument = self._cache.instrument(instrument_id)
+
+            if instrument is None:
+                self._log.error(f"Cannot parse orderbook data: no instrument for {instrument_id}")
+                return
+
+            deltas = msg.parse_to_deltas(
+                instrument_id=instrument_id,
+                price_precision=instrument.price_precision,
+                size_precision=instrument.size_precision,
+                ts_event=self._clock.timestamp_ns(),
+                ts_init=self._clock.timestamp_ns(),
+            )
+
+            self._handle_deltas(instrument_id=instrument_id, deltas=deltas)
+
+        except Exception as e:
+            self._log.error(f"Failed to parse orderbook: {raw.decode()} with error {e}")
+
+    def _handle_orderbook_batched(self, raw: bytes) -> None:
+        try:
+            msg = self._decoder_ws_orderbook_batched.decode(raw)
 
             symbol = msg.id
             instrument_id: InstrumentId = self._get_cached_instrument_id(symbol)
@@ -439,6 +495,7 @@ class DYDXDataClient(LiveMarketDataClient):
 
         # Check if the websocket client is already subscribed.
         subscription = ("v4_orderbook", dydx_symbol.raw_symbol)
+        self._orderbook_subscriptions.add(dydx_symbol.raw_symbol)
 
         if not self._ws_client.has_subscription(subscription):
             await self._ws_client.subscribe_order_book(dydx_symbol.raw_symbol)
@@ -479,6 +536,9 @@ class DYDXDataClient(LiveMarketDataClient):
         # Check if the websocket client is subscribed.
         subscription = ("v4_orderbook", dydx_symbol.raw_symbol)
 
+        if dydx_symbol.raw_symbol in self._orderbook_subscriptions:
+            self._orderbook_subscriptions.remove(dydx_symbol.raw_symbol)
+
         if self._ws_client.has_subscription(subscription):
             await self._ws_client.unsubscribe_order_book(dydx_symbol.raw_symbol)
 
@@ -489,7 +549,6 @@ class DYDXDataClient(LiveMarketDataClient):
         subscription = ("v4_orderbook", dydx_symbol.raw_symbol)
 
         if self._ws_client.has_subscription(subscription):
-
             await self._unsubscribe_order_book_deltas(instrument_id=instrument_id)
 
     async def _unsubscribe_bars(self, bar_type: BarType) -> None:

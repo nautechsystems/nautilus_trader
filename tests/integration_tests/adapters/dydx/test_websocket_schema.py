@@ -32,6 +32,7 @@ from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsCandlesSubscribedData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsMarketChannelData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsMarketSubscribedData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsMessageGeneral
+from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsOrderbookBatchedData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsOrderbookChannelData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsOrderbookSnapshotChannelData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsSubaccountsChannelData
@@ -78,6 +79,7 @@ from nautilus_trader.model.objects import Quantity
         "tests/test_data/dydx/websocket/v4_candles_channel_data.json",
         "tests/test_data/dydx/websocket/v4_candles_subscribed.json",
         "tests/test_data/dydx/websocket/v4_candles.json",
+        "tests/test_data/dydx/websocket/v4_orderbook_batched_data.json",
         "tests/test_data/dydx/websocket/v4_orderbook_snapshot.json",
         "tests/test_data/dydx/websocket/v4_orderbook.json",
         "tests/test_data/dydx/websocket/v4_trades.json",
@@ -899,6 +901,58 @@ def test_orderbook_snapshot(instrument_id: InstrumentId) -> None:
     assert deltas.deltas[1].order.price == expected_delta.order.price
     assert deltas.deltas[1].order.size == expected_delta.order.size
     assert deltas.deltas[1].order.side == expected_delta.order.side
+
+    for delta_id, delta in enumerate(deltas.deltas):
+        if delta_id < len(deltas.deltas) - 1:
+            assert delta.flags == 0
+        else:
+            assert delta.flags == RecordFlag.F_LAST
+
+
+def test_orderbook_batched_data(instrument_id: InstrumentId) -> None:
+    """
+    Test parsing the orderbook batch deltas.
+    """
+    # Prepare
+    expected_num_deltas = 41
+    expected_delta = OrderBookDelta(
+        instrument_id=instrument_id,
+        action=BookAction.UPDATE,
+        order=BookOrder(
+            side=OrderSide.BUY,
+            price=Price(2396.1, 1),
+            size=Quantity(3.123, 3),
+            order_id=0,
+        ),
+        flags=0,
+        sequence=0,
+        ts_event=0,
+        ts_init=0,
+    )
+    decoder = msgspec.json.Decoder(DYDXWsOrderbookBatchedData)
+
+    with Path(
+        "tests/test_data/dydx/websocket/v4_orderbook_batched_data.json",
+    ).open() as file_reader:
+        msg = decoder.decode(file_reader.read())
+
+    # Act
+    deltas = msg.parse_to_deltas(
+        instrument_id=instrument_id,
+        price_precision=1,
+        size_precision=3,
+        ts_event=0,
+        ts_init=0,
+    )
+
+    # Assert
+    assert len(deltas.deltas) == expected_num_deltas
+    assert deltas.deltas[0] == expected_delta
+    assert deltas.deltas[0].order.price == expected_delta.order.price
+    assert deltas.deltas[0].order.price.precision == expected_delta.order.price.precision
+    assert deltas.deltas[0].order.size == expected_delta.order.size
+    assert deltas.deltas[0].order.size.precision == expected_delta.order.size.precision
+    assert deltas.deltas[0].order.side == expected_delta.order.side
 
     for delta_id, delta in enumerate(deltas.deltas):
         if delta_id < len(deltas.deltas) - 1:
