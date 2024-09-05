@@ -252,9 +252,9 @@ mod tests {
                 value: HeaderValue::from_str(&value).unwrap(),
             };
 
-            // Setup test server
+            // Set up test server
             let task = task::spawn(async move {
-                // keep accepting connections
+                // Keep accepting connections
                 loop {
                     let (conn, _) = server.accept().await.unwrap();
                     let mut websocket = accept_hdr_async(conn, test_call_back.clone())

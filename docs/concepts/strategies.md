@@ -263,7 +263,7 @@ self.clock.set_time_alert(
 
 #### Timers
 
-Continuous timers can be setup which will generate a `TimeEvent` at regular intervals until the timer expires
+Continuous timers can be set up which will generate a `TimeEvent` at regular intervals until the timer expires
 or is canceled.
 
 This example sets a timer to fire once per minute, starting immediately:

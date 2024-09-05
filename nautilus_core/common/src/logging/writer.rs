@@ -156,7 +156,7 @@ impl FileWriter {
         file_config: FileWriterConfig,
         fileout_level: LevelFilter,
     ) -> Option<Self> {
-        // Setup log file
+        // Set up log file
         let json_format = match file_config.file_format.as_ref().map(|s| s.to_lowercase()) {
             Some(ref format) if format == "json" => true,
             None => false,

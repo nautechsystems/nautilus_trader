@@ -282,7 +282,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         nautilus_time: int = self._clock.timestamp_ms()
         self._log.info(f"Nautilus clock time {nautilus_time} UNIX (ms)")
 
-        # Setup WebSocket listen key
+        # Set up WebSocket listen key
         self._listen_key = response.listenKey
         self._log.info(f"Listen key {self._listen_key}")
         self._ping_listen_keys_task = self.create_task(self._ping_listen_keys())

@@ -104,7 +104,7 @@ async def main(
         for instrument in instruments
     ]
 
-    # Setup TradingNode
+    # Set up TradingNode
     node = TradingNode(config=config)
     node.trader.add_strategies(strategies)
 

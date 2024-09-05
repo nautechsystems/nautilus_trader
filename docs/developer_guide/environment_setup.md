@@ -15,11 +15,11 @@ NautilusTrader uses increasingly more [Rust](https://www.rust-lang.org), so Rust
 
 The following steps are for UNIX-like systems, and only need to be completed once.
 
-1. Follow the [installation guide](../getting_started/installation.md) to setup the project with a modification to the final poetry command:
+1. Follow the [installation guide](../getting_started/installation.md) to set up the project with a modification to the final poetry command:
 
        poetry install
 
-2. Setup the pre-commit hook which will then run automatically at commit:
+2. Set up the pre-commit hook which will then run automatically at commit:
 
        pre-commit install
 

@@ -86,7 +86,7 @@ async def main(instrument_config: BetfairInstrumentProviderConfig) -> TradingNod
         for instrument in instruments
     ]
 
-    # Setup TradingNode
+    # Set up TradingNode
     node = TradingNode(config=config)
 
     # Can manually set instruments for sandbox exec client

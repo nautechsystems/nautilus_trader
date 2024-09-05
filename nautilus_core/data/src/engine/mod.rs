@@ -609,7 +609,7 @@ impl DataEngine {
                 return Ok(());
             }
 
-            // TODO: Setup timer at interval
+            // TODO: Set up timer at interval
             if !self.order_book_intervals.contains_key(&interval_ms) {
                 let timer_name = format!("OrderBook|{interval_ms}");
                 let interval_ns = millis_to_nanos(interval_ms.get() as f64);
