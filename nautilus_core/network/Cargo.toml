@@ -20,7 +20,7 @@ pyo3-asyncio-0-21 = { workspace = true, optional = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-dashmap = "6.0.1"
+dashmap = "6.1.0"
 futures-util = "0.3.30"
 http = "1.1.0"
 hyper = "1.4.1"
