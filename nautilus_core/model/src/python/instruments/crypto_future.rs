@@ -51,6 +51,7 @@ impl CryptoFuture {
         margin_maint: Decimal,
         ts_event: u64,
         ts_init: u64,
+        multiplier: Option<Quantity>,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
@@ -76,6 +77,7 @@ impl CryptoFuture {
             taker_fee,
             margin_init,
             margin_maint,
+            multiplier,
             lot_size,
             max_quantity,
             min_quantity,
@@ -177,6 +179,12 @@ impl CryptoFuture {
     #[pyo3(name = "size_increment")]
     fn py_size_increment(&self) -> Quantity {
         self.size_increment
+    }
+
+    #[getter]
+    #[pyo3(name = "multiplier")]
+    fn py_multiplier(&self) -> Quantity {
+        self.multiplier
     }
 
     #[getter]
@@ -290,6 +298,7 @@ impl CryptoFuture {
         dict.set_item("size_increment", self.size_increment.to_string())?;
         dict.set_item("margin_init", self.margin_init.to_string())?;
         dict.set_item("margin_maint", self.margin_maint.to_string())?;
+        dict.set_item("multiplier", self.multiplier.to_string())?;
         dict.set_item("lot_size", self.lot_size.to_string())?;
         dict.set_item("info", PyDict::new(py))?;
         dict.set_item("maker_fee", self.maker_fee.to_string())?;

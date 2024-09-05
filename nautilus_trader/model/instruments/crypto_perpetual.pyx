@@ -68,6 +68,8 @@ cdef class CryptoPerpetual(Instrument):
         UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the data object was initialized.
+    multiplier : Quantity, default 1
+        The contract multiplier.
     max_quantity : Quantity, optional
         The maximum allowable order quantity.
     min_quantity : Quantity, optional
@@ -98,7 +100,7 @@ cdef class CryptoPerpetual(Instrument):
     ValueError
         If `size_increment` is not equal to size_increment.precision.
     ValueError
-        If `lot size` is not positive (> 0).
+        If `multiplier` is not positive (> 0).
     ValueError
         If `max_quantity` is not positive (> 0).
     ValueError
@@ -131,6 +133,7 @@ cdef class CryptoPerpetual(Instrument):
         taker_fee not None: Decimal,
         uint64_t ts_event,
         uint64_t ts_init,
+        multiplier=Quantity.from_int_c(1),
         Quantity max_quantity: Quantity | None = None,
         Quantity min_quantity: Quantity | None = None,
         Money max_notional: Money | None = None,
@@ -150,7 +153,7 @@ cdef class CryptoPerpetual(Instrument):
             size_precision=size_precision,
             price_increment=price_increment,
             size_increment=size_increment,
-            multiplier=Quantity.from_int_c(1),
+            multiplier=multiplier,
             lot_size=Quantity.from_int_c(1),
             max_quantity=max_quantity,
             min_quantity=min_quantity,
@@ -205,6 +208,7 @@ cdef class CryptoPerpetual(Instrument):
             size_precision=values["size_precision"],
             price_increment=Price.from_str_c(values["price_increment"]),
             size_increment=Quantity.from_str_c(values["size_increment"]),
+            multiplier=Quantity.from_str_c(values["multiplier"]),
             max_quantity=Quantity.from_str_c(max_q) if max_q is not None else None,
             min_quantity=Quantity.from_str_c(min_q) if min_q is not None else None,
             max_notional=Money.from_str_c(max_n) if max_n is not None else None,
@@ -235,6 +239,7 @@ cdef class CryptoPerpetual(Instrument):
             "price_increment": str(obj.price_increment),
             "size_precision": obj.size_precision,
             "size_increment": str(obj.size_increment),
+            "multiplier": str(obj.multiplier),
             "lot_size": str(obj.lot_size),
             "max_quantity": str(obj.max_quantity) if obj.max_quantity is not None else None,
             "min_quantity": str(obj.min_quantity) if obj.min_quantity is not None else None,
@@ -293,6 +298,7 @@ cdef class CryptoPerpetual(Instrument):
             size_precision=pyo3_instrument.size_precision,
             price_increment=Price.from_raw_c(pyo3_instrument.price_increment.raw, pyo3_instrument.price_precision),
             size_increment=Quantity.from_raw_c(pyo3_instrument.size_increment.raw, pyo3_instrument.size_precision),
+            multiplier=Quantity.from_raw_c(pyo3_instrument.multiplier.raw, pyo3_instrument.multiplier.precision),
             max_quantity=Quantity.from_raw_c(pyo3_instrument.max_quantity.raw,pyo3_instrument.max_quantity.precision) if pyo3_instrument.max_quantity is not None else None,
             min_quantity=Quantity.from_raw_c(pyo3_instrument.min_quantity.raw,pyo3_instrument.min_quantity.precision) if pyo3_instrument.min_quantity is not None else None,
             max_notional=Money.from_str_c(str(pyo3_instrument.max_notional)) if pyo3_instrument.max_notional is not None else None,

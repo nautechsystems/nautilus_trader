@@ -12,6 +12,7 @@ Released on TBD (UTC).
 - Added `sl_time_in_force` and `tp_time_in_force` parameters to `OrderFactory.bracket(...)` method
 - Added custom `client_order_id` parameters to `OrderFactory` methods
 - Added support for Binance RSA and Ed25519 API key types, thanks @NextThread
+- Added `multiplier` parameter for `CryptoPerpetual` (default 1)
 - Implemented `BybitExecutionClient` retry logic for `submit_order`, `modify_order`, `cancel_order` and `cancel_all_orders`
 - Improved error modeling and handling in Rust (#1866), thanks @twitu
 - Improved `HttpClient` error handling and added `HttpClientError` exception for Python (#1872), thanks @twitu
@@ -26,6 +27,8 @@ Released on TBD (UTC).
 - Renamed `heartbeat_interval` to `heartbeat_interval_secs` (more explicitly indicates time units)
 - Moved `heartbeat_interval_secs` config setting to `MessageBusConfig` (the message bus handles external stream processing)
 - Changed `WebSocketClient.send_text(...)` to take `data` as `bytes` rather than `str`
+- Changed `CryptoPerpetual` Arrow schema to include `multiplier` field
+- Changed `CryptoFuture` Arrow schema to include `multiplier` field
 
 ### Fixes
 - Fixed `OrderBook` memory deallocation in Python finalizer (memory was not being freed on object destruction), thanks for reporting @zeyuhuan

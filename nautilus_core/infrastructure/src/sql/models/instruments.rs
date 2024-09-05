@@ -133,6 +133,9 @@ impl<'r> FromRow<'r, PgRow> for CryptoFutureModel {
         let margin_maint = row
             .try_get::<String, _>("margin_maint")
             .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
+        let multiplier = row
+            .try_get::<String, _>("multiplier")
+            .map(|res| Quantity::from(res.as_str()))?;
         let lot_size = row
             .try_get::<String, _>("lot_size")
             .map(|res| Quantity::from(res.as_str()))?;
@@ -184,6 +187,7 @@ impl<'r> FromRow<'r, PgRow> for CryptoFutureModel {
             taker_fee,
             margin_init,
             margin_maint,
+            Some(multiplier),
             Some(lot_size),
             max_quantity,
             min_quantity,
@@ -236,6 +240,9 @@ impl<'r> FromRow<'r, PgRow> for CryptoPerpetualModel {
         let margin_maint = row
             .try_get::<String, _>("margin_maint")
             .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
+        let multiplier = row
+            .try_get::<String, _>("multiplier")
+            .map(|res| Quantity::from(res.as_str()))?;
         let lot_size = row
             .try_get::<String, _>("lot_size")
             .map(|res| Quantity::from(res.as_str()))?;
@@ -285,6 +292,7 @@ impl<'r> FromRow<'r, PgRow> for CryptoPerpetualModel {
             taker_fee,
             margin_init,
             margin_maint,
+            Some(multiplier),
             Some(lot_size),
             max_quantity,
             min_quantity,

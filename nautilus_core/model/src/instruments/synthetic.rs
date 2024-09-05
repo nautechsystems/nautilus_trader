@@ -20,7 +20,7 @@ use std::{
 
 use derive_builder::Builder;
 use evalexpr::{ContextWithMutableVariables, HashMapContext, Node, Value};
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::{correctness::FAILED, nanos::UnixNanos};
 
 use crate::{
     identifiers::{InstrumentId, Symbol, Venue},
@@ -102,7 +102,7 @@ impl SyntheticInstrument {
             ts_event,
             ts_init,
         )
-        .expect("Failed to create synthetic instrument")
+        .expect(FAILED)
     }
 
     #[must_use]
