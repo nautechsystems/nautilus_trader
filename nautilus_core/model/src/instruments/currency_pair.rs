@@ -16,7 +16,7 @@
 use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
-    correctness::{check_equal_u8, check_positive_i64, check_positive_u64},
+    correctness::{check_equal_u8, check_positive_i64, check_positive_u64, FAILED},
     nanos::UnixNanos,
 };
 use rust_decimal::Decimal;
@@ -179,7 +179,7 @@ impl CurrencyPair {
             ts_event,
             ts_init,
         )
-        .expect("Failed to create CurrencyPair instance")
+        .expect(FAILED)
     }
 }
 

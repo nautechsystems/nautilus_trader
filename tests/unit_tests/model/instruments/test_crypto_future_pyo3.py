@@ -52,6 +52,7 @@ def test_to_dict():
         "taker_fee": "0",
         "margin_maint": "0",
         "margin_init": "0",
+        "multiplier": "1",
         "lot_size": "1",
         "max_notional": None,
         "max_price": "1000000.0",

@@ -99,7 +99,7 @@ cdef class FuturesSpread(Instrument):
         Currency currency not None,
         int price_precision,
         Price price_increment not None,
-        Quantity multiplier,
+        Quantity multiplier not None,
         Quantity lot_size not None,
         str underlying,
         str strategy_type,
@@ -112,7 +112,6 @@ cdef class FuturesSpread(Instrument):
     ):
         Condition.valid_string(underlying, "underlying")
         Condition.valid_string(strategy_type, "strategy_type")
-        Condition.positive_int(multiplier, "multiplier")
         if exchange is not None:
             Condition.valid_string(exchange, "exchange")
         super().__init__(
