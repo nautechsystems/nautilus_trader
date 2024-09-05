@@ -20,6 +20,7 @@ from typing import Any
 
 from grpc.aio._call import AioRpcError
 
+from nautilus_trader.adapters.dydx.common.constants import DYDX_RETRY_ERRORS_GRPC
 from nautilus_trader.adapters.dydx.grpc.errors import DYDXGRPCError
 
 
@@ -54,7 +55,7 @@ def should_retry(error: BaseException) -> bool:
 
     """
     if isinstance(error, DYDXGRPCError):
-        return True
+        return error.code in DYDX_RETRY_ERRORS_GRPC
 
     if isinstance(error, AioRpcError):
         return True
