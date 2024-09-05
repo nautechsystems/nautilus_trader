@@ -438,6 +438,103 @@ class DYDXWsOrderbookSnapshotChannelData(msgspec.Struct, forbid_unknown_fields=T
         return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
 
 
+class DYDXWsOrderbookBatchedData(msgspec.Struct, forbid_unknown_fields=True):
+    """
+    Define the order book batched deltas message.
+    """
+
+    type: str
+    connection_id: str
+    message_id: int
+    channel: str
+    id: str
+    contents: list[DYDXWsOrderbookMessageContents]
+    clobPairId: str | None = None
+    version: str | None = None
+
+    def parse_to_deltas(
+        self,
+        instrument_id: InstrumentId,
+        price_precision: int,
+        size_precision: int,
+        ts_event: int,
+        ts_init: int,
+    ) -> OrderBookDeltas:
+        """
+        Parse the order book message into OrderBookDeltas.
+        """
+        deltas: list[OrderBookDelta] = []
+        num_delta_messages = len(self.contents)
+
+        for delta_message_id, deltas_message in enumerate(self.contents):
+            if deltas_message.bids is None:
+                deltas_message.bids = []
+
+            if deltas_message.asks is None:
+                deltas_message.asks = []
+
+            num_bids = len(deltas_message.bids)
+            num_asks = len(deltas_message.asks)
+
+            for bid_id, bid in enumerate(deltas_message.bids):
+                flags = 0
+
+                if (
+                    delta_message_id == num_delta_messages - 1
+                    and bid_id == num_bids - 1
+                    and num_asks == 0
+                ):
+                    # F_LAST, 1 << 7
+                    # Last message in the packet from the venue for a given `instrument_id`
+                    flags = RecordFlag.F_LAST
+
+                size = Quantity(Decimal(bid[1]), size_precision)
+                action = BookAction.DELETE if size == 0 else BookAction.UPDATE
+                delta = OrderBookDelta(
+                    instrument_id=instrument_id,
+                    action=action,
+                    order=BookOrder(
+                        side=OrderSide.BUY,
+                        price=Price(Decimal(bid[0]), price_precision),
+                        size=size,
+                        order_id=0,
+                    ),
+                    flags=flags,
+                    sequence=0,
+                    ts_event=ts_event,
+                    ts_init=ts_init,
+                )
+                deltas.append(delta)
+
+            for ask_id, ask in enumerate(deltas_message.asks):
+                flags = 0
+
+                if delta_message_id == num_delta_messages - 1 and ask_id == num_asks - 1:
+                    # F_LAST, 1 << 7
+                    # Last message in the packet from the venue for a given `instrument_id`
+                    flags = RecordFlag.F_LAST
+
+                size = Quantity(Decimal(ask[1]), size_precision)
+                action = BookAction.DELETE if size == 0 else BookAction.UPDATE
+                delta = OrderBookDelta(
+                    instrument_id=instrument_id,
+                    action=action,
+                    order=BookOrder(
+                        side=OrderSide.SELL,
+                        price=Price(Decimal(ask[0]), price_precision),
+                        size=size,
+                        order_id=0,
+                    ),
+                    flags=flags,
+                    sequence=0,
+                    ts_event=ts_event,
+                    ts_init=ts_init,
+                )
+                deltas.append(delta)
+
+        return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
+
+
 class DYDXWsSubaccountsSubscribedContents(msgspec.Struct, forbid_unknown_fields=True):
     """
     Define the contents of the sub accounts subscribed message.
