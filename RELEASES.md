@@ -19,6 +19,7 @@ Released on TBD (UTC).
 - Improved `WebSocketClient` error handling and added `WebSocketClientError` exception for Python (#1876), thanks @twitu
 - Improved `WebSocketClient.send_text` efficiency (now accepts UTF-8 encoded bytes, rather than a Python string)
 - Improved `@customdataclass` decorator with `date` field and refined `__repr__` (#1900, #1906, #1909), thanks @faysou
+- Improved standardization of `OrderBookDeltas` parsing and records flags for crypto venues
 - Refactored `RedisMessageBusDatabase` to tokio tasks
 - Refactored `RedisCacheDatabase` to tokio tasks
 - Upgraded `tokio` crate to v1.40.0

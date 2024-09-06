@@ -21,14 +21,13 @@ from nautilus_trader.adapters.binance.common.schemas.market import BinanceOrderB
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceRateLimit
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceSymbolFilter
 from nautilus_trader.core.datetime import millis_to_nanos
-from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
-from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Currency
@@ -123,35 +122,45 @@ class BinanceSpotOrderBookPartialDepthData(msgspec.Struct):
         instrument_id: InstrumentId,
         ts_init: int,
     ) -> OrderBookDeltas:
-        bids = [
-            BookOrder(OrderSide.BUY, Price.from_str(o.price), Quantity.from_str(o.size), 0)
-            for o in self.bids
-        ]
-        asks = [
-            BookOrder(OrderSide.SELL, Price.from_str(o.price), Quantity.from_str(o.size), 0)
-            for o in self.asks
-        ]
+        num_bids_raw = len(self.bids)
+        num_asks_raw = len(self.asks)
 
-        deltas = [
-            OrderBookDelta.clear(
-                instrument_id,
-                self.lastUpdateId,
-                ts_init,
-                ts_init,
-            ),
-        ]
-        deltas += [
-            OrderBookDelta(
-                instrument_id,
-                BookAction.ADD,
-                o,
-                flags=0,
+        deltas: list[OrderBookDelta] = [OrderBookDelta.clear(instrument_id, 0, ts_init, ts_init)]
+
+        for idx, bid in enumerate(self.bids):
+            flags = 0
+            if idx == num_bids_raw - 1 and num_asks_raw == 0:
+                # F_LAST, 1 << 7
+                # Last message in the packet from the venue for a given `instrument_id`
+                flags = RecordFlag.F_LAST
+
+            delta = bid.parse_to_order_book_delta(
+                instrument_id=instrument_id,
+                side=OrderSide.BUY,
+                flags=flags,
                 sequence=self.lastUpdateId,
                 ts_event=ts_init,  # No event timestamp
                 ts_init=ts_init,
             )
-            for o in bids + asks
-        ]
+            deltas.append(delta)
+
+        for idx, ask in enumerate(self.asks):
+            flags = 0
+            if idx == num_asks_raw - 1:
+                # F_LAST, 1 << 7
+                # Last message in the book event or packet from the venue for a given `instrument_id`
+                flags = RecordFlag.F_LAST
+
+            delta = ask.parse_to_order_book_delta(
+                instrument_id=instrument_id,
+                side=OrderSide.SELL,
+                flags=flags,
+                sequence=self.lastUpdateId,
+                ts_event=ts_init,  # No event timestamp
+                ts_init=ts_init,
+            )
+            deltas.append(delta)
+
         return OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
 
 
