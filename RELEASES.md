@@ -1,6 +1,6 @@
 # NautilusTrader 1.200.0 Beta
 
-Released on 6th September 2024 (UTC).
+Released on 7th September 2024 (UTC).
 
 ### Enhancements
 - Added dYdX integration (#1861, #1868, #1873, #1874, #1875, #1877, #1879, #1880, #1882, #1886, #1887, #1890, #1891, #1896, #1901, #1903, #1907, #1910, #1911, #1913), thanks @davidsblom
@@ -35,6 +35,8 @@ Released on 6th September 2024 (UTC).
 - Fixed `OrderBook` memory deallocation in Python finalizer (memory was not being freed on object destruction), thanks for reporting @zeyuhuan
 - Fixed `Order` tags serialization (was not concatenating to a single string), thanks for reporting @DevRoss
 - Fixed `types_filter` serialization in `MessageBusConfig` during kernel setup
+- Fixed `InstrumentProvider` handling of `load_ids_on_start` when elements are already `InstrumentId`s
+- Fixed `InstrumentProviderConfig` hashing for `filters` field by using `frozendict`
 
 ---
 
