@@ -298,7 +298,7 @@ class DYDXWsOrderbookChannelData(msgspec.Struct, forbid_unknown_fields=True):
 
             if ask_id == num_asks_raw - 1:
                 # F_LAST, 1 << 7
-                # Last message in the packet from the venue for a given `instrument_id`
+                # Last message in the book event or packet from the venue for a given `instrument_id`
                 flags = RecordFlag.F_LAST
 
             size = Quantity(Decimal(ask[1]), size_precision)
@@ -369,9 +369,9 @@ class DYDXWsOrderbookSnapshotChannelData(msgspec.Struct, forbid_unknown_fields=T
         # Add initial clear
         clear = OrderBookDelta.clear(
             instrument_id=instrument_id,
+            sequence=0,
             ts_event=ts_event,
             ts_init=ts_init,
-            sequence=0,
         )
         deltas.append(clear)
 

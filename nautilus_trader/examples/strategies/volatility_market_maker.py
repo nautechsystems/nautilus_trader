@@ -129,7 +129,6 @@ class VolatilityMarketMaker(Strategy):
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
         self.subscribe_quote_ticks(self.instrument_id)
-
         self.subscribe_trade_ticks(self.instrument_id)
         # self.subscribe_order_book_deltas(self.instrument_id)  # For debugging
         # self.subscribe_order_book_at_interval(

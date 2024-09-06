@@ -132,7 +132,14 @@ class BinanceSpotOrderBookPartialDepthData(msgspec.Struct):
             for o in self.asks
         ]
 
-        deltas = [OrderBookDelta.clear(instrument_id, ts_init, ts_init, self.lastUpdateId)]
+        deltas = [
+            OrderBookDelta.clear(
+                instrument_id,
+                self.lastUpdateId,
+                ts_init,
+                ts_init,
+            ),
+        ]
         deltas += [
             OrderBookDelta(
                 instrument_id,

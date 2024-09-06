@@ -281,9 +281,9 @@ def test_delta_clear() -> None:
     # Arrange, Act
     delta = OrderBookDelta.clear(
         instrument_id=AUDUSD,
+        sequence=42,
         ts_event=0,
         ts_init=1_000_000_000,
-        sequence=42,
     )
 
     # Assert
