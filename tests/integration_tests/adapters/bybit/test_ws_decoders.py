@@ -240,12 +240,13 @@ class TestBybitWsDecoders:
         decoder = msgspec.json.Decoder(BybitWsOrderbookDepthMsg)
 
         # Act
-        result = decoder.decode(item).data.parse_to_snapshot(
+        result = decoder.decode(item).data.parse_to_deltas(
             instrument_id=instrument_id,
             price_precision=2,
             size_precision=2,
             ts_event=0,
             ts_init=0,
+            snapshot=True,
         )
 
         # Assert
@@ -270,12 +271,13 @@ class TestBybitWsDecoders:
         decoder = msgspec.json.Decoder(BybitWsOrderbookDepthMsg)
 
         # Act
-        result = decoder.decode(item).data.parse_to_snapshot(
+        result = decoder.decode(item).data.parse_to_deltas(
             instrument_id=instrument_id,
             price_precision=2,
             size_precision=2,
             ts_event=0,
             ts_init=0,
+            snapshot=True,
         )
 
         # Assert

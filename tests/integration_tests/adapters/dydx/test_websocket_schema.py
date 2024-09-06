@@ -862,9 +862,9 @@ def test_orderbook_snapshot(instrument_id: InstrumentId) -> None:
     expected_num_deltas = 201
     expected_clear = OrderBookDelta.clear(
         instrument_id=instrument_id,
+        sequence=0,
         ts_event=0,
         ts_init=0,
-        sequence=0,
     )
     expected_delta = OrderBookDelta(
         instrument_id=instrument_id,

@@ -120,9 +120,10 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
     def _handle_book_partial_update(self, raw: bytes) -> None:
         msg = self._decoder_order_book_msg.decode(raw)
         instrument_id: InstrumentId = self._get_cached_instrument_id(msg.data.s)
-        book_snapshot: OrderBookDeltas = msg.data.parse_to_order_book_snapshot(
+        book_snapshot: OrderBookDeltas = msg.data.parse_to_order_book_deltas(
             instrument_id=instrument_id,
             ts_init=self._clock.timestamp_ns(),
+            snapshot=True,
         )
         # Check if book buffer active
         book_buffer: list[OrderBookDelta | OrderBookDeltas] | None = self._book_buffer.get(
