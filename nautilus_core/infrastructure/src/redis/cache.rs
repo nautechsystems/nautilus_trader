@@ -166,7 +166,8 @@ impl RedisCacheDatabase {
     }
 
     pub fn close(&mut self) {
-        log::debug!("Closing cache database adapter");
+        log::debug!("Closing");
+
         if let Err(e) = self.tx.send(DatabaseCommand::close()) {
             log::debug!("Error sending close message: {e:?}")
         }
@@ -177,6 +178,8 @@ impl RedisCacheDatabase {
                 log::error!("Error awaiting task '{CACHE_WRITE}': {:?}", e);
             }
         });
+
+        log::debug!("Closed");
     }
 
     pub fn flushdb(&mut self) {

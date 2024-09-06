@@ -147,23 +147,25 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
     fn publish(&self, topic: String, payload: Bytes) {
         let msg = BusMessage { topic, payload };
         if let Err(e) = self.pub_tx.send(msg) {
-            log::error!("Failed to send message: {}", e);
+            log::error!("Failed to send message: {e}");
         }
     }
 
     /// Closes the message bus database adapter.
     fn close(&mut self) {
-        log::debug!("Closing message bus database adapter");
+        log::debug!("Closing");
 
         self.stream_signal.store(true, Ordering::Relaxed);
         self.heartbeat_signal.store(true, Ordering::Relaxed);
 
-        let msg = BusMessage {
-            topic: CLOSE_TOPIC.to_string(),
-            payload: Bytes::new(), // Empty
-        };
-        if let Err(e) = self.pub_tx.send(msg) {
-            log::error!("Failed to send close message: {:?}", e);
+        if !self.pub_tx.is_closed() {
+            let msg = BusMessage {
+                topic: CLOSE_TOPIC.to_string(),
+                payload: Bytes::new(), // Empty
+            };
+            if let Err(e) = self.pub_tx.send(msg) {
+                log::error!("Failed to send close message: {e:?}");
+            }
         }
 
         // Keep close sync for now to avoid async trait method
@@ -172,6 +174,8 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
                 self.close_async().await;
             });
         });
+
+        log::debug!("Closed");
     }
 }
 
@@ -218,7 +222,7 @@ pub async fn publish_messages(
     let mut con = create_redis_connection(MSGBUS_PUBLISH, db_config.clone())?;
     let stream_key = get_stream_key(trader_id, instance_id, &config);
 
-    // Autotrimming
+    // Auto-trimming
     let autotrim_duration = config
         .autotrim_mins
         .filter(|&mins| mins > 0)
@@ -242,17 +246,19 @@ pub async fn publish_messages(
             )?;
             last_drain = Instant::now();
         } else {
-            // Continue to receive and handle messages until channel is hung up
-            // or the close topic is received.
             match rx.recv().await {
                 Some(msg) => {
                     if msg.topic == CLOSE_TOPIC {
+                        tracing::debug!("Received close message");
                         drop(rx);
                         break;
                     }
                     buffer.push_back(msg);
                 }
-                None => break, // Channel hung up
+                None => {
+                    tracing::debug!("Channel hung up");
+                    break;
+                }
             }
         }
     }
@@ -269,6 +275,7 @@ pub async fn publish_messages(
         )?;
     }
 
+    tracing::debug!("Stopped message publishing");
     Ok(())
 }
 
@@ -429,7 +436,7 @@ async fn run_heartbeat(
     signal: Arc<AtomicBool>,
     pub_tx: tokio::sync::mpsc::UnboundedSender<BusMessage>,
 ) {
-    tracing::info!("Starting heartbeat at {heartbeat_interval_secs} second intervals");
+    tracing::debug!("Starting heartbeat at {heartbeat_interval_secs} second intervals");
 
     let heartbeat_interval = Duration::from_secs(heartbeat_interval_secs as u64);
     let heartbeat_timer = tokio::time::interval(heartbeat_interval);
