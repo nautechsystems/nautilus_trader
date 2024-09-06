@@ -347,7 +347,7 @@ class LiveExecutionEngine(ExecutionEngine):
 
     def _on_stop(self) -> None:
         if self._inflight_check_task:
-            self._log.info(f"Canceling task '{self._inflight_check_task.get_name()}'")
+            self._log.debug(f"Canceling task '{self._inflight_check_task.get_name()}'")
             self._inflight_check_task.cancel()
             self._inflight_check_task = None
 
