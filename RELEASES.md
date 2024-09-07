@@ -38,7 +38,7 @@ Released on 7th September 2024 (UTC).
 - Fixed `Order` tags serialization (was not concatenating to a single string), thanks for reporting @DevRoss
 - Fixed `types_filter` serialization in `MessageBusConfig` during kernel setup
 - Fixed `InstrumentProvider` handling of `load_ids_on_start` when elements are already `InstrumentId`s
-- Fixed `InstrumentProviderConfig` hashing for `filters` field by using `frozendict`
+- Fixed `InstrumentProviderConfig` hashing for `filters` field
 
 ---
 
