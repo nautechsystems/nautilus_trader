@@ -1220,19 +1220,28 @@ class DYDXExecutionClient(LiveExecutionClient):
         )
 
         await self._cancel_order_single_and_retry(
-            client_order_id=client_order_id,
+            order=order,
             order_id=order_id,
             good_til_date_secs=good_til_date_secs,
         )
 
     async def _cancel_order_single_and_retry(
         self,
-        client_order_id: ClientOrderId,
+        order: Order,
         order_id: DYDXOrderId,
         good_til_date_secs: int | None,
     ) -> None:
         if self._wallet is None:
-            self._log.error(f"Cannot cancel order {client_order_id!r}: no wallet available.")
+            reason = f"Cannot cancel order {order.client_order_id!r}: no wallet available."
+            self._log.error(reason)
+            self.generate_order_cancel_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                reason=reason,
+                ts_event=self._clock.timestamp_ns(),
+            )
             return
 
         is_expired = (
@@ -1242,7 +1251,16 @@ class DYDXExecutionClient(LiveExecutionClient):
         )
 
         if is_expired:
-            self._log.warning(f"Cannot cancel order: order {client_order_id!r} is expired")
+            reason = f"Cannot cancel order: order {order.client_order_id!r} is expired"
+            self._log.warning(reason)
+            self.generate_order_cancel_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                venue_order_id=order.venue_order_id,
+                reason=reason,
+                ts_event=self._clock.timestamp_ns(),
+            )
             return
 
         current_block = await self._grpc_account.latest_block_height()
@@ -1250,10 +1268,20 @@ class DYDXExecutionClient(LiveExecutionClient):
         async with self._retry_manager_pool as retry_manager:
             await retry_manager.run(
                 name="cancel_order",
-                details=[client_order_id],
+                details=[order.client_order_id, order.venue_order_id],
                 func=self._grpc_account.cancel_order,
                 wallet=self._wallet,
                 order_id=order_id,
                 good_til_block=current_block + 10,
                 good_til_block_time=good_til_date_secs,
             )
+            if not retry_manager.result:
+                self._log.error(f"Failed to cancel order: {retry_manager.message}")
+                self.generate_order_cancel_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                    reason=retry_manager.message,
+                    ts_event=self._clock.timestamp_ns(),
+                )
