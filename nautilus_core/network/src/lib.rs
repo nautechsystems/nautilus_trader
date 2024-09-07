@@ -32,6 +32,7 @@ pub mod http;
 #[allow(dead_code)]
 mod ratelimiter;
 pub mod socket;
+mod tls;
 pub mod websocket;
 
 #[cfg(feature = "python")]

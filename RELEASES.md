@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Removed vendored `tokio-tungstenite` crate, thanks @VioletSakura-7
 
 ### Breaking Changes
 None
