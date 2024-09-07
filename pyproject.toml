@@ -56,7 +56,6 @@ numpy = ">=2.0.1"  # Build dependency
 setuptools = ">=73" # Build dependency
 toml = "^0.10.2"  # Build dependency
 click = "^8.1.7"
-frozendict = "^2.4.4"
 fsspec = "==2023.6.0"  # Pinned due breaking changes
 msgspec = "^0.18.6"
 pandas = "^2.2.2"

@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import pytest
-from frozendict import frozendict
 
 from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.config import ActorFactory
@@ -25,13 +24,14 @@ from nautilus_trader.test_kit.mocks.actors import MockActor
 @pytest.mark.parametrize(
     "filters",
     [
+        None,
+        {},
         {"A": 1, "B": 2, "C": 3},
-        frozendict({"A": 1, "B": 2, "C": 3}),
     ],
 )
-def test_instrument_provider_config_hash(filters: dict | frozendict) -> None:
+def test_instrument_provider_config_hash(filters: dict | None) -> None:
     # Arrange
-    config = InstrumentProviderConfig(filters=filters)  # type: ignore
+    config = InstrumentProviderConfig(filters=filters)
 
     # Act
     result = hash(config)
