@@ -46,6 +46,7 @@ from nautilus_trader.core.rust.model cimport InstrumentCloseType
 from nautilus_trader.core.rust.model cimport MarketStatusAction
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport PriceType
+from nautilus_trader.core.rust.model cimport RecordFlag
 from nautilus_trader.core.rust.model cimport bar_eq
 from nautilus_trader.core.rust.model cimport bar_hash
 from nautilus_trader.core.rust.model cimport bar_new
@@ -2311,6 +2312,7 @@ cdef class OrderBookDelta(Data):
         """
         return OrderBookDelta.clear_c(instrument_id, sequence, ts_event, ts_init)
 
+
     @staticmethod
     def to_pyo3_list(list[OrderBookDelta] deltas) -> list[nautilus_pyo3.OrderBookDelta]:
         """
@@ -2663,6 +2665,24 @@ cdef class OrderBookDeltas(Data):
 
         """
         return OrderBookDeltas.to_dict_c(obj)
+
+    @staticmethod
+    def batch(list data: list[OrderBookDelta]) -> list[OrderBookDeltas]:
+        cdef list[list[OrderBookDelta]] batches = []
+        cdef list[OrderBookDelta] batch = []
+
+        cdef:
+            OrderBookDelta delta
+        for delta in data:
+            batch.append(delta)
+            if delta.flags == RecordFlag.F_LAST:
+                batches.append(batch)
+                batch = []
+
+        if batch:
+            batches.append(batch)
+
+        return [OrderBookDeltas(batch[0].instrument_id, deltas=batch) for batch in batches]
 
     cpdef to_capsule(self):
         cdef OrderBookDeltas_API *data = <OrderBookDeltas_API *>PyMem_Malloc(sizeof(OrderBookDeltas_API))
