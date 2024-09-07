@@ -23,7 +23,6 @@ from typing import Annotated, Any
 
 import msgspec
 import pandas as pd
-from frozendict import frozendict
 from msgspec import Meta
 
 from nautilus_trader.common import Environment
@@ -381,7 +380,7 @@ class InstrumentProviderConfig(NautilusConfig, frozen=True):
         )
 
     def __hash__(self):
-        filters = frozendict(self.filters) if self.filters else None
+        filters = frozenset(self.filters.items()) if self.filters else None
         return hash((self.load_all, self.load_ids, filters))
 
     load_all: bool = False
