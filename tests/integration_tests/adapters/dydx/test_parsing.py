@@ -97,10 +97,11 @@ def test_parse_nautilus_order_type(
     [
         (DYDXOrderSide.BUY, OrderSide.BUY),
         (DYDXOrderSide.SELL, OrderSide.SELL),
+        (None, OrderSide.NO_ORDER_SIDE),
     ],
 )
 def test_parse_order_side(
-    dydx_order_side: DYDXOrderSide,
+    dydx_order_side: DYDXOrderSide | None,
     expected_result: OrderSide,
     enum_parser: DYDXEnumParser,
 ) -> None:
@@ -119,11 +120,12 @@ def test_parse_order_side(
     [
         (OrderSide.BUY, DYDXOrderSide.BUY),
         (OrderSide.SELL, DYDXOrderSide.SELL),
+        (OrderSide.NO_ORDER_SIDE, None),
     ],
 )
 def test_parse_nautilus_order_side(
     order_side: OrderSide,
-    expected_result: DYDXOrderSide,
+    expected_result: DYDXOrderSide | None,
     enum_parser: DYDXEnumParser,
 ) -> None:
     """
