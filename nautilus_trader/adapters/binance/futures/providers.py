@@ -54,7 +54,7 @@ from nautilus_trader.model.objects import Quantity
 
 class BinanceFuturesInstrumentProvider(InstrumentProvider):
     """
-    Provides a means of loading instruments from the `Binance Futures` exchange.
+    Provides a means of loading instruments from the Binance Futures exchange.
 
     Parameters
     ----------

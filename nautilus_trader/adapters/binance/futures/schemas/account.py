@@ -37,7 +37,7 @@ from nautilus_trader.model.objects import Quantity
 
 class BinanceFuturesBalanceInfo(msgspec.Struct, frozen=True):
     """
-    HTTP response 'inner struct' from `Binance Futures` GET /fapi/v2/account (HMAC
+    HTTP response 'inner struct' from Binance Futures GET /fapi/v2/account (HMAC
     SHA256).
     """
 
@@ -82,7 +82,7 @@ class BinanceFuturesBalanceInfo(msgspec.Struct, frozen=True):
 
 class BinanceFuturesAccountInfo(msgspec.Struct, kw_only=True, frozen=True):
     """
-    HTTP response from `Binance Futures` GET /fapi/v2/account (HMAC SHA256).
+    HTTP response from Binance Futures GET /fapi/v2/account (HMAC SHA256).
     """
 
     feeTier: int  # account commission tier
@@ -158,7 +158,7 @@ class BinanceFuturesPositionRisk(msgspec.Struct, kw_only=True, frozen=True):
 
 class BinanceFuturesDualSidePosition(msgspec.Struct, frozen=True):
     """
-    HTTP response from `Binance Futures` GET /fapi/v1/positionSide/dual (HMAC SHA256).
+    HTTP response from Binance Futures GET /fapi/v1/positionSide/dual (HMAC SHA256).
     """
 
     dualSidePosition: bool
@@ -166,7 +166,7 @@ class BinanceFuturesDualSidePosition(msgspec.Struct, frozen=True):
 
 class BinanceFuturesFeeRates(msgspec.Struct, frozen=True):
     """
-    Represents a `BinanceFutures` fee tier.
+    Represents a Binance Futures fee tier.
 
     https://www.binance.com/en/fee/futureFee
 

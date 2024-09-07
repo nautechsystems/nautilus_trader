@@ -42,7 +42,7 @@ from nautilus_trader.model.objects import Quantity
 
 class BinanceFuturesAsset(msgspec.Struct, frozen=True):
     """
-    HTTP response 'inner struct' from `Binance Futures` GET /fapi/v1/exchangeInfo.
+    HTTP response 'inner struct' from Binance Futures GET /fapi/v1/exchangeInfo.
     """
 
     asset: str
@@ -52,7 +52,7 @@ class BinanceFuturesAsset(msgspec.Struct, frozen=True):
 
 class BinanceFuturesSymbolInfo(msgspec.Struct, kw_only=True, frozen=True):
     """
-    HTTP response 'inner struct' from `Binance Futures` GET /fapi/v1/exchangeInfo.
+    HTTP response 'inner struct' from Binance Futures GET /fapi/v1/exchangeInfo.
     """
 
     symbol: str
@@ -101,7 +101,7 @@ class BinanceFuturesSymbolInfo(msgspec.Struct, kw_only=True, frozen=True):
 
 class BinanceFuturesExchangeInfo(msgspec.Struct, kw_only=True, frozen=True):
     """
-    HTTP response from `Binance Futures` GET /fapi/v1/exchangeInfo.
+    HTTP response from Binance Futures GET /fapi/v1/exchangeInfo.
     """
 
     timezone: str
@@ -114,7 +114,7 @@ class BinanceFuturesExchangeInfo(msgspec.Struct, kw_only=True, frozen=True):
 
 class BinanceFuturesMarkFunding(msgspec.Struct, frozen=True):
     """
-    HTTP response from `Binance Future` GET /fapi/v1/premiumIndex.
+    HTTP response from Binance Futures GET /fapi/v1/premiumIndex.
     """
 
     symbol: str
@@ -131,7 +131,7 @@ class BinanceFuturesMarkFunding(msgspec.Struct, frozen=True):
 
 class BinanceFuturesFundRate(msgspec.Struct, frozen=True):
     """
-    HTTP response from `Binance Future` GET /fapi/v1/fundingRate.
+    HTTP response from Binance Futures GET /fapi/v1/fundingRate.
     """
 
     symbol: str
@@ -146,7 +146,7 @@ class BinanceFuturesFundRate(msgspec.Struct, frozen=True):
 
 class BinanceFuturesTradeData(msgspec.Struct, frozen=True):
     """
-    WebSocket message 'inner struct' for `Binance Futures` Trade Streams.
+    WebSocket message 'inner struct' for Binance Futures Trade Streams.
 
     Fields
     ------
@@ -190,7 +190,7 @@ class BinanceFuturesTradeData(msgspec.Struct, frozen=True):
 
 class BinanceFuturesTradeMsg(msgspec.Struct, frozen=True):
     """
-    WebSocket message from `Binance Futures` Trade Streams.
+    WebSocket message from Binance Futures Trade Streams.
     """
 
     stream: str
@@ -199,7 +199,7 @@ class BinanceFuturesTradeMsg(msgspec.Struct, frozen=True):
 
 class BinanceFuturesMarkPriceData(msgspec.Struct, frozen=True):
     """
-    WebSocket message 'inner struct' for `Binance Futures` Mark Price Update events.
+    WebSocket message 'inner struct' for Binance Futures Mark Price Update events.
     """
 
     e: str  # Event type
@@ -230,7 +230,7 @@ class BinanceFuturesMarkPriceData(msgspec.Struct, frozen=True):
 
 class BinanceFuturesMarkPriceMsg(msgspec.Struct, frozen=True):
     """
-    WebSocket message from `Binance Futures` Mark Price Update events.
+    WebSocket message from Binance Futures Mark Price Update events.
     """
 
     stream: str

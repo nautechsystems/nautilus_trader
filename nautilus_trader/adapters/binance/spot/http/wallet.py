@@ -83,7 +83,7 @@ class BinanceSpotTradeFeeHttp(BinanceHttpEndpoint):
 
 class BinanceSpotWalletHttpAPI:
     """
-    Provides access to the `Binance Spot/Margin` Wallet HTTP REST API.
+    Provides access to the Binance Spot/Margin Wallet HTTP REST API.
 
     Parameters
     ----------

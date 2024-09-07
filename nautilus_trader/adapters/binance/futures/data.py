@@ -41,7 +41,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 class BinanceFuturesDataClient(BinanceCommonDataClient):
     """
-    Provides a data client for the `Binance Futures` exchange.
+    Provides a data client for the Binance Futures exchange.
 
     Parameters
     ----------

@@ -23,7 +23,7 @@ from nautilus_trader.model.objects import Price
 
 class BinanceFuturesMarkPriceUpdate(Data):
     """
-    Represents a `Binance Futures` mark price and funding rate update.
+    Represents a Binance Futures mark price and funding rate update.
 
     Parameters
     ----------
@@ -111,7 +111,7 @@ class BinanceFuturesMarkPriceUpdate(Data):
     @staticmethod
     def from_dict(values: dict[str, Any]) -> "BinanceFuturesMarkPriceUpdate":
         """
-        Return a `Binance Futures` mark price update parsed from the given values.
+        Return a Binance Futures mark price update parsed from the given values.
 
         Parameters
         ----------

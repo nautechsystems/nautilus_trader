@@ -69,7 +69,7 @@ class BinanceSpotUserMsgWrapper(msgspec.Struct, frozen=True):
 
 class BinanceSpotBalance(msgspec.Struct, frozen=True):
     """
-    Inner struct for `Binance Spot/Margin` balances.
+    Inner struct for Binance Spot/Margin balances.
     """
 
     a: str  # Asset
@@ -90,7 +90,7 @@ class BinanceSpotBalance(msgspec.Struct, frozen=True):
 
 class BinanceSpotAccountUpdateMsg(msgspec.Struct, frozen=True):
     """
-    WebSocket message for `Binance Spot/Margin` Account Update events.
+    WebSocket message for Binance Spot/Margin Account Update events.
     """
 
     e: str  # Event Type
@@ -115,7 +115,7 @@ class BinanceSpotAccountUpdateMsg(msgspec.Struct, frozen=True):
 
 class BinanceSpotAccountUpdateWrapper(msgspec.Struct, frozen=True):
     """
-    WebSocket message wrapper for `Binance Spot/Margin` Account Update events.
+    WebSocket message wrapper for Binance Spot/Margin Account Update events.
     """
 
     stream: str
@@ -124,7 +124,7 @@ class BinanceSpotAccountUpdateWrapper(msgspec.Struct, frozen=True):
 
 class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
     """
-    WebSocket message 'inner struct' for `Binance Spot/Margin` Order Update events.
+    WebSocket message 'inner struct' for Binance Spot/Margin Order Update events.
     """
 
     e: BinanceSpotEventType
@@ -293,7 +293,7 @@ class BinanceSpotOrderUpdateData(msgspec.Struct, kw_only=True):
 
 class BinanceSpotOrderUpdateWrapper(msgspec.Struct, frozen=True):
     """
-    WebSocket message wrapper for `Binance Spot/Margin` Order Update events.
+    WebSocket message wrapper for Binance Spot/Margin Order Update events.
     """
 
     stream: str

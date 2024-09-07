@@ -130,7 +130,7 @@ class BinanceSpotAvgPriceHttp(BinanceHttpEndpoint):
 
 class BinanceSpotMarketHttpAPI(BinanceMarketHttpAPI):
     """
-    Provides access to the `Binance Spot` Market HTTP REST API.
+    Provides access to the Binance Spot Market HTTP REST API.
 
     Parameters
     ----------

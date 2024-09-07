@@ -338,7 +338,7 @@ class BinanceFuturesPositionRiskHttp(BinanceHttpEndpoint):
 
 class BinanceFuturesAccountHttpAPI(BinanceAccountHttpAPI):
     """
-    Provides access to the `Binance Futures` Account/Trade HTTP REST API.
+    Provides access to the Binance Futures Account/Trade HTTP REST API.
 
     Parameters
     ----------

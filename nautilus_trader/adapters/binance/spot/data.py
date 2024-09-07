@@ -38,7 +38,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 class BinanceSpotDataClient(BinanceCommonDataClient):
     """
-    Provides a data client for the `Binance Spot/Margin` exchange.
+    Provides a data client for the Binance Spot/Margin exchange.
 
     Parameters
     ----------

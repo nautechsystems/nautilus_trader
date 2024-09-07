@@ -48,7 +48,7 @@ from nautilus_trader.model.objects import Quantity
 
 class BinanceSpotInstrumentProvider(InstrumentProvider):
     """
-    Provides a means of loading instruments from the `Binance Spot/Margin` exchange.
+    Provides a means of loading instruments from the Binance Spot/Margin exchange.
 
     Parameters
     ----------

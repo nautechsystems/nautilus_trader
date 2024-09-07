@@ -524,7 +524,7 @@ class BinanceSpotOrderRateLimitHttp(BinanceHttpEndpoint):
 
 class BinanceSpotAccountHttpAPI(BinanceAccountHttpAPI):
     """
-    Provides access to the `Binance Spot/Margin` Account/Trade HTTP REST API.
+    Provides access to the Binance Spot/Margin Account/Trade HTTP REST API.
 
     Parameters
     ----------
