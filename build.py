@@ -361,9 +361,9 @@ if __name__ == "__main__":
     print(f"Rust:   {_get_rustc_version()}")
     print(f"Python: {platform.python_version()} ({sys.executable})")
     print(f"Cython: {cython_compiler_version}")
-    print(f"NumPy:  {np.__version__}\n")
+    print(f"NumPy:  {np.__version__}")
 
-    print(f"RUST_TOOLCHAIN={RUST_TOOLCHAIN}")
+    print(f"\nRUST_TOOLCHAIN={RUST_TOOLCHAIN}")
     print(f"BUILD_MODE={BUILD_MODE}")
     print(f"BUILD_DIR={BUILD_DIR}")
     print(f"PROFILE_MODE={PROFILE_MODE}")
@@ -371,16 +371,10 @@ if __name__ == "__main__":
     print(f"PARALLEL_BUILD={PARALLEL_BUILD}")
     print(f"COPY_TO_SOURCE={COPY_TO_SOURCE}")
     print(f"PYO3_ONLY={PYO3_ONLY}")
+    print(f"CFLAGS={os.environ['CFLAGS']}") if "CFLAGS" in os.environ else None
+    print(f"LDFLAGS={os.environ['LDFLAGS']}") if "LDFLAGS" in os.environ else None
 
-    CFLAGS = os.environ.get("CFLAGS")
-    if CFLAGS:
-        print(f"CFLAGS={CFLAGS}")
-
-    LDFLAGS = os.environ.get("LDFLAGS")
-    if LDFLAGS:
-        print(f"LDFLAGS={LDFLAGS}\n")
-
-    print("Starting build...")
+    print("\nStarting build...")
     ts_start = datetime.datetime.now(datetime.timezone.utc)
     build()
     print(f"Build time: {datetime.datetime.now(datetime.timezone.utc) - ts_start}")
