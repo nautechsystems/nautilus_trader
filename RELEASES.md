@@ -3,7 +3,8 @@
 Released on TBD (UTC).
 
 ### Enhancements
-- Removed vendored `tokio-tungstenite` crate, thanks @VioletSakura-7
+- Added `OrderCancelRejected` event generation for dYdX adapter (#1916), thanks @davidsblom
+- Removed vendored `tokio-tungstenite` crate (#1902), thanks @VioletSakura-7
 
 ### Breaking Changes
 None
