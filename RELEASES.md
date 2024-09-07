@@ -10,7 +10,7 @@ Released on TBD (UTC).
 None
 
 ### Fixes
-None
+- Fixed `BinanceFuturesEventType` by adding new `TRADE_LITE` member, reflecting the Binance update on 2024-09-03 (UTC)
 
 ---
 

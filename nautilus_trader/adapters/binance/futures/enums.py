@@ -122,6 +122,7 @@ class BinanceFuturesEventType(Enum):
     ACCOUNT_UPDATE = "ACCOUNT_UPDATE"
     ORDER_TRADE_UPDATE = "ORDER_TRADE_UPDATE"
     ACCOUNT_CONFIG_UPDATE = "ACCOUNT_CONFIG_UPDATE"
+    TRADE_LITE = "TRADE_LITE"
 
 
 class BinanceFuturesEnumParser(BinanceEnumParser):
