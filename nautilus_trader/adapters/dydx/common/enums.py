@@ -227,9 +227,17 @@ class DYDXEnumParser:
             DYDXOrderType.STOP_MARKET: OrderType.STOP_MARKET,
         }
 
+        self.nautilus_to_dydx_order_type = {
+            value: key for key, value in self.dydx_to_nautilus_order_type.items()
+        }
+
         self.dydx_to_nautilus_order_side = {
             DYDXOrderSide.BUY: OrderSide.BUY,
             DYDXOrderSide.SELL: OrderSide.SELL,
+        }
+
+        self.nautilus_to_dydx_order_side = {
+            value: key for key, value in self.dydx_to_nautilus_order_side.items()
         }
 
         self.dydx_to_nautilus_order_status = {
@@ -275,6 +283,12 @@ class DYDXEnumParser:
         """
         return self.dydx_to_nautilus_order_type[order_type]
 
+    def parse_nautilus_order_type(self, order_type: OrderType) -> DYDXOrderType:
+        """
+        Convert a Nautilus order type to a DYDX order type.
+        """
+        return self.nautilus_to_dydx_order_type[order_type]
+
     def parse_dydx_order_side(self, order_side: DYDXOrderSide | None) -> OrderSide:
         """
         Convert a DYDX order side to a Nautilus order side.
@@ -283,6 +297,15 @@ class DYDXEnumParser:
             return OrderSide.NO_ORDER_SIDE
 
         return self.dydx_to_nautilus_order_side[order_side]
+
+    def parse_nautilus_order_side(self, order_side: OrderSide) -> DYDXOrderSide | None:
+        """
+        Convert a Nautilus order side to a DYDX order side.
+        """
+        if order_side == OrderSide.NO_ORDER_SIDE:
+            return None
+
+        return self.nautilus_to_dydx_order_side[order_side]
 
     def parse_dydx_order_status(self, order_status: DYDXOrderStatus) -> OrderStatus:
         """
