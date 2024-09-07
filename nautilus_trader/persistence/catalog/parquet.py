@@ -124,7 +124,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         fs_storage_options: dict | None = None,
         dataset_kwargs: dict | None = None,
         min_rows_per_group: int = 0,
-        max_rows_per_group: int = 5000,
+        max_rows_per_group: int = 5_000,
         show_query_paths: bool = False,
     ) -> None:
         self.fs_protocol: str = fs_protocol or _DEFAULT_FS_PROTOCOL
@@ -211,7 +211,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                     "Data should be monotonically increasing (or non-decreasing) based on `ts_init`: "
                     f"found {original.ts_init} followed by {sorted_version.ts_init}. "
                     "Consider sorting your data with something like "
-                    "`data.sort(key=lambda x: x.ts_init)` prior to writing to the catalog.",
+                    "`data.sort(key=lambda x: x.ts_init)` prior to writing to the catalog",
                 )
 
         table_or_batch = self.serializer.serialize_batch(data, data_cls=data_cls)
@@ -369,6 +369,7 @@ class ParquetDataCatalog(BaseDataCatalog):
     ) -> list[Data | CustomData]:
         if self.fs_protocol == "file" and data_cls in (
             OrderBookDelta,
+            OrderBookDeltas,
             OrderBookDepth10,
             QuoteTick,
             TradeTick,
@@ -418,8 +419,6 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         if session is None:
             session = DataBackendSession()
-        if session is None:
-            raise ValueError("`session` was `None` when a value was expected")
 
         file_prefix = class_to_filename(data_cls)
         glob_path = f"{self.path}/data/{file_prefix}/**/*"
@@ -471,8 +470,9 @@ class ParquetDataCatalog(BaseDataCatalog):
         where: str | None = None,
         **kwargs: Any,
     ) -> list[Data]:
+        query_data_cls = OrderBookDelta if data_cls == OrderBookDeltas else data_cls
         session = self.backend_session(
-            data_cls=data_cls,
+            data_cls=query_data_cls,
             instrument_ids=instrument_ids,
             bar_types=bar_types,
             start=start,
@@ -487,6 +487,9 @@ class ParquetDataCatalog(BaseDataCatalog):
         data = []
         for chunk in result:
             data.extend(capsule_to_list(chunk))
+
+        if data_cls == OrderBookDeltas:
+            data = OrderBookDeltas.batch(data)
 
         return data
 
