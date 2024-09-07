@@ -55,7 +55,7 @@ from nautilus_trader.model.orders import Order
 
 class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
     """
-    Provides an execution client for the `Binance Futures` exchange.
+    Provides an execution client for the Binance Futures exchange.
 
     Parameters
     ----------

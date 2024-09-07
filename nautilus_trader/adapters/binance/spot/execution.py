@@ -47,7 +47,7 @@ from nautilus_trader.model.orders import Order
 
 class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
     """
-    Provides an execution client for the `Binance Spot/Margin` exchange.
+    Provides an execution client for the Binance Spot/Margin exchange.
 
     Parameters
     ----------

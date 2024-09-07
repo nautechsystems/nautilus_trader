@@ -20,7 +20,7 @@ from nautilus_trader.adapters.binance.http.user import BinanceUserDataHttpAPI
 
 class BinanceFuturesUserDataHttpAPI(BinanceUserDataHttpAPI):
     """
-    Provides access to the `Binance Futures` User Data HTTP REST API.
+    Provides access to the Binance Futures User Data HTTP REST API.
 
     Parameters
     ----------

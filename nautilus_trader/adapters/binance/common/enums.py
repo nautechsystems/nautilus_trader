@@ -42,7 +42,7 @@ from nautilus_trader.model.orders import Order
 @unique
 class BinanceFuturesPositionSide(Enum):
     """
-    Represents a `Binance Futures` position side.
+    Represents a Binance Futures position side.
     """
 
     BOTH = "BOTH"

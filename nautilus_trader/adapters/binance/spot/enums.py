@@ -34,7 +34,7 @@ from nautilus_trader.model.orders import Order
 @unique
 class BinanceSpotPermissions(Enum):
     """
-    Represents `Binance Spot/Margin` trading permissions.
+    Represents Binance Spot/Margin trading permissions.
     """
 
     SPOT = "SPOT"
@@ -76,7 +76,7 @@ class BinanceSpotPermissions(Enum):
 @unique
 class BinanceSpotSymbolStatus(Enum):
     """
-    Represents a `Binance Spot/Margin` symbol status.
+    Represents a Binance Spot/Margin symbol status.
     """
 
     PRE_TRADING = "PRE_TRADING"
@@ -91,7 +91,7 @@ class BinanceSpotSymbolStatus(Enum):
 @unique
 class BinanceSpotEventType(Enum):
     """
-    Represents a `Binance Spot/Margin` event type.
+    Represents a Binance Spot/Margin event type.
     """
 
     outboundAccountPosition = "outboundAccountPosition"

@@ -38,7 +38,7 @@ from nautilus_trader.model.orders import Order
 @unique
 class BinanceFuturesContractType(Enum):
     """
-    Represents a `Binance Futures` derivatives contract type.
+    Represents a Binance Futures derivatives contract type.
     """
 
     PERPETUAL = "PERPETUAL"
@@ -53,7 +53,7 @@ class BinanceFuturesContractType(Enum):
 @unique
 class BinanceFuturesContractStatus(Enum):
     """
-    Represents a `Binance Futures` contract status.
+    Represents a Binance Futures contract status.
     """
 
     PENDING_TRADING = "PENDING_TRADING"
@@ -69,7 +69,7 @@ class BinanceFuturesContractStatus(Enum):
 @unique
 class BinanceFuturesWorkingType(Enum):
     """
-    Represents a `Binance Futures` working type.
+    Represents a Binance Futures working type.
     """
 
     MARK_PRICE = "MARK_PRICE"
@@ -79,7 +79,7 @@ class BinanceFuturesWorkingType(Enum):
 @unique
 class BinanceFuturesMarginType(Enum):
     """
-    Represents a `Binance Futures` margin type.
+    Represents a Binance Futures margin type.
     """
 
     ISOLATED = "isolated"
@@ -89,7 +89,7 @@ class BinanceFuturesMarginType(Enum):
 @unique
 class BinanceFuturesPositionUpdateReason(Enum):
     """
-    Represents a `Binance Futures` position and balance update reason.
+    Represents a Binance Futures position and balance update reason.
     """
 
     DEPOSIT = "DEPOSIT"
@@ -114,7 +114,7 @@ class BinanceFuturesPositionUpdateReason(Enum):
 @unique
 class BinanceFuturesEventType(Enum):
     """
-    Represents a `Binance Futures` event type.
+    Represents a Binance Futures event type.
     """
 
     LISTEN_KEY_EXPIRED = "listenKeyExpired"

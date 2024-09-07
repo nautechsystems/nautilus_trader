@@ -370,7 +370,7 @@ class BinanceTicker(Data):
     @staticmethod
     def from_dict(values: dict[str, Any]) -> BinanceTicker:
         """
-        Return a `Binance Spot/Margin` ticker parsed from the given values.
+        Return a Binance Spot/Margin ticker parsed from the given values.
 
         Parameters
         ----------

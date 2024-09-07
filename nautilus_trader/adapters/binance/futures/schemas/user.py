@@ -74,7 +74,7 @@ class BinanceFuturesUserMsgWrapper(msgspec.Struct, frozen=True):
 
 class MarginCallPosition(msgspec.Struct, frozen=True):
     """
-    Inner struct position for `Binance Futures` Margin Call events.
+    Inner struct position for Binance Futures Margin Call events.
     """
 
     s: str  # Symbol
@@ -89,7 +89,7 @@ class MarginCallPosition(msgspec.Struct, frozen=True):
 
 class BinanceFuturesMarginCallMsg(msgspec.Struct, frozen=True):
     """
-    WebSocket message for `Binance Futures` Margin Call events.
+    WebSocket message for Binance Futures Margin Call events.
     """
 
     e: str  # Event Type
@@ -100,7 +100,7 @@ class BinanceFuturesMarginCallMsg(msgspec.Struct, frozen=True):
 
 class BinanceFuturesBalance(msgspec.Struct, frozen=True):
     """
-    Inner struct balance for `Binance Futures` Balance and Position update event.
+    Inner struct balance for Binance Futures Balance and Position update event.
     """
 
     a: str  # Asset
@@ -123,7 +123,7 @@ class BinanceFuturesBalance(msgspec.Struct, frozen=True):
 
 class BinanceFuturesPosition(msgspec.Struct, frozen=True):
     """
-    Inner struct position for `Binance Futures` Balance and Position update event.
+    Inner struct position for Binance Futures Balance and Position update event.
     """
 
     s: str  # Symbol
@@ -138,7 +138,7 @@ class BinanceFuturesPosition(msgspec.Struct, frozen=True):
 
 class BinanceFuturesAccountUpdateData(msgspec.Struct, frozen=True):
     """
-    WebSocket message for `Binance Futures` Balance and Position Update events.
+    WebSocket message for Binance Futures Balance and Position Update events.
     """
 
     m: BinanceFuturesPositionUpdateReason
@@ -151,7 +151,7 @@ class BinanceFuturesAccountUpdateData(msgspec.Struct, frozen=True):
 
 class BinanceFuturesAccountUpdateMsg(msgspec.Struct, frozen=True):
     """
-    WebSocket message for `Binance Futures` Balance and Position Update events.
+    WebSocket message for Binance Futures Balance and Position Update events.
     """
 
     e: str  # Event Type
@@ -173,7 +173,7 @@ class BinanceFuturesAccountUpdateMsg(msgspec.Struct, frozen=True):
 
 class BinanceFuturesAccountUpdateWrapper(msgspec.Struct, frozen=True):
     """
-    WebSocket message wrapper for `Binance Futures` Balance and Position Update events.
+    WebSocket message wrapper for Binance Futures Balance and Position Update events.
     """
 
     stream: str
@@ -182,7 +182,7 @@ class BinanceFuturesAccountUpdateWrapper(msgspec.Struct, frozen=True):
 
 class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
     """
-    WebSocket message 'inner struct' for `Binance Futures` Order Update events.
+    WebSocket message 'inner struct' for Binance Futures Order Update events.
 
     Client Order ID 'c':
      - starts with "autoclose-": liquidation order/
@@ -405,7 +405,7 @@ class BinanceFuturesOrderData(msgspec.Struct, kw_only=True, frozen=True):
 
 class BinanceFuturesOrderUpdateMsg(msgspec.Struct, frozen=True):
     """
-    WebSocket message for `Binance Futures` Order Update events.
+    WebSocket message for Binance Futures Order Update events.
     """
 
     e: str  # Event Type
@@ -416,7 +416,7 @@ class BinanceFuturesOrderUpdateMsg(msgspec.Struct, frozen=True):
 
 class BinanceFuturesOrderUpdateWrapper(msgspec.Struct, frozen=True):
     """
-    WebSocket message wrapper for `Binance Futures` Order Update events.
+    WebSocket message wrapper for Binance Futures Order Update events.
     """
 
     stream: str
