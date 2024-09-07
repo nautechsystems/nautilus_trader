@@ -69,14 +69,39 @@ def test_parse_order_type(
 
 
 @pytest.mark.parametrize(
+    ("order_type", "expected_result"),
+    [
+        (OrderType.LIMIT, DYDXOrderType.LIMIT),
+        (OrderType.MARKET, DYDXOrderType.MARKET),
+        (OrderType.STOP_LIMIT, DYDXOrderType.STOP_LIMIT),
+        (OrderType.STOP_MARKET, DYDXOrderType.STOP_MARKET),
+    ],
+)
+def test_parse_nautilus_order_type(
+    order_type: OrderType,
+    expected_result: DYDXOrderType,
+    enum_parser: DYDXEnumParser,
+) -> None:
+    """
+    Test converting the Nautilus order types to dYdX order types.
+    """
+    # Act
+    result = enum_parser.parse_nautilus_order_type(order_type)
+
+    # Assert
+    assert result == expected_result
+
+
+@pytest.mark.parametrize(
     ("dydx_order_side", "expected_result"),
     [
         (DYDXOrderSide.BUY, OrderSide.BUY),
         (DYDXOrderSide.SELL, OrderSide.SELL),
+        (None, OrderSide.NO_ORDER_SIDE),
     ],
 )
 def test_parse_order_side(
-    dydx_order_side: DYDXOrderSide,
+    dydx_order_side: DYDXOrderSide | None,
     expected_result: OrderSide,
     enum_parser: DYDXEnumParser,
 ) -> None:
@@ -85,6 +110,29 @@ def test_parse_order_side(
     """
     # Act
     result = enum_parser.parse_dydx_order_side(dydx_order_side)
+
+    # Assert
+    assert result == expected_result
+
+
+@pytest.mark.parametrize(
+    ("order_side", "expected_result"),
+    [
+        (OrderSide.BUY, DYDXOrderSide.BUY),
+        (OrderSide.SELL, DYDXOrderSide.SELL),
+        (OrderSide.NO_ORDER_SIDE, None),
+    ],
+)
+def test_parse_nautilus_order_side(
+    order_side: OrderSide,
+    expected_result: DYDXOrderSide | None,
+    enum_parser: DYDXEnumParser,
+) -> None:
+    """
+    Test converting the Nautilus order side to dYdX order side.
+    """
+    # Act
+    result = enum_parser.parse_nautilus_order_side(order_side)
 
     # Assert
     assert result == expected_result
