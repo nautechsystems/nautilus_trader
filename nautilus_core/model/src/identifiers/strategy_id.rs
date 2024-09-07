@@ -46,13 +46,24 @@ impl StrategyId {
     ///
     /// # Panics
     ///
-    /// Panics if `value` is not a valid string, or does not contain a hyphen '-' separator.
-    pub fn new(value: &str) -> Self {
-        check_valid_string(value, stringify!(value)).expect(FAILED);
+    /// This function panics:
+    /// - If `value` is not a valid string, or does not contain a hyphen '-' separator.
+    pub fn new_checked(value: &str) -> anyhow::Result<Self> {
+        check_valid_string(value, stringify!(value))?;
         if value != EXTERNAL_STRATEGY_ID {
-            check_string_contains(value, "-", stringify!(value)).expect(FAILED);
+            check_string_contains(value, "-", stringify!(value))?;
         }
-        Self(Ustr::from(value))
+        Ok(Self(Ustr::from(value)))
+    }
+
+    /// Creates a new [`StrategyId`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If `value` is not a valid string.
+    pub fn new(value: &str) -> Self {
+        Self::new_checked(value).expect(FAILED)
     }
 
     /// Sets the inner identifier value.

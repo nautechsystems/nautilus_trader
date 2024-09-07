@@ -55,13 +55,13 @@ pub struct MarginAccount {
 
 impl MarginAccount {
     /// Creates a new [`MarginAccount`] instance.
-    pub fn new(event: AccountState, calculate_account_state: bool) -> anyhow::Result<Self> {
-        Ok(Self {
-            base: BaseAccount::new(event, calculate_account_state)?,
+    pub fn new(event: AccountState, calculate_account_state: bool) -> Self {
+        Self {
+            base: BaseAccount::new(event, calculate_account_state),
             leverages: HashMap::new(),
             margins: HashMap::new(),
             default_leverage: 1.0,
-        })
+        }
     }
 
     pub fn set_default_leverage(&mut self, leverage: f64) {

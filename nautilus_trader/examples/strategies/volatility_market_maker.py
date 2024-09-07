@@ -129,7 +129,6 @@ class VolatilityMarketMaker(Strategy):
         # Subscribe to live data
         self.subscribe_bars(self.bar_type)
         self.subscribe_quote_ticks(self.instrument_id)
-
         self.subscribe_trade_ticks(self.instrument_id)
         # self.subscribe_order_book_deltas(self.instrument_id)  # For debugging
         # self.subscribe_order_book_at_interval(
@@ -307,6 +306,8 @@ class VolatilityMarketMaker(Strategy):
 
         self.buy_order = order
         self.submit_order(order)
+        # order_list = self.order_factory.create_list([order])
+        # self.submit_order_list(order_list)
 
     def create_sell_order(self, last: QuoteTick) -> None:
         """
@@ -331,6 +332,8 @@ class VolatilityMarketMaker(Strategy):
 
         self.sell_order = order
         self.submit_order(order)
+        # order_list = self.order_factory.create_list([order])
+        # self.submit_order_list(order_list)
 
     def on_event(self, event: Event) -> None:
         """
@@ -363,6 +366,10 @@ class VolatilityMarketMaker(Strategy):
         """
         self.cancel_all_orders(self.instrument_id)
         self.close_all_positions(self.instrument_id)
+
+        # open_orders = self.cache.orders_open(instrument_id=self.instrument_id)
+        # if open_orders:
+        #     self.cancel_orders(open_orders)
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type)

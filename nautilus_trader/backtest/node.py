@@ -155,6 +155,7 @@ class BacktestNode:
                     venue_configs=config.venues,
                     data_configs=config.data,
                     batch_size_bytes=config.batch_size_bytes,
+                    dispose_on_completion=config.dispose_on_completion,
                 )
                 results.append(result)
             except Exception as e:
@@ -283,6 +284,7 @@ class BacktestNode:
         venue_configs: list[BacktestVenueConfig],
         data_configs: list[BacktestDataConfig],
         batch_size_bytes: int | None = None,
+        dispose_on_completion: bool = True,
     ) -> BacktestResult:
         engine: BacktestEngine = self._create_engine(
             run_config_id=run_config_id,
@@ -306,8 +308,12 @@ class BacktestNode:
                 data_configs=data_configs,
             )
 
-        # Release data objects
-        engine.dispose()
+        if dispose_on_completion:
+            # Drop data and all state
+            engine.dispose()
+        else:
+            # Drop data
+            engine.clear_data()
 
         return engine.get_result()
 
@@ -356,7 +362,6 @@ class BacktestNode:
             engine.clear_data()
 
         engine.end()
-        engine.dispose()
 
     def _run_oneshot(
         self,
@@ -389,7 +394,6 @@ class BacktestNode:
             engine.logger.info(f"Engine load took {pd.Timedelta(t2 - t1)}s")
 
         engine.run(run_config_id=run_config_id)
-        engine.dispose()
 
     @classmethod
     def load_catalog(cls, config: BacktestDataConfig) -> ParquetDataCatalog:

@@ -32,6 +32,23 @@ const REDIS_XTRIM: &str = "XTRIM";
 const REDIS_MINID: &str = "MINID";
 const REDIS_FLUSHDB: &str = "FLUSHDB";
 
+async fn await_handle(handle: Option<tokio::task::JoinHandle<()>>, task_name: &str) {
+    if let Some(handle) = handle {
+        tracing::debug!("Awaiting task '{task_name}'");
+        let timeout = Duration::from_secs(2);
+        match tokio::time::timeout(timeout, handle).await {
+            Ok(result) => {
+                if let Err(e) = result {
+                    log::error!("Error awaiting task '{task_name}': {e:?}");
+                }
+            }
+            Err(_) => {
+                log::error!("Timeout {timeout:?} awaiting task '{task_name}'");
+            }
+        }
+    }
+}
+
 /// Parse a Redis connection url from the given database config.
 pub fn get_redis_url(config: DatabaseConfig) -> (String, String) {
     let host = config.host.unwrap_or("127.0.0.1".to_string());

@@ -27,6 +27,7 @@ from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import InstrumentClose
 from nautilus_trader.model.data import InstrumentStatus
 from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
@@ -119,9 +120,11 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
     def order_book_deltas(
         self,
         instrument_ids: list[str] | None = None,
+        batched: bool = False,
         **kwargs: Any,
-    ) -> list[OrderBookDelta]:
-        return self.query(data_cls=OrderBookDelta, instrument_ids=instrument_ids, **kwargs)
+    ) -> list[OrderBookDelta] | list[OrderBookDeltas]:
+        data_cls = OrderBookDeltas if batched else OrderBookDelta
+        return self.query(data_cls=data_cls, instrument_ids=instrument_ids, **kwargs)
 
     def order_book_depth10(
         self,

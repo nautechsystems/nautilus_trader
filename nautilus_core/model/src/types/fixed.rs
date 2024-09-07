@@ -13,9 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Functions for handling fixed-point arithmetic.
+//!
+//! This module provides constants and functions that enforce a fixed-point precision strategy,
+//! ensuring consistent precision and scaling across various types and calculations.
+
+/// The maximum fixed-point precision.
 pub const FIXED_PRECISION: u8 = 9;
+
+/// The scalar value corresponding to the maximum precision (10^9).
 pub const FIXED_SCALAR: f64 = 1_000_000_000.0; // 10.0**FIXED_PRECISION
 
+/// Checks if a given `precision` value is within the allowed fixed-point precision range.
+///
+/// # Errors
+///
+/// This function returns an error:
+/// - If `precision` exceeds `FIXED_PRECISION`.
 pub fn check_fixed_precision(precision: u8) -> anyhow::Result<()> {
     if precision > FIXED_PRECISION {
         anyhow::bail!("Condition failed: `precision` was greater than the maximum `FIXED_PRECISION` (9), was {precision}")
@@ -23,6 +37,12 @@ pub fn check_fixed_precision(precision: u8) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Converts an `f64` value to a raw fixed-point `i64` representation with a specified precision.
+///
+/// # Panics
+///
+/// This function panics:
+/// - If `precision` exceeds `FIXED_PRECISION`.
 #[must_use]
 pub fn f64_to_fixed_i64(value: f64, precision: u8) -> i64 {
     assert!(precision <= FIXED_PRECISION, "precision exceeded maximum 9");
@@ -32,6 +52,12 @@ pub fn f64_to_fixed_i64(value: f64, precision: u8) -> i64 {
     rounded * pow2
 }
 
+/// Converts an `f64` value to a raw fixed-point `u64` representation with a specified precision.
+///
+/// # Panics
+///
+/// This function panics:
+/// - If `precision` exceeds `FIXED_PRECISION`.
 #[must_use]
 pub fn f64_to_fixed_u64(value: f64, precision: u8) -> u64 {
     assert!(precision <= FIXED_PRECISION, "precision exceeded maximum 9");
@@ -41,11 +67,13 @@ pub fn f64_to_fixed_u64(value: f64, precision: u8) -> u64 {
     rounded * pow2
 }
 
+/// Converts a raw fixed-point `i64` value back to an `f64` value.
 #[must_use]
 pub fn fixed_i64_to_f64(value: i64) -> f64 {
     (value as f64) / FIXED_SCALAR
 }
 
+/// Converts a raw fixed-point `u64` value back to an `f64` value.
 #[must_use]
 pub fn fixed_u64_to_f64(value: u64) -> f64 {
     (value as f64) / FIXED_SCALAR

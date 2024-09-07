@@ -15,23 +15,23 @@ NautilusTrader uses increasingly more [Rust](https://www.rust-lang.org), so Rust
 
 The following steps are for UNIX-like systems, and only need to be completed once.
 
-1. Follow the [installation guide](../getting_started/installation.md) to setup the project with a modification to the final poetry command:
+1. Follow the [installation guide](../getting_started/installation.md) to set up the project with a modification to the final poetry command:
 
        poetry install
 
-2. Setup the pre-commit hook which will then run automatically at commit:
+2. Set up the pre-commit hook which will then run automatically at commit:
 
        pre-commit install
 
-3. In case of large recompiles for small changes, configure the `PYO3_PYTHON` variable in `nautilus_core/.cargo/config.toml` with the path to the Python interpreter in the poetry managed environment. This is primarily useful for Rust developers working on core and experience frequent recompiles from IDE/rust analyzer based `cargo check`.
+3. In case of large recompiles for small changes, configure the `PYO3_PYTHON` variable in `nautilus_trader/.cargo/config.toml` with the path to the Python interpreter in the poetry managed environment. This is primarily useful for Rust developers working on core and experience frequent recompiles from IDE/rust analyzer based `cargo check`.
 
     ```
     poetry shell
     PYTHON_PATH=$(which python)
-    echo -e "\n[env]\nPYO3_PYTHON = \"$PYTHON_PATH\"" >> nautilus_core/.cargo/config.toml
+    echo -e "\n[env]\nPYO3_PYTHON = \"$PYTHON_PATH\"" >> .cargo/config.toml
     ```
 
-    Since `.cargo/config.toml` is a tracked file, configure git to skip local modifications to it with `git update-index --skip-worktree nautilus_core/.cargo/config.toml`. Git will still pull remote modifications. To push modifications track local modifications using `git update-index --no-skip-worktree nautilus_core/.cargo/config.toml`.
+    Since `.cargo/config.toml` is a tracked file, configure git to skip local modifications to it with `git update-index --skip-worktree .cargo/config.toml`. Git will still pull remote modifications. To push modifications track local modifications using `git update-index --no-skip-worktree .cargo/config.toml`.
     
     The git hack is needed till [local cargo config](https://github.com/rust-lang/cargo/issues/7723) feature is merged.
 

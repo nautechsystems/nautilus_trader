@@ -67,7 +67,7 @@ from nautilus_trader.core.rust.common import LogColor
 
 class BetfairHttpClient:
     """
-    Provides a HTTP client for `Betfair`.
+    Provides a HTTP client for Betfair.
     """
 
     def __init__(

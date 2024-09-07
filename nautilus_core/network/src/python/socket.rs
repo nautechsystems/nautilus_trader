@@ -56,9 +56,9 @@ impl SocketConfig {
 impl SocketClient {
     /// Create a socket client.
     ///
-    /// # Safety
+    /// # Errors
     ///
-    /// - Throws an Exception if it is unable to make socket connection
+    /// - Throws an Exception if it is unable to make socket connection.
     #[staticmethod]
     #[pyo3(name = "connect")]
     fn py_connect(
@@ -108,14 +108,14 @@ impl SocketClient {
     /// be because the connection disconnected and the client is still alive
     /// and reconnecting. In such cases the send can be retried after some
     /// delay
-    #[getter]
-    fn is_alive(slf: PyRef<'_, Self>) -> bool {
+    #[pyo3(name = "is_alive")]
+    fn py_is_alive(slf: PyRef<'_, Self>) -> bool {
         !slf.controller_task.is_finished()
     }
 
     /// Send bytes data to the connection.
     ///
-    /// # Safety
+    /// # Errors
     ///
     /// - Throws an Exception if it is not able to send data.
     #[pyo3(name = "send")]
@@ -168,7 +168,7 @@ mod tests {
             let server = TcpListener::bind("127.0.0.1:0").await.unwrap();
             let port = TcpListener::local_addr(&server).unwrap().port();
 
-            // Setup test server
+            // Set up test server
             let handle = task::spawn(async move {
                 // Keep listening for new connections
                 loop {

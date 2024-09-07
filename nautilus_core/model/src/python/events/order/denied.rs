@@ -41,8 +41,8 @@ impl OrderDenied {
         ts_event: u64,
         ts_init: u64,
     ) -> PyResult<Self> {
-        let reason = Ustr::from_str(reason).unwrap();
-        Self::new(
+        let reason = Ustr::from_str(reason).map_err(to_pyvalue_err)?;
+        Ok(Self::new(
             trader_id,
             strategy_id,
             instrument_id,
@@ -51,8 +51,7 @@ impl OrderDenied {
             event_id,
             ts_event.into(),
             ts_init.into(),
-        )
-        .map_err(to_pyvalue_err)
+        ))
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

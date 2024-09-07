@@ -22,7 +22,7 @@ use std::{
 use futures::SinkExt;
 use futures_util::{stream, StreamExt};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
-use pyo3::{exceptions::PyException, prelude::*, types::PyBytes};
+use pyo3::{create_exception, exceptions::PyException, prelude::*, types::PyBytes};
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::{
@@ -30,6 +30,13 @@ use crate::{
     ratelimiter::{quota::Quota, RateLimiter},
     websocket::{WebSocketClient, WebSocketConfig},
 };
+
+/// Python exception class for websocket errors.
+create_exception!(network, WebSocketClientError, PyException);
+
+fn to_websocket_pyerr(e: tokio_tungstenite::tungstenite::Error) -> PyErr {
+    PyErr::new::<WebSocketClientError, _>(e.to_string())
+}
 
 #[pymethods]
 impl WebSocketConfig {
@@ -77,7 +84,7 @@ impl WebSocketClient {
                 post_disconnection,
             )
             .await
-            .map_err(to_pyruntime_err)
+            .map_err(to_websocket_pyerr)
         })
     }
 
@@ -99,73 +106,6 @@ impl WebSocketClient {
         })
     }
 
-    /// Send bytes data to the server.
-    ///
-    /// # Safety
-    ///
-    /// - Raises PyRuntimeError if not able to send data.
-    #[pyo3(name = "send")]
-    fn py_send<'py>(
-        slf: PyRef<'_, Self>,
-        data: Vec<u8>,
-        py: Python<'py>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        tracing::debug!("Sending bytes {:?}", data);
-        let writer = slf.writer.clone();
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
-            let mut guard = writer.lock().await;
-            guard
-                .send(Message::Binary(data))
-                .await
-                .map_err(to_pyruntime_err)
-        })
-    }
-
-    /// Send text data to the server.
-    ///
-    /// # Safety
-    ///
-    /// - Raises PyRuntimeError if not able to send data.
-    #[pyo3(name = "send_text")]
-    fn py_send_text<'py>(
-        slf: PyRef<'_, Self>,
-        data: String,
-        py: Python<'py>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        tracing::debug!("Sending text: {}", data);
-        let writer = slf.writer.clone();
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
-            let mut guard = writer.lock().await;
-            guard
-                .send(Message::Text(data))
-                .await
-                .map_err(to_pyruntime_err)
-        })
-    }
-
-    /// Send pong bytes data to the server.
-    ///
-    /// # Safety
-    ///
-    /// - Raises PyRuntimeError if not able to send data.
-    #[pyo3(name = "send_pong")]
-    fn py_send_pong<'py>(
-        slf: PyRef<'_, Self>,
-        data: Vec<u8>,
-        py: Python<'py>,
-    ) -> PyResult<Bound<'py, PyAny>> {
-        let data_str = String::from_utf8(data.clone()).map_err(to_pyvalue_err)?;
-        tracing::debug!("Sending pong: {}", data_str);
-        let writer = slf.writer.clone();
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
-            let mut guard = writer.lock().await;
-            guard
-                .send(Message::Pong(data))
-                .await
-                .map_err(to_pyruntime_err)
-        })
-    }
-
     /// Check if the client is still alive.
     ///
     /// Even if the connection is disconnected the client will still be alive
@@ -176,9 +116,77 @@ impl WebSocketClient {
     /// be because the connection disconnected and the client is still alive
     /// and reconnecting. In such cases the send can be retried after some
     /// delay.
-    #[getter]
-    fn is_alive(slf: PyRef<'_, Self>) -> bool {
+    #[pyo3(name = "is_alive")]
+    fn py_is_alive(slf: PyRef<'_, Self>) -> bool {
         !slf.controller_task.is_finished()
+    }
+
+    /// Send bytes data to the server.
+    ///
+    /// # Errors
+    ///
+    /// - Raises PyRuntimeError if not able to send data.
+    #[pyo3(name = "send")]
+    fn py_send<'py>(
+        slf: PyRef<'_, Self>,
+        data: Vec<u8>,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        tracing::trace!("Sending binary: {:?}", data);
+        let writer = slf.writer.clone();
+        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+            let mut guard = writer.lock().await;
+            guard
+                .send(Message::Binary(data))
+                .await
+                .map_err(to_websocket_pyerr)
+        })
+    }
+
+    /// Send UTF-8 encoded bytes as text data to the server.
+    ///
+    /// # Errors
+    ///
+    /// - Raises PyRuntimeError if not able to send data.
+    #[pyo3(name = "send_text")]
+    fn py_send_text<'py>(
+        slf: PyRef<'_, Self>,
+        data: Vec<u8>,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let data = String::from_utf8(data).map_err(to_pyvalue_err)?;
+        tracing::trace!("Sending text: {}", data);
+        let writer = slf.writer.clone();
+        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+            let mut guard = writer.lock().await;
+            guard
+                .send(Message::Text(data))
+                .await
+                .map_err(to_websocket_pyerr)
+        })
+    }
+
+    /// Send pong bytes data to the server.
+    ///
+    /// # Errors
+    ///
+    /// - Raises PyRuntimeError if not able to send data.
+    #[pyo3(name = "send_pong")]
+    fn py_send_pong<'py>(
+        slf: PyRef<'_, Self>,
+        data: Vec<u8>,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let data_str = String::from_utf8(data.clone()).map_err(to_pyvalue_err)?;
+        tracing::trace!("Sending pong: {}", data_str);
+        let writer = slf.writer.clone();
+        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+            let mut guard = writer.lock().await;
+            guard
+                .send(Message::Pong(data))
+                .await
+                .map_err(to_websocket_pyerr)
+        })
     }
 }
 
@@ -244,9 +252,9 @@ mod tests {
                 value: HeaderValue::from_str(&value).unwrap(),
             };
 
-            // Setup test server
+            // Set up test server
             let task = task::spawn(async move {
-                // keep accepting connections
+                // Keep accepting connections
                 loop {
                     let (conn, _) = server.accept().await.unwrap();
                     let mut websocket = accept_hdr_async(conn, test_call_back.clone())

@@ -46,6 +46,7 @@ def test_to_dict():
         "size_precision": 3,
         "price_increment": "0.01",
         "size_increment": "0.001",
+        "multiplier": "1",
         "lot_size": "1",
         "max_quantity": "10000",
         "min_quantity": "0.001",

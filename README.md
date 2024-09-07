@@ -14,9 +14,9 @@
 
 | Platform           | Rust    | Python |
 | :----------------- | :------ | :----- |
-| `Linux (x86_64)`   | 1.80.1+ | 3.10+  |
-| `macOS (arm64)`    | 1.80.1+ | 3.10+  |
-| `Windows (x86_64)` | 1.80.1+ | 3.10+  |
+| `Linux (x86_64)`   | 1.81.0+ | 3.10+  |
+| `macOS (arm64)`    | 1.81.0+ | 3.10+  |
+| `Windows (x86_64)` | 1.81.0+ | 3.10+  |
 
 [![](https://dcbadge.limes.pink/api/server/AUWVs3XaCS)](https://discord.gg/AUWVs3XaCS)
 
@@ -129,10 +129,11 @@ The following integrations are currently supported:
 | [Binance Futures](https://www.binance.com/en/futures)     | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/binance.html)   |
 | [Bybit](https://www.bybit.com)                            | `BYBIT`               | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/bybit.html)     |
 | [Databento](https://databento.com)                        | `DATABENTO`           | Data Provider           | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://nautilustrader.io/docs/latest/integrations/databento.html) |
+| [dYdX](https://dydx.exchange/)                            | `DYDX`                | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://nautilustrader.io/docs/latest/integrations/dydx.html)      |
 | [Interactive Brokers](https://www.interactivebrokers.com) | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/ib.html)        |
 
-- **ID:** The default client ID for the integrations adapter clients
-- **Type:** The type of integration (often the venue type)
+- **ID**: The default client ID for the integrations adapter clients
+- **Type**: The type of integration (often the venue type)
 
 ### Status
 - `building`: Under construction and likely not in a usable state

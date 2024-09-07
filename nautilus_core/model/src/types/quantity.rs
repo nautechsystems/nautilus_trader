@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Represents a quantity with a non-negative value.
+
 use std::{
     cmp::Ordering,
     fmt::{Debug, Display},
@@ -41,6 +43,16 @@ pub const QUANTITY_MAX: f64 = 18_446_744_073.0;
 /// The minimum valid quantity value which can be represented.
 pub const QUANTITY_MIN: f64 = 0.0;
 
+/// Represents a quantity with a non-negative value.
+///
+/// Capable of storing either a whole number (no decimal places) of 'contracts'
+/// or 'shares' (instruments denominated in whole units) or a decimal value
+/// containing decimal places for instruments denominated in fractional units.
+///
+/// Handles up to 9 decimals of precision.
+///
+/// - `QUANTITY_MAX` = 18_446_744_073
+/// - `QUANTITY_MIN` = 0
 #[repr(C)]
 #[derive(Clone, Copy, Default, Eq)]
 #[cfg_attr(
@@ -48,52 +60,88 @@ pub const QUANTITY_MIN: f64 = 0.0;
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct Quantity {
+    /// The raw quantity as an unsigned 64-bit integer.
+    /// Represents the unscaled value, with `precision` defining the number of decimal places.
     pub raw: u64,
+    /// The number of decimal places, with a maximum precision of 9.
     pub precision: u8,
 }
 
 impl Quantity {
-    /// Creates a new [`Quantity`] instance.
-    pub fn new(value: f64, precision: u8) -> Self {
-        check_in_range_inclusive_f64(value, QUANTITY_MIN, QUANTITY_MAX, "value").expect(FAILED);
-        check_fixed_precision(precision).expect(FAILED);
-        Self {
+    /// Creates a new [`Quantity`] instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error:
+    /// - If `value` is invalid outside the representable range [0, 18_446_744_073].
+    /// - If `precision` is invalid outside the representable range [0, 9].
+    ///
+    /// # Notes
+    ///
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+    pub fn new_checked(value: f64, precision: u8) -> anyhow::Result<Self> {
+        check_in_range_inclusive_f64(value, QUANTITY_MIN, QUANTITY_MAX, "value")?;
+        check_fixed_precision(precision)?;
+
+        Ok(Self {
             raw: f64_to_fixed_u64(value, precision),
             precision,
-        }
+        })
     }
 
+    /// Creates a new [`Quantity`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If a correctness check fails. See [`Quantity::new_checked`] for more details.
+    pub fn new(value: f64, precision: u8) -> Self {
+        Self::new_checked(value, precision).expect(FAILED)
+    }
+
+    /// Creates a new [`Quantity`] instance from the given `raw` fixed-point value and `precision`.
     pub fn from_raw(raw: u64, precision: u8) -> Self {
         check_fixed_precision(precision).expect(FAILED);
         Self { raw, precision }
     }
 
+    /// Creates a new [`Quantity`] instance with a value of zero with the given `precision`.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If a correctness check fails. See [`Quantity::new_checked`] for more details.
     #[must_use]
     pub fn zero(precision: u8) -> Self {
         check_fixed_precision(precision).expect(FAILED);
         Self::new(0.0, precision)
     }
 
+    /// Returns `true` if the value of this instance is undefined.
     #[must_use]
     pub fn is_undefined(&self) -> bool {
         self.raw == QUANTITY_UNDEF
     }
 
+    /// Returns `true` if the value of this instance is zero.
     #[must_use]
     pub fn is_zero(&self) -> bool {
         self.raw == 0
     }
 
+    /// Returns `true` if the value of this instance is position (> 0).
     #[must_use]
     pub fn is_positive(&self) -> bool {
         self.raw > 0
     }
 
+    /// Returns the value of this instance as an `f64`.
     #[must_use]
     pub fn as_f64(&self) -> f64 {
         fixed_u64_to_f64(self.raw)
     }
 
+    /// Returns the value of this instance as a `Decimal`.
     #[must_use]
     pub fn as_decimal(&self) -> Decimal {
         // Scale down the raw value to match the precision
@@ -101,6 +149,7 @@ impl Quantity {
         Decimal::from_i128_with_scale(i128::from(rescaled_raw), u32::from(self.precision))
     }
 
+    /// Returns a formatted string representation of this instance.
     #[must_use]
     pub fn to_formatted_string(&self) -> String {
         format!("{self}").separate_with_underscores()

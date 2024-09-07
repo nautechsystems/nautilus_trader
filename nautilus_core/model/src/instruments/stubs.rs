@@ -47,7 +47,6 @@ impl Default for SyntheticInstrument {
             0.into(),
             0.into(),
         )
-        .unwrap()
     }
 }
 
@@ -82,6 +81,7 @@ pub fn crypto_future_btcusdt(
         dec!(0),
         dec!(0),
         None,
+        None,
         Some(Quantity::from("9000.0")),
         Some(Quantity::from("0.000001")),
         None,
@@ -115,6 +115,7 @@ pub fn crypto_perpetual_ethusdt() -> CryptoPerpetual {
         dec!(1.0),
         dec!(0.35),
         None,
+        None,
         Some(Quantity::from("10000.0")),
         Some(Quantity::from("0.001")),
         None,
@@ -146,6 +147,7 @@ pub fn xbtusd_bitmex() -> CryptoPerpetual {
         None,
         None,
         None,
+        None,
         Some(Money::from("10000000 USD")),
         Some(Money::from("1 USD")),
         Some(Price::from("10000000")),
@@ -172,6 +174,7 @@ pub fn ethusdt_bitmex() -> CryptoPerpetual {
         dec!(0.00075),
         dec!(0.01),
         dec!(0.0035),
+        None,
         None,
         None,
         None,

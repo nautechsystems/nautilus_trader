@@ -35,7 +35,7 @@ It’s recommended you also refer to the Bybit documentation in conjunction with
 
 ## Products
 
-A product is an umberalla term for a group of related instrument types.
+A product is an umbrella term for a group of related instrument types.
 
 :::note
 Product is also referred to as `category` in the Bybit v5 API.
@@ -56,7 +56,7 @@ Options contracts are not currently supported (will be implemented in a future v
 To distinguish between different product types on Bybit, the following instrument ID suffix’s are used:
 
 - `-SPOT`: Spot cryptocurrencies
-- `-LINEAR`: Perpeutal and futures contracts
+- `-LINEAR`: Perpetual and futures contracts
 - `-INVERSE`: Inverse perpetual and inverse futures contracts
 - `-OPTION`: Options contracts (not currently supported)
 

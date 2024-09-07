@@ -48,29 +48,26 @@ impl Display for BusMessage {
 
 /// Configuration for database connections.
 ///
-/// # Parameters
-///
-/// - `database_type` (alias: `type`): The database type. Default is `"redis"`.
-/// - `host`: The database host address. If `None`, the typical default should be used.
-/// - `port`: The database port. If `None`, the typical default should be used.
-/// - `username`: The account username for the database connection.
-/// - `password`: The account password for the database connection. If a value is provided, it will be redacted in the string representation of this object.
-/// - `ssl`: If the database should use an SSL-enabled connection. Default is `false`.
-/// - `timeout`: The timeout (in seconds) to wait for a new connection. Default is `20`.
-///
 /// # Notes
 ///
 /// If `database_type` is `"redis"`, it requires Redis version 6.2.0 and above for correct operation.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DatabaseConfig {
+    /// The database type.
     #[serde(alias = "type")]
     pub database_type: String,
+    /// The database host address. If `None`, the typical default should be used.
     pub host: Option<String>,
+    /// The database port. If `None`, the typical default should be used.
     pub port: Option<u16>,
+    /// The account username for the database connection.
     pub username: Option<String>,
+    /// The account password for the database connection.
     pub password: Option<String>,
+    /// If the database should use an SSL-enabled connection.
     pub ssl: bool,
+    /// The timeout (in seconds) to wait for a new connection.
     pub timeout: u16,
 }
 
@@ -89,36 +86,41 @@ impl Default for DatabaseConfig {
 }
 
 /// Configuration for `MessageBus` instances.
-///
-/// # Parameters
-///
-/// - `database`: The configuration for the message bus backing database.
-/// - `encoding`: The encoding for database operations, controls the type of serializer used. Default is `"msgpack"`.
-/// - `timestamps_as_iso8601`: If timestamps should be persisted as ISO 8601 strings. If `false`, they will be persisted as UNIX nanoseconds. Default is `false`.
-/// - `buffer_interval_ms`: The buffer interval (milliseconds) between pipelined/batched transactions. The recommended range if using buffered pipelining is [10, 1000] milliseconds, with a good compromise being 100 milliseconds.
-/// - `autotrim_mins`: The lookback window in minutes for automatic stream trimming. The actual window may extend up to one minute beyond the specified value since streams are trimmed at most once every minute. This feature requires Redis version 6.2.0 or higher; otherwise, it will result in a command syntax error.
-/// - `use_trader_prefix`: If a 'trader-' prefix is used for stream names. Default is `true`.
-/// - `use_trader_id`: If the trader's ID is used for stream names. Default is `true`.
-/// - `use_instance_id`: If the trader's instance ID is used for stream names. Default is `false`.
-/// - `streams_prefix`: The prefix for externally published stream names. Must have a `database` config. Default is `"stream"`.
-/// - `stream_per_topic`: If `true`, messages will be written to separate streams per topic. If `false`, all messages will be written to the same stream. Default is `true`.
-/// - `external_streams`: The external stream keys the message bus will listen to for publishing deserialized message payloads internally.
-/// - `types_filter`: A list of serializable types **not** to publish externally.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MessageBusConfig {
+    /// The configuration for the message bus backing database.
     pub database: Option<DatabaseConfig>,
+    /// The encoding for database operations, controls the type of serializer used.
     pub encoding: SerializationEncoding,
+    /// If timestamps should be persisted as ISO 8601 strings.
+    /// If `false`, then timestamps will be persisted as UNIX nanoseconds.
     pub timestamps_as_iso8601: bool,
+    /// The buffer interval (milliseconds) between pipelined/batched transactions.
+    /// The recommended range if using buffered pipelining is [10, 1000] milliseconds,
+    /// with a good compromise being 100 milliseconds.
     pub buffer_interval_ms: Option<u32>,
+    /// The lookback window in minutes for automatic stream trimming.
+    /// The actual window may extend up to one minute beyond the specified value since streams are trimmed at most once every minute.
+    /// This feature requires Redis version 6.2.0 or higher; otherwise, it will result in a command syntax error.
     pub autotrim_mins: Option<u32>,
+    /// If a 'trader-' prefix is used for stream names.
     pub use_trader_prefix: bool,
+    /// If the trader's ID is used for stream names.
     pub use_trader_id: bool,
+    /// If the trader's instance ID is used for stream names. Default is `false`.
     pub use_instance_id: bool,
+    /// The prefix for externally published stream names. Must have a `database` config.
     pub streams_prefix: String,
+    /// If `true`, messages will be written to separate streams per topic.
+    /// If `false`, all messages will be written to the same stream.
     pub stream_per_topic: bool,
+    /// The external stream keys the message bus will listen to for publishing deserialized message payloads internally.
     pub external_streams: Option<Vec<String>>,
+    /// A list of serializable types **not** to publish externally.
     pub types_filter: Option<Vec<String>>,
+    /// The heartbeat interval (seconds).
+    pub heartbeat_interval_secs: Option<u16>,
 }
 
 impl Default for MessageBusConfig {
@@ -136,6 +138,7 @@ impl Default for MessageBusConfig {
             stream_per_topic: true,
             external_streams: None,
             types_filter: None,
+            heartbeat_interval_secs: None,
         }
     }
 }
@@ -154,8 +157,9 @@ pub trait MessageBusDatabaseAdapter {
         instance_id: UUID4,
         config: MessageBusConfig,
     ) -> anyhow::Result<Self::DatabaseType>;
-    fn publish(&self, topic: String, payload: Bytes) -> anyhow::Result<()>;
-    fn close(&mut self) -> anyhow::Result<()>;
+    fn is_closed(&self) -> bool;
+    fn publish(&self, topic: String, payload: Bytes);
+    fn close(&mut self);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

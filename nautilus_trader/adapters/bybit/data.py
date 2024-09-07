@@ -73,7 +73,7 @@ from nautilus_trader.model.objects import Quantity
 
 class BybitDataClient(LiveMarketDataClient):
     """
-    Provides a data client for the `Bybit` centralized cypto exchange.
+    Provides a data client for the Bybit centralized cypto exchange.
 
     Parameters
     ----------
@@ -124,10 +124,6 @@ class BybitDataClient(LiveMarketDataClient):
             instrument_provider=instrument_provider,
         )
 
-        # Hot cache
-        self._instrument_ids: dict[str, InstrumentId] = {}
-        self._last_quotes: dict[InstrumentId, QuoteTick] = {}
-
         # HTTP API
         self._http_market = BybitMarketHttpAPI(
             client=client,
@@ -168,6 +164,10 @@ class BybitDataClient(LiveMarketDataClient):
             endpoint="bybit.data.tickers",
             handler=self.complete_fetch_tickers_task,
         )
+
+        # Hot caches
+        self._instrument_ids: dict[str, InstrumentId] = {}
+        self._last_quotes: dict[InstrumentId, QuoteTick] = {}
 
     async def fetch_send_tickers(
         self,
@@ -217,8 +217,6 @@ class BybitDataClient(LiveMarketDataClient):
         self._log.info("Initializing websocket connections")
         for ws_client in self._ws_clients.values():
             await ws_client.connect()
-
-        self._log.info("Data client connected")
 
     async def _disconnect(self) -> None:
         if self._update_instruments_task:
@@ -308,12 +306,6 @@ class BybitDataClient(LiveMarketDataClient):
         self._depths[instrument_id] = depth
         ws_client = self._ws_clients[bybit_symbol.product_type]
         await ws_client.subscribe_order_book(bybit_symbol.raw_symbol, depth=depth)
-
-    def _is_subscribed_to_order_book(self, instrument_id: InstrumentId) -> bool:
-        return (
-            instrument_id
-            in self.subscribed_order_book_snapshots() + self.subscribed_order_book_deltas()
-        )
 
     async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         bybit_symbol = BybitSymbol(instrument_id.symbol.value)
@@ -618,12 +610,13 @@ class BybitDataClient(LiveMarketDataClient):
             return
 
         if msg.type == "snapshot":
-            deltas: OrderBookDeltas = msg.data.parse_to_snapshot(
+            deltas: OrderBookDeltas = msg.data.parse_to_deltas(
                 instrument_id=instrument_id,
                 price_precision=instrument.price_precision,
                 size_precision=instrument.size_precision,
                 ts_event=millis_to_nanos(msg.ts),
                 ts_init=self._clock.timestamp_ns(),
+                snapshot=True,
             )
         else:
             deltas = msg.data.parse_to_deltas(

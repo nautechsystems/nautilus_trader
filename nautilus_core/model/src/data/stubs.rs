@@ -333,7 +333,7 @@ pub fn stub_bar() -> Bar {
         aggregation: BarAggregation::Minute,
         price_type: PriceType::Bid,
     };
-    let bar_type = BarType {
+    let bar_type = BarType::Standard {
         instrument_id,
         spec: bar_spec,
         aggregation_source: AggregationSource::External,

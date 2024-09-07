@@ -1,0 +1,6 @@
+{
+    "connection_id": "789467ca-0476-4745-adce-1b58f41be423",
+    "message": "Internal error, could not fetch data for subscription: v4_orderbook.",
+    "message_id": 1,
+    "type": "error"
+}

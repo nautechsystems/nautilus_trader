@@ -46,6 +46,7 @@ from nautilus_trader.core.rust.model cimport InstrumentCloseType
 from nautilus_trader.core.rust.model cimport MarketStatusAction
 from nautilus_trader.core.rust.model cimport OrderSide
 from nautilus_trader.core.rust.model cimport PriceType
+from nautilus_trader.core.rust.model cimport RecordFlag
 from nautilus_trader.core.rust.model cimport bar_eq
 from nautilus_trader.core.rust.model cimport bar_hash
 from nautilus_trader.core.rust.model cimport bar_new
@@ -59,15 +60,23 @@ from nautilus_trader.core.rust.model cimport bar_specification_lt
 from nautilus_trader.core.rust.model cimport bar_specification_new
 from nautilus_trader.core.rust.model cimport bar_specification_to_cstr
 from nautilus_trader.core.rust.model cimport bar_to_cstr
+from nautilus_trader.core.rust.model cimport bar_type_aggregation_source
 from nautilus_trader.core.rust.model cimport bar_type_check_parsing
+from nautilus_trader.core.rust.model cimport bar_type_composite
 from nautilus_trader.core.rust.model cimport bar_type_eq
 from nautilus_trader.core.rust.model cimport bar_type_from_cstr
 from nautilus_trader.core.rust.model cimport bar_type_ge
 from nautilus_trader.core.rust.model cimport bar_type_gt
 from nautilus_trader.core.rust.model cimport bar_type_hash
+from nautilus_trader.core.rust.model cimport bar_type_instrument_id
+from nautilus_trader.core.rust.model cimport bar_type_is_composite
+from nautilus_trader.core.rust.model cimport bar_type_is_standard
 from nautilus_trader.core.rust.model cimport bar_type_le
 from nautilus_trader.core.rust.model cimport bar_type_lt
 from nautilus_trader.core.rust.model cimport bar_type_new
+from nautilus_trader.core.rust.model cimport bar_type_new_composite
+from nautilus_trader.core.rust.model cimport bar_type_spec
+from nautilus_trader.core.rust.model cimport bar_type_standard
 from nautilus_trader.core.rust.model cimport bar_type_to_cstr
 from nautilus_trader.core.rust.model cimport book_order_debug_to_cstr
 from nautilus_trader.core.rust.model cimport book_order_eq
@@ -620,9 +629,9 @@ cdef class BarType:
     Parameters
     ----------
     instrument_id : InstrumentId
-        The bar types instrument ID.
+        The bar type's instrument ID.
     bar_spec : BarSpecification
-        The bar types specification.
+        The bar type's specification.
     aggregation_source : AggregationSource, default EXTERNAL
         The bar type aggregation source. If ``INTERNAL`` the `DataEngine`
         will subscribe to the necessary ticks and aggregate bars accordingly.
@@ -649,25 +658,63 @@ cdef class BarType:
         )
 
     def __getstate__(self):
-        return (
-            self.instrument_id.value,
-            self._mem.spec.step,
-            self._mem.spec.aggregation,
-            self._mem.spec.price_type,
-            self._mem.aggregation_source
-        )
+        if self.is_standard():
+            spec = self.spec
+
+            return (
+                self.instrument_id.value,
+                spec.step,
+                spec.aggregation,
+                spec.price_type,
+                self.aggregation_source,
+            )
+        else:
+            composite = self.composite()
+            spec = self.spec
+            spec_composite = composite.spec
+
+            return (
+                self.instrument_id.value,
+                spec.step,
+                spec.aggregation,
+                spec.price_type,
+                self.aggregation_source,
+
+                spec_composite.step,
+                spec_composite.aggregation,
+                composite.aggregation_source
+            )
 
     def __setstate__(self, state):
-        cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
-        self._mem = bar_type_new(
-            instrument_id._mem,
-            bar_specification_new(
-                state[1],
-                state[2],
-                state[3]
-            ),
-            state[4],
-        )
+        if len(state) == 5:
+            instrument_id = InstrumentId.from_str_c(state[0])
+
+            self._mem = bar_type_new(
+                instrument_id._mem,
+                bar_specification_new(
+                    state[1],
+                    state[2],
+                    state[3]
+                ),
+                state[4],
+            )
+        else:
+            instrument_id = InstrumentId.from_str_c(state[0])
+            composite_instrument_id = InstrumentId.from_str_c(state[5])
+
+            self._mem = bar_type_new_composite(
+                instrument_id._mem,
+                bar_specification_new(
+                    state[1],
+                    state[2],
+                    state[3]
+                ),
+                state[4],
+
+                state[5],
+                state[6],
+                state[7],
+            )
 
     cdef str to_str(self):
         return cstr_to_pystr(bar_type_to_cstr(&self._mem))
@@ -706,7 +753,7 @@ cdef class BarType:
         InstrumentId
 
         """
-        return InstrumentId.from_mem_c(self._mem.instrument_id)
+        return InstrumentId.from_mem_c(bar_type_instrument_id(&self._mem))
 
     @property
     def spec(self) -> BarSpecification:
@@ -718,7 +765,7 @@ cdef class BarType:
         BarSpecification
 
         """
-        return BarSpecification.from_mem_c(self._mem.spec)
+        return BarSpecification.from_mem_c(bar_type_spec(&self._mem))
 
     @property
     def aggregation_source(self) -> AggregationSource:
@@ -730,7 +777,7 @@ cdef class BarType:
         AggregationSource
 
         """
-        return self._mem.aggregation_source
+        return bar_type_aggregation_source(&self._mem)
 
     @staticmethod
     cdef BarType from_mem_c(BarType_t mem):
@@ -793,6 +840,60 @@ cdef class BarType:
 
         """
         return self.aggregation_source == AggregationSource.INTERNAL
+
+    @staticmethod
+    def new_composite(
+        InstrumentId instrument_id,
+        BarSpecification bar_spec,
+        AggregationSource aggregation_source,
+
+        int composite_step,
+        BarAggregation composite_aggregation,
+        AggregationSource composite_aggregation_source,
+    ) -> BarType:
+        return BarType.from_mem_c(
+            bar_type_new_composite(
+                instrument_id._mem,
+                bar_spec._mem,
+                aggregation_source,
+
+                composite_step,
+                composite_aggregation,
+                composite_aggregation_source,
+            )
+        )
+
+    cpdef bint is_standard(self):
+        """
+        Return a value indicating whether the bar type corresponds to BarType::Standard in rust.
+
+        Returns
+        -------
+        bool
+
+        """
+        return bar_type_is_standard(&self._mem)
+
+    cpdef bint is_composite(self):
+        """
+        Return a value indicating whether the bar type corresponds to BarType::Composite in rust.
+
+        Returns
+        -------
+        bool
+
+        """
+        return bar_type_is_composite(&self._mem)
+
+    cpdef BarType standard(self):
+        cdef BarType bar_type = BarType.__new__(BarType)
+        bar_type._mem = bar_type_standard(&self._mem)
+        return bar_type
+
+    cpdef BarType  composite(self):
+        cdef BarType bar_type = BarType.__new__(BarType)
+        bar_type._mem = bar_type_composite(&self._mem)
+        return bar_type
 
 
 cdef class Bar(Data):
@@ -862,12 +963,10 @@ cdef class Bar(Data):
         self.is_revision = is_revision
 
     def __getstate__(self):
-        return (
-            self.bar_type.instrument_id.value,
-            self._mem.bar_type.spec.step,
-            self._mem.bar_type.spec.aggregation,
-            self._mem.bar_type.spec.price_type,
-            self._mem.bar_type.aggregation_source,
+        bar_type = BarType.from_mem_c(self._mem.bar_type)
+        bart_type_state = bar_type.__getstate__()
+
+        return bart_type_state + (
             self._mem.open.raw,
             self._mem.high.raw,
             self._mem.low.raw,
@@ -880,27 +979,56 @@ cdef class Bar(Data):
         )
 
     def __setstate__(self, state):
-        cdef InstrumentId instrument_id = InstrumentId.from_str_c(state[0])
-        self._mem = bar_new_from_raw(
-            bar_type_new(
-                instrument_id._mem,
-                bar_specification_new(
-                    state[1],
-                    state[2],
-                    state[3],
+        if len(state) == 14:
+            instrument_id = InstrumentId.from_str_c(state[0])
+
+            self._mem = bar_new_from_raw(
+                bar_type_new(
+                    instrument_id._mem,
+                    bar_specification_new(
+                        state[1],
+                        state[2],
+                        state[3],
+                    ),
+                    state[4],
                 ),
-                state[4],
-            ),
-            state[5],
-            state[6],
-            state[7],
-            state[8],
-            state[9],
-            state[10],
-            state[11],
-            state[12],
-            state[13],
-        )
+                state[5],
+                state[6],
+                state[7],
+                state[8],
+                state[9],
+                state[10],
+                state[11],
+                state[12],
+                state[13],
+            )
+        else:
+            instrument_id = InstrumentId.from_str_c(state[0])
+
+            self._mem = bar_new_from_raw(
+                bar_type_new_composite(
+                    instrument_id._mem,
+                    bar_specification_new(
+                        state[1],
+                        state[2],
+                        state[3]
+                    ),
+                    state[4],
+
+                    state[5],
+                    state[6],
+                    state[7]
+                ),
+                state[8],
+                state[9],
+                state[10],
+                state[11],
+                state[12],
+                state[13],
+                state[14],
+                state[15],
+                state[16],
+            )
 
     def __eq__(self, Bar other) -> bool:
         return self.to_str() == other.to_str()
@@ -1617,11 +1745,11 @@ cdef class BookOrder:
         side : OrderSide {``BUY``, ``SELL``}
             The order side.
         price_raw : int64_t
-            The order raw price (as a scaled fixed precision integer).
+            The order raw price (as a scaled fixed-point integer).
         price_prec : uint8_t
             The order price precision.
         size_raw : uint64_t
-            The order raw size (as a scaled fixed precision integer).
+            The order raw size (as a scaled fixed-point integer).
         size_prec : uint8_t
             The order size precision.
         order_id : uint64_t
@@ -2103,11 +2231,11 @@ cdef class OrderBookDelta(Data):
         side : OrderSide {``BUY``, ``SELL``}
             The order side.
         price_raw : int64_t
-            The order raw price (as a scaled fixed precision integer).
+            The order raw price (as a scaled fixed-point integer).
         price_prec : uint8_t
             The order price precision.
         size_raw : uint64_t
-            The order raw size (as a scaled fixed precision integer).
+            The order raw size (as a scaled fixed-point integer).
         size_prec : uint8_t
             The order size precision.
         order_id : uint64_t
@@ -2183,6 +2311,7 @@ cdef class OrderBookDelta(Data):
 
         """
         return OrderBookDelta.clear_c(instrument_id, sequence, ts_event, ts_init)
+
 
     @staticmethod
     def to_pyo3_list(list[OrderBookDelta] deltas) -> list[nautilus_pyo3.OrderBookDelta]:
@@ -2536,6 +2665,24 @@ cdef class OrderBookDeltas(Data):
 
         """
         return OrderBookDeltas.to_dict_c(obj)
+
+    @staticmethod
+    def batch(list data: list[OrderBookDelta]) -> list[OrderBookDeltas]:
+        cdef list[list[OrderBookDelta]] batches = []
+        cdef list[OrderBookDelta] batch = []
+
+        cdef:
+            OrderBookDelta delta
+        for delta in data:
+            batch.append(delta)
+            if delta.flags == RecordFlag.F_LAST:
+                batches.append(batch)
+                batch = []
+
+        if batch:
+            batches.append(batch)
+
+        return [OrderBookDeltas(batch[0].instrument_id, deltas=batch) for batch in batches]
 
     cpdef to_capsule(self):
         cdef OrderBookDeltas_API *data = <OrderBookDeltas_API *>PyMem_Malloc(sizeof(OrderBookDeltas_API))
@@ -3751,17 +3898,17 @@ cdef class QuoteTick(Data):
         instrument_id : InstrumentId
             The quotes instrument ID.
         bid_price_raw : int64_t
-            The raw top-of-book bid price (as a scaled fixed precision integer).
+            The raw top-of-book bid price (as a scaled fixed-point integer).
         ask_price_raw : int64_t
-            The raw top-of-book ask price (as a scaled fixed precision integer).
+            The raw top-of-book ask price (as a scaled fixed-point integer).
         bid_price_prec : uint8_t
             The bid price precision.
         ask_price_prec : uint8_t
             The ask price precision.
         bid_size_raw : uint64_t
-            The raw top-of-book bid size (as a scaled fixed precision integer).
+            The raw top-of-book bid size (as a scaled fixed-point integer).
         ask_size_raw : uint64_t
-            The raw top-of-book ask size (as a scaled fixed precision integer).
+            The raw top-of-book ask size (as a scaled fixed-point integer).
         bid_size_prec : uint8_t
             The bid size precision.
         ask_size_prec : uint8_t
@@ -4352,11 +4499,11 @@ cdef class TradeTick(Data):
         instrument_id : InstrumentId
             The trade instrument ID.
         price_raw : int64_t
-            The traded raw price (as a scaled fixed precision integer).
+            The traded raw price (as a scaled fixed-point integer).
         price_prec : uint8_t
             The traded price precision.
         size_raw : uint64_t
-            The traded raw size (as a scaled fixed precision integer).
+            The traded raw size (as a scaled fixed-point integer).
         size_prec : uint8_t
             The traded size precision.
         aggressor_side : AggressorSide

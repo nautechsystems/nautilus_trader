@@ -42,6 +42,24 @@ pub struct TradeId {
 }
 
 impl TradeId {
+    /// Creates a new [`TradeId`] instance with correctness checking.
+    ///
+    /// Maximum length is 36 characters.
+    ///
+    /// The unique ID assigned to the trade entity once it is received or matched by
+    /// the exchange or central counterparty.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error:
+    /// - If `value` is not a valid string.
+    /// - If `value` length is greater than 36.
+    pub fn new_checked(value: &str) -> anyhow::Result<Self> {
+        // check that string is non-empty and within the expected length
+        check_in_range_inclusive_usize(value.len(), 1, TRADE_ID_LEN, stringify!(value))?;
+        Ok(Self::from_valid_bytes(value.as_bytes()))
+    }
+
     /// Creates a new [`TradeId`] instance.
     ///
     /// Maximum length is 36 characters.
@@ -51,12 +69,10 @@ impl TradeId {
     ///
     /// # Panics
     ///
-    /// Panics if `value` is not a valid string, or value length is greater than 36.
+    /// This function panics:
+    /// - If `value` is not a valid string, or value length is greater than 36.
     pub fn new(value: &str) -> Self {
-        // check that string is non-empty and within the expected length
-        check_in_range_inclusive_usize(value.len(), 1, TRADE_ID_LEN, stringify!(value))
-            .expect(FAILED);
-        Self::from_valid_bytes(value.as_bytes())
+        Self::new_checked(value).expect(FAILED)
     }
 
     pub fn from_cstr(cstr: CString) -> Self {

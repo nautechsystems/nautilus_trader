@@ -1,0 +1,40 @@
+{
+    "subaccount": {
+        "address": "dydx1kzsvkf2ghjqlysuffdkhcdctknl4rsvcx5hkm5",
+        "assetPositions": {
+            "USDC": {
+                "assetId": "0",
+                "side": "LONG",
+                "size": "90.461932",
+                "subaccountNumber": 0,
+                "symbol": "USDC"
+            }
+        },
+        "equity": "99.206819554",
+        "freeCollateral": "98.7695751763",
+        "latestProcessedBlockHeight": "18164178",
+        "marginEnabled": true,
+        "openPerpetualPositions": {
+            "ETH-USD": {
+                "closedAt": null,
+                "createdAt": "2024-08-01T07:09:25.767Z",
+                "createdAtHeight": "17933806",
+                "entryPrice": "3177.76666666666666666667",
+                "exitPrice": null,
+                "market": "ETH-USD",
+                "maxSize": "0.003",
+                "netFunding": "0",
+                "realizedPnl": "0",
+                "side": "LONG",
+                "size": "0.003",
+                "status": "OPEN",
+                "subaccountNumber": 0,
+                "sumClose": "0",
+                "sumOpen": "0.003",
+                "unrealizedPnl": "-0.78841244600000000000001"
+            }
+        },
+        "subaccountNumber": 0,
+        "updatedAtHeight": "17933806"
+    }
+}

@@ -23,6 +23,7 @@ use nautilus_model::{
 use crate::indicator::Indicator;
 
 /// An indicator which calculates the efficiency ratio across a rolling window.
+///
 /// The Kaufman Efficiency measures the ratio of the relative market speed in
 /// relation to the volatility, this could be thought of as a proxy for noise.
 #[repr(C)]

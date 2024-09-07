@@ -35,6 +35,7 @@ from nautilus_trader.adapters.binance.http.account import BinanceAccountHttpAPI
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.adapters.binance.http.error import BinanceError
+from nautilus_trader.adapters.binance.http.error import should_retry
 from nautilus_trader.adapters.binance.http.market import BinanceMarketHttpAPI
 from nautilus_trader.adapters.binance.http.user import BinanceUserDataHttpAPI
 from nautilus_trader.adapters.binance.websocket.client import BinanceWebSocketClient
@@ -56,6 +57,7 @@ from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
+from nautilus_trader.live.retry import RetryManagerPool
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
@@ -87,7 +89,7 @@ from nautilus_trader.model.position import Position
 
 class BinanceCommonExecutionClient(LiveExecutionClient):
     """
-    Execution client providing common functionality for the `Binance` exchanges.
+    Execution client providing common functionality for the Binance exchanges.
 
     Parameters
     ----------
@@ -162,6 +164,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._use_reduce_only: bool = config.use_reduce_only
         self._use_position_ids: bool = config.use_position_ids
         self._treat_expired_as_canceled: bool = config.treat_expired_as_canceled
+        self._recv_window = config.recv_window_ms
         self._max_retries: int = config.max_retries or 0
         self._retry_delay: float = config.retry_delay or 1.0
         self._log.info(f"Account type: {self._binance_account_type.value}", LogColor.BLUE)
@@ -180,7 +183,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         # Enum parser
         self._enum_parser = enum_parser
 
-        # Http API
+        # HTTP API
         self._http_client = client
         self._http_account = account
         self._http_market = market
@@ -211,24 +214,18 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             OrderType.TRAILING_STOP_MARKET: self._submit_trailing_stop_market_order,
         }
 
-        # Retry logic (hard coded for now)
-        self._retry_errors: set[BinanceErrorCode] = {
-            BinanceErrorCode.DISCONNECTED,
-            BinanceErrorCode.TOO_MANY_REQUESTS,  # Short retry delays may result in bans
-            BinanceErrorCode.TIMEOUT,
-            BinanceErrorCode.SERVER_BUSY,
-            BinanceErrorCode.INVALID_TIMESTAMP,
-            BinanceErrorCode.CANCEL_REJECTED,
-            BinanceErrorCode.ME_RECVWINDOW_REJECT,
-        }
-
-        self._recv_window = 5_000
-
         # Hot caches
         self._instrument_ids: dict[str, InstrumentId] = {}
         self._generate_order_status_retries: dict[ClientOrderId, int] = {}
-        self._modifying_orders: dict[ClientOrderId, VenueOrderId] = {}
-        self._order_retries: dict[ClientOrderId, int] = {}
+
+        self._retry_manager_pool = RetryManagerPool(
+            pool_size=100,
+            max_retries=config.max_retries or 0,
+            retry_delay_secs=config.retry_delay or 0.0,
+            logger=self._log,
+            exc_types=(BinanceError,),
+            retry_check=should_retry,
+        )
 
         self._log.info(f"Base url HTTP {self._http_client.base_url}", LogColor.BLUE)
         self._log.info(f"Base url WebSocket {base_url_ws}", LogColor.BLUE)
@@ -258,6 +255,9 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         """
         return self._treat_expired_as_canceled
 
+    def _stop(self) -> None:
+        self._retry_manager_pool.shutdown()
+
     async def _connect(self) -> None:
         try:
             # Initialize instrument provider
@@ -282,7 +282,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         nautilus_time: int = self._clock.timestamp_ms()
         self._log.info(f"Nautilus clock time {nautilus_time} UNIX (ms)")
 
-        # Setup WebSocket listen key
+        # Set up WebSocket listen key
         self._listen_key = response.listenKey
         self._log.info(f"Listen key {self._listen_key}")
         self._ping_listen_keys_task = self.create_task(self._ping_listen_keys())
@@ -591,15 +591,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         # Implement in child class
         raise NotImplementedError
 
-    def _should_retry(self, error_code: BinanceErrorCode, retries: int) -> bool:
-        if (
-            error_code not in self._retry_errors
-            or not self._max_retries
-            or retries > self._max_retries
-        ):
-            return False
-        return True
-
     def _determine_time_in_force(self, order: Order) -> BinanceTimeInForce:
         time_in_force = self._enum_parser.parse_internal_time_in_force(order.time_in_force)
         if time_in_force == TimeInForce.GTD and not self._use_gtd:
@@ -696,34 +687,22 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             ts_event=self._clock.timestamp_ns(),
         )
 
-        while True:
-            try:
-                await self._submit_order_method[order.order_type](order, position_side)
-                self._order_retries.pop(order.client_order_id, None)
-                break  # Successful request
-            except KeyError:
-                raise RuntimeError(f"unsupported order type, was {order.order_type}")
-            except BinanceError as e:
-                error_code = BinanceErrorCode(e.message["code"])
-
-                retries = self._order_retries.get(order.client_order_id, 0) + 1
-                self._order_retries[order.client_order_id] = retries
-
-                if not self._should_retry(error_code, retries):
-                    self.generate_order_rejected(
-                        strategy_id=order.strategy_id,
-                        instrument_id=order.instrument_id,
-                        client_order_id=order.client_order_id,
-                        reason=str(e.message),
-                        ts_event=self._clock.timestamp_ns(),
-                    )
-                    break
-
-                self._log.warning(
-                    f"{error_code.name}: retrying {order.client_order_id!r} "
-                    f"{retries}/{self._max_retries} in {self._retry_delay}s",
+        async with self._retry_manager_pool as retry_manager:
+            await retry_manager.run(
+                "submit_order",
+                [order.client_order_id],
+                self._submit_order_method[order.order_type],
+                order,
+                position_side,
+            )
+            if not retry_manager.result:
+                self.generate_order_rejected(
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    reason=retry_manager.message,
+                    ts_event=self._clock.timestamp_ns(),
                 )
-                await asyncio.sleep(self._retry_delay)
 
     async def _submit_market_order(
         self,
@@ -953,56 +932,28 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             )
             return
 
-        while True:
-            try:
-                await self._http_account.modify_order(
-                    symbol=order.instrument_id.symbol.value,
-                    order_id=int(order.venue_order_id.value) if order.venue_order_id else None,
-                    side=self._enum_parser.parse_internal_order_side(order.side),
-                    quantity=str(command.quantity) if command.quantity else str(order.quantity),
-                    price=str(command.price) if command.price else str(order.price),
-                )
-                self._order_retries.pop(command.client_order_id, None)
-                break  # Successful request
-            except BinanceError as e:
-                error_code = BinanceErrorCode(e.message["code"])
-
-                retries = self._order_retries.get(command.client_order_id, 0) + 1
-                self._order_retries[command.client_order_id] = retries
-
-                if not self._should_retry(error_code, retries):
-                    break
-
-                self._log.warning(
-                    f"{error_code.name}: retrying {command.client_order_id!r} "
-                    f"{retries}/{self._max_retries} in {self._retry_delay}s",
-                )
-                await asyncio.sleep(self._retry_delay)
+        async with self._retry_manager_pool as retry_manager:
+            await retry_manager.run(
+                "modify_order",
+                [order.client_order_id, order.venue_order_id],
+                self._http_account.modify_order,
+                symbol=order.instrument_id.symbol.value,
+                order_id=int(order.venue_order_id.value) if order.venue_order_id else None,
+                side=self._enum_parser.parse_internal_order_side(order.side),
+                quantity=str(command.quantity) if command.quantity else str(order.quantity),
+                price=str(command.price) if command.price else str(order.price),
+            )
 
     async def _cancel_order(self, command: CancelOrder) -> None:
-        while True:
-            try:
-                await self._cancel_order_single(
-                    instrument_id=command.instrument_id,
-                    client_order_id=command.client_order_id,
-                    venue_order_id=command.venue_order_id,
-                )
-                self._order_retries.pop(command.client_order_id, None)
-                break  # Successful request
-            except BinanceError as e:
-                error_code = BinanceErrorCode(e.message["code"])
-
-                retries = self._order_retries.get(command.client_order_id, 0) + 1
-                self._order_retries[command.client_order_id] = retries
-
-                if not self._should_retry(error_code, retries):
-                    break
-
-                self._log.warning(
-                    f"{error_code.name}: retrying {command.client_order_id!r} "
-                    f"{retries}/{self._max_retries} in {self._retry_delay}s",
-                )
-                await asyncio.sleep(self._retry_delay)
+        async with self._retry_manager_pool as retry_manager:
+            await retry_manager.run(
+                "cancel_order",
+                [command.client_order_id, command.venue_order_id],
+                self._cancel_order_single,
+                instrument_id=command.instrument_id,
+                client_order_id=command.client_order_id,
+                venue_order_id=command.venue_order_id,
+            )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         open_orders_strategy: list[Order] = self._cache.orders_open(
@@ -1073,7 +1024,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     e,
                 )
 
-    # -- WEBSOCKET EVENT HANDLERS --------------------------------------------------------------------
+    # -- WEBSOCKET EVENT HANDLERS -----------------------------------------------------------------
 
     def _handle_user_ws_message(self, raw: bytes) -> None:
         # Implement in child class

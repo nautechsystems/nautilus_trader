@@ -18,6 +18,7 @@ import hashlib
 import hmac
 from collections.abc import Awaitable
 from collections.abc import Callable
+from typing import Any
 
 import msgspec
 
@@ -25,6 +26,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClient
+from nautilus_trader.core.nautilus_pyo3 import WebSocketClientError
 from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
 
 
@@ -33,7 +35,7 @@ MAX_ARGS_PER_SUBSCRIPTION_REQUEST = 10
 
 class BybitWebsocketClient:
     """
-    Provides a `Bybit` streaming WebSocket client.
+    Provides a Bybit streaming WebSocket client.
 
     Parameters
     ----------
@@ -102,7 +104,7 @@ class BybitWebsocketClient:
         ## Authenticate
         if self._is_private:
             signature = self._get_signature()
-            self._client.send(msgspec.json.encode(signature))
+            await self._send(signature)
 
     # TODO: Temporarily sync
     def reconnect(self) -> None:
@@ -127,7 +129,11 @@ class BybitWebsocketClient:
             self._log.warning("Cannot disconnect: not connected.")
             return
 
-        await self._client.disconnect()
+        try:
+            await self._client.disconnect()
+        except WebSocketClientError as e:
+            self._log.error(str(e))
+
         self._client = None  # Dispose (will go out of scope)
 
         self._log.info(f"Disconnected from {self._base_url}", LogColor.BLUE)
@@ -137,151 +143,111 @@ class BybitWebsocketClient:
     ################################################################################
 
     async def subscribe_order_book(self, symbol: str, depth: int) -> None:
-        if self._client is None:
-            self._log.warning("Cannot subscribe: not connected")
-            return
-
         subscription = f"orderbook.{depth}.{symbol}"
         if subscription in self._subscriptions:
             self._log.warning(f"Cannot subscribe '{subscription}': already subscribed")
             return
 
         self._subscriptions.append(subscription)
-        sub = {"op": "subscribe", "args": [subscription]}
-        await self._client.send(msgspec.json.encode(sub))
+        msg = {"op": "subscribe", "args": [subscription]}
+        await self._send(msg)
 
     async def subscribe_trades(self, symbol: str) -> None:
-        if self._client is None:
-            self._log.warning("Cannot subscribe: not connected")
-            return
-
         subscription = f"publicTrade.{symbol}"
         if subscription in self._subscriptions:
             self._log.warning(f"Cannot subscribe '{subscription}': already subscribed")
             return
 
         self._subscriptions.append(subscription)
-        sub = {"op": "subscribe", "args": [subscription]}
-        await self._client.send(msgspec.json.encode(sub))
+        msg = {"op": "subscribe", "args": [subscription]}
+        await self._send(msg)
 
     async def subscribe_tickers(self, symbol: str) -> None:
-        if self._client is None:
-            self._log.warning("Cannot subscribe: not connected")
-            return
-
         subscription = f"tickers.{symbol}"
         if subscription in self._subscriptions:
             self._log.warning(f"Cannot subscribe '{subscription}': already subscribed")
             return
 
         self._subscriptions.append(subscription)
-        sub = {"op": "subscribe", "args": [subscription]}
-        await self._client.send(msgspec.json.encode(sub))
+        msg = {"op": "subscribe", "args": [subscription]}
+        await self._send(msg)
 
     async def subscribe_klines(self, symbol: str, interval: str) -> None:
-        if self._client is None:
-            self._log.warning("Cannot subscribe: not connected")
-            return
-
         subscription = f"kline.{interval}.{symbol}"
         if subscription in self._subscriptions:
             self._log.warning(f"Cannot subscribe '{subscription}': already subscribed")
             return
 
         self._subscriptions.append(subscription)
-        sub = {"op": "subscribe", "args": [subscription]}
-        await self._client.send(msgspec.json.encode(sub))
+        msg = {"op": "subscribe", "args": [subscription]}
+        await self._send(msg)
 
     async def unsubscribe_order_book(self, symbol: str, depth: int) -> None:
-        if self._client is None:
-            self._log.warning("Cannot unsubscribe: not connected")
-            return
-
         subscription = f"orderbook.{depth}.{symbol}"
         if subscription not in self._subscriptions:
             self._log.warning(f"Cannot unsubscribe '{subscription}': not subscribed")
             return
 
         self._subscriptions.remove(subscription)
-        sub = {"op": "unsubscribe", "args": [subscription]}
-        await self._client.send(msgspec.json.encode(sub))
+        msg = {"op": "unsubscribe", "args": [subscription]}
+        await self._send(msg)
 
     async def unsubscribe_trades(self, symbol: str) -> None:
-        if self._client is None:
-            self._log.warning("Cannot unsubscribe: not connected")
-            return
-
         subscription = f"publicTrade.{symbol}"
         if subscription not in self._subscriptions:
             self._log.warning(f"Cannot unsubscribe '{subscription}': not subscribed")
             return
 
         self._subscriptions.remove(subscription)
-        sub = {"op": "unsubscribe", "args": [subscription]}
-        await self._client.send(msgspec.json.encode(sub))
+        msg = {"op": "unsubscribe", "args": [subscription]}
+        await self._send(msg)
 
     async def unsubscribe_tickers(self, symbol: str) -> None:
-        if self._client is None:
-            self._log.warning("Cannot unsubscribe: not connected")
-            return
-
         subscription = f"tickers.{symbol}"
         if subscription not in self._subscriptions:
             self._log.warning(f"Cannot unsubscribe '{subscription}': not subscribed")
             return
 
         self._subscriptions.remove(subscription)
-        sub = {"op": "unsubscribe", "args": [subscription]}
-        await self._client.send(msgspec.json.encode(sub))
+        msg = {"op": "unsubscribe", "args": [subscription]}
+        await self._send(msg)
 
     async def unsubscribe_klines(self, symbol: str, interval: str) -> None:
-        if self._client is None:
-            self._log.warning("Cannot unsubscribe: not connected")
-            return
-
         subscription = f"kline.{interval}.{symbol}"
         if subscription not in self._subscriptions:
             self._log.warning(f"Cannot unsubscribe '{subscription}': not subscribed")
             return
 
         self._subscriptions.remove(subscription)
-        sub = {"op": "unsubscribe", "args": [subscription]}
-        await self._client.send(msgspec.json.encode(sub))
+        msg = {"op": "unsubscribe", "args": [subscription]}
+        await self._send(msg)
 
     ################################################################################
     # Private
     ################################################################################
     # async def subscribe_account_position_update(self) -> None:
-    #     subsscription = "position"
-    #     sub = {"op": "subscribe", "args": [subsscription]}
-    #     await self._client.send_text(json.dumps(sub))
-    #     self._subscriptions.append(subsscription)
+    #     subscription = "position"
+    #     msg = {"op": "subscribe", "args": [subscription]}
+    #     await self._send(msg)
+    #     self._subscriptions.append(subscription)
 
     async def subscribe_orders_update(self) -> None:
-        if self._client is None:
-            self._log.warning("Cannot subscribe: not connected")
-            return
-
         subscription = "order"
         if subscription in self._subscriptions:
             return
 
         self._subscriptions.append(subscription)
-        sub = {"op": "subscribe", "args": [subscription]}
-        await self._client.send(msgspec.json.encode(sub))
+        msg = {"op": "subscribe", "args": [subscription]}
+        await self._send(msg)
 
     async def subscribe_executions_update(self) -> None:
-        if self._client is None:
-            self._log.warning("Cannot subscribe: not connected")
-            return
-
         subscription = "execution"
         if subscription in self._subscriptions:
             return
 
         self._subscriptions.append(subscription)
-        sub = {"op": "subscribe", "args": [subscription]}
-        await self._client.send(msgspec.json.encode(sub))
+        msg = {"op": "subscribe", "args": [subscription]}
+        await self._send(msg)
 
     def _get_signature(self):
         expires = self._clock.timestamp_ms() + 1_000
@@ -310,5 +276,17 @@ class BybitWebsocketClient:
         ]
 
         for subscriptions in subscription_lists:
-            sub = {"op": "subscribe", "args": subscriptions}
-            await self._client.send(msgspec.json.encode(sub))
+            msg = {"op": "subscribe", "args": subscriptions}
+            await self._send(msg)
+
+    async def _send(self, msg: dict[str, Any]) -> None:
+        if self._client is None:
+            self._log.error(f"Cannot send message {msg}: not connected")
+            return
+
+        self._log.debug(f"SENDING: {msg}")
+
+        try:
+            await self._client.send_text(msgspec.json.encode(msg))
+        except WebSocketClientError as e:
+            self._log.error(str(e))

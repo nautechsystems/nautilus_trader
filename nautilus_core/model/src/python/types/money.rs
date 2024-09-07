@@ -41,9 +41,7 @@ use crate::types::{
 impl Money {
     #[new]
     fn py_new(amount: f64, currency: Currency) -> PyResult<Self> {
-        check_in_range_inclusive_f64(amount, MONEY_MIN, MONEY_MAX, "amount")
-            .map_err(to_pyvalue_err)?;
-        Ok(Self::new(amount, currency))
+        Self::new_checked(amount, currency).map_err(to_pyvalue_err)
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {

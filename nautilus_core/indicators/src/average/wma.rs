@@ -56,12 +56,20 @@ impl WeightedMovingAverage {
     /// Creates a new [`WeightedMovingAverage`] instance.
     #[must_use]
     pub fn new(period: usize, weights: Vec<f64>, price_type: Option<PriceType>) -> Self {
+        Self::new_checked(period, weights, price_type).expect(FAILED)
+    }
+
+    pub fn new_checked(
+        period: usize,
+        weights: Vec<f64>,
+        price_type: Option<PriceType>,
+    ) -> anyhow::Result<Self> {
         check_predicate_true(
             period == weights.len(),
             "`period` must be equal to `weights` length",
-        )
-        .expect(FAILED);
-        Self {
+        )?;
+
+        Ok(Self {
             period,
             weights,
             price_type: price_type.unwrap_or(PriceType::Last),
@@ -69,7 +77,7 @@ impl WeightedMovingAverage {
             inputs: Vec::with_capacity(period),
             initialized: false,
             has_inputs: false,
-        }
+        })
     }
 
     fn weighted_average(&self) -> f64 {

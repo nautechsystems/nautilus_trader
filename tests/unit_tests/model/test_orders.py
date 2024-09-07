@@ -380,6 +380,7 @@ class TestOrders:
             AUDUSD_SIM.id,
             OrderSide.BUY,
             Quantity.from_int(100_000),
+            tags=["tag-01", "tag-02", "tag-03"],
         )
 
         # Act
@@ -417,7 +418,7 @@ class TestOrders:
             "exec_algorithm_id": None,
             "exec_algorithm_params": None,
             "exec_spawn_id": None,
-            "tags": None,
+            "tags": ["tag-01", "tag-02", "tag-03"],
             "ts_init": 0,
             "ts_last": 0,
         }

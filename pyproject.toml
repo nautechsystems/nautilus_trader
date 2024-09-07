@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.199.0"
+version = "1.200.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -39,7 +39,7 @@ include = [
 requires = [
     "setuptools",
     "poetry-core>=1.9.0",
-    "numpy>=2.1.0",
+    "numpy>=2.0.1",
     "Cython==3.0.11",
     "toml>=0.10.2",
 ]
@@ -52,8 +52,8 @@ generate-setup-file = false
 [tool.poetry.dependencies]
 python = ">=3.10,<3.13"
 cython = "==3.0.11"  # Build dependency (pinned for stability)
-numpy = "^2.1.0"  # Build dependency
-setuptools = ">=72" # Build dependency
+numpy = ">=2.0.1"  # Build dependency
+setuptools = ">=73" # Build dependency
 toml = "^0.10.2"  # Build dependency
 click = "^8.1.7"
 fsspec = "==2023.6.0"  # Pinned due breaking changes
@@ -68,11 +68,18 @@ async-timeout = {version = "^4.0.3", optional = true}
 betfair_parser = {version = "==0.13.0", optional = true}  # Pinned for stability
 defusedxml = {version = "^0.7.1", optional = true}
 docker = {version = "^7.1.0", optional = true}
-nautilus_ibapi = {version = "==10.19.2", optional = true}  # Pinned for stability
+nautilus_ibapi = {version = "==10.19.4", optional = true}  # Pinned for stability
+v4-proto = {version = "==5.2.2", optional = true}  # Pinned due breaking protobuf issue
+bech32 = {version = "^1.2.0", optional = true}
+ecdsa = {version = "^0.19.0", optional = true}
+bip-utils = {version = "^2.9.3", optional = true}
+pycryptodome = {version = "^3.20.0", optional = true}
 
 [tool.poetry.extras]
 betfair = ["betfair_parser"]
+binance = ["pycryptodome"]
 docker = ["docker"]
+dydx = ["v4-proto", "bech32", "ecdsa", "bip-utils", "pycryptodome"]
 ib = ["nautilus_ibapi", "async-timeout", "defusedxml"]
 
 [tool.poetry.group.dev]
@@ -81,10 +88,10 @@ optional = true
 [tool.poetry.group.dev.dependencies]
 black = "^24.8.0"
 docformatter = "^1.7.5"
-mypy = "^1.11.1"
+mypy = "^1.11.2"
 pandas-stubs = "^2.2.2"
 pre-commit = "^3.8.0"
-ruff = "^0.6.1"
+ruff = "^0.6.4"
 types-pytz = "^2024.1"
 types-requests = "^2.32"
 types-toml = "^0.10.2"

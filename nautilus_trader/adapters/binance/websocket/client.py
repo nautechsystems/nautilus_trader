@@ -14,22 +14,24 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import json
 from collections.abc import Awaitable
 from collections.abc import Callable
 from typing import Any
+
+import msgspec
 
 from nautilus_trader.adapters.binance.common.symbol import BinanceSymbol
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClient
+from nautilus_trader.core.nautilus_pyo3 import WebSocketClientError
 from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
 
 
 class BinanceWebSocketClient:
     """
-    Provides a `Binance` streaming WebSocket client.
+    Provides a Binance streaming WebSocket client.
 
     Parameters
     ----------
@@ -148,7 +150,10 @@ class BinanceWebSocketClient:
         if self._client is None:
             return
 
-        await self._client.send_pong(raw)
+        try:
+            await self._client.send_pong(raw)
+        except WebSocketClientError as e:
+            self._log.error(str(e))
 
     # TODO: Temporarily sync
     def reconnect(self) -> None:
@@ -176,7 +181,11 @@ class BinanceWebSocketClient:
             return
 
         self._log.debug("Disconnecting...")
-        await self._client.disconnect()
+        try:
+            await self._client.disconnect()
+        except WebSocketClientError as e:
+            self._log.error(str(e))
+
         self._client = None  # Dispose (will go out of scope)
 
         self._log.info(f"Disconnected from {self._base_url}", LogColor.BLUE)
@@ -476,10 +485,8 @@ class BinanceWebSocketClient:
             await self.connect()
             return
 
-        message = self._create_subscribe_msg(streams=[stream])
-        self._log.debug(f"SENDING: {message}")
-
-        await self._client.send_text(json.dumps(message))
+        msg = self._create_subscribe_msg(streams=[stream])
+        await self._send(msg)
         self._log.debug(f"Subscribed to {stream}")
 
     async def _subscribe_all(self) -> None:
@@ -487,10 +494,8 @@ class BinanceWebSocketClient:
             self._log.error("Cannot subscribe all: no connected")
             return
 
-        message = self._create_subscribe_msg(streams=self._streams)
-        self._log.debug(f"SENDING: {message}")
-
-        await self._client.send_text(json.dumps(message))
+        msg = self._create_subscribe_msg(streams=self._streams)
+        await self._send(msg)
         for stream in self._streams:
             self._log.debug(f"Subscribed to {stream}")
 
@@ -501,14 +506,8 @@ class BinanceWebSocketClient:
 
         self._streams.remove(stream)
 
-        if self._client is None:
-            self._log.error(f"Cannot unsubscribe from {stream}: not connected")
-            return
-
-        message = self._create_unsubscribe_msg(streams=[stream])
-        self._log.debug(f"SENDING: {message}")
-
-        await self._client.send_text(json.dumps(message))
+        msg = self._create_unsubscribe_msg(streams=[stream])
+        await self._send(msg)
         self._log.debug(f"Unsubscribed from {stream}")
 
     def _create_subscribe_msg(self, streams: list[str]) -> dict[str, Any]:
@@ -528,3 +527,15 @@ class BinanceWebSocketClient:
         }
         self._msg_id += 1
         return message
+
+    async def _send(self, msg: dict[str, Any]) -> None:
+        if self._client is None:
+            self._log.error(f"Cannot send message {msg}: not connected")
+            return
+
+        self._log.debug(f"SENDING: {msg}")
+
+        try:
+            await self._client.send_text(msgspec.json.encode(msg))
+        except WebSocketClientError as e:
+            self._log.error(str(e))

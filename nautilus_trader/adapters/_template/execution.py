@@ -15,6 +15,7 @@
 
 import pandas as pd
 
+from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
 from nautilus_trader.execution.messages import CancelOrder
 from nautilus_trader.execution.messages import ModifyOrder
@@ -55,9 +56,10 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
     +--------------------------------------------+-------------+
     | _submit_order                              | required    |
     | _submit_order_list                         | required    |
-    | _modify_order                              | required    |
+    | _modify_order                              | optional    |
     | _cancel_order                              | required    |
     | _cancel_all_orders                         | required    |
+    | _batch_cancel_orders                       | optional    |
     | generate_order_status_report               | required    |
     | generate_order_status_reports              | required    |
     | generate_fill_reports                      | required    |
@@ -155,6 +157,11 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         raise NotImplementedError(
             "method `_cancel_all_orders` must be implemented in the subclass",
+        )  # pragma: no cover
+
+    async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
+        raise NotImplementedError(
+            "method `_batch_cancel_orders` must be implemented in the subclass",
         )  # pragma: no cover
 
     async def _query_order(self, command: QueryOrder) -> None:

@@ -35,20 +35,36 @@ use super::Venue;
 pub struct AccountId(Ustr);
 
 impl AccountId {
-    /// Creates a new [`AccountId`] instance.
+    /// Creates a new [`AccountId`] instance with correctness checking.
     ///
     /// Must be correctly formatted with two valid strings either side of a hyphen '-'.
+    ///
     /// It is expected an account ID is the name of the issuer with an account number
     /// separated by a hyphen.
     ///
-    /// Example: "IB-D02851908".
+    /// # Errors
+    ///
+    /// This function returns an error:
+    /// - If `value` is not a valid string.
+    /// - If `value` length is greater than 36.
+    ///
+    /// # Notes
+    ///
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+    pub fn new_checked(value: &str) -> anyhow::Result<Self> {
+        check_valid_string(value, stringify!(value))?;
+        check_string_contains(value, "-", stringify!(value))?;
+        Ok(Self(Ustr::from(value)))
+    }
+
+    /// Creates a new [`AccountId`] instance.
+    ///
     /// # Panics
     ///
-    /// Panics if `value` is not a valid string, or does not contain a hyphen '-' separator.
+    /// This function panics:
+    /// - If `value` is not a valid string, or value length is greater than 36.
     pub fn new(value: &str) -> Self {
-        check_valid_string(value, stringify!(value)).expect(FAILED);
-        check_string_contains(value, "-", stringify!(value)).expect(FAILED);
-        Self(Ustr::from(value))
+        Self::new_checked(value).expect(FAILED)
     }
 
     /// Sets the inner identifier value.

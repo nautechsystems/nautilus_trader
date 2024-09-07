@@ -63,8 +63,8 @@ config_node = TradingNodeConfig(
     #     timestamps_as_iso8601=True,
     #     # types_filter=[QuoteTick],
     #     autotrim_mins=1,
+    #     heartbeat_interval_secs=1,
     # ),
-    # heartbeat_interval=1.0,
     data_clients={
         "BYBIT": BybitDataClientConfig(
             api_key=None,  # 'BYBIT_API_KEY' env var
@@ -84,6 +84,8 @@ config_node = TradingNodeConfig(
             instrument_provider=InstrumentProviderConfig(load_all=True),
             product_types=[product_type],
             testnet=False,  # If client uses the testnet
+            max_retries=3,
+            retry_delay=1.0,
         ),
     },
     timeout_connection=20.0,

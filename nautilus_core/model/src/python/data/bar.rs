@@ -80,17 +80,14 @@ impl BarSpecification {
 #[pymethods]
 impl BarType {
     #[new]
-    #[pyo3(signature = (instrument_id, spec, aggregation_source = AggregationSource::External))]
+    #[pyo3(signature = (instrument_id, spec, aggregation_source = AggregationSource::External)
+    )]
     fn py_new(
         instrument_id: InstrumentId,
         spec: BarSpecification,
         aggregation_source: AggregationSource,
     ) -> Self {
-        Self {
-            instrument_id,
-            spec,
-            aggregation_source,
-        }
+        Self::new(instrument_id, spec, aggregation_source)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -125,6 +122,46 @@ impl BarType {
     #[pyo3(name = "from_str")]
     fn py_from_str(value: &str) -> PyResult<Self> {
         Self::from_str(value).map_err(to_pyvalue_err)
+    }
+
+    #[staticmethod]
+    #[pyo3(name = "new_composite")]
+    fn py_new_composite(
+        instrument_id: InstrumentId,
+        spec: BarSpecification,
+        aggregation_source: AggregationSource,
+        composite_step: usize,
+        composite_aggregation: BarAggregation,
+        composite_aggregation_source: AggregationSource,
+    ) -> Self {
+        Self::new_composite(
+            instrument_id,
+            spec,
+            aggregation_source,
+            composite_step,
+            composite_aggregation,
+            composite_aggregation_source,
+        )
+    }
+
+    #[pyo3(name = "is_standard")]
+    fn py_is_standard(&self) -> bool {
+        self.is_standard()
+    }
+
+    #[pyo3(name = "is_composite")]
+    fn py_is_composite(&self) -> bool {
+        self.is_composite()
+    }
+
+    #[pyo3(name = "standard")]
+    fn py_standard(&self) -> Self {
+        self.standard()
+    }
+
+    #[pyo3(name = "composite")]
+    fn py_composite(&self) -> Self {
+        self.composite()
     }
 }
 

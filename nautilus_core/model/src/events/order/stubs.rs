@@ -66,7 +66,6 @@ pub fn order_filled(
         None,
         Some(Money::from("12.2 USDT")),
     )
-    .unwrap()
 }
 
 #[fixture]
@@ -87,7 +86,6 @@ pub fn order_denied_max_submitted_rate(
         UnixNanos::default(),
         UnixNanos::default(),
     )
-    .unwrap()
 }
 
 #[fixture]
@@ -111,7 +109,6 @@ pub fn order_rejected_insufficient_margin(
         UnixNanos::default(),
         false,
     )
-    .unwrap()
 }
 
 #[fixture]
@@ -159,7 +156,6 @@ pub fn order_initialized_buy_limit(
         None,
         None,
     )
-    .unwrap()
 }
 
 #[fixture]
@@ -181,7 +177,6 @@ pub fn order_submitted(
         UnixNanos::default(),
         UnixNanos::default(),
     )
-    .unwrap()
 }
 
 #[fixture]
@@ -206,7 +201,6 @@ pub fn order_triggered(
         Some(venue_order_id),
         Some(account_id),
     )
-    .unwrap()
 }
 
 #[fixture]
@@ -226,7 +220,6 @@ pub fn order_emulated(
         UnixNanos::default(),
         UnixNanos::default(),
     )
-    .unwrap()
 }
 
 #[fixture]
@@ -247,7 +240,6 @@ pub fn order_released(
         UnixNanos::default(),
         UnixNanos::default(),
     )
-    .unwrap()
 }
 
 #[fixture]
@@ -275,7 +267,6 @@ pub fn order_updated(
         Some(Price::from("22000")),
         None,
     )
-    .unwrap()
 }
 
 #[fixture]
@@ -300,7 +291,6 @@ pub fn order_pending_update(
         false,
         Some(venue_order_id),
     )
-    .unwrap()
 }
 
 #[fixture]
@@ -325,7 +315,6 @@ pub fn order_pending_cancel(
         false,
         Some(venue_order_id),
     )
-    .unwrap()
 }
 
 #[fixture]
@@ -351,7 +340,6 @@ pub fn order_modify_rejected(
         Some(venue_order_id),
         Some(account_id),
     )
-    .unwrap()
 }
 
 #[fixture]
@@ -376,7 +364,6 @@ pub fn order_accepted(
         UnixNanos::default(),
         false,
     )
-    .unwrap()
 }
 
 #[fixture]
@@ -402,7 +389,6 @@ pub fn order_cancel_rejected(
         Some(venue_order_id),
         Some(account_id),
     )
-    .unwrap()
 }
 
 #[fixture]
@@ -427,5 +413,4 @@ pub fn order_expired(
         Some(venue_order_id),
         Some(account_id),
     )
-    .unwrap()
 }

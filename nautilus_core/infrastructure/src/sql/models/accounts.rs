@@ -47,8 +47,7 @@ impl<'r> FromRow<'r, PgRow> for AccountEventModel {
             ts_event,
             ts_init,
             base_currency,
-        )
-        .unwrap();
+        );
         Ok(AccountEventModel(account_event))
     }
 }

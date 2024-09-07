@@ -77,6 +77,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id=*,
         dict exec_algorithm_params=*,
         list[str] tags=*,
+        ClientOrderId client_order_id=*,
     )
 
     cpdef LimitOrder limit(
@@ -96,6 +97,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id=*,
         dict exec_algorithm_params=*,
         list[str] tags=*,
+        ClientOrderId client_order_id=*,
     )
 
     cpdef StopMarketOrder stop_market(
@@ -114,6 +116,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id=*,
         dict exec_algorithm_params=*,
         list[str] tags=*,
+        ClientOrderId client_order_id=*,
     )
 
     cpdef StopLimitOrder stop_limit(
@@ -135,6 +138,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id=*,
         dict exec_algorithm_params=*,
         list[str] tags=*,
+        ClientOrderId client_order_id=*,
     )
 
     cpdef MarketToLimitOrder market_to_limit(
@@ -150,6 +154,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id=*,
         dict exec_algorithm_params=*,
         list[str] tags=*,
+        ClientOrderId client_order_id=*,
     )
 
     cpdef MarketIfTouchedOrder market_if_touched(
@@ -168,6 +173,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id=*,
         dict exec_algorithm_params=*,
         list[str] tags=*,
+        ClientOrderId client_order_id=*,
     )
 
     cpdef LimitIfTouchedOrder limit_if_touched(
@@ -189,6 +195,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id=*,
         dict exec_algorithm_params=*,
         list[str] tags=*,
+        ClientOrderId client_order_id=*,
     )
 
     cpdef TrailingStopMarketOrder trailing_stop_market(
@@ -209,6 +216,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id=*,
         dict exec_algorithm_params=*,
         list[str] tags=*,
+        ClientOrderId client_order_id=*,
     )
 
     cpdef TrailingStopLimitOrder trailing_stop_limit(
@@ -233,6 +241,7 @@ cdef class OrderFactory:
         ExecAlgorithmId exec_algorithm_id=*,
         dict exec_algorithm_params=*,
         list[str] tags=*,
+        ClientOrderId client_order_id=*,
     )
 
     cpdef OrderList bracket(
@@ -248,6 +257,8 @@ cdef class OrderFactory:
         OrderType entry_order_type=*,
         OrderType tp_order_type=*,
         TimeInForce time_in_force=*,
+        TimeInForce tp_time_in_force=*,
+        TimeInForce sl_time_in_force=*,
         datetime expire_time=*,
         bint entry_post_only=*,
         bint tp_post_only=*,
@@ -264,4 +275,7 @@ cdef class OrderFactory:
         list[str] entry_tags=*,
         list[str] tp_tags=*,
         list[str] sl_tags=*,
+        ClientOrderId entry_client_order_id=*,
+        ClientOrderId tp_client_order_id=*,
+        ClientOrderId sl_client_order_id=*,
     )

@@ -6,6 +6,7 @@ import os
 import platform
 import shutil
 import subprocess
+import sys
 import sysconfig
 from pathlib import Path
 
@@ -46,12 +47,19 @@ else:
 ################################################################################
 #  RUST BUILD
 ################################################################################
+
+TARGET_DIR = Path.cwd() / "nautilus_core" / "target" / BUILD_MODE
+
 if platform.system() == "Linux":
     # Use clang as the default compiler
     os.environ["CC"] = "clang"
     os.environ["LDSHARED"] = "clang -shared"
 
-TARGET_DIR = Path.cwd() / "nautilus_core" / "target" / BUILD_MODE
+if platform.system() == "Darwin" and platform.machine() == "arm64":
+    TARGET_DIR = Path.cwd() / "nautilus_core" / "target" / "aarch64-apple-darwin" / BUILD_MODE
+    os.environ["CFLAGS"] = "-arch arm64"
+    os.environ["LDFLAGS"] = "-arch arm64 -w"
+
 
 if platform.system() == "Windows":
     # Linker error 1181
@@ -87,6 +95,10 @@ def _build_rust_libs() -> None:
             raise ValueError(f"Invalid `RUST_TOOLCHAIN` '{RUST_TOOLCHAIN}'")
 
         build_options = " --release" if BUILD_MODE == "release" else ""
+
+        if platform.system() == "Darwin" and platform.machine() == "arm64":
+            build_options += " --target aarch64-apple-darwin"
+
         print("Compiling Rust libraries...")
 
         cmd_args = [
@@ -347,7 +359,7 @@ if __name__ == "__main__":
     print(f"System: {platform.system()} {platform.machine()}")
     print(f"Clang:  {_get_clang_version()}")
     print(f"Rust:   {_get_rustc_version()}")
-    print(f"Python: {platform.python_version()}")
+    print(f"Python: {platform.python_version()} ({sys.executable})")
     print(f"Cython: {cython_compiler_version}")
     print(f"NumPy:  {np.__version__}\n")
 
@@ -358,7 +370,15 @@ if __name__ == "__main__":
     print(f"ANNOTATION_MODE={ANNOTATION_MODE}")
     print(f"PARALLEL_BUILD={PARALLEL_BUILD}")
     print(f"COPY_TO_SOURCE={COPY_TO_SOURCE}")
-    print(f"PYO3_ONLY={PYO3_ONLY}\n")
+    print(f"PYO3_ONLY={PYO3_ONLY}")
+
+    CFLAGS = os.environ.get("CFLAGS")
+    if CFLAGS:
+        print(f"CFLAGS={CFLAGS}")
+
+    LDFLAGS = os.environ.get("LDFLAGS")
+    if LDFLAGS:
+        print(f"LDFLAGS={LDFLAGS}\n")
 
     print("Starting build...")
     ts_start = datetime.datetime.now(datetime.timezone.utc)

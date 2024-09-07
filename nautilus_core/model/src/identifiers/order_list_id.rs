@@ -33,14 +33,29 @@ use ustr::Ustr;
 pub struct OrderListId(Ustr);
 
 impl OrderListId {
+    /// Creates a new [`OrderListId`] instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error:
+    /// - If `value` is not a valid string.
+    ///
+    /// # Notes
+    ///
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+    pub fn new_checked(value: &str) -> anyhow::Result<Self> {
+        check_valid_string(value, stringify!(value))?;
+        Ok(Self(Ustr::from(value)))
+    }
+
     /// Creates a new [`OrderListId`] instance.
     ///
     /// # Panics
     ///
-    /// Panics if `value` is not a valid string.
+    /// This function panics:
+    /// - If `value` is not a valid string.
     pub fn new(value: &str) -> Self {
-        check_valid_string(value, stringify!(value)).expect(FAILED);
-        Self(Ustr::from(value))
+        Self::new_checked(value).expect(FAILED)
     }
 
     /// Sets the inner identifier value.

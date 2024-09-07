@@ -55,32 +55,30 @@ use ustr::Ustr;
 use crate::{enums::SerializationEncoding, msgbus::database::DatabaseConfig};
 
 /// Configuration for `Cache` instances.
-///
-/// # Parameters
-///
-/// - `database`: The configuration for the cache backing database.
-/// - `encoding`: The encoding for database operations, controls the type of serializer used. Options are `"msgpack"` and `"json"`. Default is `"msgpack"`.
-/// - `timestamps_as_iso8601`: If timestamps should be persisted as ISO 8601 strings. If `false`, they will be persisted as UNIX nanoseconds. Default is `false`.
-/// - `buffer_interval_ms`: The buffer interval (milliseconds) between pipelined/batched transactions. The recommended range is [10, 1000] milliseconds, with a good compromise being 100 milliseconds.
-/// - `use_trader_prefix`: If a 'trader-' prefix is used for keys. Default is `true`.
-/// - `use_instance_id`: If the trader's instance ID is used for keys. Default is `false`.
-/// - `flush_on_start`: If the database should be flushed on start. Default is `false`.
-/// - `drop_instruments_on_reset`: If instrument data should be dropped from the cache's memory on reset. Default is `true`.
-/// - `tick_capacity`: The maximum length for internal tick deques. Default is `10_000`.
-/// - `bar_capacity`: The maximum length for internal bar deques. Default is `10_000`.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CacheConfig {
+    /// The configuration for the cache backing database.
     pub database: Option<DatabaseConfig>,
+    /// The encoding for database operations, controls the type of serializer used.
     pub encoding: SerializationEncoding,
+    /// If timestamps should be persisted as ISO 8601 strings.
     pub timestamps_as_iso8601: bool,
+    /// The buffer interval (milliseconds) between pipelined/batched transactions.
     pub buffer_interval_ms: Option<usize>,
+    /// If a 'trader-' prefix is used for keys.
     pub use_trader_prefix: bool,
+    /// If the trader's instance ID is used for keys.
     pub use_instance_id: bool,
+    /// If the database should be flushed on start.
     pub flush_on_start: bool,
+    /// If instrument data should be dropped from the cache's memory on reset.
     pub drop_instruments_on_reset: bool,
+    /// The maximum length for internal tick deques.
     pub tick_capacity: usize,
+    /// The maximum length for internal bar deques.
     pub bar_capacity: usize,
+    /// If market data should be persisted to disk.
     pub save_market_data: bool,
 }
 
@@ -1014,19 +1012,17 @@ impl Cache {
     }
 
     /// Dispose of the cache which will close any underlying database adapter.
-    pub fn dispose(&mut self) -> anyhow::Result<()> {
+    pub fn dispose(&mut self) {
         if let Some(database) = &mut self.database {
-            database.close()?;
+            database.close();
         }
-        Ok(())
     }
 
     /// Flushes the caches database which permanently removes all persisted data.
-    pub fn flush_db(&mut self) -> anyhow::Result<()> {
+    pub fn flush_db(&mut self) {
         if let Some(database) = &mut self.database {
-            database.flush()?;
+            database.flush();
         }
-        Ok(())
     }
 
     /// Adds a general object `value` (as bytes) to the cache at the given `key`.
@@ -1284,6 +1280,7 @@ impl Cache {
     ///
     /// # Errors
     ///
+    /// This function returns an error:
     /// If not `replace_existing` and the `order.client_order_id` is already contained in the cache.
     pub fn add_order(
         &mut self,
@@ -2574,15 +2571,15 @@ impl Cache {
         let mut bar_types = self
             .bars
             .keys()
-            .filter(|bar_type| bar_type.aggregation_source == aggregation_source)
+            .filter(|bar_type| bar_type.aggregation_source() == aggregation_source)
             .collect::<Vec<&BarType>>();
 
         if let Some(instrument_id) = instrument_id {
-            bar_types.retain(|bar_type| &bar_type.instrument_id == instrument_id);
+            bar_types.retain(|bar_type| bar_type.instrument_id() == *instrument_id);
         }
 
         if let Some(price_type) = price_type {
-            bar_types.retain(|bar_type| &bar_type.spec.price_type == price_type);
+            bar_types.retain(|bar_type| &bar_type.spec().price_type == price_type);
         }
 
         bar_types
@@ -2700,14 +2697,12 @@ mod tests {
 
     #[rstest]
     fn test_dispose_when_empty(mut cache: Cache) {
-        let result = cache.dispose();
-        assert!(result.is_ok());
+        cache.dispose();
     }
 
     #[rstest]
     fn test_flush_db_when_empty(mut cache: Cache) {
-        let result = cache.flush_db();
-        assert!(result.is_ok());
+        cache.flush_db();
     }
 
     #[rstest]
@@ -3108,7 +3103,7 @@ mod tests {
 
     #[rstest]
     fn test_order_book_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
-        let mut book = OrderBook::new(BookType::L2_MBP, audusd_sim.id);
+        let mut book = OrderBook::new(audusd_sim.id, BookType::L2_MBP);
         cache.add_order_book(book.clone()).unwrap();
         let result = cache.order_book(&audusd_sim.id);
         assert_eq!(result, Some(&mut book));

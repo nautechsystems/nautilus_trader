@@ -39,7 +39,7 @@ impl OrderExpired {
         reconciliation: bool,
         venue_order_id: Option<VenueOrderId>,
         account_id: Option<AccountId>,
-    ) -> PyResult<Self> {
+    ) -> Self {
         Self::new(
             trader_id,
             strategy_id,
@@ -52,7 +52,6 @@ impl OrderExpired {
             venue_order_id,
             account_id,
         )
-        .map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

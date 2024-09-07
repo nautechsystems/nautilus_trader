@@ -42,10 +42,7 @@ impl Currency {
         name: &str,
         currency_type: CurrencyType,
     ) -> PyResult<Self> {
-        check_valid_string(code, "code").map_err(to_pyvalue_err)?;
-        check_valid_string(name, "name").map_err(to_pyvalue_err)?;
-        check_fixed_precision(precision).map_err(to_pyvalue_err)?;
-        Ok(Self::new(code, precision, iso4217, name, currency_type))
+        Self::new_checked(code, precision, iso4217, name, currency_type).map_err(to_pyvalue_err)
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -158,7 +155,8 @@ impl Currency {
                 if strict {
                     Err(to_pyvalue_err(e))
                 } else {
-                    Ok(Self::new(value, 8, 0, value, CurrencyType::Crypto))
+                    Self::new_checked(value, 8, 0, value, CurrencyType::Crypto)
+                        .map_err(to_pyvalue_err)
                 }
             }
         }

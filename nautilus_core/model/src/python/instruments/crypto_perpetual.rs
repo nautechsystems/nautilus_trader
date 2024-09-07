@@ -49,6 +49,7 @@ impl CryptoPerpetual {
         margin_maint: Decimal,
         ts_event: u64,
         ts_init: u64,
+        multiplier: Option<Quantity>,
         lot_size: Option<Quantity>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
@@ -56,8 +57,8 @@ impl CryptoPerpetual {
         min_notional: Option<Money>,
         max_price: Option<Price>,
         min_price: Option<Price>,
-    ) -> Self {
-        Self::new(
+    ) -> PyResult<Self> {
+        Self::new_checked(
             id,
             raw_symbol,
             base_currency,
@@ -72,6 +73,7 @@ impl CryptoPerpetual {
             taker_fee,
             margin_init,
             margin_maint,
+            multiplier,
             lot_size,
             max_quantity,
             min_quantity,
@@ -82,6 +84,7 @@ impl CryptoPerpetual {
             ts_event.into(),
             ts_init.into(),
         )
+        .map_err(to_pyvalue_err)
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -160,6 +163,12 @@ impl CryptoPerpetual {
     #[pyo3(name = "size_increment")]
     fn py_size_increment(&self) -> Quantity {
         self.size_increment
+    }
+
+    #[getter]
+    #[pyo3(name = "multiplier")]
+    fn py_multiplier(&self) -> Quantity {
+        self.multiplier
     }
 
     #[getter]
@@ -276,6 +285,7 @@ impl CryptoPerpetual {
         dict.set_item("info", PyDict::new(py))?;
         dict.set_item("ts_event", self.ts_event.as_u64())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;
+        dict.set_item("multiplier", self.multiplier.to_string())?;
         dict.set_item("lot_size", self.lot_size.to_string())?;
         match self.max_quantity {
             Some(value) => dict.set_item("max_quantity", value.to_string())?,

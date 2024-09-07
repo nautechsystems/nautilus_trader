@@ -79,7 +79,7 @@ impl MarketToLimitOrder {
         tags: Option<Vec<Ustr>>,
         init_id: UUID4,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
+    ) -> Self {
         let init_order = OrderInitialized::new(
             trader_id,
             strategy_id,
@@ -114,15 +114,14 @@ impl MarketToLimitOrder {
             exec_algorithm_params,
             exec_spawn_id,
             tags,
-        )
-        .unwrap();
-        Ok(Self {
-            core: OrderCore::new(init_order).unwrap(),
+        );
+        Self {
+            core: OrderCore::new(init_order),
             price: None, // Price will be determined on fill
             expire_time,
             is_post_only: post_only,
             display_qty,
-        })
+        }
     }
 }
 
@@ -390,6 +389,5 @@ impl From<OrderInitialized> for MarketToLimitOrder {
             event.event_id,
             event.ts_event,
         )
-        .unwrap() // SAFETY: From can panic
     }
 }

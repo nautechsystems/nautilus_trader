@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! The core `AtomicTime` real-time and static clocks.
+//! The core `AtomicTime` for real-time and static clocks.
 
 use std::{
     ops::Deref,
@@ -60,19 +60,14 @@ pub fn duration_since_unix_epoch() -> Duration {
 ///
 /// This struct provides thread-safe access to a stored nanosecond time value,
 /// useful for when concurrent access to time information is required.
-///
-/// Fields:
-/// - `realtime`: Indicates whether the clock is operating in real-time mode.
-///    When `true`, the clock reflects real-world time progression. When `false`,
-///    the clock is in a manual or static mode, allowing for controlled time setting.
-/// - `timestamp_ns`: The last recorded time for the clock in Unix nanoseconds.
-///    This value is atomically updated and represents the precise time measurement.
 #[repr(C)]
 #[derive(Debug)]
 pub struct AtomicTime {
-    /// Atomic clock is operating in real-time mode if true, otherwise clock is operating in manual static mode.
+    /// Indicates whether the clock is operating in real-time mode.
+    /// When `false`, the clock is in a manual or static mode, allowing for controlled time setting.
     pub realtime: AtomicBool,
     /// The last recorded time for the clock in UNIX nanoseconds.
+    /// This value is atomically updated and represents the precise time measurement.
     pub timestamp_ns: AtomicU64,
 }
 
@@ -154,10 +149,12 @@ impl AtomicTime {
         UnixNanos::from(time)
     }
 
+    /// Switches the clock to real-time mode.
     pub fn make_realtime(&self) {
         self.realtime.store(true, Ordering::Relaxed);
     }
 
+    /// Switches the clock to static mode.
     pub fn make_static(&self) {
         self.realtime.store(false, Ordering::Relaxed);
     }

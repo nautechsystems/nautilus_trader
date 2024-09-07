@@ -15,18 +15,35 @@
 
 use std::{
     collections::{hash_map::DefaultHasher, HashMap},
+    error::Error,
+    fmt::Display,
     hash::{Hash, Hasher},
     sync::Arc,
 };
 
 use bytes::Bytes;
 use futures_util::{stream, StreamExt};
-use pyo3::{exceptions::PyException, prelude::*, types::PyBytes};
+use pyo3::{create_exception, exceptions::PyException, prelude::*, types::PyBytes};
 
 use crate::{
-    http::{HttpClient, HttpMethod, HttpResponse, InnerHttpClient},
+    http::{HttpClient, HttpClientError, HttpMethod, HttpResponse, InnerHttpClient},
     ratelimiter::{quota::Quota, RateLimiter},
 };
+
+/// Python exception class for generic HTTP errors.
+create_exception!(network, HttpError, PyException);
+
+/// Python exception class for generic HTTP timeout errors.
+create_exception!(network, HttpTimeoutError, PyException);
+
+impl HttpClientError {
+    pub fn into_py_err(self) -> PyErr {
+        match self {
+            HttpClientError::Error(e) => PyErr::new::<HttpError, _>(e),
+            HttpClientError::TimeoutError(e) => PyErr::new::<HttpTimeoutError, _>(e.to_string()),
+        }
+    }
+}
 
 #[pymethods]
 impl HttpMethod {
@@ -71,10 +88,25 @@ impl HttpResponse {
 impl HttpClient {
     /// Create a new HttpClient.
     ///
-    /// * `header_keys`: The key value pairs for the given `header_keys` are retained from the responses.
-    /// * `keyed_quota`: A list of string quota pairs that gives quota for specific key values.
-    /// * `default_quota`: The default rate limiting quota for any request.
+    /// `header_keys`: The key value pairs for the given `header_keys` are retained from the responses.
+    /// `keyed_quota`: A list of string quota pairs that gives quota for specific key values.
+    /// `default_quota`: The default rate limiting quota for any request.
     /// Default quota is optional and no quota is passthrough.
+    ///
+    /// Rate limiting can be configured on a per-endpoint basis by passing
+    /// key-value pairs of endpoint URLs and their respective quotas.
+    ///
+    /// For /foo -> 10 reqs/sec configure limit with ("foo", Quota.rate_per_second(10))
+    ///
+    /// Hierarchical rate limiting can be achieved by configuring the quotas for
+    /// each level.
+    ///
+    /// For /foo/bar -> 10 reqs/sec and /foo -> 20 reqs/sec configure limits for
+    /// keys "foo/bar" and "foo" respectively.
+    ///
+    /// When a request is made the URL should be split into all the keys within it.
+    ///
+    /// For request /foo/bar, should pass keys ["foo/bar", "foo"] for rate limiting.
     #[new]
     #[pyo3(signature = (header_keys = Vec::new(), keyed_quotas = Vec::new(), default_quota = None))]
     #[must_use]
@@ -99,11 +131,17 @@ impl HttpClient {
 
     /// Send an HTTP request.
     ///
-    /// * `method`: The HTTP method to call.
-    /// * `url`: The request is sent to this url.
-    /// * `headers`: The header key value pairs in the request.
-    /// * `body`: The bytes sent in the body of request.
-    /// * `keys`: The keys used for rate limiting the request.
+    /// `method`: The HTTP method to call.
+    /// `url`: The request is sent to this url.
+    /// `headers`: The header key value pairs in the request.
+    /// `body`: The bytes sent in the body of request.
+    /// `keys`: The keys used for rate limiting the request.
+    ///
+    /// # Example
+    ///
+    /// When a request is made the URL should be split into all relevant keys within it.
+    ///
+    /// For request /foo/bar, should pass keys ["foo/bar", "foo"] for rate limiting.
     #[pyo3(name = "request")]
     fn py_request<'py>(
         &self,
@@ -129,15 +167,10 @@ impl HttpClient {
                     key.await;
                 })
                 .await;
-            match client
+            client
                 .send_request(method, url, headers, body_vec, timeout_secs)
                 .await
-            {
-                Ok(res) => Ok(res),
-                Err(e) => Err(PyErr::new::<PyException, _>(format!(
-                    "Error handling response: {e}"
-                ))),
-            }
+                .map_err(|e| e.into_py_err())
         })
     }
 }

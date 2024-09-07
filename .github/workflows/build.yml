@@ -283,11 +283,16 @@ jobs:
     env:
       BUILD_MODE: debug
       RUST_BACKTRACE: 1
-      # CARGO_BUILD_TARGET: aarch64-apple-darwin
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Free up disk space (macOS)
+        run: |
+          sudo rm -rf ~/Library/Caches/*
+          sudo rm -rf ~/Library/Developer/Xcode/DerivedData/*
+          sudo rm -rf /Library/Developer/CommandLineTools
 
       - name: Get Rust version from rust-toolchain.toml
         id: rust-version
@@ -304,7 +309,7 @@ jobs:
           toolchain: ${{ env.RUST_VERSION }}
           override: true
           components: rustfmt, clippy
-          # target: aarch64-apple-darwin
+          target: aarch64-apple-darwin
 
       - name: Set up Python environment
         uses: actions/setup-python@v5

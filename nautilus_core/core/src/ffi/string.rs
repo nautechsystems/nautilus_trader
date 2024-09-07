@@ -29,6 +29,7 @@ use ustr::Ustr;
 ///
 /// # Panics
 ///
+/// This function panics:
 /// - If `ptr` is null.
 #[must_use]
 pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
@@ -44,6 +45,7 @@ pub unsafe fn pystr_to_string(ptr: *mut ffi::PyObject) -> String {
 ///
 /// # Panics
 ///
+/// This function panics:
 /// - If `ptr` is null.
 #[must_use]
 pub unsafe fn cstr_to_ustr(ptr: *const c_char) -> Ustr {
@@ -59,6 +61,7 @@ pub unsafe fn cstr_to_ustr(ptr: *const c_char) -> Ustr {
 ///
 /// # Panics
 ///
+/// This function panics:
 /// - If `ptr` is null.
 #[must_use]
 pub unsafe fn cstr_to_bytes(ptr: *const c_char) -> Vec<u8> {
@@ -74,6 +77,7 @@ pub unsafe fn cstr_to_bytes(ptr: *const c_char) -> Vec<u8> {
 ///
 /// # Panics
 ///
+/// This function panics:
 /// - If `ptr` is null.
 #[must_use]
 pub unsafe fn optional_cstr_to_ustr(ptr: *const c_char) -> Option<Ustr> {
@@ -92,6 +96,7 @@ pub unsafe fn optional_cstr_to_ustr(ptr: *const c_char) -> Option<Ustr> {
 ///
 /// # Panics
 ///
+/// This function panics:
 /// - If `ptr` is null.
 #[must_use]
 pub unsafe fn cstr_to_str(ptr: *const c_char) -> &'static str {
@@ -127,6 +132,7 @@ pub fn str_to_cstr(s: &str) -> *const c_char {
 ///
 /// # Panics
 ///
+/// This function panics:
 /// - If `ptr` is null.
 #[no_mangle]
 pub unsafe extern "C" fn cstr_drop(ptr: *const c_char) {

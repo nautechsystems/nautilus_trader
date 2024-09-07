@@ -63,9 +63,9 @@ impl StopMarketOrder {
         exec_algorithm_params: Option<HashMap<String, String>>,
         exec_spawn_id: Option<ClientOrderId>,
         tags: Option<Vec<String>>,
-    ) -> PyResult<Self> {
+    ) -> Self {
         let exec_algorithm_params = exec_algorithm_params.map(str_hashmap_to_ustr);
-        Ok(Self::new(
+        Self::new(
             trader_id,
             strategy_id,
             instrument_id,
@@ -92,7 +92,6 @@ impl StopMarketOrder {
             init_id,
             ts_init.into(),
         )
-        .unwrap())
     }
 
     #[staticmethod]

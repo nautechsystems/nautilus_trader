@@ -34,9 +34,7 @@ use crate::identifiers::trade_id::{TradeId, TRADE_ID_LEN};
 impl TradeId {
     #[new]
     fn py_new(value: &str) -> PyResult<Self> {
-        check_in_range_inclusive_usize(value.len(), 1, TRADE_ID_LEN, stringify!(value))
-            .map_err(to_pyvalue_err)?;
-        Ok(Self::new(value))
+        Self::new_checked(value).map_err(to_pyvalue_err)
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -101,8 +99,8 @@ impl TradeId {
 
     #[staticmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(value: &str) -> Self {
-        Self::new(value)
+    fn py_from_str(value: &str) -> PyResult<Self> {
+        Self::new_checked(value).map_err(to_pyvalue_err)
     }
 }
 

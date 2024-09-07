@@ -75,6 +75,10 @@ cdef class CryptoFuture(Instrument):
         UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the data object was initialized.
+    multiplier : Quantity, default 1
+        The contract multiplier.
+    lot_size : Quantity
+        The rounded lot unit size (standard/board).
     max_quantity : Quantity, optional
         The maximum allowable order quantity.
     min_quantity : Quantity, optional
@@ -276,6 +280,7 @@ cdef class CryptoFuture(Instrument):
             size_precision=values["size_precision"],
             price_increment=Price.from_str_c(values["price_increment"]),
             size_increment=Quantity.from_str_c(values["size_increment"]),
+            multiplier=Quantity.from_str_c(values["multiplier"]),
             max_quantity=Quantity.from_str_c(max_q) if max_q is not None else None,
             min_quantity=Quantity.from_str_c(min_q) if min_q is not None else None,
             max_notional=Money.from_str_c(max_n) if max_n is not None else None,
@@ -308,6 +313,7 @@ cdef class CryptoFuture(Instrument):
             "price_increment": str(obj.price_increment),
             "size_precision": obj.size_precision,
             "size_increment": str(obj.size_increment),
+            "multiplier": str(obj.multiplier),
             "lot_size": str(obj.lot_size),
             "max_quantity": str(obj.max_quantity) if obj.max_quantity is not None else None,
             "min_quantity": str(obj.min_quantity) if obj.min_quantity is not None else None,

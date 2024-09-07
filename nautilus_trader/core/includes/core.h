@@ -5,12 +5,24 @@
 #include <stdint.h>
 #include <Python.h>
 
+/**
+ * Number of milliseconds in one second.
+ */
 #define MILLISECONDS_IN_SECOND 1000
 
+/**
+ * Number of nanoseconds in one second.
+ */
 #define NANOSECONDS_IN_SECOND 1000000000
 
+/**
+ * Number of nanoseconds in one millisecond.
+ */
 #define NANOSECONDS_IN_MILLISECOND 1000000
 
+/**
+ * Number of nanoseconds in one microsecond.
+ */
 #define NANOSECONDS_IN_MICROSECOND 1000
 
 /**
@@ -101,6 +113,7 @@ const char *unix_nanos_to_iso8601_cstr(uint64_t timestamp_ns);
  *
  * # Panics
  *
+ * This function panics:
  * - If `ptr` is null.
  */
 uint8_t precision_from_cstr(const char *ptr);
@@ -114,6 +127,7 @@ uint8_t precision_from_cstr(const char *ptr);
  *
  * # Panics
  *
+ * This function panics:
  * - If `ptr` is null.
  */
 uint8_t min_increment_precision_from_cstr(const char *ptr);
@@ -127,6 +141,7 @@ uint8_t min_increment_precision_from_cstr(const char *ptr);
  *
  * # Panics
  *
+ * This function panics:
  * - If `ptr` is null.
  */
 void cstr_drop(const char *ptr);
@@ -142,6 +157,7 @@ struct UUID4_t uuid4_new(void);
  *
  * # Panics
  *
+ * This function panics:
  * - If `ptr` cannot be cast to a valid C string.
  */
 struct UUID4_t uuid4_from_cstr(const char *ptr);

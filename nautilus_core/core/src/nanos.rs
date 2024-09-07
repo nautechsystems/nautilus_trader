@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A `UnixNanos` type for working with UNIX epoch (nanoseconds).
+//! A `UnixNanos` type for working with timestamps in nanoseconds since the UNIX epoch.
 
 use std::{
     cmp::Ordering,
@@ -24,7 +24,7 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-/// Represents a timestamp in nanoseconds since UNIX epoch.
+/// Represents a timestamp in nanoseconds since the UNIX epoch.
 #[repr(C)]
 #[derive(
     Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
@@ -32,16 +32,19 @@ use serde::{Deserialize, Serialize};
 pub struct UnixNanos(u64);
 
 impl UnixNanos {
+    /// Returns the underlying value as `u64`.
     #[must_use]
     pub const fn as_u64(&self) -> u64 {
         self.0
     }
 
+    /// Returns the underlying value as `i64`.
     #[must_use]
     pub const fn as_i64(&self) -> i64 {
         self.0 as i64
     }
 
+    /// Returns the underlying value as `f64`.
     #[must_use]
     pub const fn as_f64(&self) -> f64 {
         self.0 as f64

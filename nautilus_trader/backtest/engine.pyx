@@ -80,6 +80,7 @@ from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.execution.algorithm cimport ExecAlgorithm
 from nautilus_trader.model.data cimport Bar
 from nautilus_trader.model.data cimport CustomData
+from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
 from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
@@ -120,7 +121,7 @@ cdef class BacktestEngine:
 
         self._config: BacktestEngineConfig  = config
 
-        # Setup components
+        # Set up components
         self._accumulator = <TimeEventAccumulatorAPI>time_event_accumulator_new()
 
         # Run IDs
@@ -1104,6 +1105,9 @@ cdef class BacktestEngine:
                 elif isinstance(data, Bar):
                     venue = self._venues[data.bar_type.instrument_id.venue]
                     venue.process_bar(data)
+                elif isinstance(data, InstrumentClose):
+                    venue = self._venues[data.instrument_id.venue]
+                    venue.process_instrument_close(data)
                 elif isinstance(data, InstrumentStatus):
                     venue = self._venues[data.instrument_id.venue]
                     venue.process_instrument_status(data)

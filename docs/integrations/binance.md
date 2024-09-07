@@ -5,6 +5,10 @@ of daily trading volume, and open interest of crypto assets and crypto
 derivative products. This integration supports live market data ingest and order
 execution with Binance.
 
+## Installation
+
+The Binance integration requires the `pycryptodome` package to be installed for signing RSA and Ed25519 API key types.
+
 ## Overview
 
 The following documentation assumes a trader is setting up for both live market
@@ -298,9 +302,8 @@ To use Binance Future Hedge mode, you need to follow the three items below:
 ## Order books
 
 Order books can be maintained at full or partial depths depending on the
-subscription options. WebSocket stream throttling is different between
-Spot and Futures exchanges, Nautilus will automatically use the highest streaming
-rate possible:
+subscription. WebSocket stream throttling is different between Spot and Futures exchanges,
+Nautilus will use the highest streaming rate possible:
 
 - Spot 100ms
 - Futures 0ms (unthrottled)

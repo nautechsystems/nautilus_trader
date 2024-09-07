@@ -42,6 +42,7 @@ from nautilus_trader.common.component import log_header
 from nautilus_trader.common.component import register_component_clock
 from nautilus_trader.common.component import set_logging_pyo3
 from nautilus_trader.common.config import InvalidConfiguration
+from nautilus_trader.common.config import msgspec_encoding_hook
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.common.enums import LogLevel
 from nautilus_trader.common.enums import log_level_from_str
@@ -227,7 +228,7 @@ class NautilusKernel:
         self._log: Logger = Logger(name=name)
         self._log.info("Building system kernel")
 
-        # Setup loop (if sandbox live)
+        # Set up loop (if sandbox live)
         self._loop: asyncio.AbstractEventLoop | None = None
         if self._environment != Environment.BACKTEST:
             self._loop = loop or asyncio.get_running_loop()
@@ -250,7 +251,7 @@ class NautilusKernel:
             self._msgbus_db = nautilus_pyo3.RedisMessageBusDatabase(
                 trader_id=nautilus_pyo3.TraderId(self._trader_id.value),
                 instance_id=nautilus_pyo3.UUID4(self._instance_id.value),
-                config_json=msgspec.json.encode(config.message_bus),
+                config_json=msgspec.json.encode(config.message_bus, enc_hook=msgspec_encoding_hook),
             )
         else:
             raise ValueError(
@@ -449,12 +450,12 @@ class NautilusKernel:
                 clock=self._clock,
             )
 
-        # Setup stream writer
+        # Set up stream writer
         self._writer: StreamingFeatherWriter | None = None
         if config.streaming:
             self._setup_streaming(config=config.streaming)
 
-        # Setup data catalog
+        # Set up data catalog
         self._catalog: ParquetDataCatalog | None = None
         if config.catalog:
             self._catalog = ParquetDataCatalog(
@@ -491,7 +492,7 @@ class NautilusKernel:
             raise RuntimeError("No event loop available for the node")
 
         if self._loop.is_closed():
-            self._log.error("Cannot setup signal handling (event loop was closed)")
+            self._log.error("Cannot set up signal handling (event loop was closed)")
             return
 
         signal.signal(signal.SIGINT, signal.SIG_DFL)
@@ -510,7 +511,7 @@ class NautilusKernel:
             self._loop_sig_callback(sig)
 
     def _setup_streaming(self, config: StreamingConfig) -> None:
-        # Setup persistence
+        # Set up persistence
         path = f"{config.catalog_path}/{self._environment.value}/{self.instance_id}"
         self._writer = StreamingFeatherWriter(
             path=path,
@@ -896,6 +897,8 @@ class NautilusKernel:
         """
         self._log.info("STOPPING")
 
+        self._stop_clients()
+
         if self._controller:
             self._controller.stop()
 
@@ -931,6 +934,8 @@ class NautilusKernel:
             raise RuntimeError("no event loop has been assigned to the kernel")
 
         self._log.info("STOPPING")
+
+        self._stop_clients()
 
         if self._trader.is_running:
             self._trader.stop()
@@ -1053,6 +1058,10 @@ class NautilusKernel:
     def _disconnect_clients(self) -> None:
         self._data_engine.disconnect()
         self._exec_engine.disconnect()
+
+    def _stop_clients(self) -> None:
+        self._data_engine.stop_clients()
+        self._exec_engine.stop_clients()
 
     def _initialize_portfolio(self) -> None:
         self._portfolio.initialize_orders()

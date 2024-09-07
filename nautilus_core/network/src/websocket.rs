@@ -144,7 +144,7 @@ impl WebSocketClientInner {
                         None => guard.send(Message::Ping(vec![])).await,
                     };
                     match guard_send_response {
-                        Ok(()) => tracing::debug!("Sent ping"),
+                        Ok(()) => tracing::trace!("Sent ping"),
                         Err(e) => tracing::error!("Error sending ping: {e}"),
                     }
                 }
@@ -163,7 +163,7 @@ impl WebSocketClientInner {
             loop {
                 match reader.next().await {
                     Some(Ok(Message::Binary(data))) => {
-                        tracing::debug!("Received message <binary>");
+                        tracing::trace!("Received message <binary>");
                         if let Err(e) =
                             Python::with_gil(|py| handler.call1(py, (PyBytes::new(py, &data),)))
                         {
@@ -173,7 +173,7 @@ impl WebSocketClientInner {
                         continue;
                     }
                     Some(Ok(Message::Text(data))) => {
-                        tracing::debug!("Received message: {data}");
+                        tracing::trace!("Received message: {data}");
                         if let Err(e) = Python::with_gil(|py| {
                             handler.call1(py, (PyBytes::new(py, data.as_bytes()),))
                         }) {
@@ -184,7 +184,7 @@ impl WebSocketClientInner {
                     }
                     Some(Ok(Message::Ping(ping))) => {
                         let payload = String::from_utf8(ping.clone()).expect("Invalid payload");
-                        tracing::debug!("Received ping: {payload}",);
+                        tracing::trace!("Received ping: {payload}",);
                         if let Some(ref handler) = ping_handler {
                             if let Err(e) =
                                 Python::with_gil(|py| handler.call1(py, (PyBytes::new(py, &ping),)))
@@ -196,7 +196,7 @@ impl WebSocketClientInner {
                         continue;
                     }
                     Some(Ok(Message::Pong(_))) => {
-                        tracing::debug!("Received pong");
+                        tracing::trace!("Received pong");
                     }
                     Some(Ok(Message::Close(_))) => {
                         tracing::error!("Received close message - terminating");
@@ -278,6 +278,8 @@ impl WebSocketClientInner {
     /// shutdown or will receive a `Close` frame which will finish it. There
     /// might be some delay between the connection being closed and the client
     /// detecting.
+    #[inline]
+    #[must_use]
     pub fn is_alive(&self) -> bool {
         !self.read_task.is_finished()
     }
@@ -375,7 +377,7 @@ impl WebSocketClient {
     }
 
     pub async fn send_bytes(&self, data: Vec<u8>) -> Result<(), Error> {
-        tracing::debug!("Sending bytes: {:?}", data);
+        tracing::trace!("Sending bytes: {:?}", data);
         let mut guard = self.writer.lock().await;
         guard.send(Message::Binary(data)).await
     }

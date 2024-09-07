@@ -87,7 +87,7 @@ def get_cached_binance_http_client(
     secret = secret or get_api_secret(account_type, is_testnet)
     default_http_base_url = get_http_base_url(account_type, is_testnet, is_us)
 
-    # Setup rate limit quotas
+    # Set up rate limit quotas
     if account_type.is_spot:
         # Spot
         ratelimiter_default_quota = Quota.rate_per_minute(6000)
@@ -202,7 +202,7 @@ def get_cached_binance_futures_instrument_provider(
 
 class BinanceLiveDataClientFactory(LiveDataClientFactory):
     """
-    Provides a `Binance` live data client factory.
+    Provides a Binance live data client factory.
     """
 
     @staticmethod
@@ -309,7 +309,7 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
 
 class BinanceLiveExecClientFactory(LiveExecClientFactory):
     """
-    Provides a `Binance` live execution client factory.
+    Provides a Binance live execution client factory.
     """
 
     @staticmethod

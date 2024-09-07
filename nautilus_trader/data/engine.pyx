@@ -509,16 +509,15 @@ cdef class DataEngine(Component):
 # -- ACTION IMPLEMENTATIONS -----------------------------------------------------------------------
 
     cpdef void _start(self):
-        cdef DataClient client
         for client in self._clients.values():
             client.start()
 
         self._on_start()
 
     cpdef void _stop(self):
-        cdef DataClient client
         for client in self._clients.values():
-            client.stop()
+            if client.is_running:
+                client.stop()
 
         for aggregator in self._bar_aggregators.values():
             if isinstance(aggregator, TimeBarAggregator):
@@ -553,6 +552,13 @@ cdef class DataEngine(Component):
         self._clock.cancel_timers()
 
 # -- COMMANDS -------------------------------------------------------------------------------------
+
+    cpdef void stop_clients(self):
+        """
+        Stop the registered clients.
+        """
+        for client in self._clients.values():
+            client.stop()
 
     cpdef void execute(self, DataCommand command):
         """
@@ -609,6 +615,7 @@ cdef class DataEngine(Component):
         Condition.not_none(response, "response")
 
         self._handle_response(response)
+
 
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
@@ -865,7 +872,7 @@ cdef class DataEngine(Component):
                     kwargs=metadata.get("kwargs"),
                 )
 
-        # Setup subscriptions
+        # Set up subscriptions
         cdef str topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol}"
 
         if not self._msgbus.is_subscribed(
@@ -981,7 +988,7 @@ cdef class DataEngine(Component):
 
         if bar_type.is_internally_aggregated():
             # Internal aggregation
-            if bar_type not in self._bar_aggregators:
+            if bar_type.standard() not in self._bar_aggregators:
                 self._start_bar_aggregator(client, bar_type, await_partial)
         else:
             # External aggregation
@@ -1116,7 +1123,7 @@ cdef class DataEngine(Component):
             self._log.error("Cannot unsubscribe from synthetic instrument `OrderBook` data")
             return
 
-        # Setup topics
+        # Set up topics
         cdef str deltas_topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol}"
         cdef str depth_topic = f"data.book.depth.{instrument_id.venue}.{instrument_id.symbol}"
         cdef str snapshots_topic = f"data.book.snapshots.{instrument_id.venue}.{instrument_id.symbol}"
@@ -1194,7 +1201,7 @@ cdef class DataEngine(Component):
 
         if bar_type.is_internally_aggregated():
             # Internal aggregation
-            if bar_type in self._bar_aggregators:
+            if bar_type.standard() in self._bar_aggregators:
                 self._stop_bar_aggregator(client, bar_type)
         else:
             # External aggregation
@@ -1690,8 +1697,8 @@ cdef class DataEngine(Component):
                 f"no instrument found for {bar_type.instrument_id}",
             )
 
+        # Create aggregator
         if bar_type.spec.is_time_aggregated():
-            # Create aggregator
             aggregator = TimeBarAggregator(
                 instrument=instrument,
                 bar_type=bar_type,
@@ -1730,11 +1737,19 @@ cdef class DataEngine(Component):
         aggregator.set_await_partial(await_partial)
 
         # Add aggregator
-        self._bar_aggregators[bar_type] = aggregator
+        self._bar_aggregators[bar_type.standard()] = aggregator
         self._log.debug(f"Added {aggregator} for {bar_type} bars")
 
         # Subscribe to required data
-        if bar_type.spec.price_type == PriceType.LAST:
+        if bar_type.is_composite():
+            composite_bar_type = bar_type.composite()
+
+            self._msgbus.subscribe(
+                topic=f"data.bars.{composite_bar_type}",
+                handler=aggregator.handle_bar,
+            )
+            self._handle_subscribe_bars(client, composite_bar_type, False)
+        elif bar_type.spec.price_type == PriceType.LAST:
             self._msgbus.subscribe(
                 topic=f"data.trades"
                       f".{bar_type.instrument_id.venue}"
@@ -1754,7 +1769,7 @@ cdef class DataEngine(Component):
             self._handle_subscribe_quote_ticks(client, bar_type.instrument_id)
 
     cpdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type):
-        cdef aggregator = self._bar_aggregators.get(bar_type)
+        cdef aggregator = self._bar_aggregators.get(bar_type.standard())
         if aggregator is None:
             self._log.warning(
                 f"Cannot stop bar aggregator: "
@@ -1765,8 +1780,16 @@ cdef class DataEngine(Component):
         if isinstance(aggregator, TimeBarAggregator):
             aggregator.stop()
 
-        # Unsubscribe from update ticks
-        if bar_type.spec.price_type == PriceType.LAST:
+        # Unsubscribe from market data updates
+        if bar_type.is_composite():
+            composite_bar_type = bar_type.composite()
+
+            self._msgbus.unsubscribe(
+                topic=f"data.bars.{composite_bar_type}",
+                handler=aggregator.handle_bar,
+            )
+            self._handle_unsubscribe_bars(client, composite_bar_type)
+        elif bar_type.spec.price_type == PriceType.LAST:
             self._msgbus.unsubscribe(
                 topic=f"data.trades"
                       f".{bar_type.instrument_id.venue}"
@@ -1784,7 +1807,7 @@ cdef class DataEngine(Component):
             self._handle_unsubscribe_quote_ticks(client, bar_type.instrument_id)
 
         # Remove from aggregators
-        del self._bar_aggregators[bar_type]
+        del self._bar_aggregators[bar_type.standard()]
 
     cpdef void _update_synthetics_with_quote(self, list synthetics, QuoteTick update):
         cdef SyntheticInstrument synthetic

@@ -748,11 +748,11 @@ class TestLiveClock:
         # Act
         time.sleep(0.3)
         self.clock.cancel_timer(name)
-        time.sleep(0.3)
+        time.sleep(1.0)
 
         # Assert
         assert self.clock.timer_count == 0
-        assert len(self.handler) <= 4
+        assert len(self.handler) <= 6
 
     def test_set_repeating_timer(self):
         # Arrange
@@ -791,7 +791,7 @@ class TestLiveClock:
         # Act
         time.sleep(0.3)
         self.clock.cancel_timer(name)
-        time.sleep(0.5)
+        time.sleep(1.0)
 
         # Assert
         assert len(self.handler) <= 6

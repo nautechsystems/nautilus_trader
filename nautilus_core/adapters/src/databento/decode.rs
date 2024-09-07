@@ -557,7 +557,7 @@ pub fn decode_tbbo_msg(
         Quantity::from_raw(u64::from(top_level.ask_sz) * FIXED_SCALAR as u64, 0),
         msg.ts_recv.into(),
         ts_init,
-    )?;
+    );
 
     let trade = TradeTick::new(
         instrument_id,
@@ -588,7 +588,7 @@ pub fn decode_mbp1_msg(
         Quantity::from_raw(u64::from(top_level.ask_sz) * FIXED_SCALAR as u64, 0),
         msg.ts_recv.into(),
         ts_init,
-    )?;
+    );
 
     let maybe_trade = if include_trades && msg.action as u8 as char == 'T' {
         Some(TradeTick::new(

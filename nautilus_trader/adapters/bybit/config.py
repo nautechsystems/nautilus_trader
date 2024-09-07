@@ -74,6 +74,14 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     use_gtd : bool, default False
         If False then GTD time in force will be remapped to GTC
         (this is useful if managing GTD orders locally).
+    max_retries : PositiveInt, optional
+        The maximum number of times a submit, cancel or modify order request will be retried.
+    retry_delay : PositiveFloat, optional
+        The delay (seconds) between retries. Short delays with frequent retries may result in account bans.
+
+    Warnings
+    --------
+    A short `retry_delay` with frequent retries may result in account bans.
 
     """
 

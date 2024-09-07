@@ -21,7 +21,6 @@ from urllib import parse
 import msgspec
 
 import nautilus_trader
-from nautilus_trader.adapters.bybit.common.error import raise_bybit_error
 from nautilus_trader.adapters.bybit.http.errors import BybitError
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
@@ -31,13 +30,17 @@ from nautilus_trader.core.nautilus_pyo3 import HttpResponse
 from nautilus_trader.core.nautilus_pyo3 import Quota
 
 
-class ResponseCode(msgspec.Struct):
+class BybitResponse(msgspec.Struct, frozen=True):
     retCode: int
+    retMsg: str
+    result: dict[str, Any]
+    time: int
+    retExtInfo: dict[str, Any] | None = None
 
 
 class BybitHttpClient:
     """
-    Provides a `Bybit` asynchronous HTTP client.
+    Provides a Bybit asynchronous HTTP client.
 
     Parameters
     ----------
@@ -81,7 +84,7 @@ class BybitHttpClient:
             keyed_quotas=ratelimiter_quotas or [],
             default_quota=ratelimiter_default_quota,
         )
-        self._decoder_response_code = msgspec.json.Decoder(ResponseCode)
+        self._decoder_response = msgspec.json.Decoder(BybitResponse)
 
     @property
     def api_key(self) -> str:
@@ -99,7 +102,7 @@ class BybitHttpClient:
         signature: str | None = None,
         timestamp: str | None = None,
         ratelimiter_keys: list[str] | None = None,
-    ) -> bytes | None:
+    ) -> bytes:
         if payload and http_method == HttpMethod.GET:
             url_path += "?" + parse.urlencode(payload)
             payload = None
@@ -114,9 +117,6 @@ class BybitHttpClient:
         else:
             headers = self._headers
 
-        # Uncomment for development
-        # self._log.info(f"{url_path=}, {payload=}", LogColor.MAGENTA)
-
         response: HttpResponse = await self._client.request(
             http_method,
             url,
@@ -124,22 +124,18 @@ class BybitHttpClient:
             msgspec.json.encode(payload) if payload else None,
             ratelimiter_keys,
         )
-        # First check for server error
-        if 400 <= response.status < 500:
-            message = msgspec.json.decode(response.body) if response.body else None
+
+        if response.status >= 400:
             raise BybitError(
-                status=response.status,
-                message=message,
-                headers=response.headers,
+                code=response.status,
+                message=msgspec.json.decode(response.body) if response.body else None,
             )
-        # Then check for error inside response
-        response_status = self._decoder_response_code.decode(response.body)
-        if response_status.retCode == 0:
+
+        bybit_resp: BybitResponse = self._decoder_response.decode(response.body)
+        if bybit_resp.retCode == 0:
             return response.body
         else:
-            message = msgspec.json.decode(response.body) if response.body else None
-            raise_bybit_error(response_status.retCode, message)
-        return None
+            raise BybitError(code=bybit_resp.retCode, message=bybit_resp.retMsg)
 
     async def sign_request(
         self,

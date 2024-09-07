@@ -133,11 +133,10 @@ impl LimitOrder {
             exec_algorithm_params,
             exec_spawn_id,
             tags,
-        )
-        .unwrap();
+        );
 
         Ok(Self {
-            core: OrderCore::new(init_order).unwrap(),
+            core: OrderCore::new(init_order),
             price,
             expire_time: expire_time.or(Some(UnixNanos::default())),
             is_post_only: post_only,

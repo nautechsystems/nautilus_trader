@@ -61,39 +61,41 @@ pub trait DataClient {
     // -- COMMAND HANDLERS ---------------------------------------------------------------------------
 
     /// Parse command and call specific function
-    fn subscribe(&mut self, data_type: DataType) -> anyhow::Result<()>;
-    fn subscribe_instruments(&mut self, venue: Option<Venue>) -> anyhow::Result<()>;
-    fn subscribe_instrument(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
+    fn subscribe(&mut self, data_type: &DataType) -> anyhow::Result<()>;
+    fn subscribe_instruments(&mut self, venue: Option<&Venue>) -> anyhow::Result<()>;
+    fn subscribe_instrument(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()>;
     fn subscribe_order_book_deltas(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_id: &InstrumentId,
         book_type: BookType,
         depth: Option<usize>,
     ) -> anyhow::Result<()>;
     fn subscribe_order_book_snapshots(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_id: &InstrumentId,
         book_type: BookType,
         depth: Option<usize>,
     ) -> anyhow::Result<()>;
-    fn subscribe_quote_ticks(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
-    fn subscribe_trade_ticks(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
-    fn subscribe_bars(&mut self, bar_type: BarType) -> anyhow::Result<()>;
-    fn subscribe_instrument_status(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
-    fn subscribe_instrument_close(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
-    fn unsubscribe(&mut self, data_type: DataType) -> anyhow::Result<()>;
-    fn unsubscribe_instruments(&mut self, venue: Option<Venue>) -> anyhow::Result<()>;
-    fn unsubscribe_instrument(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
-    fn unsubscribe_order_book_deltas(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
+    fn subscribe_quote_ticks(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()>;
+    fn subscribe_trade_ticks(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()>;
+    fn subscribe_bars(&mut self, bar_type: &BarType) -> anyhow::Result<()>;
+    fn subscribe_instrument_status(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()>;
+    fn subscribe_instrument_close(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()>;
+    fn unsubscribe(&mut self, data_type: &DataType) -> anyhow::Result<()>;
+    fn unsubscribe_instruments(&mut self, venue: Option<&Venue>) -> anyhow::Result<()>;
+    fn unsubscribe_instrument(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()>;
+    fn unsubscribe_order_book_deltas(&mut self, instrument_id: &InstrumentId)
+        -> anyhow::Result<()>;
     fn unsubscribe_order_book_snapshots(
         &mut self,
-        instrument_id: InstrumentId,
+        instrument_id: &InstrumentId,
     ) -> anyhow::Result<()>;
-    fn unsubscribe_quote_ticks(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
-    fn unsubscribe_trade_ticks(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
-    fn unsubscribe_bars(&mut self, bar_type: BarType) -> anyhow::Result<()>;
-    fn unsubscribe_instrument_status(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
-    fn unsubscribe_instrument_close(&mut self, instrument_id: InstrumentId) -> anyhow::Result<()>;
+    fn unsubscribe_quote_ticks(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()>;
+    fn unsubscribe_trade_ticks(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()>;
+    fn unsubscribe_bars(&mut self, bar_type: &BarType) -> anyhow::Result<()>;
+    fn unsubscribe_instrument_status(&mut self, instrument_id: &InstrumentId)
+        -> anyhow::Result<()>;
+    fn unsubscribe_instrument_close(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<()>;
 
     // -- DATA REQUEST HANDLERS ---------------------------------------------------------------------------
 
@@ -150,6 +152,8 @@ pub struct DataClientAdapter {
     clock: Box<dyn Clock>,
     pub client_id: ClientId,
     pub venue: Venue,
+    pub handles_order_book_deltas: bool,
+    pub handles_order_book_snapshots: bool,
     pub subscriptions_generic: HashSet<DataType>,
     pub subscriptions_order_book_delta: HashSet<InstrumentId>,
     pub subscriptions_order_book_snapshot: HashSet<InstrumentId>,
@@ -181,6 +185,8 @@ impl DataClientAdapter {
     pub fn new(
         client_id: ClientId,
         venue: Venue,
+        handles_order_book_deltas: bool,
+        handles_order_book_snapshots: bool,
         client: Box<dyn DataClient>,
         clock: Box<dyn Clock>,
     ) -> Self {
@@ -189,6 +195,8 @@ impl DataClientAdapter {
             clock,
             client_id,
             venue,
+            handles_order_book_deltas,
+            handles_order_book_snapshots,
             subscriptions_generic: HashSet::new(),
             subscriptions_order_book_delta: HashSet::new(),
             subscriptions_order_book_snapshot: HashSet::new(),
@@ -243,15 +251,15 @@ impl DataClientAdapter {
     }
 
     fn subscribe_instrument(&mut self, command: SubscriptionCommand) {
-        let instrument_id = command.data_type.parse_instrument_id_from_metadata();
-        let venue = command.data_type.parse_venue_from_metadata();
+        let instrument_id = command.data_type.instrument_id();
+        let venue = command.data_type.venue();
 
         if let Some(instrument_id) = instrument_id {
             // TODO: consider using insert_with once it stabilizes
             // https://github.com/rust-lang/rust/issues/60896
             if !self.subscriptions_instrument.contains(&instrument_id) {
                 self.client
-                    .subscribe_instrument(instrument_id)
+                    .subscribe_instrument(&instrument_id)
                     .expect("Error on subscribe");
             }
 
@@ -261,7 +269,7 @@ impl DataClientAdapter {
         if let Some(venue) = venue {
             if !self.subscriptions_instrument_venue.contains(&venue) {
                 self.client
-                    .subscribe_instruments(Some(venue))
+                    .subscribe_instruments(Some(&venue))
                     .expect("Error on subscribe");
             }
 
@@ -270,13 +278,13 @@ impl DataClientAdapter {
     }
 
     fn unsubscribe_instrument(&mut self, command: SubscriptionCommand) {
-        let instrument_id = command.data_type.parse_instrument_id_from_metadata();
-        let venue = command.data_type.parse_venue_from_metadata();
+        let instrument_id = command.data_type.instrument_id();
+        let venue = command.data_type.venue();
 
         if let Some(instrument_id) = instrument_id {
             if self.subscriptions_instrument.contains(&instrument_id) {
                 self.client
-                    .unsubscribe_instrument(instrument_id)
+                    .unsubscribe_instrument(&instrument_id)
                     .expect("Error on subscribe");
             }
 
@@ -286,7 +294,7 @@ impl DataClientAdapter {
         if let Some(venue) = venue {
             if self.subscriptions_instrument_venue.contains(&venue) {
                 self.client
-                    .unsubscribe_instruments(Some(venue))
+                    .unsubscribe_instruments(Some(&venue))
                     .expect("Error on subscribe");
             }
 
@@ -297,15 +305,15 @@ impl DataClientAdapter {
     fn subscribe_order_book_deltas(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
-            .parse_instrument_id_from_metadata()
+            .instrument_id()
             .expect("Error on subscribe: no 'instrument_id' in metadata");
 
-        let book_type = command.data_type.parse_book_type_from_metadata();
-        let depth = command.data_type.parse_depth_from_metadata();
+        let book_type = command.data_type.book_type();
+        let depth = command.data_type.depth();
 
         if !self.subscriptions_order_book_delta.contains(&instrument_id) {
             self.client
-                .subscribe_order_book_deltas(instrument_id, book_type, depth)
+                .subscribe_order_book_deltas(&instrument_id, book_type, depth)
                 .expect("Error on subscribe");
         }
 
@@ -315,12 +323,12 @@ impl DataClientAdapter {
     fn unsubscribe_order_book_deltas(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
-            .parse_instrument_id_from_metadata()
+            .instrument_id()
             .expect("Error on subscribe: no 'instrument_id' in metadata");
 
         if self.subscriptions_order_book_delta.contains(&instrument_id) {
             self.client
-                .unsubscribe_order_book_deltas(instrument_id)
+                .unsubscribe_order_book_deltas(&instrument_id)
                 .expect("Error on subscribe");
         }
 
@@ -330,18 +338,18 @@ impl DataClientAdapter {
     fn subscribe_snapshots(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
-            .parse_instrument_id_from_metadata()
+            .instrument_id()
             .expect("Error on subscribe: no 'instrument_id' in metadata");
 
-        let book_type = command.data_type.parse_book_type_from_metadata();
-        let depth = command.data_type.parse_depth_from_metadata();
+        let book_type = command.data_type.book_type();
+        let depth = command.data_type.depth();
 
         if !self
             .subscriptions_order_book_snapshot
             .contains(&instrument_id)
         {
             self.client
-                .subscribe_order_book_snapshots(instrument_id, book_type, depth)
+                .subscribe_order_book_snapshots(&instrument_id, book_type, depth)
                 .expect("Error on subscribe");
         }
 
@@ -351,7 +359,7 @@ impl DataClientAdapter {
     fn unsubscribe_snapshots(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
-            .parse_instrument_id_from_metadata()
+            .instrument_id()
             .expect("Error on subscribe: no 'instrument_id' in metadata");
 
         if self
@@ -359,7 +367,7 @@ impl DataClientAdapter {
             .contains(&instrument_id)
         {
             self.client
-                .unsubscribe_order_book_snapshots(instrument_id)
+                .unsubscribe_order_book_snapshots(&instrument_id)
                 .expect("Error on subscribe");
         }
 
@@ -370,12 +378,12 @@ impl DataClientAdapter {
     fn subscribe_quote_ticks(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
-            .parse_instrument_id_from_metadata()
+            .instrument_id()
             .expect("Error on subscribe: no 'instrument_id' in metadata");
 
         if !self.subscriptions_quote_tick.contains(&instrument_id) {
             self.client
-                .subscribe_quote_ticks(instrument_id)
+                .subscribe_quote_ticks(&instrument_id)
                 .expect("Error on subscribe");
         }
         self.subscriptions_quote_tick.insert(instrument_id);
@@ -384,12 +392,12 @@ impl DataClientAdapter {
     fn unsubscribe_quote_ticks(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
-            .parse_instrument_id_from_metadata()
+            .instrument_id()
             .expect("Error on subscribe: no 'instrument_id' in metadata");
 
         if self.subscriptions_quote_tick.contains(&instrument_id) {
             self.client
-                .unsubscribe_quote_ticks(instrument_id)
+                .unsubscribe_quote_ticks(&instrument_id)
                 .expect("Error on subscribe");
         }
         self.subscriptions_quote_tick.remove(&instrument_id);
@@ -398,12 +406,12 @@ impl DataClientAdapter {
     fn unsubscribe_trade_ticks(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
-            .parse_instrument_id_from_metadata()
+            .instrument_id()
             .expect("Error on subscribe: no 'instrument_id' in metadata");
 
         if self.subscriptions_trade_tick.contains(&instrument_id) {
             self.client
-                .unsubscribe_trade_ticks(instrument_id)
+                .unsubscribe_trade_ticks(&instrument_id)
                 .expect("Error on subscribe");
         }
         self.subscriptions_trade_tick.remove(&instrument_id);
@@ -412,34 +420,34 @@ impl DataClientAdapter {
     fn subscribe_trade_ticks(&mut self, command: SubscriptionCommand) {
         let instrument_id = command
             .data_type
-            .parse_instrument_id_from_metadata()
+            .instrument_id()
             .expect("Error on subscribe: no 'instrument_id' in metadata");
 
         if !self.subscriptions_trade_tick.contains(&instrument_id) {
             self.client
-                .subscribe_trade_ticks(instrument_id)
+                .subscribe_trade_ticks(&instrument_id)
                 .expect("Error on subscribe");
         }
         self.subscriptions_trade_tick.insert(instrument_id);
     }
 
     fn subscribe_bars(&mut self, command: SubscriptionCommand) {
-        let bar_type = command.data_type.parse_bar_type_from_metadata();
+        let bar_type = command.data_type.bar_type();
 
         if !self.subscriptions_bar.contains(&bar_type) {
             self.client
-                .subscribe_bars(bar_type)
+                .subscribe_bars(&bar_type)
                 .expect("Error on subscribe");
         }
         self.subscriptions_bar.insert(bar_type);
     }
 
     fn unsubscribe_bars(&mut self, command: SubscriptionCommand) {
-        let bar_type = command.data_type.parse_bar_type_from_metadata();
+        let bar_type = command.data_type.bar_type();
 
         if self.subscriptions_bar.contains(&bar_type) {
             self.client
-                .subscribe_bars(bar_type)
+                .subscribe_bars(&bar_type)
                 .expect("Error on subscribe");
         }
         self.subscriptions_bar.remove(&bar_type);
@@ -449,7 +457,7 @@ impl DataClientAdapter {
         let data_type = command.data_type;
         if !self.subscriptions_generic.contains(&data_type) {
             self.client
-                .subscribe(data_type.clone())
+                .subscribe(&data_type)
                 .expect("Error on subscribe");
         }
         self.subscriptions_generic.insert(data_type);
@@ -459,7 +467,7 @@ impl DataClientAdapter {
         let data_type = command.data_type;
         if self.subscriptions_generic.contains(&data_type) {
             self.client
-                .unsubscribe(data_type.clone())
+                .unsubscribe(&data_type)
                 .expect("Error on unsubscribe");
         }
         self.subscriptions_generic.remove(&data_type);
@@ -477,11 +485,11 @@ impl DataClientAdapter {
 
     #[must_use]
     pub fn request(&self, req: DataRequest) -> DataResponse {
-        let instrument_id = req.data_type.parse_instrument_id_from_metadata();
-        let venue = req.data_type.parse_venue_from_metadata();
-        let start = req.data_type.parse_start_from_metadata();
-        let end = req.data_type.parse_end_from_metadata();
-        let limit = req.data_type.parse_limit_from_metadata();
+        let instrument_id = req.data_type.instrument_id();
+        let venue = req.data_type.venue();
+        let start = req.data_type.start();
+        let end = req.data_type.end();
+        let limit = req.data_type.limit();
 
         match req.data_type.type_name() {
             stringify!(InstrumentAny) => match (instrument_id, venue) {
@@ -529,7 +537,7 @@ impl DataClientAdapter {
                 self.handle_trade_ticks(&instrument_id, trades, req.correlation_id)
             }
             stringify!(Bar) => {
-                let bar_type = req.data_type.parse_bar_type_from_metadata();
+                let bar_type = req.data_type.bar_type();
                 let bars =
                     self.client
                         .request_bars(req.correlation_id, bar_type, start, end, limit);
@@ -639,7 +647,7 @@ impl DataClientAdapter {
         DataResponse::new(
             correlation_id,
             self.client_id,
-            bar_type.instrument_id.venue,
+            bar_type.instrument_id().venue,
             data_type,
             data,
             self.clock.timestamp_ns(),

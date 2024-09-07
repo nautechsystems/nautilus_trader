@@ -139,6 +139,7 @@ pub unsafe fn optional_bytes_to_str_vec(ptr: *const c_char) -> Option<Vec<String
 ///
 /// # Panics
 ///
+/// This function panics:
 /// - If `ptr` is null.
 #[no_mangle]
 pub unsafe extern "C" fn precision_from_cstr(ptr: *const c_char) -> u8 {
@@ -154,6 +155,7 @@ pub unsafe extern "C" fn precision_from_cstr(ptr: *const c_char) -> u8 {
 ///
 /// # Panics
 ///
+/// This function panics:
 /// - If `ptr` is null.
 #[no_mangle]
 pub unsafe extern "C" fn min_increment_precision_from_cstr(ptr: *const c_char) -> u8 {

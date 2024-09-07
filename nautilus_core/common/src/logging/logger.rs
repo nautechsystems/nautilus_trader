@@ -18,11 +18,7 @@ use std::{
     env,
     fmt::Display,
     str::FromStr,
-    sync::{
-        atomic::Ordering,
-        mpsc::{channel, Receiver, SendError, Sender},
-    },
-    thread::JoinHandle,
+    sync::{atomic::Ordering, mpsc::SendError},
 };
 
 use indexmap::IndexMap;
@@ -45,6 +41,8 @@ use crate::{
     enums::{LogColor, LogLevel},
     logging::writer::{FileWriter, FileWriterConfig, LogWriter, StderrWriter, StdoutWriter},
 };
+
+const LOGGING: &str = "logging";
 
 #[cfg_attr(
     feature = "python",
@@ -151,14 +149,14 @@ impl LoggerConfig {
 
 /// A high-performance logger utilizing a MPSC channel under the hood.
 ///
-/// A separate thead is spawned at initialization which receives [`LogEvent`] structs over the
+/// A separate thread is spawned at initialization which receives [`LogEvent`] structs over the
 /// channel.
 #[derive(Debug)]
 pub struct Logger {
     /// Configure maximum levels for components and IO.
     pub config: LoggerConfig,
-    /// Send log events to a different thread.
-    tx: Sender<LogEvent>,
+    /// Send log events to a separate thread.
+    tx: std::sync::mpsc::Sender<LogEvent>,
 }
 
 /// Represents a type of log event.
@@ -319,7 +317,7 @@ impl Logger {
         config: LoggerConfig,
         file_config: FileWriterConfig,
     ) -> LogGuard {
-        let (tx, rx) = channel::<LogEvent>();
+        let (tx, rx) = std::sync::mpsc::channel::<LogEvent>();
 
         let logger = Self {
             tx,
@@ -332,12 +330,12 @@ impl Logger {
             println!("Logger initialized with {config:?} {file_config:?}");
         }
 
-        let mut handle: Option<JoinHandle<()>> = None;
+        let mut handle: Option<std::thread::JoinHandle<()>> = None;
         match set_boxed_logger(Box::new(logger)) {
             Ok(()) => {
                 handle = Some(
                     std::thread::Builder::new()
-                        .name("logging".to_string())
+                        .name(LOGGING.to_string())
                         .spawn(move || {
                             Self::handle_messages(
                                 trader_id.to_string(),
@@ -347,7 +345,7 @@ impl Logger {
                                 rx,
                             );
                         })
-                        .expect("Error spawning `logging` thread"),
+                        .expect("Error spawning thread '{LOGGING}'"),
                 );
 
                 let max_level = log::LevelFilter::Trace;
@@ -369,12 +367,8 @@ impl Logger {
         instance_id: String,
         config: LoggerConfig,
         file_config: FileWriterConfig,
-        rx: Receiver<LogEvent>,
+        rx: std::sync::mpsc::Receiver<LogEvent>,
     ) {
-        if config.print_config {
-            println!("Logger thread `handle_messages` initialized");
-        }
-
         let LoggerConfig {
             stdout_level,
             fileout_level,
@@ -385,7 +379,7 @@ impl Logger {
 
         let trader_id_cache = Ustr::from(&trader_id);
 
-        // Setup std I/O buffers
+        // Set up std I/O buffers
         let mut stdout_writer = StdoutWriter::new(stdout_level, is_colored);
         let mut stderr_writer = StderrWriter::new(is_colored);
 
@@ -484,13 +478,13 @@ pub fn log(level: LogLevel, color: LogColor, component: Ustr, message: &str) {
 )]
 #[derive(Debug)]
 pub struct LogGuard {
-    handle: Option<JoinHandle<()>>,
+    handle: Option<std::thread::JoinHandle<()>>,
 }
 
 impl LogGuard {
     /// Creates a new [`LogGuard`] instance.
     #[must_use]
-    pub const fn new(handle: Option<JoinHandle<()>>) -> Self {
+    pub const fn new(handle: Option<std::thread::JoinHandle<()>>) -> Self {
         Self { handle }
     }
 }

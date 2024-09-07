@@ -41,10 +41,7 @@ use crate::types::{
 impl Quantity {
     #[new]
     fn py_new(value: f64, precision: u8) -> PyResult<Self> {
-        check_in_range_inclusive_f64(value, QUANTITY_MIN, QUANTITY_MAX, "value")
-            .map_err(to_pyvalue_err)?;
-        check_fixed_precision(precision).map_err(to_pyvalue_err)?;
-        Ok(Self::new(value, precision))
+        Self::new_checked(value, precision).map_err(to_pyvalue_err)
     }
 
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
@@ -348,14 +345,14 @@ impl Quantity {
     #[staticmethod]
     #[pyo3(name = "zero")]
     #[pyo3(signature = (precision = 0))]
-    fn py_zero(precision: u8) -> Self {
-        Self::new(0.0, precision)
+    fn py_zero(precision: u8) -> PyResult<Self> {
+        Self::new_checked(0.0, precision).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]
     #[pyo3(name = "from_int")]
-    fn py_from_int(value: u64) -> Self {
-        Self::new(value as f64, 0)
+    fn py_from_int(value: u64) -> PyResult<Self> {
+        Self::new_checked(value as f64, 0).map_err(to_pyvalue_err)
     }
 
     #[staticmethod]

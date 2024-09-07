@@ -69,8 +69,8 @@ impl OrderRejected {
         ts_event: UnixNanos,
         ts_init: UnixNanos,
         reconciliation: bool,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             trader_id,
             strategy_id,
             instrument_id,
@@ -81,7 +81,7 @@ impl OrderRejected {
             ts_event,
             ts_init,
             reconciliation: u8::from(reconciliation),
-        })
+        }
     }
 }
 

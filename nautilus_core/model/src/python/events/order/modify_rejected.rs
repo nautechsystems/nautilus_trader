@@ -44,8 +44,8 @@ impl OrderModifyRejected {
         venue_order_id: Option<VenueOrderId>,
         account_id: Option<AccountId>,
     ) -> PyResult<Self> {
-        let reason = Ustr::from_str(reason).unwrap();
-        Self::new(
+        let reason = Ustr::from_str(reason).map_err(to_pyvalue_err)?;
+        Ok(Self::new(
             trader_id,
             strategy_id,
             instrument_id,
@@ -57,8 +57,7 @@ impl OrderModifyRejected {
             reconciliation,
             venue_order_id,
             account_id,
-        )
-        .map_err(to_pyvalue_err)
+        ))
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {

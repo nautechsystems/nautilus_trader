@@ -20,7 +20,7 @@ use std::{
 
 use derive_builder::Builder;
 use evalexpr::{ContextWithMutableVariables, HashMapContext, Node, Value};
-use nautilus_core::nanos::UnixNanos;
+use nautilus_core::{correctness::FAILED, nanos::UnixNanos};
 
 use crate::{
     identifiers::{InstrumentId, Symbol, Venue},
@@ -48,8 +48,12 @@ pub struct SyntheticInstrument {
 }
 
 impl SyntheticInstrument {
-    /// Creates a new [`SyntheticInstrument`] instance.
-    pub fn new(
+    /// Creates a new [`SyntheticInstrument`] instance with correctness checking.
+    ///
+    /// # Notes
+    ///
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+    pub fn new_checked(
         symbol: Symbol,
         price_precision: u8,
         components: Vec<InstrumentId>,
@@ -79,6 +83,26 @@ impl SyntheticInstrument {
             ts_event,
             ts_init,
         })
+    }
+
+    /// Creates a new [`SyntheticInstrument`] instance
+    pub fn new(
+        symbol: Symbol,
+        price_precision: u8,
+        components: Vec<InstrumentId>,
+        formula: String,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> Self {
+        Self::new_checked(
+            symbol,
+            price_precision,
+            components,
+            formula,
+            ts_event,
+            ts_init,
+        )
+        .expect(FAILED)
     }
 
     #[must_use]

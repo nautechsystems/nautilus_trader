@@ -160,6 +160,40 @@ cdef class BarBuilder:
         self.count += 1
         self.ts_last = ts_event
 
+    cpdef void update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        """
+        Update the bar builder.
+
+        Parameters
+        ----------
+        bar : Bar
+            The update Bar.
+
+        """
+        Condition.not_none(bar, "bar")
+
+        # TODO: What happens if the first bar updates before a partial bar is applied?
+        if ts_init < self.ts_last:
+            return  # Not applicable
+
+        if self._open is None:
+            # Initialize builder
+            self._open = bar.open
+            self._high = bar.high
+            self._low = bar.low
+            self.initialized = True
+        else:
+            if bar.high > self._high:
+                self._high = bar.high
+
+            if bar.low < self._low:
+                self._low = bar.low
+
+        self._close = bar.close
+        self.volume._mem.raw += volume._mem.raw
+        self.count += 1
+        self.ts_last = ts_init
+
     cpdef void reset(self):
         """
         Reset the bar builder.
@@ -302,6 +336,25 @@ cdef class BarAggregator:
                 ts_event=tick.ts_event,
             )
 
+    cpdef void handle_bar(self, Bar bar):
+        """
+        Update the aggregator with the given bar.
+
+        Parameters
+        ----------
+        bar : Bar
+            The bar for the update.
+
+        """
+        Condition.not_none(bar, "bar")
+
+        if not self._await_partial:
+            self._apply_update_bar(
+                bar=bar,
+                volume=bar.volume,
+                ts_init=bar.ts_init,
+            )
+
     cpdef void set_partial(self, Bar partial_bar):
         """
         Set the initial values for a partially completed bar.
@@ -317,7 +370,10 @@ cdef class BarAggregator:
         self._builder.set_partial(partial_bar)
 
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
-        raise NotImplementedError("method `_apply_update` must be implemented in the subclass")  # pragma: no cover
+        raise NotImplementedError("method `_apply_update` must be implemented in the subclass")
+
+    cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        raise NotImplementedError("method `_apply_update` must be implemented in the subclass") # pragma: no cover
 
     cdef void _build_now_and_send(self):
         cdef Bar bar = self._builder.build_now()
@@ -358,12 +414,18 @@ cdef class TickBarAggregator(BarAggregator):
     ):
         super().__init__(
             instrument=instrument,
-            bar_type=bar_type,
+            bar_type=bar_type.standard(),
             handler=handler,
         )
 
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
         self._builder.update(price, size, ts_event)
+
+        if self._builder.count == self.bar_type.spec.step:
+            self._build_now_and_send()
+
+    cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        self._builder.update_bar(bar, volume, ts_init)
 
         if self._builder.count == self.bar_type.spec.step:
             self._build_now_and_send()
@@ -399,7 +461,7 @@ cdef class VolumeBarAggregator(BarAggregator):
     ):
         super().__init__(
             instrument=instrument,
-            bar_type=bar_type,
+            bar_type=bar_type.standard(),
             handler=handler,
         )
 
@@ -433,6 +495,36 @@ cdef class VolumeBarAggregator(BarAggregator):
             raw_size_update -= raw_size_diff
             assert raw_size_update >= 0
 
+    cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        cdef uint64_t raw_volume_update = volume._mem.raw
+        cdef uint64_t raw_step = int(self.bar_type.spec.step * 1e9)
+        cdef uint64_t raw_volume_diff = 0
+
+        while raw_volume_update > 0:  # While there is volume to apply
+            if self._builder.volume._mem.raw + raw_volume_update < raw_step:
+                # Update and break
+                self._builder.update_bar(
+                    bar=bar,
+                    volume=Quantity.from_raw_c(raw_volume_update, precision=volume._mem.precision),
+                    ts_init=ts_init,
+                )
+                break
+
+            raw_volume_diff = raw_step - self._builder.volume._mem.raw
+            # Update builder to the step threshold
+            self._builder.update_bar(
+                bar=bar,
+                volume=Quantity.from_raw_c(raw_volume_diff, precision=volume._mem.precision),
+                ts_init=ts_init,
+            )
+
+            # Build a bar and reset builder
+            self._build_now_and_send()
+
+            # Decrement the update volume
+            raw_volume_update -= raw_volume_diff
+            assert raw_volume_update >= 0
+
 
 cdef class ValueBarAggregator(BarAggregator):
     """
@@ -464,7 +556,7 @@ cdef class ValueBarAggregator(BarAggregator):
     ):
         super().__init__(
             instrument=instrument,
-            bar_type=bar_type,
+            bar_type=bar_type.standard(),
             handler=handler,
         )
 
@@ -513,6 +605,39 @@ cdef class ValueBarAggregator(BarAggregator):
             size_update -= size_diff
             assert size_update >= 0
 
+    cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        volume_update = volume
+        average_price = (bar.open + bar.high + bar.low + bar.close) * Decimal(0.25)
+
+        while volume_update > 0:  # While there is value to apply
+            value_update = average_price * volume_update  # Calculated value in quote currency
+            if self._cum_value + value_update < self.bar_type.spec.step:
+                # Update and break
+                self._cum_value = self._cum_value + value_update
+                self._builder.update_bar(
+                    bar=bar,
+                    volume=Quantity(volume_update, precision=volume._mem.precision),
+                    ts_init=ts_init,
+                )
+                break
+
+            value_diff: Decimal = self.bar_type.spec.step - self._cum_value
+            volume_diff: Decimal = volume_update * (value_diff / value_update)
+            # Update builder to the step threshold
+            self._builder.update_bar(
+                bar=bar,
+                volume=Quantity(volume_diff, precision=volume._mem.precision),
+                ts_init=ts_init,
+            )
+
+            # Build a bar and reset builder and cumulative value
+            self._build_now_and_send()
+            self._cum_value = Decimal(0)
+
+            # Decrement the update volume
+            volume_update -= volume_diff
+            assert volume_update >= 0
+
 
 cdef class TimeBarAggregator(BarAggregator):
     """
@@ -558,7 +683,7 @@ cdef class TimeBarAggregator(BarAggregator):
     ):
         super().__init__(
             instrument=instrument,
-            bar_type=bar_type,
+            bar_type=bar_type.standard(),
             handler=handler,
         )
 
@@ -574,6 +699,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self._cached_update = None
         self._build_with_no_updates = build_with_no_updates
         self._timestamp_on_close = timestamp_on_close
+        self._add_delay = bar_type.is_composite() and bar_type.composite().is_internally_aggregated()
 
         if interval_type == "left-open":
             self._is_left_open = True
@@ -650,6 +776,9 @@ cdef class TimeBarAggregator(BarAggregator):
                 f"was {bar_aggregation_to_str(self.bar_type.spec.aggregation)}",
             )
 
+        if self._add_delay:
+            start_time += timedelta(microseconds=10)
+
         return start_time
 
     cpdef void stop(self):
@@ -725,6 +854,9 @@ cdef class TimeBarAggregator(BarAggregator):
             # Reset flag and clear stored close
             self._build_on_next_tick = False
             self._stored_close_ns = 0
+
+    cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        self._builder.update_bar(bar, volume, ts_init)
 
     cpdef void _build_bar(self, TimeEvent event):
         if not self._builder.initialized:

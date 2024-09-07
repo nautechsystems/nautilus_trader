@@ -258,8 +258,7 @@ impl<'r> FromRow<'r, PgRow> for OrderInitializedModel {
             exec_algorithm_params,
             exec_spawn_id,
             tags,
-        )
-        .unwrap();
+        );
         Ok(OrderInitializedModel(order_event))
     }
 }
@@ -294,8 +293,7 @@ impl<'r> FromRow<'r, PgRow> for OrderAcceptedModel {
             ts_event,
             ts_init,
             false,
-        )
-        .unwrap();
+        );
         Ok(OrderAcceptedModel(order_event))
     }
 }
@@ -390,8 +388,7 @@ impl<'r> FromRow<'r, PgRow> for OrderFilledModel {
             false,
             position_id,
             commission,
-        )
-        .unwrap();
+        );
         Ok(OrderFilledModel(order_event))
     }
 }
@@ -455,8 +452,7 @@ impl<'r> FromRow<'r, PgRow> for OrderSubmittedModel {
             event_id,
             ts_event,
             ts_init,
-        )
-        .unwrap();
+        );
         Ok(OrderSubmittedModel(order_event))
     }
 }

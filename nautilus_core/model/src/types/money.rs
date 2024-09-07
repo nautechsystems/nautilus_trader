@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Represents an amount of money in a specified currency denomination.
+
 use std::{
     cmp::Ordering,
     fmt::{Debug, Display},
@@ -38,6 +40,10 @@ pub const MONEY_MAX: f64 = 9_223_372_036.0;
 /// The minimum valid money amount which can be represented.
 pub const MONEY_MIN: f64 = -9_223_372_036.0;
 
+/// Represents an amount of money in a specified currency denomination.
+///
+/// - `MONEY_MAX` = 9_223_372_036
+/// - `MONEY_MIN` = -9_223_372_036
 #[repr(C)]
 #[derive(Clone, Copy, Eq)]
 #[cfg_attr(
@@ -45,36 +51,63 @@ pub const MONEY_MIN: f64 = -9_223_372_036.0;
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct Money {
+    /// The raw monetary amount as a signed 64-bit integer.
+    /// Represents the unscaled amount, with `currency.precision` defining the number of decimal places.
     pub raw: i64,
+    /// The currency denomination associated with the monetary amount.
     pub currency: Currency,
 }
 
 impl Money {
-    /// Creates a new [`Money`] instance.
-    pub fn new(amount: f64, currency: Currency) -> Self {
-        check_in_range_inclusive_f64(amount, MONEY_MIN, MONEY_MAX, "amount").expect(FAILED);
+    /// Creates a new [`Money`] instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error:
+    /// - If `amount` is invalid outside the representable range [-9_223_372_036, 9_223_372_036].
+    /// - If `precision` is invalid outside the representable range [0, 9].
+    ///
+    /// # Notes
+    ///
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+    pub fn new_checked(amount: f64, currency: Currency) -> anyhow::Result<Self> {
+        check_in_range_inclusive_f64(amount, MONEY_MIN, MONEY_MAX, "amount")?;
 
-        Self {
+        Ok(Self {
             raw: f64_to_fixed_i64(amount, currency.precision),
             currency,
-        }
+        })
     }
 
+    /// Creates a new [`Money`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If a correctness check fails. See [`Money::new_checked`] for more details.
+    pub fn new(amount: f64, currency: Currency) -> Self {
+        Self::new_checked(amount, currency).expect(FAILED)
+    }
+
+    /// Creates a new [`Money`] instance from the given `raw` fixed-point value and the specified `currency`.
     #[must_use]
     pub fn from_raw(raw: i64, currency: Currency) -> Self {
         Self { raw, currency }
     }
 
+    /// Returns `true` if the value of this instance is zero.
     #[must_use]
     pub fn is_zero(&self) -> bool {
         self.raw == 0
     }
 
+    /// Returns the value of this instance as an `f64`.
     #[must_use]
     pub fn as_f64(&self) -> f64 {
         fixed_i64_to_f64(self.raw)
     }
 
+    /// Returns the value of this instance as a `Decimal`.
     #[must_use]
     pub fn as_decimal(&self) -> Decimal {
         // Scale down the raw value to match the precision
@@ -83,6 +116,7 @@ impl Money {
         Decimal::from_i128_with_scale(i128::from(rescaled_raw), u32::from(precision))
     }
 
+    /// Returns a formatted string representation of this instance.
     #[must_use]
     pub fn to_formatted_string(&self) -> String {
         let amount_str = format!("{:.*}", self.currency.precision as usize, self.as_f64())

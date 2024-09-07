@@ -13,6 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Represents a medium of exchange in a specified denomination with a fixed decimal precision.
+//!
+//! Handles up to 9 decimals of precision.
+
 use std::{
     fmt::{Debug, Display, Formatter},
     hash::{Hash, Hasher},
@@ -26,6 +30,9 @@ use ustr::Ustr;
 use super::fixed::check_fixed_precision;
 use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
 
+/// Represents a medium of exchange in a specified denomination with a fixed decimal precision.
+///
+/// Handles up to 9 decimals of precision.
 #[repr(C)]
 #[derive(Clone, Copy, Eq)]
 #[cfg_attr(
@@ -33,15 +40,56 @@ use crate::{currencies::CURRENCY_MAP, enums::CurrencyType};
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 pub struct Currency {
+    /// The currency code as an alpha-3 string (e.g., "USD", "EUR").
     pub code: Ustr,
+    /// The currency decimal precision.
     pub precision: u8,
+    /// The currency code (ISO 4217).
     pub iso4217: u16,
+    /// The full name of the currency.
     pub name: Ustr,
+    /// The currency type, indicating its category (e.g. Fiat, Crypto).
     pub currency_type: CurrencyType,
 }
 
 impl Currency {
+    /// Creates a new [`Currency`] instance with correctness checking.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error:
+    /// - If `code` is not a valid string.
+    /// - If `name` is not a valid string.
+    /// - If `precision` is invalid outside the valid representable range [0, 9].
+    ///
+    /// # Notes
+    ///
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
+    pub fn new_checked(
+        code: &str,
+        precision: u8,
+        iso4217: u16,
+        name: &str,
+        currency_type: CurrencyType,
+    ) -> anyhow::Result<Self> {
+        check_valid_string(code, "code")?;
+        check_valid_string(name, "name")?;
+        check_fixed_precision(precision)?;
+        Ok(Self {
+            code: Ustr::from(code),
+            precision,
+            iso4217,
+            name: Ustr::from(name),
+            currency_type,
+        })
+    }
+
     /// Creates a new [`Currency`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If a correctness check fails. See [`Currency::new_checked`] for more details.
     pub fn new(
         code: &str,
         precision: u8,
@@ -49,18 +97,18 @@ impl Currency {
         name: &str,
         currency_type: CurrencyType,
     ) -> Self {
-        check_valid_string(code, "code").expect(FAILED);
-        check_valid_string(name, "name").expect(FAILED);
-        check_fixed_precision(precision).expect(FAILED);
-        Self {
-            code: Ustr::from(code),
-            precision,
-            iso4217,
-            name: Ustr::from(name),
-            currency_type,
-        }
+        Self::new_checked(code, precision, iso4217, name, currency_type).expect(FAILED)
     }
 
+    /// Register the given `currency` in the internal currency map.
+    ///
+    /// - If `overwrite` is `true`, any existing currency will be replaced.
+    /// - If `overwrite` is `false` and the currency already exists, the operation is a no-op.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error:
+    /// - If there is a failure acquiring the lock on the currency map.
     pub fn register(currency: Self, overwrite: bool) -> anyhow::Result<()> {
         let mut map = CURRENCY_MAP
             .lock()
@@ -76,16 +124,38 @@ impl Currency {
         Ok(())
     }
 
+    /// Checks if the currency identified by the given `code` is a fiat currency.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error:
+    /// - If a currency with the given `code` does not exist.
+    /// - If there is a failure acquiring the lock on the currency map.
     pub fn is_fiat(code: &str) -> anyhow::Result<bool> {
         let currency = Self::from_str(code)?;
         Ok(currency.currency_type == CurrencyType::Fiat)
     }
 
+    /// Checks if the currency identified by the given `code` is a cryptocurrency.
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error:
+    /// - If a currency with the given `code` does not exist.
+    /// - If there is a failure acquiring the lock on the currency map.
     pub fn is_crypto(code: &str) -> anyhow::Result<bool> {
         let currency = Self::from_str(code)?;
         Ok(currency.currency_type == CurrencyType::Crypto)
     }
 
+    /// Checks if the currency identified by the given `code` is a commodity (such as a precious
+    /// metal).
+    ///
+    /// # Errors
+    ///
+    /// This function returns an error:
+    /// - If a currency with the given `code` does not exist.
+    /// - If there is a failure acquiring the lock on the currency map.
     pub fn is_commodity_backed(code: &str) -> anyhow::Result<bool> {
         let currency = Self::from_str(code)?;
         Ok(currency.currency_type == CurrencyType::CommodityBacked)
