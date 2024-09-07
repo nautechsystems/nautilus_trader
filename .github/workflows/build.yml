@@ -288,6 +288,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Free up disk space (macOS)
+        run: |
+          sudo rm -rf ~/Library/Caches/*
+          sudo rm -rf ~/Library/Developer/Xcode/DerivedData/*
+          sudo rm -rf /Library/Developer/CommandLineTools
+
       - name: Get Rust version from rust-toolchain.toml
         id: rust-version
         run: |
