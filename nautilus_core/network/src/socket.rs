@@ -33,10 +33,11 @@ use tokio::{
     time::sleep,
 };
 use tokio_tungstenite::{
-    tls::tcp_tls,
     tungstenite::{client::IntoClientRequest, stream::Mode, Error},
     MaybeTlsStream,
 };
+
+use crate::tls::tcp_tls;
 
 type TcpWriter = WriteHalf<MaybeTlsStream<TcpStream>>;
 type SharedTcpWriter = Arc<Mutex<WriteHalf<MaybeTlsStream<TcpStream>>>>;
