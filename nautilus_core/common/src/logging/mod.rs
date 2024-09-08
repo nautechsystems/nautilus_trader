@@ -95,6 +95,11 @@ pub extern "C" fn logging_clock_set_static_time(time_ns: u64) {
     clock.set_time(time_ns.into());
 }
 
+/// Initialize tracing.
+///
+/// Tracing is meant to be used to trace/debug async Rust code. It can be
+/// configured to filter modules and write up to a specific level by passing
+/// a configuration using the `RUST_LOG` environment variable.
 ///
 /// # Safety
 ///
