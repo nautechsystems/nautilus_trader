@@ -229,11 +229,11 @@ impl Clock for TestClock {
         callback: Option<EventHandler>,
     ) {
         check_valid_string(name, stringify!(name)).expect(FAILED);
-        check_predicate_true(
-            callback.is_some() | self.default_callback.is_some(),
-            "All Python callbacks were `None`",
-        )
-        .expect(FAILED);
+        // check_predicate_true(
+        //     callback.is_some() | self.default_callback.is_some(),
+        //     "All Python callbacks were `None`",
+        // )
+        // .expect(FAILED);
 
         let name_ustr = Ustr::from(name);
         match callback {
