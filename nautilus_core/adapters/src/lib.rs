@@ -34,3 +34,5 @@
 
 #[cfg(feature = "databento")]
 pub mod databento;
+
+pub mod crypto;

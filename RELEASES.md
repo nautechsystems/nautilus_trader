@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 - Added order book deltas triggering support for `OrderEmulator`
 - Added `OrderCancelRejected` event generation for dYdX adapter (#1916), thanks @davidsblom
+- Implemented cryptographic signing in Rust (replacing `pycryptodome` for Binance)
 - Removed vendored `tokio-tungstenite` crate (#1902), thanks @VioletSakura-7
 
 ### Breaking Changes

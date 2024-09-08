@@ -13,16 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import hashlib
-import hmac
 import urllib.parse
-from base64 import b64encode
 from typing import Any
 
 import msgspec
-from Crypto.Hash import SHA256
-from Crypto.Signature import pkcs1_15
-from nacl.signing import SigningKey
 
 import nautilus_trader
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
@@ -30,6 +24,7 @@ from nautilus_trader.adapters.binance.http.error import BinanceServerError
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 from nautilus_trader.core.nautilus_pyo3 import HttpResponse
@@ -54,12 +49,14 @@ class BinanceHttpClient:
         The keyed rate limiter quotas for the client.
     ratelimiter_quota : Quota, optional
         The default rate limiter quota for the client.
-    key_type : str, optional
-        The type of API key (HMAC, RSA, Ed25519).
+    key_type : str, optional {'HMAC', 'RSA', 'Ed25519'}
+        The type of API key.
     rsa_private_key : str, optional
         The RSA private key for RSA signing.
     ed25519_private_key : str, optional
         The Ed25519 private key for Ed25519 signing.
+    rsa_private_key: str | None = None,
+        ed25519_private_key: str | None = None,
 
     """
 
@@ -83,7 +80,9 @@ class BinanceHttpClient:
         self._secret: str = secret
         self._key_type: str = key_type
         self._rsa_private_key: str | None = rsa_private_key
-        self._ed25519_private_key: str | None = ed25519_private_key
+        self._ed25519_private_key: bytes | None = (
+            ed25519_private_key.encode() if ed25519_private_key else None
+        )
 
         self._headers: dict[str, Any] = {
             "Content-Type": "application/json",
@@ -138,29 +137,17 @@ class BinanceHttpClient:
     def _get_sign(self, data: str) -> str:
         match self._key_type:
             case "HMAC":
-                return self._hmac_sign(data)
+                return nautilus_pyo3.hmac_sign(self._secret, data)
             case "RSA":
-                return self._rsa_signature(data)
+                if not self._rsa_private_key:
+                    raise ValueError("`rsa_private_key` was None")
+                return nautilus_pyo3.rsa_signature(self._rsa_private_key, data)
             case "Ed25519":
-                return self._ed25519_signature(data)
+                if not self._ed25519_private_key:
+                    raise ValueError("`ed25519_private_key` was None")
+                return nautilus_pyo3.ed25519_signature(self._ed25519_private_key, data)
             case _:
                 raise ValueError(f"Unsupported key type, was {self._key_type}")
-
-    def _hmac_sign(self, data: str) -> str:
-        m = hmac.new(self._secret.encode(), data.encode(), hashlib.sha256)
-        return m.hexdigest()
-
-    def _rsa_signature(self, query_string: str) -> str:
-        assert self._rsa_private_key
-        h = SHA256.new(query_string.encode())
-        signature = pkcs1_15.new(self._rsa_private_key).sign(h)
-        return b64encode(signature).decode()
-
-    def _ed25519_signature(self, query_string: str) -> str:
-        assert self._ed25519_private_key
-        signing_key = SigningKey(self._ed25519_private_key.encode())
-        signed_message = signing_key.sign(query_string.encode())
-        return b64encode(signed_message.signature).decode()
 
     async def sign_request(
         self,
