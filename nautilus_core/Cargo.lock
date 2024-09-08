@@ -2718,18 +2718,22 @@ name = "nautilus-adapters"
 version = "0.31.0"
 dependencies = [
  "anyhow",
+ "base64",
  "chrono",
  "criterion",
  "databento",
  "fallible-streaming-iterator",
+ "hex",
  "indexmap 2.5.0",
  "itoa",
  "nautilus-common",
  "nautilus-core",
  "nautilus-model",
+ "pem",
  "pyo3",
  "pyo3-asyncio-0-21",
  "rand",
+ "ring",
  "rstest",
  "rust_decimal",
  "rust_decimal_macros",
@@ -2817,7 +2821,6 @@ dependencies = [
  "nautilus-model",
  "pyo3",
  "pyo3-asyncio-0-21",
- "ring",
  "rstest",
  "rust_decimal",
  "rust_decimal_macros",
@@ -3413,6 +3416,16 @@ name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
+
+[[package]]
+name = "pem"
+version = "3.0.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e459365e590736a54c3fa561947c84837534b8e9af6fc5bf781307e82658fae"
+dependencies = [
+ "base64",
+ "serde",
+]
 
 [[package]]
 name = "pem-rfc7468"
