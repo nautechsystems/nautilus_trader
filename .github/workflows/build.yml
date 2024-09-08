@@ -167,7 +167,6 @@ jobs:
           make test-examples
 
   build-windows:
-    if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/nightly'
     strategy:
       fail-fast: false
       matrix:
@@ -186,6 +185,16 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Free disk space (Windows)
+        run: |
+          rm -rf "/c/Program Files/dotnet"
+          rm -rf "/c/Program Files (x86)/Microsoft Visual Studio/2019"
+
+      - name: Install nasm dependency
+        run: |
+          choco install nasm
+          choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System'
 
       - name: Get Rust version from rust-toolchain.toml
         id: rust-version
@@ -287,7 +296,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Free up disk space (macOS)
+      - name: Free disk space (macOS)
         run: |
           sudo rm -rf ~/Library/Caches/*
           sudo rm -rf ~/Library/Developer/Xcode/DerivedData/*
