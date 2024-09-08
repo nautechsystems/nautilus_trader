@@ -17,9 +17,9 @@
 
 use std::{
     cmp::Ordering,
-    ffi::c_char,
     fmt::Display,
     num::NonZeroU64,
+    rc::Rc,
     sync::{
         atomic::{self, AtomicBool, AtomicU64},
         Arc,
@@ -33,15 +33,13 @@ use nautilus_core::{
     time::get_atomic_clock_realtime,
     uuid::UUID4,
 };
-#[cfg(feature = "python")]
-use pyo3::{types::PyCapsule, IntoPy, PyObject, Python};
 use tokio::{
     sync::oneshot,
     time::{Duration, Instant},
 };
 use ustr::Ustr;
 
-use crate::{handlers::EventHandler, runtime::get_runtime};
+use crate::runtime::get_runtime;
 
 #[repr(C)]
 #[derive(Clone, Debug)]
@@ -97,8 +95,26 @@ impl PartialEq for TimeEvent {
     }
 }
 
+pub trait TimeEventCallback {
+    fn call(&self, event: TimeEvent);
+}
+
+#[derive(Clone)]
+#[repr(transparent)]
+pub struct ShareableTimeEventCallback(pub Rc<dyn TimeEventCallback>);
+
+impl From<Rc<dyn TimeEventCallback>> for ShareableTimeEventCallback {
+    fn from(value: Rc<dyn TimeEventCallback>) -> Self {
+        Self(value)
+    }
+}
+
+// SAFETY: Message handlers cannot be sent across thread boundaries
+unsafe impl Send for ShareableTimeEventCallback {}
+unsafe impl Sync for ShareableTimeEventCallback {}
+
 #[repr(C)]
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 /// Represents a time event and its associated handler.
 ///
 /// `TimeEventHandler` associates a `TimeEvent` with a callback function that is triggered
@@ -106,8 +122,16 @@ impl PartialEq for TimeEvent {
 pub struct TimeEventHandler {
     /// The time event.
     pub event: TimeEvent,
-    /// The callable raw pointer.
-    pub callback_ptr: *mut c_char,
+    /// The callable handler for the event.
+    pub callback: ShareableTimeEventCallback,
+}
+
+impl TimeEventHandler {
+    /// Creates a new [`TimeEventHandler`] instance.
+    #[must_use]
+    pub const fn new(event: TimeEvent, callback: ShareableTimeEventCallback) -> Self {
+        Self { event, callback }
+    }
 }
 
 impl PartialOrd for TimeEventHandler {
@@ -264,7 +288,7 @@ pub struct LiveTimer {
     pub stop_time_ns: Option<UnixNanos>,
     next_time_ns: Arc<AtomicU64>,
     is_expired: Arc<AtomicBool>,
-    callback: EventHandler,
+    callback: ShareableTimeEventCallback,
     canceler: Option<oneshot::Sender<()>>,
 }
 
@@ -282,7 +306,7 @@ impl LiveTimer {
         interval_ns: u64,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
-        callback: EventHandler,
+        callback: ShareableTimeEventCallback,
     ) -> Self {
         check_valid_string(name, stringify!(name)).expect(FAILED);
         // SAFETY: Guaranteed to be non-zero
@@ -328,7 +352,7 @@ impl LiveTimer {
         let next_time_atomic = self.next_time_ns.clone();
         let interval_ns = self.interval_ns.get();
         let is_expired = self.is_expired.clone();
-        let callback = self.callback.clone();
+        let _callback = self.callback.clone();
 
         // Floor the next time to the nearest microsecond which is within the timers accuracy
         let mut next_time_ns = UnixNanos::from(floor_to_nearest_microsecond(next_time_ns));
@@ -359,7 +383,10 @@ impl LiveTimer {
                 tokio::select! {
                     _ = timer.tick() => {
                         let now_ns = clock.get_time_ns();
-                        call_python_with_time_event(event_name, next_time_ns, now_ns, &callback);
+                        // call_python_with_time_event(event_name, next_time_ns, now_ns, &callback);
+                        let _event = TimeEvent::new(event_name, UUID4::new(), next_time_ns, now_ns);
+                        // TODO: Call python time event
+                        // callback.0.call(event);
 
                         // Prepare next time interval
                         next_time_ns += interval_ns;
@@ -398,57 +425,36 @@ impl LiveTimer {
     }
 }
 
-#[cfg(feature = "python")]
-fn call_python_with_time_event(
-    name: Ustr,
-    ts_event: UnixNanos,
-    ts_init: UnixNanos,
-    handler: &EventHandler,
-) {
-    Python::with_gil(|py| {
-        // Create new time event
-        let event = TimeEvent::new(name, UUID4::new(), ts_event, ts_init);
-        let capsule: PyObject = PyCapsule::new_bound(py, event, None)
-            .expect("Error creating `PyCapsule`")
-            .into_py(py);
+// #[cfg(feature = "python")]
+// fn call_python_with_time_event(
+//     name: Ustr,
+//     ts_event: UnixNanos,
+//     ts_init: UnixNanos,
+//     handler: &EventHandler,
+// ) {
+//     Python::with_gil(|py| {
+//         // Create new time event
+//         let event = TimeEvent::new(name, UUID4::new(), ts_event, ts_init);
+//         let capsule: PyObject = PyCapsule::new_bound(py, event, None)
+//             .expect("Error creating `PyCapsule`")
+//             .into_py(py);
 
-        match handler.callback.call1(py, (capsule,)) {
-            Ok(_) => {}
-            Err(e) => tracing::error!("Error on callback: {:?}", e),
-        };
-    });
-}
-
-#[cfg(not(feature = "python"))]
-fn call_python_with_time_event(
-    _name: Ustr,
-    _ts_event: UnixNanos,
-    _ts_init: UnixNanos,
-    _handler: EventHandler,
-) {
-    panic!("`python` feature is not enabled");
-}
+//         match handler.callback.call1(py, (capsule,)) {
+//             Ok(_) => {}
+//             Err(e) => tracing::error!("Error on callback: {:?}", e),
+//         };
+//     });
+// }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_core::{
-        datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos, time::get_atomic_clock_realtime,
-    };
-    use pyo3::prelude::*;
+    use nautilus_core::nanos::UnixNanos;
     use rstest::*;
-    use tokio::time::Duration;
 
-    use super::{LiveTimer, TestTimer, TimeEvent};
-    use crate::{handlers::EventHandler, testing::wait_until};
-
-    #[pyfunction]
-    const fn receive_event(_py: Python, _event: TimeEvent) -> PyResult<()> {
-        // TODO: Assert the length of a handler vec
-        Ok(())
-    }
+    use super::{TestTimer, TimeEvent};
 
     #[rstest]
     fn test_test_timer_pop_event() {
@@ -512,87 +518,5 @@ mod tests {
         );
         assert_eq!(timer.advance(UnixNanos::from(10)).count(), 5);
         assert!(timer.is_expired);
-    }
-
-    #[tokio::test]
-    async fn test_live_timer_starts_and_stops() {
-        pyo3::prepare_freethreaded_python();
-
-        let handler = Python::with_gil(|py| {
-            let callable = wrap_pyfunction_bound!(receive_event, py).unwrap();
-            EventHandler::new(callable.into_py(py))
-        });
-
-        // Create a new LiveTimer with no stop time
-        let clock = get_atomic_clock_realtime();
-        let start_time = clock.get_time_ns();
-        let interval_ns = 100 * NANOSECONDS_IN_MILLISECOND;
-        let mut timer = LiveTimer::new("TEST_TIMER", interval_ns, start_time, None, handler);
-        let next_time_ns = timer.next_time_ns();
-        timer.start();
-
-        // Wait for timer to run
-        tokio::time::sleep(Duration::from_millis(300)).await;
-
-        timer.cancel().unwrap();
-        wait_until(|| timer.is_expired(), Duration::from_secs(2));
-        assert!(timer.next_time_ns() > next_time_ns);
-    }
-
-    #[tokio::test]
-    async fn test_live_timer_with_stop_time() {
-        pyo3::prepare_freethreaded_python();
-
-        let handler = Python::with_gil(|py| {
-            let callable = wrap_pyfunction_bound!(receive_event, py).unwrap();
-            EventHandler::new(callable.into_py(py))
-        });
-
-        // Create a new LiveTimer with a stop time
-        let clock = get_atomic_clock_realtime();
-        let start_time = clock.get_time_ns();
-        let interval_ns = 100 * NANOSECONDS_IN_MILLISECOND;
-        let stop_time = start_time + 500 * NANOSECONDS_IN_MILLISECOND;
-        let mut timer = LiveTimer::new(
-            "TEST_TIMER",
-            interval_ns,
-            start_time,
-            Some(stop_time),
-            handler,
-        );
-        let next_time_ns = timer.next_time_ns();
-        timer.start();
-
-        // Wait for a longer time than the stop time
-        tokio::time::sleep(Duration::from_secs(1)).await;
-
-        wait_until(|| timer.is_expired(), Duration::from_secs(2));
-        assert!(timer.next_time_ns() > next_time_ns);
-    }
-
-    #[tokio::test]
-    async fn test_live_timer_with_zero_interval_and_immediate_stop_time() {
-        pyo3::prepare_freethreaded_python();
-
-        let handler = Python::with_gil(|py| {
-            let callable = wrap_pyfunction_bound!(receive_event, py).unwrap();
-            EventHandler::new(callable.into_py(py))
-        });
-
-        // Create a new LiveTimer with a stop time
-        let clock = get_atomic_clock_realtime();
-        let start_time = UnixNanos::default();
-        let interval_ns = 0;
-        let stop_time = clock.get_time_ns();
-        let mut timer = LiveTimer::new(
-            "TEST_TIMER",
-            interval_ns,
-            start_time,
-            Some(stop_time),
-            handler,
-        );
-        timer.start();
-
-        wait_until(|| timer.is_expired(), Duration::from_secs(2));
     }
 }

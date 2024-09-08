@@ -18,9 +18,4 @@ cdef extern from "../includes/backtest.h":
 
     void time_event_accumulator_drop(TimeEventAccumulatorAPI accumulator);
 
-    void time_event_accumulator_advance_clock(TimeEventAccumulatorAPI *accumulator,
-                                              TestClock_API *clock,
-                                              uint64_t to_time_ns,
-                                              uint8_t set_time);
-
     CVec time_event_accumulator_drain(TimeEventAccumulatorAPI *accumulator);

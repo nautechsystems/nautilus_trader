@@ -197,50 +197,7 @@ typedef enum LogLevel {
     ERROR = 5,
 } LogLevel;
 
-/**
- * A real-time clock which uses system time.
- *
- * Timestamps are guaranteed to be unique and monotonically increasing.
- */
-typedef struct LiveClock LiveClock;
-
 typedef struct LogGuard LogGuard;
-
-/**
- * A static test clock.
- *
- * Stores the current timestamp internally which can be advanced.
- */
-typedef struct TestClock TestClock;
-
-/**
- * C compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
- *
- * This struct wraps `TestClock` in a way that makes it compatible with C function
- * calls, enabling interaction with `TestClock` in a C environment.
- *
- * It implements the `Deref` trait, allowing instances of `TestClock_API` to be
- * dereferenced to `TestClock`, providing access to `TestClock`'s methods without
- * having to manually access the underlying `TestClock` instance.
- */
-typedef struct TestClock_API {
-    struct TestClock *_0;
-} TestClock_API;
-
-/**
- * C compatible Foreign Function Interface (FFI) for an underlying [`LiveClock`].
- *
- * This struct wraps `LiveClock` in a way that makes it compatible with C function
- * calls, enabling interaction with `LiveClock` in a C environment.
- *
- * It implements the `Deref` and `DerefMut` traits, allowing instances of `LiveClock_API` to be
- * dereferenced to `LiveClock`, providing access to `LiveClock`'s methods without
- * having to manually access the underlying `LiveClock` instance. This includes
- * both mutable and immutable access.
- */
-typedef struct LiveClock_API {
-    struct LiveClock *_0;
-} LiveClock_API;
 
 /**
  * C compatible Foreign Function Interface (FFI) for an underlying [`LogGuard`].
@@ -282,23 +239,6 @@ typedef struct TimeEvent_t {
 } TimeEvent_t;
 
 /**
- * Represents a time event and its associated handler.
- *
- * `TimeEventHandler` associates a `TimeEvent` with a callback function that is triggered
- * when the event's timestamp is reached.
- */
-typedef struct TimeEventHandler_t {
-    /**
-     * The time event.
-     */
-    struct TimeEvent_t event;
-    /**
-     * The callable raw pointer.
-     */
-    char *callback_ptr;
-} TimeEventHandler_t;
-
-/**
  * Returns whether the core logger is enabled.
  */
 uint8_t logging_is_initialized(void);
@@ -332,155 +272,6 @@ void logging_clock_set_static_mode(void);
  * Sets the global logging clock static time with the given UNIX time (nanoseconds).
  */
 void logging_clock_set_static_time(uint64_t time_ns);
-
-struct TestClock_API test_clock_new(void);
-
-void test_clock_drop(struct TestClock_API clock);
-
-/**
- * # Safety
- *
- * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
- */
-void test_clock_register_default_handler(struct TestClock_API *clock, PyObject *callback_ptr);
-
-void test_clock_set_time(const struct TestClock_API *clock, uint64_t to_time_ns);
-
-double test_clock_timestamp(const struct TestClock_API *clock);
-
-uint64_t test_clock_timestamp_ms(const struct TestClock_API *clock);
-
-uint64_t test_clock_timestamp_us(const struct TestClock_API *clock);
-
-uint64_t test_clock_timestamp_ns(const struct TestClock_API *clock);
-
-PyObject *test_clock_timer_names(const struct TestClock_API *clock);
-
-uintptr_t test_clock_timer_count(struct TestClock_API *clock);
-
-/**
- * # Safety
- *
- * - Assumes `name_ptr` is a valid C string pointer.
- * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
- */
-void test_clock_set_time_alert(struct TestClock_API *clock,
-                               const char *name_ptr,
-                               uint64_t alert_time_ns,
-                               PyObject *callback_ptr);
-
-/**
- * # Safety
- *
- * - Assumes `name_ptr` is a valid C string pointer.
- * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
- */
-void test_clock_set_timer(struct TestClock_API *clock,
-                          const char *name_ptr,
-                          uint64_t interval_ns,
-                          uint64_t start_time_ns,
-                          uint64_t stop_time_ns,
-                          PyObject *callback_ptr);
-
-/**
- * # Safety
- *
- * - Assumes `set_time` is a correct `uint8_t` of either 0 or 1.
- */
-CVec test_clock_advance_time(struct TestClock_API *clock, uint64_t to_time_ns, uint8_t set_time);
-
-void vec_time_event_handlers_drop(CVec v);
-
-/**
- * # Safety
- *
- * - Assumes `name_ptr` is a valid C string pointer.
- */
-uint64_t test_clock_next_time(struct TestClock_API *clock, const char *name_ptr);
-
-/**
- * # Safety
- *
- * - Assumes `name_ptr` is a valid C string pointer.
- */
-void test_clock_cancel_timer(struct TestClock_API *clock, const char *name_ptr);
-
-void test_clock_cancel_timers(struct TestClock_API *clock);
-
-struct LiveClock_API live_clock_new(void);
-
-void live_clock_drop(struct LiveClock_API clock);
-
-/**
- * # Safety
- *
- * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
- */
-void live_clock_register_default_handler(struct LiveClock_API *clock, PyObject *callback_ptr);
-
-double live_clock_timestamp(struct LiveClock_API *clock);
-
-uint64_t live_clock_timestamp_ms(struct LiveClock_API *clock);
-
-uint64_t live_clock_timestamp_us(struct LiveClock_API *clock);
-
-uint64_t live_clock_timestamp_ns(struct LiveClock_API *clock);
-
-PyObject *live_clock_timer_names(const struct LiveClock_API *clock);
-
-uintptr_t live_clock_timer_count(struct LiveClock_API *clock);
-
-/**
- * # Safety
- *
- * - Assumes `name_ptr` is a valid C string pointer.
- * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
- *
- * # Panics
- *
- * This function panics:
- * - If `name` is not a valid string.
- * - If `callback_ptr` is NULL and no default callback has been assigned on the clock.
- */
-void live_clock_set_time_alert(struct LiveClock_API *clock,
-                               const char *name_ptr,
-                               uint64_t alert_time_ns,
-                               PyObject *callback_ptr);
-
-/**
- * # Safety
- *
- * - Assumes `name_ptr` is a valid C string pointer.
- * - Assumes `callback_ptr` is a valid `PyCallable` pointer.
- *
- * # Panics
- *
- * This function panics:
- * - If `name` is not a valid string.
- * - If `callback_ptr` is NULL and no default callback has been assigned on the clock.
- */
-void live_clock_set_timer(struct LiveClock_API *clock,
-                          const char *name_ptr,
-                          uint64_t interval_ns,
-                          uint64_t start_time_ns,
-                          uint64_t stop_time_ns,
-                          PyObject *callback_ptr);
-
-/**
- * # Safety
- *
- * - Assumes `name_ptr` is a valid C string pointer.
- */
-uint64_t live_clock_next_time(struct LiveClock_API *clock, const char *name_ptr);
-
-/**
- * # Safety
- *
- * - Assumes `name_ptr` is a valid C string pointer.
- */
-void live_clock_cancel_timer(struct LiveClock_API *clock, const char *name_ptr);
-
-void live_clock_cancel_timers(struct LiveClock_API *clock);
 
 const char *component_state_to_cstr(enum ComponentState value);
 
@@ -610,5 +401,3 @@ struct TimeEvent_t time_event_new(const char *name_ptr,
  * Returns a [`TimeEvent`] as a C string pointer.
  */
 const char *time_event_to_cstr(const struct TimeEvent_t *event);
-
-struct TimeEventHandler_t dummy(struct TimeEventHandler_t v);

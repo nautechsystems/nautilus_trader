@@ -17,11 +17,9 @@
 
 use std::ops::{Deref, DerefMut};
 
-use nautilus_common::{clock::TestClock, ffi::clock::TestClock_API, timer::TimeEventHandler};
-use nautilus_core::{
-    ffi::{cvec::CVec, parsing::u8_as_bool},
-    nanos::UnixNanos,
-};
+use nautilus_common::{clock::TestClock, timer::TimeEventHandler};
+// use nautilus_common::ffi::clock::TestClock_API;
+use nautilus_core::{ffi::cvec::CVec, nanos::UnixNanos};
 
 /// Provides a means of accumulating and draining time event handlers.
 pub struct TimeEventAccumulator {
@@ -91,15 +89,15 @@ pub extern "C" fn time_event_accumulator_drop(accumulator: TimeEventAccumulatorA
     drop(accumulator); // Memory freed here
 }
 
-#[no_mangle]
-pub extern "C" fn time_event_accumulator_advance_clock(
-    accumulator: &mut TimeEventAccumulatorAPI,
-    clock: &mut TestClock_API,
-    to_time_ns: UnixNanos,
-    set_time: u8,
-) {
-    accumulator.advance_clock(clock, to_time_ns, u8_as_bool(set_time));
-}
+// #[no_mangle]
+// pub extern "C" fn time_event_accumulator_advance_clock(
+//     accumulator: &mut TimeEventAccumulatorAPI,
+//     clock: &mut TestClock_API,
+//     to_time_ns: UnixNanos,
+//     set_time: u8,
+// ) {
+//     accumulator.advance_clock(clock, to_time_ns, u8_as_bool(set_time));
+// }
 
 #[no_mangle]
 pub extern "C" fn time_event_accumulator_drain(accumulator: &mut TimeEventAccumulatorAPI) -> CVec {
@@ -111,9 +109,12 @@ pub extern "C" fn time_event_accumulator_drain(accumulator: &mut TimeEventAccumu
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::ffi::c_char;
+    use std::rc::Rc;
 
-    use nautilus_common::timer::TimeEvent;
+    use nautilus_common::{
+        python::timer::TimeEventCallback_Py,
+        timer::{ShareableTimeEventCallback, TimeEvent},
+    };
     use nautilus_core::uuid::UUID4;
     use pyo3::{prelude::*, types::PyList, Py, Python};
     use rstest::*;
@@ -153,25 +154,12 @@ mod tests {
             // Note: as_ptr returns a borrowed pointer. It is valid as long
             // as the object is in scope. In this case `callback_ptr` is valid
             // as long as `py_append` is in scope.
-            let callback_ptr = py_append
-                .as_ptr()
-                .cast::<pyo3::ffi::PyObject>()
-                .cast::<c_char>();
+            let callback = TimeEventCallback_Py::new(py_append.into_py(py));
+            let callback = ShareableTimeEventCallback(Rc::new(callback));
 
-            let handler1 = TimeEventHandler {
-                event: time_event1.clone(),
-                callback_ptr,
-            };
-
-            let handler2 = TimeEventHandler {
-                event: time_event2.clone(),
-                callback_ptr,
-            };
-
-            let handler3 = TimeEventHandler {
-                event: time_event3.clone(),
-                callback_ptr,
-            };
+            let handler1 = TimeEventHandler::new(time_event1.clone(), callback.clone());
+            let handler2 = TimeEventHandler::new(time_event2.clone(), callback.clone());
+            let handler3 = TimeEventHandler::new(time_event3.clone(), callback.clone());
 
             accumulator.event_handlers.push(handler1);
             accumulator.event_handlers.push(handler2);
