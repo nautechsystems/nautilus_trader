@@ -52,9 +52,9 @@ const LOGGING: &str = "logging";
 pub struct LoggerConfig {
     /// Maximum log level to write to stdout.
     pub stdout_level: LevelFilter,
-    /// Maximum log level to write to file.
+    /// Maximum log level to write to file (disabled is `Off`).
     pub fileout_level: LevelFilter,
-    /// Maximum log level to write for a given component.
+    /// Per-component log levels, allowing finer-grained control.
     component_level: HashMap<Ustr, LevelFilter>,
     /// If logger is using ANSI color codes.
     pub is_colored: bool,
@@ -141,21 +141,16 @@ impl LoggerConfig {
     }
 }
 
-/// Initialize tracing.
-///
-/// Tracing is meant to be used to trace/debug async Rust code. It can be
-/// configured to filter modules and write up to a specific level only using
-/// by passing a configuration using the `RUST_LOG` environment variable.
-
 /// A high-performance logger utilizing a MPSC channel under the hood.
 ///
-/// A separate thread is spawned at initialization which receives [`LogEvent`] structs over the
-/// channel.
+/// A logger is initialized with a [`LoggerConfig`] to set up different logging levels for
+/// stdout, file, and components. The logger spawns a thread that listens for [`LogEvent`]s
+/// sent via an MPSC channel.
 #[derive(Debug)]
 pub struct Logger {
-    /// Configure maximum levels for components and IO.
+    /// Configuration for logging levels and behavior.
     pub config: LoggerConfig,
-    /// Send log events to a separate thread.
+    /// Transmitter for sending log events to the 'logging' thread.
     tx: std::sync::mpsc::Sender<LogEvent>,
 }
 
@@ -186,11 +181,22 @@ impl Display for LogLine {
     }
 }
 
+/// A wrapper around a log line that provides formatted and cached representations.
+///
+/// This struct contains a log line and provides various formatted versions
+/// of it, such as plain string, colored string, and JSON. It also caches the
+/// results for repeated calls, optimizing performance when the same message
+/// needs to be logged multiple times in different formats.
 pub struct LogLineWrapper {
+    /// The underlying log line that contains the log data.
     line: LogLine,
+    /// Cached plain string representation of the log line.
     cache: Option<String>,
+    /// Cached colored string representation of the log line.
     colored: Option<String>,
+    /// The timestamp of when the log event occurred.
     timestamp: String,
+    /// The ID of the trader associated with this log event.
     trader_id: Ustr,
 }
 
@@ -207,6 +213,10 @@ impl LogLineWrapper {
         }
     }
 
+    /// Returns the plain log message string, caching the result.
+    ///
+    /// This method constructs the log line format and caches it for repeated calls. Useful when the
+    /// same log message needs to be printed multiple times.
     pub fn get_string(&mut self) -> &str {
         self.cache.get_or_insert_with(|| {
             format!(
@@ -220,6 +230,11 @@ impl LogLineWrapper {
         })
     }
 
+    /// Returns the colored log message string, caching the result.
+    ///
+    /// This method constructs the colored log line format and caches the result
+    /// for repeated calls, providing the message with ANSI color codes if the
+    /// logger is configured to use colors.
     pub fn get_colored(&mut self) -> &str {
         self.colored.get_or_insert_with(|| {
             format!(
@@ -234,6 +249,11 @@ impl LogLineWrapper {
         })
     }
 
+    /// Returns the log message as a JSON string.
+    ///
+    /// This method serializes the log line and its associated metadata
+    /// (timestamp, trader ID, etc.) into a JSON string format. This is useful
+    /// for structured logging or when logs need to be stored in a JSON format.
     #[must_use]
     pub fn get_json(&self) -> String {
         let json_string =
@@ -310,6 +330,15 @@ impl Logger {
         Self::init_with_config(trader_id, instance_id, config, file_config)
     }
 
+    /// Initializes the logger with the given configuration.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// let config = LoggerConfig::from_spec("stdout=Info;fileout=Debug;RiskEngine=Error");
+    /// let file_config = FileWriterConfig::default();
+    /// let log_guard = Logger::init_with_config(trader_id, instance_id, config, file_config);
+    /// ```
     #[must_use]
     pub fn init_with_config(
         trader_id: TraderId,
