@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType

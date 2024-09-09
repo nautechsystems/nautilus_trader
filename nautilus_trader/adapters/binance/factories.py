@@ -18,7 +18,10 @@ from functools import lru_cache
 
 from nautilus_trader.adapters.binance.common.credentials import get_api_key
 from nautilus_trader.adapters.binance.common.credentials import get_api_secret
+from nautilus_trader.adapters.binance.common.credentials import get_ed25519_private_key
+from nautilus_trader.adapters.binance.common.credentials import get_rsa_private_key
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceKeyType
 from nautilus_trader.adapters.binance.common.urls import get_http_base_url
 from nautilus_trader.adapters.binance.common.urls import get_ws_base_url
 from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
@@ -47,8 +50,9 @@ BINANCE_HTTP_CLIENTS: dict[str, BinanceHttpClient] = {}
 def get_cached_binance_http_client(
     clock: LiveClock,
     account_type: BinanceAccountType,
-    key: str | None = None,
-    secret: str | None = None,
+    api_key: str | None = None,
+    api_secret: str | None = None,
+    key_type: BinanceKeyType = BinanceKeyType.HMAC,
     base_url: str | None = None,
     is_testnet: bool = False,
     is_us: bool = False,
@@ -65,10 +69,12 @@ def get_cached_binance_http_client(
         The clock for the client.
     account_type : BinanceAccountType
         The account type for the client.
-    key : str, optional
+    api_key : str, optional
         The API key for the client.
-    secret : str, optional
+    api_secret : str, optional
         The API secret for the client.
+    key_type : BinanceKeyType, default 'HMAC'
+        The private key cryptographic algorithm type.
     base_url : str, optional
         The base URL for the API endpoints.
     is_testnet : bool, default False
@@ -83,9 +89,22 @@ def get_cached_binance_http_client(
     """
     global BINANCE_HTTP_CLIENTS
 
-    key = key or get_api_key(account_type, is_testnet)
-    secret = secret or get_api_secret(account_type, is_testnet)
+    api_key = api_key or get_api_key(account_type, is_testnet)
+    api_secret = api_secret or get_api_secret(account_type, is_testnet)
     default_http_base_url = get_http_base_url(account_type, is_testnet, is_us)
+
+    match key_type:
+        case BinanceKeyType.HMAC:
+            rsa_private_key = None
+            ed25519_private_key = None
+        case BinanceKeyType.RSA:
+            rsa_private_key = get_rsa_private_key(account_type, is_testnet)
+            ed25519_private_key = None
+        case BinanceKeyType.ED25519:
+            rsa_private_key = None
+            ed25519_private_key = get_ed25519_private_key(account_type, is_testnet)
+        case _:
+            raise ValueError(f"invalid `key_type`, was {key_type}")
 
     # Set up rate limit quotas
     if account_type.is_spot:
@@ -103,12 +122,15 @@ def get_cached_binance_http_client(
             ("allOrders", Quota.rate_per_minute(int(1200 / 20))),
         ]
 
-    client_key: str = "|".join((account_type.value, key, secret))
+    client_key: str = "|".join((account_type.value, api_key, api_secret))
     if client_key not in BINANCE_HTTP_CLIENTS:
         client = BinanceHttpClient(
             clock=clock,
-            key=key,
-            secret=secret,
+            api_key=api_key,
+            api_secret=api_secret,
+            key_type=key_type,
+            rsa_private_key=rsa_private_key,
+            ed25519_private_key=ed25519_private_key,
             base_url=base_url or default_http_base_url,
             ratelimiter_quotas=ratelimiter_quotas,
             ratelimiter_default_quota=ratelimiter_default_quota,
@@ -246,8 +268,9 @@ class BinanceLiveDataClientFactory(LiveDataClientFactory):
         client: BinanceHttpClient = get_cached_binance_http_client(
             clock=clock,
             account_type=config.account_type,
-            key=config.api_key,
-            secret=config.api_secret,
+            api_key=config.api_key,
+            api_secret=config.api_secret,
+            key_type=config.key_type,
             base_url=config.base_url_http,
             is_testnet=config.testnet,
             is_us=config.us,
@@ -353,8 +376,9 @@ class BinanceLiveExecClientFactory(LiveExecClientFactory):
         client: BinanceHttpClient = get_cached_binance_http_client(
             clock=clock,
             account_type=config.account_type,
-            key=config.api_key,
-            secret=config.api_secret,
+            api_key=config.api_key,
+            api_secret=config.api_secret,
+            key_type=config.key_type,
             base_url=config.base_url_http,
             is_testnet=config.testnet,
             is_us=config.us,

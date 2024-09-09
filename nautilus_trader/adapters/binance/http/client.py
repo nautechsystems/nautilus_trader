@@ -19,6 +19,7 @@ from typing import Any
 import msgspec
 
 import nautilus_trader
+from nautilus_trader.adapters.binance.common.enums import BinanceKeyType
 from nautilus_trader.adapters.binance.http.error import BinanceClientError
 from nautilus_trader.adapters.binance.http.error import BinanceServerError
 from nautilus_trader.common.component import LiveClock
@@ -39,46 +40,44 @@ class BinanceHttpClient:
     ----------
     clock : LiveClock
         The clock for the client.
-    key : str
+    api_key : str
         The Binance API key for requests.
-    secret : str
+    api_secret : str
         The Binance API secret for signed requests.
+    key_type : BinanceKeyType, default 'HMAC'
+        The private key cryptographic algorithm type.
+    rsa_private_key : str, optional
+        The RSA private key for RSA signing.
+    ed25519_private_key : str, optional
+        The Ed25519 private key for Ed25519 signing.
     base_url : str, optional
         The base endpoint URL for the client.
     ratelimiter_quotas : list[tuple[str, Quota]], optional
         The keyed rate limiter quotas for the client.
     ratelimiter_quota : Quota, optional
         The default rate limiter quota for the client.
-    key_type : str, optional {'HMAC', 'RSA', 'Ed25519'}
-        The type of API key.
-    rsa_private_key : str, optional
-        The RSA private key for RSA signing.
-    ed25519_private_key : str, optional
-        The Ed25519 private key for Ed25519 signing.
-    rsa_private_key: str | None = None,
-        ed25519_private_key: str | None = None,
 
     """
 
     def __init__(
         self,
         clock: LiveClock,
-        key: str,
-        secret: str,
+        api_key: str,
+        api_secret: str,
         base_url: str,
-        ratelimiter_quotas: list[tuple[str, Quota]] | None = None,
-        ratelimiter_default_quota: Quota | None = None,
-        key_type: str = "HMAC",
+        key_type: BinanceKeyType = BinanceKeyType.HMAC,
         rsa_private_key: str | None = None,
         ed25519_private_key: str | None = None,
+        ratelimiter_quotas: list[tuple[str, Quota]] | None = None,
+        ratelimiter_default_quota: Quota | None = None,
     ) -> None:
         self._clock: LiveClock = clock
         self._log: Logger = Logger(type(self).__name__)
-        self._key: str = key
+        self._key: str = api_key
 
         self._base_url: str = base_url
-        self._secret: str = secret
-        self._key_type: str = key_type
+        self._secret: str = api_secret
+        self._key_type: BinanceKeyType = key_type
         self._rsa_private_key: str | None = rsa_private_key
         self._ed25519_private_key: bytes | None = (
             ed25519_private_key.encode() if ed25519_private_key else None
@@ -87,7 +86,7 @@ class BinanceHttpClient:
         self._headers: dict[str, Any] = {
             "Content-Type": "application/json",
             "User-Agent": nautilus_trader.USER_AGENT,
-            "X-MBX-APIKEY": key,
+            "X-MBX-APIKEY": api_key,
         }
         self._client = HttpClient(
             keyed_quotas=ratelimiter_quotas or [],
@@ -136,18 +135,18 @@ class BinanceHttpClient:
 
     def _get_sign(self, data: str) -> str:
         match self._key_type:
-            case "HMAC":
+            case BinanceKeyType.HMAC:
                 return nautilus_pyo3.hmac_sign(self._secret, data)
-            case "RSA":
+            case BinanceKeyType.RSA:
                 if not self._rsa_private_key:
                     raise ValueError("`rsa_private_key` was None")
                 return nautilus_pyo3.rsa_signature(self._rsa_private_key, data)
-            case "Ed25519":
+            case BinanceKeyType.ED25519:
                 if not self._ed25519_private_key:
                     raise ValueError("`ed25519_private_key` was None")
                 return nautilus_pyo3.ed25519_signature(self._ed25519_private_key, data)
             case _:
-                raise ValueError(f"Unsupported key type, was {self._key_type}")
+                raise ValueError(f"Unsupported key type, was '{self._key_type.value}'")
 
     async def sign_request(
         self,
