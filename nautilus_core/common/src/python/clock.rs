@@ -13,90 +13,97 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-// use crate::{
-//     clock::{Clock, LiveClock, TestClock},
-//     handlers::EventHandler,
-//     timer::{LiveTimer, TestTimer, TimeEvent, TimeEventHandler},
-// };
-// use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
-// use pyo3::prelude::*;
-// use pyo3::types::{PyString, PyTuple};
-// use std::{collections::HashMap, ops::Deref};
-// use ustr::Ustr;
+use crate::{
+    clock::{Clock, LiveClock, TestClock},
+    handlers::EventHandler,
+    timer::{
+        LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandler, TimeEventHandlerV2,
+    },
+};
+use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
+use pyo3::prelude::*;
+use pyo3::types::{PyString, PyTuple};
+use std::{collections::HashMap, ops::Deref};
+use ustr::Ustr;
 
-// /// PyO3 compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
-// ///
-// /// This struct wraps `TestClock` in a way that makes it possible to create
-// /// Python bindings for it.
-// ///
-// /// It implements the `Deref` trait, allowing instances of `TestClock_API` to be
-// /// dereferenced to `TestClock`, providing access to `TestClock`'s methods without
-// /// having to manually access the underlying `TestClock` instance.
-// #[allow(non_camel_case_types)]
-// #[pyo3::pyclass(
-//     module = "nautilus_trader.core.nautilus_pyo3.common",
-//     name = "TestClock"
-// )]
-// pub struct TestClock_Py(Box<TestClock>);
+use super::timer::TimeEventHandler_Py;
 
-// #[pymethods]
-// impl TestClock_Py {
-//     #[new]
-//     fn py_new() -> Self {
-//         TestClock_Py(Box::new(TestClock::new()))
-//     }
+/// PyO3 compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
+///
+/// This struct wraps `TestClock` in a way that makes it possible to create
+/// Python bindings for it.
+///
+/// It implements the `Deref` trait, allowing instances of `TestClock_API` to be
+/// dereferenced to `TestClock`, providing access to `TestClock`'s methods without
+/// having to manually access the underlying `TestClock` instance.
+#[allow(non_camel_case_types)]
+#[pyo3::pyclass(
+    module = "nautilus_trader.core.nautilus_pyo3.common",
+    name = "TestClock"
+)]
+pub struct TestClock_Py(Box<TestClock>);
 
-//     fn advance_time(&mut self, to_time_ns: u64, set_time: bool) -> Vec<TimeEvent> {
-//         self.0.advance_time(to_time_ns.into(), set_time)
-//     }
+#[pymethods]
+impl TestClock_Py {
+    #[new]
+    fn py_new() -> Self {
+        TestClock_Py(Box::new(TestClock::new()))
+    }
 
-//     fn match_handlers(&self, events: Vec<TimeEvent>) -> Vec<TimeEventHandler> {
-//         self.0.match_handlers(events)
-//     }
+    fn advance_time(&mut self, to_time_ns: u64, set_time: bool) -> Vec<TimeEvent> {
+        self.0.advance_time(to_time_ns.into(), set_time)
+    }
 
-//     fn register_default_handler(&mut self, callback: EventHandler) {
-//         self.0.register_default_handler(callback)
-//     }
+    fn match_handlers(&self, events: Vec<TimeEvent>) -> Vec<TimeEventHandler_Py> {
+        self.0
+            .match_handlers(events)
+            .into_iter()
+            .map(Into::into)
+            .collect()
+    }
 
-//     fn set_time_alert_ns(
-//         &mut self,
-//         name: &str,
-//         alert_time_ns: u64,
-//         callback: Option<EventHandler>,
-//     ) {
-//         self.0
-//             .set_time_alert_ns(name, alert_time_ns.into(), callback)
-//     }
+    fn register_default_handler(&mut self, callback: PyObject) {
+        self.0
+            .register_default_handler(TimeEventCallback::from(callback))
+    }
 
-//     fn set_timer_ns(
-//         &mut self,
-//         name: &str,
-//         interval_ns: u64,
-//         start_time_ns: u64,
-//         stop_time_ns: Option<u64>,
-//         callback: Option<EventHandler>,
-//     ) {
-//         self.0.set_timer_ns(
-//             name,
-//             interval_ns,
-//             start_time_ns.into(),
-//             stop_time_ns.map(UnixNanos::from),
-//             callback,
-//         )
-//     }
+    fn set_time_alert_ns(&mut self, name: &str, alert_time_ns: u64, callback: Option<PyObject>) {
+        self.0.set_time_alert_ns(
+            name,
+            alert_time_ns.into(),
+            callback.map(TimeEventCallback::from),
+        )
+    }
 
-//     fn next_time_ns(&self, name: &str) -> UnixNanos {
-//         self.next_time_ns(name)
-//     }
+    fn set_timer_ns(
+        &mut self,
+        name: &str,
+        interval_ns: u64,
+        start_time_ns: u64,
+        stop_time_ns: Option<u64>,
+        callback: Option<PyObject>,
+    ) {
+        self.0.set_timer_ns(
+            name,
+            interval_ns,
+            start_time_ns.into(),
+            stop_time_ns.map(UnixNanos::from),
+            callback.map(TimeEventCallback::from),
+        )
+    }
 
-//     fn cancel_timer(&mut self, name: &str) {
-//         self.cancel_timer(name)
-//     }
+    fn next_time_ns(&self, name: &str) -> u64 {
+        *self.0.next_time_ns(name)
+    }
 
-//     fn cancel_timers(&mut self) {
-//         self.cancel_timers()
-//     }
-// }
+    fn cancel_timer(&mut self, name: &str) {
+        self.0.cancel_timer(name)
+    }
+
+    fn cancel_timers(&mut self) {
+        self.0.cancel_timers()
+    }
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
