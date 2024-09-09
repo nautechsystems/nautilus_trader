@@ -41,3 +41,29 @@ def get_api_secret(account_type: BinanceAccountType, is_testnet: bool) -> str:
         return get_env_key("BINANCE_API_SECRET")
     else:
         return get_env_key("BINANCE_FUTURES_API_SECRET")
+
+
+def get_rsa_private_key(account_type: BinanceAccountType, is_testnet: bool) -> str:
+    if is_testnet:
+        if account_type.is_spot_or_margin:
+            return get_env_key("BINANCE_TESTNET_RSA_PK")
+        else:
+            return get_env_key("BINANCE_FUTURES_TESTNET_RSA_PK")
+
+    if account_type.is_spot_or_margin:
+        return get_env_key("BINANCE_RSA_PK")
+    else:
+        return get_env_key("BINANCE_FUTURES_RSA_PK")
+
+
+def get_ed25519_private_key(account_type: BinanceAccountType, is_testnet: bool) -> str:
+    if is_testnet:
+        if account_type.is_spot_or_margin:
+            return get_env_key("BINANCE_TESTNET_ED25519_PK")
+        else:
+            return get_env_key("BINANCE_FUTURES_TESTNET_ED25519_PK")
+
+    if account_type.is_spot_or_margin:
+        return get_env_key("BINANCE_ED25519_PK")
+    else:
+        return get_env_key("BINANCE_FUTURES_ED25519_PK")

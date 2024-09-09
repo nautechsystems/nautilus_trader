@@ -43,8 +43,8 @@ def live_logger():
 def binance_http_client(loop, live_clock):
     client = BinanceHttpClient(
         clock=live_clock,
-        key="SOME_BINANCE_API_KEY",
-        secret="SOME_BINANCE_API_SECRET",
+        api_key="SOME_BINANCE_API_KEY",
+        api_secret="SOME_BINANCE_API_SECRET",
         base_url="https://api.binance.com/",  # Spot/Margin
     )
     return client

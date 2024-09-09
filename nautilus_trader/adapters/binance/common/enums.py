@@ -40,6 +40,17 @@ from nautilus_trader.model.orders import Order
 
 
 @unique
+class BinanceKeyType(Enum):
+    """
+    Represents a Binance private key cryptographic algorithm type.
+    """
+
+    HMAC = "HMAC"
+    RSA = "RSA"
+    ED25519 = "Ed25519"
+
+
+@unique
 class BinanceFuturesPositionSide(Enum):
     """
     Represents a Binance Futures position side.

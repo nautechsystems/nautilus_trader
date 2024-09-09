@@ -167,6 +167,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._recv_window = config.recv_window_ms
         self._max_retries: int = config.max_retries or 0
         self._retry_delay: float = config.retry_delay or 1.0
+        self._log.info(f"Key type: {config.key_type.value}", LogColor.BLUE)
         self._log.info(f"Account type: {self._binance_account_type.value}", LogColor.BLUE)
         self._log.info(f"{config.use_gtd=}", LogColor.BLUE)
         self._log.info(f"{config.use_reduce_only=}", LogColor.BLUE)
