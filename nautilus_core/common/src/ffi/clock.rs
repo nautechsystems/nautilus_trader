@@ -30,8 +30,10 @@ use pyo3::{
 
 use crate::{
     clock::{Clock, LiveClock, TestClock},
-    timer::{TimeEvent, TimeEventCallback, TimeEventHandlerV2},
+    timer::{TimeEvent, TimeEventCallback},
 };
+
+use super::timer::TimeEventHandler;
 
 /// C compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
 ///
@@ -195,7 +197,12 @@ pub unsafe extern "C" fn test_clock_advance_time(
     set_time: u8,
 ) -> CVec {
     let events: Vec<TimeEvent> = clock.advance_time(to_time_ns.into(), u8_as_bool(set_time));
-    clock.match_handlers(events).into()
+    let t: Vec<TimeEventHandler> = clock
+        .match_handlers(events)
+        .into_iter()
+        .map(Into::into)
+        .collect();
+    t.into()
 }
 
 // TODO: This struct implementation potentially leaks memory
@@ -204,8 +211,8 @@ pub unsafe extern "C" fn test_clock_advance_time(
 #[no_mangle]
 pub extern "C" fn vec_time_event_handlers_drop(v: CVec) {
     let CVec { ptr, len, cap } = v;
-    let data: Vec<TimeEventHandlerV2> =
-        unsafe { Vec::from_raw_parts(ptr.cast::<TimeEventHandlerV2>(), len, cap) };
+    let data: Vec<TimeEventHandler> =
+        unsafe { Vec::from_raw_parts(ptr.cast::<TimeEventHandler>(), len, cap) };
     drop(data); // Memory freed here
 }
 

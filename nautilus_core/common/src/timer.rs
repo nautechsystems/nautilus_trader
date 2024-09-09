@@ -381,7 +381,7 @@ impl LiveTimer {
 
         // TODO: Live timer is currently multi-threaded
         // and only supports the python event handler
-        let callback = match self.callback.clone() {
+        let callback: PyObject = match self.callback.clone() {
             #[cfg(feature = "python")]
             TimeEventCallback::Python(callback) => callback,
             TimeEventCallback::Rust(_) => {
@@ -418,6 +418,7 @@ impl LiveTimer {
                 tokio::select! {
                     _ = timer.tick() => {
                         let now_ns = clock.get_time_ns();
+                        #[cfg(feature = "python")]
                         call_python_with_time_event(event_name, next_time_ns, now_ns, &callback);
 
                         // Prepare next time interval
