@@ -2299,7 +2299,7 @@ cdef class Actor(Component):
             client_id=client_id,
             venue=bar_type.instrument_id.venue,
             data_type=DataType(Bar, metadata={
-                "bar_type": bar_type.standard(),
+                "bar_type": bar_type,
                 "start": start,
                 "end": end,
             }),
