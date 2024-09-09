@@ -385,11 +385,9 @@ impl LiveTimer {
             #[cfg(feature = "python")]
             TimeEventCallback::Python(callback) => callback,
             TimeEventCallback::Rust(_) => {
-                panic!("Live timer does nto support Rust callbacks right now")
+                panic!("Live timer does not support Rust callbacks right now")
             }
         };
-
-        // let callback = Rc::
 
         // Floor the next time to the nearest microsecond which is within the timers accuracy
         let mut next_time_ns = UnixNanos::from(floor_to_nearest_microsecond(next_time_ns));
@@ -420,12 +418,7 @@ impl LiveTimer {
                 tokio::select! {
                     _ = timer.tick() => {
                         let now_ns = clock.get_time_ns();
-                        let event = TimeEvent::new(event_name, UUID4::new(), next_time_ns, now_ns);
-                        // TODO: handle error gracefully
-                        #[cfg(feature = "python")]
-                        Python::with_gil(|py| {
-                            callback.call1(py, (event,)).unwrap();
-                        });
+                        call_python_with_time_event(event_name, next_time_ns, now_ns, &callback);
 
                         // Prepare next time interval
                         next_time_ns += interval_ns;
@@ -462,6 +455,29 @@ impl LiveTimer {
         }
         Ok(())
     }
+}
+
+#[cfg(feature = "python")]
+fn call_python_with_time_event(
+    name: Ustr,
+    ts_event: UnixNanos,
+    ts_init: UnixNanos,
+    callback: &PyObject,
+) {
+    use pyo3::{types::PyCapsule, IntoPy};
+
+    Python::with_gil(|py| {
+        // Create new time event
+        let event = TimeEvent::new(name, UUID4::new(), ts_event, ts_init);
+        let capsule: PyObject = PyCapsule::new_bound(py, event, None)
+            .expect("Error creating `PyCapsule`")
+            .into_py(py);
+
+        match callback.call1(py, (capsule,)) {
+            Ok(_) => {}
+            Err(e) => tracing::error!("Error on callback: {:?}", e),
+        };
+    });
 }
 
 ////////////////////////////////////////////////////////////////////////////////
