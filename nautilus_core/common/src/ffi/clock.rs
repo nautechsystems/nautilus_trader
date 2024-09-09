@@ -30,7 +30,7 @@ use pyo3::{
 
 use crate::{
     clock::{Clock, LiveClock, TestClock},
-    timer::{TimeEvent, TimeEventCallback, TimeEventHandler},
+    timer::{TimeEvent, TimeEventCallback, TimeEventHandlerV2},
 };
 
 /// C compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
@@ -204,8 +204,8 @@ pub unsafe extern "C" fn test_clock_advance_time(
 #[no_mangle]
 pub extern "C" fn vec_time_event_handlers_drop(v: CVec) {
     let CVec { ptr, len, cap } = v;
-    let data: Vec<TimeEventHandler> =
-        unsafe { Vec::from_raw_parts(ptr.cast::<TimeEventHandler>(), len, cap) };
+    let data: Vec<TimeEventHandlerV2> =
+        unsafe { Vec::from_raw_parts(ptr.cast::<TimeEventHandlerV2>(), len, cap) };
     drop(data); // Memory freed here
 }
 

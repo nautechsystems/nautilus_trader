@@ -25,7 +25,7 @@ use nautilus_core::{
 };
 use ustr::Ustr;
 
-use crate::timer::{LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandler};
+use crate::timer::{LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandlerV2};
 
 /// Represents a type of clock.
 ///
@@ -136,7 +136,7 @@ impl TestClock {
 
     /// Assumes time events are sorted by their `ts_event`.
     #[must_use]
-    pub fn match_handlers(&self, events: Vec<TimeEvent>) -> Vec<TimeEventHandler> {
+    pub fn match_handlers(&self, events: Vec<TimeEvent>) -> Vec<TimeEventHandlerV2> {
         events
             .into_iter()
             .map(|event| {
@@ -147,7 +147,7 @@ impl TestClock {
                         .clone()
                         .expect("Default callback should exist")
                 });
-                TimeEventHandler::new(event, callback)
+                TimeEventHandlerV2::new(event, callback)
             })
             .collect()
     }

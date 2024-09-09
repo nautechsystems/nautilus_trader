@@ -282,6 +282,25 @@ typedef struct TimeEvent_t {
 } TimeEvent_t;
 
 /**
+ * Legacy time event handler for Cython/FFI inter-operatbility
+ *
+ * TODO: Remove once Cython is deprecated
+ *
+ * `TimeEventHandler` associates a `TimeEvent` with a callback function that is triggered
+ * when the event's timestamp is reached.
+ */
+typedef struct TimeEventHandler_t {
+    /**
+     * The time event.
+     */
+    struct TimeEvent_t event;
+    /**
+     * The callable raw pointer.
+     */
+    char *callback_ptr;
+} TimeEventHandler_t;
+
+/**
  * Returns whether the core logger is enabled.
  */
 uint8_t logging_is_initialized(void);
@@ -593,3 +612,5 @@ struct TimeEvent_t time_event_new(const char *name_ptr,
  * Returns a [`TimeEvent`] as a C string pointer.
  */
 const char *time_event_to_cstr(const struct TimeEvent_t *event);
+
+struct TimeEventHandler_t dummy(struct TimeEventHandler_t v);

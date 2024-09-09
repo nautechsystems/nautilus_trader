@@ -17,6 +17,7 @@
 
 use std::{
     cmp::Ordering,
+    ffi::c_char,
     fmt::Display,
     num::NonZeroU64,
     rc::Rc,
@@ -140,19 +141,48 @@ unsafe impl Send for TimeEventCallback {}
 unsafe impl Sync for TimeEventCallback {}
 
 #[repr(C)]
-#[derive(Clone)]
-/// Represents a time event and its associated handler.
+#[derive(Clone, Debug)]
+/// Legacy time event handler for Cython/FFI inter-operatbility
+///
+/// TODO: Remove once Cython is deprecated
 ///
 /// `TimeEventHandler` associates a `TimeEvent` with a callback function that is triggered
 /// when the event's timestamp is reached.
 pub struct TimeEventHandler {
     /// The time event.
     pub event: TimeEvent,
+    /// The callable raw pointer.
+    pub callback_ptr: *mut c_char,
+}
+
+impl From<TimeEventHandlerV2> for TimeEventHandler {
+    fn from(value: TimeEventHandlerV2) -> Self {
+        Self {
+            event: value.event,
+            callback_ptr: match value.callback {
+                TimeEventCallback::Python(callback) => callback.as_ptr() as *mut c_char,
+                TimeEventCallback::Rust(_) => {
+                    panic!("Legacy time event handler is not supported for Rust callback")
+                }
+            },
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone)]
+/// Represents a time event and its associated handler.
+///
+/// `TimeEventHandler` associates a `TimeEvent` with a callback function that is triggered
+/// when the event's timestamp is reached.
+pub struct TimeEventHandlerV2 {
+    /// The time event.
+    pub event: TimeEvent,
     /// The callable handler for the event.
     pub callback: TimeEventCallback,
 }
 
-impl TimeEventHandler {
+impl TimeEventHandlerV2 {
     /// Creates a new [`TimeEventHandler`] instance.
     #[must_use]
     pub const fn new(event: TimeEvent, callback: TimeEventCallback) -> Self {
@@ -160,21 +190,21 @@ impl TimeEventHandler {
     }
 }
 
-impl PartialOrd for TimeEventHandler {
+impl PartialOrd for TimeEventHandlerV2 {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-impl PartialEq for TimeEventHandler {
+impl PartialEq for TimeEventHandlerV2 {
     fn eq(&self, other: &Self) -> bool {
         self.event.ts_event == other.event.ts_event
     }
 }
 
-impl Eq for TimeEventHandler {}
+impl Eq for TimeEventHandlerV2 {}
 
-impl Ord for TimeEventHandler {
+impl Ord for TimeEventHandlerV2 {
     fn cmp(&self, other: &Self) -> Ordering {
         self.event.ts_event.cmp(&other.event.ts_event)
     }

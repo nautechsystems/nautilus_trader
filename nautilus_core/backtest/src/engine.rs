@@ -17,13 +17,16 @@
 
 use std::ops::{Deref, DerefMut};
 
-use nautilus_common::{clock::TestClock, timer::TimeEventHandler};
+use nautilus_common::{clock::TestClock, ffi::clock::TestClock_API, timer::TimeEventHandlerV2};
 // use nautilus_common::ffi::clock::TestClock_API;
-use nautilus_core::{ffi::cvec::CVec, nanos::UnixNanos};
+use nautilus_core::{
+    ffi::{cvec::CVec, parsing::u8_as_bool},
+    nanos::UnixNanos,
+};
 
 /// Provides a means of accumulating and draining time event handlers.
 pub struct TimeEventAccumulator {
-    event_handlers: Vec<TimeEventHandler>,
+    event_handlers: Vec<TimeEventHandlerV2>,
 }
 
 impl TimeEventAccumulator {
@@ -43,7 +46,7 @@ impl TimeEventAccumulator {
     }
 
     /// Drain the accumulated time event handlers in sorted order (by the events `ts_event`).
-    pub fn drain(&mut self) -> Vec<TimeEventHandler> {
+    pub fn drain(&mut self) -> Vec<TimeEventHandlerV2> {
         // stable sort is not necessary since there is no relation between
         // events of the same clock. Only time based ordering is needed.
         self.event_handlers
@@ -89,15 +92,15 @@ pub extern "C" fn time_event_accumulator_drop(accumulator: TimeEventAccumulatorA
     drop(accumulator); // Memory freed here
 }
 
-// #[no_mangle]
-// pub extern "C" fn time_event_accumulator_advance_clock(
-//     accumulator: &mut TimeEventAccumulatorAPI,
-//     clock: &mut TestClock_API,
-//     to_time_ns: UnixNanos,
-//     set_time: u8,
-// ) {
-//     accumulator.advance_clock(clock, to_time_ns, u8_as_bool(set_time));
-// }
+#[no_mangle]
+pub extern "C" fn time_event_accumulator_advance_clock(
+    accumulator: &mut TimeEventAccumulatorAPI,
+    clock: &mut TestClock_API,
+    to_time_ns: UnixNanos,
+    set_time: u8,
+) {
+    accumulator.advance_clock(clock, to_time_ns, u8_as_bool(set_time));
+}
 
 #[no_mangle]
 pub extern "C" fn time_event_accumulator_drain(accumulator: &mut TimeEventAccumulatorAPI) -> CVec {
@@ -109,12 +112,7 @@ pub extern "C" fn time_event_accumulator_drain(accumulator: &mut TimeEventAccumu
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
-
-    use nautilus_common::{
-        python::timer::TimeEventCallback_Py,
-        timer::{RustTimeEventCallback, TimeEvent},
-    };
+    use nautilus_common::timer::{TimeEvent, TimeEventCallback};
     use nautilus_core::uuid::UUID4;
     use pyo3::{prelude::*, types::PyList, Py, Python};
     use rstest::*;
@@ -154,12 +152,11 @@ mod tests {
             // Note: as_ptr returns a borrowed pointer. It is valid as long
             // as the object is in scope. In this case `callback_ptr` is valid
             // as long as `py_append` is in scope.
-            let callback = TimeEventCallback_Py::new(py_append.into_py(py));
-            let callback = RustTimeEventCallback(Rc::new(callback));
+            let callback = TimeEventCallback::from(py_append.into_py(py));
 
-            let handler1 = TimeEventHandler::new(time_event1.clone(), callback.clone());
-            let handler2 = TimeEventHandler::new(time_event2.clone(), callback.clone());
-            let handler3 = TimeEventHandler::new(time_event3.clone(), callback.clone());
+            let handler1 = TimeEventHandlerV2::new(time_event1.clone(), callback.clone());
+            let handler2 = TimeEventHandlerV2::new(time_event2.clone(), callback.clone());
+            let handler3 = TimeEventHandlerV2::new(time_event3.clone(), callback.clone());
 
             accumulator.event_handlers.push(handler1);
             accumulator.event_handlers.push(handler2);

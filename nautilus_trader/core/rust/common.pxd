@@ -166,6 +166,18 @@ cdef extern from "../includes/common.h":
         # UNIX timestamp (nanoseconds) when the instance was initialized.
         uint64_t ts_init;
 
+    # Legacy time event handler for Cython/FFI inter-operatbility
+    #
+    # TODO: Remove once Cython is deprecated
+    #
+    # `TimeEventHandler` associates a `TimeEvent` with a callback function that is triggered
+    # when the event's timestamp is reached.
+    cdef struct TimeEventHandler_t:
+        # The time event.
+        TimeEvent_t event;
+        # The callable raw pointer.
+        char *callback_ptr;
+
     # Returns whether the core logger is enabled.
     uint8_t logging_is_initialized();
 
@@ -420,3 +432,5 @@ cdef extern from "../includes/common.h":
 
     # Returns a [`TimeEvent`] as a C string pointer.
     const char *time_event_to_cstr(const TimeEvent_t *event);
+
+    TimeEventHandler_t dummy(TimeEventHandler_t v);
