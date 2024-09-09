@@ -23,31 +23,7 @@ use pyo3::{
 };
 use ustr::Ustr;
 
-use crate::timer::{TimeEvent, TimeEventCallback};
-
-#[pyo3::pyclass(
-    module = "nautilus_trader.core.nautilus_pyo3.common",
-    name = "TimeEventCallback"
-)]
-pub struct TimeEventCallback_Py {
-    callback: PyObject,
-}
-
-#[pymethods]
-impl TimeEventCallback_Py {
-    #[new]
-    pub fn new(callback: PyObject) -> Self {
-        Self { callback }
-    }
-}
-
-impl TimeEventCallback for TimeEventCallback_Py {
-    fn call(&self, event: TimeEvent) {
-        Python::with_gil(|py| {
-            self.callback.call1(py, (event,)).unwrap();
-        });
-    }
-}
+use crate::timer::{RustTimeEventCallback, TimeEvent};
 
 #[pymethods]
 impl TimeEvent {
@@ -148,9 +124,8 @@ mod tests {
     use tokio::time::Duration;
 
     use crate::{
-        python::timer::TimeEventCallback_Py,
         testing::wait_until,
-        timer::{LiveTimer, ShareableTimeEventCallback, TimeEvent},
+        timer::{LiveTimer, RustTimeEventCallback, TimeEvent, TimeEventCallback},
     };
 
     #[pyfunction]
@@ -163,17 +138,16 @@ mod tests {
     async fn test_live_timer_starts_and_stops() {
         pyo3::prepare_freethreaded_python();
 
-        let handler = Python::with_gil(|py| {
+        let callback = Python::with_gil(|py| {
             let callable = wrap_pyfunction_bound!(receive_event, py).unwrap();
-            let callback = TimeEventCallback_Py::new(callable.into_py(py));
-            ShareableTimeEventCallback(Rc::new(callback))
+            TimeEventCallback::from(callable.into_py(py))
         });
 
         // Create a new LiveTimer with no stop time
         let clock = get_atomic_clock_realtime();
         let start_time = clock.get_time_ns();
         let interval_ns = 100 * NANOSECONDS_IN_MILLISECOND;
-        let mut timer = LiveTimer::new("TEST_TIMER", interval_ns, start_time, None, handler);
+        let mut timer = LiveTimer::new("TEST_TIMER", interval_ns, start_time, None, callback);
         let next_time_ns = timer.next_time_ns();
         timer.start();
 
@@ -189,10 +163,9 @@ mod tests {
     async fn test_live_timer_with_stop_time() {
         pyo3::prepare_freethreaded_python();
 
-        let handler = Python::with_gil(|py| {
+        let callback = Python::with_gil(|py| {
             let callable = wrap_pyfunction_bound!(receive_event, py).unwrap();
-            let callback = TimeEventCallback_Py::new(callable.into_py(py));
-            ShareableTimeEventCallback(Rc::new(callback))
+            TimeEventCallback::from(callable.into_py(py))
         });
 
         // Create a new LiveTimer with a stop time
@@ -205,7 +178,7 @@ mod tests {
             interval_ns,
             start_time,
             Some(stop_time),
-            handler,
+            callback,
         );
         let next_time_ns = timer.next_time_ns();
         timer.start();
@@ -221,10 +194,9 @@ mod tests {
     async fn test_live_timer_with_zero_interval_and_immediate_stop_time() {
         pyo3::prepare_freethreaded_python();
 
-        let handler = Python::with_gil(|py| {
+        let callback = Python::with_gil(|py| {
             let callable = wrap_pyfunction_bound!(receive_event, py).unwrap();
-            let callback = TimeEventCallback_Py::new(callable.into_py(py));
-            ShareableTimeEventCallback(Rc::new(callback))
+            TimeEventCallback::from(callable.into_py(py))
         });
 
         // Create a new LiveTimer with a stop time
@@ -237,7 +209,7 @@ mod tests {
             interval_ns,
             start_time,
             Some(stop_time),
-            handler,
+            callback,
         );
         timer.start();
 

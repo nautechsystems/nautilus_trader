@@ -25,7 +25,7 @@ use nautilus_core::{
 };
 use ustr::Ustr;
 
-use crate::timer::{LiveTimer, ShareableTimeEventCallback, TestTimer, TimeEvent, TimeEventHandler};
+use crate::timer::{LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandler};
 
 /// Represents a type of clock.
 ///
@@ -57,7 +57,7 @@ pub trait Clock {
 
     /// Register a default event handler for the clock. If a `Timer`
     /// does not have an event handler, then this handler is used.
-    fn register_default_handler(&mut self, callback: ShareableTimeEventCallback);
+    fn register_default_handler(&mut self, callback: TimeEventCallback);
 
     /// Set a `Timer` to alert at a particular time. Optional
     /// callback gets used to handle generated events.
@@ -65,7 +65,7 @@ pub trait Clock {
         &mut self,
         name: &str,
         alert_time_ns: UnixNanos,
-        callback: Option<ShareableTimeEventCallback>,
+        callback: Option<TimeEventCallback>,
     );
 
     /// Set a `Timer` to start alerting at every interval
@@ -77,7 +77,7 @@ pub trait Clock {
         interval_ns: u64,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
-        callback: Option<ShareableTimeEventCallback>,
+        callback: Option<TimeEventCallback>,
     );
 
     fn next_time_ns(&self, name: &str) -> UnixNanos;
@@ -91,8 +91,8 @@ pub trait Clock {
 pub struct TestClock {
     time: AtomicTime,
     timers: HashMap<Ustr, TestTimer>,
-    default_callback: Option<ShareableTimeEventCallback>,
-    callbacks: HashMap<Ustr, ShareableTimeEventCallback>,
+    default_callback: Option<TimeEventCallback>,
+    callbacks: HashMap<Ustr, TimeEventCallback>,
 }
 
 impl TestClock {
@@ -200,7 +200,7 @@ impl Clock for TestClock {
             .count()
     }
 
-    fn register_default_handler(&mut self, callback: ShareableTimeEventCallback) {
+    fn register_default_handler(&mut self, callback: TimeEventCallback) {
         self.default_callback = Some(callback);
     }
 
@@ -208,7 +208,7 @@ impl Clock for TestClock {
         &mut self,
         name: &str,
         alert_time_ns: UnixNanos,
-        callback: Option<ShareableTimeEventCallback>,
+        callback: Option<TimeEventCallback>,
     ) {
         check_valid_string(name, stringify!(name)).expect(FAILED);
         check_predicate_true(
@@ -239,7 +239,7 @@ impl Clock for TestClock {
         interval_ns: u64,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
-        callback: Option<ShareableTimeEventCallback>,
+        callback: Option<TimeEventCallback>,
     ) {
         check_valid_string(name, "name").expect(FAILED);
         check_positive_u64(interval_ns, stringify!(interval_ns)).expect(FAILED);
@@ -289,7 +289,7 @@ impl Clock for TestClock {
 pub struct LiveClock {
     time: &'static AtomicTime,
     timers: HashMap<Ustr, LiveTimer>,
-    default_callback: Option<ShareableTimeEventCallback>,
+    default_callback: Option<TimeEventCallback>,
 }
 
 impl LiveClock {
@@ -356,7 +356,7 @@ impl Clock for LiveClock {
             .count()
     }
 
-    fn register_default_handler(&mut self, handler: ShareableTimeEventCallback) {
+    fn register_default_handler(&mut self, handler: TimeEventCallback) {
         self.default_callback = Some(handler);
     }
 
@@ -364,7 +364,7 @@ impl Clock for LiveClock {
         &mut self,
         name: &str,
         mut alert_time_ns: UnixNanos,
-        callback: Option<ShareableTimeEventCallback>,
+        callback: Option<TimeEventCallback>,
     ) {
         check_valid_string(name, stringify!(name)).expect(FAILED);
         assert!(
@@ -392,7 +392,7 @@ impl Clock for LiveClock {
         interval_ns: u64,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
-        callback: Option<ShareableTimeEventCallback>,
+        callback: Option<TimeEventCallback>,
     ) {
         check_valid_string(name, stringify!(name)).expect(FAILED);
         check_positive_u64(interval_ns, stringify!(interval_ns)).expect(FAILED);

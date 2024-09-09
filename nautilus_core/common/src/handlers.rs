@@ -17,13 +17,12 @@
 
 #[cfg(not(feature = "python"))]
 use std::ffi::c_char;
-use std::{fmt::Debug, sync::Arc};
+use std::sync::Arc;
 
 #[cfg(not(feature = "python"))]
 use nautilus_core::message::Message;
 #[cfg(feature = "python")]
 use pyo3::prelude::*;
-use ustr::Ustr;
 
 use crate::timer::TimeEvent;
 
@@ -46,41 +45,6 @@ pub struct SafeTimeEventCallback {
 
 unsafe impl Send for SafeTimeEventCallback {}
 unsafe impl Sync for SafeTimeEventCallback {}
-
-// TODO: Make this more generic
-#[derive(Clone)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
-)]
-pub struct MessageHandler {
-    pub handler_id: Ustr,
-    _callback: Option<SafeMessageCallback>,
-}
-
-impl MessageHandler {
-    #[must_use]
-    pub const fn new(handler_id: Ustr, callback: Option<SafeMessageCallback>) -> Self {
-        Self {
-            handler_id,
-            _callback: callback,
-        }
-    }
-}
-
-impl PartialEq for MessageHandler {
-    fn eq(&self, other: &Self) -> bool {
-        self.handler_id == other.handler_id
-    }
-}
-
-impl Debug for MessageHandler {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct(stringify!(MessageHandler))
-            .field("handler_id", &self.handler_id)
-            .finish()
-    }
-}
 
 #[derive(Clone)]
 #[cfg_attr(

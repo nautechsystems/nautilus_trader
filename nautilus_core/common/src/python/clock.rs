@@ -112,8 +112,7 @@ mod tests {
     use super::*;
     use crate::{
         clock::{Clock, TestClock},
-        python::timer::TimeEventCallback_Py,
-        timer::{ShareableTimeEventCallback, TimeEventCallback},
+        timer::TimeEventCallback,
     };
 
     #[fixture]
@@ -121,13 +120,11 @@ mod tests {
         TestClock::new()
     }
 
-    pub fn test_callback() -> ShareableTimeEventCallback {
+    pub fn test_callback() -> TimeEventCallback {
         Python::with_gil(|py| {
             let py_list = PyList::empty(py);
             let py_append = Py::from(py_list.getattr("append").unwrap());
-            let callback: Rc<dyn TimeEventCallback> =
-                Rc::new(TimeEventCallback_Py::new(py_append.into_py(py)));
-            ShareableTimeEventCallback(callback)
+            TimeEventCallback::from(py_append.into_py(py))
         })
     }
 

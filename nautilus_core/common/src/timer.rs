@@ -33,6 +33,8 @@ use nautilus_core::{
     time::get_atomic_clock_realtime,
     uuid::UUID4,
 };
+#[cfg(feature = "python")]
+use pyo3::{PyObject, Python};
 use tokio::{
     sync::oneshot,
     time::{Duration, Instant},
@@ -95,23 +97,47 @@ impl PartialEq for TimeEvent {
     }
 }
 
-pub trait TimeEventCallback {
+pub trait RustTimeEventCallback {
     fn call(&self, event: TimeEvent);
 }
 
 #[derive(Clone)]
-#[repr(transparent)]
-pub struct ShareableTimeEventCallback(pub Rc<dyn TimeEventCallback>);
+pub enum TimeEventCallback {
+    #[cfg(feature = "python")]
+    Python(PyObject),
+    Rust(Rc<dyn RustTimeEventCallback>),
+}
 
-impl From<Rc<dyn TimeEventCallback>> for ShareableTimeEventCallback {
-    fn from(value: Rc<dyn TimeEventCallback>) -> Self {
-        Self(value)
+impl TimeEventCallback {
+    pub fn call(&self, event: TimeEvent) {
+        match self {
+            #[cfg(feature = "python")]
+            Self::Python(callback) => {
+                Python::with_gil(|py| {
+                    callback.call1(py, (event,)).unwrap();
+                });
+            }
+            Self::Rust(callback) => callback.call(event),
+        }
+    }
+}
+
+impl From<Rc<dyn RustTimeEventCallback>> for TimeEventCallback {
+    fn from(value: Rc<dyn RustTimeEventCallback>) -> Self {
+        Self::Rust(value)
+    }
+}
+
+#[cfg(feature = "python")]
+impl From<PyObject> for TimeEventCallback {
+    fn from(value: PyObject) -> Self {
+        Self::Python(value)
     }
 }
 
 // SAFETY: Message handlers cannot be sent across thread boundaries
-unsafe impl Send for ShareableTimeEventCallback {}
-unsafe impl Sync for ShareableTimeEventCallback {}
+unsafe impl Send for TimeEventCallback {}
+unsafe impl Sync for TimeEventCallback {}
 
 #[repr(C)]
 #[derive(Clone)]
@@ -123,13 +149,13 @@ pub struct TimeEventHandler {
     /// The time event.
     pub event: TimeEvent,
     /// The callable handler for the event.
-    pub callback: ShareableTimeEventCallback,
+    pub callback: TimeEventCallback,
 }
 
 impl TimeEventHandler {
     /// Creates a new [`TimeEventHandler`] instance.
     #[must_use]
-    pub const fn new(event: TimeEvent, callback: ShareableTimeEventCallback) -> Self {
+    pub const fn new(event: TimeEvent, callback: TimeEventCallback) -> Self {
         Self { event, callback }
     }
 }
@@ -288,7 +314,7 @@ pub struct LiveTimer {
     pub stop_time_ns: Option<UnixNanos>,
     next_time_ns: Arc<AtomicU64>,
     is_expired: Arc<AtomicBool>,
-    callback: ShareableTimeEventCallback,
+    callback: TimeEventCallback,
     canceler: Option<oneshot::Sender<()>>,
 }
 
@@ -306,7 +332,7 @@ impl LiveTimer {
         interval_ns: u64,
         start_time_ns: UnixNanos,
         stop_time_ns: Option<UnixNanos>,
-        callback: ShareableTimeEventCallback,
+        callback: TimeEventCallback,
     ) -> Self {
         check_valid_string(name, stringify!(name)).expect(FAILED);
         // SAFETY: Guaranteed to be non-zero
@@ -352,7 +378,18 @@ impl LiveTimer {
         let next_time_atomic = self.next_time_ns.clone();
         let interval_ns = self.interval_ns.get();
         let is_expired = self.is_expired.clone();
-        let _callback = self.callback.clone();
+
+        // TODO: Live timer is currently multi-threaded
+        // and only supports the python event handler
+        let callback = match self.callback.clone() {
+            #[cfg(feature = "python")]
+            TimeEventCallback::Python(callback) => callback,
+            TimeEventCallback::Rust(_) => {
+                panic!("Live timer does nto support Rust callbacks right now")
+            }
+        };
+
+        // let callback = Rc::
 
         // Floor the next time to the nearest microsecond which is within the timers accuracy
         let mut next_time_ns = UnixNanos::from(floor_to_nearest_microsecond(next_time_ns));
@@ -383,10 +420,12 @@ impl LiveTimer {
                 tokio::select! {
                     _ = timer.tick() => {
                         let now_ns = clock.get_time_ns();
-                        // call_python_with_time_event(event_name, next_time_ns, now_ns, &callback);
-                        let _event = TimeEvent::new(event_name, UUID4::new(), next_time_ns, now_ns);
-                        // TODO: Call python time event
-                        // callback.0.call(event);
+                        let event = TimeEvent::new(event_name, UUID4::new(), next_time_ns, now_ns);
+                        // TODO: handle error gracefully
+                        #[cfg(feature = "python")]
+                        Python::with_gil(|py| {
+                            callback.call1(py, (event,)).unwrap();
+                        });
 
                         // Prepare next time interval
                         next_time_ns += interval_ns;
@@ -424,27 +463,6 @@ impl LiveTimer {
         Ok(())
     }
 }
-
-// #[cfg(feature = "python")]
-// fn call_python_with_time_event(
-//     name: Ustr,
-//     ts_event: UnixNanos,
-//     ts_init: UnixNanos,
-//     handler: &EventHandler,
-// ) {
-//     Python::with_gil(|py| {
-//         // Create new time event
-//         let event = TimeEvent::new(name, UUID4::new(), ts_event, ts_init);
-//         let capsule: PyObject = PyCapsule::new_bound(py, event, None)
-//             .expect("Error creating `PyCapsule`")
-//             .into_py(py);
-
-//         match handler.callback.call1(py, (capsule,)) {
-//             Ok(_) => {}
-//             Err(e) => tracing::error!("Error on callback: {:?}", e),
-//         };
-//     });
-// }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tests

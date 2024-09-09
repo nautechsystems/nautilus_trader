@@ -113,7 +113,7 @@ mod tests {
 
     use nautilus_common::{
         python::timer::TimeEventCallback_Py,
-        timer::{ShareableTimeEventCallback, TimeEvent},
+        timer::{RustTimeEventCallback, TimeEvent},
     };
     use nautilus_core::uuid::UUID4;
     use pyo3::{prelude::*, types::PyList, Py, Python};
@@ -155,7 +155,7 @@ mod tests {
             // as the object is in scope. In this case `callback_ptr` is valid
             // as long as `py_append` is in scope.
             let callback = TimeEventCallback_Py::new(py_append.into_py(py));
-            let callback = ShareableTimeEventCallback(Rc::new(callback));
+            let callback = RustTimeEventCallback(Rc::new(callback));
 
             let handler1 = TimeEventHandler::new(time_event1.clone(), callback.clone());
             let handler2 = TimeEventHandler::new(time_event2.clone(), callback.clone());
