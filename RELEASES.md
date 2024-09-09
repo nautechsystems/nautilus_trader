@@ -1,9 +1,28 @@
+# NautilusTrader 1.201.0 Beta
+
+Released on 9th September 2024 (UTC).
+
+### Enhancements
+- Added order book deltas triggering support for `OrderEmulator`
+- Added `OrderCancelRejected` event generation for dYdX adapter (#1916), thanks @davidsblom
+- Refined handling of Binance private key types (RSA, Ed25519) and integrated into configs
+- Implemented cryptographic signing in Rust (replacing `pycryptodome` for Binance)
+- Removed the vendored `tokio-tungstenite` crate (#1902), thanks @VioletSakura-7
+
+### Breaking Changes
+None
+
+### Fixes
+- Fixed `BinanceFuturesEventType` by adding new `TRADE_LITE` member, reflecting the Binance update on 2024-09-03 (UTC)
+
+---
+
 # NautilusTrader 1.200.0 Beta
 
 Released on 7th September 2024 (UTC).
 
 ### Enhancements
-- Added dYdX integration (#1861, #1868, #1873, #1874, #1875, #1877, #1879, #1880, #1882, #1886, #1887, #1890, #1891, #1896, #1901, #1903, #1907, #1910, #1911, #1913), thanks @davidsblom
+- Added dYdX integration (#1861, #1868, #1873, #1874, #1875, #1877, #1879, #1880, #1882, #1886, #1887, #1890, #1891, #1896, #1901, #1903, #1907, #1910, #1911, #1913, #1915), thanks @davidsblom
 - Added composite bar types, bars aggregated from other bar types (#1859, #1885, #1888, #1894, #1905), thanks @faysou
 - Added `OrderBookDeltas.batch` for batching groups of deltas based on record flags (batch until `F_LAST`)
 - Added `OrderBookDeltas` batching support for `ParquetDataCatalog` (use `data_cls` of `OrderBookDeltas` to batch with the same flags method as live adapters)

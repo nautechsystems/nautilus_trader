@@ -31,8 +31,8 @@ async def test_binance_spot_wallet_http_client():
     client = get_cached_binance_http_client(
         clock=clock,
         account_type=BinanceAccountType.SPOT,
-        key=os.getenv("BINANCE_API_KEY"),
-        secret=os.getenv("BINANCE_API_SECRET"),
+        api_key=os.getenv("BINANCE_API_KEY"),
+        api_secret=os.getenv("BINANCE_API_SECRET"),
     )
 
     wallet = BinanceSpotWalletHttpAPI(clock=clock, client=client)

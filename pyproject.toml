@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.200.0"
+version = "1.201.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -77,7 +77,6 @@ pycryptodome = {version = "^3.20.0", optional = true}
 
 [tool.poetry.extras]
 betfair = ["betfair_parser"]
-binance = ["pycryptodome"]
 docker = ["docker"]
 dydx = ["v4-proto", "bech32", "ecdsa", "bip-utils", "pycryptodome"]
 ib = ["nautilus_ibapi", "async-timeout", "defusedxml"]

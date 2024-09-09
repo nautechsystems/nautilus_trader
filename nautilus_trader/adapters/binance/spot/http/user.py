@@ -20,7 +20,7 @@ from nautilus_trader.adapters.binance.http.user import BinanceUserDataHttpAPI
 
 class BinanceSpotUserDataHttpAPI(BinanceUserDataHttpAPI):
     """
-    Provides access to the `Binance Spot/Margin` User Data HTTP REST API.
+    Provides access to the Binance Spot/Margin User Data HTTP REST API.
 
     Parameters
     ----------

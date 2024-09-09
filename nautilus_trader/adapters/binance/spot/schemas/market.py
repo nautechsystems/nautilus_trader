@@ -42,7 +42,7 @@ from nautilus_trader.model.objects import Quantity
 
 class BinanceSpotSymbolInfo(msgspec.Struct, frozen=True):
     """
-    HTTP response 'inner struct' from `Binance Spot/Margin` GET /api/v3/exchangeInfo.
+    HTTP response 'inner struct' from Binance Spot/Margin GET /api/v3/exchangeInfo.
     """
 
     symbol: str
@@ -83,7 +83,7 @@ class BinanceSpotSymbolInfo(msgspec.Struct, frozen=True):
 
 class BinanceSpotExchangeInfo(msgspec.Struct, frozen=True):
     """
-    HTTP response from `Binance Spot/Margin` GET /api/v3/exchangeInfo.
+    HTTP response from Binance Spot/Margin GET /api/v3/exchangeInfo.
     """
 
     timezone: str
@@ -95,7 +95,7 @@ class BinanceSpotExchangeInfo(msgspec.Struct, frozen=True):
 
 class BinanceSpotAvgPrice(msgspec.Struct, frozen=True):
     """
-    HTTP response from `Binance Spot/Margin` GET /api/v3/avgPrice.
+    HTTP response from Binance Spot/Margin GET /api/v3/avgPrice.
     """
 
     mins: int
@@ -175,7 +175,7 @@ class BinanceSpotOrderBookPartialDepthMsg(msgspec.Struct):
 
 class BinanceSpotTradeData(msgspec.Struct):
     """
-    WebSocket message 'inner struct' for `Binance Spot/Margin` Trade Streams.
+    WebSocket message 'inner struct' for Binance Spot/Margin Trade Streams.
 
     Fields
     ------

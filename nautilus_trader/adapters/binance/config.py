@@ -15,6 +15,7 @@
 
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
+from nautilus_trader.adapters.binance.common.enums import BinanceKeyType
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.config import PositiveFloat
@@ -38,6 +39,8 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
         The Binance API public key.
         If ``None`` then will source the `BINANCE_API_SECRET` or
         `BINANCE_TESTNET_API_SECRET` environment variables.
+    key_type : BinanceKeyType, default 'HMAC'
+        The private key cryptographic algorithm type.
     account_type : BinanceAccountType, default BinanceAccountType.SPOT
         The account type for the client.
     base_url_http : str, optional
@@ -57,6 +60,7 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
     venue: Venue = BINANCE_VENUE
     api_key: str | None = None
     api_secret: str | None = None
+    key_type: BinanceKeyType = BinanceKeyType.HMAC
     account_type: BinanceAccountType = BinanceAccountType.SPOT
     base_url_http: str | None = None
     base_url_ws: str | None = None
@@ -81,6 +85,8 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
         The Binance API public key.
         If ``None`` then will source the `BINANCE_API_KEY` or
         `BINANCE_TESTNET_API_KEY` environment variables.
+    key_type : BinanceKeyType, default 'HMAC'
+        The private key cryptographic algorithm type.
     account_type : BinanceAccountType, default BinanceAccountType.SPOT
         The account type for the client.
     base_url_http : str, optional
@@ -122,6 +128,7 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
     venue: Venue = BINANCE_VENUE
     api_key: str | None = None
     api_secret: str | None = None
+    key_type: BinanceKeyType = BinanceKeyType.HMAC
     account_type: BinanceAccountType = BinanceAccountType.SPOT
     base_url_http: str | None = None
     base_url_ws: str | None = None

@@ -13,27 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! [NautilusTrader](http://nautilustrader.io) is an open-source, high-performance, production-grade
-//! algorithmic trading platform, providing quantitative traders with the ability to backtest
-//! portfolios of automated trading strategies on historical data with an event-driven engine,
-//! and also deploy those same strategies live, with no code changes.
-//!
-//! # Feature flags
-//!
-//! This crate provides feature flags to control source code inclusion during compilation,
-//! depending on the intended use case, i.e. whether to provide Python bindings
-//! for the main `nautilus_trader` Python package, or as part of a Rust only build.
-//!
-//! - `python`: Enables Python bindings from `pyo3`
-
-#![allow(warnings)] // TODO: non-local `impl` definition, temporary allow until pyo3 upgrade
-
-pub mod http;
-#[allow(dead_code)]
-mod ratelimiter;
-pub mod socket;
-mod tls;
-pub mod websocket;
+pub mod signing;
 
 #[cfg(feature = "python")]
 pub mod python;

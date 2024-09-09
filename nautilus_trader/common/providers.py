@@ -161,7 +161,6 @@ class InstrumentProvider:
         else:
             self._log.debug("Awaiting loading...")
             while self._loading:
-                # Wait 100ms
                 await asyncio.sleep(0.1)
 
         # Set async loading flags
