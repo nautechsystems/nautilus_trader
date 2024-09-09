@@ -1,6 +1,6 @@
 # NautilusTrader 1.201.0 Beta
 
-Released on TBD (UTC).
+Released on 9th September 2024 (UTC).
 
 ### Enhancements
 - Added order book deltas triggering support for `OrderEmulator`
