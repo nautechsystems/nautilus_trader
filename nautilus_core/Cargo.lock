@@ -478,9 +478,9 @@ dependencies = [
 
 [[package]]
 name = "aws-lc-sys"
-version = "0.21.1"
+version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "234314bd569802ec87011d653d6815c6d7b9ffb969e9fee5b8b20ef860e8dce9"
+checksum = "5055edc4a9a1b2a917a818258cdfb86a535947feebd9981adc99667a062c6f85"
 dependencies = [
  "bindgen",
  "cc",
@@ -2703,6 +2703,7 @@ name = "nautilus-adapters"
 version = "0.32.0"
 dependencies = [
  "anyhow",
+ "aws-lc-sys",
  "base64",
  "chrono",
  "criterion",

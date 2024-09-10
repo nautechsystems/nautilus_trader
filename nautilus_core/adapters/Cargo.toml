@@ -36,6 +36,7 @@ thiserror = { workspace = true }
 ustr = { workspace = true }
 databento = { version = "0.12.1", optional = true }
 fallible-streaming-iterator = "0.1.9"
+aws-lc-sys = "=0.21.0"  # Pin to avoid nasm issue (https://github.com/aws/aws-lc-rs/issues/364)
 base64 = "0.22.1"
 hex = "0.4.3"
 pem = "3.0.4"
