@@ -2407,14 +2407,14 @@ cdef class OrderBookDelta(Data):
 
 cdef class OrderBookDeltas(Data):
     """
-    Represents a grouped batch of `OrderBookDelta` updates for an `OrderBook`.
+    Represents a batch of `OrderBookDelta` updates for an `OrderBook`.
 
     Parameters
     ----------
     instrument_id : InstrumentId
         The instrument ID for the book.
     deltas : list[OrderBookDelta]
-        The list of order book changes.
+        The batch of order book changes.
 
     Raises
     ------
