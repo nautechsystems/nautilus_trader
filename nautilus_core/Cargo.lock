@@ -478,9 +478,9 @@ dependencies = [
 
 [[package]]
 name = "aws-lc-sys"
-version = "0.21.0"
+version = "0.21.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5055edc4a9a1b2a917a818258cdfb86a535947feebd9981adc99667a062c6f85"
+checksum = "234314bd569802ec87011d653d6815c6d7b9ffb969e9fee5b8b20ef860e8dce9"
 dependencies = [
  "bindgen",
  "cc",
@@ -2252,9 +2252,9 @@ dependencies = [
 
 [[package]]
 name = "hyper-util"
-version = "0.1.7"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cde7055719c54e36e95e8719f95883f22072a48ede39db7fc17a4e1d5281e9b9"
+checksum = "da62f120a8a37763efb0cf8fdf264b884c7b8b9ac8660b900c8661030c00e6ba"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -2700,7 +2700,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-adapters"
-version = "0.31.0"
+version = "0.32.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -2734,7 +2734,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-analysis"
-version = "0.31.0"
+version = "0.32.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2754,7 +2754,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.31.0"
+version = "0.32.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2776,7 +2776,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cli"
-version = "0.31.0"
+version = "0.32.0"
 dependencies = [
  "anyhow",
  "clap 4.5.17",
@@ -2793,7 +2793,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.31.0"
+version = "0.32.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2823,7 +2823,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.31.0"
+version = "0.32.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2845,7 +2845,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-data"
-version = "0.31.0"
+version = "0.32.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2871,7 +2871,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-execution"
-version = "0.31.0"
+version = "0.32.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -2895,7 +2895,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.31.0"
+version = "0.32.0"
 dependencies = [
  "anyhow",
  "log",
@@ -2908,7 +2908,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-infrastructure"
-version = "0.31.0"
+version = "0.32.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -2937,7 +2937,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.31.0"
+version = "0.32.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2965,7 +2965,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.31.0"
+version = "0.32.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2995,7 +2995,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.31.0"
+version = "0.32.0"
 dependencies = [
  "anyhow",
  "binary-heap-plus",
@@ -3019,7 +3019,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.31.0"
+version = "0.32.0"
 dependencies = [
  "nautilus-adapters",
  "nautilus-common",
@@ -4235,9 +4235,9 @@ checksum = "fc0a2ce646f8655401bb81e7927b812614bd5d91dbc968696be50603510fcaf0"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.102.7"
+version = "0.102.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84678086bd54edf2b415183ed7a94d0efb049f1b646a33e22a36f3794be6ae56"
+checksum = "64ca1bc8749bd4cf37b5ce386cc146580777b4e8572c7b97baf22c83f444bee9"
 dependencies = [
  "aws-lc-rs",
  "ring",

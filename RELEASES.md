@@ -1,3 +1,18 @@
+# NautilusTrader 1.202.0 Beta
+
+Released on TBD (UTC).
+
+### Enhancements
+None
+
+### Breaking Changes
+None
+
+### Fixes
+- Fixed composite bar requests (#1923), thanks @faysou
+
+---
+
 # NautilusTrader 1.201.0 Beta
 
 Released on 9th September 2024 (UTC).
