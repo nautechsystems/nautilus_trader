@@ -1196,7 +1196,7 @@ cdef class DataEngine(Component):
         Condition.not_none(client, "client")
         Condition.not_none(bar_type, "bar_type")
 
-        if self._msgbus.has_subscribers(f"data.bars.{bar_type}"):
+        if self._msgbus.has_subscribers(f"data.bars.{bar_type.standard()}"):
             return
 
         if bar_type.is_internally_aggregated():

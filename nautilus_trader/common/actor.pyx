@@ -685,14 +685,16 @@ cdef class Actor(Component):
         if indicator not in self._indicators:
             self._indicators.append(indicator)
 
-        if bar_type not in self._indicators_for_bars:
-            self._indicators_for_bars[bar_type] = []  # type: list[Indicator]
+        cdef BarType standard_bar_type = bar_type.standard()
 
-        if indicator not in self._indicators_for_bars[bar_type]:
-            self._indicators_for_bars[bar_type].append(indicator)
-            self.log.info(f"Registered Indicator {indicator} for {bar_type} bars")
+        if standard_bar_type not in self._indicators_for_bars:
+            self._indicators_for_bars[standard_bar_type] = []  # type: list[Indicator]
+
+        if indicator not in self._indicators_for_bars[standard_bar_type]:
+            self._indicators_for_bars[standard_bar_type].append(indicator)
+            self.log.info(f"Registered Indicator {indicator} for {standard_bar_type} bars")
         else:
-            self.log.error(f"Indicator {indicator} already registered for {bar_type} bars")
+            self.log.error(f"Indicator {indicator} already registered for {standard_bar_type} bars")
 
 # -- ACTOR COMMANDS -------------------------------------------------------------------------------
 
@@ -1741,21 +1743,23 @@ cdef class Actor(Component):
         Condition.not_none(bar_type, "bar_type")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
+        standard_bar_type = bar_type.standard()
+
         self._msgbus.unsubscribe(
-            topic=f"data.bars.{bar_type}",
+            topic=f"data.bars.{standard_bar_type}",
             handler=self.handle_bar,
         )
 
         cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
             venue=bar_type.instrument_id.venue,
-            data_type=DataType(Bar, metadata={"bar_type": bar_type}),
+            data_type=DataType(Bar, metadata={"bar_type": standard_bar_type}),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
-        self._log.info(f"Unsubscribed from {bar_type} bar data")
+        self._log.info(f"Unsubscribed from {standard_bar_type} bar data")
 
     cpdef void unsubscribe_instrument_status(self, InstrumentId instrument_id, ClientId client_id = None):
         """
