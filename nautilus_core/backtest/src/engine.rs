@@ -17,7 +17,11 @@
 
 use std::ops::{Deref, DerefMut};
 
-use nautilus_common::{clock::TestClock, ffi::clock::TestClock_API, timer::TimeEventHandlerV2};
+use nautilus_common::{
+    clock::TestClock,
+    ffi::{clock::TestClock_API, timer::TimeEventHandler},
+    timer::TimeEventHandlerV2,
+};
 // use nautilus_common::ffi::clock::TestClock_API;
 use nautilus_core::{
     ffi::{cvec::CVec, parsing::u8_as_bool},
@@ -104,7 +108,8 @@ pub extern "C" fn time_event_accumulator_advance_clock(
 
 #[no_mangle]
 pub extern "C" fn time_event_accumulator_drain(accumulator: &mut TimeEventAccumulatorAPI) -> CVec {
-    accumulator.drain().into()
+    let handlers: Vec<TimeEventHandler> = accumulator.drain().into_iter().map(Into::into).collect();
+    handlers.into()
 }
 
 ////////////////////////////////////////////////////////////////////////////////

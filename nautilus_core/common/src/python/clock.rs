@@ -15,7 +15,6 @@
 
 use crate::{
     clock::{Clock, LiveClock, TestClock},
-    handlers::EventHandler,
     timer::{LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandlerV2},
 };
 use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
