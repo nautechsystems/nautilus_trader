@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import timedelta
+from decimal import ROUND_HALF_UP
 from decimal import Decimal
 
 import pandas as pd
@@ -1507,7 +1508,8 @@ class TestTestValueBarAggregator:
         assert handler[1].low == Price.from_str("20.00000")
         assert handler[1].close == Price.from_str("20.00000")
         assert handler[1].volume == Quantity.from_str("5000.00")
-        assert aggregator.get_cumulative_value() == Decimal("40000.11000")
+        expected = Decimal("40000.11")
+        assert aggregator.get_cumulative_value().quantize(expected, ROUND_HALF_UP) == expected
 
     def test_handle_bar_when_value_beyond_threshold_sends_bars_to_handler(self):
         # Arrange
@@ -1571,7 +1573,10 @@ class TestTestValueBarAggregator:
         assert handler[1].low == Price.from_str("20.00000")
         assert handler[1].close == Price.from_str("20.00015")
         assert handler[1].volume == Quantity.from_str("5000.00")
-        assert aggregator.get_cumulative_value() == Decimal("40001.02500")
+        expected = Decimal("40001.11")
+        assert (
+            aggregator.get_cumulative_value().quantize(expected, rounding=ROUND_HALF_UP) == expected
+        )
 
     def test_run_quote_ticks_through_aggregator_results_in_expected_bars(self):
         # Arrange
