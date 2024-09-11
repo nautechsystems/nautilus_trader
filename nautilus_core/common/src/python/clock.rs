@@ -25,7 +25,7 @@ use ustr::Ustr;
 
 use super::timer::TimeEventHandler_Py;
 
-/// PyO3 compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
+/// PyO3 compatible interface for an underlying [`TestClock`].
 ///
 /// This struct wraps `TestClock` in a way that makes it possible to create
 /// Python bindings for it.
@@ -57,6 +57,71 @@ impl TestClock_Py {
             .into_iter()
             .map(Into::into)
             .collect()
+    }
+
+    fn register_default_handler(&mut self, callback: PyObject) {
+        self.0
+            .register_default_handler(TimeEventCallback::from(callback))
+    }
+
+    fn set_time_alert_ns(&mut self, name: &str, alert_time_ns: u64, callback: Option<PyObject>) {
+        self.0.set_time_alert_ns(
+            name,
+            alert_time_ns.into(),
+            callback.map(TimeEventCallback::from),
+        )
+    }
+
+    fn set_timer_ns(
+        &mut self,
+        name: &str,
+        interval_ns: u64,
+        start_time_ns: u64,
+        stop_time_ns: Option<u64>,
+        callback: Option<PyObject>,
+    ) {
+        self.0.set_timer_ns(
+            name,
+            interval_ns,
+            start_time_ns.into(),
+            stop_time_ns.map(UnixNanos::from),
+            callback.map(TimeEventCallback::from),
+        )
+    }
+
+    fn next_time_ns(&self, name: &str) -> u64 {
+        *self.0.next_time_ns(name)
+    }
+
+    fn cancel_timer(&mut self, name: &str) {
+        self.0.cancel_timer(name)
+    }
+
+    fn cancel_timers(&mut self) {
+        self.0.cancel_timers()
+    }
+}
+
+/// PyO3 compatible interface for an underlying [`LiveClock`].
+///
+/// This struct wraps `LiveClock` in a way that makes it possible to create
+/// Python bindings for it.
+///
+/// It implements the `Deref` trait, allowing instances of `LiveClock_Py` to be
+/// dereferenced to `LiveClock`, providing access to `LiveClock`'s methods without
+/// having to manually access the underlying `LiveClock` instance.
+#[allow(non_camel_case_types)]
+#[pyo3::pyclass(
+    module = "nautilus_trader.core.nautilus_pyo3.common",
+    name = "LiveClock"
+)]
+pub struct LiveClock_Py(Box<LiveClock>);
+
+#[pymethods]
+impl LiveClock_Py {
+    #[new]
+    fn py_new() -> Self {
+        LiveClock_Py(Box::new(LiveClock::new()))
     }
 
     fn register_default_handler(&mut self, callback: PyObject) {
