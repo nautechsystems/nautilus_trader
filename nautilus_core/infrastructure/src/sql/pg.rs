@@ -14,9 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use derive_builder::Builder;
-use sqlx::{postgres::PgConnectOptions, query, ConnectOptions, PgPool};
-
-use crate::sql::NAUTILUS_TABLES;
+use sqlx::{postgres::PgConnectOptions, ConnectOptions, PgPool};
 
 #[derive(Debug, Clone, Builder)]
 #[builder(default)]
@@ -113,19 +111,8 @@ pub fn get_postgres_connect_options(
     ))
 }
 
-pub async fn delete_nautilus_postgres_tables(db: &PgPool) -> anyhow::Result<()> {
-    // Iterate over NAUTILUS_TABLES and delete all rows
-    for table in NAUTILUS_TABLES {
-        query(format!("DELETE FROM \"{}\" WHERE true", table).as_str())
-            .execute(db)
-            .await
-            .unwrap_or_else(|err| panic!("Failed to delete table {} because: {}", table, err));
-    }
-    Ok(())
-}
-
 pub async fn connect_pg(options: PgConnectOptions) -> anyhow::Result<PgPool> {
-    Ok(PgPool::connect_with(options).await.unwrap())
+    Ok(PgPool::connect_with(options).await?)
 }
 
 /// Scans current path with keyword nautilus_trader and build schema dir

@@ -30,10 +30,7 @@ use nautilus_model::{
 };
 use pyo3::prelude::*;
 
-use crate::sql::{
-    cache_database::PostgresCacheDatabase, pg::delete_nautilus_postgres_tables,
-    queries::DatabaseQueries,
-};
+use crate::sql::{cache_database::PostgresCacheDatabase, queries::DatabaseQueries};
 
 #[pymethods]
 impl PostgresCacheDatabase {
@@ -285,16 +282,9 @@ impl PostgresCacheDatabase {
     }
 
     #[pyo3(name = "flush_db")]
-    fn py_drop_schema(slf: PyRef<'_, Self>) -> PyResult<()> {
-        let result =
-            get_runtime().block_on(async { delete_nautilus_postgres_tables(&slf.pool).await });
-        result.map_err(to_pyruntime_err)
-    }
-
-    #[pyo3(name = "truncate")]
-    fn py_truncate(slf: PyRef<'_, Self>, table: String) -> PyResult<()> {
-        let result =
-            get_runtime().block_on(async { DatabaseQueries::truncate(&slf.pool, table).await });
-        result.map_err(to_pyruntime_err)
+    fn py_flush_db(slf: PyRef<'_, Self>) -> PyResult<()> {
+        get_runtime()
+            .block_on(async { DatabaseQueries::truncate(&slf.pool).await })
+            .map_err(to_pyruntime_err)
     }
 }

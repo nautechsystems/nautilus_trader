@@ -468,4 +468,32 @@ mod serial_tests {
         assert_eq!(bars.len(), 1);
         assert_eq!(bars[0], bar);
     }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_truncate() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        // add items in currency and instrument table
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_instrument(&instrument).unwrap();
+        wait_until(
+            || {
+                pg_cache.load_currencies().unwrap().len() == 2
+                    && pg_cache.load_instruments().unwrap().len() == 1
+            },
+            Duration::from_secs(2),
+        );
+
+        // call flush which will truncate all the tables
+        pg_cache.flush().unwrap();
+
+        // check if all the tables are empty
+        let currencies = pg_cache.load_currencies().unwrap();
+        assert_eq!(currencies.len(), 0);
+        let instruments = pg_cache.load_instruments().unwrap();
+        assert_eq!(instruments.len(), 0);
+    }
 }
