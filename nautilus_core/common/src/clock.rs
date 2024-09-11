@@ -442,4 +442,131 @@ impl Clock for LiveClock {
     }
 }
 
-// TODO: Rust specific clock tests
+#[cfg(test)]
+mod tests {
+    use rstest::{fixture, rstest};
+
+    use crate::timer::RustTimeEventCallback;
+
+    use super::*;
+    use std::cell::RefCell;
+    use std::rc::Rc;
+
+    #[derive(Default)]
+    struct TestCallback {
+        called: Rc<RefCell<bool>>,
+    }
+
+    impl RustTimeEventCallback for TestCallback {
+        fn call(&self, _event: TimeEvent) {
+            *self.called.borrow_mut() = true;
+        }
+    }
+
+    impl Into<TimeEventCallback> for TestCallback {
+        fn into(self) -> TimeEventCallback {
+            TimeEventCallback::Rust(Rc::new(self))
+        }
+    }
+
+    #[fixture]
+    pub fn test_clock() -> TestClock {
+        let mut clock = TestClock::new();
+        clock.register_default_handler(TestCallback::default().into());
+        clock
+    }
+
+    #[rstest]
+    fn test_time_monotonicity(mut test_clock: TestClock) {
+        let initial_time = test_clock.timestamp_ns();
+        test_clock.advance_time((*initial_time + 1000).into(), true);
+        assert!(test_clock.timestamp_ns() > initial_time);
+    }
+
+    #[rstest]
+    fn test_timer_registration(mut test_clock: TestClock) {
+        test_clock.set_time_alert_ns(
+            "test_timer",
+            (*test_clock.timestamp_ns() + 1000).into(),
+            None,
+        );
+        assert_eq!(test_clock.timer_count(), 1);
+        assert_eq!(test_clock.timer_names(), vec!["test_timer"]);
+    }
+
+    #[rstest]
+    fn test_timer_expiration(mut test_clock: TestClock) {
+        let alert_time = (*test_clock.timestamp_ns() + 1000).into();
+        test_clock.set_time_alert_ns("test_timer", alert_time, None);
+        let events = test_clock.advance_time(alert_time, true);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].name.as_str(), "test_timer");
+    }
+
+    #[rstest]
+    fn test_timer_cancellation(mut test_clock: TestClock) {
+        test_clock.set_time_alert_ns(
+            "test_timer",
+            (*test_clock.timestamp_ns() + 1000).into(),
+            None,
+        );
+        assert_eq!(test_clock.timer_count(), 1);
+        test_clock.cancel_timer("test_timer");
+        assert_eq!(test_clock.timer_count(), 0);
+    }
+
+    #[rstest]
+    fn test_time_advancement(mut test_clock: TestClock) {
+        let start_time = test_clock.timestamp_ns();
+        test_clock.set_timer_ns("test_timer", 1000, start_time, None, None);
+        let events = test_clock.advance_time((*start_time + 2500).into(), true);
+        assert_eq!(events.len(), 2);
+        assert_eq!(*events[0].ts_event, *start_time + 1000);
+        assert_eq!(*events[1].ts_event, *start_time + 2000);
+    }
+
+    #[test]
+    fn test_default_and_custom_callbacks() {
+        let mut clock = TestClock::new();
+        let default_called = Rc::new(RefCell::new(false));
+        let custom_called = Rc::new(RefCell::new(false));
+
+        let default_callback: Rc<dyn RustTimeEventCallback> = Rc::new(TestCallback {
+            called: Rc::clone(&default_called),
+        });
+
+        let custom_callback: Rc<dyn RustTimeEventCallback> = Rc::new(TestCallback {
+            called: Rc::clone(&custom_called),
+        });
+
+        clock.register_default_handler(TimeEventCallback::from(default_callback));
+        clock.set_time_alert_ns("default_timer", (*clock.timestamp_ns() + 1000).into(), None);
+        clock.set_time_alert_ns(
+            "custom_timer",
+            (*clock.timestamp_ns() + 1000).into(),
+            Some(TimeEventCallback::from(custom_callback)),
+        );
+
+        let events = clock.advance_time((*clock.timestamp_ns() + 1000).into(), true);
+        let handlers = clock.match_handlers(events);
+
+        for handler in handlers {
+            handler.callback.call(handler.event);
+        }
+
+        assert!(*default_called.borrow());
+        assert!(*custom_called.borrow());
+    }
+
+    #[rstest]
+    fn test_multiple_timers(mut test_clock: TestClock) {
+        let start_time = test_clock.timestamp_ns();
+        test_clock.set_timer_ns("timer1", 1000, start_time, None, None);
+        test_clock.set_timer_ns("timer2", 2000, start_time, None, None);
+        let events = test_clock.advance_time((*start_time + 2000).into(), true);
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0].name.as_str(), "timer1");
+        assert_eq!(events[1].name.as_str(), "timer1");
+        assert_eq!(events[2].name.as_str(), "timer2");
+    }
+}

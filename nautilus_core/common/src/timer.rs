@@ -381,8 +381,8 @@ impl LiveTimer {
 
         // TODO: Live timer is currently multi-threaded
         // and only supports the python event handler
+        #[cfg(feature = "python")]
         let callback: PyObject = match self.callback.clone() {
-            #[cfg(feature = "python")]
             TimeEventCallback::Python(callback) => callback,
             TimeEventCallback::Rust(_) => {
                 panic!("Live timer does not support Rust callbacks right now")
