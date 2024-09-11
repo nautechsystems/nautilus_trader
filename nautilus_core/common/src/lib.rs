@@ -35,7 +35,6 @@ pub mod component;
 pub mod enums;
 pub mod factories;
 pub mod generators;
-pub mod handlers;
 pub mod logging;
 pub mod messages;
 pub mod msgbus;

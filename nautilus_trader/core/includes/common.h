@@ -282,7 +282,9 @@ typedef struct TimeEvent_t {
 } TimeEvent_t;
 
 /**
- * Represents a time event and its associated handler.
+ * Legacy time event handler for Cython/FFI inter-operatbility
+ *
+ * TODO: Remove once Cython is deprecated
  *
  * `TimeEventHandler` associates a `TimeEvent` with a callback function that is triggered
  * when the event's timestamp is reached.

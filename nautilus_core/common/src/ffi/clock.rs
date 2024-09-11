@@ -30,9 +30,10 @@ use pyo3::{
 
 use crate::{
     clock::{Clock, LiveClock, TestClock},
-    handlers::EventHandler,
-    timer::{TimeEvent, TimeEventHandler},
+    timer::{TimeEvent, TimeEventCallback},
 };
+
+use super::timer::TimeEventHandler;
 
 /// C compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
 ///
@@ -82,9 +83,9 @@ pub unsafe extern "C" fn test_clock_register_default_handler(
     assert!(ffi::Py_None() != callback_ptr);
 
     let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
-    let handler = EventHandler::new(callback);
+    let callback = TimeEventCallback::from(callback);
 
-    clock.register_default_handler(handler);
+    clock.register_default_handler(callback);
 }
 
 #[no_mangle]
@@ -144,15 +145,15 @@ pub unsafe extern "C" fn test_clock_set_time_alert(
     assert!(!callback_ptr.is_null());
 
     let name = cstr_to_str(name_ptr);
-    let handler = match callback_ptr == ffi::Py_None() {
+    let callback = match callback_ptr == ffi::Py_None() {
         true => None,
         false => {
             let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
-            Some(EventHandler::new(callback))
+            Some(TimeEventCallback::from(callback))
         }
     };
 
-    clock.set_time_alert_ns(name, alert_time_ns, handler);
+    clock.set_time_alert_ns(name, alert_time_ns, callback);
 }
 
 /// # Safety
@@ -175,15 +176,15 @@ pub unsafe extern "C" fn test_clock_set_timer(
         0 => None,
         _ => Some(stop_time_ns),
     };
-    let handler = match callback_ptr == ffi::Py_None() {
+    let callback = match callback_ptr == ffi::Py_None() {
         true => None,
         false => {
             let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
-            Some(EventHandler::new(callback))
+            Some(TimeEventCallback::from(callback))
         }
     };
 
-    clock.set_timer_ns(name, interval_ns, start_time_ns, stop_time_ns, handler);
+    clock.set_timer_ns(name, interval_ns, start_time_ns, stop_time_ns, callback);
 }
 
 /// # Safety
@@ -196,7 +197,12 @@ pub unsafe extern "C" fn test_clock_advance_time(
     set_time: u8,
 ) -> CVec {
     let events: Vec<TimeEvent> = clock.advance_time(to_time_ns.into(), u8_as_bool(set_time));
-    clock.match_handlers(events).into()
+    let t: Vec<TimeEventHandler> = clock
+        .match_handlers(events)
+        .into_iter()
+        .map(Into::into)
+        .collect();
+    t.into()
 }
 
 // TODO: This struct implementation potentially leaks memory
@@ -288,9 +294,9 @@ pub unsafe extern "C" fn live_clock_register_default_handler(
     assert!(ffi::Py_None() != callback_ptr);
 
     let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
-    let handler = EventHandler::new(callback);
+    let callback = TimeEventCallback::from(callback);
 
-    clock.register_default_handler(handler);
+    clock.register_default_handler(callback);
 }
 
 #[no_mangle]
@@ -351,15 +357,15 @@ pub unsafe extern "C" fn live_clock_set_time_alert(
     assert!(!callback_ptr.is_null());
 
     let name = cstr_to_str(name_ptr);
-    let handler = match callback_ptr == ffi::Py_None() {
+    let callback = match callback_ptr == ffi::Py_None() {
         true => None,
         false => {
             let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
-            Some(EventHandler::new(callback))
+            Some(TimeEventCallback::from(callback))
         }
     };
 
-    clock.set_time_alert_ns(name, alert_time_ns, handler);
+    clock.set_time_alert_ns(name, alert_time_ns, callback);
 }
 
 /// # Safety
@@ -389,15 +395,15 @@ pub unsafe extern "C" fn live_clock_set_timer(
         _ => Some(stop_time_ns),
     };
 
-    let handler = match callback_ptr == ffi::Py_None() {
+    let callback = match callback_ptr == ffi::Py_None() {
         true => None,
         false => {
             let callback = Python::with_gil(|py| PyObject::from_borrowed_ptr(py, callback_ptr));
-            Some(EventHandler::new(callback))
+            Some(TimeEventCallback::from(callback))
         }
     };
 
-    clock.set_timer_ns(name, interval_ns, start_time_ns, stop_time_ns, handler);
+    clock.set_timer_ns(name, interval_ns, start_time_ns, stop_time_ns, callback);
 }
 
 /// # Safety

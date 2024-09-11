@@ -166,7 +166,9 @@ cdef extern from "../includes/common.h":
         # UNIX timestamp (nanoseconds) when the instance was initialized.
         uint64_t ts_init;
 
-    # Represents a time event and its associated handler.
+    # Legacy time event handler for Cython/FFI inter-operatbility
+    #
+    # TODO: Remove once Cython is deprecated
     #
     # `TimeEventHandler` associates a `TimeEvent` with a callback function that is triggered
     # when the event's timestamp is reached.
