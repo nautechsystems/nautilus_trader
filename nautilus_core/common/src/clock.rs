@@ -15,7 +15,10 @@
 
 //! Real-time and static test `Clock` implementations.
 
-use std::{collections::HashMap, ops::Deref};
+use std::{
+    collections::{BTreeMap, HashMap},
+    ops::Deref,
+};
 
 use chrono::{DateTime, Utc};
 use nautilus_core::{
@@ -90,7 +93,9 @@ pub trait Clock {
 /// Stores the current timestamp internally which can be advanced.
 pub struct TestClock {
     time: AtomicTime,
-    timers: HashMap<Ustr, TestTimer>,
+    // use btree map to ensure stable ordering when scanning for timers
+    // in `advance_time`
+    timers: BTreeMap<Ustr, TestTimer>,
     default_callback: Option<TimeEventCallback>,
     callbacks: HashMap<Ustr, TimeEventCallback>,
 }
@@ -101,14 +106,14 @@ impl TestClock {
     pub fn new() -> Self {
         Self {
             time: AtomicTime::new(false, UnixNanos::default()),
-            timers: HashMap::new(),
+            timers: BTreeMap::new(),
             default_callback: None,
             callbacks: HashMap::new(),
         }
     }
 
     #[must_use]
-    pub const fn get_timers(&self) -> &HashMap<Ustr, TestTimer> {
+    pub const fn get_timers(&self) -> &BTreeMap<Ustr, TestTimer> {
         &self.timers
     }
 
@@ -279,7 +284,7 @@ impl Clock for TestClock {
         for timer in &mut self.timers.values_mut() {
             timer.cancel();
         }
-        self.timers = HashMap::new();
+        self.timers = BTreeMap::new();
     }
 }
 
