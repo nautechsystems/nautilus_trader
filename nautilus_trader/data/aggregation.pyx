@@ -607,7 +607,7 @@ cdef class ValueBarAggregator(BarAggregator):
 
     cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
         volume_update = volume
-        average_price = (bar.open + bar.high + bar.low + bar.close) * Decimal(0.25)
+        average_price = Quantity((bar.high + bar.low + bar.close) / Decimal(3.0), precision=self._builder.price_precision)
 
         while volume_update > 0:  # While there is value to apply
             value_update = average_price * volume_update  # Calculated value in quote currency
