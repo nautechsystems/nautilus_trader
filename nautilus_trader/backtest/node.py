@@ -387,7 +387,7 @@ class BacktestNode:
 
             t1 = pd.Timestamp.now()
             engine.logger.info(
-                f"Read {len(result.data):,} events from parquet in {pd.Timedelta(t1 - t0)}s.",
+                f"Read {len(result.data):,} events from parquet in {pd.Timedelta(t1 - t0)}s",
             )
             self._load_engine_data(engine=engine, result=result)
             t2 = pd.Timestamp.now()

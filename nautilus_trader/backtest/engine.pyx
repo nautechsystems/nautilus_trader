@@ -121,7 +121,7 @@ cdef class BacktestEngine:
 
         self._config: BacktestEngineConfig  = config
 
-        # Setup components
+        # Set up components
         self._accumulator = <TimeEventAccumulatorAPI>time_event_accumulator_new()
 
         # Run IDs

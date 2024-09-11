@@ -17,7 +17,7 @@ use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
     correctness::{
-        check_equal_u8, check_positive_i64, check_valid_string, check_valid_string_optional,
+        check_equal_u8, check_positive_i64, check_valid_string, check_valid_string_optional, FAILED,
     },
     nanos::UnixNanos,
 };
@@ -175,7 +175,7 @@ impl FuturesContract {
             ts_event,
             ts_init,
         )
-        .expect("Failed to create new FuturesContract instance")
+        .expect(FAILED)
     }
 }
 

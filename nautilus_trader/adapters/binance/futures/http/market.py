@@ -62,7 +62,7 @@ class BinanceFuturesExchangeInfoHttp(BinanceHttpEndpoint):
 
 class BinanceFuturesMarketHttpAPI(BinanceMarketHttpAPI):
     """
-    Provides access to the `Binance Futures` HTTP REST API.
+    Provides access to the Binance Futures HTTP REST API.
 
     Parameters
     ----------

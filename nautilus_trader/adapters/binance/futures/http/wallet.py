@@ -81,7 +81,7 @@ class BinanceFuturesCommissionRateHttp(BinanceHttpEndpoint):
 
 class BinanceFuturesWalletHttpAPI:
     """
-    Provides access to the `Binance Futures` Wallet HTTP REST API.
+    Provides access to the Binance Futures Wallet HTTP REST API.
 
     Parameters
     ----------

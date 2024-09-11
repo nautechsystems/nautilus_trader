@@ -60,7 +60,7 @@ def test_run_with_empty_strategy(benchmark):
 
         engine.add_instrument(USDJPY_SIM)
 
-        # Setup data
+        # Set up data
         wrangler = QuoteTickDataWrangler(USDJPY_SIM)
         provider = TestDataProvider()
         ticks = wrangler.process_bar_data(
@@ -96,7 +96,7 @@ def test_run_for_tick_processing(benchmark):
 
         engine.add_instrument(USDJPY_SIM)
 
-        # Setup data
+        # Set up data
         wrangler = QuoteTickDataWrangler(USDJPY_SIM)
         provider = TestDataProvider()
         ticks = wrangler.process_bar_data(
@@ -147,7 +147,7 @@ def test_run_with_ema_cross_strategy(benchmark):
 
         engine.add_instrument(USDJPY_SIM)
 
-        # Setup data
+        # Set up data
         wrangler = QuoteTickDataWrangler(USDJPY_SIM)
         ticks = wrangler.process_bar_data(
             bid_data=provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv"),

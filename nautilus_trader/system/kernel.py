@@ -228,7 +228,7 @@ class NautilusKernel:
         self._log: Logger = Logger(name=name)
         self._log.info("Building system kernel")
 
-        # Setup loop (if sandbox live)
+        # Set up loop (if sandbox live)
         self._loop: asyncio.AbstractEventLoop | None = None
         if self._environment != Environment.BACKTEST:
             self._loop = loop or asyncio.get_running_loop()
@@ -450,12 +450,12 @@ class NautilusKernel:
                 clock=self._clock,
             )
 
-        # Setup stream writer
+        # Set up stream writer
         self._writer: StreamingFeatherWriter | None = None
         if config.streaming:
             self._setup_streaming(config=config.streaming)
 
-        # Setup data catalog
+        # Set up data catalog
         self._catalog: ParquetDataCatalog | None = None
         if config.catalog:
             self._catalog = ParquetDataCatalog(
@@ -492,7 +492,7 @@ class NautilusKernel:
             raise RuntimeError("No event loop available for the node")
 
         if self._loop.is_closed():
-            self._log.error("Cannot setup signal handling (event loop was closed)")
+            self._log.error("Cannot set up signal handling (event loop was closed)")
             return
 
         signal.signal(signal.SIGINT, signal.SIG_DFL)
@@ -511,7 +511,7 @@ class NautilusKernel:
             self._loop_sig_callback(sig)
 
     def _setup_streaming(self, config: StreamingConfig) -> None:
-        # Setup persistence
+        # Set up persistence
         path = f"{config.catalog_path}/{self._environment.value}/{self.instance_id}"
         self._writer = StreamingFeatherWriter(
             path=path,

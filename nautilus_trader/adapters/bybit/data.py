@@ -610,12 +610,13 @@ class BybitDataClient(LiveMarketDataClient):
             return
 
         if msg.type == "snapshot":
-            deltas: OrderBookDeltas = msg.data.parse_to_snapshot(
+            deltas: OrderBookDeltas = msg.data.parse_to_deltas(
                 instrument_id=instrument_id,
                 price_precision=instrument.price_precision,
                 size_precision=instrument.size_precision,
                 ts_event=millis_to_nanos(msg.ts),
                 ts_init=self._clock.timestamp_ns(),
+                snapshot=True,
             )
         else:
             deltas = msg.data.parse_to_deltas(

@@ -22,9 +22,10 @@ To install the latest binary wheel (or sdist package) from PyPI using Pythons _p
 
 Install optional dependencies as 'extras' for specific integrations:
 
-- `betfair`: Betfair adapter (integration)
+- `betfair`: Betfair adapter (integration) dependencies
 - `docker`: Needed for Docker when using the IB gateway (with the Interactive Brokers adapter)
-- `ib`: Interactive Brokers adapter
+- `dydx`: dYdX adapter (integration) dependencies
+- `ib`: Interactive Brokers adapter (integration) dependencies
 
 To install with specific extras using _pip_:
 

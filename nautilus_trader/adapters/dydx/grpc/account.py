@@ -16,6 +16,7 @@
 Implement the client for GRPC account endpoints.
 """
 
+import asyncio
 import hashlib
 from functools import partial
 
@@ -58,6 +59,7 @@ from v4_proto.dydxprotocol.clob.tx_pb2 import MsgPlaceOrder
 from v4_proto.dydxprotocol.feetiers import query_pb2 as fee_tier_query
 from v4_proto.dydxprotocol.feetiers import query_pb2_grpc as fee_tier_query_grpc
 
+from nautilus_trader.adapters.dydx.common.constants import ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODE
 from nautilus_trader.adapters.dydx.grpc.errors import DYDXGRPCError
 
 
@@ -238,6 +240,7 @@ class DYDXAccountGRPCAPI:
             options=[("grpc.service_config", grpc_service_config)],
         )
         self._transaction_builder = transaction_builder
+        self._lock = asyncio.Lock()
 
     async def connect(self) -> None:
         """
@@ -268,7 +271,7 @@ class DYDXAccountGRPCAPI:
 
         if not response.account.Unpack(account):
             message = "Failed to unpack account"
-            raise DYDXGRPCError(message)
+            raise DYDXGRPCError(code=None, message=message)
 
         return account
 
@@ -355,7 +358,15 @@ class DYDXAccountGRPCAPI:
             The response from the transaction broadcast.
 
         """
-        return await self.broadcast_message(wallet, MsgPlaceOrder(order=order))
+        response = await self.broadcast_message(wallet, MsgPlaceOrder(order=order))
+
+        is_success = response.tx_response.code == 0
+
+        if not is_success:
+            message = f"Failed to place the order: {response}"
+            raise DYDXGRPCError(code=response.tx_response.code, message=message)
+
+        return response
 
     async def cancel_order(
         self,
@@ -384,7 +395,15 @@ class DYDXAccountGRPCAPI:
             good_til_block=good_til_block,
             good_til_block_time=good_til_block_time,
         )
-        return await self.broadcast_message(wallet, message)
+        response = await self.broadcast_message(wallet, message)
+
+        is_success = response.tx_response.code == 0
+
+        if not is_success:
+            message = f"Failed to cancel the order: {response}"
+            raise DYDXGRPCError(code=response.tx_response.code, message=message)
+
+        return response
 
     async def broadcast_message(
         self,
@@ -406,11 +425,17 @@ class DYDXAccountGRPCAPI:
             The response from the broadcast.
 
         """
-        account = await self.get_account(wallet.address)
-        wallet.sequence = account.sequence
+        async with self._lock:
+            response = await self.broadcast(self._transaction_builder.build(wallet, message), mode)
+            wallet.sequence += 1
 
-        response = await self.broadcast(self._transaction_builder.build(wallet, message), mode)
-        return response
+            # The sequence number is not correct. Retrieve it from the gRPC channel.
+            # The retry manager can retry the transaction.
+            if response.tx_response.code == ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODE:
+                account = await self.get_account(wallet.address)
+                wallet.sequence = account.sequence
+
+            return response
 
     async def broadcast(
         self,

@@ -74,7 +74,7 @@ docs-python: install-docs
 
 .PHONY: docs-rust
 docs-rust:
-	(cd nautilus_core && RUSTDOCFLAGS="--enable-index-page -Zunstable-options" cargo +nightly doc --all-features --no-deps --workspace --exclude tokio-tungstenite)
+	(cd nautilus_core && RUSTDOCFLAGS="--enable-index-page -Zunstable-options" cargo +nightly doc --all-features --no-deps --workspace)
 
 .PHONY: clippy
 clippy:
@@ -98,7 +98,7 @@ cargo-test:
 		echo "cargo-nextest is not installed. You can install it using 'cargo install cargo-nextest'"; \
 		exit 1; \
 	fi
-	RUST_BACKTRACE=1 && (cd nautilus_core && cargo nextest run --workspace --exclude tokio-tungstenite)
+	RUST_BACKTRACE=1 && (cd nautilus_core && cargo nextest run --workspace)
 
 .PHONY: cargo-test-coverage
 cargo-test-coverage:
@@ -110,7 +110,7 @@ cargo-test-coverage:
 		echo "cargo-llvm-cov is not installed. You can install it using 'cargo install cargo-llvm-cov'"; \
 		exit 1; \
 	fi
-	RUST_BACKTRACE=1 && (cd nautilus_core && cargo llvm-cov nextest run --workspace --exclude tokio-tungstenite)
+	RUST_BACKTRACE=1 && (cd nautilus_core && cargo llvm-cov nextest run --workspace)
 
 .PHONY: cargo-bench
 cargo-bench:

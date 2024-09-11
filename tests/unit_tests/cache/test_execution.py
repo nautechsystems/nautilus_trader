@@ -1317,7 +1317,7 @@ class TestExecutionCacheIntegrityCheck:
         )
         self.engine = BacktestEngine(config=config)
 
-        # Setup venue
+        # Set up venue
         self.engine.add_venue(
             venue=Venue("SIM"),
             oms_type=OmsType.HEDGING,
@@ -1329,7 +1329,7 @@ class TestExecutionCacheIntegrityCheck:
 
         self.usdjpy = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
-        # Setup data
+        # Set up data
         wrangler = QuoteTickDataWrangler(self.usdjpy)
         provider = TestDataProvider()
         ticks = wrangler.process_bar_data(

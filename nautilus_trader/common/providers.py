@@ -71,7 +71,10 @@ class InstrumentProvider:
         """
         return len(self._instruments)
 
-    async def load_all_async(self, filters: dict | None = None) -> None:
+    async def load_all_async(
+        self,
+        filters: dict | None = None,
+    ) -> None:
         """
         Load the latest instruments into the provider asynchronously, optionally
         applying the given filters.
@@ -93,7 +96,7 @@ class InstrumentProvider:
         ----------
         instrument_ids : list[InstrumentId]
             The instrument IDs to load.
-        filters : dict, optional
+        filters : frozendict[str, Any] or dict[str, Any], optional
             The venue specific instrument loading filters to apply.
 
         Raises
@@ -119,7 +122,7 @@ class InstrumentProvider:
         ----------
         instrument_id : InstrumentId
             The instrument ID to load.
-        filters : dict, optional
+        filters : frozendict[str, Any] or dict[str, Any], optional
             The venue specific instrument loading filters to apply.
 
         Raises
@@ -148,13 +151,16 @@ class InstrumentProvider:
             if self._load_all_on_start:
                 await self.load_all_async(self._filters)
             elif self._load_ids_on_start:
-                instrument_ids = [InstrumentId.from_str(i) for i in self._load_ids_on_start]
+                instrument_ids = [
+                    InstrumentId.from_str(i)
+                    for i in self._load_ids_on_start
+                    if not isinstance(i, InstrumentId)
+                ]
                 await self.load_ids_async(instrument_ids, self._filters)
             self._log.info(f"Loaded {self.count} instruments")
         else:
             self._log.debug("Awaiting loading...")
             while self._loading:
-                # Wait 100ms
                 await asyncio.sleep(0.1)
 
         # Set async loading flags
@@ -168,7 +174,7 @@ class InstrumentProvider:
 
         Parameters
         ----------
-        filters : dict, optional
+        filters : frozendict[str, Any] or dict[str, Any], optional
             The venue specific instrument loading filters to apply.
 
         """
@@ -192,7 +198,7 @@ class InstrumentProvider:
         ----------
         instrument_ids : list[InstrumentId]
             The instrument IDs to load.
-        filters : dict, optional
+        filters : frozendict[str, Any] or dict[str, Any], optional
             The venue specific instrument loading filters to apply.
 
         """
@@ -218,7 +224,7 @@ class InstrumentProvider:
         ----------
         instrument_id : InstrumentId
             The instrument ID to load.
-        filters : dict, optional
+        filters : frozendict[str, Any] or dict[str, Any], optional
             The venue specific instrument loading filters to apply.
 
         """

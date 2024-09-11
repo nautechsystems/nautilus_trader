@@ -28,3 +28,8 @@ DEFAULT_CURRENCY: Final[str] = "USDC"
 CURRENCY_MAP: Final[dict[str, str]] = {
     "USD": "USDC",
 }
+
+ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODE = 32
+DYDX_RETRY_ERRORS_GRPC: Final[list[int]] = [
+    32,  # Account sequence mismatch
+]

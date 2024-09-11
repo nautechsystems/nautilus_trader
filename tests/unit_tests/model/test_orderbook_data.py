@@ -26,6 +26,7 @@ from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.test_kit.rust.data_pyo3 import TestDataProviderPyo3
@@ -281,9 +282,9 @@ def test_delta_clear() -> None:
     # Arrange, Act
     delta = OrderBookDelta.clear(
         instrument_id=AUDUSD,
+        sequence=42,
         ts_event=0,
         ts_init=1_000_000_000,
-        sequence=42,
     )
 
     # Assert
@@ -473,6 +474,23 @@ def test_deltas_hash_str_and_repr() -> None:
         repr(deltas)
         == "OrderBookDeltas(instrument_id=AUD/USD.SIM, [OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder(side=BUY, price=10.0, size=5, order_id=1), flags=0, sequence=0, ts_event=0, ts_init=0), OrderBookDelta(instrument_id=AUD/USD.SIM, action=ADD, order=BookOrder(side=BUY, price=10.0, size=15, order_id=2), flags=0, sequence=1, ts_event=0, ts_init=0)], is_snapshot=False, sequence=1, ts_event=0, ts_init=0)"  # noqa
     )
+
+
+def test_deltas_batching() -> None:
+    # Arrange
+    delta1 = TestDataStubs.order_book_delta(flags=0)
+    delta2 = TestDataStubs.order_book_delta(flags=RecordFlag.F_LAST)
+    delta3 = TestDataStubs.order_book_delta(flags=0)
+    delta4 = TestDataStubs.order_book_delta(flags=0)
+    delta5 = TestDataStubs.order_book_delta(flags=RecordFlag.F_LAST)
+
+    # Act
+    deltas = OrderBookDeltas.batch([delta1, delta2, delta3, delta4, delta5])
+
+    # Assert
+    assert len(deltas) == 2
+    assert isinstance(deltas[0], OrderBookDeltas)
+    assert isinstance(deltas[1], OrderBookDeltas)
 
 
 def test_deltas_to_dict_from_dict_round_trip() -> None:

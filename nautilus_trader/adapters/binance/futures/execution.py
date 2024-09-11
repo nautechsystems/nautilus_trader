@@ -21,8 +21,8 @@ import msgspec
 from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceErrorCode
-from nautilus_trader.adapters.binance.common.execution import BinanceCommonExecutionClient
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
+from nautilus_trader.adapters.binance.execution import BinanceCommonExecutionClient
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEnumParser
 from nautilus_trader.adapters.binance.futures.enums import BinanceFuturesEventType
 from nautilus_trader.adapters.binance.futures.http.account import BinanceFuturesAccountHttpAPI
@@ -55,7 +55,7 @@ from nautilus_trader.model.orders import Order
 
 class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
     """
-    Provides an execution client for the `Binance Futures` exchange.
+    Provides an execution client for the Binance Futures exchange.
 
     Parameters
     ----------

@@ -1,22 +1,61 @@
-# NautilusTrader 1.200.0 Beta
+# NautilusTrader 1.202.0 Beta
 
 Released on TBD (UTC).
 
 ### Enhancements
-- Added dYdX integration (#1861, #1868, #1873, #1874, #1875, #1877, #1879, #1880, #1882, #1886, #1887, #1890, #1891, #1896, #1901), thanks @davidsblom
-- Added composite bar types, bars aggregated from other bar types (#1859, #1885, #1888), thanks @faysou
+None
+
+### Breaking Changes
+None
+
+### Fixes
+- Fixed composite bar requests (#1923), thanks @faysou
+
+---
+
+# NautilusTrader 1.201.0 Beta
+
+Released on 9th September 2024 (UTC).
+
+### Enhancements
+- Added order book deltas triggering support for `OrderEmulator`
+- Added `OrderCancelRejected` event generation for dYdX adapter (#1916), thanks @davidsblom
+- Refined handling of Binance private key types (RSA, Ed25519) and integrated into configs
+- Implemented cryptographic signing in Rust (replacing `pycryptodome` for Binance)
+- Removed the vendored `tokio-tungstenite` crate (#1902), thanks @VioletSakura-7
+
+### Breaking Changes
+None
+
+### Fixes
+- Fixed `BinanceFuturesEventType` by adding new `TRADE_LITE` member, reflecting the Binance update on 2024-09-03 (UTC)
+
+---
+
+# NautilusTrader 1.200.0 Beta
+
+Released on 7th September 2024 (UTC).
+
+### Enhancements
+- Added dYdX integration (#1861, #1868, #1873, #1874, #1875, #1877, #1879, #1880, #1882, #1886, #1887, #1890, #1891, #1896, #1901, #1903, #1907, #1910, #1911, #1913, #1915), thanks @davidsblom
+- Added composite bar types, bars aggregated from other bar types (#1859, #1885, #1888, #1894, #1905), thanks @faysou
+- Added `OrderBookDeltas.batch` for batching groups of deltas based on record flags (batch until `F_LAST`)
+- Added `OrderBookDeltas` batching support for `ParquetDataCatalog` (use `data_cls` of `OrderBookDeltas` to batch with the same flags method as live adapters)
 - Added `RetryManagerPool` to abstract common retry functionality for all adapters
 - Added `InstrumentClose` functionality for `OrderMatchingEngine`, thanks @limx0
 - Added `BacktestRunConfig.dispose_on_completion` config setting to control post-run disposal behavior for each internal backtest engine (`True` by default to retain current behavior)
 - Added `recv_window_ms` config setting for `BinanceExecClientConfig`
 - Added `sl_time_in_force` and `tp_time_in_force` parameters to `OrderFactory.bracket(...)` method
 - Added custom `client_order_id` parameters to `OrderFactory` methods
+- Added support for Binance RSA and Ed25519 API key types (#1908), thanks @NextThread
+- Added `multiplier` parameter for `CryptoPerpetual` (default 1)
 - Implemented `BybitExecutionClient` retry logic for `submit_order`, `modify_order`, `cancel_order` and `cancel_all_orders`
 - Improved error modeling and handling in Rust (#1866), thanks @twitu
 - Improved `HttpClient` error handling and added `HttpClientError` exception for Python (#1872), thanks @twitu
 - Improved `WebSocketClient` error handling and added `WebSocketClientError` exception for Python (#1876), thanks @twitu
 - Improved `WebSocketClient.send_text` efficiency (now accepts UTF-8 encoded bytes, rather than a Python string)
-- Improved `@customdataclass` decorator with `date` field (#1900), thanks @faysou
+- Improved `@customdataclass` decorator with `date` field and refined `__repr__` (#1900, #1906, #1909), thanks @faysou
+- Improved standardization of `OrderBookDeltas` parsing and records flags for crypto venues
 - Refactored `RedisMessageBusDatabase` to tokio tasks
 - Refactored `RedisCacheDatabase` to tokio tasks
 - Upgraded `tokio` crate to v1.40.0
@@ -25,11 +64,15 @@ Released on TBD (UTC).
 - Renamed `heartbeat_interval` to `heartbeat_interval_secs` (more explicitly indicates time units)
 - Moved `heartbeat_interval_secs` config setting to `MessageBusConfig` (the message bus handles external stream processing)
 - Changed `WebSocketClient.send_text(...)` to take `data` as `bytes` rather than `str`
+- Changed `CryptoPerpetual` Arrow schema to include `multiplier` field
+- Changed `CryptoFuture` Arrow schema to include `multiplier` field
 
 ### Fixes
 - Fixed `OrderBook` memory deallocation in Python finalizer (memory was not being freed on object destruction), thanks for reporting @zeyuhuan
 - Fixed `Order` tags serialization (was not concatenating to a single string), thanks for reporting @DevRoss
 - Fixed `types_filter` serialization in `MessageBusConfig` during kernel setup
+- Fixed `InstrumentProvider` handling of `load_ids_on_start` when elements are already `InstrumentId`s
+- Fixed `InstrumentProviderConfig` hashing for `filters` field
 
 ---
 

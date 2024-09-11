@@ -4,7 +4,7 @@ The NautilusTrader platform defines a range of built-in data types crafted speci
 a trading domain:
 
 - `OrderBookDelta` (L1/L2/L3): Most granular order book updates
-- `OrderBookDeltas` (L1/L2/L3): Bundles multiple order book deltas
+- `OrderBookDeltas` (L1/L2/L3): Batches multiple order book deltas
 - `OrderBookDepth10`: Aggregated order book snapshot (10 levels per side)
 - `QuoteTick`: Top-of-book best bid and ask prices and sizes
 - `TradeTick`: A single trade/match event between counterparties
@@ -97,7 +97,7 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 data_path = TEST_DATA_DIR / "binance" / "btcusdt-depth-snap.csv"
 df = BinanceOrderBookDeltaDataLoader.load(data_path)
 
-# Setup a wrangler
+# Set up a wrangler
 instrument = TestInstrumentProvider.btcusdt_binance()
 wrangler = OrderBookDeltaDataWrangler(instrument)
 

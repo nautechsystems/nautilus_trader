@@ -360,9 +360,9 @@ class InstrumentProviderConfig(NautilusConfig, frozen=True):
     ----------
     load_all : bool, default False
         If all venue instruments should be loaded on start.
-    load_ids : FrozenSet[InstrumentId], optional
+    load_ids : frozenset[InstrumentId], optional
         The list of instrument IDs to be loaded on start (if `load_all_instruments` is False).
-    filters : frozendict, optional
+    filters : frozendict or dict[str, Any], optional
         The venue specific instrument loading filters to apply.
     filter_callable: str, optional
         A fully qualified path to a callable that takes a single argument, `instrument` and returns a bool, indicating
@@ -380,7 +380,8 @@ class InstrumentProviderConfig(NautilusConfig, frozen=True):
         )
 
     def __hash__(self):
-        return hash((self.load_all, self.load_ids, self.filters))
+        filters = frozenset(self.filters.items()) if self.filters else None
+        return hash((self.load_all, self.load_ids, filters))
 
     load_all: bool = False
     load_ids: frozenset[InstrumentId] | None = None

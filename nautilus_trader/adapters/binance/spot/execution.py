@@ -18,8 +18,8 @@ import asyncio
 import msgspec
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.common.execution import BinanceCommonExecutionClient
 from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
+from nautilus_trader.adapters.binance.execution import BinanceCommonExecutionClient
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEnumParser
 from nautilus_trader.adapters.binance.spot.enums import BinanceSpotEventType
@@ -47,7 +47,7 @@ from nautilus_trader.model.orders import Order
 
 class BinanceSpotExecutionClient(BinanceCommonExecutionClient):
     """
-    Provides an execution client for the `Binance Spot/Margin` exchange.
+    Provides an execution client for the Binance Spot/Margin exchange.
 
     Parameters
     ----------

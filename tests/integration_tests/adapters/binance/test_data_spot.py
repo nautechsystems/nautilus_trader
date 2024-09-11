@@ -65,8 +65,8 @@ class TestBinanceSpotDataClient:
 
         self.http_client = BinanceHttpClient(
             clock=self.clock,
-            key="SOME_BINANCE_API_KEY",
-            secret="SOME_BINANCE_API_SECRET",
+            api_key="SOME_BINANCE_API_KEY",
+            api_secret="SOME_BINANCE_API_SECRET",
             base_url="https://api.binance.com/",  # Spot/Margin
         )
 

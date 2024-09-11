@@ -94,7 +94,7 @@ cdef class FuturesContract(Instrument):
         Currency currency not None,
         int price_precision,
         Price price_increment not None,
-        Quantity multiplier,
+        Quantity multiplier not None,
         Quantity lot_size not None,
         str underlying,
         uint64_t activation_ns,

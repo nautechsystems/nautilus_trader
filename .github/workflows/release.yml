@@ -42,6 +42,18 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get install -y curl clang git libssl-dev make pkg-config
 
+      - name: Free disk space (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          rm -rf "/c/Program Files/dotnet"
+          rm -rf "/c/Program Files (x86)/Microsoft Visual Studio/2019"
+
+      - name: Install nasm dependency (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install nasm
+          choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System'
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -312,7 +324,19 @@ jobs:
           docker-images: true
           swap-storage: true
 
-      - name: Install runner dependencies
+      - name: Free disk space (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          rm -rf "/c/Program Files/dotnet"
+          rm -rf "/c/Program Files (x86)/Microsoft Visual Studio/2019"
+
+      - name: Install nasm dependency (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install nasm
+          choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System'
+
+      - name: Install runner dependencies (Linux)
         if: runner.os == 'Linux'
         run: sudo apt-get install -y curl clang git libssl-dev make pkg-config
 

@@ -30,8 +30,8 @@ async def test_binance_spot_account_http_client():
     client = get_cached_binance_http_client(
         clock=clock,
         account_type=BinanceAccountType.USDT_FUTURE,
-        key=os.getenv("BINANCE_FUTURES_TESTNET_API_KEY"),
-        secret=os.getenv("BINANCE_FUTURES_TESTNET_API_SECRET"),
+        api_key=os.getenv("BINANCE_FUTURES_TESTNET_API_KEY"),
+        api_secret=os.getenv("BINANCE_FUTURES_TESTNET_API_SECRET"),
         is_testnet=True,
     )
 

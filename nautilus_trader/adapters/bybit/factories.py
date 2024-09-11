@@ -80,7 +80,7 @@ def get_bybit_http_client(
     http_base_url = base_url or get_http_base_url(is_demo, is_testnet)
     client_key: str = "|".join((key, secret))
 
-    # Setup rate limit quotas
+    # Set up rate limit quotas
     # Current rate limit in bybit is 120 requests in any 5-second window,
     # and that is 24 request per second.
     # https://bybit-exchange.github.io/docs/v5/rate-limit

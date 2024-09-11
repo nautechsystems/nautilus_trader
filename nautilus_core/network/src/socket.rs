@@ -25,6 +25,7 @@ use std::{
 
 use nautilus_core::python::to_pyruntime_err;
 use pyo3::prelude::*;
+use rustls::crypto::{aws_lc_rs, CryptoProvider};
 use tokio::{
     io::{split, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf},
     net::TcpStream,
@@ -33,10 +34,11 @@ use tokio::{
     time::sleep,
 };
 use tokio_tungstenite::{
-    tls::tcp_tls,
     tungstenite::{client::IntoClientRequest, stream::Mode, Error},
     MaybeTlsStream,
 };
+
+use crate::tls::tcp_tls;
 
 type TcpWriter = WriteHalf<MaybeTlsStream<TcpStream>>;
 type SharedTcpWriter = Arc<Mutex<WriteHalf<MaybeTlsStream<TcpStream>>>>;
@@ -89,6 +91,12 @@ struct SocketClientInner {
 
 impl SocketClientInner {
     pub async fn connect_url(config: SocketConfig) -> Result<Self, Error> {
+        if CryptoProvider::get_default().is_none() {
+            aws_lc_rs::default_provider()
+                .install_default()
+                .expect("Error installing crypto provider");
+        }
+
         let SocketConfig {
             url,
             mode,

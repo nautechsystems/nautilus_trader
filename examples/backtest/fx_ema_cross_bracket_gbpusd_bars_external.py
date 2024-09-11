@@ -85,7 +85,7 @@ if __name__ == "__main__":
     GBPUSD_SIM = TestInstrumentProvider.default_fx_ccy("GBP/USD", SIM)
     engine.add_instrument(GBPUSD_SIM)
 
-    # Setup wranglers
+    # Set up wranglers
     bid_wrangler = BarDataWrangler(
         bar_type=BarType.from_str("GBP/USD.SIM-1-MINUTE-BID-EXTERNAL"),
         instrument=GBPUSD_SIM,

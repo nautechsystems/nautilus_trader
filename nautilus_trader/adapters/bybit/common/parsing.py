@@ -43,15 +43,15 @@ def parse_bybit_delta(
     values: tuple[Price, Quantity],
     side: OrderSide,
     update_id: int,
+    flags: int,
     sequence: int,
     ts_event: int,
     ts_init: int,
-    is_snapshot: bool,
-    flags: int = 0,
+    snapshot: bool,
 ) -> OrderBookDelta:
     price = values[0]
     size = values[1]
-    if is_snapshot:
+    if snapshot:
         action = BookAction.ADD
     else:
         action = BookAction.DELETE if size == 0 else BookAction.UPDATE

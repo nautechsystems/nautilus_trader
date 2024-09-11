@@ -45,6 +45,8 @@ from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.execution.messages cimport TradingCommand
 from nautilus_trader.execution.trailing cimport TrailingStopCalculator
+from nautilus_trader.model.book cimport OrderBook
+from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.events.order cimport OrderCanceled
@@ -406,6 +408,8 @@ cdef class OrderEmulator(Actor):
         # Check data subscription
         if emulation_trigger == TriggerType.DEFAULT or emulation_trigger == TriggerType.BID_ASK:
             if trigger_instrument_id not in self._subscribed_quotes:
+                if not trigger_instrument_id.is_synthetic():
+                    self.subscribe_order_book_deltas(trigger_instrument_id)
                 self.subscribe_quote_ticks(trigger_instrument_id)
                 self._subscribed_quotes.add(trigger_instrument_id)
         elif emulation_trigger == TriggerType.LAST_TRADE:
@@ -792,6 +796,34 @@ cdef class OrderEmulator(Actor):
             self._manager.send_algo_command(command, order.exec_algorithm_id)
         else:
             self._manager.send_exec_command(command)
+
+    cpdef void on_order_book_deltas(self, deltas):
+        cdef OrderBookDeltas _deltas = deltas  # C typing to optimize performance
+
+        if is_logging_initialized():
+            self._log.debug(f"Processing {repr(_deltas)}", LogColor.CYAN)
+
+
+        cdef MatchingCore matching_core = self._matching_cores.get(_deltas.instrument_id)
+        if matching_core is None:
+            self._log.error(f"Cannot handle `OrderBookDeltas`: no matching core for instrument {_deltas.instrument_id}")
+            return
+
+        cdef OrderBook book = self.cache.order_book(_deltas.instrument_id)
+        if book is None:
+            self.log.error(f"Cannot handle `OrderBookDeltas`: no book being maintained for {_deltas.instrument_id}")
+            return
+
+        cdef Price best_bid = book.best_bid_price()
+        cdef Price best_ask = book.best_ask_price()
+
+        if best_bid is not None:
+            matching_core.set_bid_raw(best_bid._mem.raw)
+
+        if best_ask is not None:
+            matching_core.set_ask_raw(best_ask._mem.raw)
+
+        self._iterate_orders(matching_core)
 
     cpdef void on_quote_tick(self, QuoteTick tick):
         if is_logging_initialized():

@@ -262,9 +262,6 @@ class GreeksTestData(Data):
     instrument_id: InstrumentId = InstrumentId.from_str("ES.GLBX")
     delta: float = 0.0
 
-    def __repr__(self):
-        return (f"GreeksData(instrument_id={self.instrument_id}, delta={self.delta:.2f}, ts_event={unix_nanos_to_str(self._ts_event)}, ts_init={unix_nanos_to_str(self._ts_init)})")
-
 
 GreeksTestData(
     instrument_id=InstrumentId.from_str("CL.GLBX"),

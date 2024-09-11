@@ -31,7 +31,7 @@ if __name__ == "__main__":
 
     provider = TestDataProvider()
 
-    # Setup wranglers
+    # Set up wranglers
     trade_tick_wrangler = TradeTickDataWrangler(instrument=ETHUSDT_BINANCE)
     quote_tick_wrangler = QuoteTickDataWrangler(instrument=AUDUSD_SIM)
     bid_wrangler = BarDataWrangler(

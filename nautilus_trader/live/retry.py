@@ -14,14 +14,22 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from collections.abc import Awaitable
 from collections.abc import Callable
+from typing import Generic, TypeVar
 
 from nautilus_trader.common.component import Logger
 
 
-class RetryManager:
+T = TypeVar("T")
+
+
+class RetryManager(Generic[T]):
     """
     Provides retry state management for an HTTP request.
+
+    This class is generic over `T`, where `T` is the return type of the
+    function passed to the `run` method.
 
     Parameters
     ----------
@@ -64,7 +72,14 @@ class RetryManager:
     def __repr__(self) -> str:
         return f"<{type(self).__name__}(name='{self.name}', details={self.details}) at {hex(id(self))}>"
 
-    async def run(self, name: str, details: list[object] | None, func, *args, **kwargs):
+    async def run(
+        self,
+        name: str,
+        details: list[object] | None,
+        func: Callable[..., Awaitable[T]],
+        *args,
+        **kwargs,
+    ) -> T | None:
         """
         Execute the given `func` with retry management.
 
@@ -77,12 +92,17 @@ class RetryManager:
             The name of the operation to run.
         details : list[object], optional
             The operation details such as identifiers.
-        func : Awaitable
+        func : Callable[..., Awaitable[T]]
             The function to execute.
         args : Any
             Positional arguments to pass to the function `func`.
         kwargs : Any
             Keyword arguments to pass to the function `func`.
+
+        Returns
+        -------
+        T | None
+            The result of the executed function, or `None` if the retries fail.
 
         """
         self.name = name
@@ -92,12 +112,12 @@ class RetryManager:
             while True:
                 if self.cancel_event.is_set():
                     self._cancel()
-                    return
+                    return None
 
                 try:
-                    await func(*args, **kwargs)
+                    response = await func(*args, **kwargs)
                     self.result = True
-                    return  # Successful request
+                    return response  # Successful request
                 except self.exc_types as e:
                     self.log.warning(repr(e))
                     if (
@@ -108,13 +128,14 @@ class RetryManager:
                         self._log_error()
                         self.result = False
                         self.message = str(e)
-                        return  # Operation failed
+                        return None  # Operation failed
 
                     self.retries += 1
                     self._log_retry()
                     await asyncio.sleep(self.retry_delay_secs)
         except asyncio.CancelledError:
             self._cancel()
+            return None
 
     def cancel(self) -> None:
         """
