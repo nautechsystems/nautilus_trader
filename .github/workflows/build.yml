@@ -22,7 +22,6 @@ jobs:
     env:
       BUILD_MODE: debug
       RUST_BACKTRACE: 1
-      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
 
     services:
       redis:
@@ -183,7 +182,6 @@ jobs:
     env:
       BUILD_MODE: debug
       RUST_BACKTRACE: 1
-      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
 
     steps:
       - name: Checkout repository
@@ -294,7 +292,6 @@ jobs:
     env:
       BUILD_MODE: debug
       RUST_BACKTRACE: 1
-      PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION: python
 
     steps:
       - name: Checkout repository
