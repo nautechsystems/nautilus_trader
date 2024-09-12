@@ -13,39 +13,42 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cmp::max, collections::VecDeque};
+use std::{cell::RefCell, cmp::max, collections::VecDeque, rc::Rc};
 
 use nautilus_core::nanos::UnixNanos;
 
-use crate::{clock::Clock, timer::TimeEvent};
+use crate::{
+    clock::Clock,
+    timer::{RustTimeEventCallback, TimeEvent, TimeEventCallback},
+};
 
-type ThrottlerCallbackFn<T, F> = Box<dyn Fn(&mut Throttler<T, F>, TimeEvent)>;
-// type ThrottlerCallbackFn<T> = dyn Fn(&mut Throttler<T>, TimeEvent);
+type ThrottlerWrapperCallbackFn<T, F> = Rc<dyn Fn(&mut Throttler<T, F>, TimeEvent)>;
 
-// Struct to hold the callback
-pub struct ThrottlerCallback<T, F: Fn(T)> {
-    inner: ThrottlerCallbackFn<T, F>,
+pub struct ThrottlerWrapper<T, F: Fn(T)> {
+    throttler: RefCell<Throttler<T, F>>,
+    callback: ThrottlerWrapperCallbackFn<T, F>,
 }
 
-impl<T, F: Fn(T)> ThrottlerCallback<T, F> {
-    pub fn new<C>(f: C) -> Self
-    where
-        C: Fn(&mut Throttler<T, F>, TimeEvent) + 'static,
-    {
-        ThrottlerCallback { inner: Box::new(f) }
-    }
-
-    pub fn call(&self, throttler: &mut Throttler<T, F>, event: TimeEvent) {
-        (self.inner)(throttler, event);
+impl<T, F: Fn(T)> ThrottlerWrapper<T, F> {
+    fn _new(
+        throttler: Throttler<T, F>,
+        callback: impl Fn(&mut Throttler<T, F>, TimeEvent) + 'static,
+    ) -> Self {
+        Self {
+            throttler: RefCell::new(throttler),
+            callback: Rc::new(callback),
+        }
     }
 }
 
-/// A throttler that limits the rate at which messages are sent.
-pub struct Throttler<T, F>
-where
-    F: Fn(T),
-{
-    /// The number of messages received.
+impl<T, F: Fn(T)> RustTimeEventCallback for ThrottlerWrapper<T, F> {
+    fn call(&self, event: TimeEvent) {
+        let mut throttler = self.throttler.borrow_mut();
+        (self.callback)(&mut throttler, event);
+    }
+}
+
+pub struct Throttler<T, F: Fn(T)> {
     pub recv_count: usize,
     /// The number of messages sent.
     pub sent_count: usize,
@@ -69,15 +72,10 @@ where
     output_send: F,
     /// The function to drop a message.
     output_drop: Option<F>,
-    callback: Option<ThrottlerCallback<T, F>>,
+    wrapper: Option<Rc<ThrottlerWrapper<T, F>>>,
 }
 
-impl<T, F> Throttler<T, F>
-where
-    F: Fn(T),
-{
-    /// Creates a new `Throttler` instance.
-    #[must_use]
+impl<T: 'static, F: Fn(T) + 'static> Throttler<T, F> {
     pub fn new(
         limit: usize,
         interval: u64,
@@ -99,7 +97,7 @@ where
             timer_name,
             output_send,
             output_drop,
-            callback: None,
+            wrapper: None,
         }
     }
 
@@ -109,7 +107,6 @@ where
         self.buffer.len()
     }
 
-    /// Resets the throttler.
     pub fn reset(&mut self) {
         self.buffer.clear();
         self.warm = false;
@@ -118,16 +115,16 @@ where
         self.is_limiting = false;
     }
 
-    /// Returns the utilization of the throttler.
-    // #[must_use]
     pub fn used(&self) -> f64 {
         if !self.warm && self.sent_count < 2 {
             return 0.0;
         }
 
-        let mut diff =
-            self.clock.timestamp_ns().as_i64() - self.timestamps.back().unwrap().as_i64();
-        diff = max(0, self.interval as i64 - diff);
+        let diff = max(
+            0,
+            self.interval as i64
+                - (self.clock.timestamp_ns().as_i64() - self.timestamps.back().unwrap().as_i64()),
+        );
         let mut used = diff as f64 / self.interval as f64;
 
         if !self.warm {
@@ -137,32 +134,21 @@ where
         used
     }
 
-    /// Sends a message.
     pub fn send(&mut self, msg: T) {
         self.recv_count += 1;
 
-        if self.is_limiting {
+        if self.is_limiting || self.delta_next() > 0 {
             self.limit_msg(msg);
-            return;
-        }
-
-        let delta_next = self.delta_next();
-        if delta_next <= 0 {
-            self.send_msg(msg);
         } else {
-            self.limit_msg(msg);
+            self.send_msg(msg);
         }
     }
 
-    /// Returns the time until the next message can be sent.
-    // #[must_use]
     pub fn delta_next(&mut self) -> i64 {
-        if !self.warm {
-            if self.sent_count < self.limit {
-                return 0;
-            }
-            self.warm = true;
+        if !self.warm && self.sent_count < self.limit {
+            return 0;
         }
+        self.warm = true;
 
         let diff = self.clock.timestamp_ns().as_u64()
             - self
@@ -170,11 +156,9 @@ where
                 .back()
                 .unwrap_or_else(|| panic!("Failed to get timestamp"))
                 .as_u64();
-
         self.interval as i64 - diff as i64
     }
 
-    /// Limits the message rate.
     fn limit_msg(&mut self, msg: T) {
         if self.output_drop.is_none() {
             self.buffer.push_front(msg);
@@ -200,28 +184,13 @@ where
 
         let delta_next = self.delta_next();
 
-        // let callback = SafeTimeEventCallback {
-        //     callback: Box::new(move |event| self.callback.call(self, event)),
-        // };
-        // let handler = EventHandler {
-        //     callback: callback,
-        // };
-
-        // call the callback in this
-        // Some(Box::new(move |event| {
-        //     if let Some(callback) = &self.callback {
-        //         callback.call(self, event);
-        //     }
-        // })),
-
         self.clock.set_time_alert_ns(
             &self.timer_name,
             self.clock.timestamp_ns() + delta_next as u64,
-            None,
+            Some(TimeEventCallback::Rust(self.wrapper.clone().expect("T"))),
         );
     }
 
-    /// Processes the messages in the buffer.
     fn process(&mut self, _event: TimeEvent) {
         while let Some(msg) = self.buffer.pop_back() {
             self.send_msg(msg);
@@ -234,28 +203,26 @@ where
         }
 
         self.is_limiting = false;
-        self.callback = None;
+        self.wrapper = None;
     }
 
     fn resume(&mut self, _event: TimeEvent) {
         self.is_limiting = false;
     }
 
-    /// Sends a message.
     fn send_msg(&mut self, msg: T) {
         self.timestamps.push_front(self.clock.timestamp_ns());
         (self.output_send)(msg);
         self.sent_count += 1;
     }
 
-    fn set_callback<C>(&mut self, f: C)
+    fn set_callback<C>(&mut self, _f: C)
     where
-        C: Fn(&mut Throttler<T, F>, TimeEvent) + 'static + Send + Sync,
+        C: Fn(&mut Throttler<T, F>, TimeEvent) + 'static,
     {
-        self.callback = Some(ThrottlerCallback::new(f));
+        // self.wrapper = Some(Rc::new(ThrottlerWrapper::new(self, f)))
     }
 }
-
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
