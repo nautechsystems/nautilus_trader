@@ -3,13 +3,15 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Implemented flush with truncate Postgres function for `PostgresCacheDatabase` (#1928), thanks @filipmacek
 
 ### Breaking Changes
 None
 
 ### Fixes
 - Fixed composite bar requests (#1923), thanks @faysou
+- Fixed average price calculation for `ValueBarAggregator` (#1927), thanks @faysou
+- Fixed breaking protobuf issue by pinning `protobuf` and `grpcio` for dYdX (#1929), thanks @davidsblom
 
 ---
 
