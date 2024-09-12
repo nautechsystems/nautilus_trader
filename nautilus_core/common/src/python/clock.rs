@@ -13,17 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::{collections::HashMap, ops::Deref};
+
+use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
+use pyo3::{
+    prelude::*,
+    types::{PyString, PyTuple},
+};
+use ustr::Ustr;
+
+use super::timer::TimeEventHandler_Py;
 use crate::{
     clock::{Clock, LiveClock, TestClock},
     timer::{LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandlerV2},
 };
-use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
-use pyo3::prelude::*;
-use pyo3::types::{PyString, PyTuple};
-use std::{collections::HashMap, ops::Deref};
-use ustr::Ustr;
-
-use super::timer::TimeEventHandler_Py;
 
 /// PyO3 compatible interface for an underlying [`TestClock`].
 ///

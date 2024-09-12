@@ -43,8 +43,8 @@ use ustr::Ustr;
 
 use crate::sql::{
     pg::{
-        connect_pg, delete_nautilus_postgres_tables, get_postgres_connect_options,
-        PostgresConnectOptions, PostgresConnectOptionsBuilder,
+        connect_pg, get_postgres_connect_options, PostgresConnectOptions,
+        PostgresConnectOptionsBuilder,
     },
     queries::DatabaseQueries,
 };
@@ -284,13 +284,13 @@ pub async fn reset_pg_database(pg_options: Option<PostgresConnectOptions>) -> an
             .username(String::from("postgres"))
             .build()?,
     );
-    let pg_pool = connect_pg(pg_connect_options.into()).await.unwrap();
-    delete_nautilus_postgres_tables(&pg_pool).await.unwrap();
+    let pg_pool = connect_pg(pg_connect_options.into()).await?;
+    DatabaseQueries::truncate(&pg_pool).await?;
     Ok(())
 }
 
 pub async fn get_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
-    reset_pg_database(None).await.unwrap();
+    reset_pg_database(None).await?;
     // run tests as nautilus user
     let connect_options = PostgresConnectOptionsBuilder::default()
         .username(String::from("nautilus"))
@@ -302,19 +302,34 @@ pub async fn get_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
         Some(connect_options.password),
         Some(connect_options.database),
     )
-    .await
-    .unwrap())
+    .await?)
 }
 
 #[allow(dead_code)]
 #[allow(unused)]
 impl CacheDatabaseAdapter for PostgresCacheDatabase {
-    fn close(&mut self) {
-        todo!()
+    fn close(&mut self) -> anyhow::Result<()> {
+        let pool = self.pool.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = pool.close().await;
+            if let Err(e) = tx.send(()) {
+                log::error!("Failed to send close result: {:?}", e);
+            }
+        });
+        Ok(rx.recv()?)
     }
 
-    fn flush(&mut self) {
-        todo!()
+    fn flush(&mut self) -> anyhow::Result<()> {
+        let pool = self.pool.clone();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::truncate(&pool).await;
+            if let Err(e) = tx.send(()) {
+                log::error!("Failed to send flush result: {:?}", e);
+            }
+        });
+        Ok(rx.recv()?)
     }
 
     fn load(&mut self) -> anyhow::Result<HashMap<String, Bytes>> {
@@ -507,8 +522,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
                 }
             }
         });
-        let res = rx.recv().unwrap();
-        Ok(res)
+        Ok(rx.recv()?)
     }
 
     fn load_instrument(

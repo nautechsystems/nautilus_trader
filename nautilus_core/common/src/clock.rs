@@ -449,13 +449,12 @@ impl Clock for LiveClock {
 
 #[cfg(test)]
 mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
     use rstest::{fixture, rstest};
 
-    use crate::timer::RustTimeEventCallback;
-
     use super::*;
-    use std::cell::RefCell;
-    use std::rc::Rc;
+    use crate::timer::RustTimeEventCallback;
 
     #[derive(Default)]
     struct TestCallback {
