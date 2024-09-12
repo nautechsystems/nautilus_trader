@@ -28,12 +28,11 @@ use pyo3::{
     types::{PyList, PyString},
 };
 
+use super::timer::TimeEventHandler;
 use crate::{
     clock::{Clock, LiveClock, TestClock},
     timer::{TimeEvent, TimeEventCallback},
 };
-
-use super::timer::TimeEventHandler;
 
 /// C compatible Foreign Function Interface (FFI) for an underlying [`TestClock`].
 ///

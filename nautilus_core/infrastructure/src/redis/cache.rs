@@ -664,12 +664,14 @@ pub struct RedisCacheDatabaseAdapter {
 #[allow(dead_code)] // Under development
 #[allow(unused)] // Under development
 impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
-    fn close(&mut self) {
-        self.database.close()
+    fn close(&mut self) -> anyhow::Result<()> {
+        self.database.close();
+        Ok(())
     }
 
-    fn flush(&mut self) {
-        self.database.flushdb()
+    fn flush(&mut self) -> anyhow::Result<()> {
+        self.database.flushdb();
+        Ok(())
     }
 
     fn load(&mut self) -> anyhow::Result<HashMap<String, Bytes>> {

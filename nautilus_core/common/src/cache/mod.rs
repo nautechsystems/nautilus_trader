@@ -1014,14 +1014,14 @@ impl Cache {
     /// Dispose of the cache which will close any underlying database adapter.
     pub fn dispose(&mut self) {
         if let Some(database) = &mut self.database {
-            database.close();
+            database.close().expect("Failed to close database");
         }
     }
 
     /// Flushes the caches database which permanently removes all persisted data.
     pub fn flush_db(&mut self) {
         if let Some(database) = &mut self.database {
-            database.flush();
+            database.flush().expect("Failed to flush database");
         }
     }
 
