@@ -15,29 +15,21 @@
 # -------------------------------------------------------------------------------------------------
 
 
-from decimal import Decimal
 from datetime import datetime
 
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
-from nautilus_trader.adapters.binance.config import (
-    BinanceDataClientConfig,
-    BinanceExecClientConfig,
-)
-from nautilus_trader.adapters.binance.factories import (
-    BinanceLiveDataClientFactory,
-    BinanceLiveExecClientFactory,
-)
+from nautilus_trader.adapters.binance.config import BinanceDataClientConfig
+from nautilus_trader.adapters.binance.config import BinanceExecClientConfig
+from nautilus_trader.adapters.binance.factories import BinanceLiveDataClientFactory
+from nautilus_trader.adapters.binance.factories import BinanceLiveExecClientFactory
 from nautilus_trader.cache.config import CacheConfig
-from nautilus_trader.config import (
-    ImportableControllerConfig,
-    InstrumentProviderConfig,
-    LiveExecEngineConfig,
-    LoggingConfig,
-    TradingNodeConfig,
-)
+from nautilus_trader.config import ImportableControllerConfig
+from nautilus_trader.config import InstrumentProviderConfig
+from nautilus_trader.config import LiveExecEngineConfig
+from nautilus_trader.config import LoggingConfig
+from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
-from nautilus_trader.model.data import BarType
-from nautilus_trader.model.identifiers import InstrumentId, TraderId
+from nautilus_trader.model.identifiers import TraderId
 
 
 # *** THIS IS A TEST STRATEGY WITH NO ALPHA ADVANTAGE WHATSOEVER. ***
@@ -69,9 +61,9 @@ config_node = TradingNodeConfig(
     #     external_streams=["bybit"],
     #     autotrim_mins=30,
     # ),
-    controller = ImportableControllerConfig(
-        controller_path="nautilus_trader.examples.strategies.simple_insturment_selector_controller:BinanceFutureInstrumentSelectorController",
-        config_path="nautilus_trader.examples.strategies.simple_insturment_selector_controller:BinanceFutureInstrumentSelectorControllerConfig",
+    controller=ImportableControllerConfig(
+        controller_path="nautilus_trader.examples.strategies.simple_instrument_selector_controller:BinanceFutureInstrumentSelectorController",
+        config_path="nautilus_trader.examples.strategies.simple_instrument_selector_controller:BinanceFutureInstrumentSelectorControllerConfig",
         config={
             "interval_secs": 3600,
             "min_notional_threshold": 6,
