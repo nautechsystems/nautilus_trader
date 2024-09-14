@@ -12,6 +12,7 @@ None
 - Fixed composite bar requests (#1923), thanks @faysou
 - Fixed average price calculation for `ValueBarAggregator` (#1927), thanks @faysou
 - Fixed breaking protobuf issue by pinning `protobuf` and `grpcio` for dYdX (#1929), thanks @davidsblom
+- Fixed edge case where exceptions raised in `BacktestNode` prior to engine init would not produce logs, thanks for reporting @faysou
 
 ---
 
