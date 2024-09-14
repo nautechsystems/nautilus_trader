@@ -25,6 +25,8 @@ from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.component import LogGuard
+from nautilus_trader.common.component import init_logging
+from nautilus_trader.common.component import is_logging_initialized
 from nautilus_trader.common.config import ActorFactory
 from nautilus_trader.common.config import InvalidConfiguration
 from nautilus_trader.core import nautilus_pyo3
@@ -159,6 +161,9 @@ class BacktestNode:
                 )
                 results.append(result)
             except Exception as e:
+                if not is_logging_initialized:
+                    init_logging()
+
                 # Broad catch all prevents a single backtest run from halting
                 # the execution of the other backtests (such as a zero balance exception).
                 Logger(type(self).__name__).error(f"Error running backtest: {e}")
