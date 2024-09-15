@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Implemented flush with truncate Postgres function for `PostgresCacheDatabase` (#1928), thanks @filipmacek
+- Use dynamic IB gateway `container_image` from config (#1940), thanks @rsmb7z
 
 ### Breaking Changes
 None
@@ -13,6 +14,7 @@ None
 - Fixed average price calculation for `ValueBarAggregator` (#1927), thanks @faysou
 - Fixed breaking protobuf issue by pinning `protobuf` and `grpcio` for dYdX (#1929), thanks @davidsblom
 - Fixed edge case where exceptions raised in `BacktestNode` prior to engine init would not produce logs, thanks for reporting @faysou
+- Fixed handling of internal server error for dYdX (#1938), thanks @davidsblom
 
 ---
 
