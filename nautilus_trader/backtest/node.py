@@ -161,13 +161,13 @@ class BacktestNode:
                 )
                 results.append(result)
             except Exception as e:
-                if not is_logging_initialized():
-                    init_logging()
-
                 # Broad catch all prevents a single backtest run from halting
                 # the execution of the other backtests (such as a zero balance exception).
-                Logger(type(self).__name__).error(f"Error running backtest: {e}")
-                Logger(type(self).__name__).info(f"Config: {config}")
+                if not is_logging_initialized():
+                    init_logging()
+                log = Logger(type(self).__name__)
+                log.error(f"Error running backtest: {e}")
+                log.info(f"Config: {config}")
 
         return results
 
