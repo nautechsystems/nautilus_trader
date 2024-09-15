@@ -22,6 +22,7 @@ from grpc.aio._call import AioRpcError
 
 from nautilus_trader.adapters.dydx.common.constants import DYDX_RETRY_ERRORS_GRPC
 from nautilus_trader.adapters.dydx.grpc.errors import DYDXGRPCError
+from nautilus_trader.core.nautilus_pyo3 import HttpTimeoutError
 
 
 class DYDXError(Exception):
@@ -61,6 +62,9 @@ def should_retry(error: BaseException) -> bool:
         return True
 
     if isinstance(error, DYDXError):
+        return True
+
+    if isinstance(error, HttpTimeoutError):
         return True
 
     return False
