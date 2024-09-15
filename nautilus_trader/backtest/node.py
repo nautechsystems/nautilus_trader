@@ -161,7 +161,7 @@ class BacktestNode:
                 )
                 results.append(result)
             except Exception as e:
-                if not is_logging_initialized:
+                if not is_logging_initialized():
                     init_logging()
 
                 # Broad catch all prevents a single backtest run from halting
