@@ -146,6 +146,8 @@ class DYDXDataClient(LiveMarketDataClient):
         self._resubscribe_orderbook_task: asyncio.Task | None = None
         self._last_quotes: dict[InstrumentId, QuoteTick] = {}
         self._orderbook_subscriptions: set[str] = set()
+        self._resubscribe_orderbook_lock = asyncio.Lock()
+        self._message_id: int | None = None
 
         # Hot caches
         self._bars: dict[BarType, Bar] = {}
@@ -156,7 +158,9 @@ class DYDXDataClient(LiveMarketDataClient):
 
         self._send_all_instruments_to_data_engine()
         self._update_instruments_task = self.create_task(self._update_instruments())
-        self._resubscribe_orderbook_task = self.create_task(self._resubscribe_orderbook())
+        self._resubscribe_orderbook_task = self.create_task(
+            self._resubscribe_orderbooks_on_interval(),
+        )
 
         self._log.info("Initializing websocket connection")
         await self._ws_client.connect()
@@ -190,7 +194,7 @@ class DYDXDataClient(LiveMarketDataClient):
         except asyncio.CancelledError:
             self._log.debug("Canceled `update_instruments` task")
 
-    async def _resubscribe_orderbook(self) -> None:
+    async def _resubscribe_orderbooks_on_interval(self) -> None:
         """
         Resubscribe to the orderbook on a fixed interval `update_orderbook_interval` to
         ensure it does not become outdated.
@@ -201,12 +205,18 @@ class DYDXDataClient(LiveMarketDataClient):
                     f"Scheduled `resubscribe_order_book` to run in {self._update_orderbook_interval}s",
                 )
                 await asyncio.sleep(self._update_orderbook_interval)
-
-                for symbol in self._orderbook_subscriptions:
-                    await self._ws_client.unsubscribe_order_book(symbol)
-                    await self._ws_client.subscribe_order_book(symbol)
+                await self._resubscribe_orderbooks()
         except asyncio.CancelledError:
             self._log.debug("Canceled `resubscribe_orderbook` task")
+
+    async def _resubscribe_orderbooks(self) -> None:
+        """
+        Resubscribe to the orderbook.
+        """
+        async with self._resubscribe_orderbook_lock:
+            for symbol in self._orderbook_subscriptions:
+                await self._ws_client.unsubscribe_order_book(symbol)
+                await self._ws_client.subscribe_order_book(symbol)
 
     def _send_all_instruments_to_data_engine(self) -> None:
         for instrument in self._instrument_provider.get_all().values():
@@ -230,6 +240,13 @@ class DYDXDataClient(LiveMarketDataClient):
         try:
             ws_message = self._decoder_ws_msg_general.decode(raw)
 
+            if self._message_id is not None and ws_message.message_id != self._message_id + 1:
+                self._log.error(
+                    f"Inconsistent message IDs. {self._message_id=} {ws_message.message_id=}",
+                )
+
+            self._message_id = ws_message.message_id
+
             key = (ws_message.channel, ws_message.type)
 
             if key in callbacks:
@@ -246,7 +263,18 @@ class DYDXDataClient(LiveMarketDataClient):
             elif ws_message.type == "connected":
                 self._log.info("Websocket connected")
             elif ws_message.type == "error":
-                self._log.error(f"Websocket error: {ws_message.message}")
+                if (
+                    ws_message.message
+                    == "Internal error, could not fetch data for subscription: v4_orderbook"
+                ):
+                    # This error occurs when the websocket service fails to request the initial
+                    # orderbook snapshot.
+                    self._log.warning(
+                        f"Websocket error: {ws_message.message}. Resubscribe to order books",
+                    )
+                    self.create_task(self._resubscribe_orderbooks())
+                else:
+                    self._log.error(f"Websocket error: {ws_message.message}")
             else:
                 self._log.error(
                     f"Unknown message `{ws_message.channel}` `{ws_message.type}`: {raw.decode()}",
