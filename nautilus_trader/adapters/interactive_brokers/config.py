@@ -45,6 +45,8 @@ class DockerizedIBGatewayConfig(NautilusConfig, frozen=True):
         If True, no order execution is allowed. Set read_only_api=False to allow executing live orders.
     timeout: int, optional
         The timeout for trying to launch IBG docker container when start=True
+    container_image: str, optional
+        The reference to the container image used by the IB Gateway.
 
     """
 
@@ -53,13 +55,13 @@ class DockerizedIBGatewayConfig(NautilusConfig, frozen=True):
     trading_mode: Literal["paper", "live"] = "paper"
     read_only_api: bool = True
     timeout: int = 300
+    container_image: str = "ghcr.io/gnzsnz/ib-gateway:stable"
 
     def __repr__(self):
         masked_username = self._mask_sensitive_info(self.username)
-        masked_password = self._mask_sensitive_info(self.password)
         return (
             f"DockerizedIBGatewayConfig(username={masked_username}, "
-            f"password={masked_password}, trading_mode='{self.trading_mode}', "
+            f"password=********, trading_mode='{self.trading_mode}', "
             f"read_only_api={self.read_only_api}, timeout={self.timeout})"
         )
 
