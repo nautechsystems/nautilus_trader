@@ -55,10 +55,14 @@ class DYDXGetSubaccountEndpoint(DYDXHttpEndpoint):
         self.http_method = HttpMethod.GET
         self._get_resp_decoder = msgspec.json.Decoder(DYDXSubaccountResponse)
 
-    async def get(self, params: DYDXGetSubaccountGetParams) -> DYDXSubaccountResponse:
+    async def get(self, params: DYDXGetSubaccountGetParams) -> DYDXSubaccountResponse | None:
         """
         Call the endpoint to list the instruments.
         """
         url_path = f"/addresses/{params.address}/subaccountNumber/{params.subaccountNumber}"
         raw = await self._method(self.http_method, params=None, url_path=url_path)
-        return self._get_resp_decoder.decode(raw)
+
+        if raw is not None:
+            return self._get_resp_decoder.decode(raw)
+
+        return None

@@ -80,7 +80,7 @@ class DYDXAccountHttpAPI:
     async def get_adress_subaccounts(
         self,
         address: str,
-    ) -> DYDXAddressResponse:
+    ) -> DYDXAddressResponse | None:
         """
         Fetch the address subaccounts.
         """
@@ -90,7 +90,7 @@ class DYDXAccountHttpAPI:
         self,
         address: str,
         subaccount_number: int,
-    ) -> DYDXSubaccountResponse:
+    ) -> DYDXSubaccountResponse | None:
         """
         Fetch the subaccount.
         """
@@ -105,7 +105,7 @@ class DYDXAccountHttpAPI:
         self,
         address: str,
         subaccount_number: int,
-    ) -> DYDXAssetPositionsResponse:
+    ) -> DYDXAssetPositionsResponse | None:
         """
         Fetch the asset positions.
         """
@@ -123,7 +123,7 @@ class DYDXAccountHttpAPI:
         status: DYDXPerpetualPositionStatus | None = None,
         limit: int | None = None,
         created_before_or_at: datetime.datetime | None = None,
-    ) -> DYDXPerpetualPositionsResponse:
+    ) -> DYDXPerpetualPositionsResponse | None:
         """
         Fetch the perpetual positions.
         """
@@ -147,7 +147,7 @@ class DYDXAccountHttpAPI:
         order_type: DYDXOrderType | None = None,
         order_status: list[DYDXOrderStatus] | None = None,
         return_latest_orders: bool | None = None,
-    ) -> list[DYDXOrderResponse]:
+    ) -> list[DYDXOrderResponse] | None:
         """
         Fetch the orders.
         """
@@ -169,7 +169,7 @@ class DYDXAccountHttpAPI:
         address: str,
         subaccount_number: int,
         order_id: str,
-    ) -> DYDXOrderResponse:
+    ) -> DYDXOrderResponse | None:
         """
         Fetch a specific order.
         """
@@ -190,7 +190,7 @@ class DYDXAccountHttpAPI:
         limit: int | None = None,
         created_before_or_at: datetime.datetime | None = None,
         page: int | None = None,
-    ) -> DYDXFillsResponse:
+    ) -> DYDXFillsResponse | None:
         """
         Fetch the fills.
         """

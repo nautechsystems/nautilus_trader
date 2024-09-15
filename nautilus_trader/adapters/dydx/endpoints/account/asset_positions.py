@@ -55,9 +55,16 @@ class DYDXGetAssetPositionsEndpoint(DYDXHttpEndpoint):
         self.http_method = HttpMethod.GET
         self._get_resp_decoder = msgspec.json.Decoder(DYDXAssetPositionsResponse)
 
-    async def get(self, params: DYDXGetAssetPositionsGetParams) -> DYDXAssetPositionsResponse:
+    async def get(
+        self,
+        params: DYDXGetAssetPositionsGetParams,
+    ) -> DYDXAssetPositionsResponse | None:
         """
         Call the endpoint to list the instruments.
         """
         raw = await self._method(self.http_method, params)
-        return self._get_resp_decoder.decode(raw)
+
+        if raw is not None:
+            return self._get_resp_decoder.decode(raw)
+
+        return None
