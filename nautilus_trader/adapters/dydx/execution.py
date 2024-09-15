@@ -481,54 +481,54 @@ class DYDXExecutionClient(LiveExecutionClient):
         if instrument_id is not None:
             symbol = instrument_id.symbol.value.removesuffix("-PERP")
 
-            dydx_orders = await self._http_account.get_orders(
-                address=self._wallet_address,
-                subaccount_number=self._subaccount,
-                symbol=symbol,
-            )
+        dydx_orders = await self._http_account.get_orders(
+            address=self._wallet_address,
+            subaccount_number=self._subaccount,
+            symbol=symbol,
+        )
 
-            if dydx_orders is not None:
-                for dydx_order in dydx_orders:
-                    current_instrument_id = DYDXSymbol(dydx_order.ticker).to_instrument_id()
-                    instrument = self._cache.instrument(current_instrument_id)
+        if dydx_orders is not None:
+            for dydx_order in dydx_orders:
+                current_instrument_id = DYDXSymbol(dydx_order.ticker).to_instrument_id()
+                instrument = self._cache.instrument(current_instrument_id)
 
-                    if instrument is None:
-                        self._log.error(
-                            f"Cannot handle fill event: instrument {current_instrument_id} not found",
-                        )
-                        return []
-
-                    # We use the updatedAt property to filter the orders since the
-                    # createdAt property does not exist. createdAtBlockHeight is
-                    # available, but a mapping between block height and datetime is missing.
-                    if (
-                        start_dt is not None
-                        and dydx_order.updatedAt is not None
-                        and dydx_order.updatedAt < start_dt
-                    ):
-                        continue  # Filter start on the Nautilus side
-
-                    if (
-                        end_dt is not None
-                        and dydx_order.updatedAt is not None
-                        and dydx_order.updatedAt > end_dt
-                    ):
-                        continue  # Filter end on the Nautilus side
-
-                    report = dydx_order.parse_to_order_status_report(
-                        account_id=self.account_id,
-                        client_order_id=self._client_order_id_generator.get_client_order_id(
-                            int(dydx_order.clientId),
-                        ),
-                        price_precision=instrument.price_precision,
-                        size_precision=instrument.size_precision,
-                        report_id=UUID4(),
-                        enum_parser=self._enum_parser,
-                        ts_init=self._clock.timestamp_ns(),
+                if instrument is None:
+                    self._log.error(
+                        f"Cannot handle fill event: instrument {current_instrument_id} not found",
                     )
-                    reports.append(report)
-            else:
-                self._log.error("Failed to generate OrderStatusReports")
+                    return []
+
+                # We use the updatedAt property to filter the orders since the
+                # createdAt property does not exist. createdAtBlockHeight is
+                # available, but a mapping between block height and datetime is missing.
+                if (
+                    start_dt is not None
+                    and dydx_order.updatedAt is not None
+                    and dydx_order.updatedAt < start_dt
+                ):
+                    continue  # Filter start on the Nautilus side
+
+                if (
+                    end_dt is not None
+                    and dydx_order.updatedAt is not None
+                    and dydx_order.updatedAt > end_dt
+                ):
+                    continue  # Filter end on the Nautilus side
+
+                report = dydx_order.parse_to_order_status_report(
+                    account_id=self.account_id,
+                    client_order_id=self._client_order_id_generator.get_client_order_id(
+                        int(dydx_order.clientId),
+                    ),
+                    price_precision=instrument.price_precision,
+                    size_precision=instrument.size_precision,
+                    report_id=UUID4(),
+                    enum_parser=self._enum_parser,
+                    ts_init=self._clock.timestamp_ns(),
+                )
+                reports.append(report)
+        else:
+            self._log.error("Failed to generate OrderStatusReports")
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
