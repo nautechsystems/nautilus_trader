@@ -3,8 +3,9 @@
 Released on TBD (UTC).
 
 ### Enhancements
-- Implemented flush with truncate Postgres function for `PostgresCacheDatabase` (#1928), thanks @filipmacek
+- Use `RetryManager` for dYdX HTTP requests (#1941), thanks @davidsblom
 - Use dynamic IB gateway `container_image` from config (#1940), thanks @rsmb7z
+- Implemented flush with truncate Postgres function for `PostgresCacheDatabase` (#1928), thanks @filipmacek
 
 ### Breaking Changes
 None
