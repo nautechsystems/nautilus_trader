@@ -337,37 +337,39 @@ class DYDXExecutionClient(LiveExecutionClient):
                 return_latest_orders=True,
             )
 
-            for dydx_order in dydx_orders:
-                current_client_order_id = self._client_order_id_generator.get_client_order_id(
-                    int(dydx_order.clientId),
-                )
-
-                if current_client_order_id == client_order_id:
-                    result = dydx_order.parse_to_order_status_report(
-                        account_id=self.account_id,
-                        client_order_id=current_client_order_id,
-                        price_precision=instrument.price_precision,
-                        size_precision=instrument.size_precision,
-                        report_id=UUID4(),
-                        enum_parser=self._enum_parser,
-                        ts_init=self._clock.timestamp_ns(),
+            if dydx_orders is not None:
+                for dydx_order in dydx_orders:
+                    current_client_order_id = self._client_order_id_generator.get_client_order_id(
+                        int(dydx_order.clientId),
                     )
+
+                    if current_client_order_id == client_order_id:
+                        result = dydx_order.parse_to_order_status_report(
+                            account_id=self.account_id,
+                            client_order_id=current_client_order_id,
+                            price_precision=instrument.price_precision,
+                            size_precision=instrument.size_precision,
+                            report_id=UUID4(),
+                            enum_parser=self._enum_parser,
+                            ts_init=self._clock.timestamp_ns(),
+                        )
         else:
-            dydx_order = await self._http_account.get_order(
+            dydx_order_response = await self._http_account.get_order(
                 address=self._wallet_address,
                 subaccount_number=self._subaccount,
                 order_id=venue_order_id.value,
             )
 
-            result = dydx_order.parse_to_order_status_report(
-                account_id=self.account_id,
-                client_order_id=client_order_id,
-                price_precision=instrument.price_precision,
-                size_precision=instrument.size_precision,
-                report_id=UUID4(),
-                enum_parser=self._enum_parser,
-                ts_init=self._clock.timestamp_ns(),
-            )
+            if dydx_order_response is not None:
+                result = dydx_order_response.parse_to_order_status_report(
+                    account_id=self.account_id,
+                    client_order_id=client_order_id,
+                    price_precision=instrument.price_precision,
+                    size_precision=instrument.size_precision,
+                    report_id=UUID4(),
+                    enum_parser=self._enum_parser,
+                    ts_init=self._clock.timestamp_ns(),
+                )
 
         return result
 
@@ -479,13 +481,13 @@ class DYDXExecutionClient(LiveExecutionClient):
         if instrument_id is not None:
             symbol = instrument_id.symbol.value.removesuffix("-PERP")
 
-        try:
-            dydx_orders = await self._http_account.get_orders(
-                address=self._wallet_address,
-                subaccount_number=self._subaccount,
-                symbol=symbol,
-            )
+        dydx_orders = await self._http_account.get_orders(
+            address=self._wallet_address,
+            subaccount_number=self._subaccount,
+            symbol=symbol,
+        )
 
+        if dydx_orders is not None:
             for dydx_order in dydx_orders:
                 current_instrument_id = DYDXSymbol(dydx_order.ticker).to_instrument_id()
                 instrument = self._cache.instrument(current_instrument_id)
@@ -525,8 +527,8 @@ class DYDXExecutionClient(LiveExecutionClient):
                     ts_init=self._clock.timestamp_ns(),
                 )
                 reports.append(report)
-        except DYDXError as e:
-            self._log.error(f"Failed to generate OrderStatusReports: {e}")
+        else:
+            self._log.error("Failed to generate OrderStatusReports")
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
@@ -554,14 +556,14 @@ class DYDXExecutionClient(LiveExecutionClient):
         if instrument_id is not None:
             symbol = instrument_id.symbol.value.removesuffix("-PERP")
 
-        try:
-            dydx_fills = await self._http_account.get_fills(
-                address=self._wallet_address,
-                subaccount_number=self._subaccount,
-                symbol=symbol,
-                created_before_or_at=end_dt,
-            )
+        dydx_fills = await self._http_account.get_fills(
+            address=self._wallet_address,
+            subaccount_number=self._subaccount,
+            symbol=symbol,
+            created_before_or_at=end_dt,
+        )
 
+        if dydx_fills is not None:
             for dydx_fill in dydx_fills.fills:
                 client_order_id = None
 
@@ -598,9 +600,8 @@ class DYDXExecutionClient(LiveExecutionClient):
                     ts_init=self._clock.timestamp_ns(),
                 )
                 reports.append(report)
-
-        except DYDXError as e:
-            self._log.error(f"Failed to generate FillReports: {e}")
+        else:
+            self._log.error("Failed to generate FillReports")
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
@@ -619,13 +620,13 @@ class DYDXExecutionClient(LiveExecutionClient):
         self._log.info("Requesting PositionStatusReports...")
         reports: list[PositionStatusReport] = []
 
-        try:
-            dydx_positions = await self._http_account.get_perpetual_positions(
-                address=self._wallet_address,
-                subaccount_number=self._subaccount,
-                status=DYDXPerpetualPositionStatus.OPEN,
-            )
+        dydx_positions = await self._http_account.get_perpetual_positions(
+            address=self._wallet_address,
+            subaccount_number=self._subaccount,
+            status=DYDXPerpetualPositionStatus.OPEN,
+        )
 
+        if dydx_positions is not None:
             if instrument_id:
                 for dydx_position in dydx_positions.positions:
                     current_instrument_id = DYDXSymbol(dydx_position.market).to_instrument_id()
@@ -680,9 +681,8 @@ class DYDXExecutionClient(LiveExecutionClient):
                         ts_init=self._clock.timestamp_ns(),
                     )
                     reports.append(report)
-
-        except DYDXError as e:
-            self._log.error(f"Failed to generate PositionStatusReports: {e}")
+        else:
+            self._log.error("Failed to generate PositionStatusReports")
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"

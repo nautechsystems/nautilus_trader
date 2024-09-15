@@ -58,7 +58,7 @@ class DYDXMarketHttpAPI:
         self,
         symbol: str | None = None,
         limit: int | None = None,
-    ) -> DYDXListPerpetualMarketsResponse:
+    ) -> DYDXListPerpetualMarketsResponse | None:
         """
         Fetch all the instruments for the dYdX venue.
         """
@@ -73,7 +73,7 @@ class DYDXMarketHttpAPI:
         limit: int | None = None,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-    ) -> DYDXCandlesResponse:
+    ) -> DYDXCandlesResponse | None:
         """
         Fetch the bars from the dYdX venue.
         """
