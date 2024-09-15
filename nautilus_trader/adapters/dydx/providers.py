@@ -138,6 +138,11 @@ class DYDXInstrumentProvider(InstrumentProvider):
         fee_tier: fee_tier_query.QueryUserFeeTierResponse | None = None,
     ) -> None:
         markets = await self._http_market.fetch_instruments(symbol=symbol)
+
+        if markets is None:
+            self._log.error("Failed to fetch the instruments")
+            return
+
         maker_fee = Decimal("0")
         taker_fee = Decimal("0")
 

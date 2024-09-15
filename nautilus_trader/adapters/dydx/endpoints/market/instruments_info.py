@@ -186,10 +186,17 @@ class DYDXListPerpetualMarketsEndpoint(DYDXHttpEndpoint):
             DYDXListPerpetualMarketsResponse,
         )
 
-    async def get(self, params: ListPerpetualMarketsGetParams) -> DYDXListPerpetualMarketsResponse:
+    async def get(
+        self,
+        params: ListPerpetualMarketsGetParams,
+    ) -> DYDXListPerpetualMarketsResponse | None:
         """
         Call the endpoint to list the instruments.
         """
         method_type = HttpMethod.GET
         raw = await self._method(method_type, params)
-        return self._response_decoder_list_perpetual_markets.decode(raw)
+
+        if raw is not None:
+            return self._response_decoder_list_perpetual_markets.decode(raw)
+
+        return None

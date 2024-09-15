@@ -69,9 +69,13 @@ class DYDXGetPerpetualPositionsEndpoint(DYDXHttpEndpoint):
     async def get(
         self,
         params: DYDXGetPerpetualPositionsGetParams,
-    ) -> DYDXPerpetualPositionsResponse:
+    ) -> DYDXPerpetualPositionsResponse | None:
         """
         Call the endpoint to list the instruments.
         """
         raw = await self._method(self.http_method, params)
-        return self._get_resp_decoder.decode(raw)
+
+        if raw is not None:
+            return self._get_resp_decoder.decode(raw)
+
+        return None

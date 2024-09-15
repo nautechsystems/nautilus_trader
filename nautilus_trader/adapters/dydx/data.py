@@ -254,7 +254,7 @@ class DYDXDataClient(LiveMarketDataClient):
                 return
 
             if ws_message.type == "unsubscribed":
-                self._log.info(
+                self._log.debug(
                     f"Unsubscribed from channel {ws_message.channel} for {ws_message.id}",
                 )
 
@@ -637,17 +637,18 @@ class DYDXDataClient(LiveMarketDataClient):
             end=end,
         )
 
-        ts_init = self._clock.timestamp_ns()
+        if candles is not None:
+            ts_init = self._clock.timestamp_ns()
 
-        bars = [
-            candle.parse_to_bar(
-                bar_type=bar_type,
-                price_precision=instrument.price_precision,
-                size_precision=instrument.size_precision,
-                ts_init=ts_init,
-            )
-            for candle in candles.candles
-        ]
+            bars = [
+                candle.parse_to_bar(
+                    bar_type=bar_type,
+                    price_precision=instrument.price_precision,
+                    size_precision=instrument.size_precision,
+                    ts_init=ts_init,
+                )
+                for candle in candles.candles
+            ]
 
-        partial: Bar = bars.pop()
-        self._handle_bars(bar_type, bars, partial, correlation_id)
+            partial: Bar = bars.pop()
+            self._handle_bars(bar_type, bars, partial, correlation_id)
