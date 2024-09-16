@@ -40,6 +40,7 @@ class DYDXHttpEndpoint:
         client: DYDXHttpClient,
         endpoint_type: DYDXEndpointType,
         url_path: str | None = None,
+        name: str | None = None,
     ) -> None:
         """
         Construct the base class for dYdX endpoints.
@@ -47,6 +48,7 @@ class DYDXHttpEndpoint:
         self.client = client
         self.endpoint_type = endpoint_type
         self.url_path = url_path
+        self.name = name
 
         self.decoder = msgspec.json.Decoder()
         self.encoder = msgspec.json.Encoder()
@@ -74,10 +76,11 @@ class DYDXHttpEndpoint:
         payload: dict = self.decoder.decode(self.encoder.encode(params))
         method_call = self._method_request[self.endpoint_type]
         url_path = url_path or self.url_path
+        retry_name = self.name or "http_call"
 
         async with self._retry_manager_pool as retry_manager:
             result: bytes | None = await retry_manager.run(
-                name="http_call",
+                name=retry_name,
                 details=[url_path, str(params)],
                 func=method_call,
                 http_method=method_type,

@@ -63,6 +63,7 @@ class DYDXCandlesEndpoint(DYDXHttpEndpoint):
             client=client,
             url_path=url_path,
             endpoint_type=DYDXEndpointType.NONE,
+            name="DYDXCandlesEndpoint",
         )
         self.method_type = HttpMethod.GET
         self._decoder = msgspec.json.Decoder(DYDXCandlesResponse)
