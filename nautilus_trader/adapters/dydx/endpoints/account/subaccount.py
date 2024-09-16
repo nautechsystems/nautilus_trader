@@ -51,6 +51,7 @@ class DYDXGetSubaccountEndpoint(DYDXHttpEndpoint):
             client=client,
             endpoint_type=DYDXEndpointType.ACCOUNT,
             url_path=url_path,
+            name="DYDXGetSubaccountEndpoint",
         )
         self.http_method = HttpMethod.GET
         self._get_resp_decoder = msgspec.json.Decoder(DYDXSubaccountResponse)

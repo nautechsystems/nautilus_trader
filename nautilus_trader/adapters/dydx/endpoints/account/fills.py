@@ -60,6 +60,7 @@ class DYDXGetFillsEndpoint(DYDXHttpEndpoint):
             client=client,
             endpoint_type=DYDXEndpointType.ACCOUNT,
             url_path=url_path,
+            name="DYDXGetFillsEndpoint",
         )
         self.http_method = HttpMethod.GET
         self._get_resp_decoder = msgspec.json.Decoder(DYDXFillsResponse)

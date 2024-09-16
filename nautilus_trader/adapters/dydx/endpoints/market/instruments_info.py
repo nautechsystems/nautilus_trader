@@ -181,6 +181,7 @@ class DYDXListPerpetualMarketsEndpoint(DYDXHttpEndpoint):
             client=client,
             url_path=url_path,
             endpoint_type=DYDXEndpointType.NONE,
+            name="DYDXListPerpetualMarketsEndpoint",
         )
         self._response_decoder_list_perpetual_markets = msgspec.json.Decoder(
             DYDXListPerpetualMarketsResponse,

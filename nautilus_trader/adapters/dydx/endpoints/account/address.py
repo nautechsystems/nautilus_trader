@@ -48,6 +48,7 @@ class DYDXGetAddressEndpoint(DYDXHttpEndpoint):
         super().__init__(
             client=client,
             endpoint_type=DYDXEndpointType.ACCOUNT,
+            name="DYDXGetAddressEndpoint",
         )
         self.http_method = HttpMethod.GET
         self._get_resp_decoder = msgspec.json.Decoder(DYDXAddressResponse)
