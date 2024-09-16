@@ -81,8 +81,7 @@ def test_catalog_query_filtered(
     # No record flags so everything batched into one `OrderBookDeltas`
     # Batching only makes sense with correct flags
     deltas = catalog_betfair.order_book_deltas(batched=True)
-    assert len(deltas) == 0  # TODO: Fix this with deltas stub data including flags
-    # assert isinstance(deltas[0], OrderBookDeltas)
+    assert len(deltas) == 1
 
 
 def test_catalog_query_custom_filtered(

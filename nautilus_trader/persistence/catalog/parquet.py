@@ -490,8 +490,8 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         if data_cls == OrderBookDeltas:
             # Batch process deltas into `OrderBookDeltas`,
-            # any unbatched deltas remaining will produce a warning.
-            data, _ = OrderBookDeltas.batch(data)
+            # will warn when there are deltas after the final `F_LAST` flag.
+            data = OrderBookDeltas.batch(data)
 
         return data
 
