@@ -616,12 +616,11 @@ cdef class DataEngine(Component):
 
         self._handle_response(response)
 
-
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
     cpdef void _execute_command(self, DataCommand command):
         if self.debug:
-            self._log.debug(f"{RECV}{CMD} {command}")
+            self._log.debug(f"{RECV}{CMD} {command}", LogColor.MAGENTA)
         self.command_count += 1
 
         if command.client_id in self._external_clients:
