@@ -485,12 +485,51 @@ def test_deltas_batching() -> None:
     delta5 = TestDataStubs.order_book_delta(flags=RecordFlag.F_LAST)
 
     # Act
-    deltas = OrderBookDeltas.batch([delta1, delta2, delta3, delta4, delta5])
+    batches, remainder = OrderBookDeltas.batch(
+        [
+            delta1,
+            delta2,
+            delta3,
+            delta4,
+            delta5,
+        ],
+    )
 
     # Assert
-    assert len(deltas) == 2
-    assert isinstance(deltas[0], OrderBookDeltas)
-    assert isinstance(deltas[1], OrderBookDeltas)
+    assert len(batches) == 2
+    assert isinstance(batches[0], OrderBookDeltas)
+    assert isinstance(batches[1], OrderBookDeltas)
+    assert remainder == []
+
+
+def test_deltas_batching_with_remainder() -> None:
+    # Arrange
+    delta1 = TestDataStubs.order_book_delta(flags=0)
+    delta2 = TestDataStubs.order_book_delta(flags=RecordFlag.F_LAST)
+    delta3 = TestDataStubs.order_book_delta(flags=0)
+    delta4 = TestDataStubs.order_book_delta(flags=0)
+    delta5 = TestDataStubs.order_book_delta(flags=RecordFlag.F_LAST)
+    delta6 = TestDataStubs.order_book_delta(flags=0)
+    delta7 = TestDataStubs.order_book_delta(flags=0)
+
+    # Act
+    batches, remainder = OrderBookDeltas.batch(
+        [
+            delta1,
+            delta2,
+            delta3,
+            delta4,
+            delta5,
+            delta6,
+            delta7,
+        ],
+    )
+
+    # Assert
+    assert len(batches) == 2
+    assert isinstance(batches[0], OrderBookDeltas)
+    assert isinstance(batches[1], OrderBookDeltas)
+    assert remainder == [delta6, delta7]
 
 
 def test_deltas_to_dict_from_dict_round_trip() -> None:
