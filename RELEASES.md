@@ -3,8 +3,9 @@
 Released on TBD (UTC).
 
 ### Enhancements
-- Use `RetryManager` for dYdX HTTP requests (#1941), thanks @davidsblom
-- Use dynamic IB gateway `container_image` from config (#1940), thanks @rsmb7z
+- Improved dYdX execution client to use `RetryManager` for HTTP requests (#1941), thanks @davidsblom
+- Improved Interactive Brokers adapter to use a dynamic IB gateway `container_image` from config (#1940), thanks @rsmb7z
+- Improved `OrderBookDeltas` streaming and batching based on the `F_LAST` flag
 - Implemented flush with truncate Postgres function for `PostgresCacheDatabase` (#1928), thanks @filipmacek
 
 ### Breaking Changes

@@ -138,6 +138,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         self.min_rows_per_group = min_rows_per_group
         self.max_rows_per_group = max_rows_per_group
         self.show_query_paths = show_query_paths
+        self.remaining_deltas: list[OrderBookDelta] = []
 
         if self.fs_protocol == "file":
             final_path = str(make_path_posix(str(path)))
@@ -489,7 +490,12 @@ class ParquetDataCatalog(BaseDataCatalog):
             data.extend(capsule_to_list(chunk))
 
         if data_cls == OrderBookDeltas:
-            data = OrderBookDeltas.batch(data)
+            if self.remaining_deltas:
+                data = self.remaining_deltas + data
+                self.remaining_deltas = []
+            data, remaining = OrderBookDeltas.batch(data)
+            if remaining:
+                self.remaining_deltas = remaining
 
         return data
 
