@@ -485,7 +485,7 @@ def test_deltas_batching() -> None:
     delta5 = TestDataStubs.order_book_delta(flags=RecordFlag.F_LAST)
 
     # Act
-    batches, remainder = OrderBookDeltas.batch(
+    batches = OrderBookDeltas.batch(
         [
             delta1,
             delta2,
@@ -499,7 +499,6 @@ def test_deltas_batching() -> None:
     assert len(batches) == 2
     assert isinstance(batches[0], OrderBookDeltas)
     assert isinstance(batches[1], OrderBookDeltas)
-    assert remainder == []
 
 
 def test_deltas_batching_with_remainder() -> None:
@@ -513,7 +512,7 @@ def test_deltas_batching_with_remainder() -> None:
     delta7 = TestDataStubs.order_book_delta(flags=0)
 
     # Act
-    batches, remainder = OrderBookDeltas.batch(
+    batches = OrderBookDeltas.batch(
         [
             delta1,
             delta2,
@@ -526,10 +525,10 @@ def test_deltas_batching_with_remainder() -> None:
     )
 
     # Assert
-    assert len(batches) == 2
+    assert len(batches) == 3
     assert isinstance(batches[0], OrderBookDeltas)
     assert isinstance(batches[1], OrderBookDeltas)
-    assert remainder == [delta6, delta7]
+    assert isinstance(batches[2], OrderBookDeltas)
 
 
 def test_deltas_to_dict_from_dict_round_trip() -> None:

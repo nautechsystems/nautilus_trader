@@ -2668,25 +2668,36 @@ cdef class OrderBookDeltas(Data):
         return OrderBookDeltas.to_dict_c(obj)
 
     @staticmethod
-    def batch(list data: list[OrderBookDelta]) -> tuple[list[OrderBookDeltas], list[OrderBookDelta]]:
+    def batch(list data: list[OrderBookDelta]) -> list[OrderBookDeltas]:
         """
         Groups the given list of `OrderBookDelta` records into batches, creating `OrderBookDeltas`
         objects when an `F_LAST` flag is encountered.
 
         The method iterates through the `data` list and appends each `OrderBookDelta` to the current
         batch. When an `F_LAST` flag is found, it indicates the end of a batch. The batch is then
-        appended to the list of completed batches and a new batch is started. The remaining deltas
-        that do not form a completed batch (i.e., not ending with an `F_LAST` flag) are returned
-        separately.
+        appended to the list of completed batches and a new batch is started.
 
         Returns
         -------
-        tuple[list[OrderBookDeltas], list[OrderBookDelta]]
-            - A list of `OrderBookDeltas` objects, each representing a completed batch.
-            - A list of remaining `OrderBookDelta` objects that were not part of a completed batch,
-              which could occur if the input data doesn't end with an `F_LAST` flag.
+        list[OrderBookDeltas]
+
+        Raises
+        ------
+        ValueError
+            If `data` is empty.
+        TypeError
+            If `data` is not a list of `OrderBookDelta`.
+
+        Warnings
+        --------
+        UserWarning
+            If there are remaining deltas in the final batch after the last `F_LAST` flag.
 
         """
+        Condition.not_empty(data, "data")
+        cdef OrderBookDelta first = data[0]
+
+        cdef InstrumentId instrument_id = first.instrument_id
         cdef list[list[OrderBookDelta]] batches = []
         cdef list[OrderBookDelta] batch = []
 
@@ -2698,17 +2709,19 @@ cdef class OrderBookDeltas(Data):
                 batches.append(batch)
                 batch = []
 
-        # Check remaining unbatched data
+        cdef list[OrderBookDeltas] deltas = [OrderBookDeltas(instrument_id, deltas=batch) for batch in batches]
+
         if batch:
             warnings.warn(
-                f"Batched into {len(batches)} `OrderBookDeltas` with {len(batch)} unbatched deltas remaining. "
-                "Ensure deltas have been correctly processed with 'F_LAST' flags for batching. "
-                "This warning may also occur during normal backtest node streaming "
-                "if a chunk does not include a final delta with an F_LAST flag.",
+                f"Batched {len(batches):_} `OrderBookDeltas`, but found {len(batch):_} remaining deltas "
+                "without an 'F_LAST' flag. This can indicate incomplete data processing, as deltas "
+                "should typically end with an 'F_LAST' flag to signal the end of a batch. If using streaming, "
+                "this warning can occur if the last chunk did not include a final 'F_LAST' delta.",
                 UserWarning,
             )
+            deltas.append(OrderBookDeltas(instrument_id, deltas=batch))
 
-        return ([OrderBookDeltas(batch[0].instrument_id, deltas=batch) for batch in batches], batch)
+        return deltas
 
     cpdef to_capsule(self):
         cdef OrderBookDeltas_API *data = <OrderBookDeltas_API *>PyMem_Malloc(sizeof(OrderBookDeltas_API))
