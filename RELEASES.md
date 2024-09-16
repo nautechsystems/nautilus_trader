@@ -17,6 +17,7 @@ None
 - Fixed breaking protobuf issue by pinning `protobuf` and `grpcio` for dYdX (#1929), thanks @davidsblom
 - Fixed edge case where exceptions raised in `BacktestNode` prior to engine init would not produce logs, thanks for reporting @faysou
 - Fixed handling of internal server error for dYdX (#1938), thanks @davidsblom
+- Fixed `BybitWebSocketClient` private channel authentication on reconnect, thanks for reporting @miller-moore
 
 ---
 
