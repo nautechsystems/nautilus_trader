@@ -53,6 +53,7 @@ cdef class Clock:
         str name,
         datetime alert_time,
         callback: Callable[[TimeEvent], None]=*,
+        bint override=*,
     )
     cpdef void set_time_alert_ns(
         self,

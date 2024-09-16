@@ -18,6 +18,8 @@ from typing import Callable
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.risk.greeks import GreeksData
+
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Component
@@ -37,7 +39,6 @@ from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport DataType
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport InstrumentStatus
-from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.identifiers cimport ClientId
@@ -57,6 +58,7 @@ cdef class Actor(Component):
     cdef dict[InstrumentId, list[Indicator]] _indicators_for_quotes
     cdef dict[InstrumentId, list[Indicator]] _indicators_for_trades
     cdef dict[BarType, list[Indicator]] _indicators_for_bars
+    cdef dict[InstrumentId, list[GreeksData]] _future_greeks
     cdef set[type] _pyo3_conversion_types
 
     cdef readonly PortfolioFacade portfolio

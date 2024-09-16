@@ -24,6 +24,8 @@ def is_nautilus_class(cls: type) -> bool:
     """
     if cls.__module__.startswith("nautilus_trader.core.nautilus_pyo3.model"):
         return True
+    if cls.__module__.startswith("nautilus_trader.model.greeks"):
+        return False
     if cls.__module__.startswith("nautilus_trader.model"):
         return True
     if cls.__module__.startswith("nautilus_trader.common"):
