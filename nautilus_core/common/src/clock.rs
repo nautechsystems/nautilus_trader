@@ -49,7 +49,7 @@ pub trait Clock {
     /// Returns the current UNIX timestamp in milliseconds (ms).
     fn timestamp_ms(&self) -> u64;
 
-    /// Returns the current UNIX time in seconds.
+    /// Returns the current UNIX timestamp in seconds.
     fn timestamp(&self) -> f64;
 
     /// Returns the names of active timers in the clock.
@@ -112,11 +112,20 @@ impl TestClock {
         }
     }
 
+    /// Returns a reference to the internal timers for the clock.
     #[must_use]
     pub const fn get_timers(&self) -> &BTreeMap<Ustr, TestTimer> {
         &self.timers
     }
 
+    /// Advances the internal clock to the specified `to_time_ns` and optionally sets the clock to that time.
+    ///
+    /// This function ensures that the clock moves forward monotonically. If `set_time` is `true`,
+    /// the internal clock will be updated to the value of `to_time_ns`. Otherwise, the clock will advance
+    /// without explicitly setting the time.
+    ///
+    /// The method processes active timers, advancing them to `to_time_ns`, and collects any `TimeEvent`
+    /// objects that are triggered as a result. Only timers that are not expired are processed.
     pub fn advance_time(&mut self, to_time_ns: UnixNanos, set_time: bool) -> Vec<TimeEvent> {
         // Time should increase monotonically
         assert!(
@@ -139,7 +148,11 @@ impl TestClock {
         timers
     }
 
-    /// Assumes time events are sorted by their `ts_event`.
+    /// Matches `TimeEvent` objects with their corresponding event handlers.
+    ///
+    /// This function takes an `events` vector of `TimeEvent` objects, assumes they are already sorted
+    /// by their `ts_event`, and matches them with the appropriate callback handler from the internal
+    /// registry of callbacks. If no specific callback is found for an event, the default callback is used.
     #[must_use]
     pub fn match_handlers(&self, events: Vec<TimeEvent>) -> Vec<TimeEventHandlerV2> {
         events
