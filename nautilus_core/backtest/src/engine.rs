@@ -161,7 +161,7 @@ mod tests {
 
             let handler1 = TimeEventHandlerV2::new(time_event1.clone(), callback.clone());
             let handler2 = TimeEventHandlerV2::new(time_event2.clone(), callback.clone());
-            let handler3 = TimeEventHandlerV2::new(time_event3.clone(), callback.clone());
+            let handler3 = TimeEventHandlerV2::new(time_event3.clone(), callback);
 
             accumulator.event_handlers.push(handler1);
             accumulator.event_handlers.push(handler2);

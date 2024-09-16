@@ -42,7 +42,7 @@ impl From<TimeEventHandlerV2> for TimeEventHandler {
         Self {
             event: value.event,
             callback_ptr: match value.callback {
-                TimeEventCallback::Python(callback) => callback.as_ptr() as *mut c_char,
+                TimeEventCallback::Python(callback) => callback.as_ptr().cast::<c_char>(),
                 TimeEventCallback::Rust(_) => {
                     panic!("Legacy time event handler is not supported for Rust callback")
                 }

@@ -467,9 +467,9 @@ mod tests {
         }
     }
 
-    impl Into<TimeEventCallback> for TestCallback {
-        fn into(self) -> TimeEventCallback {
-            TimeEventCallback::Rust(Rc::new(self))
+    impl From<TestCallback> for TimeEventCallback {
+        fn from(val: TestCallback) -> Self {
+            TimeEventCallback::Rust(Rc::new(val))
         }
     }
 
