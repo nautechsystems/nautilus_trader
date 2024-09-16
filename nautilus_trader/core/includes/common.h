@@ -172,27 +172,27 @@ typedef enum LogColor {
  */
 typedef enum LogLevel {
     /**
-     * A level lower than all other log levels (off).
+     * The **OFF** log level. A level lower than all other log levels (off).
      */
     OFF = 0,
     /**
-     * The **TRACE** trace log level. Only available in Rust for debug/development builds.
+     * The **TRACE** log level. Only available in Rust for debug/development builds.
      */
     TRACE = 1,
     /**
-     * The **DEBUG** debug log level.
+     * The **DEBUG** log level.
      */
     DEBUG = 2,
     /**
-     * The **INFO** info log level.
+     * The **INFO** log level.
      */
     INFO = 3,
     /**
-     * The **WARNING** warning log level.
+     * The **WARNING** log level.
      */
     WARNING = 4,
     /**
-     * The **ERROR** error log level.
+     * The **ERROR** log level.
      */
     ERROR = 5,
 } LogLevel;
