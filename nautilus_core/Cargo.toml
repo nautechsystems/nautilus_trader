@@ -34,7 +34,7 @@ futures = "0.3.30"
 indexmap = { version = "2.5.0", features = ["serde"] }
 itertools = "0.12.1"
 itoa = "1.0.11"
-once_cell = "1.20.0"
+once_cell = "1.19.0"
 log = { version = "0.4.22", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
 pyo3 = { version = "0.21.2", features = ["rust_decimal"] }
 pyo3-asyncio-0-21 = { version = "0.21.0", features = ["tokio-runtime", "tokio", "attributes"] }
@@ -57,7 +57,7 @@ uuid = { version = "1.10.0", features = ["v4"] }
 criterion = "0.5.1"
 float-cmp = "0.9.0"
 iai = "0.1.1"
-pretty_assertions = "1.4.0"
+pretty_assertions = "1.4.1"
 rstest = "0.21.0"
 tempfile = "3.12.0"
 
