@@ -281,6 +281,7 @@ cdef class Clock:
         str name,
         datetime alert_time,
         callback: Callable[[TimeEvent], None] = None,
+        bint override = False,
     ):
         """
         Set a time alert for the given time.
@@ -297,6 +298,8 @@ cdef class Clock:
             The time for the alert.
         callback : Callable[[TimeEvent], None], optional
             The callback to receive time events.
+        override: bool
+            If override is set to True an alert with a given name can be overwritten if it exists already.
 
         Raises
         ------
@@ -315,6 +318,9 @@ cdef class Clock:
         time event will be generated (rather than being invalid and failing a condition check).
 
         """
+        if override and self.next_time_ns(name) > 0:
+            self.cancel_timer(name)
+
         self.set_time_alert_ns(
             name=name,
             alert_time_ns=dt_to_unix_nanos(alert_time),
