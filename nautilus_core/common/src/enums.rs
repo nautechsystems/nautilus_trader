@@ -157,27 +157,27 @@ pub enum ComponentTrigger {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common.enums")
 )]
 pub enum LogLevel {
-    /// A level lower than all other log levels (off).
+    /// The **OFF** log level. A level lower than all other log levels (off).
     #[strum(serialize = "OFF")]
     #[serde(rename = "OFF")]
     Off = 0,
-    /// The **TRACE** trace log level. Only available in Rust for debug/development builds.
+    /// The **TRACE** log level. Only available in Rust for debug/development builds.
     #[strum(serialize = "TRACE")]
     #[serde(rename = "TRACE")]
     Trace = 1,
-    /// The **DEBUG** debug log level.
+    /// The **DEBUG** log level.
     #[strum(serialize = "DEBUG")]
     #[serde(rename = "DEBUG")]
     Debug = 2,
-    /// The **INFO** info log level.
+    /// The **INFO** log level.
     #[strum(serialize = "INFO")]
     #[serde(rename = "INFO")]
     Info = 3,
-    /// The **WARNING** warning log level.
+    /// The **WARNING** log level.
     #[strum(serialize = "WARN", serialize = "WARNING")]
     #[serde(rename = "WARNING")]
     Warning = 4,
-    /// The **ERROR** error log level.
+    /// The **ERROR** log level.
     #[strum(serialize = "ERROR")]
     #[serde(rename = "ERROR")]
     Error = 5,
