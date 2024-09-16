@@ -9,7 +9,7 @@ Released on TBD (UTC).
 - Implemented flush with truncate Postgres function for `PostgresCacheDatabase` (#1928), thanks @filipmacek
 
 ### Breaking Changes
-None
+- Standardized SL and TP param ordering for `OrderFactory.bracket(...)` including, `tp_time_in_force`, `tp_exec_algorithm_params`, `tp_tags`, `tp_client_order_id`
 
 ### Fixes
 - Fixed composite bar requests (#1923), thanks @faysou
@@ -18,6 +18,7 @@ None
 - Fixed edge case where exceptions raised in `BacktestNode` prior to engine init would not produce logs, thanks for reporting @faysou
 - Fixed handling of internal server error for dYdX (#1938), thanks @davidsblom
 - Fixed `BybitWebSocketClient` private channel authentication on reconnect, thanks for reporting @miller-moore
+- Fixed `OrderFactory.bracket(...)` param ordering for `sl_time_in_force` and `tp_time_in_force`
 
 ---
 
