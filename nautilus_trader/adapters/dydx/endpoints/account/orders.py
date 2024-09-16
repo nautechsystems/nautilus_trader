@@ -64,6 +64,7 @@ class DYDXGetOrdersEndpoint(DYDXHttpEndpoint):
             client=client,
             endpoint_type=DYDXEndpointType.ACCOUNT,
             url_path=url_path,
+            name="DYDXGetOrdersEndpoint",
         )
         self.http_method = HttpMethod.GET
 
