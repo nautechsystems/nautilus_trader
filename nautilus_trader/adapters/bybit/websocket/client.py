@@ -116,6 +116,11 @@ class BybitWebsocketClient:
 
         self._log.warning(f"Reconnected to {self._base_url}")
 
+        ## Authenticate
+        if self._is_private:
+            signature = self._get_signature()
+            self._loop.create_task(self._send(signature))
+
         # Re-subscribe to all streams
         self._loop.create_task(self._subscribe_all())
 
