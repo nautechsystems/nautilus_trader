@@ -88,6 +88,9 @@ cpdef dt_to_unix_nanos(dt: pd.Timestamp):
 
     return <uint64_t>dt.value
 
+cpdef str unix_nanos_to_str(uint64_t unix_nanos):
+    return format_iso8601(unix_nanos_to_dt(unix_nanos))
+
 
 cpdef maybe_unix_nanos_to_dt(nanos):
     """

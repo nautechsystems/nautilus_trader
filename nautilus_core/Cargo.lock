@@ -2316,6 +2316,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "implied-vol"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d39bd655c296413f6c62bdcad319927348d81a83242dc514f7a2d1cfd52faf1"
+
+[[package]]
 name = "indexmap"
 version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2948,6 +2954,7 @@ dependencies = [
  "evalexpr",
  "float-cmp",
  "iai",
+ "implied-vol",
  "indexmap 2.5.0",
  "nautilus-core",
  "once_cell",

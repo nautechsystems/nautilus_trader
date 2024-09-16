@@ -3900,3 +3900,62 @@ class DatabentoLiveClient:
 def hmac_sign(secret: str, data: str) -> str: ...
 def rsa_signature(private_key_pem: str, data: str) -> str: ...
 def ed25519_signature(private_key: bytes, data: str) -> str: ...
+
+
+# Greeks
+
+class GreeksData(Data):
+    instrument_id: InstrumentId
+    is_call: bool
+    strike: float
+    expiry: int
+    forward: float
+    expiry_in_years: float
+    interest_rate: float
+    vol: float
+    price: float
+    delta: float
+    gamma: float
+    vega: float
+    theta: float
+    quantity: int
+
+    def __init__(
+            self,
+            ts_event: int = 0,
+            ts_init: int = 0,
+            instrument_id: InstrumentId = ...,
+            is_call: bool = True,
+            strike: float = 0.0,
+            expiry: int = 0,
+            forward: float = 0.0,
+            expiry_in_years: float = 0.0,
+            interest_rate: float = 0.0,
+            vol: float = 0.0,
+            price: float = 0.0,
+            delta: float = 0.0,
+            gamma: float = 0.0,
+            vega: float = 0.0,
+            theta: float = 0.0,
+            quantity: int = 1,
+    ): ...
+
+    @classmethod
+    def from_delta(cls, instrument_id: InstrumentId, delta: float) -> GreeksData: ...
+
+
+class PortfolioGreeks(Data):
+    delta: float
+    gamma: float
+    vega: float
+    theta: float
+
+    def __init__(
+            self,
+            ts_event: int = 0,
+            ts_init: int = 0,
+            delta: float = 0.0,
+            gamma: float = 0.0,
+            vega: float = 0.0,
+            theta: float = 0.0,
+    ): ...

@@ -13,20 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pandas as pd
-
-from cpython.datetime cimport datetime
-from libc.stdint cimport uint64_t
+from nautilus_trader.model.greeks import GreeksData
+from nautilus_trader.common.actor cimport Actor
 
 
-cpdef unix_nanos_to_dt(uint64_t nanos)
-cpdef dt_to_unix_nanos(dt: pd.Timestamp)
-cpdef str unix_nanos_to_str(uint64_t unix_nanos)
-cpdef maybe_unix_nanos_to_dt(nanos)
-cpdef maybe_dt_to_unix_nanos(dt: pd.Timestamp)
-cpdef bint is_datetime_utc(datetime dt)
-cpdef bint is_tz_aware(time_object)
-cpdef bint is_tz_naive(time_object)
-cpdef datetime as_utc_timestamp(datetime dt)
-cpdef object as_utc_index(time_object)
-cpdef str format_iso8601(datetime dt)
+cpdef dict black_scholes_greeks(double s, double r, double b, double vol, bint is_call, double k, double t,
+                                double multiplier)
+
+cpdef double imply_vol(double s, double r, double b, bint is_call, double k, double t, double price)
+
+cpdef dict imply_vol_and_greeks(double s, double r, double b, bint is_call, double k, double t, double price,
+                                double multiplier)
+
+cdef class GreeksCalculator(Actor):
+    cdef readonly bint load_greeks
+    cdef readonly str underlying
+    cdef readonly str update_period
+    cdef readonly object interest_rates_file
+    cdef readonly float interest_rate
+    cdef object interest_rates_df
