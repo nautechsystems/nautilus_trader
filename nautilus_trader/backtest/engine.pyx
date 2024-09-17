@@ -665,7 +665,7 @@ cdef class BacktestEngine:
             self._data = sorted(self._data, key=lambda x: x.ts_init)
 
         self._log.info(
-            f"Added {len(data):,} {data_added_str} element{'' if len(data) == 1 else 's'}",
+            f"Added {len(data):_} {data_added_str} element{'' if len(data) == 1 else 's'}",
         )
 
     def dump_pickled_data(self) -> bytes:
@@ -700,7 +700,7 @@ cdef class BacktestEngine:
         self._data = pickle.loads(data)
 
         self._log.info(
-            f"Loaded {len(self._data):,} data "
+            f"Loaded {len(self._data):_} data "
             f"element{'' if len(data) == 1 else 's'} from pickle",
         )
 
@@ -1293,16 +1293,16 @@ cdef class BacktestEngine:
         self._log.info(f"Backtest start: {self._backtest_start}")
         self._log.info(f"Backtest end:   {self._backtest_end}")
         self._log.info(f"Backtest range: {backtest_range}")
-        self._log.info(f"Iterations: {self._iteration:,}")
-        self._log.info(f"Total events: {self._kernel.exec_engine.event_count:,}")
-        self._log.info(f"Total orders: {self._kernel.cache.orders_total_count():,}")
+        self._log.info(f"Iterations: {self._iteration:_}")
+        self._log.info(f"Total events: {self._kernel.exec_engine.event_count:_}")
+        self._log.info(f"Total orders: {self._kernel.cache.orders_total_count():_}")
 
         # Get all positions for venue
         cdef list positions = []
         for position in self._kernel.cache.positions() + self._kernel.cache.position_snapshots():
             positions.append(position)
 
-        self._log.info(f"Total positions: {len(positions):,}")
+        self._log.info(f"Total positions: {len(positions):_}")
 
         if not self._config.run_analysis:
             return
