@@ -196,7 +196,7 @@ cdef extern from "../includes/common.h":
     # Sets the global logging clock to static mode.
     void logging_clock_set_static_mode();
 
-    # Sets the global logging clock static time with the given UNIX time (nanoseconds).
+    # Sets the global logging clock static time with the given UNIX timestamp (nanoseconds).
     void logging_clock_set_static_time(uint64_t time_ns);
 
     TestClock_API test_clock_new();

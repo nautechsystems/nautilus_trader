@@ -345,7 +345,7 @@ cdef class Clock:
         name : str
             The name for the alert (must be unique for this clock).
         alert_time_ns : uint64_t
-            The UNIX time (nanoseconds) for the alert.
+            The UNIX timestamp (nanoseconds) for the alert.
         callback : Callable[[TimeEvent], None], optional
             The callback to receive time events.
 
@@ -446,9 +446,9 @@ cdef class Clock:
         interval_ns : uint64_t
             The time interval (nanoseconds) for the timer.
         start_time_ns : uint64_t
-            The start UNIX time (nanoseconds) for the timer.
+            The start UNIX timestamp (nanoseconds) for the timer.
         stop_time_ns : uint64_t
-            The stop UNIX time (nanoseconds) for the timer.
+            The stop UNIX timestamp (nanoseconds) for the timer.
         callback : Callable[[TimeEvent], None], optional
             The callback to receive time events.
 
@@ -642,7 +642,7 @@ cdef class TestClock(Clock):
         Parameters
         ----------
         to_time_ns : uint64_t
-            The UNIX time (nanoseconds) to set.
+            The UNIX timestamp (nanoseconds) to set.
 
         """
         test_clock_set_time(&self._mem, to_time_ns)
@@ -659,7 +659,7 @@ cdef class TestClock(Clock):
         Parameters
         ----------
         to_time_ns : uint64_t
-            The UNIX time (nanoseconds) to advance the clock to.
+            The UNIX timestamp (nanoseconds) to advance the clock to.
         set_time : bool
             If the clock should also be set to the given `to_time_ns`.
 
