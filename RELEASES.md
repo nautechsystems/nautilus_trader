@@ -7,8 +7,10 @@ Released on TBD (UTC).
 - Improved Interactive Brokers adapter to use a dynamic IB gateway `container_image` from config (#1940), thanks @rsmb7z
 - Improved `OrderBookDeltas` streaming and batching based on the `F_LAST` flag
 - Implemented flush with truncate Postgres function for `PostgresCacheDatabase` (#1928), thanks @filipmacek
+- Standardized underscore thousands separators for backtest logging
 
 ### Breaking Changes
+- Renamed `batch_size_bytes` to `chunk_size` (more accurate naming for number of data points to process per chunk in backtest streaming mode)
 - Standardized SL and TP param ordering for `OrderFactory.bracket(...)` including, `tp_time_in_force`, `tp_exec_algorithm_params`, `tp_tags`, `tp_client_order_id`
 
 ### Fixes

@@ -2627,7 +2627,7 @@ class NautilusDataType(Enum):
     Bar = 5
 
 class DataBackendSession:
-    def __init__(self, chunk_size: int = 5000) -> None: ...
+    def __init__(self, chunk_size: int = 10_000) -> None: ...
     def add_file(
         self,
         data_type: NautilusDataType,
