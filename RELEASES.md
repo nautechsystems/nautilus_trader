@@ -20,7 +20,7 @@ Released on TBD (UTC).
 - Fixed edge case where exceptions raised in `BacktestNode` prior to engine init would not produce logs, thanks for reporting @faysou
 - Fixed handling of internal server error for dYdX (#1938), thanks @davidsblom
 - Fixed `BybitWebSocketClient` private channel authentication on reconnect, thanks for reporting @miller-moore
-- Fixed `OrderFactory.bracket(...)` param ordering for `sl_time_in_force` and `tp_time_in_force`
+- Fixed `OrderFactory.bracket(...)` param ordering for `sl_time_in_force` and `tp_time_in_force`, thanks for reporting @marcodambros
 
 ---
 
