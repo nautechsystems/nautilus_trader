@@ -19,10 +19,13 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
-use std::ops::Add;
+use std::{cell::RefCell, ops::Add, rc::Rc};
 
 use chrono::TimeDelta;
-use nautilus_common::{clock::Clock, timer::TimeEvent};
+use nautilus_common::{
+    clock::Clock,
+    timer::{RustTimeEventCallback, TimeEvent},
+};
 use nautilus_core::{
     correctness::{self, FAILED},
     nanos::UnixNanos,
@@ -464,9 +467,26 @@ where
     next_close_ns: UnixNanos,
 }
 
+#[derive(Clone)]
+pub struct NewBarCallback<C: Clock> {
+    aggregator: Rc<RefCell<TimeBarAggregator<C>>>,
+}
+
+impl<C: Clock> NewBarCallback<C> {
+    pub fn new(aggregator: Rc<RefCell<TimeBarAggregator<C>>>) -> Self {
+        Self { aggregator }
+    }
+}
+
+impl<C: Clock + 'static> RustTimeEventCallback for NewBarCallback<C> {
+    fn call(&self, event: TimeEvent) {
+        self.aggregator.borrow_mut().build_bar(event);
+    }
+}
+
 impl<C> TimeBarAggregator<C>
 where
-    C: Clock,
+    C: Clock + 'static,
 {
     /// Creates a new [`TimeBarAggregator`] instance.
     ///
@@ -504,22 +524,18 @@ where
     }
 
     /// Starts the time bar aggregator.
-    pub fn start(&mut self) -> anyhow::Result<()> {
+    pub fn start(&mut self, callback: NewBarCallback<C>) -> anyhow::Result<()> {
         let now = self.clock.utc_now();
         let start_time = get_time_bar_start(now, &self.bar_type());
         let start_time_ns = UnixNanos::from(start_time.timestamp_nanos_opt().unwrap() as u64);
-
-        // let callback = SafeTimeEventCallback {
-        //     callback: Box::new(move |event| self.build_bar(event)),
-        // };
-        // let handler = EventHandler { }
+        let callback: Rc<dyn RustTimeEventCallback> = Rc::new(callback);
 
         self.clock.set_timer_ns(
             &self.timer_name,
             self.interval_ns.as_u64(),
             start_time_ns,
             None,
-            None, // TODO: Implement Rust callback handlers properly (see above commented code)
+            Some(callback.into()),
         );
 
         log::debug!("Started timer {}", self.timer_name);
