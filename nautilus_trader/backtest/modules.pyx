@@ -118,7 +118,7 @@ cdef class FXRolloverInterestModule(SimulationModule):
         Parameters
         ----------
         ts_now : uint64_t
-            The current UNIX time (nanoseconds) in the simulated exchange.
+            The current UNIX timestamp (nanoseconds) in the simulated exchange.
 
         """
         cdef datetime now = pd.Timestamp(ts_now, tz="UTC")
