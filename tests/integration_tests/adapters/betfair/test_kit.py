@@ -275,6 +275,7 @@ class BetfairTestStubs:
                     instrument_id=instrument_id,
                 ),
             ],
+            chunk_size=5_000,
         )
         return run_config
 

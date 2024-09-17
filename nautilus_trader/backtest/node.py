@@ -156,7 +156,7 @@ class BacktestNode:
                     engine_config=config.engine,
                     venue_configs=config.venues,
                     data_configs=config.data,
-                    batch_size_bytes=config.batch_size_bytes,
+                    chunk_size=config.chunk_size,
                     dispose_on_completion=config.dispose_on_completion,
                 )
                 results.append(result)
@@ -274,13 +274,20 @@ class BacktestNode:
 
     def _load_engine_data(self, engine: BacktestEngine, result: CatalogDataResult) -> None:
         if is_nautilus_class(result.data_cls):
-            engine.add_data(data=result.data)
+            engine.add_data(
+                data=result.data,
+                sort=False,  # Already sorted from backend
+            )
         else:
             if not result.client_id:
                 raise ValueError(
                     f"Data type {result.data_cls} not setup for loading into `BacktestEngine`",
                 )
-            engine.add_data(data=result.data, client_id=result.client_id)
+            engine.add_data(
+                data=result.data,
+                client_id=result.client_id,
+                sort=False,  # Already sorted from backend
+            )
 
     def _run(
         self,
@@ -288,8 +295,8 @@ class BacktestNode:
         engine_config: BacktestEngineConfig,
         venue_configs: list[BacktestVenueConfig],
         data_configs: list[BacktestDataConfig],
-        batch_size_bytes: int | None = None,
-        dispose_on_completion: bool = True,
+        chunk_size: int | None,
+        dispose_on_completion: bool,
     ) -> BacktestResult:
         engine: BacktestEngine = self._create_engine(
             run_config_id=run_config_id,
@@ -299,12 +306,12 @@ class BacktestNode:
         )
 
         # Run backtest
-        if batch_size_bytes is not None:
+        if chunk_size is not None:
             self._run_streaming(
                 run_config_id=run_config_id,
                 engine=engine,
                 data_configs=data_configs,
-                batch_size_bytes=batch_size_bytes,
+                chunk_size=chunk_size,
             )
         else:
             self._run_oneshot(
@@ -327,10 +334,10 @@ class BacktestNode:
         run_config_id: str,
         engine: BacktestEngine,
         data_configs: list[BacktestDataConfig],
-        batch_size_bytes: int,
+        chunk_size: int,
     ) -> None:
         # Create session for entire stream
-        session = DataBackendSession(chunk_size=batch_size_bytes)
+        session = DataBackendSession(chunk_size=chunk_size)
 
         # Add query for all data configs
         for config in data_configs:
@@ -358,7 +365,7 @@ class BacktestNode:
             engine.add_data(
                 data=capsule_to_list(chunk),
                 validate=False,  # Cannot validate mixed type stream
-                sort=True,  # Temporarily sorting  # Already sorted from kmerge
+                sort=False,  # Already sorted from backend
             )
             engine.run(
                 run_config_id=run_config_id,

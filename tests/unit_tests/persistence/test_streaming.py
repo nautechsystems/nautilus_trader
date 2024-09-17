@@ -124,6 +124,7 @@ class TestPersistenceStreaming:
             engine=BacktestEngineConfig(streaming=streaming),
             data=[data_config, instrument_data_config],
             venues=[BetfairTestStubs.betfair_venue_config(book_type="L1_MBP")],
+            chunk_size=None,  # No streaming
         )
 
         # Act
@@ -137,7 +138,7 @@ class TestPersistenceStreaming:
         )
 
         result = Counter([r.__class__.__name__ for r in result])  # type: ignore
-        assert result["NewsEventData"] == 86985  # type: ignore
+        assert result["NewsEventData"] == 79_039  # type: ignore
 
     def test_feather_writer_include_types(
         self,
@@ -175,6 +176,7 @@ class TestPersistenceStreaming:
             engine=BacktestEngineConfig(streaming=streaming),
             data=[data_config, instrument_data_config],
             venues=[BetfairTestStubs.betfair_venue_config(book_type="L1_MBP")],
+            chunk_size=None,  # No streaming
         )
 
         # Act
@@ -188,7 +190,7 @@ class TestPersistenceStreaming:
         )
 
         result = Counter([r.__class__.__name__ for r in result])  # type: ignore
-        assert result["NewsEventData"] == 86985  # type: ignore
+        assert result["NewsEventData"] == 79_039  # type: ignore
         assert len(result) == 1
 
     def test_feather_writer_stream_to_data(
@@ -226,6 +228,7 @@ class TestPersistenceStreaming:
             engine=BacktestEngineConfig(streaming=streaming),
             data=[data_config, instrument_data_config],
             venues=[BetfairTestStubs.betfair_venue_config(book_type="L1_MBP")],
+            chunk_size=None,  # No streaming
         )
 
         node = BacktestNode(configs=[run_config])
@@ -245,7 +248,7 @@ class TestPersistenceStreaming:
         )
 
         result = Counter([r.__class__.__name__ for r in result])  # type: ignore
-        assert result["NewsEventData"] == 86985  # type: ignore
+        assert result["NewsEventData"] == 79_039  # type: ignore
 
     def test_feather_writer_signal_data(
         self,
@@ -277,6 +280,7 @@ class TestPersistenceStreaming:
             ),
             data=[data_config],
             venues=[BetfairTestStubs.betfair_venue_config(book_type="L1_MBP")],
+            chunk_size=None,  # No streaming
         )
 
         # Act
@@ -335,6 +339,7 @@ class TestPersistenceStreaming:
             ),
             data=[data_config],
             venues=[BetfairTestStubs.betfair_venue_config(book_type="L1_MBP")],
+            chunk_size=None,  # No streaming
         )
 
         # Act

@@ -249,8 +249,9 @@ class BacktestRunConfig(NautilusConfig, frozen=True):
         A valid configuration must include at least one data config.
     engine : BacktestEngineConfig
         The backtest engine configuration (the core system kernel).
-    batch_size_bytes : optional
-        The batch block size in bytes (will then run in streaming mode).
+    chunk_size : int, default 10_000
+        The number of data points to process in each chunk during streaming mode.
+        If `None`, the backtest will run without streaming, loading all data at once.
     dispose_on_completion : bool, default True
         If the backtest engine should be disposed on completion of the run.
         If True, then will drop both data and all state.
@@ -261,7 +262,7 @@ class BacktestRunConfig(NautilusConfig, frozen=True):
     venues: list[BacktestVenueConfig]
     data: list[BacktestDataConfig]
     engine: BacktestEngineConfig | None = None
-    batch_size_bytes: int | None = None
+    chunk_size: int | None = 10_000
     dispose_on_completion: bool = True
 
 
