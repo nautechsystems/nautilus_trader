@@ -28,8 +28,8 @@ thiserror = { workspace = true }
 thousands = { workspace = true }
 ustr = { workspace = true }
 evalexpr = "11.3.0"
-tabled = "0.16.0"
 implied-vol = { version = "1.0.0", features = ["normal-distribution"] }
+tabled = "0.16.0"
 
 [dev-dependencies]
 criterion = { workspace = true }
