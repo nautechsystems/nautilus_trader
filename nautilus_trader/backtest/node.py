@@ -156,6 +156,7 @@ class BacktestNode:
                     engine_config=config.engine,
                     venue_configs=config.venues,
                     data_configs=config.data,
+                    time_streaming=config.time_streaming,
                     chunk_size=config.chunk_size,
                     dispose_on_completion=config.dispose_on_completion,
                 )
@@ -296,6 +297,7 @@ class BacktestNode:
         venue_configs: list[BacktestVenueConfig],
         data_configs: list[BacktestDataConfig],
         chunk_size: int | None,
+        time_streaming: bool,
         dispose_on_completion: bool,
     ) -> BacktestResult:
         engine: BacktestEngine = self._create_engine(
@@ -312,6 +314,12 @@ class BacktestNode:
                 engine=engine,
                 data_configs=data_configs,
                 chunk_size=chunk_size,
+            )
+        elif time_streaming:
+            self._run_time_streaming(
+                run_config_id=run_config_id,
+                engine=engine,
+                data_configs=data_configs,
             )
         else:
             self._run_oneshot(
@@ -371,6 +379,46 @@ class BacktestNode:
                 run_config_id=run_config_id,
                 streaming=True,
             )
+            engine.clear_data()
+
+        engine.end()
+
+    def _run_time_streaming(
+        self,
+        run_config_id: str,
+        engine: BacktestEngine,
+        data_configs: list[BacktestDataConfig],
+    ) -> None:
+        # Load data
+        for config in data_configs:
+            t0 = pd.Timestamp.now()
+            engine.logger.info(
+                f"Reading {config.data_type} data for instrument={config.instrument_id}. Between time {config.start_time} and {config.end_time}.",
+            )
+            result: CatalogDataResult = self.load_data_config(config)
+
+            if config.instrument_id and result.instrument is None:
+                engine.logger.warning(
+                    f"Requested instrument_id={result.instrument} from data_config not found in catalog",
+                )
+                continue
+            if not result.data:
+                engine.logger.warning(f"No data found for {config}")
+                continue
+
+            t1 = pd.Timestamp.now()
+            engine.logger.info(
+                f"Read {len(result.data):,} events from parquet in {pd.Timedelta(t1 - t0)}s.",
+            )
+            engine.add_data(data=result.data)
+            t2 = pd.Timestamp.now()
+            engine.logger.info(f"Engine load took {pd.Timedelta(t2 - t1)}s")
+
+            engine.run(
+                run_config_id=run_config_id,
+                streaming=True,
+            )
+
             engine.clear_data()
 
         engine.end()

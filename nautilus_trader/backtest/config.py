@@ -256,6 +256,10 @@ class BacktestRunConfig(NautilusConfig, frozen=True):
         If the backtest engine should be disposed on completion of the run.
         If True, then will drop both data and all state.
         If False, then will only drop data.
+    time_streaming : bool, default False
+        If the backtest run should be in time streaming mode.
+        It loads each data config in a streaming matter
+        Allowing for streaming by time rather than size
 
     """
 
@@ -264,6 +268,7 @@ class BacktestRunConfig(NautilusConfig, frozen=True):
     engine: BacktestEngineConfig | None = None
     chunk_size: int | None = 10_000
     dispose_on_completion: bool = True
+    time_streaming: bool = False
 
 
 class SimulationModuleConfig(ActorConfig, frozen=True):
