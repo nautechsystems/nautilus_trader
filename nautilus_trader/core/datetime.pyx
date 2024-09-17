@@ -47,12 +47,12 @@ cdef datetime UNIX_EPOCH = pd.Timestamp("1970-01-01", tz=pytz.utc)
 
 cpdef unix_nanos_to_dt(uint64_t nanos):
     """
-    Return the datetime (UTC) from the given UNIX time (nanoseconds).
+    Return the datetime (UTC) from the given UNIX timestamp (nanoseconds).
 
     Parameters
     ----------
     nanos : uint64_t
-        The UNIX time (nanoseconds) to convert.
+        The UNIX timestamp (nanoseconds) to convert.
 
     Returns
     -------
@@ -64,7 +64,7 @@ cpdef unix_nanos_to_dt(uint64_t nanos):
 
 cpdef dt_to_unix_nanos(dt: pd.Timestamp):
     """
-    Return the UNIX time (nanoseconds) from the given datetime (UTC).
+    Return the UNIX timestamp (nanoseconds) from the given datetime (UTC).
 
     Parameters
     ----------
@@ -89,19 +89,32 @@ cpdef dt_to_unix_nanos(dt: pd.Timestamp):
     return <uint64_t>dt.value
 
 cpdef str unix_nanos_to_str(uint64_t unix_nanos):
+    """
+    Convert the given `unix_nanos` to an ISO 8601 formatted string.
+
+    Parameters
+    ----------
+    unix_nanos : int
+        The UNIX timestamp (nanoseconds) to be converted.
+
+    Returns
+    -------
+    str
+
+    """
     return format_iso8601(unix_nanos_to_dt(unix_nanos))
 
 
 cpdef maybe_unix_nanos_to_dt(nanos):
     """
-    Return the datetime (UTC) from the given UNIX time (nanoseconds), or ``None``.
+    Return the datetime (UTC) from the given UNIX timestamp (nanoseconds), or ``None``.
 
     If nanos is ``None``, then will return ``None``.
 
     Parameters
     ----------
     nanos : int, optional
-        The UNIX time (nanoseconds) to convert.
+        The UNIX timestamp (nanoseconds) to convert.
 
     Returns
     -------
@@ -116,7 +129,7 @@ cpdef maybe_unix_nanos_to_dt(nanos):
 
 cpdef maybe_dt_to_unix_nanos(dt: pd.Timestamp):
     """
-    Return the UNIX time (nanoseconds) from the given datetime, or ``None``.
+    Return the UNIX timestamp (nanoseconds) from the given datetime, or ``None``.
 
     If dt is ``None``, then will return ``None``.
 
@@ -265,18 +278,16 @@ cpdef object as_utc_index(data: pd.DataFrame):
 
 cpdef str format_iso8601(datetime dt):
     """
-    Format the given datetime to a millisecond accurate ISO 8601 specification
-    string.
+    Format the given datetime to a millisecond accurate ISO 8601 specification string.
 
     Parameters
     ----------
     dt : datetime
-        The input datetime to format.
+        The datetime to format.
 
     Returns
     -------
     str
-        The formatted string.
 
     """
     Condition.not_none(datetime, "datetime")
