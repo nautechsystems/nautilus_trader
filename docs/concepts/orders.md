@@ -68,16 +68,16 @@ summary of the different execution instructions available.
 
 ### Time in force
 
-The orders time in force is an instruction to specify how long the order will remain open
-or active, before any remaining quantity is canceled.
+The order's time in force specifies how long the order will remain open or active before any
+remaining quantity is canceled.
 
-- `GTC` (Good 'til Canceled): The order remains in force until canceled by the trader or the exchange
-- `IOC` (Immediate or Cancel / Fill **and** Kill): The order will execute immediately with any portion of the order quantity which cannot be executed being canceled
-- `FOK` (Fill **or** Kill): The order will execute immediately, and in full, or not at all
-- `GTD` (Good 'til Date): The order remains in force until reaching the specified expiration date and time
-- `DAY` (Good for session/day): The order remains in force until the end of the current trading session
-- `AT_THE_OPEN` (OPG): The order is only in force at the trading session open
-- `AT_THE_CLOSE`: The order is only in force at the trading session close
+- `GTC` **(Good-Till-Canceled)**: The order remains active until canceled by the trader or the exchange.
+- `IOC` **(Immediate-Or-Cancel / Fill-And-Kill)**: The order executes immediately, with any unfilled portion canceled.
+- `FOK` **(Fill-Or-Kill)**: The order executes immediately in full or not at all.
+- `GTD` **(Good-Till-Date/Time)**: The order remains active until a specified expiration date and time.
+- `DAY` **(Good for session/day)**: The order remains active until the end of the current trading session.
+- `AT_THE_OPEN` **(OPG)**: The order is only active at the open of the trading session.
+- `AT_THE_CLOSE`: The order is only active at the close of the trading session.
 
 ### Expire time
 
