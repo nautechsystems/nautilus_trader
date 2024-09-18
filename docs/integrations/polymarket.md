@@ -20,6 +20,12 @@ while NautilusTrader abstracts the complexity of signing and preparing orders fo
 A [binary option](https://en.wikipedia.org/wiki/Binary_option) is a type of financial exotic option contract in which traders bet on the outcome of a yes-or-no proposition.
 If the prediction is correct, the trader receives a fixed payout; otherwise, they receive nothing.
 
+All assets traded on Polymarket are quoted and settled in **USDC.e (PoS)**, with the contract address [0x2791bca1f2de4661ed88a30c99a7a9449aa84174](https://polygonscan.com/address/0x2791bca1f2de4661ed88a30c99a7a9449aa84174) on the Polygon blockchain.
+**USDC.e** is a bridged version of USDC from Ethereum to the Polygon network, operating on Polygon's **Proof of Stake (PoS)** chain.
+This allows for the use of USDC on Polygon with faster, more cost-efficient transactions, while being backed by USDC on Ethereum.
+
+More information can be found in this [blog](https://polygon.technology/blog/phase-one-of-native-usdc-migration-on-polygon-pos-is-underway).
+
 ## Polymarket documentation
 
 Polymarket offers comprehensive resources for different audiences:
@@ -47,16 +53,27 @@ and won't need to necessarily work with these lower level components directly.
 
 ## Wallets and accounts
 
-To interact with Polymarket via NautilusTrader, you will need a compatible **Polygon** wallet (such as MetaMask),
-configured to use EOA (Externally Owned Account) signature type 0, which supports EIP712 signatures.
+To interact with Polymarket via NautilusTrader, you’ll need a **Polygon**-compatible wallet (such as MetaMask).
+The integration uses Externally Owned Account (EOA) signature types compatible with EIP712, meaning the wallet is directly owned by the trader/user.
+This contrasts with the signature types used for Polymarket-administered wallets (such as those accessed via their user interface).
 
-For now, a single wallet address is supported per trader instance when using environment variables,
-or multiple wallets could be used with multiple `PolymarketExecutionClient` instances.
+A single wallet address is supported per trader instance when using environment variables,
+or multiple wallets could be configured with multiple `PolymarketExecutionClient` instances.
 
-Additionally, before you can start trading, you need to ensure that your wallet has allowances set for Polymarket's smart contracts.
-You can do this by running the provided script located at `adapters/polymarket/scripts/set_allowances.py`.
+:::info
+Ensure your wallet is funded with **USDC.e**, otherwise you will encounter the "not enough balance / allowance" API error when submitting orders.
+:::
 
 ### Setting allowances for Polymarket contracts
+
+Before you can start trading, you need to ensure that your wallet has allowances set for Polymarket's smart contracts.
+You can do this by running the provided script located at `/adapters/polymarket/scripts/set_allowances.py`.
+
+This script is adapted from a [gist](https://gist.github.com/poly-rodr/44313920481de58d5a3f6d1f8226bd5e) created by @poly-rodr.
+
+:::note
+You only need to run this script once per wallet that you intend to use for trading on Polymarket.
+:::
 
 This script automates the process of approving the necessary allowances for the Polymarket contracts.
 It sets approvals for the USDC token and Conditional Token Framework (CTF) contract to allow the
@@ -73,6 +90,11 @@ Once you have these in place, the script will:
 
 - Approve the maximum possible amount of USDC (using the `MAX_INT` value) for the Polymarket USDC token contract.
 - Set the approval for the CTF contract, allowing it to interact with your account for trading purposes.
+
+:::note
+You can also adjust the approval amount in the script instead of using `MAX_INT`,
+with the amount specified in units of **wma (wrapped market asset)**, though this has not been tested.
+:::
 
 Ensure that your private key and public key are correctly stored in the environment variables before running the script.
 Here's an example of how to set the variables in your terminal session:
@@ -107,7 +129,7 @@ When setting up NautilusTrader to work with Polymarket, it’s crucial to proper
 
 - `private_key`: This is the private key for your external EOA wallet (_not_ the Polymarket wallet accessed through their GUI). This private key allows the system to sign and send transactions on behalf of the external account interacting with Polymarket. If not explicitly provided in the configuration, it will automatically source the `POLYMARKET_PK` environment variable.
 - Ensure that the `POLYGON_PRIVATE_KEY` you are using corresponds to the external wallet used for trading and not the Polymarket wallet.
-- `funder`: This refers to the USDC.e wallet address used for funding trades. Like the private key, if it’s not set, the `POLYMARKET_FUNDER` environment variable will be sourced.
+- `funder`: This refers to the **USDC.e** wallet address used for funding trades. Like the private key, if it’s not set, the `POLYMARKET_FUNDER` environment variable will be sourced.
 - API credentials: You will need to provide the following API credentials to interact with the Polymarket CLOB:
   - `api_key`: If not provided, will source the `POLYMARKET_API_KEY` environment variable.
   - `api_secret`: If not provided, will source the `POLYMARKET_API_SECRET` environment variable.
@@ -124,9 +146,9 @@ The following order types are supported on Polymarket:
 - `LIMIT`
 
 The following time in force options are available:
-- `GTC`
-- `GTD` (second granularity based on UNIX time)
-- `FOK`
+- `GTC`: Good-Till-Canceled
+- `GTD`: Good-Till-Date (second granularity based on UNIX time)
+- `FOK`: Fill-Or-Kill
 
 ## Trades
 
@@ -172,8 +194,8 @@ created for each new instrument (asset).
 ### Execution
 
 The main execution WebSocket manages all `user` channel subscriptions based on the Polymarket instruments
-available in the cache during the initial connection sequence. When new trading commands are issued for additional instruments,
-a new `PolymarketWebSocketClient` is created for each new instrument (asset).
+available in the cache during the initial connection sequence. When trading commands are issued for additional instruments,
+a separate `PolymarketWebSocketClient` is created for each new instrument (asset).
 
 :::note
 Polymarket does not support unsubscribing from channel streams once subscribed.
