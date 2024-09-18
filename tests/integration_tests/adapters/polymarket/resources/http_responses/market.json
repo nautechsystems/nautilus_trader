@@ -1,0 +1,82 @@
+{
+  "enable_order_book": true,
+  "active": true,
+  "closed": false,
+  "archived": false,
+  "accepting_orders": true,
+  "accepting_order_timestamp": null,
+  "minimum_order_size": 5,
+  "minimum_tick_size": 0.001,
+  "condition_id": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+  "question_id": "0xe3b1bc389210504ebcb9cffe4b0ed06ccac50561e0f24abb6379984cec030f00",
+  "question": "Will Donald Trump win the 2024 US Presidential Election?",
+  "description": "This market will resolve to “Yes” if Donald J. Trump wins the 2024 US Presidential Election. Otherwise, this market will resolve to “No.”\n\nThe resolution source for this market is the Associated Press, Fox News, and NBC. This market will resolve once all three sources call the race for the same candidate. If all three sources haven’t called the race for the same candidate by the inauguration date (January 20, 2025) this market will resolve based on who is inaugurated.",
+  "market_slug": "will-donald-trump-win-the-2024-us-presidential-election",
+  "end_date_iso": "2024-11-05T00:00:00Z",
+  "game_start_time": null,
+  "seconds_delay": 0,
+  "fpmm": "",
+  "maker_base_fee": 0,
+  "taker_base_fee": 0,
+  "notifications_enabled": false,
+  "neg_risk": true,
+  "neg_risk_market_id": "0xe3b1bc389210504ebcb9cffe4b0ed06ccac50561e0f24abb6379984cec030f00",
+  "neg_risk_request_id": "0xc2d6714f691eacd6ec494c7d6e5eaaf7dfba8907dcaf55b2dd93e7b479da1605",
+  "icon": "https://polymarket-upload.s3.us-east-2.amazonaws.com/will-donald-trump-win-the-2024-us-presidential-election-c83f01bb-5089-4222-9347-3f12673b6a48.png",
+  "image": "https://polymarket-upload.s3.us-east-2.amazonaws.com/will-donald-trump-win-the-2024-us-presidential-election-c83f01bb-5089-4222-9347-3f12673b6a48.png",
+  "rewards": {
+    "rates": [
+      {
+        "asset_address": "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",
+        "rewards_daily_rate": 750
+      }
+    ],
+    "min_size": 200,
+    "max_spread": 1.5
+  },
+  "is_50_50_outcome": false,
+  "tokens": [
+    {
+      "token_id": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+      "outcome": "Yes",
+      "price": 0.4865,
+      "winner": false
+    },
+    {
+      "token_id": "48331043336612883890938759509493159234755048973500640148014422747788308965732",
+      "outcome": "No",
+      "price": 0.5135,
+      "winner": false
+    }
+  ],
+  "tags": [
+    "Politics",
+    "Joe Biden",
+    "US Election",
+    "republican party",
+    "vivek ramaswamy",
+    "2024 presidential election",
+    "Trump",
+    "nikki haley",
+    "Elections",
+    "democratic party",
+    "ron desantis",
+    "us elections",
+    "gavin newsom",
+    "2024 election",
+    "kanye west",
+    "Breaking News",
+    "hillary clinton",
+    "kamala harris",
+    "robert f. kennedy jr.",
+    "chris christie",
+    "us presidential election 2024",
+    "elizabeth warren",
+    "michelle obama",
+    "us presidential election",
+    "2024 us presidential election",
+    "aoc",
+    "bernie sanders",
+    "All"
+  ]
+}

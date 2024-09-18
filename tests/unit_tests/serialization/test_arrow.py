@@ -452,6 +452,8 @@ class TestArrowSerializer:
             TestInstrumentProvider.equity(),
             TestInstrumentProvider.future(),
             TestInstrumentProvider.aapl_option(),
+            TestInstrumentProvider.betting_instrument(),
+            TestInstrumentProvider.binary_option(),
         ],
     )
     def test_serialize_and_deserialize_instruments(self, instrument):

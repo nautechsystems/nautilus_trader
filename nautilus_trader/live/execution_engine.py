@@ -17,6 +17,7 @@ import asyncio
 import math
 import uuid
 from asyncio import Queue
+from collections import Counter
 from decimal import Decimal
 from typing import Any, Final
 
@@ -118,6 +119,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._loop: asyncio.AbstractEventLoop = loop
         self._cmd_queue: asyncio.Queue = Queue(maxsize=config.qsize)
         self._evt_queue: asyncio.Queue = Queue(maxsize=config.qsize)
+        self._inflight_check_retries: Counter[ClientOrderId] = Counter()
 
         # Async tasks
         self._cmd_queue_task: asyncio.Task | None = None
@@ -141,6 +143,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.info(f"{config.filter_position_reports=}", LogColor.BLUE)
         self._log.info(f"{config.inflight_check_interval_ms=}", LogColor.BLUE)
         self._log.info(f"{config.inflight_check_threshold_ms=}", LogColor.BLUE)
+        self._log.info(f"{config.inflight_check_retries=}", LogColor.BLUE)
 
         # Register endpoints
         self._msgbus.register(endpoint="ExecEngine.reconcile_report", handler=self.reconcile_report)
@@ -419,6 +422,9 @@ class LiveExecutionEngine(ExecutionEngine):
         inflight_len = len(inflight_orders)
         self._log.debug(f"Found {inflight_len} order{'' if inflight_len == 1 else 's'} in-flight")
         for order in inflight_orders:
+            retries = self._inflight_check_retries[order.client_order_id]
+            if retries >= self.config.inflight_check_retries:
+                continue
             ts_now = self._clock.timestamp_ns()
             ts_init_last = order.last_event.ts_event
             self._log.debug(f"Checking in-flight order: {ts_now=}, {ts_init_last=}, {order=}...")
@@ -434,6 +440,7 @@ class LiveExecutionEngine(ExecutionEngine):
                     ts_init=self._clock.timestamp_ns(),
                 )
                 self._execute_command(query)
+                self._inflight_check_retries[order.client_order_id] += 1
 
     # -- RECONCILIATION -------------------------------------------------------------------------------
 

@@ -1,0 +1,10 @@
+{
+  "asset_id": "21742633143463906290569050155826241533067272736897614950488156847949938836455",
+  "event_type": "last_trade_price",
+  "fee_rate_bps": "0",
+  "market": "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917",
+  "price": "0.491",
+  "side": "SELL",
+  "size": "85.36",
+  "timestamp": "1724564136087"
+}

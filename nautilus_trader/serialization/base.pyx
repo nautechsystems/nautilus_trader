@@ -55,6 +55,7 @@ from nautilus_trader.model.events.position cimport PositionClosed
 from nautilus_trader.model.events.position cimport PositionOpened
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.betting cimport BettingInstrument
+from nautilus_trader.model.instruments.binary_option cimport BinaryOption
 from nautilus_trader.model.instruments.crypto_future cimport CryptoFuture
 from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
 from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
@@ -95,6 +96,7 @@ _OBJECT_TO_DICT_MAP: dict[str, Callable[[None], dict]] = {
     Instrument.__name__: Instrument.base_to_dict_c,
     SyntheticInstrument.__name__: SyntheticInstrument.to_dict_c,
     BettingInstrument.__name__: BettingInstrument.to_dict_c,
+    BinaryOption.__name__: BinaryOption.to_dict_c,
     Equity.__name__: Equity.to_dict_c,
     FuturesContract.__name__: FuturesContract.to_dict_c,
     OptionsContract.__name__: OptionsContract.to_dict_c,
@@ -144,6 +146,7 @@ _OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
     Instrument.__name__: Instrument.base_from_dict_c,
     SyntheticInstrument.__name__: SyntheticInstrument.from_dict_c,
     BettingInstrument.__name__: BettingInstrument.from_dict_c,
+    BinaryOption.__name__: BinaryOption.from_dict_c,
     Equity.__name__: Equity.from_dict_c,
     FuturesContract.__name__: FuturesContract.from_dict_c,
     OptionsContract.__name__: OptionsContract.from_dict_c,
@@ -196,6 +199,7 @@ _EXTERNAL_PUBLISHABLE_TYPES = {
     Instrument,
     SyntheticInstrument,
     BettingInstrument,
+    BinaryOption,
     Equity,
     FuturesContract,
     OptionsContract,

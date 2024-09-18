@@ -228,6 +228,8 @@ pub enum InstrumentClass {
     Warrant = 10,
     /// A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
     SportsBetting = 11,
+    /// A binary option instrument class. A type of derivative where the payoff is either a fixed monetary amount or nothing, based on a yes/no proposition about an underlying event.
+    BinaryOption = 12,
 }
 
 /// The aggregation method through which a bar is generated and closed.

@@ -76,12 +76,14 @@ bech32 = {version = "^1.2.0", optional = true}
 ecdsa = {version = "^0.19.0", optional = true}
 bip-utils = {version = "^2.9.3", optional = true}
 pycryptodome = {version = "^3.20.0", optional = true}
+py-clob-client = {version = "^0.17.5", optional = true}
 
 [tool.poetry.extras]
 betfair = ["betfair_parser"]
 docker = ["docker"]
 dydx = ["v4-proto", "bech32", "ecdsa", "bip-utils", "pycryptodome", "grpcio", "protobuf"]
 ib = ["nautilus_ibapi", "async-timeout", "defusedxml"]
+polymarket = ["py-clob-client"]
 
 [tool.poetry.group.dev]
 optional = true

@@ -180,6 +180,7 @@ cdef class ExecutionClient(Component):
         Money commission,
         LiquiditySide liquidity_side,
         uint64_t ts_event,
+        dict info=*,
     )
 
 # --------------------------------------------------------------------------------------------------

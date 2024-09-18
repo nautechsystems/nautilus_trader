@@ -277,6 +277,17 @@ cdef class Order:
         """
         return self.type_string_c()
 
+    cpdef str tif_string(self):
+        """
+        Return the orders time in force as a string.
+
+        Returns
+        -------
+        str
+
+        """
+        return self.tif_string_c()
+
     cpdef str info(self):
         """
         Return a summary description of the order.
