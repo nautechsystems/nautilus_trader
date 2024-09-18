@@ -17,4 +17,5 @@
    databento.md
    dydx.md
    interactive_brokers.md
+   polymarket.md
 ```
