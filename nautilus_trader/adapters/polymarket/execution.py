@@ -142,7 +142,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         account_id = AccountId(f"{name or POLYMARKET_VENUE.value}-001")
         self._set_account_id(account_id)
-        self._log.info(f"{account_id=}", LogColor.BLUE)
+        self._log.info(f"account_id={account_id.value}", LogColor.BLUE)
 
         wallet_address = http_client.get_address()
         if wallet_address is None:
@@ -175,7 +175,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
         self._allowances: dict[InstrumentId, str] = {}
 
     async def _connect(self) -> None:
-        await asyncio.sleep(2.0)  # Initial delay to allow instruments to populate
+        self._log.info("Initializing instruments...")
+        await self._instrument_provider.initialize()
 
         # Set up initial active markets
         instruments = self._cache.instruments(venue=POLYMARKET_VENUE)
