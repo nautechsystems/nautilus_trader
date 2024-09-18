@@ -49,23 +49,23 @@ class PolymarketUserOrder(msgspec.Struct, tag="order", tag_field="event_type", f
 
     """
 
-    asset_id: str
-    associate_trades: list[str] | None
+    asset_id: str  # asset ID (token ID) of taker order (market order)
+    associate_trades: list[str] | None  # trades that the order has been included in
     created_at: str
     expiration: str
-    id: str
+    id: str  # order ID
     maker_address: str
     market: str
     order_owner: str
     order_type: PolymarketOrderType  # time in force
     original_size: str
     outcome: str
-    owner: str
+    owner: str  # owner of order
     price: str
     side: PolymarketOrderSide
-    size_matched: str
+    size_matched: str  # size of order that has been matched
     status: PolymarketOrderStatus
-    timestamp: str
+    timestamp: str  # time of event
     type: PolymarketEventType
 
     def get_venue_order_id(self) -> VenueOrderId:
@@ -111,26 +111,26 @@ class PolymarketUserTrade(msgspec.Struct, tag="trade", tag_field="event_type", f
 
     """
 
-    asset_id: str
+    asset_id: str  # asset ID (token ID) of taker order (market order)
     bucket_index: str
     fee_rate_bps: str
-    id: str
-    last_update: str
+    id: str  # trade ID
+    last_update: str  # time of last update to trade
     maker_address: str
     maker_orders: list[PolymarketMakerOrder]
-    market: str
-    match_time: str
+    market: str  # market identifier (condition ID)
+    match_time: str  # time trade was matched
     outcome: str
-    owner: str
+    owner: str  # api key of event owner
     price: str
     side: PolymarketOrderSide
     size: str
     status: PolymarketTradeStatus
-    taker_order_id: str
-    timestamp: str
-    trade_owner: str
+    taker_order_id: str  # order ID of taker order
+    timestamp: str  # time of even
+    trade_owner: str  # api key of trade owner
     trader_side: PolymarketLiquiditySide
-    type: PolymarketEventType
+    type: PolymarketEventType  # TRADE
 
     def liqudity_side(self) -> LiquiditySide:
         if self.trader_side == PolymarketLiquiditySide.MAKER:
@@ -219,7 +219,7 @@ class PolymarketOpenOrder(msgspec.Struct, frozen=True):
             quantity=instrument.make_qty(float(self.original_size)),
             filled_qty=instrument.make_qty(float(self.size_matched)),
             ts_accepted=millis_to_nanos(self.created_at),
-            ts_last=millis_to_nanos(self.created_at),  # TODO: TBD
+            ts_last=millis_to_nanos(self.created_at),
             report_id=UUID4(),
             ts_init=ts_init,
         )
