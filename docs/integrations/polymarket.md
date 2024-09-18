@@ -5,7 +5,7 @@ We are currently working on this integration guide.
 :::
 
 Founded in 2020, Polymarket is the world’s largest decentralized prediction market platform,
-allowing traders to speculate on the outcomes of world events by buying and selling binary option shares using cryptocurrency.
+enabling traders to speculate on the outcomes of world events by buying and selling binary option shares using cryptocurrency.
 
 NautilusTrader provides a venue integration for data and execution via Polymarket's Central Limit Order Book (CLOB) API.
 The integration leverages the [official Python CLOB client library](https://github.com/Polymarket/py-clob-client)
@@ -17,7 +17,7 @@ while NautilusTrader abstracts the complexity of signing and preparing orders fo
 
 ## Binary options
 
-A binary option is a type of financial contract in which traders bet on the outcome of a yes-or-no proposition.
+A [binary option](https://en.wikipedia.org/wiki/Binary_option) is a type of financial exotic option contract in which traders bet on the outcome of a yes-or-no proposition.
 If the prediction is correct, the trader receives a fixed payout; otherwise, they receive nothing.
 
 ## Polymarket documentation
@@ -47,7 +47,7 @@ and won't need to necessarily work with these lower level components directly.
 
 ## Wallets and accounts
 
-To interact with Polymarket via NautilusTrader, you will need a compatible Polygon wallet (such as MetaMask),
+To interact with Polymarket via NautilusTrader, you will need a compatible **Polygon** wallet (such as MetaMask),
 configured to use EOA (Externally Owned Account) signature type 0, which supports EIP712 signatures.
 
 For now, a single wallet address is supported per trader instance when using environment variables,
@@ -64,10 +64,10 @@ Polymarket CLOB Exchange to interact with your funds.
 
 Before running the script, ensure the following prerequisites are met:
 - Install the web3 Python package: `pip install -U web3==5.28`
-- Have a Polygon wallet funded with some MATIC (used for gas fees).
+- Have a **Polygon** wallet funded with some MATIC (used for gas fees).
 - Set the following environment variables in your shell:
-  - `POLYGON_PRIVATE_KEY`: Your private key for the Polygon wallet.
-  - `POLYGON_PUBLIC_KEY`: Your public key for the Polygon wallet.
+  - `POLYGON_PRIVATE_KEY`: Your private key for the **Polygon** wallet.
+  - `POLYGON_PUBLIC_KEY`: Your public key for the **Polygon** wallet.
 
 Once you have these in place, the script will:
 
@@ -85,7 +85,7 @@ export POLYGON_PUBLIC_KEY="your_public_key"
 Run the script using:
 
 ```bash
-python /scripts/set_allowances.py
+python nautilus_trader/adapters/polymarket/scripts/set_allowances.py
 ```
 
 ### Script breakdown
@@ -103,10 +103,10 @@ This allows Polymarket to interact with your funds when executing trades and ens
 
 When setting up NautilusTrader to work with Polymarket, it’s crucial to properly configure the necessary parameters, particularly the private key.
 
-**Key configuration parameters**
+**Key parameters**
 
-- `private_key`: This is the private key for your external EOA wallet (not the Polymarket wallet accessed through their GUI). This private key allows the system to sign and send transactions on behalf of the external account interacting with Polymarket. If not explicitly provided in the configuration, it will automatically source the `POLYMARKET_PK` environment variable.
-- Ensure that the `POLYGON_PRIVATE_KEY` you are using corresponds to the external wallet used for trading and not the Polymarket interface wallet.
+- `private_key`: This is the private key for your external EOA wallet (_not_ the Polymarket wallet accessed through their GUI). This private key allows the system to sign and send transactions on behalf of the external account interacting with Polymarket. If not explicitly provided in the configuration, it will automatically source the `POLYMARKET_PK` environment variable.
+- Ensure that the `POLYGON_PRIVATE_KEY` you are using corresponds to the external wallet used for trading and not the Polymarket wallet.
 - `funder`: This refers to the USDC.e wallet address used for funding trades. Like the private key, if it’s not set, the `POLYMARKET_FUNDER` environment variable will be sourced.
 - API credentials: You will need to provide the following API credentials to interact with the Polymarket CLOB:
   - `api_key`: If not provided, will source the `POLYMARKET_API_KEY` environment variable.
@@ -123,7 +123,7 @@ The following order types are supported on Polymarket:
 - `MARKET` (executed as a marketable limit order)
 - `LIMIT`
 
-The following time in force are available:
+The following time in force options are available:
 - `GTC`
 - `GTD` (second granularity based on UNIX time)
 - `FOK`
@@ -154,7 +154,7 @@ The following limitations and considerations are currently known:
 The Polymarket API returns either all active (open) orders or specific orders when queried by their
 Polymarket order ID (`venue_order_id`). During reconciliation, order reports are obtained for:
 
-- All instruments with active orders, as reported by Polymarket.
+- All instruments with active (open) orders, as reported by Polymarket.
 - All open orders according to Nautilus execution state.
 
 Since the Polymarket API does not natively support positions, they are inferred from user trades.
@@ -163,12 +163,14 @@ Since the Polymarket API does not natively support positions, they are inferred 
 
 The `PolymarketWebSocketClient` is built on top of the high-performance Nautilus `WebSocketClient` base class, written in Rust.
 
-**Data**
+### Data
+
 The main data WebSocket handles all `market` channel subscriptions received during the initial
 connection sequence, up to `ws_connection_delay_secs`. For any additional subscriptions, a new `PolymarketWebSocketClient` is
 created for each new instrument (asset).
 
-**Execution**
+### Execution
+
 The main execution WebSocket manages all `user` channel subscriptions based on the Polymarket instruments
 available in the cache during the initial connection sequence. When new trading commands are issued for additional instruments,
 a new `PolymarketWebSocketClient` is created for each new instrument (asset).
