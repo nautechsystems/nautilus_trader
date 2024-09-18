@@ -28,8 +28,6 @@ from py_clob_client.client import TradeParams
 from py_clob_client.clob_types import AssetType
 from py_clob_client.exceptions import PolyApiException
 
-from nautilus_trader.adapters.bybit.common.enums import BybitEnumParser
-from nautilus_trader.adapters.bybit.common.enums import BybitProductType
 from nautilus_trader.adapters.polymarket.common.cache import get_polymarket_trades_key
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MAX_PRICE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MIN_PRICE
@@ -142,16 +140,15 @@ class PolymarketExecutionClient(LiveExecutionClient):
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay=}", LogColor.BLUE)
 
-        self._enum_parser = BybitEnumParser()
-
         account_id = AccountId(f"{name or POLYMARKET_VENUE.value}-001")
         self._set_account_id(account_id)
+        self._log.info(f"{account_id=}", LogColor.BLUE)
 
         wallet_address = http_client.get_address()
         if wallet_address is None:
             raise RuntimeError("Auth error: could not determine `wallet_address`")
         self._wallet_address = wallet_address
-        self._log.info(f"wallet_address={wallet_address}", LogColor.BLUE)
+        self._log.info(f"{wallet_address=}", LogColor.BLUE)
 
         # HTTP API
         self._signature_type = 0
@@ -726,23 +723,6 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     LogColor.MAGENTA,
                 )
                 self._cache.add_venue_order_id(order.client_order_id, venue_order_id)
-
-    def _check_order_validity(self, order: Order, product_type: BybitProductType) -> bool:
-        # Check post only
-        if order.is_post_only and order.order_type != OrderType.LIMIT:
-            self._log.error(
-                f"Cannot submit {order} has invalid post only {order.is_post_only}, unsupported on Bybit",
-            )
-            return False
-
-        # Check reduce only
-        if order.is_reduce_only and product_type == BybitProductType.SPOT:
-            self._log.error(
-                f"Cannot submit {order} is reduce_only, unsupported on Bybit SPOT",
-            )
-            return False
-
-        return True
 
     def _handle_ws_message(self, raw: bytes) -> None:
         # Uncomment for development
