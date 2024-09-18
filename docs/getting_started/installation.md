@@ -26,6 +26,7 @@ Install optional dependencies as 'extras' for specific integrations:
 - `docker`: Needed for Docker when using the IB gateway (with the Interactive Brokers adapter)
 - `dydx`: dYdX adapter (integration) dependencies
 - `ib`: Interactive Brokers adapter (integration) dependencies
+- `polymarket`: Polymarket adapter (integration) dependencies
 
 To install with specific extras using _pip_:
 
