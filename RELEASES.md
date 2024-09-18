@@ -2,7 +2,12 @@
 
 Released on TBD (UTC).
 
+This will be the final release with support for Python 3.10.
+
 ### Enhancements
+- Added Polymarket integration
+- Added `BinaryOption` instrument (supports Polymarket integration)
+- Added `LiveExecutionEngine.inflight_check_retries` config option to limit in-flight order query attempts
 - Improved dYdX execution client to use `RetryManager` for HTTP requests (#1941), thanks @davidsblom
 - Improved Interactive Brokers adapter to use a dynamic IB gateway `container_image` from config (#1940), thanks @rsmb7z
 - Improved `OrderBookDeltas` streaming and batching based on the `F_LAST` flag
