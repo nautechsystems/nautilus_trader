@@ -20,11 +20,7 @@ while NautilusTrader abstracts the complexity of signing and preparing orders fo
 A [binary option](https://en.wikipedia.org/wiki/Binary_option) is a type of financial exotic option contract in which traders bet on the outcome of a yes-or-no proposition.
 If the prediction is correct, the trader receives a fixed payout; otherwise, they receive nothing.
 
-All assets traded on Polymarket are quoted and settled in **USDC.e (PoS)**, with the contract address [0x2791bca1f2de4661ed88a30c99a7a9449aa84174](https://polygonscan.com/address/0x2791bca1f2de4661ed88a30c99a7a9449aa84174) on the Polygon blockchain.
-**USDC.e** is a bridged version of USDC from Ethereum to the Polygon network, operating on Polygon's **Proof of Stake (PoS)** chain.
-This allows for the use of USDC on Polygon with faster, more cost-efficient transactions, while being backed by USDC on Ethereum.
-
-More information can be found in this [blog](https://polygon.technology/blog/phase-one-of-native-usdc-migration-on-polygon-pos-is-underway).
+All assets traded on Polymarket are quoted and settled in **USDC.e (PoS)** (see below).
 
 ## Polymarket documentation
 
@@ -50,6 +46,14 @@ which can be used together or separately depending on the users needs.
 Most users will simply define a configuration for a live trading node (as below),
 and won't need to necessarily work with these lower level components directly.
 :::
+
+## USDC.e (PoS)
+
+**USDC.e** is a bridged version of USDC from Ethereum to the Polygon network, operating on Polygon's **Proof of Stake (PoS)** chain.
+This enables faster, more cost-efficient transactions on Polygon while maintaining backing by USDC on Ethereum.
+
+The contract address is [0x2791bca1f2de4661ed88a30c99a7a9449aa84174](https://polygonscan.com/address/0x2791bca1f2de4661ed88a30c99a7a9449aa84174) on the Polygon blockchain.
+More information can be found in this [blog](https://polygon.technology/blog/phase-one-of-native-usdc-migration-on-polygon-pos-is-underway).
 
 ## Wallets and accounts
 
