@@ -40,7 +40,7 @@ class PolymarketTradeReport(msgspec.Struct, frozen=True):
 
     """
 
-    id: str  # Trade ID
+    id: str  # trade ID
     taker_order_id: str
     market: str
     asset_id: str
