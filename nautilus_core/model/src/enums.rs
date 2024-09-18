@@ -1035,13 +1035,13 @@ impl RecordFlag {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
 )]
 pub enum TimeInForce {
-    /// Good Till Canceled (GTC) - the order remains active until canceled.
+    /// Good-Till-Canceled (GTC) - the order remains active until canceled.
     Gtc = 1,
-    /// Immediate or Cancel (IOC) - the order is filled as much as possible, the rest is canceled.
+    /// Immediate-Or-Cancel (IOC) - the order is filled as much as possible, the rest is canceled.
     Ioc = 2,
-    /// Fill or Kill (FOK) - the order must be executed in full immediately, or it is canceled.
+    /// Fill-Or-Kill (FOK) - the order must be executed in full immediately, or it is canceled.
     Fok = 3,
-    /// Good Till Date/Time (GTD) - the order is active until a specified date or time.
+    /// Good-Till-Date/Time (GTD) - the order is active until a specified date or time.
     Gtd = 4,
     /// Day - the order is active until the end of the current trading session.
     Day = 5,
