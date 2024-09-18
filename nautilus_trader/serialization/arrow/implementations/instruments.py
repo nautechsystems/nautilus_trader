@@ -17,6 +17,7 @@ import msgspec
 import pyarrow as pa
 
 from nautilus_trader.model.instruments import BettingInstrument
+from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.model.instruments import Cfd
 from nautilus_trader.model.instruments import Commodity
 from nautilus_trader.model.instruments import CryptoFuture
@@ -59,6 +60,30 @@ SCHEMAS = {
             "ts_init": pa.uint64(),
         },
         metadata={"type": "BettingInstrument"},
+    ),
+    BinaryOption: pa.schema(  # TBD
+        {
+            "id": pa.dictionary(pa.int64(), pa.string()),
+            "raw_symbol": pa.string(),
+            "asset_class": pa.dictionary(pa.int8(), pa.string()),
+            "currency": pa.dictionary(pa.int16(), pa.string()),
+            "price_precision": pa.uint8(),
+            "size_precision": pa.uint8(),
+            "price_increment": pa.dictionary(pa.int16(), pa.string()),
+            "size_increment": pa.dictionary(pa.int16(), pa.string()),
+            "activation_ns": pa.uint64(),
+            "expiration_ns": pa.uint64(),
+            "max_quantity": pa.dictionary(pa.int16(), pa.string()),
+            "min_quantity": pa.dictionary(pa.int16(), pa.string()),
+            "maker_fee": pa.string(),
+            "taker_fee": pa.string(),
+            "outcome": pa.string(),
+            "description": pa.string(),
+            "info": pa.binary(),
+            "ts_event": pa.uint64(),
+            "ts_init": pa.uint64(),
+        },
+        metadata={"type": "BinaryOption"},
     ),
     CurrencyPair: pa.schema(
         {
@@ -315,6 +340,7 @@ def deserialize(batch: pa.RecordBatch) -> list[Instrument]:
     ins_type = batch.schema.metadata.get(b"type") or batch.schema.metadata[b"class"]
     Cls = {
         b"BettingInstrument": BettingInstrument,
+        b"BinaryOption": BinaryOption,
         b"CurrencyPair": CurrencyPair,
         b"CryptoPerpetual": CryptoPerpetual,
         b"CryptoFuture": CryptoFuture,

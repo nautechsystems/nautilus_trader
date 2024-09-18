@@ -818,6 +818,7 @@ class InstrumentClass(Enum):
     OPTION_SPREAD = "OPTION_SPEAD"
     WARRANT = "WARRANT"
     SPORTS_BETTING = "SPORTS_BETTING"
+    BINARY_OPTION = "BINARY_OPTION"
 
 class BarAggregation(Enum):
     TICK = "TICK"

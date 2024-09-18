@@ -121,16 +121,17 @@ and data providers by converting their raw APIs into a unified interface.
 
 The following integrations are currently supported:
 
-| Name                                                      | ID                    | Type                    | Status                                                  | Docs                                                                       |
-| :-------------------------------------------------------- | :-------------------- | :---------------------- | :------------------------------------------------------ | :------------------------------------------------------------------------- |
-| [Betfair](https://betfair.com)                            | `BETFAIR`             | Sports Betting Exchange | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/betfair.html)   |
-| [Binance](https://binance.com)                            | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/binance.html)   |
-| [Binance US](https://binance.us)                          | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/binance.html)   |
-| [Binance Futures](https://www.binance.com/en/futures)     | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/binance.html)   |
-| [Bybit](https://www.bybit.com)                            | `BYBIT`               | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/bybit.html)     |
-| [Databento](https://databento.com)                        | `DATABENTO`           | Data Provider           | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://nautilustrader.io/docs/latest/integrations/databento.html) |
-| [dYdX](https://dydx.exchange/)                            | `DYDX`                | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://nautilustrader.io/docs/latest/integrations/dydx.html)      |
-| [Interactive Brokers](https://www.interactivebrokers.com) | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/ib.html)        |
+| Name                                                      | ID                    | Type                    | Status                                                  | Docs                                                                        |
+| :-------------------------------------------------------- | :-------------------- | :---------------------- | :------------------------------------------------------ | :-------------------------------------------------------------------------- |
+| [Betfair](https://betfair.com)                            | `BETFAIR`             | Sports Betting Exchange | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/betfair.html)    |
+| [Binance](https://binance.com)                            | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/binance.html)    |
+| [Binance US](https://binance.us)                          | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/binance.html)    |
+| [Binance Futures](https://www.binance.com/en/futures)     | `BINANCE`             | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/binance.html)    |
+| [Bybit](https://www.bybit.com)                            | `BYBIT`               | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/bybit.html)      |
+| [Databento](https://databento.com)                        | `DATABENTO`           | Data Provider           | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://nautilustrader.io/docs/latest/integrations/databento.html)  |
+| [dYdX](https://dydx.exchange/)                            | `DYDX`                | Crypto Exchange (DEX)   | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://nautilustrader.io/docs/latest/integrations/dydx.html)       |
+| [Interactive Brokers](https://www.interactivebrokers.com) | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/ib.html)         |
+| [Polymarket](https://polymarket.com)                      | `POLYMARKET`          | Prediction Market (DEX) | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://nautilustrader.io/docs/latest/integrations/polymarket.html) |
 
 - **ID**: The default client ID for the integrations adapter clients
 - **Type**: The type of integration (often the venue type)

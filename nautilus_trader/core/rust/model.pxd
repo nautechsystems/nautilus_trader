@@ -151,6 +151,8 @@ cdef extern from "../includes/model.h":
         WARRANT # = 10,
         # A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
         SPORTS_BETTING # = 11,
+        # A binary option instrument class. A type of derivative where the payoff is either a fixed monetary amount or nothing, based on a yes/no proposition about an underlying event.
+        BINARY_OPTION # = 12,
 
     # The type of event for an instrument close.
     cpdef enum InstrumentCloseType:
