@@ -663,6 +663,9 @@ class LiveExecutionEngine(ExecutionEngine):
             # Assign to report
             report.client_order_id = client_order_id
 
+        # Reset retry count
+        self._inflight_check_retries[client_order_id] = 0
+
         self._log.info(f"Reconciling order for {client_order_id!r}", LogColor.BLUE)
 
         order: Order = self._cache.order(client_order_id)
