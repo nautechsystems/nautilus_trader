@@ -356,13 +356,13 @@ cdef extern from "../includes/model.h":
 
     # The 'Time in Force' instruction for an order.
     cpdef enum TimeInForce:
-        # Good Till Canceled (GTC) - the order remains active until canceled.
+        # Good-Till-Canceled (GTC) - the order remains active until canceled.
         GTC # = 1,
-        # Immediate or Cancel (IOC) - the order is filled as much as possible, the rest is canceled.
+        # Immediate-Or-Cancel (IOC) - the order is filled as much as possible, the rest is canceled.
         IOC # = 2,
-        # Fill or Kill (FOK) - the order must be executed in full immediately, or it is canceled.
+        # Fill-Or-Kill (FOK) - the order must be executed in full immediately, or it is canceled.
         FOK # = 3,
-        # Good Till Date/Time (GTD) - the order is active until a specified date or time.
+        # Good-Till-Date/Time (GTD) - the order is active until a specified date or time.
         GTD # = 4,
         # Day - the order is active until the end of the current trading session.
         DAY # = 5,
