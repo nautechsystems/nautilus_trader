@@ -26,6 +26,7 @@ This will be the final release with support for Python 3.10.
 - Fixed handling of internal server error for dYdX (#1938), thanks @davidsblom
 - Fixed `BybitWebSocketClient` private channel authentication on reconnect, thanks for reporting @miller-moore
 - Fixed `OrderFactory.bracket(...)` param ordering for `sl_time_in_force` and `tp_time_in_force`, thanks for reporting @marcodambros
+- Fixed `Cfd` instrument Arrow schema and serialization
 
 ---
 

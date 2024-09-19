@@ -30,6 +30,7 @@ from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import ADA
+from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
@@ -46,6 +47,7 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.instruments import BinaryOption
+from nautilus_trader.model.instruments import Cfd
 from nautilus_trader.model.instruments import CryptoFuture
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
@@ -525,6 +527,27 @@ class TestInstrumentProvider:
             maker_fee=Decimal("0.00002"),
             taker_fee=Decimal("0.00002"),
             tick_scheme_name=tick_scheme_name,
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def audusd_cfd() -> Cfd:
+        return Cfd(
+            instrument_id=InstrumentId.from_str("AUDUSD.OANDA"),
+            raw_symbol=Symbol("AUD/USD"),
+            asset_class=AssetClass.FX,
+            base_currency=AUD,
+            quote_currency=USD,
+            price_precision=5,
+            price_increment=Price.from_str("0.00001"),
+            size_precision=0,
+            size_increment=Quantity.from_int(1),
+            lot_size=Quantity.from_int(1000),
+            margin_init=Decimal("0.03"),
+            margin_maint=Decimal("0.03"),
+            maker_fee=Decimal("0.00002"),
+            taker_fee=Decimal("0.00002"),
             ts_event=0,
             ts_init=0,
         )
