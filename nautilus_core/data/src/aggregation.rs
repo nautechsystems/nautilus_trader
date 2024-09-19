@@ -473,7 +473,7 @@ pub struct NewBarCallback<C: Clock> {
 }
 
 impl<C: Clock> NewBarCallback<C> {
-    pub fn new(aggregator: Rc<RefCell<TimeBarAggregator<C>>>) -> Self {
+    pub const fn new(aggregator: Rc<RefCell<TimeBarAggregator<C>>>) -> Self {
         Self { aggregator }
     }
 }
