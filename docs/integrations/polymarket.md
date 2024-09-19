@@ -11,7 +11,7 @@ NautilusTrader provides a venue integration for data and execution via Polymarke
 The integration leverages the [official Python CLOB client library](https://github.com/Polymarket/py-clob-client)
 to facilitate interaction with the Polymarket platform.
 
-NautilusTrader is designed to work with Polymarket's signature type 0 (EOA), supporting EIP712 signatures from externally owned accounts.
+NautilusTrader is designed to work with Polymarket's signature type 0, supporting EIP712 signatures from externally owned accounts (EOA).
 This integration ensures that traders can execute orders securely and efficiently, using the most common on-chain signature method,
 while NautilusTrader abstracts the complexity of signing and preparing orders for seamless execution.
 
@@ -34,7 +34,7 @@ poetry install --extras polymarket
 A [binary option](https://en.wikipedia.org/wiki/Binary_option) is a type of financial exotic option contract in which traders bet on the outcome of a yes-or-no proposition.
 If the prediction is correct, the trader receives a fixed payout; otherwise, they receive nothing.
 
-All assets traded on Polymarket are quoted and settled in **USDC.e (PoS)** (see below).
+All assets traded on Polymarket are quoted and settled in **USDC.e (PoS)**, [see below](#usdce-pos) for more information.
 
 ## Polymarket documentation
 
@@ -191,7 +191,7 @@ The following limitations and considerations are currently known:
 
 ## Reconciliation
 
-The Polymarket API returns either all active (open) orders or specific orders when queried by their
+The Polymarket API returns either all active (open) orders or specific orders when queried by the
 Polymarket order ID (`venue_order_id`). During reconciliation, order reports are obtained for:
 
 - All instruments with active (open) orders, as reported by Polymarket.
