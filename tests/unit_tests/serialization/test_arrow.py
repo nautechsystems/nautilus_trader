@@ -446,6 +446,7 @@ class TestArrowSerializer:
     @pytest.mark.parametrize(
         "instrument",
         [
+            TestInstrumentProvider.audusd_cfd(),
             TestInstrumentProvider.xbtusd_bitmex(),
             TestInstrumentProvider.btcusdt_future_binance(),
             TestInstrumentProvider.btcusdt_binance(),
