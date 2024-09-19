@@ -164,27 +164,27 @@ mod tests {
 
     use crate::types::{
         balance::{AccountBalance, MarginBalance},
-        stubs::{account_balance_test, margin_balance_test},
+        stubs::{stub_account_balance, stub_margin_balance},
     };
 
     #[rstest]
     fn test_account_balance_equality() {
-        let account_balance_1 = account_balance_test();
-        let account_balance_2 = account_balance_test();
+        let account_balance_1 = stub_account_balance();
+        let account_balance_2 = stub_account_balance();
         assert_eq!(account_balance_1, account_balance_2);
     }
 
     #[rstest]
-    fn test_account_balance_debug(account_balance_test: AccountBalance) {
-        let result = format!("{account_balance_test:?}");
+    fn test_account_balance_debug(stub_account_balance: AccountBalance) {
+        let result = format!("{stub_account_balance:?}");
         let expected =
             "AccountBalance(total=1525000.00 USD, locked=25000.00 USD, free=1500000.00 USD)";
         assert_eq!(result, expected);
     }
 
     #[rstest]
-    fn test_account_balance_display(account_balance_test: AccountBalance) {
-        let result = format!("{account_balance_test}");
+    fn test_account_balance_display(stub_account_balance: AccountBalance) {
+        let result = format!("{stub_account_balance}");
         let expected =
             "AccountBalance(total=1525000.00 USD, locked=25000.00 USD, free=1500000.00 USD)";
         assert_eq!(result, expected);
@@ -192,14 +192,14 @@ mod tests {
 
     #[rstest]
     fn test_margin_balance_equality() {
-        let margin_balance_1 = margin_balance_test();
-        let margin_balance_2 = margin_balance_test();
+        let margin_balance_1 = stub_margin_balance();
+        let margin_balance_2 = stub_margin_balance();
         assert_eq!(margin_balance_1, margin_balance_2);
     }
 
     #[rstest]
-    fn test_margin_balance_debug(margin_balance_test: MarginBalance) {
-        let display = format!("{margin_balance_test:?}");
+    fn test_margin_balance_debug(stub_margin_balance: MarginBalance) {
+        let display = format!("{stub_margin_balance:?}");
         assert_eq!(
             "MarginBalance(initial=5000.00 USD, maintenance=20000.00 USD, instrument_id=BTCUSDT.COINBASE)",
             display
@@ -207,8 +207,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_margin_balance_display(margin_balance_test: MarginBalance) {
-        let display = format!("{margin_balance_test}");
+    fn test_margin_balance_display(stub_margin_balance: MarginBalance) {
+        let display = format!("{stub_margin_balance}");
         assert_eq!(
             "MarginBalance(initial=5000.00 USD, maintenance=20000.00 USD, instrument_id=BTCUSDT.COINBASE)",
             display
