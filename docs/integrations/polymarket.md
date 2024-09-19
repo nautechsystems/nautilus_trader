@@ -5,7 +5,7 @@ We are currently working on this integration guide.
 :::
 
 Founded in 2020, Polymarket is the world’s largest decentralized prediction market platform,
-enabling traders to speculate on the outcomes of world events by buying and selling binary option shares using cryptocurrency.
+enabling traders to speculate on the outcomes of world events by buying and selling binary option contracts using cryptocurrency.
 
 NautilusTrader provides a venue integration for data and execution via Polymarket's Central Limit Order Book (CLOB) API.
 The integration leverages the [official Python CLOB client library](https://github.com/Polymarket/py-clob-client)
@@ -14,6 +14,20 @@ to facilitate interaction with the Polymarket platform.
 NautilusTrader is designed to work with Polymarket's signature type 0 (EOA), supporting EIP712 signatures from externally owned accounts.
 This integration ensures that traders can execute orders securely and efficiently, using the most common on-chain signature method,
 while NautilusTrader abstracts the complexity of signing and preparing orders for seamless execution.
+
+## Installation
+
+To install the latest nautilus-trader package along with the `polymarket` dependencies using pip:
+
+```
+pip install -U "nautilus_trader[polymarket]"
+```
+
+To install using poetry:
+
+```
+poetry install --extras polymarket
+```
 
 ## Binary options
 
