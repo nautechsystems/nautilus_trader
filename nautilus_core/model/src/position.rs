@@ -543,14 +543,14 @@ mod tests {
     };
 
     #[rstest]
-    fn test_position_long_display(test_position_long: Position) {
-        let display = format!("{test_position_long}");
+    fn test_position_long_display(stub_position_long: Position) {
+        let display = format!("{stub_position_long}");
         assert_eq!(display, "Position(LONG 1 AUD/USD.SIM, id=1)");
     }
 
     #[rstest]
-    fn test_position_short_display(test_position_short: Position) {
-        let display = format!("{test_position_short}");
+    fn test_position_short_display(stub_position_short: Position) {
+        let display = format!("{stub_position_short}");
         assert_eq!(display, "Position(SHORT 1 AUD/USD.SIM, id=1)");
     }
 
