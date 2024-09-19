@@ -3,6 +3,20 @@
 NautilusTrader offers adapters for integrating with the Betfair REST API and 
 Exchange Streaming API.
 
+## Installation
+
+To install the latest `nautilus_trader` package along with the `betfair` dependencies using pip:
+
+```
+pip install -U "nautilus_trader[betfair]"
+```
+
+To install from source using poetry:
+
+```
+poetry install --extras betfair
+```
+
 ## Overview
 
 The following adapter classes are available:

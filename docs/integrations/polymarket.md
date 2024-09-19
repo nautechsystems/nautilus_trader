@@ -17,13 +17,13 @@ while NautilusTrader abstracts the complexity of signing and preparing orders fo
 
 ## Installation
 
-To install the latest nautilus-trader package along with the `polymarket` dependencies using pip:
+To install the latest `nautilus_trader` package along with the `polymarket` dependencies using pip:
 
 ```
 pip install -U "nautilus_trader[polymarket]"
 ```
 
-To install using poetry:
+To install from source using poetry:
 
 ```
 poetry install --extras polymarket

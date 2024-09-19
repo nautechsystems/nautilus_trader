@@ -12,13 +12,13 @@ central components.
 
 ## Installation
 
-To install the latest nautilus-trader package along with the `dydx` dependencies using pip:
+To install the latest `nautilus_trader` package along with the `dydx` dependencies using pip:
 
 ```
 pip install -U "nautilus_trader[dydx]"
 ```
 
-To install using poetry:
+To install from source using poetry:
 
 ```
 poetry install --extras dydx
