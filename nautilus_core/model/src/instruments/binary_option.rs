@@ -37,11 +37,13 @@ use crate::{
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
 )]
 #[cfg_attr(feature = "trivial_copy", derive(Copy))]
-pub struct CurrencyPair {
+pub struct BinaryOption {
     pub id: InstrumentId,
     pub raw_symbol: Symbol,
-    pub base_currency: Currency,
-    pub quote_currency: Currency,
+    pub asset_class: AssetClass,
+    pub currency: Currency,
+    pub activation_ns: UnixNanos,
+    pub expiration_ns: UnixNanos,
     pub price_precision: u8,
     pub size_precision: u8,
     pub price_increment: Price,
@@ -50,7 +52,8 @@ pub struct CurrencyPair {
     pub taker_fee: Decimal,
     pub margin_init: Decimal,
     pub margin_maint: Decimal,
-    pub lot_size: Option<Quantity>,
+    pub outcome: Option<Ustr>,
+    pub description: Option<Ustr>,
     pub max_quantity: Option<Quantity>,
     pub min_quantity: Option<Quantity>,
     pub max_notional: Option<Money>,
@@ -61,8 +64,8 @@ pub struct CurrencyPair {
     pub ts_init: UnixNanos,
 }
 
-impl CurrencyPair {
-    /// Creates a new [`CurrencyPair`] instance with correctness checking.
+impl BinaryOption {
+    /// Creates a new [`BinaryOption`] instance with correctness checking.
     ///
     /// # Notes
     ///
@@ -71,17 +74,20 @@ impl CurrencyPair {
     pub fn new_checked(
         id: InstrumentId,
         raw_symbol: Symbol,
-        base_currency: Currency,
-        quote_currency: Currency,
+        asset_class: AssetClass,
+        currency: Currency,
+        activation_ns: UnixNanos,
+        expiration_ns: UnixNanos,
         price_precision: u8,
         size_precision: u8,
         price_increment: Price,
         size_increment: Quantity,
-        taker_fee: Decimal,
         maker_fee: Decimal,
+        taker_fee: Decimal,
         margin_init: Decimal,
         margin_maint: Decimal,
-        lot_size: Option<Quantity>,
+        outcome: Option<Ustr>,
+        description: Option<Ustr>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_notional: Option<Money>,
@@ -109,8 +115,10 @@ impl CurrencyPair {
         Ok(Self {
             id,
             raw_symbol,
-            base_currency,
-            quote_currency,
+            asset_class,
+            currency,
+            activation_ns,
+            expiration_ns,
             price_precision,
             size_precision,
             price_increment,
@@ -119,7 +127,8 @@ impl CurrencyPair {
             taker_fee,
             margin_init,
             margin_maint,
-            lot_size,
+            outcome,
+            description,
             max_quantity,
             min_quantity,
             max_notional,
@@ -131,22 +140,24 @@ impl CurrencyPair {
         })
     }
 
-    /// Creates a new [`CurrencyPair`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,
         raw_symbol: Symbol,
-        base_currency: Currency,
-        quote_currency: Currency,
+        asset_class: AssetClass,
+        currency: Currency,
+        activation_ns: UnixNanos,
+        expiration_ns: UnixNanos,
         price_precision: u8,
         size_precision: u8,
         price_increment: Price,
         size_increment: Quantity,
-        taker_fee: Decimal,
         maker_fee: Decimal,
+        taker_fee: Decimal,
         margin_init: Decimal,
         margin_maint: Decimal,
-        lot_size: Option<Quantity>,
+        outcome: Option<Ustr>,
+        description: Option<Ustr>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_notional: Option<Money>,
@@ -159,17 +170,20 @@ impl CurrencyPair {
         Self::new_checked(
             id,
             raw_symbol,
-            base_currency,
-            quote_currency,
+            asset_class,
+            currency,
+            activation_ns,
+            expiration_ns,
             price_precision,
             size_precision,
             price_increment,
             size_increment,
-            taker_fee,
             maker_fee,
+            taker_fee,
             margin_init,
             margin_maint,
-            lot_size,
+            outcome,
+            description,
             max_quantity,
             min_quantity,
             max_notional,
@@ -183,23 +197,23 @@ impl CurrencyPair {
     }
 }
 
-impl PartialEq<Self> for CurrencyPair {
+impl PartialEq<Self> for BinaryOption {
     fn eq(&self, other: &Self) -> bool {
         self.id == other.id
     }
 }
 
-impl Eq for CurrencyPair {}
+impl Eq for BinaryOption {}
 
-impl Hash for CurrencyPair {
+impl Hash for BinaryOption {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.id.hash(state);
     }
 }
 
-impl Instrument for CurrencyPair {
+impl Instrument for BinaryOption {
     fn into_any(self) -> InstrumentAny {
-        InstrumentAny::CurrencyPair(self)
+        InstrumentAny::BinaryOption(self)
     }
 
     fn id(&self) -> InstrumentId {
@@ -211,28 +225,38 @@ impl Instrument for CurrencyPair {
     }
 
     fn asset_class(&self) -> AssetClass {
-        AssetClass::FX
+        self.asset_class
     }
 
     fn instrument_class(&self) -> InstrumentClass {
-        InstrumentClass::Spot
+        InstrumentClass::BinaryOption
     }
+
     fn underlying(&self) -> Option<Ustr> {
         None
     }
 
     fn quote_currency(&self) -> Currency {
-        self.quote_currency
+        self.currency
     }
 
     fn base_currency(&self) -> Option<Currency> {
-        Some(self.base_currency)
+        None
     }
 
     fn settlement_currency(&self) -> Currency {
-        self.quote_currency
+        self.currency
     }
+
     fn isin(&self) -> Option<Ustr> {
+        None
+    }
+
+    fn exchange(&self) -> Option<Ustr> {
+        None
+    }
+
+    fn option_kind(&self) -> Option<OptionKind> {
         None
     }
 
@@ -261,7 +285,7 @@ impl Instrument for CurrencyPair {
     }
 
     fn lot_size(&self) -> Option<Quantity> {
-        self.lot_size
+        Some(Quantity::from(1))
     }
 
     fn max_quantity(&self) -> Option<Quantity> {
@@ -288,40 +312,16 @@ impl Instrument for CurrencyPair {
         self.ts_init
     }
 
-    fn margin_init(&self) -> Decimal {
-        self.margin_init
-    }
-
-    fn margin_maint(&self) -> Decimal {
-        self.margin_maint
-    }
-
-    fn taker_fee(&self) -> Decimal {
-        self.taker_fee
-    }
-
-    fn maker_fee(&self) -> Decimal {
-        self.maker_fee
-    }
-
-    fn option_kind(&self) -> Option<OptionKind> {
-        None
-    }
-
-    fn exchange(&self) -> Option<Ustr> {
-        None
-    }
-
     fn strike_price(&self) -> Option<Price> {
         None
     }
 
     fn activation_ns(&self) -> Option<UnixNanos> {
-        None
+        Some(self.activation_ns)
     }
 
     fn expiration_ns(&self) -> Option<UnixNanos> {
-        None
+        Some(self.expiration_ns)
     }
 
     fn max_notional(&self) -> Option<Money> {
@@ -335,16 +335,16 @@ impl Instrument for CurrencyPair {
 
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
-///////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
 
-    use crate::instruments::{currency_pair::CurrencyPair, stubs::*};
+    use crate::instruments::{binary_option::BinaryOption, stubs::*};
 
     #[rstest]
-    fn test_equality(currency_pair_btcusdt: CurrencyPair) {
-        let cloned = currency_pair_btcusdt;
-        assert_eq!(currency_pair_btcusdt, cloned);
+    fn test_binary_option(binary_option: BinaryOption) {
+        let cloned = binary_option.clone();
+        assert_eq!(binary_option, cloned);
     }
 }

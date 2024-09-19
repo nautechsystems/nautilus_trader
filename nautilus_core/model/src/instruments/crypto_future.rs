@@ -291,8 +291,7 @@ impl Instrument for CryptoFuture {
     }
 
     fn multiplier(&self) -> Quantity {
-        // SAFETY: Unwrap safe as using known values
-        Quantity::new(1.0, 0)
+        Quantity::from(1)
     }
 
     fn lot_size(&self) -> Option<Quantity> {
