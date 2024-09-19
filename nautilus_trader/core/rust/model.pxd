@@ -334,7 +334,7 @@ cdef extern from "../includes/model.h":
         BID # = 1,
         # A quoted order price where a seller is willing to sell a quantity of an instrument.
         ASK # = 2,
-        # The midpoint between the bid and ask prices.
+        # The midpoint between the best bid and best ask prices.
         MID # = 3,
         # The last price at which a trade was made for an instrument.
         LAST # = 4,
