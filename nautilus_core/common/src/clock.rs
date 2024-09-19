@@ -482,7 +482,7 @@ mod tests {
 
     impl From<TestCallback> for TimeEventCallback {
         fn from(val: TestCallback) -> Self {
-            TimeEventCallback::Rust(Rc::new(val))
+            Self::Rust(Rc::new(val))
         }
     }
 
