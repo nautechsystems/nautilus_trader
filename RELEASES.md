@@ -16,13 +16,13 @@ This will be the final release with support for Python 3.10.
 
 ### Breaking Changes
 - Renamed `batch_size_bytes` to `chunk_size` (more accurate naming for number of data points to process per chunk in backtest streaming mode)
-- Standardized SL and TP param ordering for `OrderFactory.bracket(...)` including, `tp_time_in_force`, `tp_exec_algorithm_params`, `tp_tags`, `tp_client_order_id`
+- Standardized Stop-Loss (SL) and Take-Profit (TP) param ordering for `OrderFactory.bracket(...)` including: `tp_time_in_force`, `tp_exec_algorithm_params`, `tp_tags`, `tp_client_order_id`
 
 ### Fixes
 - Fixed composite bar requests (#1923), thanks @faysou
 - Fixed average price calculation for `ValueBarAggregator` (#1927), thanks @faysou
 - Fixed breaking protobuf issue by pinning `protobuf` and `grpcio` for dYdX (#1929), thanks @davidsblom
-- Fixed edge case where exceptions raised in `BacktestNode` prior to engine init would not produce logs, thanks for reporting @faysou
+- Fixed edge case where exceptions raised in `BacktestNode` prior to engine initialization would not produce logs, thanks for reporting @faysou
 - Fixed handling of internal server error for dYdX (#1938), thanks @davidsblom
 - Fixed `BybitWebSocketClient` private channel authentication on reconnect, thanks for reporting @miller-moore
 - Fixed `OrderFactory.bracket(...)` param ordering for `sl_time_in_force` and `tp_time_in_force`, thanks for reporting @marcodambros
