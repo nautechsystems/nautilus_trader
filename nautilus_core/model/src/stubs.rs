@@ -60,7 +60,7 @@ pub fn calculate_commission(
 }
 
 #[fixture]
-pub fn test_position_long(audusd_sim: CurrencyPair) -> Position {
+pub fn stub_position_long(audusd_sim: CurrencyPair) -> Position {
     let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
     let order = TestOrderStubs::market_order(
         audusd_sim.id(),
@@ -85,7 +85,7 @@ pub fn test_position_long(audusd_sim: CurrencyPair) -> Position {
 }
 
 #[fixture]
-pub fn test_position_short(audusd_sim: CurrencyPair) -> Position {
+pub fn stub_position_short(audusd_sim: CurrencyPair) -> Position {
     let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
     let order = TestOrderStubs::market_order(
         audusd_sim.id(),
