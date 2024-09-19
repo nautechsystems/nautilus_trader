@@ -83,6 +83,62 @@ async def test_subscribe(ib_client):
 
 
 @pytest.mark.asyncio
+async def test_subscribe_historical_subscription_not_called(ib_client):
+    # Arrange
+    ib_client._request_id_seq = 999
+    ib_client.subscribe_historical_bars = MagicMock()
+    subscription_method = ib_client.subscribe_historical_bars
+    cancellation_method = MagicMock()
+    name = "test_subscription"
+    args = (1, 2, 3)
+    kwargs = {"a": 1, "b": 2}
+
+    # Act
+    subscription = await ib_client._subscribe(
+        name,
+        subscription_method,
+        cancellation_method,
+        *args,
+        **kwargs,
+    )
+
+    # Assert
+    subscription_method.assert_not_called()
+    assert isinstance(subscription, Subscription)
+
+
+@pytest.mark.asyncio
+async def test_subscribe_subscription_always_returned(ib_client):
+    # Arrange
+    ib_client._request_id_seq = 999
+    ib_client.subscribe_historical_bars = MagicMock()
+    subscription_method = ib_client.subscribe_historical_bars
+    cancellation_method = MagicMock()
+    name = "test_subscription"
+    args = (1, 2, 3)
+    kwargs = {"a": 1, "b": 2}
+    await ib_client._subscribe(
+        name,
+        subscription_method,
+        cancellation_method,
+        *args,
+        **kwargs,
+    )
+
+    # Act
+    subscription = await ib_client._subscribe(
+        name,
+        subscription_method,
+        cancellation_method,
+        *args,
+        **kwargs,
+    )
+
+    # Assert
+    assert isinstance(subscription, Subscription)
+
+
+@pytest.mark.asyncio
 async def test_subscribe_ticks(ib_client):
     # Arrange
     ib_client._request_id_seq = 999
