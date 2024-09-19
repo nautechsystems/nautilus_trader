@@ -146,7 +146,6 @@ When setting up NautilusTrader to work with Polymarket, it’s crucial to proper
 **Key parameters**
 
 - `private_key`: This is the private key for your external EOA wallet (_not_ the Polymarket wallet accessed through their GUI). This private key allows the system to sign and send transactions on behalf of the external account interacting with Polymarket. If not explicitly provided in the configuration, it will automatically source the `POLYMARKET_PK` environment variable.
-- Ensure that the `POLYGON_PRIVATE_KEY` you are using corresponds to the external wallet used for trading and not the Polymarket wallet.
 - `funder`: This refers to the **USDC.e** wallet address used for funding trades. Like the private key, if it’s not set, the `POLYMARKET_FUNDER` environment variable will be sourced.
 - API credentials: You will need to provide the following API credentials to interact with the Polymarket CLOB:
   - `api_key`: If not provided, will source the `POLYMARKET_API_KEY` environment variable.
@@ -185,7 +184,7 @@ with additional trade events stored in the cache as JSON under a custom key to r
 
 The following limitations and considerations are currently known:
 
-- Order signing via the Polymarket Python client is slow, taking more than 1 second.
+- Order signing via the Polymarket Python client is slow, taking around one second.
 - Post-only orders are not supported.
 - Reduce-only orders are not supported.
 
