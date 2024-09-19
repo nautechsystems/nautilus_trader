@@ -626,7 +626,7 @@ typedef enum PriceType {
      */
     ASK = 2,
     /**
-     * The midpoint between the bid and ask prices.
+     * The midpoint between the best bid and best ask prices.
      */
     MID = 3,
     /**
