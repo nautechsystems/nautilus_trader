@@ -12,16 +12,16 @@ The standalone TWS and IB Gateway applications require manually inputting userna
 
 ## Installation
 
-To install the latest nautilus-trader package along with the `ibapi` and optional `docker` dependencies using pip, execute:
+To install the latest `nautilus_trader` package along with the `ibapi` and optional `docker` dependencies using pip:
 
 ```
 pip install -U "nautilus_trader[ib,docker]"
 ```
 
-For installation via poetry, use:
+To install from source using poetry:
 
 ```
-poetry add "nautilus_trader[ib,docker]"
+poetry install --extras ib --extras docker
 ```
 
 :::note
