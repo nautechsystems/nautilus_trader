@@ -190,6 +190,20 @@ class TestCache:
         # Assert
         assert result == []
 
+    def test_instruments_with_underlying_returns_expected(self):
+        # Arrange
+        instrument1 = TestInstrumentProvider.future(symbol="ESZ24", underlying="ES")
+        instrument2 = TestInstrumentProvider.future(symbol="CLZ24", underlying="CL")
+
+        self.cache.add_instrument(instrument1)
+        self.cache.add_instrument(instrument2)
+
+        # Act
+        result = self.cache.instruments(underlying="ES")
+
+        # Assert
+        assert result == [instrument1]
+
     def test_synthetic_ids_when_one_synthetic_instrument_returns_expected_list(self):
         # Arrange
         synthetic = TestInstrumentProvider.synthetic_instrument()
