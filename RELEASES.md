@@ -9,10 +9,11 @@ This will be the final release with support for Python 3.10.
 - Added `BinaryOption` instrument (supports Polymarket integration)
 - Added `LiveExecutionEngine.inflight_check_retries` config option to limit in-flight order query attempts
 - Added `Symbol.root()` method for obtaining the root of parent or composite symbols
+- Implemented `OrderTestBuilder` to assist testing in Rust (#1952), thanks @filipmacek
+- Implemented flush with truncate Postgres function for `PostgresCacheDatabase` (#1928), thanks @filipmacek
 - Improved dYdX execution client to use `RetryManager` for HTTP requests (#1941), thanks @davidsblom
 - Improved Interactive Brokers adapter to use a dynamic IB gateway `container_image` from config (#1940), thanks @rsmb7z
 - Improved `OrderBookDeltas` streaming and batching based on the `F_LAST` flag
-- Implemented flush with truncate Postgres function for `PostgresCacheDatabase` (#1928), thanks @filipmacek
 - Standardized underscore thousands separators for backtest logging
 
 ### Breaking Changes
