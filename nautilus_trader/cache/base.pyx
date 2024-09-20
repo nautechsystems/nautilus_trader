@@ -135,7 +135,7 @@ cdef class CacheFacade:
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `instrument_ids` must be implemented in the subclass")  # pragma: no cover
 
-    cpdef list instruments(self, Venue venue = None):
+    cpdef list instruments(self, Venue venue = None, str underlying = None):
         """Abstract method (implement in subclass)."""
         raise NotImplementedError("method `instruments` must be implemented in the subclass")  # pragma: no cover
 
