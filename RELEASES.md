@@ -27,6 +27,7 @@ This will be the final release with support for Python 3.10.
 - Fixed `BybitWebSocketClient` private channel authentication on reconnect, thanks for reporting @miller-moore
 - Fixed `OrderFactory.bracket(...)` param ordering for `sl_time_in_force` and `tp_time_in_force`, thanks for reporting @marcodambros
 - Fixed `Cfd` instrument Arrow schema and serialization
+- Fixed bar subscriptions on TWS/GW restart for Interactive Brokers (#1950), thanks @rsmb7z
 
 ---
 
