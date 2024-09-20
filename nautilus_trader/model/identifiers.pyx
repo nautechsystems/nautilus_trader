@@ -41,6 +41,7 @@ from nautilus_trader.core.rust.model cimport strategy_id_hash
 from nautilus_trader.core.rust.model cimport strategy_id_new
 from nautilus_trader.core.rust.model cimport symbol_hash
 from nautilus_trader.core.rust.model cimport symbol_new
+from nautilus_trader.core.rust.model cimport symbol_root
 from nautilus_trader.core.rust.model cimport trade_id_hash
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.rust.model cimport trade_id_to_cstr
@@ -152,6 +153,21 @@ cdef class Symbol(Identifier):
 
     cdef str to_str(self):
         return ustr_to_pystr(self._mem._0)
+
+    cpdef str root(self):
+        """
+        Return the symbol root.
+
+        The symbol root is defined as the portion of the symbol string that appears
+        before the first period. If the symbol contains one or more periods, a
+        wildcard character '*' is appended to the root.
+
+        Returns
+        -------
+        str
+
+        """
+        return cstr_to_pystr(symbol_root(&self._mem))
 
 
 cdef class Venue(Identifier):
