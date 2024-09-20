@@ -325,8 +325,8 @@ This process is primarily applicable to live trading, which is why only the `Liv
 
 There are two main scenarios for reconciliation:
 
-- **Previous Cached Execution State:** Where cached execution state exists, information from reports is used to generate missing events to align the state
-- **No Previous Cached Execution State:** Where there is no cached state, all orders and positions that exist externally are generated from scratch
+- **Previous Cached Execution State**: Where cached execution state exists, information from reports is used to generate missing events to align the state
+- **No Previous Cached Execution State**: Where there is no cached state, all orders and positions that exist externally are generated from scratch
 
 ### Reconciliation configuration
 
@@ -367,13 +367,13 @@ methods to produce an execution mass status:
 
 The system state is then reconciled with the reports, which represent the external reality:
 
-- **Duplicate Check:**
+- **Duplicate Check**:
     - Check for duplicate order IDs and trade IDs
-- **Order Reconciliation:**
+- **Order Reconciliation**:
     - Generate and apply events necessary to update orders from any cached state to the current state
     - If any trade reports are missing, inferred `OrderFilled` events are generated
     - If any client order ID is not recognized or an order report lacks a client order ID, external order events are generated
-- **Position Reconciliation:**
+- **Position Reconciliation**:
     - Ensure the net position per instrument matches the position reports returned from the venue
     - If the position state resulting from order reconciliation does not match the external state, external order events will be generated to resolve discrepancies
 

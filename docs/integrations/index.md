@@ -17,8 +17,8 @@ The following integrations are currently supported:
 | [Interactive Brokers](https://www.interactivebrokers.com) | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](ib.md)         |
 | [Polymarket](https://polymarket.com)                      | `POLYMARKET`          | Prediction Market (DEX) | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](polymarket.md) |
 
-- **ID:** The default client ID for the integrations adapter clients
-- **Type:** The type of integration (often the venue type)
+- **ID**: The default client ID for the integrations adapter clients
+- **Type**: The type of integration (often the venue type)
 
 ### Status
 

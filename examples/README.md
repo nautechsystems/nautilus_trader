@@ -1,9 +1,9 @@
 # Examples
 
 The following code examples are organized by system environment context:
-- **Backtest:** Historical data with simulated venues
-- **Sandbox:** Real-time data with simulated venues
-- **Live:** Real-time data with live venues (paper trading or real accounts)
+- **Backtest**: Historical data with simulated venues
+- **Sandbox**: Real-time data with simulated venues
+- **Live**: Real-time data with live venues (paper trading or real accounts)
 
 Within each environment context directory, are scripts organized by integration.
 

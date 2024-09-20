@@ -20,9 +20,9 @@
 
 [![](https://dcbadge.limes.pink/api/server/AUWVs3XaCS)](https://discord.gg/AUWVs3XaCS)
 
-- **Docs:** https://nautilustrader.io/docs/
-- **Website:** https://nautilustrader.io
-- **Support:** [support@nautilustrader.io](mailto:support@nautilustrader.io)
+- **Docs**: https://nautilustrader.io/docs/
+- **Website**: https://nautilustrader.io
+- **Support**: [support@nautilustrader.io](mailto:support@nautilustrader.io)
 
 ## Introduction
 
@@ -44,16 +44,16 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 
 ## Features
 
-- **Fast:** Core written in Rust with asynchronous networking using [tokio](https://crates.io/crates/tokio)
-- **Reliable:** Type safety and thread safety through Rust. Redis backed performant state persistence
-- **Portable:** OS independent, runs on Linux, macOS, Windows. Deploy using Docker
-- **Flexible:** Modular adapters mean any REST, WebSocket, or FIX API can be integrated
-- **Advanced:** Time in force `IOC`, `FOK`, `GTD`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO`
-- **Customizable:** Add user-defined custom components, or assemble entire systems from scratch leveraging the cache and message bus
-- **Backtesting:** Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution
-- **Live:** Use identical strategy implementations between backtesting and live deployments
-- **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies
-- **AI Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES)
+- **Fast**: Core written in Rust with asynchronous networking using [tokio](https://crates.io/crates/tokio)
+- **Reliable**: Type safety and thread safety through Rust. Redis backed performant state persistence
+- **Portable**: OS independent, runs on Linux, macOS, Windows. Deploy using Docker
+- **Flexible**: Modular adapters mean any REST, WebSocket, or FIX API can be integrated
+- **Advanced**: Time in force `IOC`, `FOK`, `GTD`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO`
+- **Customizable**: Add user-defined custom components, or assemble entire systems from scratch leveraging the cache and message bus
+- **Backtesting**: Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution
+- **Live**: Use identical strategy implementations between backtesting and live deployments
+- **Multi-venue**: Multiple venue capabilities facilitate market making and statistical arbitrage strategies
+- **AI Training**: Backtest engine fast enough to be used to train AI trading agents (RL/ES)
 
 ![Alt text](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/nautilus-art.png?raw=true "nautilus")
 
@@ -64,10 +64,10 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 
 ## Why NautilusTrader?
 
-- **Highly performant event-driven Python:** Native binary core components
-- **Parity between backtesting and live trading:** Identical strategy code
-- **Reduced operational risk:** Risk management functionality, logical correctness and type safety
-- **Highly extendable:** Message bus, custom components and actors, custom data, custom adapters
+- **Highly performant event-driven Python**: Native binary core components
+- **Parity between backtesting and live trading**: Identical strategy code
+- **Reduced operational risk**: Risk management functionality, logical correctness and type safety
+- **Highly extendable**: Message bus, custom components and actors, custom data, custom adapters
 
 Traditionally, trading strategy research and backtesting might be conducted in Python (or other suitable language)
 using vectorized methods, with the strategy then needing to be reimplemented in a more event-drive way

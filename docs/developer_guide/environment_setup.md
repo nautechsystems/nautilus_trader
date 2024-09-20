@@ -66,7 +66,7 @@ Used services are:
 - `redis`: Redis server
 - `pgadmin`: PgAdmin4 for database management and administration
 
-> **Note:** Please use this as development environment only. For production, use a proper and  more secure setup.
+> **Note**: Please use this as development environment only. For production, use a proper and  more secure setup.
 
 After the services has been started, you must log in with `psql` cli to create `nautilus` Postgres database.
 To do that you can run, and type `POSTGRES_PASSWORD` from docker service setup
@@ -93,7 +93,7 @@ CREATE DATABASE
 The Nautilus CLI is a command-line interface tool designed to interact
 with the Nautilus Trader ecosystem. It provides commands for managing the Postgres database and other trading operations.
 
-> **Note:** The Nautilus CLI command is only supported on UNIX-like systems.
+> **Note**: The Nautilus CLI command is only supported on UNIX-like systems.
 
 
 ## Install 
