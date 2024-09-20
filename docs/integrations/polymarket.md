@@ -149,13 +149,18 @@ To trade with Polymarket using an EOA wallet, follow these steps to generate you
 
 2. Run the script located at:
 
-    /adapters/polymarket/scripts/create_api_key.py
+    `/adapters/polymarket/scripts/create_api_key.py`
 
-The script will generate and print the following API credentials, which you should save:
+The script will generate and print API credentials, which you should save to the following environment variables:
 
 - `POLYMARKET_API_KEY`
 - `POLYMARKET_API_SECRET`
 - `POLYMARKET_API_PASSPHRASE`
+
+These can then be used for Polymarket client configurations:
+
+- `PolymarketDataClientConfig`
+- `PolymarketExecClientConfig`
 
 ## Configuration
 
