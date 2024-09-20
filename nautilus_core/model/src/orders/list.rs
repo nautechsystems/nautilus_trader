@@ -89,39 +89,33 @@ mod tests {
 
     use super::*;
     use crate::{
-        enums::OrderSide,
+        enums::{OrderSide, OrderType},
         identifiers::{OrderListId, StrategyId},
         instruments::{currency_pair::CurrencyPair, stubs::*},
-        orders::stubs::TestOrderStubs,
+        orders::builder::OrderTestBuilder,
         types::{price::Price, quantity::Quantity},
     };
 
     #[rstest]
     fn test_new_and_display(audusd_sim: CurrencyPair) {
-        let order1 = TestOrderStubs::limit_order(
-            audusd_sim.id,
-            OrderSide::Buy,
-            Price::from("1.00000"),
-            Quantity::from(100_000),
-            None,
-            None,
-        );
-        let order2 = TestOrderStubs::limit_order(
-            audusd_sim.id,
-            OrderSide::Buy,
-            Price::from("1.00000"),
-            Quantity::from(100_000),
-            None,
-            None,
-        );
-        let order3 = TestOrderStubs::limit_order(
-            audusd_sim.id,
-            OrderSide::Buy,
-            Price::from("1.00000"),
-            Quantity::from(100_000),
-            None,
-            None,
-        );
+        let order1 = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .price(Price::from("1.00000"))
+            .quantity(Quantity::from(100_000))
+            .build();
+        let order2 = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .price(Price::from("1.00000"))
+            .quantity(Quantity::from(100_000))
+            .build();
+        let order3 = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .price(Price::from("1.00000"))
+            .quantity(Quantity::from(100_000))
+            .build();
 
         let orders = vec![order1, order2, order3];
 

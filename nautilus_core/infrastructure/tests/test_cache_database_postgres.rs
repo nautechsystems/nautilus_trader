@@ -24,7 +24,7 @@ mod serial_tests {
     use nautilus_model::{
         accounts::{any::AccountAny, cash::CashAccount},
         data::stubs::{quote_tick_ethusdt_binance, stub_bar, stub_trade_tick_ethusdt_buyer},
-        enums::{CurrencyType, OrderSide, OrderStatus},
+        enums::{CurrencyType, OrderSide, OrderStatus, OrderType},
         events::account::stubs::cash_account_state_million_usd,
         identifiers::{
             stubs::account_id, AccountId, ClientId, ClientOrderId, InstrumentId, TradeId,
@@ -38,7 +38,7 @@ mod serial_tests {
             },
             Instrument,
         },
-        orders::stubs::{TestOrderEventStubs, TestOrderStubs},
+        orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         types::{currency::Currency, price::Price, quantity::Quantity},
     };
     use serde::Serialize;
@@ -221,21 +221,21 @@ mod serial_tests {
         let client_order_id_2 = ClientOrderId::new("O-19700101-000000-001-001-2");
         let instrument = currency_pair_ethusdt();
         let mut pg_cache = get_pg_cache_database().await.unwrap();
-        let market_order = TestOrderStubs::market_order(
-            instrument.id(),
-            OrderSide::Buy,
-            Quantity::from("1.0"),
-            Some(client_order_id_1),
-            None,
-        );
-        let limit_order = TestOrderStubs::limit_order(
-            instrument.id(),
-            OrderSide::Sell,
-            Price::from("100.0"),
-            Quantity::from("1.0"),
-            Some(client_order_id_2),
-            None,
-        );
+
+        let market_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(client_order_id_1)
+            .build();
+        let limit_order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .price(Price::from("100.0"))
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(client_order_id_2)
+            .build();
+
         // add foreign key dependencies: instrument and currencies
         pg_cache
             .add_currency(&instrument.base_currency().unwrap())
@@ -302,13 +302,12 @@ mod serial_tests {
         pg_cache.add_currency(&instrument.quote_currency()).unwrap();
         pg_cache.add_instrument(&instrument).unwrap();
         // 1. Create the order
-        let mut market_order = TestOrderStubs::market_order(
-            instrument.id(),
-            OrderSide::Buy,
-            Quantity::from("1.0"),
-            Some(client_order_id_1),
-            None,
-        );
+        let mut market_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(client_order_id_1)
+            .build();
         pg_cache.add_order(&market_order, None).unwrap();
         let submitted = TestOrderEventStubs::order_submitted(&market_order, account);
         market_order.apply(submitted).unwrap();

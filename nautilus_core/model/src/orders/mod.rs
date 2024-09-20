@@ -31,5 +31,6 @@ pub mod stop_market;
 pub mod trailing_stop_limit;
 pub mod trailing_stop_market;
 
+pub mod builder;
 #[cfg(feature = "stubs")]
 pub mod stubs;
