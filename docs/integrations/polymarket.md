@@ -139,6 +139,24 @@ The script performs the following actions:
 
 This allows Polymarket to interact with your funds when executing trades and ensures smooth integration with the CLOB Exchange.
 
+## API keys
+
+To trade with Polymarket using an EOA wallet, follow these steps to generate your API keys:
+
+1. Ensure the following environment variables are set:
+  - `POLYMARKET_PK`: Your private key for signing transactions.
+  - `POLYMARKET_FUNDER`: The wallet address used for funding trades.
+
+2. Run the script located at:
+
+    /adapters/polymarket/scripts/create_api_key.py
+
+The script will generate and print the following API credentials, which you should save:
+
+- `POLYMARKET_API_KEY`
+- `POLYMARKET_API_SECRET`
+- `POLYMARKET_API_PASSPHRASE`
+
 ## Configuration
 
 When setting up NautilusTrader to work with Polymarket, it’s crucial to properly configure the necessary parameters, particularly the private key.
@@ -146,7 +164,7 @@ When setting up NautilusTrader to work with Polymarket, it’s crucial to proper
 **Key parameters**
 
 - `private_key`: This is the private key for your external EOA wallet (_not_ the Polymarket wallet accessed through their GUI). This private key allows the system to sign and send transactions on behalf of the external account interacting with Polymarket. If not explicitly provided in the configuration, it will automatically source the `POLYMARKET_PK` environment variable.
-- `funder`: This refers to the **USDC.e** wallet address used for funding trades. Like the private key, if it’s not set, the `POLYMARKET_FUNDER` environment variable will be sourced.
+- `funder`: This refers to the **USDC.e** wallet address used for funding trades. If not provided, will source the `POLYMARKET_FUNDER` environment variable.
 - API credentials: You will need to provide the following API credentials to interact with the Polymarket CLOB:
   - `api_key`: If not provided, will source the `POLYMARKET_API_KEY` environment variable.
   - `api_secret`: If not provided, will source the `POLYMARKET_API_SECRET` environment variable.
