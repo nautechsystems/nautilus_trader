@@ -914,19 +914,19 @@ mod tests {
             MessageBus,
         },
     };
-    use nautilus_core::{nanos::UnixNanos, time::AtomicTime, uuid::UUID4};
+    use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
     use nautilus_model::{
-        enums::{AccountType, BookType, ContingencyType, OmsType, OrderSide, TimeInForce},
+        enums::{AccountType, BookType, ContingencyType, OmsType, OrderSide, OrderType},
         events::order::{
             rejected::OrderRejectedBuilder, OrderEventAny, OrderEventType, OrderRejected,
         },
-        identifiers::{AccountId, ClientOrderId, StrategyId, TraderId},
+        identifiers::{AccountId, ClientOrderId},
         instruments::{
             any::InstrumentAny,
             equity::Equity,
             stubs::{futures_contract_es, *},
         },
-        orders::{any::OrderAny, market::MarketOrder, stubs::TestOrderStubs},
+        orders::{builder::OrderTestBuilder, stubs::TestOrderStubs},
         types::{price::Price, quantity::Quantity},
     };
     use rstest::{fixture, rstest};
@@ -1048,13 +1048,12 @@ mod tests {
             None,
             None,
         );
-        let order = TestOrderStubs::market_order(
-            instrument.id(),
-            OrderSide::Buy,
-            Quantity::from("1"),
-            None,
-            None,
-        );
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .build();
+
         engine.process_order(&order, account_id);
 
         // Get messages and test
@@ -1104,13 +1103,12 @@ mod tests {
             None,
             None,
         );
-        let order = TestOrderStubs::market_order(
-            instrument.id(),
-            OrderSide::Buy,
-            Quantity::from("1"),
-            None,
-            None,
-        );
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .build();
+
         engine.process_order(&order, account_id);
 
         // Get messages and test
@@ -1146,13 +1144,12 @@ mod tests {
             None,
             None,
         );
-        let order = TestOrderStubs::market_order(
-            instrument_es.id(),
-            OrderSide::Buy,
-            Quantity::from("1.122"), // <- wrong precision for es futures contract (which is 1)x
-            None,
-            None,
-        );
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_es.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.122"))
+            .build();
+
         engine.process_order(&order, account_id);
 
         // Get messages and test
@@ -1188,14 +1185,13 @@ mod tests {
             None,
             None,
         );
-        let limit_order = TestOrderStubs::limit_order(
-            instrument_es.id(),
-            OrderSide::Sell,
-            Price::from("100.12333"), // <- wrong price precision for es futures contract (which is 2)
-            Quantity::from("1"),
-            None,
-            None,
-        );
+
+        let limit_order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_es.id())
+            .side(OrderSide::Sell)
+            .price(Price::from("100.12333")) // <- wrong price precision for es futures contract (which is 2)
+            .quantity(Quantity::from("1"))
+            .build();
 
         engine.process_order(&limit_order, account_id);
 
@@ -1232,18 +1228,12 @@ mod tests {
             None,
             None,
         );
-        let stop_order = TestOrderStubs::stop_market_order(
-            instrument_es.id(),
-            OrderSide::Sell,
-            Price::from("100.12333"), // <- wrong trigger price precision for es futures contract (which is 2)
-            Quantity::from("1"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
+        let stop_order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument_es.id())
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("100.12333")) // <- wrong trigger price precision for es futures contract (which is 2)
+            .quantity(Quantity::from("1"))
+            .build();
 
         engine.process_order(&stop_order, account_id);
 
@@ -1281,13 +1271,11 @@ mod tests {
             None,
             None,
         );
-        let order = TestOrderStubs::market_order(
-            instrument.id(),
-            OrderSide::Sell,
-            Quantity::from("1"),
-            None,
-            None,
-        );
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1"))
+            .build();
 
         engine.process_order(&order, account_id);
 
@@ -1328,13 +1316,12 @@ mod tests {
             None,
             Some(engine_config),
         );
-        let market_order = TestOrderStubs::market_order_reduce(
-            instrument_es.id(),
-            OrderSide::Buy,
-            Quantity::from("1"),
-            None,
-            None,
-        );
+        let market_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_es.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .reduce_only(true)
+            .build();
 
         engine.process_order(&market_order, account_id);
 
@@ -1377,27 +1364,13 @@ mod tests {
         let stop_loss_client_order_id = ClientOrderId::from("O-19700101-000000-001-001-2");
 
         // Create entry market order
-        let mut entry_order = OrderAny::Market(MarketOrder::new(
-            TraderId::default(),
-            StrategyId::default(),
-            instrument_es.id(),
-            entry_client_order_id,
-            OrderSide::Buy,
-            Quantity::from("1"),
-            TimeInForce::Gtc,
-            UUID4::new(),
-            UnixNanos::default(),
-            false,
-            false,
-            Some(ContingencyType::Oto), // <- set contingency type to OTO
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        ));
+        let mut entry_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_es.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(1))
+            .contingency_type(ContingencyType::Oto)
+            .client_order_id(entry_client_order_id)
+            .build();
         // Set entry order status to Rejected with proper event
         let rejected_event = OrderRejected::default();
         entry_order
@@ -1405,18 +1378,15 @@ mod tests {
             .unwrap();
 
         // Create stop loss order
-        let stop_order = TestOrderStubs::stop_market_order(
-            instrument_es.id(),
-            OrderSide::Sell,
-            Price::from("0.95"),
-            Quantity::from(1),
-            None,
-            Some(ContingencyType::Oto),
-            Some(stop_loss_client_order_id),
-            None,
-            Some(entry_client_order_id),
-            None,
-        );
+        let stop_order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument_es.id())
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("0.95"))
+            .quantity(Quantity::from(1))
+            .contingency_type(ContingencyType::Oto)
+            .client_order_id(stop_loss_client_order_id)
+            .parent_order_id(entry_client_order_id)
+            .build();
         // Make it Accepted
         let accepted_stop_order = TestOrderStubs::make_accepted_order(&stop_order);
 
@@ -1467,29 +1437,24 @@ mod tests {
         let stop_loss_client_order_id = ClientOrderId::from("O-19700101-000000-001-001-2");
         let take_profit_client_order_id = ClientOrderId::from("O-19700101-000000-001-001-3");
         // Create two linked orders: stop loss and take profit
-        let mut stop_loss_order = TestOrderStubs::stop_market_order(
-            instrument_es.id(),
-            OrderSide::Sell,
-            Price::from("0.95"),
-            Quantity::from(1),
-            None,
-            Some(ContingencyType::Oco),
-            Some(stop_loss_client_order_id),
-            None,
-            None,
-            Some(vec![take_profit_client_order_id]),
-        );
-        let take_profit_order = TestOrderStubs::market_if_touched_order(
-            instrument_es.id(),
-            OrderSide::Sell,
-            Price::from("1.1"),
-            Quantity::from(1),
-            None,
-            Some(ContingencyType::Oco),
-            Some(take_profit_client_order_id),
-            None,
-            Some(vec![stop_loss_client_order_id]),
-        );
+        let mut stop_loss_order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument_es.id())
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("0.95"))
+            .quantity(Quantity::from(1))
+            .contingency_type(ContingencyType::Oco)
+            .client_order_id(stop_loss_client_order_id)
+            .linked_order_ids(vec![take_profit_client_order_id])
+            .build();
+        let take_profit_order = OrderTestBuilder::new(OrderType::MarketIfTouched)
+            .instrument_id(instrument_es.id())
+            .side(OrderSide::Sell)
+            .trigger_price(Price::from("1.1"))
+            .quantity(Quantity::from(1))
+            .contingency_type(ContingencyType::Oco)
+            .client_order_id(take_profit_client_order_id)
+            .linked_order_ids(vec![stop_loss_client_order_id])
+            .build();
         // Set stop loss order status to Rejected with proper event
         let rejected_event: OrderRejected = OrderRejectedBuilder::default()
             .client_order_id(stop_loss_client_order_id)
@@ -1548,20 +1513,17 @@ mod tests {
             None,
             None,
         );
-        let market_order_buy = TestOrderStubs::market_order(
-            instrument_es.id(),
-            OrderSide::Buy,
-            Quantity::from("1"),
-            None,
-            None,
-        );
-        let market_order_sell = TestOrderStubs::market_order(
-            instrument_es.id(),
-            OrderSide::Sell,
-            Quantity::from("1"),
-            None,
-            None,
-        );
+        let market_order_buy = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_es.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .build();
+        let market_order_sell = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_es.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("1"))
+            .build();
+
         engine.process_order(&market_order_buy, account_id);
         engine.process_order(&market_order_sell, account_id);
 

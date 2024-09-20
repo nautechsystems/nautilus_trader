@@ -2647,7 +2647,7 @@ mod tests {
     use nautilus_model::{
         accounts::any::AccountAny,
         data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
-        enums::{BookType, OmsType, OrderSide, OrderStatus},
+        enums::{BookType, OmsType, OrderSide, OrderStatus, OrderType},
         events::order::{OrderAccepted, OrderEventAny, OrderRejected, OrderSubmitted},
         identifiers::{AccountId, ClientOrderId, PositionId, Venue},
         instruments::{
@@ -2655,7 +2655,7 @@ mod tests {
             synthetic::SyntheticInstrument,
         },
         orderbook::book::OrderBook,
-        orders::stubs::{TestOrderEventStubs, TestOrderStubs},
+        orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
         types::{price::Price, quantity::Quantity},
     };
@@ -2726,14 +2726,13 @@ mod tests {
 
     #[rstest]
     fn test_order_when_initialized(mut cache: Cache, audusd_sim: CurrencyPair) {
-        let order = TestOrderStubs::limit_order(
-            audusd_sim.id,
-            OrderSide::Buy,
-            Price::from("1.00000"),
-            Quantity::from(100_000),
-            None,
-            None,
-        );
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .price(Price::from("1.00000"))
+            .quantity(Quantity::from(100_000))
+            .build();
+
         let client_order_id = order.client_order_id();
         cache.add_order(order, None, None, false).unwrap();
 
@@ -2759,14 +2758,13 @@ mod tests {
 
     #[rstest]
     fn test_order_when_submitted(mut cache: Cache, audusd_sim: CurrencyPair) {
-        let mut order = TestOrderStubs::limit_order(
-            audusd_sim.id,
-            OrderSide::Buy,
-            Price::from("1.00000"),
-            Quantity::from(100_000),
-            None,
-            None,
-        );
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .price(Price::from("1.00000"))
+            .quantity(Quantity::from(100_000))
+            .build();
+
         let client_order_id = order.client_order_id();
         cache.add_order(order.clone(), None, None, false).unwrap();
 
@@ -2799,13 +2797,11 @@ mod tests {
 
     #[rstest]
     fn test_order_when_rejected(mut cache: Cache, audusd_sim: CurrencyPair) {
-        let mut order = TestOrderStubs::market_order(
-            audusd_sim.id,
-            OrderSide::Buy,
-            Quantity::from(100_000),
-            None,
-            None,
-        );
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
         cache.add_order(order.clone(), None, None, false).unwrap();
 
         let submitted = OrderSubmitted::default();
@@ -2840,14 +2836,13 @@ mod tests {
 
     #[rstest]
     fn test_order_when_accepted(mut cache: Cache, audusd_sim: CurrencyPair) {
-        let mut order = TestOrderStubs::limit_order(
-            audusd_sim.id,
-            OrderSide::Buy,
-            Price::from("1.00000"),
-            Quantity::from(100_000),
-            None,
-            None,
-        );
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .price(Price::from("1.00000"))
+            .quantity(Quantity::from(100_000))
+            .build();
+
         cache.add_order(order.clone(), None, None, false).unwrap();
 
         let submitted = OrderSubmitted::default();
@@ -2891,13 +2886,11 @@ mod tests {
     #[rstest]
     fn test_order_when_filled(mut cache: Cache, audusd_sim: CurrencyPair) {
         let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
-        let mut order = TestOrderStubs::market_order(
-            audusd_sim.id(),
-            OrderSide::Buy,
-            Quantity::from(100_000),
-            None,
-            None,
-        );
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
         cache.add_order(order.clone(), None, None, false).unwrap();
 
         let submitted = OrderSubmitted::default();
@@ -2970,14 +2963,13 @@ mod tests {
 
     #[rstest]
     fn test_orders_for_position(mut cache: Cache, audusd_sim: CurrencyPair) {
-        let order = TestOrderStubs::limit_order(
-            audusd_sim.id,
-            OrderSide::Buy,
-            Price::from("1.00000"),
-            Quantity::from(100_000),
-            None,
-            None,
-        );
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .price(Price::from("1.00000"))
+            .quantity(Quantity::from(100_000))
+            .build();
+
         let position_id = PositionId::default();
         cache
             .add_order(order.clone(), Some(position_id), None, false)
@@ -3003,13 +2995,11 @@ mod tests {
     #[rstest]
     fn test_position_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
         let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
-        let order = TestOrderStubs::market_order(
-            audusd_sim.id(),
-            OrderSide::Buy,
-            Quantity::from("1000000"),
-            None,
-            None,
-        );
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
         let fill = TestOrderEventStubs::order_filled(
             &order,
             &audusd_sim,

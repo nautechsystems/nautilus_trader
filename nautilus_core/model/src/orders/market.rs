@@ -498,33 +498,30 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        enums::{OrderSide, TimeInForce},
+        enums::{OrderSide, OrderType, TimeInForce},
         instruments::{currency_pair::CurrencyPair, stubs::*},
-        orders::stubs::*,
+        orders::builder::OrderTestBuilder,
         types::quantity::Quantity,
     };
 
     #[rstest]
     #[should_panic(expected = "Condition failed: invalid `Quantity`, should be positive and was 0")]
     fn test_positive_quantity_condition(audusd_sim: CurrencyPair) {
-        let _ = TestOrderStubs::market_order(
-            audusd_sim.id,
-            OrderSide::Buy,
-            Quantity::from(0),
-            None,
-            None,
-        );
+        let _ = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(0))
+            .build();
     }
 
     #[rstest]
     #[should_panic(expected = "GTD not supported for Market orders")]
     fn test_gtd_condition(audusd_sim: CurrencyPair) {
-        let _ = TestOrderStubs::market_order(
-            audusd_sim.id,
-            OrderSide::Buy,
-            Quantity::from(100),
-            None,
-            Some(TimeInForce::Gtd),
-        );
+        let _ = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100))
+            .time_in_force(TimeInForce::Gtd)
+            .build();
     }
 }
