@@ -35,7 +35,7 @@ tungstenite = "0.24.0"
 criterion = { workspace = true }
 serde_json = { workspace = true }
 rstest = { workspace = true }
-axum = "0.7.5"
+axum = "0.7.6"
 tracing-test = "0.2.5"
 
 [features]
