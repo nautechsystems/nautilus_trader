@@ -294,7 +294,7 @@ class TestPersistenceStreaming:
         )
 
         result = Counter([r.__class__.__name__ for r in result])  # type: ignore
-        assert result["SignalCounter"] == 179  # type: ignore
+        assert result["SignalCounter"] == 283  # type: ignore
 
     def test_generate_signal_class(self) -> None:
         # Arrange

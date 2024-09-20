@@ -8,6 +8,7 @@ This will be the final release with support for Python 3.10.
 - Added Polymarket integration
 - Added `BinaryOption` instrument (supports Polymarket integration)
 - Added `LiveExecutionEngine.inflight_check_retries` config option to limit in-flight order query attempts
+- Added `Symbol.root()` method for obtaining the root of parent or composite symbols
 - Improved dYdX execution client to use `RetryManager` for HTTP requests (#1941), thanks @davidsblom
 - Improved Interactive Brokers adapter to use a dynamic IB gateway `container_image` from config (#1940), thanks @rsmb7z
 - Improved `OrderBookDeltas` streaming and batching based on the `F_LAST` flag
@@ -28,6 +29,7 @@ This will be the final release with support for Python 3.10.
 - Fixed `OrderFactory.bracket(...)` param ordering for `sl_time_in_force` and `tp_time_in_force`, thanks for reporting @marcodambros
 - Fixed `Cfd` instrument Arrow schema and serialization
 - Fixed bar subscriptions on TWS/GW restart for Interactive Brokers (#1950), thanks @rsmb7z
+- Fixed Databento parent and continuous contract subscriptions (using new symbol root)
 
 ---
 

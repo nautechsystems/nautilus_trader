@@ -77,6 +77,22 @@ impl Symbol {
     pub fn as_str(&self) -> &str {
         self.0.as_str()
     }
+
+    /// Return the symbol root.
+    ///
+    /// The symbol root is defined as the portion of the symbol string that appears
+    /// before the first period. If the symbol contains one or more periods, a
+    /// wildcard character '*' is appended to the root.
+    #[must_use]
+    pub fn root(&self) -> String {
+        let symbol_str = self.as_str();
+        if let Some(index) = symbol_str.find('.') {
+            // TODO: The root shouldn't contain a wildcard char, we do this for convenience for now
+            format!("{}*", &symbol_str[..index])
+        } else {
+            symbol_str.to_string()
+        }
+    }
 }
 
 impl Debug for Symbol {
@@ -110,5 +126,16 @@ mod tests {
     fn test_string_reprs(symbol_eth_perp: Symbol) {
         assert_eq!(symbol_eth_perp.as_str(), "ETH-PERP");
         assert_eq!(format!("{symbol_eth_perp}"), "ETH-PERP");
+    }
+
+    #[rstest]
+    #[case("AUDUSD", "AUDUSD")]
+    #[case("AUD/USD", "AUD/USD")]
+    #[case("CL.FUT", "CL*")]
+    #[case("LO.OPT", "LO*")]
+    #[case("ES.c.0", "ES*")]
+    fn test_symbol_root(#[case] input: &str, #[case] expected_root: &str) {
+        let symbol = Symbol::new(input);
+        assert_eq!(symbol.root(), expected_root);
     }
 }
