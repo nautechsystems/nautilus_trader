@@ -145,7 +145,6 @@ class DatabentoInstrumentProvider(InstrumentProvider):
             self._log.info(f"Requesting parent symbols {parent_symbols}.", LogColor.BLUE)
             live_client.subscribe(
                 schema=DatabentoSchema.DEFINITION.value,
-                stype_in="parent",
                 symbols=parent_symbols,
                 start=0,  # From start of current week (latest definitions)
             )
