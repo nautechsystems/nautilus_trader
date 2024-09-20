@@ -47,21 +47,21 @@ from nautilus_trader.model.instruments import Instrument
 
 class OKXDataClient(LiveMarketDataClient):
     """
-    Provides a data client for the `Bybit` centralized cypto exchange.
+    Provides a data client for the `OKX` centralized cypto exchange.
 
     Parameters
     ----------
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
-    client : BybitHttpClient
-        The Bybit HTTP client.
+    client : OKXHttpClient
+        The OKX HTTP client.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
         The cache for the client.
     clock : LiveClock
         The clock for the client.
-    instrument_provider : BybitInstrumentProvider
+    instrument_provider : OKXInstrumentProvider
         The instrument provider.
     config : OKXDataClientConfig
         The configuration for the client.

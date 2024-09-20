@@ -231,7 +231,7 @@ class OKXSymbol(str):
 
     def to_instrument_id(self) -> InstrumentId:
         """
-        Parse the Bybit symbol into a Nautilus instrument ID.
+        Parse the OKX symbol into a Nautilus instrument ID.
 
         Returns
         -------
