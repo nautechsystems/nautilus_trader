@@ -192,9 +192,6 @@ jobs:
           rm -rf "/c/Program Files/dotnet"
           rm -rf "/c/Program Files (x86)/Microsoft Visual Studio/2019"
 
-      - name: Install nasm dependency (Windows)
-        uses: ilammy/setup-nasm@v1
-
       - name: Get Rust version from rust-toolchain.toml
         id: rust-version
         run: |
