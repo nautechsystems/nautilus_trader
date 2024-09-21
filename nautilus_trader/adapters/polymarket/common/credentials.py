@@ -27,7 +27,7 @@ def get_polymarket_api_secret() -> str:
 
 
 def get_polymarket_passphrase() -> str:
-    return get_env_key("POLYMARKET_PASS_PHRASE")
+    return get_env_key("POLYMARKET_PASSPHRASE")
 
 
 def get_polymarket_private_key() -> str:
