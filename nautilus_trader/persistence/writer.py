@@ -260,8 +260,9 @@ class StreamingFeatherWriter:
             return
 
         schema = self._schemas[cls]
-        timestamp = self.clock.utc_now().strftime("%Y%m%d_%H%M%S")
+        timestamp = self.clock.timestamp_ns()
         full_path = f"{self.path}/{table_name}_{timestamp}.feather"
+        print(full_path)
 
         self.fs.makedirs(self.fs._parent(full_path), exist_ok=True)
         f = self.fs.open(full_path, "wb")
@@ -290,7 +291,7 @@ class StreamingFeatherWriter:
         key = (table_name, obj.instrument_id.value)
         self.fs.makedirs(folder, exist_ok=True)
 
-        timestamp = self.clock.utc_now().strftime("%Y%m%d_%H%M%S")
+        timestamp = self.clock.timestamp_ns()
         full_path = f"{folder}/{urisafe_instrument_id(obj.instrument_id.value)}_{timestamp}.feather"
 
         f = self.fs.open(full_path, "wb")
@@ -393,7 +394,6 @@ class StreamingFeatherWriter:
         serialized = ArrowSerializer.serialize_batch([obj], data_cls=cls)
         if not serialized:
             return
-
         try:
             writer.write_table(serialized)
             self._file_sizes[table] = self._file_sizes.get(table, 0) + serialized.nbytes

@@ -1889,6 +1889,8 @@ class TestActor:
             cache=self.cache,
             clock=self.clock,
         )
+
+        self.clock.set_time(1704067205000000000)
         catalog = setup_catalog(protocol="memory", path="/catalog")
 
         writer = StreamingFeatherWriter(
@@ -1904,7 +1906,7 @@ class TestActor:
         actor.publish_signal(name="Test", value=5.0, ts_event=0)
 
         # Assert
-        assert catalog.fs.exists(f"{catalog.path}/custom_signal_test.feather")
+        assert catalog.fs.exists(f"{catalog.path}/custom_signal_test_1704067205000000000.feather")
 
     def test_subscribe_bars(self) -> None:
         # Arrange

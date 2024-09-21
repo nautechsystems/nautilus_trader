@@ -736,11 +736,13 @@ class ParquetDataCatalog(BaseDataCatalog):
         # Non-instrument feather files
         for fn in self.fs.glob(f"{prefix}/*.feather"):
             cls_name = fn.replace(prefix + "/", "").replace(".feather", "")
+            cls_name = cls_name.split("_")[0]
             yield FeatherFile(path=fn, class_name=cls_name)
 
         # Per-instrument feather files
         for ins_fn in self.fs.glob(f"{prefix}/**/*.feather"):
             ins_cls_name = pathlib.Path(ins_fn.replace(prefix + "/", "")).parent.name
+            ins_cls_name = ins_cls_name.split("_")[0]
             yield FeatherFile(path=ins_fn, class_name=ins_cls_name)
 
     def _read_feather_file(
