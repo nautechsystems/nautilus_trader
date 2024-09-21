@@ -90,7 +90,7 @@ You can do this by running the provided script located at `/adapters/polymarket/
 This script is adapted from a [gist](https://gist.github.com/poly-rodr/44313920481de58d5a3f6d1f8226bd5e) created by @poly-rodr.
 
 :::note
-You only need to run this script once per wallet that you intend to use for trading on Polymarket.
+You only need to run this script **once** per EOA wallet that you intend to use for trading on Polymarket.
 :::
 
 This script automates the process of approving the necessary allowances for the Polymarket contracts.
@@ -99,10 +99,10 @@ Polymarket CLOB Exchange to interact with your funds.
 
 Before running the script, ensure the following prerequisites are met:
 - Install the web3 Python package: `pip install -U web3==5.28`
-- Have a **Polygon** wallet funded with some MATIC (used for gas fees).
+- Have a **Polygon**-compatible wallet funded with some MATIC (used for gas fees).
 - Set the following environment variables in your shell:
-  - `POLYGON_PRIVATE_KEY`: Your private key for the **Polygon** wallet.
-  - `POLYGON_PUBLIC_KEY`: Your public key for the **Polygon** wallet.
+  - `POLYGON_PRIVATE_KEY`: Your private key for the **Polygon**-compatible wallet.
+  - `POLYGON_PUBLIC_KEY`: Your public key for the **Polygon**-compatible wallet.
 
 Once you have these in place, the script will:
 
@@ -111,7 +111,7 @@ Once you have these in place, the script will:
 
 :::note
 You can also adjust the approval amount in the script instead of using `MAX_INT`,
-with the amount specified in units of **wma (wrapped market asset)**, though this has not been tested.
+with the amount specified in _fractional units_ of **USDC.e**, though this has not been tested.
 :::
 
 Ensure that your private key and public key are correctly stored in the environment variables before running the script.
@@ -147,9 +147,10 @@ To trade with Polymarket using an EOA wallet, follow these steps to generate you
   - `POLYMARKET_PK`: Your private key for signing transactions.
   - `POLYMARKET_FUNDER`: The wallet address used for funding trades.
 
-2. Run the script located at:
-
-    `/adapters/polymarket/scripts/create_api_key.py`
+2. Run the script using:
+   ```bash
+   python nautilus_trader/adapters/polymarket/scripts/create_api_key.py
+   ```
 
 The script will generate and print API credentials, which you should save to the following environment variables:
 
