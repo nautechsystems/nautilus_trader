@@ -1893,6 +1893,8 @@ class TestActor:
 
         writer = StreamingFeatherWriter(
             path=catalog.path,
+            cache=self.cache,
+            clock=self.clock,
             fs_protocol=catalog.fs_protocol,
             replace=True,
         )
