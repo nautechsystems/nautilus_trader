@@ -97,7 +97,7 @@ from nautilus_trader.model.position import Position
 
 class OKXExecutionClient(LiveExecutionClient):
     """
-    Provides an execution client for the `OKX` centralized crypto exchange.
+    Provides an execution client for the OKX centralized crypto exchange.
 
     Parameters
     ----------

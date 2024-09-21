@@ -48,7 +48,7 @@ HTTP_METHOD_STRINGS = {
 
 class OKXHttpClient:
     """
-    Provides a `OKX` asynchronous HTTP client.
+    Provides a OKX asynchronous HTTP client.
 
     Parameters
     ----------

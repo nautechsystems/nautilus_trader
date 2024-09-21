@@ -12,7 +12,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-"""https://www.okx.com/docs-v5/en/?python#error-code"""
 
 
 def raise_okx_error(error_code: int, status_code: int | None, message: str | None) -> None:
@@ -23,7 +22,12 @@ def raise_okx_error(error_code: int, status_code: int | None, message: str | Non
 
 class OKXError(Exception):
     """
-    The base class for all `OKX` specific errors.
+    The base class for all OKX specific errors.
+
+    References
+    ----------
+    https://www.okx.com/docs-v5/en/?python#error-code
+
     """
 
     def __init__(self, error_code: int, status_code: int | None, message: str | None):
@@ -39,7 +43,7 @@ class OKXError(Exception):
 
 class OKXGeneralError(OKXError):
     """
-    Provides error codes and messages for `OKX` General Class exceptions.
+    Provides error codes and messages for OKX General Class exceptions.
     """
 
     error_code_messages = {

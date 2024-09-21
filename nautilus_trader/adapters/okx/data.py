@@ -62,7 +62,7 @@ from nautilus_trader.model.instruments import Instrument
 
 class OKXDataClient(LiveMarketDataClient):
     """
-    Provides a data client for the `OKX` centralized cypto exchange.
+    Provides a data client for the OKX centralized cypto exchange.
 
     Parameters
     ----------

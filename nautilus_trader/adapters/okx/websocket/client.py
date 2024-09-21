@@ -131,7 +131,7 @@ def get_book_channel(depth: SUPPORTED_WS_DEPTHS) -> str:
 
 class OKXWebsocketClient:
     """
-    Provides a `OKX` streaming WebSocket client.
+    Provides an OKX streaming WebSocket client.
 
     Parameters
     ----------
