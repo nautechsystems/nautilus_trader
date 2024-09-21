@@ -164,7 +164,7 @@ def get_cached_okx_instrument_provider(
 
 class OKXLiveDataClientFactory(LiveDataClientFactory):
     """
-    Provides a `OKX` live data client factory.
+    Provides a OKX live data client factory.
     """
 
     @staticmethod
@@ -230,7 +230,7 @@ class OKXLiveDataClientFactory(LiveDataClientFactory):
 
 class OKXLiveExecClientFactory(LiveExecClientFactory):
     """
-    Provides a `OKX` live execution client factory.
+    Provides a OKX live execution client factory.
     """
 
     @staticmethod
