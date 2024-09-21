@@ -42,6 +42,7 @@ from nautilus_trader.core.rust.model cimport strategy_id_new
 from nautilus_trader.core.rust.model cimport symbol_hash
 from nautilus_trader.core.rust.model cimport symbol_new
 from nautilus_trader.core.rust.model cimport symbol_root
+from nautilus_trader.core.rust.model cimport symbol_topic
 from nautilus_trader.core.rust.model cimport trade_id_hash
 from nautilus_trader.core.rust.model cimport trade_id_new
 from nautilus_trader.core.rust.model cimport trade_id_to_cstr
@@ -158,9 +159,10 @@ cdef class Symbol(Identifier):
         """
         Return the symbol root.
 
-        The symbol root is defined as the portion of the symbol string that appears
-        before the first period. If the symbol contains one or more periods, a
-        wildcard character '*' is appended to the root.
+        The symbol root is the substring that appears before the first period (`.`)
+        in the full symbol string. It typically represents the underlying asset for
+        futures and options contracts. If no period is found, the entire symbol
+        string is considered the root.
 
         Returns
         -------
@@ -168,6 +170,20 @@ cdef class Symbol(Identifier):
 
         """
         return cstr_to_pystr(symbol_root(&self._mem))
+
+    cpdef str topic(self):
+        """
+        Return the symbol topic.
+
+        The symbol topic is the root symbol with a wildcard `*` appended if the symbol has a root,
+        otherwise returns the full symbol string.
+
+        Returns
+        -------
+        str
+
+        """
+        return cstr_to_pystr(symbol_topic(&self._mem))
 
 
 cdef class Venue(Identifier):

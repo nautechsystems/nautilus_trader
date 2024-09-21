@@ -1527,6 +1527,8 @@ cdef extern from "../includes/model.h":
 
     const char *symbol_root(const Symbol_t *id);
 
+    const char *symbol_topic(const Symbol_t *id);
+
     # Returns a Nautilus identifier from a C string pointer.
     #
     # # Safety

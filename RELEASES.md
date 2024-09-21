@@ -9,6 +9,7 @@ This will be the final release with support for Python 3.10.
 - Added `BinaryOption` instrument (supports Polymarket integration)
 - Added `LiveExecutionEngine.inflight_check_retries` config option to limit in-flight order query attempts
 - Added `Symbol.root()` method for obtaining the root of parent or composite symbols
+- Added `Symbol.topic()` method for obtaining the subscription topic of parent or composite symbols
 - Added `underlying` filter param for `Cache.instruments(...)` method
 - Implemented `OrderTestBuilder` to assist testing in Rust (#1952), thanks @filipmacek
 - Implemented flush with truncate Postgres function for `PostgresCacheDatabase` (#1928), thanks @filipmacek

@@ -2273,6 +2273,8 @@ uint64_t symbol_hash(const struct Symbol_t *id);
 
 const char *symbol_root(const struct Symbol_t *id);
 
+const char *symbol_topic(const struct Symbol_t *id);
+
 /**
  * Returns a Nautilus identifier from a C string pointer.
  *

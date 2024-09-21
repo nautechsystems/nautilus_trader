@@ -39,6 +39,7 @@ cdef class Symbol(Identifier):
     @staticmethod
     cdef Symbol from_mem_c(Symbol_t mem)
     cpdef str root(self)
+    cpdef str topic(self)
 
 
 cdef class Venue(Identifier):

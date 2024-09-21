@@ -872,7 +872,7 @@ cdef class DataEngine(Component):
                 )
 
         # Set up subscriptions
-        cdef str topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol}"
+        cdef str topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol.topic()}"
 
         if not self._msgbus.is_subscribed(
             topic=topic,
@@ -884,7 +884,7 @@ cdef class DataEngine(Component):
                 priority=10,
             )
 
-        topic = f"data.book.depth.{instrument_id.venue}.{instrument_id.symbol}"
+        topic = f"data.book.depth.{instrument_id.venue}.{instrument_id.symbol.topic()}"
 
         if not only_deltas and not self._msgbus.is_subscribed(
             topic=topic,
@@ -1089,7 +1089,7 @@ cdef class DataEngine(Component):
             self._log.error("Cannot unsubscribe from synthetic instrument `OrderBookDelta` data")
             return
 
-        cdef str topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol}"
+        cdef str topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol.topic()}"
 
         cdef int num_subscribers = len(self._msgbus.subscriptions(pattern=topic))
         cdef bint is_internal_book_subscriber = self._msgbus.is_subscribed(
@@ -1123,9 +1123,9 @@ cdef class DataEngine(Component):
             return
 
         # Set up topics
-        cdef str deltas_topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol}"
-        cdef str depth_topic = f"data.book.depth.{instrument_id.venue}.{instrument_id.symbol}"
-        cdef str snapshots_topic = f"data.book.snapshots.{instrument_id.venue}.{instrument_id.symbol}"
+        cdef str deltas_topic = f"data.book.deltas.{instrument_id.venue}.{instrument_id.symbol.topic()}"
+        cdef str depth_topic = f"data.book.depth.{instrument_id.venue}.{instrument_id.symbol.topic()}"
+        cdef str snapshots_topic = f"data.book.snapshots.{instrument_id.venue}.{instrument_id.symbol.topic()}"
 
         # Check the deltas and the depth subscription
         cdef list[str] topics = [deltas_topic, depth_topic]

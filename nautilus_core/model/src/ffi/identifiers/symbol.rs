@@ -36,5 +36,10 @@ pub extern "C" fn symbol_hash(id: &Symbol) -> u64 {
 
 #[no_mangle]
 pub extern "C" fn symbol_root(id: &Symbol) -> *const c_char {
-    str_to_cstr(&id.root())
+    str_to_cstr(id.root())
+}
+
+#[no_mangle]
+pub extern "C" fn symbol_topic(id: &Symbol) -> *const c_char {
+    str_to_cstr(&id.topic())
 }
