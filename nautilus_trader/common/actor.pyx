@@ -1155,7 +1155,7 @@ cdef class Actor(Component):
         self._msgbus.subscribe(
             topic=f"data.instrument"
                   f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.root()}",
+                  f".{instrument_id.symbol.topic()}",
             handler=self.handle_instrument,
         )
 
@@ -1212,7 +1212,7 @@ cdef class Actor(Component):
         self._msgbus.subscribe(
             topic=f"data.book.deltas"
                   f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.root()}",
+                  f".{instrument_id.symbol.topic()}",
             handler=self.handle_order_book_deltas,
         )
 
@@ -1294,7 +1294,7 @@ cdef class Actor(Component):
         self._msgbus.subscribe(
             topic=f"data.book.snapshots"
                   f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.root()}"
+                  f".{instrument_id.symbol.topic()}"
                   f".{interval_ms}",
             handler=self.handle_order_book,
         )
@@ -1335,7 +1335,7 @@ cdef class Actor(Component):
         self._msgbus.subscribe(
             topic=f"data.quotes"
                   f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.root()}",
+                  f".{instrument_id.symbol.topic()}",
             handler=self.handle_quote_tick,
         )
 
@@ -1368,7 +1368,7 @@ cdef class Actor(Component):
         self._msgbus.subscribe(
             topic=f"data.trades"
                   f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.root()}",
+                  f".{instrument_id.symbol.topic()}",
             handler=self.handle_trade_tick,
         )
 
@@ -1443,7 +1443,7 @@ cdef class Actor(Component):
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.status.{instrument_id.venue}.{instrument_id.symbol.root()}",
+            topic=f"data.status.{instrument_id.venue}.{instrument_id.symbol.topic()}",
             handler=self.handle_instrument_status,
         )
 
@@ -1573,7 +1573,7 @@ cdef class Actor(Component):
         self._msgbus.unsubscribe(
             topic=f"data.instrument"
                   f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.root()}",
+                  f".{instrument_id.symbol.topic()}",
             handler=self.handle_instrument,
         )
 
@@ -1606,7 +1606,7 @@ cdef class Actor(Component):
         self._msgbus.unsubscribe(
             topic=f"data.book.deltas"
                   f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.root()}",
+                  f".{instrument_id.symbol.topic()}",
             handler=self.handle_order_book_deltas,
         )
 
@@ -1648,7 +1648,7 @@ cdef class Actor(Component):
         self._msgbus.unsubscribe(
             topic=f"data.book.snapshots"
                   f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.root()}"
+                  f".{instrument_id.symbol.topic()}"
                   f".{interval_ms}",
             handler=self.handle_order_book,
         )
@@ -1685,7 +1685,7 @@ cdef class Actor(Component):
         self._msgbus.unsubscribe(
             topic=f"data.quotes"
                   f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.root()}",
+                  f".{instrument_id.symbol.topic()}",
             handler=self.handle_quote_tick,
         )
 
@@ -1718,7 +1718,7 @@ cdef class Actor(Component):
         self._msgbus.unsubscribe(
             topic=f"data.trades"
                   f".{instrument_id.venue}"
-                  f".{instrument_id.symbol.root()}",
+                  f".{instrument_id.symbol.topic()}",
             handler=self.handle_trade_tick,
         )
 
@@ -1783,7 +1783,7 @@ cdef class Actor(Component):
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
-            topic=f"data.status.{instrument_id.venue}.{instrument_id.symbol.root()}",
+            topic=f"data.status.{instrument_id.venue}.{instrument_id.symbol.topic()}",
             handler=self.handle_instrument_status,
         )
 

@@ -66,9 +66,9 @@ def test_symbol_equality() -> None:
     [
         ["AUDUSD", "AUDUSD"],
         ["AUD/USD", "AUD/USD"],
-        ["CL.FUT", "CL*"],
-        ["LO.OPT", "LO*"],
-        ["ES.c.0", "ES*"],
+        ["CL.FUT", "CL"],
+        ["LO.OPT", "LO"],
+        ["ES.c.0", "ES"],
     ],
 )
 def test_symbol_root(value: str, expected_root: str) -> None:
@@ -77,6 +77,24 @@ def test_symbol_root(value: str, expected_root: str) -> None:
 
     # Act, Assert
     assert symbol.root() == expected_root
+
+
+@pytest.mark.parametrize(
+    ("value", "expected_topic"),
+    [
+        ["AUDUSD", "AUDUSD"],
+        ["AUD/USD", "AUD/USD"],
+        ["CL.FUT", "CL*"],
+        ["LO.OPT", "LO*"],
+        ["ES.c.0", "ES*"],
+    ],
+)
+def test_symbol_topic(value: str, expected_topic: str) -> None:
+    # Arrange
+    symbol = Symbol(value)
+
+    # Act, Assert
+    assert symbol.topic() == expected_topic
 
 
 def test_symbol_str() -> None:

@@ -78,19 +78,32 @@ impl Symbol {
         self.0.as_str()
     }
 
-    /// Return the symbol root.
+    /// Returns the symbol root.
     ///
-    /// The symbol root is defined as the portion of the symbol string that appears
-    /// before the first period. If the symbol contains one or more periods, a
-    /// wildcard character '*' is appended to the root.
+    /// The symbol root is the substring that appears before the first period (`.`)
+    /// in the full symbol string. It typically represents the underlying asset for
+    /// futures and options contracts. If no period is found, the entire symbol
+    /// string is considered the root.
     #[must_use]
-    pub fn root(&self) -> String {
+    pub fn root(&self) -> &str {
         let symbol_str = self.as_str();
         if let Some(index) = symbol_str.find('.') {
-            // TODO: The root shouldn't contain a wildcard char, we do this for convenience for now
-            format!("{}*", &symbol_str[..index])
+            &symbol_str[..index]
         } else {
-            symbol_str.to_string()
+            symbol_str
+        }
+    }
+
+    /// Returns the symbol topic.
+    ///
+    /// The symbol topic is the root symbol with a wildcard `*` appended if the symbol has a root,
+    /// otherwise returns the full symbol string.
+    pub fn topic(&self) -> String {
+        let root_str = self.root();
+        if root_str == self.as_str() {
+            root_str.to_string()
+        } else {
+            format!("{}*", root_str)
         }
     }
 }
@@ -131,11 +144,22 @@ mod tests {
     #[rstest]
     #[case("AUDUSD", "AUDUSD")]
     #[case("AUD/USD", "AUD/USD")]
-    #[case("CL.FUT", "CL*")]
-    #[case("LO.OPT", "LO*")]
-    #[case("ES.c.0", "ES*")]
+    #[case("CL.FUT", "CL")]
+    #[case("LO.OPT", "LO")]
+    #[case("ES.c.0", "ES")]
     fn test_symbol_root(#[case] input: &str, #[case] expected_root: &str) {
         let symbol = Symbol::new(input);
         assert_eq!(symbol.root(), expected_root);
+    }
+
+    #[rstest]
+    #[case("AUDUSD", "AUDUSD")]
+    #[case("AUD/USD", "AUD/USD")]
+    #[case("CL.FUT", "CL*")]
+    #[case("LO.OPT", "LO*")]
+    #[case("ES.c.0", "ES*")]
+    fn test_symbol_topic(#[case] input: &str, #[case] expected_topic: &str) {
+        let symbol = Symbol::new(input);
+        assert_eq!(symbol.topic(), expected_topic);
     }
 }
