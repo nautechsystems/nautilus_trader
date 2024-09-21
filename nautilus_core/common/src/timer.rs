@@ -153,7 +153,7 @@ pub struct TimeEventHandlerV2 {
 }
 
 impl TimeEventHandlerV2 {
-    /// Creates a new [`TimeEventHandler`] instance.
+    /// Creates a new [`TimeEventHandlerV2`] instance.
     #[must_use]
     pub const fn new(event: TimeEvent, callback: TimeEventCallback) -> Self {
         Self { event, callback }
