@@ -1525,6 +1525,8 @@ cdef extern from "../includes/model.h":
 
     uint64_t symbol_hash(const Symbol_t *id);
 
+    uint8_t symbol_is_composite(const Symbol_t *id);
+
     const char *symbol_root(const Symbol_t *id);
 
     const char *symbol_topic(const Symbol_t *id);

@@ -78,6 +78,12 @@ impl Symbol {
         self.0.as_str()
     }
 
+    /// Returns true if the symbol string contains a period (`.`).
+    #[must_use]
+    pub fn is_composite(&self) -> bool {
+        self.as_str().contains('.')
+    }
+
     /// Returns the symbol root.
     ///
     /// The symbol root is the substring that appears before the first period (`.`)
@@ -96,8 +102,9 @@ impl Symbol {
 
     /// Returns the symbol topic.
     ///
-    /// The symbol topic is the root symbol with a wildcard `*` appended if the symbol has a root,
+    /// The symbol topic is the root symbol with a wildcard (`*`) appended if the symbol has a root,
     /// otherwise returns the full symbol string.
+    #[must_use]
     pub fn topic(&self) -> String {
         let root_str = self.root();
         if root_str == self.as_str() {
@@ -139,6 +146,17 @@ mod tests {
     fn test_string_reprs(symbol_eth_perp: Symbol) {
         assert_eq!(symbol_eth_perp.as_str(), "ETH-PERP");
         assert_eq!(format!("{symbol_eth_perp}"), "ETH-PERP");
+    }
+
+    #[rstest]
+    #[case("AUDUSD", false)]
+    #[case("AUD/USD", false)]
+    #[case("CL.FUT", true)]
+    #[case("LO.OPT", true)]
+    #[case("ES.c.0", true)]
+    fn test_symbol_is_composite(#[case] input: &str, #[case] expected: bool) {
+        let symbol = Symbol::new(input);
+        assert_eq!(symbol.is_composite(), expected);
     }
 
     #[rstest]

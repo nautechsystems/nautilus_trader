@@ -98,6 +98,12 @@ impl Symbol {
     }
 
     #[getter]
+    #[pyo3(name = "is_composite")]
+    fn py_is_composite(&self) -> bool {
+        self.is_composite()
+    }
+
+    #[getter]
     #[pyo3(name = "root")]
     fn py_root(&self) -> &str {
         self.root()

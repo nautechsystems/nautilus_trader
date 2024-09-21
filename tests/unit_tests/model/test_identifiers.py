@@ -62,6 +62,24 @@ def test_symbol_equality() -> None:
 
 
 @pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ["AUDUSD", False],
+        ["AUD/USD", False],
+        ["CL.FUT", True],
+        ["LO.OPT", True],
+        ["ES.c.0", True],
+    ],
+)
+def test_symbol_is_composite(value: str, expected: str) -> None:
+    # Arrange
+    symbol = Symbol(value)
+
+    # Act, Assert
+    assert symbol.is_composite() == expected
+
+
+@pytest.mark.parametrize(
     ("value", "expected_root"),
     [
         ["AUDUSD", "AUDUSD"],
