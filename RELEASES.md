@@ -5,7 +5,8 @@ Released on TBD (UTC).
 This will be the final release with support for Python 3.10.
 
 ### Enhancements
-- Added Polymarket integration
+- Added Polymarket decentralized prediction market integration
+- Added OKX crypto exchange integration (#1951), thanks @miller-moore
 - Added `BinaryOption` instrument (supports Polymarket integration)
 - Added `LiveExecutionEngine.inflight_check_retries` config option to limit in-flight order query attempts
 - Added `Symbol.root()` method for obtaining the root of parent or composite symbols
