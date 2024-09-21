@@ -2271,6 +2271,8 @@ struct Symbol_t symbol_new(const char *ptr);
 
 uint64_t symbol_hash(const struct Symbol_t *id);
 
+uint8_t symbol_is_composite(const struct Symbol_t *id);
+
 const char *symbol_root(const struct Symbol_t *id);
 
 const char *symbol_topic(const struct Symbol_t *id);

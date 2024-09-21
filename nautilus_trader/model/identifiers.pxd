@@ -38,6 +38,7 @@ cdef class Symbol(Identifier):
 
     @staticmethod
     cdef Symbol from_mem_c(Symbol_t mem)
+    cpdef bint is_composite(self)
     cpdef str root(self)
     cpdef str topic(self)
 
