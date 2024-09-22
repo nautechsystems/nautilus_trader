@@ -3040,6 +3040,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-test-kit"
+version = "0.32.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-model",
+ "pyo3",
+ "reqwest",
+ "rstest",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "nom"
 version = "7.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3983,6 +3999,7 @@ dependencies = [
  "base64",
  "bytes",
  "encoding_rs",
+ "futures-channel",
  "futures-core",
  "futures-util",
  "h2",
