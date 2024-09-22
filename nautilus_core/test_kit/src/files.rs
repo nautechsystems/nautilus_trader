@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 use std::{
-    fs,
     fs::File,
     io::{
         copy, {self},
@@ -24,37 +23,27 @@ use std::{
 
 use reqwest::blocking::Client;
 
-pub fn ensure_file_exists_or_download_http(path: &str, url: &str) -> io::Result<()> {
+pub fn ensure_file_exists_or_download_http(path: &str, url: &str) -> anyhow::Result<()> {
     let file_path = Path::new(path);
-    if Path::new(path).exists() {
+    if file_path.exists() {
         return Ok(());
     }
 
     println!("File not found at {path}. Downloading from {url}");
 
     if let Some(parent) = file_path.parent() {
-        fs::create_dir_all(parent)?;
+        std::fs::create_dir_all(parent)?;
     }
 
-    let response = Client::new().get(url).send().map_err(|e| {
-        eprintln!("Network error: {e}");
-        io::Error::new(io::ErrorKind::Other, format!("Network error: {e}"))
-    })?;
+    let response = Client::new().get(url).send()?;
 
     if response.status().is_success() {
         let mut out = File::create(file_path)?;
-        let mut content = io::Cursor::new(response.bytes().map_err(|e| {
-            eprintln!("Error reading response bytes: {e}");
-            io::Error::new(io::ErrorKind::Other, e)
-        })?);
+        let mut content = io::Cursor::new(response.bytes()?);
         copy(&mut content, &mut out)?;
         println!("File downloaded to {path}");
     } else {
-        eprintln!("Failed to download file: HTTP {}", response.status());
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
-            format!("Failed to download file: HTTP {}", response.status()),
-        ));
+        anyhow::bail!("Failed to download file: HTTP {}", response.status());
     }
 
     Ok(())
@@ -65,10 +54,10 @@ pub fn ensure_file_exists_or_download_http(path: &str, url: &str) -> io::Result<
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use super::*;
     use std::{fs, net::SocketAddr, sync::Arc};
 
     use axum::{http::StatusCode, routing::get, serve, Router};
-    use rstest::rstest;
     use tempfile::TempDir;
     use tokio::{
         net::TcpListener,
@@ -76,14 +65,11 @@ mod tests {
         time::{sleep, Duration},
     };
 
-    use super::*;
-
     async fn setup_test_server(
         server_content: Option<String>,
         status_code: StatusCode,
     ) -> SocketAddr {
         let server_content = Arc::new(server_content);
-        let status_code = status_code;
         let server_content_clone = server_content.clone();
         let app = Router::new().route(
             "/testfile.txt",
@@ -114,83 +100,87 @@ mod tests {
         addr
     }
 
-    #[rstest]
-    #[case::file_exists(true, true, StatusCode::OK, Some("Server file content".into()))]
-    #[case::download_success(false, true, StatusCode::OK, Some("Server file content".into()))]
-    #[case::download_404(false, true, StatusCode::NOT_FOUND, None)]
-    #[case::network_error(false, false, StatusCode::OK, Some("Server file content".into()))]
     #[tokio::test]
-    async fn test_ensure_file_exists(
-        #[case] file_exists: bool,
-        #[case] start_server: bool,
-        #[case] status_code: StatusCode,
-        #[case] server_content: Option<String>,
-    ) {
+    async fn test_file_already_exists() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("testfile.txt");
+        fs::write(&file_path, "Existing file content").unwrap();
+
+        let url = "http://example.com/testfile.txt".to_string();
+        let result = ensure_file_exists_or_download_http(file_path.to_str().unwrap(), &url);
+
+        assert!(result.is_ok());
+        let content = fs::read_to_string(&file_path).unwrap();
+        assert_eq!(content, "Existing file content");
+    }
+
+    #[tokio::test]
+    async fn test_download_file_success() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("testfile.txt");
 
-        if file_exists {
-            fs::write(&file_path, "Existing file content").unwrap();
-        }
+        let server_content = Some("Server file content".to_string());
+        let status_code = StatusCode::OK;
+        let addr = setup_test_server(server_content.clone(), status_code).await;
+        let url = format!("http://{}/testfile.txt", addr);
 
-        let url: String;
-
-        if start_server {
-            let addr = setup_test_server(server_content.clone(), status_code).await;
-            url = format!("http://{}/testfile.txt", addr);
-        } else {
-            // Use an unreachable address to simulate a network error
-            let addr = SocketAddr::from(([127, 0, 0, 1], 0));
-            url = format!("http://{}/testfile.txt", addr);
-        }
-
-        let file_path_clone = file_path.to_str().unwrap().to_string();
-        let url_clone = url.clone();
+        let file_path_str = file_path.to_str().unwrap().to_string();
         let result = tokio::task::spawn_blocking(move || {
-            ensure_file_exists_or_download_http(&file_path_clone, &url_clone)
+            ensure_file_exists_or_download_http(&file_path_str, &url)
         })
         .await
         .unwrap();
 
-        if !start_server {
-            // Expect a network error
-            assert!(result.is_err());
-            let err = result.unwrap_err();
-            let err_msg = format!("{}", err);
-            assert!(
-                err_msg.contains("Network error"),
-                "Unexpected error message: {}",
-                err_msg
-            );
-        } else {
-            match status_code {
-                StatusCode::OK => {
-                    if file_exists {
-                        // The function should not attempt to download
-                        assert!(result.is_ok());
-                        let content = fs::read_to_string(&file_path).unwrap();
-                        assert_eq!(content, "Existing file content");
-                    } else {
-                        // The function should download the file
-                        assert!(result.is_ok());
-                        let content = fs::read_to_string(&file_path).unwrap();
-                        let expected_content =
-                            server_content.unwrap_or_else(|| "File not found".to_string());
-                        assert_eq!(content, expected_content);
-                    }
-                }
-                StatusCode::NOT_FOUND => {
-                    assert!(result.is_err());
-                    let err = result.unwrap_err();
-                    let err_msg = format!("{}", err);
-                    assert!(
-                        err_msg.contains("Failed to download file"),
-                        "Unexpected error message: {}",
-                        err_msg
-                    );
-                }
-                _ => {}
-            }
-        }
+        assert!(result.is_ok());
+        let content = fs::read_to_string(&file_path).unwrap();
+        assert_eq!(content, server_content.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_download_file_not_found() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("testfile.txt");
+
+        let server_content = None;
+        let status_code = StatusCode::NOT_FOUND;
+        let addr = setup_test_server(server_content, status_code).await;
+        let url = format!("http://{}/testfile.txt", addr);
+
+        let result = tokio::task::spawn_blocking(move || {
+            ensure_file_exists_or_download_http(file_path.to_str().unwrap(), &url)
+        })
+        .await
+        .unwrap();
+
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.contains("Failed to download file"),
+            "Unexpected error message: {}",
+            err_msg
+        );
+    }
+
+    #[tokio::test]
+    async fn test_network_error() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("testfile.txt");
+
+        // Use an unreachable address to simulate a network error
+        let url = "http://127.0.0.1:0/testfile.txt".to_string();
+
+        let result = tokio::task::spawn_blocking(move || {
+            ensure_file_exists_or_download_http(file_path.to_str().unwrap(), &url)
+        })
+        .await
+        .unwrap();
+
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.unwrap_err());
+        assert!(
+            err_msg.contains("error"),
+            "Unexpected error message: {}",
+            err_msg
+        );
     }
 }
