@@ -122,7 +122,7 @@ mod tests {
         let server_content = Some("Server file content".to_string());
         let status_code = StatusCode::OK;
         let addr = setup_test_server(server_content.clone(), status_code).await;
-        let url = format!("http://{}/testfile.txt", addr);
+        let url = format!("http://{addr}/testfile.txt");
 
         let file_path_str = file_path.to_str().unwrap().to_string();
         let result = tokio::task::spawn_blocking(move || {
@@ -144,7 +144,7 @@ mod tests {
         let server_content = None;
         let status_code = StatusCode::NOT_FOUND;
         let addr = setup_test_server(server_content, status_code).await;
-        let url = format!("http://{}/testfile.txt", addr);
+        let url = format!("http://{addr}/testfile.txt");
 
         let result = tokio::task::spawn_blocking(move || {
             ensure_file_exists_or_download_http(file_path.to_str().unwrap(), &url)
@@ -156,8 +156,7 @@ mod tests {
         let err_msg = format!("{}", result.unwrap_err());
         assert!(
             err_msg.contains("Failed to download file"),
-            "Unexpected error message: {}",
-            err_msg
+            "Unexpected error message: {err_msg}"
         );
     }
 
@@ -179,8 +178,7 @@ mod tests {
         let err_msg = format!("{}", result.unwrap_err());
         assert!(
             err_msg.contains("error"),
-            "Unexpected error message: {}",
-            err_msg
+            "Unexpected error message: {err_msg}"
         );
     }
 }
