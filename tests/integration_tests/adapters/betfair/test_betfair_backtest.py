@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pytest
 
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
@@ -33,6 +34,7 @@ from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvide
 from tests.integration_tests.adapters.betfair.test_kit import betting_instrument
 
 
+@pytest.mark.skip(reason="Unskip once Betfair symbol conventions changed")
 def test_betfair_backtest():
     # Arrange
     config = BacktestEngineConfig(

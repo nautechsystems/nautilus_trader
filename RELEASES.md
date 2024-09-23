@@ -36,6 +36,8 @@ This will be the final release with support for Python 3.10.
 - Fixed `Cfd` instrument Arrow schema and serialization
 - Fixed bar subscriptions on TWS/GW restart for Interactive Brokers (#1950), thanks @rsmb7z
 - Fixed Databento parent and continuous contract subscriptions (using new symbol root)
+- Fixed `FuturesSpread` serialization
+- Fixed `OptionsSpread` serialization
 
 ---
 

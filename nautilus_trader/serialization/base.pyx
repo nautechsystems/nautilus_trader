@@ -62,7 +62,9 @@ from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
 from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.instruments.equity cimport Equity
 from nautilus_trader.model.instruments.futures_contract cimport FuturesContract
+from nautilus_trader.model.instruments.futures_spread cimport FuturesSpread
 from nautilus_trader.model.instruments.options_contract cimport OptionsContract
+from nautilus_trader.model.instruments.options_spread cimport OptionsSpread
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
 
 
@@ -100,7 +102,9 @@ _OBJECT_TO_DICT_MAP: dict[str, Callable[[None], dict]] = {
     BinaryOption.__name__: BinaryOption.to_dict_c,
     Equity.__name__: Equity.to_dict_c,
     FuturesContract.__name__: FuturesContract.to_dict_c,
+    FuturesSpread.__name__: FuturesSpread.to_dict_c,
     OptionsContract.__name__: OptionsContract.to_dict_c,
+    OptionsSpread.__name__: OptionsSpread.to_dict_c,
     Cfd.__name__: Cfd.to_dict_c,
     CurrencyPair.__name__: CurrencyPair.to_dict_c,
     CryptoPerpetual.__name__: CryptoPerpetual.to_dict_c,
@@ -151,7 +155,9 @@ _OBJECT_FROM_DICT_MAP: dict[str, Callable[[dict], Any]] = {
     BinaryOption.__name__: BinaryOption.from_dict_c,
     Equity.__name__: Equity.from_dict_c,
     FuturesContract.__name__: FuturesContract.from_dict_c,
+    FuturesSpread.__name__: FuturesSpread.from_dict_c,
     OptionsContract.__name__: OptionsContract.from_dict_c,
+    OptionsSpread.__name__: OptionsSpread.from_dict_c,
     Cfd.__name__: Cfd.from_dict_c,
     CurrencyPair.__name__: CurrencyPair.from_dict_c,
     CryptoPerpetual.__name__: CryptoPerpetual.from_dict_c,

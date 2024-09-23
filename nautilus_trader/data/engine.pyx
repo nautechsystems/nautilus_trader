@@ -55,6 +55,7 @@ from nautilus_trader.core.rust.common cimport ComponentState
 from nautilus_trader.core.rust.core cimport NANOSECONDS_IN_MILLISECOND
 from nautilus_trader.core.rust.core cimport NANOSECONDS_IN_SECOND
 from nautilus_trader.core.rust.core cimport millis_to_nanos
+from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.aggregation cimport BarAggregator
@@ -834,29 +835,29 @@ cdef class DataEngine(Component):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(metadata, "metadata")
 
-        # Create order book
-        if managed and not self._cache.has_order_book(instrument_id):
-            instrument = self._cache.instrument(instrument_id)
-            if instrument is None:
-                self._log.error(
-                    f"Cannot subscribe to {instrument_id} <OrderBook> data: "
-                    f"no instrument found in the cache",
-                )
-                return
-            order_book = OrderBook(
-                instrument_id=instrument.id,
-                book_type=metadata["book_type"],
-            )
+        cdef BookType book_type = metadata["book_type"]
 
-            self._cache.add_order_book(order_book)
-            self._log.debug(f"Created {type(order_book).__name__}")
+        # Create order book(s0)
+        cdef:
+            list[Instrument] instruments
+            Instrument instrument
+            str root
+        if managed:
+            if instrument_id.symbol.is_composite():
+                root = instrument_id.symbol.root()
+                instruments = self._cache.instruments(venue=instrument_id.venue, underlying=root)
+                for instrument in instruments:
+                    self._create_new_book(instrument, book_type)
+            else:
+                instrument = self._cache.instrument(instrument_id)
+                self._create_new_book(instrument, book_type)
 
         # Always re-subscribe to override previous settings
         try:
             if instrument_id not in client.subscribed_order_book_deltas():
                 client.subscribe_order_book_deltas(
                     instrument_id=instrument_id,
-                    book_type=metadata["book_type"],
+                    book_type=book_type,
                     depth=metadata["depth"],
                     kwargs=metadata.get("kwargs"),
                 )
@@ -895,6 +896,21 @@ cdef class DataEngine(Component):
                 handler=self._update_order_book,
                 priority=10,
             )
+
+    cpdef void _create_new_book(self, Instrument instrument, BookType book_type):
+        if instrument is None:
+            self._log.error(
+                f"Cannot subscribe to {instrument.id} <OrderBook> data: "
+                f"no instrument found in the cache",
+            )
+            return
+        order_book = OrderBook(
+            instrument_id=instrument.id,
+            book_type=book_type,
+        )
+
+        self._cache.add_order_book(order_book)
+        self._log.debug(f"Created {type(order_book).__name__} for {instrument.id}")
 
     cpdef void _handle_subscribe_quote_ticks(
         self,
@@ -1649,39 +1665,49 @@ cdef class DataEngine(Component):
     cpdef void _update_order_book(self, Data data):
         cdef OrderBook order_book = self._cache.order_book(data.instrument_id)
         if order_book is None:
-            # TODO: Silence error for now (book may be managed manually)
-            # self._log.error(
-            #     "Cannot update order book: "
-            #     f"no book found for {data.instrument_id}.",
-            # )
             return
 
         order_book.apply(data)
 
     cpdef void _snapshot_order_book(self, TimeEvent snap_event):
+        # OrderBook|LO.OPT.GLBX|100
+        # TODO: Optimize this with a map based on `snap_event.name` lookup
         cdef tuple[str] parts = snap_event.name.partition('|')[2].rpartition('|')
         cdef InstrumentId instrument_id = InstrumentId.from_str_c(parts[0])
         cdef int interval_ms = int(parts[2])
 
-        cdef OrderBook order_book = self._cache.order_book(instrument_id)
-        if order_book:
-            if order_book.ts_last == 0:
-                self._log.debug("OrderBook not yet updated, skipping snapshot")
-                return
-
-            self._msgbus.publish_c(
-                topic=f"data.book.snapshots"
-                      f".{instrument_id.venue}"
-                      f".{instrument_id.symbol}"
-                      f".{interval_ms}",
-                msg=order_book,
-            )
-
+        cdef:
+            list[Instrument] instruments
+            Instrument instrument
+            str root
+        if instrument_id.symbol.is_composite():
+            root = instrument_id.symbol.root()
+            instruments = self._cache.instruments(venue=instrument_id.venue, underlying=root)
+            for instrument in instruments:
+                self._publish_order_book(instrument.id, interval_ms)
         else:
+            self._publish_order_book(instrument_id, interval_ms)
+
+    cpdef void _publish_order_book(self, InstrumentId instrument_id, int interval_ms):
+        cdef OrderBook order_book = self._cache.order_book(instrument_id)
+        if order_book is None:
             self._log.error(
                 f"Cannot snapshot orderbook: "
-                f"no order book found, {snap_event}",
+                f"no order book found, {instrument_id}",
             )
+            return
+
+        if order_book.ts_last == 0:
+            self._log.debug("OrderBook not yet updated, skipping snapshot")
+            return
+
+        self._msgbus.publish_c(
+            topic=f"data.book.snapshots"
+                    f".{instrument_id.venue}"
+                    f".{instrument_id.symbol}"
+                    f".{interval_ms}",
+            msg=order_book,
+        )
 
     cpdef void _start_bar_aggregator(
         self,

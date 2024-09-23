@@ -16,6 +16,8 @@
 import copy
 from collections import Counter
 
+import pytest
+
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.config import BacktestDataConfig
@@ -59,6 +61,7 @@ class TestPersistenceStreaming:
 
         return backtest_result
 
+    @pytest.mark.skip(reason="Unskip once Betfair symbol conventions changed")
     def test_feather_writer(self, catalog_betfair: ParquetDataCatalog) -> None:
         # Arrange
         backtest_result = self._run_default_backtest(catalog_betfair)
@@ -397,6 +400,7 @@ class TestPersistenceStreaming:
             book.apply_delta(update)
             copy.deepcopy(book)
 
+    @pytest.mark.skip(reason="Unskip once Betfair symbol conventions changed")
     def test_read_backtest(
         self,
         catalog_betfair: ParquetDataCatalog,

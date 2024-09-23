@@ -36,7 +36,7 @@ class DatabentoDataClientConfig(LiveDataClientConfig, frozen=True):
         e.g. {'GLBX.MDP3', ['ES.FUT', 'ES.OPT']} (for all E-mini S&P 500 futures and options products).
     instrument_ids : list[InstrumentId], optional
         The instrument IDs to request instrument definitions for on start.
-    timeout_initial_load : float, default 10.0
+    timeout_initial_load : float, default 15.0
         The timeout (seconds) to wait for instruments to load (concurrently per dataset).
     mbo_subscriptions_delay : float, default 3.0
         The timeout (seconds) to wait for MBO/L3 subscriptions (concurrently per dataset).
@@ -50,5 +50,5 @@ class DatabentoDataClientConfig(LiveDataClientConfig, frozen=True):
     live_gateway: str | None = None
     instrument_ids: list[InstrumentId] | None = None
     parent_symbols: dict[str, set[str]] | None = None
-    timeout_initial_load: float | None = 10.0
+    timeout_initial_load: float | None = 15.0
     mbo_subscriptions_delay: float | None = 3.0  # Need to have received all definitions
