@@ -83,6 +83,9 @@ pub trait Clock {
         callback: Option<TimeEventCallback>,
     );
 
+    /// Returns the time interval in which the timer `name` is triggered
+    ///
+    /// If the timer doesn't exist 0 is returned.
     fn next_time_ns(&self, name: &str) -> UnixNanos;
     fn cancel_timer(&mut self, name: &str);
     fn cancel_timers(&mut self);
