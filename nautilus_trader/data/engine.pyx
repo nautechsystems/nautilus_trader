@@ -837,12 +837,12 @@ cdef class DataEngine(Component):
 
         cdef BookType book_type = metadata["book_type"]
 
-        # Create order book(s0)
         cdef:
             list[Instrument] instruments
             Instrument instrument
             str root
         if managed:
+            # Create order book(s)
             if instrument_id.symbol.is_composite():
                 root = instrument_id.symbol.root()
                 instruments = self._cache.instruments(venue=instrument_id.venue, underlying=root)
