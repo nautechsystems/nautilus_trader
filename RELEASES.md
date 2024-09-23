@@ -19,6 +19,7 @@ This will be the final release with support for Python 3.10.
 - Improved Interactive Brokers adapter to use a dynamic IB gateway `container_image` from config (#1940), thanks @rsmb7z
 - Improved `OrderBookDeltas` streaming and batching based on the `F_LAST` flag
 - Standardized underscore thousands separators for backtest logging
+- Updated Databento `publishers.json`
 
 ### Breaking Changes
 - Renamed `batch_size_bytes` to `chunk_size` (more accurate naming for number of data points to process per chunk in backtest streaming mode)
