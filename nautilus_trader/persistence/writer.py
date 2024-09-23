@@ -45,10 +45,10 @@ from nautilus_trader.serialization.arrow.serializer import register_arrow
 
 
 class RotationMode(Enum):
-    SIZE = "size"
-    INTERVAL = "interval"
-    SCHEDULED_DATES = "scheduled_dates"
-    NO_ROTATION = "no_rotation"
+    SIZE = 0
+    INTERVAL = 1
+    SCHEDULED_DATES = 2
+    NO_ROTATION = 3
 
 
 class StreamingFeatherWriter:
