@@ -355,7 +355,7 @@ pub fn decode_futures_spread_v1(
         msg.expiration.into(),
         currency,
         currency.precision,
-        decode_price(msg.min_price_increment, currency.precision)?,
+        decode_price(msg.min_price_increment, currency.precision)?, // TODO: Can be zero?
         Quantity::new(unit_of_measure_qty, 0),
         Quantity::new(lot_size_round, 0),
         None,               // TBD

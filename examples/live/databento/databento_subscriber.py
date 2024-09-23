@@ -44,10 +44,10 @@ from nautilus_trader.trading.strategy import Strategy
 # For correct subscription operation, you must specify all instruments to be immediately
 # subscribed for as part of the data client configuration
 instrument_ids = [
-    InstrumentId.from_str("ES.FUT.GLBX"),
-    InstrumentId.from_str("CL.FUT.GLBX"),
+    InstrumentId.from_str("ES.c.0.GLBX"),
+    # InstrumentId.from_str("ES.FUT.GLBX"),
+    # InstrumentId.from_str("CL.FUT.GLBX"),
     # InstrumentId.from_str("LO.OPT.GLBX"),
-    # InstrumentId.from_str("ES.c.0.GLBX"),
     # InstrumentId.from_str("AAPL.XNAS"),
 ]
 
@@ -85,7 +85,8 @@ config_node = TradingNodeConfig(
             http_gateway=None,
             instrument_provider=InstrumentProviderConfig(load_all=True),
             instrument_ids=instrument_ids,
-            parent_symbols={"GLBX.MDP3": {"ES.FUT", "CL.FUT"}},
+            parent_symbols={"GLBX.MDP3": {"ES.FUT"}},
+            mbo_subscriptions_delay=10.0,
         ),
     },
     timeout_connection=20.0,
@@ -140,7 +141,6 @@ class DataSubscriber(Strategy):
         for instrument_id in self.instrument_ids:
             # from nautilus_trader.model.enums import BookType
 
-            #
             # self.subscribe_order_book_deltas(
             #     instrument_id=instrument_id,
             #     book_type=BookType.L3_MBO,
@@ -151,7 +151,7 @@ class DataSubscriber(Strategy):
             #     book_type=BookType.L2_MBP,
             #     depth=10,
             #     client_id=DATABENTO_CLIENT_ID,
-            #     interval_ms=100,
+            #     interval_ms=1000,
             # )
 
             self.subscribe_quote_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
