@@ -48,7 +48,7 @@ semver = "1.0.23"
 serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0.128"
 strum = { version = "0.26.3", features = ["derive"] }
-thiserror = "1.0.63"
+thiserror = "1.0.64"
 thousands = "0.2.0"
 tracing = "0.1.40"
 tokio = { version = "1.40.0", features = ["full"] }
