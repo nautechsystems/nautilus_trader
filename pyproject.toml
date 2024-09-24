@@ -39,7 +39,7 @@ include = [
 requires = [
     "setuptools",
     "poetry-core>=1.9.0",
-    "numpy>=2.0.1",
+    "numpy>=1.26.4",
     "Cython==3.0.11",
     "toml>=0.10.2",
 ]
@@ -52,7 +52,7 @@ generate-setup-file = false
 [tool.poetry.dependencies]
 python = ">=3.10,<3.13"
 cython = "==3.0.11"  # Build dependency (pinned for stability)
-numpy = ">=2.0.1"  # Build dependency
+numpy = ">=1.26.4"  # Build dependency
 setuptools = ">=73" # Build dependency
 toml = "^0.10.2"  # Build dependency
 click = "^8.1.7"
