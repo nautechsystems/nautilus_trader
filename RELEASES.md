@@ -27,6 +27,7 @@ This will be the final release with support for Python 3.10.
 - Standardized Stop-Loss (SL) and Take-Profit (TP) param ordering for `OrderFactory.bracket(...)` including: `tp_time_in_force`, `tp_exec_algorithm_params`, `tp_tags`, `tp_client_order_id`
 
 ### Fixes
+- Fixed `LoggingConfig` issue for `level_file` when used with `use_pyo3=True` (was not passing through the `level_file` setting), thanks for reporting @xt2014
 - Fixed composite bar requests (#1923), thanks @faysou
 - Fixed average price calculation for `ValueBarAggregator` (#1927), thanks @faysou
 - Fixed breaking protobuf issue by pinning `protobuf` and `grpcio` for dYdX (#1929), thanks @davidsblom

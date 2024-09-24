@@ -180,6 +180,7 @@ class NautilusKernel:
                         trader_id=nautilus_pyo3.TraderId(self._trader_id.value),
                         instance_id=nautilus_pyo3.UUID4(self._instance_id.value),
                         level_stdout=nautilus_pyo3.LogLevel(logging.log_level),
+                        level_file=nautilus_pyo3.LogLevel(logging.log_level_file),
                         directory=logging.log_directory,
                         file_name=logging.log_file_name,
                         file_format=logging.log_file_format,
