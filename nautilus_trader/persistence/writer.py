@@ -13,8 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
-from datetime import time
+import datetime as dt
 from enum import Enum
 from io import TextIOWrapper
 from typing import Any, BinaryIO
@@ -73,16 +72,16 @@ class StreamingFeatherWriter:
     include_types : list[type], optional
         A list of Arrow serializable types to write.
         If this is specified then **only** the included types will be written.
-    rotation_mode : RotationMode, default RotationMode.NO_ROTATION
+    rotation_mode : RotationMode, default `RotationMode.NO_ROTATION`
         The mode for file rotation.
     max_file_size : int, default 1GB
-        The maximum file size in bytes before rotation (for SIZE mode).
+        The maximum file size in bytes before rotation (for `SIZE` mode).
     rotation_interval : pd.Timedelta, default 1 day
-        The time interval for file rotation (for INTERVAL mode and SCHEDULED_DATES mode).
-    rotation_time : time, default 00:00
-        The time of day for file rotation (for SCHEDULED_DATES mode).
+        The time interval for file rotation (for `INTERVAL` mode and `SCHEDULED_DATES` mode).
+    rotation_time : datetime.time, default 00:00
+        The time of day for file rotation (for `SCHEDULED_DATES` mode).
     rotation_timezone : str, default 'UTC'
-        The timezone for rotation calculations(for SCHEDULED_DATES mode).
+        The timezone for rotation calculations(for `SCHEDULED_DATES` mode).
 
     """
 
@@ -98,7 +97,7 @@ class StreamingFeatherWriter:
         rotation_mode: RotationMode = RotationMode.NO_ROTATION,
         max_file_size: int = 1024 * 1024 * 1024,  # 1GB
         rotation_interval: pd.Timedelta = pd.Timedelta(days=1),
-        rotation_time: time = time(0, 0, 0, 0),
+        rotation_time: dt.time = dt.time(0, 0, 0, 0),
         rotation_timezone: str = "UTC",
     ) -> None:
         self.path = path
