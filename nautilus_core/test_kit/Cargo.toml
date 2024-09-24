@@ -25,7 +25,7 @@ rstest = { workspace = true }
 tempfile = { workspace = true }
 
 [features]
-default = []
+default = ["python"]
 extension-module = [
     "pyo3/extension-module",
     "nautilus-core/extension-module",

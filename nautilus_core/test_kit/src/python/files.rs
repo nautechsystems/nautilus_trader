@@ -13,7 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod files;
+use nautilus_core::python::to_pyruntime_err;
+use pyo3::prelude::*;
 
-#[cfg(feature = "python")]
-pub mod python;
+use crate::files::ensure_file_exists_or_download_http;
+
+#[must_use]
+#[pyfunction(name = "ensure_file_exists_or_download_http")]
+pub fn py_ensure_file_exists_or_download_http(path: &str, url: &str) -> PyResult<()> {
+    ensure_file_exists_or_download_http(path, url).map_err(to_pyruntime_err)
+}
