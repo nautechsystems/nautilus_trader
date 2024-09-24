@@ -285,7 +285,7 @@ class TestBacktestConfigParsing:
                 TestConfigStubs.backtest_engine_config,
                 ("catalog",),
                 {"persist": True},
-                ("eec4a983b988d398cafeaf45e3eec4bf2ac12bbaa840442b8a1174da2ca0b9f5",),
+                ("789b190f1bbf143aebf018f49307f0107cf052b2def65179d5fb133b457b3da0",),
             ),
             (
                 TestConfigStubs.risk_engine_config,
@@ -303,7 +303,7 @@ class TestBacktestConfigParsing:
                 TestConfigStubs.streaming_config,
                 ("catalog",),
                 {},
-                ("c287d8e433d931f014895daa4400171a67c30b8c61d94f51be60ad162bdef6cd",),
+                ("302b840b10cdd0cc2664ee5f3bb8623ada23d6a6c7ecb8f41117fddecc6bea9a",),
             ),
         ],
     )

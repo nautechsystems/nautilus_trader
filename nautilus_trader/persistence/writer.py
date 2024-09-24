@@ -13,15 +13,21 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import datetime
+
+from datetime import time
+from enum import Enum
 from io import TextIOWrapper
 from typing import Any, BinaryIO
 
 import fsspec
+import pandas as pd
 import pyarrow as pa
+import pytz
 from fsspec.compression import AbstractBufferedFile
 from pyarrow import RecordBatchStreamWriter
 
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.common.component import Clock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
@@ -31,8 +37,6 @@ from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
-from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.persistence.funcs import class_to_filename
 from nautilus_trader.persistence.funcs import urisafe_instrument_id
 from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
@@ -40,14 +44,26 @@ from nautilus_trader.serialization.arrow.serializer import list_schemas
 from nautilus_trader.serialization.arrow.serializer import register_arrow
 
 
+class RotationMode(Enum):
+    SIZE = 0
+    INTERVAL = 1
+    SCHEDULED_DATES = 2
+    NO_ROTATION = 3
+
+
 class StreamingFeatherWriter:
     """
-    Provides a stream writer of Nautilus objects into feather files.
+    Provides a stream writer of Nautilus objects into feather files with rotation
+    capabilities.
 
     Parameters
     ----------
     path : str
         The path to persist the stream to.
+    cache : Cache
+        The cache for the query info.
+    clock : Clock
+        The clock to use for time-related operations.
     fs_protocol : str, default 'file'
         The `fsspec` file system protocol.
     flush_interval_ms : int, optional
@@ -57,18 +73,37 @@ class StreamingFeatherWriter:
     include_types : list[type], optional
         A list of Arrow serializable types to write.
         If this is specified then **only** the included types will be written.
+    rotation_mode : RotationMode, default RotationMode.NO_ROTATION
+        The mode for file rotation.
+    max_file_size : int, default 1GB
+        The maximum file size in bytes before rotation (for SIZE mode).
+    rotation_interval : pd.Timedelta, default 1 day
+        The time interval for file rotation (for INTERVAL mode and SCHEDULED_DATES mode).
+    rotation_time : time, default 00:00
+        The time of day for file rotation (for SCHEDULED_DATES mode).
+    rotation_timezone : str, default 'UTC'
+        The timezone for rotation calculations(for SCHEDULED_DATES mode).
 
     """
 
     def __init__(
         self,
         path: str,
+        cache: Cache,
+        clock: Clock,
         fs_protocol: str | None = "file",
         flush_interval_ms: int | None = None,
         replace: bool = False,
         include_types: list[type] | None = None,
+        rotation_mode: RotationMode = RotationMode.NO_ROTATION,
+        max_file_size: int = 1024 * 1024 * 1024,  # 1GB
+        rotation_interval: pd.Timedelta = pd.Timedelta(days=1),
+        rotation_time: time = time(0, 0, 0, 0),
+        rotation_timezone: str = "UTC",
     ) -> None:
         self.path = path
+        self.cache = cache
+        self.clock = clock
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(fs_protocol)
         self.fs.makedirs(self.fs._parent(self.path), exist_ok=True)
 
@@ -85,32 +120,132 @@ class StreamingFeatherWriter:
 
         self._schemas = list_schemas()
         self.logger = Logger(type(self).__name__)
-        self._files: dict[object, TextIOWrapper | BinaryIO | AbstractBufferedFile] = {}
-        self._writers: dict[str, RecordBatchStreamWriter] = {}
+        self._files: dict[
+            str | tuple[str, str],
+            TextIOWrapper | BinaryIO | AbstractBufferedFile,
+        ] = {}
+        self._writers: dict[str | tuple[str, str], RecordBatchStreamWriter] = {}
         self._instrument_writers: dict[tuple[str, str], RecordBatchStreamWriter] = {}
         self._per_instrument_writers = {
             "order_book_delta",
             "quote_tick",
             "trade_tick",
         }
-        self._instruments: dict[InstrumentId, Instrument] = {}
-        self._create_writers()
+        self.rotation_mode = rotation_mode
+        self.max_file_size = max_file_size
+        self.rotation_interval = rotation_interval
+        self.rotation_time = rotation_time
+        self.rotation_timezone = pytz.timezone(rotation_timezone)
+        self._file_sizes: dict[str | tuple[str, str], int] = {}
+        self._file_creation_times: dict[str | tuple[str, str], pd.Timestamp] = {}
+        self._next_rotation_time: pd.Timestamp | None = None
 
-        self.flush_interval_ms = datetime.timedelta(milliseconds=flush_interval_ms or 1000)
-        self._last_flush = datetime.datetime(1970, 1, 1)  # Default value to begin
+        self._create_writers()
+        self._update_next_rotation_time()
+
+        self.flush_interval_ms = flush_interval_ms or 1000
+        self._last_flush = self.clock.utc_now()
         self.missing_writers: set[type] = set()
 
-    @property
-    def is_closed(self) -> bool:
+    def _update_next_rotation_time(self) -> None:
         """
-        Return whether all file streams are closed.
+        Update the next rotation time based on the current rotation mode and clock.
+        """
+        now = self.clock.utc_now()
+        if self.rotation_mode == RotationMode.INTERVAL:
+            self._next_rotation_time = now + self.rotation_interval
+        elif self.rotation_mode == RotationMode.SCHEDULED_DATES:
+            if self._next_rotation_time is None:
+                user_rotation_time = pd.Timestamp.combine(now.date(), self.rotation_time)
+                self._next_rotation_time = pd.Timestamp(
+                    user_rotation_time,
+                    tz=self.rotation_timezone,
+                ).tz_convert("UTC")
+                while self._next_rotation_time <= now:
+                    self._next_rotation_time += self.rotation_interval
+            else:
+                self._next_rotation_time = now + self.rotation_interval
+        elif self.rotation_mode in (RotationMode.SIZE, RotationMode.NO_ROTATION):
+            self._next_rotation_time = None
+
+    def _check_file_rotation(self, table_name: str) -> bool:
+        """
+        Check if file rotation is needed for the given table.
+
+        Parameters
+        ----------
+        table_name : str
+            The name of the table to check.
 
         Returns
         -------
         bool
+            True if rotation is needed, False otherwise.
 
         """
-        return all(self._files[table_name].closed for table_name in self._files)
+        if self.rotation_mode == RotationMode.NO_ROTATION:
+            return False
+        elif self.rotation_mode == RotationMode.SIZE:
+            return self._file_sizes.get(table_name, 0) >= self.max_file_size
+        elif self.rotation_mode in (RotationMode.INTERVAL, RotationMode.SCHEDULED_DATES):
+            now = self.clock.utc_now()
+            if self._next_rotation_time and now >= self._next_rotation_time:
+                self._update_next_rotation_time()
+                return True
+        return False
+
+    def _rotate_regular_file(self, table_name: str, cls: type) -> None:
+        """
+        Rotate the file for a regular table.
+
+        Parameters
+        ----------
+        table_name : str
+            The name of the table to rotate.
+        cls : type
+            The class type for the writer.
+
+        """
+        if table_name in self._writers:
+            self._files[table_name].flush()
+            self._writers[table_name].close()
+            self._files[table_name].close()
+            del self._writers[table_name]
+            del self._files[table_name]
+
+        self._create_writer(cls=cls, table_name=table_name)
+        self._file_sizes[table_name] = 0
+        self._file_creation_times[table_name] = self.clock.utc_now()
+        self.logger.info(f"Rotated regular file for table '{table_name}'")
+
+    def _rotate_per_instrument_file(self, cls: type, obj: Any) -> None:
+        """
+        Rotate the file for a per-instrument table.
+
+        Parameters
+        ----------
+        cls : type
+            The class type of the object.
+        obj : Any
+            The object containing instrument data.
+
+        """
+        table_name = class_to_filename(cls)
+        key = (table_name, obj.instrument_id.value)
+        if key in self._instrument_writers:
+            self._files[key].flush()
+            self._instrument_writers[key].close()
+            self._files[key].close()
+            del self._instrument_writers[key]
+            del self._files[key]
+
+        self._create_instrument_writer(cls=cls, obj=obj)
+
+        self._file_sizes[key] = 0
+        self._file_creation_times[key] = self.clock.utc_now()
+        self.logger.info(
+            f"Rotated instrument file for table '{table_name}' with instrument ID '{obj.instrument_id.value}'",
+        )
 
     def _create_writer(self, cls: type, table_name: str | None = None) -> None:
         # Check if an include types filter has been specified
@@ -125,12 +260,16 @@ class StreamingFeatherWriter:
             return
 
         schema = self._schemas[cls]
-        full_path = f"{self.path}/{table_name}.feather"
+        timestamp = self.clock.timestamp_ns()
+        full_path = f"{self.path}/{table_name}_{timestamp}.feather"
+        print(full_path)
 
         self.fs.makedirs(self.fs._parent(full_path), exist_ok=True)
         f = self.fs.open(full_path, "wb")
         self._files[table_name] = f
         self._writers[table_name] = pa.ipc.new_stream(f, schema)
+        self._file_sizes[table_name] = 0
+        self._file_creation_times[table_name] = self.clock.utc_now()
 
         self.logger.info(f"Created writer for table '{table_name}'")
 
@@ -152,18 +291,21 @@ class StreamingFeatherWriter:
         key = (table_name, obj.instrument_id.value)
         self.fs.makedirs(folder, exist_ok=True)
 
-        full_path = f"{folder}/{urisafe_instrument_id(obj.instrument_id.value)}.feather"
+        timestamp = self.clock.timestamp_ns()
+        full_path = f"{folder}/{urisafe_instrument_id(obj.instrument_id.value)}_{timestamp}.feather"
+
         f = self.fs.open(full_path, "wb")
         self._files[key] = f
         self._instrument_writers[key] = pa.ipc.new_stream(f, schema)
-
+        self._file_sizes[table_name] = 0
+        self._file_creation_times[table_name] = self.clock.utc_now()
         self.logger.info(f"Created writer for table '{table_name}'")
 
     def _extract_obj_metadata(
         self,
         obj: TradeTick | QuoteTick | Bar | OrderBookDelta,
     ) -> dict[bytes, bytes]:
-        instrument = self._instruments[obj.instrument_id]
+        instrument = self.cache.instrument(obj.instrument_id)
         metadata = {b"instrument_id": obj.instrument_id.value.encode()}
         if (
             isinstance(obj, OrderBookDelta)
@@ -216,9 +358,6 @@ class StreamingFeatherWriter:
 
         if isinstance(obj, CustomData):
             cls = obj.data_type.type
-        elif isinstance(obj, Instrument):
-            if obj.id not in self._instruments:
-                self._instruments[obj.id] = obj
 
         table = class_to_filename(cls)
         if isinstance(obj, Bar):
@@ -233,7 +372,8 @@ class StreamingFeatherWriter:
                 self._create_writer(cls=cls, table_name=table)
             elif table in self._per_instrument_writers:
                 key = (table, obj.instrument_id.value)  # type: ignore
-                if key not in self._instrument_writers:
+                instrument = self.cache.instrument(obj.instrument_id)  # type: ignore
+                if key not in self._instrument_writers and instrument is not None:
                     self._create_instrument_writer(cls=cls, obj=obj)
             elif cls not in self.missing_writers:
                 self.logger.warning(f"Can't find writer for cls: {cls}")
@@ -243,17 +383,26 @@ class StreamingFeatherWriter:
                 return
 
         if table in self._per_instrument_writers:
-            writer: RecordBatchStreamWriter = self._instrument_writers[(table, obj.instrument_id.value)]  # type: ignore
+            key = (table, obj.instrument_id.value)  # type: ignore
+            if key in self._instrument_writers:
+                writer: RecordBatchStreamWriter = self._instrument_writers[key]
+            else:
+                return
         else:
             writer: RecordBatchStreamWriter = self._writers[table]  # type: ignore
 
         serialized = ArrowSerializer.serialize_batch([obj], data_cls=cls)
         if not serialized:
             return
-
         try:
             writer.write_table(serialized)
+            self._file_sizes[table] = self._file_sizes.get(table, 0) + serialized.nbytes
             self.check_flush()
+            if self._check_file_rotation(table):
+                if table in self._per_instrument_writers:
+                    self._rotate_per_instrument_file(cls=cls, obj=obj)
+                else:
+                    self._rotate_regular_file(table, cls)
         except Exception as e:
             self.logger.error(f"Failed to serialize {cls=}")
             self.logger.error(f"ERROR = `{e}`")
@@ -263,8 +412,8 @@ class StreamingFeatherWriter:
         """
         Flush all stream writers if current time greater than the next flush interval.
         """
-        now = datetime.datetime.now()
-        if now - self._last_flush > self.flush_interval_ms:
+        now = self.clock.utc_now()
+        if (now - self._last_flush).total_seconds() * 1000 > self.flush_interval_ms:
             self.flush()
             self._last_flush = now
 
@@ -286,6 +435,49 @@ class StreamingFeatherWriter:
             del self._writers[wcls]
         for fcls in self._files:
             self._files[fcls].close()
+
+    def get_current_file_info(self) -> dict[str | tuple[str, str], dict[str, Any]]:
+        """
+        Get information about the current files being written.
+
+        Returns
+        -------
+        dict[str | tuple[str, str], dict[str, Any]]
+            A dictionary containing file information for each table.
+
+        """
+        return {
+            table_name: {
+                "size": self._file_sizes.get(table_name, 0),
+                "creation_time": self._file_creation_times.get(table_name),
+            }
+            for table_name in self._writers
+        }
+
+    def get_next_rotation_time(self) -> pd.Timestamp | None:
+        """
+        Get the expected time for the next file rotation.
+
+        Returns
+        -------
+        pd.Timestamp | None
+            The next rotation time, or None if not applicable.
+
+        """
+        return self._next_rotation_time
+
+    @property
+    def is_closed(self) -> bool:
+        """
+        Return whether all file streams are closed.
+
+        Returns
+        -------
+        bool
+            True if all streams are closed, False otherwise.
+
+        """
+        return all(self._files[table_name].closed for table_name in self._files)
 
 
 def generate_signal_class(name: str, value_type: type) -> type:

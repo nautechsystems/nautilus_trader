@@ -736,6 +736,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         # Non-instrument feather files
         for fn in self.fs.glob(f"{prefix}/*.feather"):
             cls_name = fn.replace(prefix + "/", "").replace(".feather", "")
+            cls_name = "_".join(cls_name.split("_")[:-1])
             yield FeatherFile(path=fn, class_name=cls_name)
 
         # Per-instrument feather files
@@ -764,10 +765,17 @@ class ParquetDataCatalog(BaseDataCatalog):
         **kwargs: Any,
     ) -> None:
         table_name = class_to_filename(data_cls)
-        feather_file = Path(self.path) / "backtest" / instance_id / f"{table_name}.feather"
+        feather_dir = Path(self.path) / "backtest" / instance_id
+        feather_files = sorted(feather_dir.glob(f"{table_name}_*.feather"))
 
-        feather_table = self._read_feather_file(feather_file)
-        custom_data_list = self._handle_table_nautilus(feather_table, data_cls)
+        all_data = []
+        for feather_file in feather_files:
+            feather_table = self._read_feather_file(str(feather_file))
+            if feather_table is not None:
+                custom_data_list = self._handle_table_nautilus(feather_table, data_cls)
+                all_data.extend(custom_data_list)
+
+        all_data.sort(key=lambda x: x.ts_init)
 
         used_catalog = self if other_catalog is None else other_catalog
-        used_catalog.write_data(custom_data_list, **kwargs)
+        used_catalog.write_data(all_data, **kwargs)
