@@ -15,6 +15,7 @@ This will be the final release with support for Python 3.10.
 - Added `underlying` filter param for `Cache.instruments(...)` method
 - Implemented `OrderTestBuilder` to assist testing in Rust (#1952), thanks @filipmacek
 - Implemented flush with truncate Postgres function for `PostgresCacheDatabase` (#1928), thanks @filipmacek
+- Improved `StreamingFeatherWriter` with file rotation and use of `Clock` and `Cache` (#1954), thanks @graceyangfan
 - Improved dYdX execution client to use `RetryManager` for HTTP requests (#1941), thanks @davidsblom
 - Improved Interactive Brokers adapter to use a dynamic IB gateway `container_image` from config (#1940), thanks @rsmb7z
 - Improved `OrderBookDeltas` streaming and batching based on the `F_LAST` flag
