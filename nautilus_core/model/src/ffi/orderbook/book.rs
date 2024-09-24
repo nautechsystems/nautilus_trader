@@ -246,7 +246,7 @@ pub extern "C" fn orderbook_get_avg_px_qty_for_exposure(
     book: &mut OrderBook_API,
     qty: Quantity,
     order_side: OrderSide,
-) -> (f64, f64) {
+) -> (f64, f64, f64) {
     book.get_avg_px_qty_for_exposure(qty, order_side)
 }
 
