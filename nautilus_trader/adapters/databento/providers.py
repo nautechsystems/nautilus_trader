@@ -128,6 +128,12 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
         pyo3_instruments = []
         success_msg = "All instruments received and decoded"
+        timeout_secs = 10.0
+
+        self._log.info(
+            f"Awaiting instrument definitions ({timeout_secs}s timeout)...",
+            LogColor.BLUE,
+        )
 
         def receive_instruments(pyo3_instrument: Any) -> None:
             pyo3_instruments.append(pyo3_instrument)
@@ -156,12 +162,14 @@ class DatabentoInstrumentProvider(InstrumentProvider):
                 ),
                 timeout=10.0,
             )
-        except Exception as e:
+        except asyncio.TimeoutError:
+            pass  # Expected for parent and continuous for now
+        except asyncio.CancelledError as e:
             if success_msg in str(e):
                 # Expected on decode completion, continue
                 self._log.info(success_msg)
-            else:
-                self._log.error(repr(e))
+        except Exception as e:
+            self._log.error(repr(e))
 
         instruments = instruments_from_pyo3(pyo3_instruments)
 
