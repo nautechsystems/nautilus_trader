@@ -29,7 +29,7 @@ pub fn ensure_file_exists_or_download_http(path: &str, url: &str) -> anyhow::Res
         return Ok(());
     }
 
-    println!("File not found at {path}. Downloading from {url}");
+    println!("File not found at {path}: downloading from {url}");
 
     if let Some(parent) = file_path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -54,7 +54,6 @@ pub fn ensure_file_exists_or_download_http(path: &str, url: &str) -> anyhow::Res
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::{fs, net::SocketAddr, sync::Arc};
 
     use axum::{http::StatusCode, routing::get, serve, Router};
@@ -64,6 +63,8 @@ mod tests {
         task,
         time::{sleep, Duration},
     };
+
+    use super::*;
 
     async fn setup_test_server(
         server_content: Option<String>,

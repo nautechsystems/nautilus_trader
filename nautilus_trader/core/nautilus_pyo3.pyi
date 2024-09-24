@@ -3978,23 +3978,23 @@ class GreeksData(Data):
     quantity: int
 
     def __init__(
-            self,
-            ts_event: int = 0,
-            ts_init: int = 0,
-            instrument_id: InstrumentId = ...,
-            is_call: bool = True,
-            strike: float = 0.0,
-            expiry: int = 0,
-            forward: float = 0.0,
-            expiry_in_years: float = 0.0,
-            interest_rate: float = 0.0,
-            vol: float = 0.0,
-            price: float = 0.0,
-            delta: float = 0.0,
-            gamma: float = 0.0,
-            vega: float = 0.0,
-            theta: float = 0.0,
-            quantity: int = 1,
+        self,
+        ts_event: int = 0,
+        ts_init: int = 0,
+        instrument_id: InstrumentId = ...,
+        is_call: bool = True,
+        strike: float = 0.0,
+        expiry: int = 0,
+        forward: float = 0.0,
+        expiry_in_years: float = 0.0,
+        interest_rate: float = 0.0,
+        vol: float = 0.0,
+        price: float = 0.0,
+        delta: float = 0.0,
+        gamma: float = 0.0,
+        vega: float = 0.0,
+        theta: float = 0.0,
+        quantity: int = 1,
     ): ...
 
     @classmethod
@@ -4008,11 +4008,17 @@ class PortfolioGreeks(Data):
     theta: float
 
     def __init__(
-            self,
-            ts_event: int = 0,
-            ts_init: int = 0,
-            delta: float = 0.0,
-            gamma: float = 0.0,
-            vega: float = 0.0,
-            theta: float = 0.0,
+        self,
+        ts_event: int = 0,
+        ts_init: int = 0,
+        delta: float = 0.0,
+        gamma: float = 0.0,
+        vega: float = 0.0,
+        theta: float = 0.0,
     ): ...
+
+###################################################################################################
+# Test Kit
+###################################################################################################
+
+def ensure_file_exists_or_download_http(path: str, url: str): ...

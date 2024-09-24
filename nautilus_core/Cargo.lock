@@ -3036,6 +3036,7 @@ dependencies = [
  "nautilus-model",
  "nautilus-network",
  "nautilus-persistence",
+ "nautilus-test-kit",
  "pyo3",
 ]
 
