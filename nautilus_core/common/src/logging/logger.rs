@@ -449,7 +449,6 @@ impl Logger {
                         } else {
                             stderr_writer.write(wrapper.get_string());
                         }
-                        // TODO: remove flushes once log guard is implemented
                         stderr_writer.flush();
                     }
 
@@ -469,7 +468,6 @@ impl Logger {
                             } else {
                                 writer.write(wrapper.get_string());
                             }
-                            writer.flush();
                         }
                     }
                 }
@@ -647,6 +645,8 @@ mod tests {
             Duration::from_secs(2),
         );
 
+        drop(log_guard); // Ensure log buffers are flushed
+
         wait_until(
             || {
                 let log_file_path = std::fs::read_dir(&temp_dir)
@@ -662,8 +662,6 @@ mod tests {
             },
             Duration::from_secs(2),
         );
-
-        drop(log_guard); // Ensure log buffers are flushed
 
         assert_eq!(
             log_contents,
@@ -696,6 +694,8 @@ mod tests {
             "This is a test."
         );
 
+        drop(log_guard); // Ensure log buffers are flushed
+
         wait_until(
             || {
                 if let Some(log_file) = std::fs::read_dir(&temp_dir)
@@ -713,8 +713,6 @@ mod tests {
             },
             Duration::from_secs(3),
         );
-
-        drop(log_guard); // Ensure log buffers are flushed
 
         assert!(
             std::fs::read_dir(&temp_dir)
@@ -754,6 +752,8 @@ mod tests {
 
         let mut log_contents = String::new();
 
+        drop(log_guard); // Ensure log buffers are flushed
+
         wait_until(
             || {
                 if let Some(log_file) = std::fs::read_dir(&temp_dir)
@@ -771,8 +771,6 @@ mod tests {
             },
             Duration::from_secs(2),
         );
-
-        drop(log_guard); // Ensure log buffers are flushed
 
         assert_eq!(
         log_contents,
