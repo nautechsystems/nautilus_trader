@@ -665,8 +665,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         if order.order_type == OrderType.MARKET:
             price = POLYMARKET_MAX_PRICE if order.side == OrderSide.BUY else POLYMARKET_MIN_PRICE
+            expire_time_ns = 0
         elif order.order_type == OrderType.LIMIT:
             price = float(order.price)
+            expire_time_ns = order.expire_time_ns
         else:
             self._log.error(
                 f"Order type {order.type_string()} not supported on Polymarket, "
@@ -680,7 +682,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             token_id=get_polymarket_token_id(order.instrument_id),
             size=float(order.quantity),
             side=order_side_to_str(order.side),
-            expiration=int(nanos_to_secs(order.expire_time_ns)),
+            expiration=int(nanos_to_secs(expire_time_ns)),
         )
         options = PartialCreateOrderOptions(neg_risk=False)
         signing_start = self._clock.timestamp()
