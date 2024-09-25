@@ -23,10 +23,11 @@ use super::{aggregation::pre_process_order, analysis, display::pprint_book, leve
 use crate::{
     data::{
         delta::OrderBookDelta, deltas::OrderBookDeltas, depth::OrderBookDepth10, order::BookOrder,
+        quote::QuoteTick, trade::TradeTick,
     },
     enums::{BookAction, BookType, OrderSide, OrderSideSpecified},
     identifiers::InstrumentId,
-    orderbook::ladder::Ladder,
+    orderbook::{error::InvalidBookOperation, ladder::Ladder},
     types::{price::Price, quantity::Quantity},
 };
 
@@ -274,6 +275,74 @@ impl OrderBook {
         self.ts_last = ts_event;
         self.count += 1;
     }
+
+    pub fn update_quote_tick(&mut self, quote: &QuoteTick) -> Result<(), InvalidBookOperation> {
+        if self.book_type != BookType::L1_MBP {
+            return Err(InvalidBookOperation::Update(self.book_type));
+        };
+
+        let bid = BookOrder::new(
+            OrderSide::Buy,
+            quote.bid_price,
+            quote.bid_size,
+            OrderSide::Buy as u64,
+        );
+
+        let ask = BookOrder::new(
+            OrderSide::Sell,
+            quote.ask_price,
+            quote.ask_size,
+            OrderSide::Sell as u64,
+        );
+
+        self.update_book_bid(bid, quote.ts_event);
+        self.update_book_ask(ask, quote.ts_event);
+
+        Ok(())
+    }
+
+    pub fn update_trade_tick(&mut self, trade: &TradeTick) -> Result<(), InvalidBookOperation> {
+        if self.book_type != BookType::L1_MBP {
+            return Err(InvalidBookOperation::Update(self.book_type));
+        };
+
+        let bid = BookOrder::new(
+            OrderSide::Buy,
+            trade.price,
+            trade.size,
+            OrderSide::Buy as u64,
+        );
+
+        let ask = BookOrder::new(
+            OrderSide::Sell,
+            trade.price,
+            trade.size,
+            OrderSide::Sell as u64,
+        );
+
+        self.update_book_bid(bid, trade.ts_event);
+        self.update_book_ask(ask, trade.ts_event);
+
+        Ok(())
+    }
+
+    fn update_book_bid(&mut self, order: BookOrder, ts_event: UnixNanos) {
+        if let Some(top_bids) = self.bids.top() {
+            if let Some(top_bid) = top_bids.first() {
+                self.bids.remove(top_bid.order_id, 0, ts_event);
+            }
+        }
+        self.bids.add(order);
+    }
+
+    fn update_book_ask(&mut self, order: BookOrder, ts_event: UnixNanos) {
+        if let Some(top_asks) = self.asks.top() {
+            if let Some(top_ask) = top_asks.first() {
+                self.asks.remove(top_ask.order_id, 0, ts_event);
+            }
+        }
+        self.asks.add(order);
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -289,11 +358,7 @@ mod tests {
         },
         enums::{AggressorSide, BookType, OrderSide},
         identifiers::{InstrumentId, TradeId},
-        orderbook::{
-            aggregation::{update_book_with_quote_tick, update_book_with_trade_tick},
-            analysis::book_check_integrity,
-            book::OrderBook,
-        },
+        orderbook::{analysis::book_check_integrity, book::OrderBook},
         types::{price::Price, quantity::Quantity},
     };
 
@@ -595,7 +660,7 @@ mod tests {
             0.into(),
         );
 
-        update_book_with_quote_tick(&mut book, &quote).unwrap();
+        book.update_quote_tick(&quote).unwrap();
 
         assert_eq!(book.best_bid_price().unwrap(), quote.bid_price);
         assert_eq!(book.best_ask_price().unwrap(), quote.ask_price);
@@ -620,7 +685,7 @@ mod tests {
             0.into(),
         );
 
-        update_book_with_trade_tick(&mut book, &trade).unwrap();
+        book.update_trade_tick(&trade).unwrap();
 
         assert_eq!(book.best_bid_price().unwrap(), price);
         assert_eq!(book.best_ask_price().unwrap(), price);

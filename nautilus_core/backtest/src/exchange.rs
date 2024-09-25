@@ -20,17 +20,21 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use nautilus_common::{cache::Cache, msgbus::MessageBus};
-use nautilus_core::{correctness::check_equal, nanos::UnixNanos, time::AtomicTime};
+use nautilus_core::{
+    correctness::{check_equal, FAILED},
+    nanos::UnixNanos,
+    time::AtomicTime,
+};
 use nautilus_execution::{client::ExecutionClient, messages::TradingCommand};
 use nautilus_model::{
     data::{
         bar::Bar, delta::OrderBookDelta, deltas::OrderBookDeltas, quote::QuoteTick,
-        status::InstrumentStatus, trade::TradeTick,
+        status::InstrumentStatus, trade::TradeTick, Data,
     },
     enums::{AccountType, BookType, OmsType},
     identifiers::{InstrumentId, Venue},
     instruments::any::InstrumentAny,
-    types::{currency::Currency, money::Money},
+    types::{currency::Currency, money::Money, price::Price},
 };
 use rust_decimal::Decimal;
 
@@ -165,7 +169,7 @@ impl SimulatedExchange {
             "Venue of instrument id",
             "Venue of simulated exchange",
         )
-        .unwrap();
+        .expect(FAILED);
 
         if self.account_type == AccountType::Cash
             && (matches!(instrument, InstrumentAny::CryptoPerpetual(_))
@@ -207,12 +211,16 @@ impl SimulatedExchange {
         Ok(())
     }
 
-    pub fn best_bid_price(&self, _instrument_id: InstrumentId) {
-        todo!("best bid price")
+    pub fn best_bid_price(&self, instrument_id: InstrumentId) -> Option<Price> {
+        self.matching_engines
+            .get(&instrument_id)
+            .and_then(|matching_engine| matching_engine.best_bid_price())
     }
 
-    pub fn best_ask_price(&self, _instrument_id: InstrumentId) {
-        todo!("best ask price")
+    pub fn best_ask_price(&self, instrument_id: InstrumentId) -> Option<Price> {
+        self.matching_engines
+            .get(&instrument_id)
+            .and_then(|matching_engine| matching_engine.best_ask_price())
     }
 
     pub fn get_book(&self, _instrument_id: InstrumentId) {
@@ -267,8 +275,32 @@ impl SimulatedExchange {
         todo!("process order book deltas")
     }
 
-    pub fn process_quote_tick(&mut self, _tick: QuoteTick) {
-        todo!("process quote tick")
+    pub fn process_quote_tick(&mut self, tick: &QuoteTick) {
+        for module in self.modules.iter() {
+            module.pre_process(Data::Quote(tick.to_owned()));
+        }
+
+        if !self.matching_engines.contains_key(&tick.instrument_id) {
+            let instrument = {
+                let cache = self.cache.as_ref().borrow();
+                cache.instrument(&tick.instrument_id).cloned()
+            };
+
+            if let Some(instrument) = instrument {
+                self.add_instrument(instrument).unwrap();
+            } else {
+                panic!(
+                    "No matching engine found for instrument {}",
+                    tick.instrument_id
+                );
+            }
+        }
+
+        if let Some(matching_engine) = self.matching_engines.get_mut(&tick.instrument_id) {
+            matching_engine.process_quote_tick(tick);
+        } else {
+            panic!("Matching engine should be initialized");
+        }
     }
 
     pub fn process_trade_tick(&mut self, _tick: TradeTick) {
@@ -297,5 +329,121 @@ impl SimulatedExchange {
 
     pub fn generate_fresh_account_state(&self) {
         todo!("generate fresh account state")
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use std::{cell::RefCell, collections::HashMap, rc::Rc, sync::LazyLock};
+
+    use nautilus_common::{cache::Cache, msgbus::MessageBus};
+    use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
+    use nautilus_model::{
+        data::quote::QuoteTick,
+        enums::{AccountType, BookType, OmsType},
+        identifiers::Venue,
+        instruments::{
+            any::InstrumentAny, crypto_perpetual::CryptoPerpetual, stubs::crypto_perpetual_ethusdt,
+        },
+        types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    };
+    use rstest::rstest;
+
+    use crate::{
+        exchange::SimulatedExchange,
+        models::{
+            fee::{FeeModelAny, MakerTakerFeeModel},
+            fill::FillModel,
+            latency::LatencyModel,
+        },
+    };
+
+    static ATOMIC_TIME: LazyLock<AtomicTime> =
+        LazyLock::new(|| AtomicTime::new(true, UnixNanos::default()));
+
+    fn get_exchange(
+        venue: Venue,
+        account_type: AccountType,
+        book_type: BookType,
+    ) -> SimulatedExchange {
+        SimulatedExchange::new(
+            venue,
+            OmsType::Netting,
+            account_type,
+            vec![Money::new(1000.0, Currency::USD())],
+            None,
+            1.into(),
+            HashMap::new(),
+            vec![],
+            Rc::new(RefCell::new(MessageBus::default())),
+            Rc::new(RefCell::new(Cache::default())),
+            &ATOMIC_TIME,
+            FillModel::default(),
+            FeeModelAny::MakerTaker(MakerTakerFeeModel),
+            LatencyModel,
+            book_type,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap()
+    }
+
+    #[rstest]
+    #[should_panic(
+        expected = r#"Condition failed: 'Venue of instrument id' value of BINANCE was not equal to 'Venue of simulated exchange' value of SIM"#
+    )]
+    fn test_venue_mismatch_between_exchange_and_instrument(
+        crypto_perpetual_ethusdt: CryptoPerpetual,
+    ) {
+        let mut exchange: SimulatedExchange =
+            get_exchange(Venue::new("SIM"), AccountType::Margin, BookType::L1_MBP);
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        exchange.add_instrument(instrument).unwrap();
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Cash account cannot trade futures or perpetuals")]
+    fn test_cash_account_trading_futures_or_perpetuals(crypto_perpetual_ethusdt: CryptoPerpetual) {
+        let mut exchange: SimulatedExchange =
+            get_exchange(Venue::new("BINANCE"), AccountType::Cash, BookType::L1_MBP);
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        exchange.add_instrument(instrument).unwrap();
+    }
+
+    #[rstest]
+    fn test_exchange_process_quote_tick(crypto_perpetual_ethusdt: CryptoPerpetual) {
+        let mut exchange: SimulatedExchange =
+            get_exchange(Venue::new("BINANCE"), AccountType::Margin, BookType::L1_MBP);
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+
+        // register instrument
+        exchange.add_instrument(instrument).unwrap();
+
+        // process tick
+        let quote_tick = QuoteTick::new(
+            crypto_perpetual_ethusdt.id,
+            Price::from("1000"),
+            Price::from("1001"),
+            Quantity::from(1),
+            Quantity::from(1),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        exchange.process_quote_tick(&quote_tick);
+
+        let best_bid_price = exchange.best_bid_price(crypto_perpetual_ethusdt.id);
+        assert_eq!(best_bid_price, Some(Price::from("1000")));
+        let best_ask_price = exchange.best_ask_price(crypto_perpetual_ethusdt.id);
+        assert_eq!(best_ask_price, Some(Price::from("1001")));
     }
 }
