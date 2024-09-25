@@ -473,7 +473,6 @@ mod tests {
     use rstest::{fixture, rstest};
 
     use super::*;
-    use crate::timer::RustTimeEventCallback;
 
     #[derive(Default)]
     struct TestCallback {
@@ -555,14 +554,6 @@ mod tests {
         let mut clock = TestClock::new();
         let default_called = Rc::new(RefCell::new(false));
         let custom_called = Rc::new(RefCell::new(false));
-
-        // let default_callback: Rc<dyn RustTimeEventCallback> = Rc::new(TestCallback {
-        //     called: Rc::clone(&default_called),
-        // });
-
-        // let custom_callback: Rc<dyn RustTimeEventCallback> = Rc::new(TestCallback {
-        //     called: Rc::clone(&custom_called),
-        // });
 
         let default_callback = TestCallback::new(Rc::clone(&default_called));
         let custom_callback = TestCallback::new(Rc::clone(&custom_called));

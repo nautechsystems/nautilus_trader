@@ -97,11 +97,6 @@ impl PartialEq for TimeEvent {
     }
 }
 
-// TODO: Replace with Fn(TimeEvent)
-// pub trait RustTimeEventCallback {
-//     fn call(&self, event: TimeEvent);
-// }
-
 pub type RustTimeEventCallback = dyn Fn(TimeEvent);
 
 #[derive(Clone)]
