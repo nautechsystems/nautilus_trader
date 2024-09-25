@@ -19,12 +19,13 @@ use nautilus_core::python::to_pyvalue_err;
 use pyo3::{IntoPy, PyObject, PyResult, Python};
 
 use crate::instruments::{
-    any::InstrumentAny, crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual,
-    currency_pair::CurrencyPair, equity::Equity, futures_contract::FuturesContract,
-    futures_spread::FuturesSpread, options_contract::OptionsContract,
-    options_spread::OptionsSpread,
+    any::InstrumentAny, binary_option::BinaryOption, crypto_future::CryptoFuture,
+    crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair, equity::Equity,
+    futures_contract::FuturesContract, futures_spread::FuturesSpread,
+    options_contract::OptionsContract, options_spread::OptionsSpread,
 };
 
+pub mod binary_option;
 pub mod crypto_future;
 pub mod crypto_perpetual;
 pub mod currency_pair;
@@ -36,6 +37,7 @@ pub mod options_spread;
 
 pub fn instrument_any_to_pyobject(py: Python, instrument: InstrumentAny) -> PyResult<PyObject> {
     match instrument {
+        InstrumentAny::BinaryOption(inst) => Ok(inst.into_py(py)),
         InstrumentAny::CryptoFuture(inst) => Ok(inst.into_py(py)),
         InstrumentAny::CryptoPerpetual(inst) => Ok(inst.into_py(py)),
         InstrumentAny::CurrencyPair(inst) => Ok(inst.into_py(py)),
@@ -50,6 +52,9 @@ pub fn instrument_any_to_pyobject(py: Python, instrument: InstrumentAny) -> PyRe
 
 pub fn pyobject_to_instrument_any(py: Python, instrument: PyObject) -> PyResult<InstrumentAny> {
     match instrument.getattr(py, "type_str")?.extract::<&str>(py)? {
+        stringify!(BinaryOption) => Ok(InstrumentAny::BinaryOption(
+            instrument.extract::<BinaryOption>(py)?,
+        )),
         stringify!(CryptoFuture) => Ok(InstrumentAny::CryptoFuture(
             instrument.extract::<CryptoFuture>(py)?,
         )),

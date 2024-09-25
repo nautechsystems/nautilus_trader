@@ -8,8 +8,8 @@ from the latest NautilusTrader source code using [Sphinx](https://www.sphinx-doc
 
 Please note that there are separate references for different versions of NautilusTrader:
 
-- **Latest:** This API reference is built from the head of the `master` branch and represents the latest stable release.
-- **Nightly:** This API reference is built from the head of the `nightly` branch and represents bleeding edge and experimental changes/features currently in development.
+- **Latest**: This API reference is built from the head of the `master` branch and represents the latest stable release.
+- **Nightly**: This API reference is built from the head of the `nightly` branch and represents bleeding edge and experimental changes/features currently in development.
 
 You can select the desired API reference from the **Versions** top left drop down menu.
 

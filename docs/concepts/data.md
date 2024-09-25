@@ -61,7 +61,7 @@ of the Nautilus core, currently in development.
 
 ### Transformation pipeline
 
-**Process flow:**
+**Process flow**:
 1. Raw data (e.g., CSV) is input into the pipeline
 2. DataLoader processes the raw data and converts it into a `pd.DataFrame`
 3. DataWrangler further processes the `pd.DataFrame` to generate a list of Nautilus objects

@@ -15,7 +15,7 @@
 
 use std::ffi::c_char;
 
-use nautilus_core::ffi::string::cstr_to_str;
+use nautilus_core::ffi::string::{cstr_to_str, str_to_cstr};
 
 use crate::identifiers::Symbol;
 
@@ -32,4 +32,19 @@ pub unsafe extern "C" fn symbol_new(ptr: *const c_char) -> Symbol {
 #[no_mangle]
 pub extern "C" fn symbol_hash(id: &Symbol) -> u64 {
     id.inner().precomputed_hash()
+}
+
+#[no_mangle]
+pub extern "C" fn symbol_is_composite(id: &Symbol) -> u8 {
+    u8::from(id.is_composite())
+}
+
+#[no_mangle]
+pub extern "C" fn symbol_root(id: &Symbol) -> *const c_char {
+    str_to_cstr(id.root())
+}
+
+#[no_mangle]
+pub extern "C" fn symbol_topic(id: &Symbol) -> *const c_char {
+    str_to_cstr(&id.topic())
 }

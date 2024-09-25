@@ -18,15 +18,15 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 
 ## Features
 
-- **Fast:** C-level speed through Rust and Cython. Asynchronous networking with [uvloop](https://github.com/MagicStack/uvloop)
-- **Reliable:** Type safety through Rust and Cython. Redis backed performant state persistence
-- **Flexible:** OS independent, runs on Linux, macOS, Windows. Deploy using Docker
-- **Integrated:** Modular adapters mean any REST, WebSocket, or FIX API can be integrated
-- **Advanced:** Time in force `IOC`, `FOK`, `GTD`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO`
-- **Backtesting:** Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution
-- **Live:** Use identical strategy implementations between backtesting and live deployments
-- **Multi-venue:** Multiple venue capabilities facilitate market making and statistical arbitrage strategies
-- **AI Training:** Backtest engine fast enough to be used to train AI trading agents (RL/ES)
+- **Fast**: C-level speed through Rust and Cython. Asynchronous networking with [uvloop](https://github.com/MagicStack/uvloop)
+- **Reliable**: Type safety through Rust and Cython. Redis backed performant state persistence
+- **Flexible**: OS independent, runs on Linux, macOS, Windows. Deploy using Docker
+- **Integrated**: Modular adapters mean any REST, WebSocket, or FIX API can be integrated
+- **Advanced**: Time in force `IOC`, `FOK`, `GTD`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO`
+- **Backtesting**: Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution
+- **Live**: Use identical strategy implementations between backtesting and live deployments
+- **Multi-venue**: Multiple venue capabilities facilitate market making and statistical arbitrage strategies
+- **AI Training**: Backtest engine fast enough to be used to train AI trading agents (RL/ES)
 
 ![Nautilus](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/nautilus-art.png?raw=true "nautilus")
 > *nautilus - from ancient Greek 'sailor' and naus 'ship'.*
@@ -36,10 +36,10 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 
 ## Why NautilusTrader?
 
-- **Highly performant event-driven Python:** Native binary core components
-- **Parity between backtesting and live trading:** Identical strategy code
-- **Reduced operational risk:** Risk management functionality, logical correctness and type safety
-- **Highly extendable:** Message bus, custom components and actors, custom data, custom adapters
+- **Highly performant event-driven Python**: Native binary core components
+- **Parity between backtesting and live trading**: Identical strategy code
+- **Reduced operational risk**: Risk management functionality, logical correctness and type safety
+- **Highly extendable**: Message bus, custom components and actors, custom data, custom adapters
 
 Traditionally, trading strategy research and backtesting might be conducted in Python (or other suitable language)
 using vectorized methods, with the strategy then needing to be reimplemented in a more event-drive way

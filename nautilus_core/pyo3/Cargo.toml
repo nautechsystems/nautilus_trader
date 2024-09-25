@@ -19,6 +19,7 @@ nautilus-infrastructure = { path = "../infrastructure", features = ["python"] }
 nautilus-model = { path = "../model" , features = ["python"] }
 nautilus-network = { path = "../network" , features = ["python"] }
 nautilus-persistence = { path = "../persistence" , features = ["python"] }
+nautilus-test-kit = { path = "../test_kit" , features = ["python"] }
 pyo3 = { workspace = true }
 
 [features]
@@ -32,6 +33,7 @@ extension-module = [
     "nautilus-infrastructure/extension-module",
     "nautilus-model/extension-module",
     "nautilus-persistence/extension-module",
+    "nautilus-test-kit/extension-module",
 ]
 ffi = [
     "nautilus-adapters/ffi",

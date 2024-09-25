@@ -97,7 +97,6 @@ impl FuturesSpread {
         ts_init: UnixNanos,
     ) -> anyhow::Result<Self> {
         check_valid_string_optional(exchange.map(|u| u.as_str()), stringify!(isin))?;
-        check_valid_string(underlying.as_str(), stringify!(underlying))?;
         check_valid_string(strategy_type.as_str(), stringify!(strategy_type))?;
         check_equal_u8(
             price_precision,

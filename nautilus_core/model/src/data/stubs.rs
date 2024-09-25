@@ -287,11 +287,6 @@ pub fn stub_book_order() -> BookOrder {
 }
 
 #[fixture]
-pub fn quote_tick_audusd_sim() -> QuoteTick {
-    QuoteTick::default()
-}
-
-#[fixture]
 pub fn quote_tick_ethusdt_binance() -> QuoteTick {
     QuoteTick {
         instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
@@ -302,11 +297,6 @@ pub fn quote_tick_ethusdt_binance() -> QuoteTick {
         ts_event: UnixNanos::default(),
         ts_init: UnixNanos::from(1),
     }
-}
-
-#[fixture]
-pub fn trade_tick_audusd_sim() -> TradeTick {
-    TradeTick::default()
 }
 
 #[fixture]

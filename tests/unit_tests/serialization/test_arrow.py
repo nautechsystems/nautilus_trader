@@ -446,12 +446,15 @@ class TestArrowSerializer:
     @pytest.mark.parametrize(
         "instrument",
         [
+            TestInstrumentProvider.audusd_cfd(),
             TestInstrumentProvider.xbtusd_bitmex(),
             TestInstrumentProvider.btcusdt_future_binance(),
             TestInstrumentProvider.btcusdt_binance(),
             TestInstrumentProvider.equity(),
             TestInstrumentProvider.future(),
             TestInstrumentProvider.aapl_option(),
+            TestInstrumentProvider.betting_instrument(),
+            TestInstrumentProvider.binary_option(),
         ],
     )
     def test_serialize_and_deserialize_instruments(self, instrument):

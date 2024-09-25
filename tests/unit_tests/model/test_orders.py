@@ -1518,8 +1518,8 @@ class TestOrders:
             sl_trigger_price=Price.from_str("0.99990"),
             tp_price=Price.from_str("1.00010"),
             entry_tags=["ENTRY"],
-            tp_tags=["TAKE_PROFIT"],
             sl_tags=["STOP_LOSS"],
+            tp_tags=["TAKE_PROFIT"],
         )
 
         # Assert

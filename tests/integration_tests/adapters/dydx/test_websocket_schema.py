@@ -838,6 +838,7 @@ def test_orderbook(instrument_id: InstrumentId) -> None:
     )
 
     # Assert
+    assert deltas.is_snapshot is False
     assert len(deltas.deltas) == expected_num_deltas
     assert deltas.deltas[0].order.size == 0
     assert deltas.deltas[0].action == BookAction.DELETE
@@ -895,6 +896,7 @@ def test_orderbook_snapshot(instrument_id: InstrumentId) -> None:
     )
 
     # Assert
+    assert deltas.is_snapshot
     assert len(deltas.deltas) == expected_num_deltas
     assert deltas.deltas[0] == expected_clear
     assert deltas.deltas[1] == expected_delta
@@ -946,6 +948,7 @@ def test_orderbook_batched_data(instrument_id: InstrumentId) -> None:
     )
 
     # Assert
+    assert deltas.is_snapshot is False
     assert len(deltas.deltas) == expected_num_deltas
     assert deltas.deltas[0] == expected_delta
     assert deltas.deltas[0].order.price == expected_delta.order.price

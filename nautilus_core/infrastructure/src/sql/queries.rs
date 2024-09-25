@@ -48,6 +48,14 @@ use crate::sql::models::{
 pub struct DatabaseQueries;
 
 impl DatabaseQueries {
+    pub async fn truncate(pool: &PgPool) -> anyhow::Result<()> {
+        sqlx::query("SELECT truncate_all_tables()")
+            .execute(pool)
+            .await
+            .map(|_| ())
+            .map_err(|err| anyhow::anyhow!("Failed to truncate tables: {err}"))
+    }
+
     pub async fn add(pool: &PgPool, key: String, value: Vec<u8>) -> anyhow::Result<()> {
         sqlx::query("INSERT INTO general (id, value) VALUES ($1, $2)")
             .bind(key)
@@ -102,14 +110,6 @@ impl DatabaseQueries {
             .await
             .map(|currency| currency.map(|row| row.0))
             .map_err(|err| anyhow::anyhow!("Failed to load currency: {err}"))
-    }
-
-    pub async fn truncate(pool: &PgPool, table: String) -> anyhow::Result<()> {
-        sqlx::query(format!("TRUNCATE TABLE {} CASCADE", table).as_str())
-            .execute(pool)
-            .await
-            .map(|_| ())
-            .map_err(|err| anyhow::anyhow!("Failed to truncate table: {err}"))
     }
 
     pub async fn add_instrument(

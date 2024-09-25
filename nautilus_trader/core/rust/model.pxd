@@ -151,6 +151,8 @@ cdef extern from "../includes/model.h":
         WARRANT # = 10,
         # A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
         SPORTS_BETTING # = 11,
+        # A binary option instrument class. A type of derivative where the payoff is either a fixed monetary amount or nothing, based on a yes/no proposition about an underlying event.
+        BINARY_OPTION # = 12,
 
     # The type of event for an instrument close.
     cpdef enum InstrumentCloseType:
@@ -332,7 +334,7 @@ cdef extern from "../includes/model.h":
         BID # = 1,
         # A quoted order price where a seller is willing to sell a quantity of an instrument.
         ASK # = 2,
-        # The midpoint between the bid and ask prices.
+        # The midpoint between the best bid and best ask prices.
         MID # = 3,
         # The last price at which a trade was made for an instrument.
         LAST # = 4,
@@ -354,13 +356,13 @@ cdef extern from "../includes/model.h":
 
     # The 'Time in Force' instruction for an order.
     cpdef enum TimeInForce:
-        # Good Till Canceled (GTC) - the order remains active until canceled.
+        # Good-Till-Canceled (GTC) - the order remains active until canceled.
         GTC # = 1,
-        # Immediate or Cancel (IOC) - the order is filled as much as possible, the rest is canceled.
+        # Immediate-Or-Cancel (IOC) - the order is filled as much as possible, the rest is canceled.
         IOC # = 2,
-        # Fill or Kill (FOK) - the order must be executed in full immediately, or it is canceled.
+        # Fill-Or-Kill (FOK) - the order must be executed in full immediately, or it is canceled.
         FOK # = 3,
-        # Good Till Date/Time (GTD) - the order is active until a specified date or time.
+        # Good-Till-Date/Time (GTD) - the order is active until a specified date or time.
         GTD # = 4,
         # Day - the order is active until the end of the current trading session.
         DAY # = 5,
@@ -683,6 +685,21 @@ cdef extern from "../includes/model.h":
         QuoteTick_t quote;
         TradeTick_t trade;
         Bar_t bar;
+
+    cdef struct BlackScholesGreeksResult:
+        double price;
+        double delta;
+        double gamma;
+        double vega;
+        double theta;
+
+    cdef struct ImplyVolAndGreeksResult:
+        double vol;
+        double price;
+        double delta;
+        double gamma;
+        double vega;
+        double theta;
 
     # Represents a valid trader ID.
     cdef struct TraderId_t:
@@ -1023,6 +1040,32 @@ cdef extern from "../includes/model.h":
     const uint32_t *orderbook_depth10_bid_counts_array(const OrderBookDepth10_t *depth);
 
     const uint32_t *orderbook_depth10_ask_counts_array(const OrderBookDepth10_t *depth);
+
+    BlackScholesGreeksResult greeks_black_scholes_greeks(double s,
+                                                         double r,
+                                                         double b,
+                                                         double sigma,
+                                                         uint8_t is_call,
+                                                         double k,
+                                                         double t,
+                                                         double multiplier);
+
+    double greeks_imply_vol(double s,
+                            double r,
+                            double b,
+                            uint8_t is_call,
+                            double k,
+                            double t,
+                            double price);
+
+    ImplyVolAndGreeksResult greeks_imply_vol_and_greeks(double s,
+                                                        double r,
+                                                        double b,
+                                                        uint8_t is_call,
+                                                        double k,
+                                                        double t,
+                                                        double price,
+                                                        double multiplier);
 
     BookOrder_t book_order_from_raw(OrderSide order_side,
                                     int64_t price_raw,
@@ -1481,6 +1524,12 @@ cdef extern from "../includes/model.h":
     Symbol_t symbol_new(const char *ptr);
 
     uint64_t symbol_hash(const Symbol_t *id);
+
+    uint8_t symbol_is_composite(const Symbol_t *id);
+
+    const char *symbol_root(const Symbol_t *id);
+
+    const char *symbol_topic(const Symbol_t *id);
 
     # Returns a Nautilus identifier from a C string pointer.
     #

@@ -46,8 +46,6 @@ cdef class Cfd(Instrument):
         The raw/local/native symbol for the instrument, assigned by the venue.
     asset_class : AssetClass
         The CFD contract asset class.
-    base_currency : Currency, optional
-        The base currency.
     quote_currency : Currency
         The quote currency.
     price_precision : int
@@ -70,7 +68,7 @@ cdef class Cfd(Instrument):
         UNIX timestamp (nanoseconds) when the data event occurred.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the data object was initialized.
-    base_currency : Currency
+    base_currency : Currency, optional
         The base currency.
     lot_size : Quantity, optional
         The rounded lot unit size.
@@ -191,12 +189,12 @@ cdef class Cfd(Instrument):
         Condition.not_none(values, "values")
         cdef str base_c = values["base_currency"]
         cdef str lot_s = values["lot_size"]
-        cdef str max_q = values["max_quantity"]
-        cdef str min_q = values["min_quantity"]
-        cdef str max_n = values["max_notional"]
-        cdef str min_n = values["min_notional"]
-        cdef str max_p = values["max_price"]
-        cdef str min_p = values["min_price"]
+        cdef str max_q = values.get("max_quantity")
+        cdef str min_q = values.get("min_quantity")
+        cdef str max_n = values.get("max_notional")
+        cdef str min_n = values.get("min_notional")
+        cdef str max_p = values.get("max_price")
+        cdef str min_p = values.get("min_price")
         return Cfd(
             instrument_id=InstrumentId.from_str_c(values["id"]),
             raw_symbol=Symbol(values["raw_symbol"]),
@@ -214,10 +212,10 @@ cdef class Cfd(Instrument):
             min_notional=Money.from_str_c(min_n) if min_n is not None else None,
             max_price=Price.from_str_c(max_p) if max_p is not None else None,
             min_price=Price.from_str_c(min_p) if min_p is not None else None,
-            margin_init=Decimal(values["margin_init"]),
-            margin_maint=Decimal(values["margin_maint"]),
-            maker_fee=Decimal(values["maker_fee"]),
-            taker_fee=Decimal(values["taker_fee"]),
+            margin_init=Decimal(values.get("margin_init", 0)),
+            margin_maint=Decimal(values.get("margin_maint", 0)),
+            maker_fee=Decimal(values.get("maker_fee", 0)),
+            taker_fee=Decimal(values.get("taker_fee", 0)),
             ts_event=values["ts_event"],
             ts_init=values["ts_init"],
             info=values["info"],

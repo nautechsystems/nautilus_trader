@@ -63,14 +63,19 @@ class DYDXCandlesEndpoint(DYDXHttpEndpoint):
             client=client,
             url_path=url_path,
             endpoint_type=DYDXEndpointType.NONE,
+            name="DYDXCandlesEndpoint",
         )
         self.method_type = HttpMethod.GET
         self._decoder = msgspec.json.Decoder(DYDXCandlesResponse)
 
-    async def get(self, symbol: str, params: DYDXCandlesGetParams) -> DYDXCandlesResponse:
+    async def get(self, symbol: str, params: DYDXCandlesGetParams) -> DYDXCandlesResponse | None:
         """
         Call the endpoint to list the instruments.
         """
         url_path = f"/candles/perpetualMarkets/{symbol}"
         raw = await self._method(self.method_type, params=params, url_path=url_path)
-        return self._decoder.decode(raw)
+
+        if raw is not None:
+            return self._decoder.decode(raw)
+
+        return None

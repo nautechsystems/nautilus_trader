@@ -28,9 +28,9 @@ See also the `LiveExecEngineConfig` [API Reference](../api_reference/config#clas
 
 #### Reconciliation
   
-**Purpose:** Ensures that the system state remains consistent with the trading venue by recovering any missed events, such as order and position status updates.
+**Purpose**: Ensures that the system state remains consistent with the trading venue by recovering any missed events, such as order and position status updates.
 
-**Settings:**
+**Settings**:
  - `reconciliation`: (default True): Activates reconciliation at startup, aligning the system's internal state with the execution venue's state.
  - `reconciliation_lookback_mins`: Specifies how far back (in minutes) the system should request past events to reconcile. This provides recovery for uncached execution state.
 
@@ -40,25 +40,25 @@ See also [Execution reconciliation](../concepts/execution#execution-reconciliati
 
 #### Order filtering
 
-**Purpose:** Manages which order events and reports should be processed by the system to avoid conflicts with other trading nodes and unnecessary data handling.
+**Purpose**: Manages which order events and reports should be processed by the system to avoid conflicts with other trading nodes and unnecessary data handling.
 
-**Settings:**
+**Settings**:
  - `filter_unclaimed_external_orders`: (default False) Filters out unclaimed external orders, which can help prevent irrelevant external orders from impacting the strategy.
  - `filter_position_reports`: (default False) Filters out position status reports, which is useful in scenarios where multiple nodes are trading the same instruments on the same account, thus avoiding conflicting position data.
 
 #### In-flight order checks
 
-**Purpose:** Regularly checks the status of in-flight orders (orders that have been submitted, modified or canceled but not yet confirmed) to ensure they are processed correctly and promptly.
+**Purpose**: Regularly checks the status of in-flight orders (orders that have been submitted, modified or canceled but not yet confirmed) to ensure they are processed correctly and promptly.
 
-**Settings:**
+**Settings**:
 - `inflight_check_interval_ms`: (default 2,000 ms) Determines how frequently the system checks the status of in-flight orders.
 - `inflight_check_threshold_ms`: (default 5,000 ms) Sets the time threshold after which an in-flight order is considered for a status check with the venue. Adjusting this setting is particularly important if you are colocated with the venue, to avoid potential race conditions.
 
 #### Queue management
 
-**Purpose:** Handles the internal buffering of orders and events to ensure smooth processing and to prevent system overloads.
+**Purpose**: Handles the internal buffering of orders and events to ensure smooth processing and to prevent system overloads.
 
-**Settings:**
+**Settings**:
  - `qsize` (default 100,000): Sets the size of the internal queue buffers, which helps in managing the flow of data within the engine.
 
 ### Strategy configuration
@@ -72,38 +72,38 @@ See also the `StrategyConfig` [API Reference](../api_reference/config#class-stra
 
 #### Strategy identification
 
-**Purpose:** Provides unique identifiers for each strategy to prevent conflicts and ensure proper tracking of orders.
+**Purpose**: Provides unique identifiers for each strategy to prevent conflicts and ensure proper tracking of orders.
 
-**Settings:**
+**Settings**:
  - `strategy_id`: A unique ID for the strategy, ensuring it can be distinctly identified.
  - `order_id_tag`: A unique tag for the strategy's orders, differentiates orders from multiple strategies.
 
 #### Order Management System (OMS) type
         
-**Purpose:** Defines how the order management system handles position IDs, influencing how orders are processed and tracked.
+**Purpose**: Defines how the order management system handles position IDs, influencing how orders are processed and tracked.
 
-**Settings:**
+**Settings**:
  - `oms_type`: Specifies the type of OMS, which dictates the handling of position IDs and impacts the overall order processing flow.
 
 #### External order claims
 
-**Purpose:** Enables the strategy to claim external orders based on specified instrument IDs, ensuring that relevant external orders are associated with the correct strategy.
+**Purpose**: Enables the strategy to claim external orders based on specified instrument IDs, ensuring that relevant external orders are associated with the correct strategy.
 
-**Settings:**
+**Settings**:
  - `external_order_claims`: Lists instrument IDs for external orders that the strategy should claim, helping to manage and track these orders accurately.
 
 #### Contingent order management
 
-**Purpose:** Automates the management of contingent orders, such as One-Updates-the-Other (OUO) and One-Cancels-the-Other (OCO) orders, ensuring they are handled correctly.
+**Purpose**: Automates the management of contingent orders, such as One-Updates-the-Other (OUO) and One-Cancels-the-Other (OCO) orders, ensuring they are handled correctly.
 
-**Settings:**
+**Settings**:
  - `manage_contingent_orders`: (default False) If enabled, the strategy will automatically manage contingent orders, reducing the need for manual intervention.
 
 #### GTD (Good-Till-Date) expiry management
 
-**Purpose:** Ensures that orders with GTD time-in-force instructions are managed properly, with timers reactivated as necessary.
+**Purpose**: Ensures that orders with GTD time-in-force instructions are managed properly, with timers reactivated as necessary.
 
-**Settings:**
+**Settings**:
  - `manage_gtd_expiry`: (default False) If enabled, the strategy will manage GTD expirations, ensuring that orders remain active as intended.
 
 By configuring these parameters thoughtfully, you can ensure that your trading system operates efficiently,

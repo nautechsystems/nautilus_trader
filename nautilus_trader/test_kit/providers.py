@@ -30,9 +30,11 @@ from nautilus_trader.core.datetime import dt_to_unix_nanos
 from nautilus_trader.core.datetime import secs_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.currencies import ADA
+from nautilus_trader.model.currencies import AUD
 from nautilus_trader.model.currencies import BTC
 from nautilus_trader.model.currencies import ETH
 from nautilus_trader.model.currencies import USD
+from nautilus_trader.model.currencies import USDC
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
@@ -44,6 +46,8 @@ from nautilus_trader.model.identifiers import Symbol
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import BettingInstrument
+from nautilus_trader.model.instruments import BinaryOption
+from nautilus_trader.model.instruments import Cfd
 from nautilus_trader.model.instruments import CryptoFuture
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
@@ -528,6 +532,27 @@ class TestInstrumentProvider:
         )
 
     @staticmethod
+    def audusd_cfd() -> Cfd:
+        return Cfd(
+            instrument_id=InstrumentId.from_str("AUDUSD.OANDA"),
+            raw_symbol=Symbol("AUD/USD"),
+            asset_class=AssetClass.FX,
+            base_currency=AUD,
+            quote_currency=USD,
+            price_precision=5,
+            price_increment=Price.from_str("0.00001"),
+            size_precision=0,
+            size_increment=Quantity.from_int(1),
+            lot_size=Quantity.from_int(1000),
+            margin_init=Decimal("0.03"),
+            margin_maint=Decimal("0.03"),
+            maker_fee=Decimal("0.00002"),
+            taker_fee=Decimal("0.00002"),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
     def equity(symbol: str = "AAPL", venue: str = "XNAS") -> Equity:
         return Equity(
             instrument_id=InstrumentId(symbol=Symbol(symbol), venue=Venue(venue)),
@@ -655,6 +680,34 @@ class TestInstrumentProvider:
             currency="GBP",
             price_precision=2,  # BETFAIR_PRICE_PRECISION,
             size_precision=2,  # BETFAIR_QUANTITY_PRECISION,
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def binary_option() -> CurrencyPair:
+        raw_symbol = Symbol(
+            "0x12a0cb60174abc437bf1178367c72d11f069e1a3add20b148fb0ab4279b772b2-92544998123698303655208967887569360731013655782348975589292031774495159624905",
+        )
+        price_increment = Price.from_str("0.001")
+        size_increment = Quantity.from_str("0.01")
+        return BinaryOption(
+            instrument_id=InstrumentId(symbol=raw_symbol, venue=Venue("POLYMARKET")),
+            raw_symbol=raw_symbol,
+            outcome="Yes",
+            description="Will the outcome of this market be 'Yes'?",
+            asset_class=AssetClass.ALTERNATIVE,
+            currency=USDC,
+            price_precision=price_increment.precision,
+            price_increment=price_increment,
+            size_precision=size_increment.precision,
+            size_increment=size_increment,
+            activation_ns=0,
+            expiration_ns=pd.Timestamp("2024-01-01", tz="UTC").value,
+            max_quantity=None,
+            min_quantity=Quantity.from_int(5),
+            maker_fee=Decimal(0),  # TBD
+            taker_fee=Decimal(0),  # TBD
             ts_event=0,
             ts_init=0,
         )

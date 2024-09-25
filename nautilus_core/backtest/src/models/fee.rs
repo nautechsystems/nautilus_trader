@@ -101,9 +101,12 @@ impl FeeModel for MakerTakerFeeModel {
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        enums::{LiquiditySide, OrderSide},
+        enums::{LiquiditySide, OrderSide, OrderType},
         instruments::{any::InstrumentAny, stubs::audusd_sim},
-        orders::stubs::{TestOrderEventStubs, TestOrderStubs},
+        orders::{
+            builder::OrderTestBuilder,
+            stubs::{TestOrderEventStubs, TestOrderStubs},
+        },
         types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
     };
     use rstest::rstest;
@@ -116,13 +119,11 @@ mod tests {
         let expected_commission = Money::new(1.0, Currency::USD());
         let aud_usd = InstrumentAny::CurrencyPair(audusd_sim());
         let fee_model = FixedFeeModel::new(expected_commission, None).unwrap();
-        let market_order = TestOrderStubs::market_order(
-            aud_usd.id(),
-            OrderSide::Buy,
-            Quantity::from(100_000),
-            None,
-            None,
-        );
+        let market_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(aud_usd.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .build();
         let accepted_order = TestOrderStubs::make_accepted_order(&market_order);
         let commission = fee_model
             .get_commission(
@@ -149,13 +150,11 @@ mod tests {
         let aud_usd = InstrumentAny::CurrencyPair(audusd_sim());
         let fee_model =
             FixedFeeModel::new(expected_first_fill, Some(charge_commission_once)).unwrap();
-        let market_order = TestOrderStubs::market_order(
-            aud_usd.id(),
-            order_side,
-            Quantity::from(100_000),
-            None,
-            None,
-        );
+        let market_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(aud_usd.id())
+            .side(order_side)
+            .quantity(Quantity::from(100_000))
+            .build();
         let mut accepted_order = TestOrderStubs::make_accepted_order(&market_order);
         let commission_first_fill = fee_model
             .get_commission(
@@ -196,14 +195,12 @@ mod tests {
         let aud_usd = InstrumentAny::CurrencyPair(audusd_sim());
         let maker_fee = aud_usd.maker_fee().to_f64().unwrap();
         let price = Price::from("1.0");
-        let limit_order = TestOrderStubs::limit_order(
-            aud_usd.id(),
-            OrderSide::Sell,
-            price,
-            Quantity::from(100_000),
-            None,
-            None,
-        );
+        let limit_order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(aud_usd.id())
+            .side(OrderSide::Sell)
+            .price(price)
+            .quantity(Quantity::from(100_000))
+            .build();
         let order_filled =
             TestOrderStubs::make_filled_order(&limit_order, &aud_usd, LiquiditySide::Maker);
         let expected_commission_amount =
@@ -225,14 +222,13 @@ mod tests {
         let aud_usd = InstrumentAny::CurrencyPair(audusd_sim());
         let maker_fee = aud_usd.taker_fee().to_f64().unwrap();
         let price = Price::from("1.0");
-        let limit_order = TestOrderStubs::limit_order(
-            aud_usd.id(),
-            OrderSide::Sell,
-            price,
-            Quantity::from(100_000),
-            None,
-            None,
-        );
+        let limit_order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(aud_usd.id())
+            .side(OrderSide::Sell)
+            .price(price)
+            .quantity(Quantity::from(100_000))
+            .build();
+
         let order_filled =
             TestOrderStubs::make_filled_order(&limit_order, &aud_usd, LiquiditySide::Taker);
         let expected_commission_amount =

@@ -24,7 +24,7 @@ use crate::{
         balance::AccountBalance,
         currency::Currency,
         money::Money,
-        stubs::{account_balance_test, margin_balance_test},
+        stubs::{stub_account_balance, stub_margin_balance},
     },
 };
 
@@ -33,7 +33,7 @@ pub fn cash_account_state() -> AccountState {
     AccountState::new(
         account_id(),
         AccountType::Cash,
-        vec![account_balance_test()],
+        vec![stub_account_balance()],
         vec![],
         true,
         uuid4(),
@@ -140,8 +140,8 @@ pub fn margin_account_state() -> AccountState {
     AccountState::new(
         account_id(),
         AccountType::Margin,
-        vec![account_balance_test()],
-        vec![margin_balance_test()],
+        vec![stub_account_balance()],
+        vec![stub_margin_balance()],
         true,
         uuid4(),
         0.into(),

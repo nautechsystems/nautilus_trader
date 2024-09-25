@@ -29,14 +29,14 @@ mod serial_tests {
     use nautilus_infrastructure::sql::cache_database::get_pg_cache_database;
     use nautilus_model::{
         accounts::any::AccountAny,
-        enums::{CurrencyType, OrderSide},
+        enums::{CurrencyType, OrderSide, OrderType},
         identifiers::ClientOrderId,
         instruments::{
             any::InstrumentAny,
             stubs::{crypto_perpetual_ethusdt, currency_pair_ethusdt},
             Instrument,
         },
-        orders::stubs::TestOrderStubs,
+        orders::builder::OrderTestBuilder,
         types::{currency::Currency, quantity::Quantity},
     };
 
@@ -77,13 +77,12 @@ mod serial_tests {
         let mut database = get_pg_cache_database().await.unwrap();
         let mut cache = get_cache(Some(Box::new(database.clone())));
         let instrument = currency_pair_ethusdt();
-        let market_order = TestOrderStubs::market_order(
-            instrument.id(),
-            OrderSide::Buy,
-            Quantity::from("1.0"),
-            Some(ClientOrderId::new("O-19700101-0000-001-001-1")),
-            None,
-        );
+        let market_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.0"))
+            .client_order_id(ClientOrderId::new("O-19700101-0000-001-001-1"))
+            .build();
         // add foreign key dependencies: instrument and currencies
         database
             .add_currency(&instrument.base_currency().unwrap())

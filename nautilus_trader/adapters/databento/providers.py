@@ -127,7 +127,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         parent_symbols = list(filters.get("parent_symbols", [])) if filters is not None else None
 
         pyo3_instruments = []
-        success_msg = "All instruments received and decoded."
+        success_msg = "All instruments received and decoded"
 
         def receive_instruments(pyo3_instrument: Any) -> None:
             pyo3_instruments.append(pyo3_instrument)
@@ -142,10 +142,9 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         )
 
         if parent_symbols:
-            self._log.info(f"Requesting parent symbols {parent_symbols}.", LogColor.BLUE)
+            self._log.info(f"Requesting parent symbols {parent_symbols}", LogColor.BLUE)
             live_client.subscribe(
                 schema=DatabentoSchema.DEFINITION.value,
-                stype_in="parent",
                 symbols=parent_symbols,
                 start=0,  # From start of current week (latest definitions)
             )
@@ -168,7 +167,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
 
         for instrument in instruments:
             self.add(instrument=instrument)
-            self._log.debug(f"Added instrument {instrument.id}.")
+            self._log.debug(f"Added instrument {instrument.id}")
 
         await asyncio.sleep(1.0)
         live_client.close()
