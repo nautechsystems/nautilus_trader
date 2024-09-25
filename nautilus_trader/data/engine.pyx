@@ -133,13 +133,14 @@ cdef class DataEngine(Component):
         self._default_client: DataClient | None = None
         self._external_clients: set[ClientId] = set()
         self._catalog: ParquetDataCatalog | None = None
-        self._order_book_intervals: dict[(InstrumentId, int), list[Callable[[OrderBook], None]]] = {}
+        self._order_book_intervals: dict[tuple[InstrumentId, int], list[Callable[[OrderBook], None]]] = {}
         self._bar_aggregators: dict[BarType, BarAggregator] = {}
         self._synthetic_quote_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
         self._synthetic_trade_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
         self._subscribed_synthetic_quotes: list[InstrumentId] = []
         self._subscribed_synthetic_trades: list[InstrumentId] = []
         self._buffered_deltas_map: dict[InstrumentId, list[OrderBookDelta]] = {}
+        self._snapshot_info: dict[str, SnapshotInfo] = {}
 
         # Settings
         self.debug = config.debug
@@ -538,6 +539,7 @@ cdef class DataEngine(Component):
         self._subscribed_synthetic_quotes.clear()
         self._subscribed_synthetic_trades.clear()
         self._buffered_deltas_map.clear()
+        self._snapshot_info.clear()
 
         self._clock.cancel_timers()
         self.command_count = 0
@@ -794,6 +796,7 @@ cdef class DataEngine(Component):
             uint64_t interval_ms = metadata["interval_ms"]
             uint64_t interval_ns
             uint64_t timestamp_ns
+            SnapshotInfo snap_info
         key = (instrument_id, interval_ms)
         if key not in self._order_book_intervals:
             self._order_book_intervals[key] = []
@@ -802,6 +805,19 @@ cdef class DataEngine(Component):
             interval_ns = millis_to_nanos(interval_ms)
             timestamp_ns = self._clock.timestamp_ns()
             start_time_ns = timestamp_ns - (timestamp_ns % interval_ns)
+
+            topic = f"data.book.snapshots.{instrument_id.venue}.{instrument_id.symbol}.{interval_ms}"
+
+            # Cache snapshot event info
+            snap_info = SnapshotInfo.__new__(SnapshotInfo)
+            snap_info.instrument_id = instrument_id
+            snap_info.venue = instrument_id.venue
+            snap_info.is_composite = instrument_id.symbol.is_composite()
+            snap_info.root = instrument_id.symbol.root()
+            snap_info.topic = topic
+            snap_info.interval_ms = interval_ms
+
+            self._snapshot_info[timer_name] = snap_info
 
             if start_time_ns - NANOSECONDS_IN_MILLISECOND <= self._clock.timestamp_ns():
                 start_time_ns += NANOSECONDS_IN_SECOND  # Add one second
@@ -1670,25 +1686,25 @@ cdef class DataEngine(Component):
         order_book.apply(data)
 
     cpdef void _snapshot_order_book(self, TimeEvent snap_event):
-        # OrderBook|LO.OPT.GLBX|100
-        # TODO: Optimize this with a map based on `snap_event.name` lookup
-        cdef tuple[str] parts = snap_event.name.partition('|')[2].rpartition('|')
-        cdef InstrumentId instrument_id = InstrumentId.from_str_c(parts[0])
-        cdef int interval_ms = int(parts[2])
+        if self.debug:
+            self._log.debug(f"Received snapshot event for {snap_event}", LogColor.MAGENTA)
+
+        cdef SnapshotInfo snap_info = self._snapshot_info.get(snap_event.name)
+        if snap_info is None:
+            self._log.error(f"No `SnapshotInfo` found for snapshot event {snap_event}")
+            return
 
         cdef:
             list[Instrument] instruments
             Instrument instrument
-            str root
-        if instrument_id.symbol.is_composite():
-            root = instrument_id.symbol.root()
-            instruments = self._cache.instruments(venue=instrument_id.venue, underlying=root)
+        if snap_info.is_composite:
+            instruments = self._cache.instruments(venue=snap_info.venue, underlying=snap_info.root)
             for instrument in instruments:
-                self._publish_order_book(instrument.id, interval_ms)
+                self._publish_order_book(instrument.id, snap_info.topic)
         else:
-            self._publish_order_book(instrument_id, interval_ms)
+            self._publish_order_book(snap_info.instrument_id, snap_info.topic)
 
-    cpdef void _publish_order_book(self, InstrumentId instrument_id, int interval_ms):
+    cpdef void _publish_order_book(self, InstrumentId instrument_id, str topic):
         cdef OrderBook order_book = self._cache.order_book(instrument_id)
         if order_book is None:
             self._log.error(
@@ -1702,10 +1718,7 @@ cdef class DataEngine(Component):
             return
 
         self._msgbus.publish_c(
-            topic=f"data.book.snapshots"
-                    f".{instrument_id.venue}"
-                    f".{instrument_id.symbol}"
-                    f".{interval_ms}",
+            topic=topic,
             msg=order_book,
         )
 

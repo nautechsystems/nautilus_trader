@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from libc.stdint cimport uint64_t
+
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport TimeEvent
@@ -59,6 +61,7 @@ cdef class DataEngine(Component):
     cdef readonly list[InstrumentId] _subscribed_synthetic_quotes
     cdef readonly list[InstrumentId] _subscribed_synthetic_trades
     cdef readonly dict[InstrumentId, list[OrderBookDelta]] _buffered_deltas_map
+    cdef readonly dict[str, SnapshotInfo] _snapshot_info
     cdef readonly bint _time_bars_build_with_no_updates
     cdef readonly bint _time_bars_timestamp_on_close
     cdef readonly str _time_bars_interval_type
@@ -168,10 +171,19 @@ cdef class DataEngine(Component):
     cpdef void _internal_update_instruments(self, list instruments)
     cpdef void _update_order_book(self, Data data)
     cpdef void _snapshot_order_book(self, TimeEvent snap_event)
-    cpdef void _publish_order_book(self, InstrumentId instrument_id, int interval_ms)
+    cpdef void _publish_order_book(self, InstrumentId instrument_id, str topic)
     cpdef void _start_bar_aggregator(self, MarketDataClient client, BarType bar_type, bint await_partial)
     cpdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type)
     cpdef void _update_synthetics_with_quote(self, list synthetics, QuoteTick update)
     cpdef void _update_synthetic_with_quote(self, SyntheticInstrument synthetic, QuoteTick update)
     cpdef void _update_synthetics_with_trade(self, list synthetics, TradeTick update)
     cpdef void _update_synthetic_with_trade(self, SyntheticInstrument synthetic, TradeTick update)
+
+
+cdef class SnapshotInfo:
+    cdef InstrumentId instrument_id
+    cdef Venue venue
+    cdef bint is_composite
+    cdef str root
+    cdef str topic
+    cdef uint64_t interval_ms

@@ -224,7 +224,7 @@ class DataSubscriber(Strategy):
         """
         Actions to be performed when an order book update is received.
         """
-        self.log.info("\n" + order_book.pprint(10), LogColor.CYAN)
+        self.log.info(f"\n{order_book.instrument_id}\n{order_book.pprint(10)}", LogColor.CYAN)
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """

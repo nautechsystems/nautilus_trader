@@ -1083,6 +1083,60 @@ class TestDataEngine:
         assert handler[0].instrument_id == ETHUSDT_BINANCE.id
         assert isinstance(handler[0], OrderBookDeltas)
 
+    def test_process_order_book_deltas_with_composite_symbol(self):
+        # Arrange
+        esf5 = TestInstrumentProvider.es_future(2024, 1)
+        esg5 = TestInstrumentProvider.es_future(2024, 2)
+        esh5 = TestInstrumentProvider.es_future(2024, 3)
+
+        self.data_engine.register_client(self.binance_client)
+        self.binance_client.start()
+
+        self.data_engine.process(esf5)  # <-- add necessary instrument for test
+        self.data_engine.process(esg5)  # <-- add necessary instrument for test
+        self.data_engine.process(esh5)  # <-- add necessary instrument for test
+
+        handler = []
+        self.msgbus.subscribe(topic="data.book.deltas.GLBX.ES*", handler=handler.append)
+
+        es_fut = InstrumentId.from_str("ES.FUT.GLBX")
+
+        subscribe = Subscribe(
+            client_id=ClientId(BINANCE.value),
+            venue=BINANCE,
+            data_type=DataType(
+                OrderBookDelta,
+                {
+                    "instrument_id": es_fut,
+                    "book_type": BookType.L3_MBO,
+                    "depth": 25,
+                    "managed": True,
+                },
+            ),
+            command_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.data_engine.execute(subscribe)
+
+        deltas1 = TestDataStubs.order_book_deltas(esf5.id)
+        deltas2 = TestDataStubs.order_book_deltas(esg5.id)
+        deltas3 = TestDataStubs.order_book_deltas(esh5.id)
+
+        # Act
+        self.data_engine.process(deltas1)
+        self.data_engine.process(deltas2)
+        self.data_engine.process(deltas3)
+
+        # Assert
+        assert len(handler) == 3
+        assert isinstance(handler[0], OrderBookDeltas)
+        assert isinstance(handler[1], OrderBookDeltas)
+        assert isinstance(handler[2], OrderBookDeltas)
+        assert handler[0].instrument_id == esf5.id
+        assert handler[1].instrument_id == esg5.id
+        assert handler[2].instrument_id == esh5.id
+
     def test_process_order_book_snapshots_when_multiple_subscribers_then_sends_to_registered_handlers(
         self,
     ):
