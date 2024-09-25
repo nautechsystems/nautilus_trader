@@ -21,6 +21,7 @@ use ring::{
     signature::{Ed25519KeyPair, RsaKeyPair, Signature, RSA_PKCS1_SHA256},
 };
 
+#[must_use]
 pub fn hmac_sign(secret: &str, data: &str) -> String {
     let key = hmac::Key::new(hmac::HMAC_SHA256, secret.as_bytes());
     let signature = hmac::sign(&key, data.as_bytes());
@@ -98,9 +99,9 @@ mod tests {
 
     #[rstest]
     #[case(
-        r#"-----BEGIN TEST KEY-----
+        r"-----BEGIN TEST KEY-----
 MIIBVwIBADANBgkqhkiG9w0BAQEFAASCATswggE3AgEAAkEAu/...
------END PRIVATE KEY-----"#,
+-----END PRIVATE KEY-----",
         ""
     )]
     fn test_rsa_signature_empty_query(#[case] private_key_pem: &str, #[case] query_string: &str) {
@@ -113,9 +114,9 @@ MIIBVwIBADANBgkqhkiG9w0BAQEFAASCATswggE3AgEAAkEAu/...
 
     #[rstest]
     #[case(
-        r#"-----BEGIN INVALID KEY-----
+        r"-----BEGIN INVALID KEY-----
 INVALID_KEY_DATA
------END INVALID KEY-----"#,
+-----END INVALID KEY-----",
         "This is a test query"
     )]
     fn test_rsa_signature_invalid_key(#[case] private_key_pem: &str, #[case] query_string: &str) {
@@ -126,7 +127,7 @@ INVALID_KEY_DATA
         );
     }
 
-    fn valid_ed25519_private_key() -> [u8; 32] {
+    const fn valid_ed25519_private_key() -> [u8; 32] {
         [
             0x0c, 0x74, 0x18, 0x92, 0x6b, 0x5d, 0xe9, 0x8f, 0xe2, 0xb6, 0x47, 0x8a, 0x51, 0xf9,
             0x97, 0x31, 0x9a, 0xcd, 0x2d, 0xbc, 0xf9, 0x94, 0xea, 0x8f, 0xc3, 0x1b, 0x65, 0x24,
@@ -141,8 +142,7 @@ INVALID_KEY_DATA
         let result = ed25519_signature(&private_key_bytes, query_string);
         assert!(
             result.is_ok(),
-            "Expected valid signature but got an error: {:?}",
-            result
+            "Expected valid signature but got an error: {result:?}"
         );
         assert!(!result.unwrap().is_empty(), "Signature should not be empty");
     }

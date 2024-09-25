@@ -457,22 +457,40 @@ mod tests {
     use rstest::{fixture, rstest};
 
     use super::*;
-    use crate::timer::RustTimeEventCallback;
+
+    // #[derive(Default)]
+    // struct TestCallback {
+    //     called: Rc<RefCell<bool>>,
+    // }
+
+    // impl RustTimeEventCallback for TestCallback {
+    //     fn call(&self, _event: TimeEvent) {
+    //         *self.called.borrow_mut() = true;
+    //     }
+    // }
+
+    // impl Into<TimeEventCallback> for TestCallback {
+    //     fn into(self) -> TimeEventCallback {
+    //         TimeEventCallback::Rust(Rc::new(self))
+    //     }
+    // }
 
     #[derive(Default)]
     struct TestCallback {
         called: Rc<RefCell<bool>>,
     }
 
-    impl RustTimeEventCallback for TestCallback {
-        fn call(&self, _event: TimeEvent) {
-            *self.called.borrow_mut() = true;
+    impl TestCallback {
+        const fn new(called: Rc<RefCell<bool>>) -> Self {
+            Self { called }
         }
     }
 
-    impl Into<TimeEventCallback> for TestCallback {
-        fn into(self) -> TimeEventCallback {
-            TimeEventCallback::Rust(Rc::new(self))
+    impl From<TestCallback> for TimeEventCallback {
+        fn from(callback: TestCallback) -> Self {
+            Self::Rust(Rc::new(move |_event: TimeEvent| {
+                *callback.called.borrow_mut() = true;
+            }))
         }
     }
 
@@ -538,13 +556,16 @@ mod tests {
         let default_called = Rc::new(RefCell::new(false));
         let custom_called = Rc::new(RefCell::new(false));
 
-        let default_callback: Rc<dyn RustTimeEventCallback> = Rc::new(TestCallback {
-            called: Rc::clone(&default_called),
-        });
+        // let default_callback: Rc<dyn RustTimeEventCallback> = Rc::new(TestCallback {
+        //     called: Rc::clone(&default_called),
+        // });
 
-        let custom_callback: Rc<dyn RustTimeEventCallback> = Rc::new(TestCallback {
-            called: Rc::clone(&custom_called),
-        });
+        // let custom_callback: Rc<dyn RustTimeEventCallback> = Rc::new(TestCallback {
+        //     called: Rc::clone(&custom_called),
+        // });
+
+        let default_callback = TestCallback::new(Rc::clone(&default_called));
+        let custom_callback = TestCallback::new(Rc::clone(&custom_called));
 
         clock.register_default_handler(TimeEventCallback::from(default_callback));
         clock.set_time_alert_ns("default_timer", (*clock.timestamp_ns() + 1000).into(), None);

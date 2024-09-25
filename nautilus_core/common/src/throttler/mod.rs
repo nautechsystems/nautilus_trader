@@ -46,6 +46,7 @@ impl<T, F> Throttler<T, F> {
 
     /// Returns the number of messages in the buffer.
     // #[must_use]
+    #[must_use]
     pub fn qsize(&self) -> usize {
         let inner = self.inner.borrow();
         inner.buffer.len()
@@ -56,6 +57,7 @@ impl<T, F> Throttler<T, F> {
         inner.reset();
     }
 
+    #[must_use]
     pub fn used(&self) -> f64 {
         let inner = self.inner.borrow();
         inner.used()
@@ -68,7 +70,7 @@ where
     T: 'static,
 {
     pub fn send(&self, msg: T) {
-        let throttler_clone = Throttler {
+        let throttler_clone = Self {
             inner: self.inner.clone(),
         };
         let mut inner = self.inner.borrow_mut();
@@ -95,10 +97,9 @@ where
 ////////////////////////////////////////////////////////////////////////////////
 // #[cfg(test)]
 mod tests {
+    use rstest::{fixture, rstest};
+
     use super::Throttler;
-
-    use rstest::*;
-
     use crate::clock::TestClock;
 
     // fn round_to_precision(value: f64) -> f64 {

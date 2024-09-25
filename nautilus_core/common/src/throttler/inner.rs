@@ -1,10 +1,9 @@
-use std::{cmp::max, collections::VecDeque, rc::Rc};
+use std::{cmp::max, collections::VecDeque};
 
 use nautilus_core::nanos::UnixNanos;
 
-use crate::{clock::Clock, timer::TimeEventCallback};
-
 use super::Throttler;
+use crate::{clock::Clock, timer::TimeEventCallback};
 
 pub struct InnerThrottler<T, F> {
     pub recv_count: usize,
@@ -139,9 +138,7 @@ where
         let callback = if self.output_drop.is_none() {
             self.buffer.push_front(msg);
             log::debug!("Buffering {}", self.buffer.len());
-            Some(TimeEventCallback::Rust(Rc::new(
-                throttler.get_process_callback(),
-            )))
+            Some(throttler.get_process_callback().into())
         } else {
             log::debug!("Dropping");
             if let Some(drop) = &self.output_drop {
@@ -149,7 +146,6 @@ where
             }
             Some(throttler.get_resume_callback().into())
         };
-
         if !self.is_limiting {
             log::debug!("Limiting");
             self.set_timer(callback);

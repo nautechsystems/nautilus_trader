@@ -98,15 +98,17 @@ impl PartialEq for TimeEvent {
 }
 
 // TODO: Replace with Fn(TimeEvent)
-pub trait RustTimeEventCallback {
-    fn call(&self, event: TimeEvent);
-}
+// pub trait RustTimeEventCallback {
+//     fn call(&self, event: TimeEvent);
+// }
+
+pub type RustTimeEventCallback = dyn Fn(TimeEvent);
 
 #[derive(Clone)]
 pub enum TimeEventCallback {
     #[cfg(feature = "python")]
     Python(PyObject),
-    Rust(Rc<dyn RustTimeEventCallback>),
+    Rust(Rc<RustTimeEventCallback>),
 }
 
 impl TimeEventCallback {
@@ -118,13 +120,13 @@ impl TimeEventCallback {
                     callback.call1(py, (event,)).unwrap();
                 });
             }
-            Self::Rust(callback) => callback.call(event),
+            Self::Rust(callback) => callback(event),
         }
     }
 }
 
-impl From<Rc<dyn RustTimeEventCallback>> for TimeEventCallback {
-    fn from(value: Rc<dyn RustTimeEventCallback>) -> Self {
+impl From<Rc<RustTimeEventCallback>> for TimeEventCallback {
+    fn from(value: Rc<RustTimeEventCallback>) -> Self {
         Self::Rust(value)
     }
 }
