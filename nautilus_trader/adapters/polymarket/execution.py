@@ -58,7 +58,6 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
-from nautilus_trader.core.stats import basis_points_as_percentage
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
@@ -70,6 +69,7 @@ from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.live.retry import RetryManagerPool
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import OrderType
@@ -481,7 +481,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                             f"Cannot handle trade report: instrument {instrument_id} not found",
                         )
 
-                    venue_order_id = polymarket_trade.venue_order_id()
+                    venue_order_id = polymarket_trade.venue_order_id(self._wallet_address)
                     client_order_id = self._cache.client_order_id(venue_order_id)
                     if client_order_id is None:
                         client_order_id = ClientOrderId(str(UUID4()))
@@ -490,6 +490,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                         account_id=self.account_id,
                         instrument=instrument,
                         client_order_id=client_order_id,
+                        maker_address=self._wallet_address,
                         ts_init=self._clock.timestamp_ns(),
                     )
                     reports.append(report)
@@ -737,7 +738,6 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 self._handle_ws_order_msg(ws_message, wait_for_ack=True)
             elif isinstance(ws_message, PolymarketUserTrade):
                 self._add_trade_to_cache(ws_message, raw)
-                self._handle_ws_trade_msg(ws_message, wait_for_ack=True)
             else:
                 self._log.error(f"Unrecognized websocket message {ws_message}")
         except Exception as e:
@@ -790,7 +790,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         self._handle_ws_trade_msg(msg, wait_for_ack=False)
 
     def _handle_ws_order_msg(self, msg: PolymarketUserOrder, wait_for_ack: bool):
-        venue_order_id = msg.get_venue_order_id()
+        venue_order_id = msg.venue_order_id()
 
         instrument_id = get_polymarket_instrument_id(msg.market, msg.asset_id)
         instrument = self._cache.instrument(instrument_id)
@@ -835,60 +835,54 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     ts_event=millis_to_nanos(int(msg.timestamp)),
                 )
             case PolymarketEventType.UPDATE:  # Matched
-                pass  # Use trade messages only for matches
+                assert msg.associate_trades is not None  # Type checking
+                order = self._cache.order(client_order_id)
 
-    def _handle_ws_trade_msg(self, msg: PolymarketUserTrade, wait_for_ack: bool):
-        venue_order_id = msg.venue_order_id()
+                # Temporary
+                liquidity_side = (
+                    LiquiditySide.MAKER
+                    if order.order_type == OrderType.LIMIT
+                    else LiquiditySide.TAKER
+                )
 
-        instrument_id = get_polymarket_instrument_id(msg.market, msg.asset_id)
-        instrument = self._cache.instrument(instrument_id)
-        if instrument is None:
-            raise ValueError(f"Cannot handle ws message: instrument {instrument_id} not found")
+                if strategy_id is None:
+                    report = msg.parse_to_fill_report(
+                        account_id=self.account_id,
+                        instrument=instrument,
+                        client_order_id=client_order_id,
+                        liquidity_side=liquidity_side,
+                        ts_init=self._clock.timestamp_ns(),
+                    )
+                    self._send_fill_report(report)
+                    return
 
-        if wait_for_ack:
-            self._loop.create_task(self._wait_for_ack_trade(msg, venue_order_id))
-            return
+                if order.is_closed:
+                    return  # Already closed (only status update)
 
-        client_order_id = self._cache.client_order_id(venue_order_id)
+                # Determine solution for commissions
+                # last_qty = instrument.make_qty(msg.size_matched)
+                # last_px = instrument.make_price(msg.price)
+                # commission = float(last_qty * last_px) * basis_points_as_percentage(
+                #     float(msg.fee_rate_bps)
+                # )
 
-        strategy_id = None
-        if client_order_id:
-            strategy_id = self._cache.strategy_id_for_order(client_order_id)
+                matched_qty = instrument.make_qty(float(msg.size_matched))
+                last_qty = matched_qty.sub(order.filled_qty)
 
-        if strategy_id is None:
-            report = msg.parse_to_fill_report(
-                account_id=self.account_id,
-                instrument=instrument,
-                client_order_id=client_order_id,
-                ts_init=self._clock.timestamp_ns(),
-            )
-            self._send_fill_report(report)
-            return
-
-        order = self._cache.order(client_order_id)
-        if order.is_closed:
-            return  # Already closed (only status update)
-
-        last_qty = instrument.make_qty(msg.size)
-        last_px = instrument.make_price(msg.price)
-        commission = float(last_qty * last_px) * basis_points_as_percentage(float(msg.fee_rate_bps))
-
-        self.generate_order_filled(
-            strategy_id=strategy_id,
-            instrument_id=instrument_id,
-            client_order_id=client_order_id,
-            venue_order_id=venue_order_id,
-            venue_position_id=None,  # Not applicable on Polymarket
-            trade_id=TradeId(msg.id),
-            order_side=parse_order_side(msg.side),
-            order_type=order.order_type,
-            last_qty=instrument.make_qty(msg.size),
-            last_px=instrument.make_price(msg.price),
-            quote_currency=USDC_POS,
-            commission=Money(commission, USDC_POS),
-            liquidity_side=msg.liqudity_side(),
-            ts_event=millis_to_nanos(int(msg.match_time)),
-            info=msgspec.structs.asdict(msg),
-        )
-
-        self._loop.create_task(self._update_account_state())
+                self.generate_order_filled(
+                    strategy_id=strategy_id,
+                    instrument_id=instrument_id,
+                    client_order_id=client_order_id,
+                    venue_order_id=venue_order_id,
+                    venue_position_id=None,  # Not applicable on Polymarket
+                    trade_id=TradeId(msg.associate_trades[-1]),
+                    order_side=parse_order_side(msg.side),
+                    order_type=order.order_type,
+                    last_qty=last_qty,
+                    last_px=instrument.make_price(msg.price),
+                    quote_currency=USDC_POS,
+                    commission=Money(0.0, USDC_POS),  #  TBD
+                    liquidity_side=liquidity_side,
+                    ts_event=millis_to_nanos(int(msg.timestamp)),
+                    info=msgspec.structs.asdict(msg),
+                )

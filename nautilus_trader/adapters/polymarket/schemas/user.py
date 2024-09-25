@@ -68,7 +68,7 @@ class PolymarketUserOrder(msgspec.Struct, tag="order", tag_field="event_type", f
     timestamp: str  # time of event
     type: PolymarketEventType
 
-    def get_venue_order_id(self) -> VenueOrderId:
+    def venue_order_id(self) -> VenueOrderId:
         return VenueOrderId(self.id)
 
     def parse_to_order_status_report(
@@ -84,7 +84,7 @@ class PolymarketUserOrder(msgspec.Struct, tag="order", tag_field="event_type", f
             instrument_id=instrument.id,
             client_order_id=client_order_id,
             order_list_id=None,
-            venue_order_id=self.get_venue_order_id(),
+            venue_order_id=self.venue_order_id(),
             order_side=parse_order_side(self.side),
             order_type=OrderType.LIMIT,
             contingency_type=ContingencyType.NO_CONTINGENCY,
@@ -97,6 +97,29 @@ class PolymarketUserOrder(msgspec.Struct, tag="order", tag_field="event_type", f
             ts_accepted=millis_to_nanos(timestamp_ms),
             ts_last=millis_to_nanos(timestamp_ms),
             report_id=UUID4(),
+            ts_init=ts_init,
+        )
+
+    def parse_to_fill_report(
+        self,
+        account_id: AccountId,
+        instrument: BinaryOption,
+        client_order_id: ClientOrderId | None,
+        liquidity_side: LiquiditySide,
+        ts_init: int,
+    ) -> FillReport:
+        return FillReport(
+            account_id=account_id,
+            instrument_id=instrument.id,
+            client_order_id=client_order_id,
+            venue_order_id=self.venue_order_id(),
+            trade_id=TradeId(self.id),
+            order_side=parse_order_side(self.side),
+            last_qty=instrument.make_qty(float(self.size_matched)),
+            last_px=instrument.make_price(float(self.price)),
+            liquidity_side=liquidity_side,
+            report_id=UUID4(),
+            ts_event=millis_to_nanos(int(self.timestamp)),
             ts_init=ts_init,
         )
 
@@ -138,9 +161,12 @@ class PolymarketUserTrade(msgspec.Struct, tag="trade", tag_field="event_type", f
         else:
             return LiquiditySide.TAKER
 
-    def venue_order_id(self) -> VenueOrderId:
+    def venue_order_id(self, maker_address: str) -> VenueOrderId:
         if self.trader_side == PolymarketLiquiditySide.MAKER:
-            return VenueOrderId(self.maker_orders[-1].order_id)
+            for order in reversed(self.maker_orders):
+                if order.maker_address == maker_address:
+                    return VenueOrderId(order.order_id)
+            raise ValueError("Invalid array of maker orders (`maker_address` not found)")
         else:
             return VenueOrderId(self.taker_order_id)
 
@@ -149,13 +175,14 @@ class PolymarketUserTrade(msgspec.Struct, tag="trade", tag_field="event_type", f
         account_id: AccountId,
         instrument: BinaryOption,
         client_order_id: ClientOrderId | None,
+        maker_address: str,
         ts_init: int,
     ) -> FillReport:
         return FillReport(
             account_id=account_id,
             instrument_id=instrument.id,
             client_order_id=client_order_id,
-            venue_order_id=self.venue_order_id(),
+            venue_order_id=self.venue_order_id(maker_address),
             trade_id=TradeId(self.id),
             order_side=parse_order_side(self.side),
             last_qty=instrument.make_qty(float(self.size)),

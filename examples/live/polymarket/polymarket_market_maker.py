@@ -16,8 +16,6 @@
 
 from decimal import Decimal
 
-import pandas as pd
-
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
 from nautilus_trader.adapters.polymarket.config import PolymarketDataClientConfig
@@ -26,8 +24,6 @@ from nautilus_trader.adapters.polymarket.factories import PolymarketLiveDataClie
 from nautilus_trader.adapters.polymarket.factories import PolymarketLiveExecClientFactory
 from nautilus_trader.cache.config import CacheConfig
 from nautilus_trader.common.config import DatabaseConfig
-from nautilus_trader.common.config import PositiveFloat
-from nautilus_trader.common.config import PositiveInt
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
@@ -35,22 +31,16 @@ from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.core.data import Data
-from nautilus_trader.core.message import Event
-from nautilus_trader.indicators.atr import AverageTrueRange
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.book import OrderBook
-from nautilus_trader.model.data import Bar
-from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import OrderSide
-from nautilus_trader.model.enums import TimeInForce
-from nautilus_trader.model.enums import TriggerType
-from nautilus_trader.model.events import OrderFilled
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.objects import Price
 from nautilus_trader.model.orders import LimitOrder
 from nautilus_trader.trading.strategy import Strategy
 
@@ -65,6 +55,9 @@ from nautilus_trader.trading.strategy import Strategy
 condition_id = "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917"
 token_id1 = 21742633143463906290569050155826241533067272736897614950488156847949938836455  # (Yes)
 token_id2 = 48331043336612883890938759509493159234755048973500640148014422747788308965732  # (No)
+# condition_id = "0xbd00b7bbe9cfd644555601eab5e6839d300f157655c7398e52363d65ca31d60e"
+# token_id1 = 39610451808489359091225744616605783593218688051033352591068084124126317646408  # (Yes)
+# token_id2 = 46295355012862633280841323519184879706138175839204568272783303327732070711432  # (No)
 instrument_ids = [
     get_polymarket_instrument_id(condition_id, token_id1),
     get_polymarket_instrument_id(condition_id, token_id2),
@@ -136,40 +129,27 @@ config_node = TradingNodeConfig(
 node = TradingNode(config=config_node)
 
 
-class VolatilityMarketMakerConfig(StrategyConfig, frozen=True):
+class TOBQuoterConfig(StrategyConfig, frozen=True):
     """
-    Configuration for ``VolatilityMarketMaker`` instances.
+    Configuration for ``TOBQuoter`` instances.
 
     Parameters
     ----------
     instrument_id : InstrumentId
         The instrument ID for the strategy.
-    bar_type : BarType
-        The bar type for the strategy.
-    atr_period : PositiveInt
-        The period for the ATR indicator.
-    atr_multiple : PositiveFloat
-        The ATR multiple for bracketing limit orders.
     trade_size : Decimal
         The position size per trade.
     order_id_tag : str
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
-    emulation_trigger : str, default 'NO_TRIGGER'
-        The emulation trigger for submitting emulated orders.
-        If ``None`` then orders will not be emulated.
 
     """
 
     instrument_id: InstrumentId
-    bar_type: BarType
-    atr_period: PositiveInt
-    atr_multiple: PositiveFloat
     trade_size: Decimal
-    emulation_trigger: str = "NO_TRIGGER"
 
 
-class VolatilityMarketMaker(Strategy):
+class TOBQuoter(Strategy):
     """
     A simple market maker which joins the current market best bid and ask.
 
@@ -177,25 +157,18 @@ class VolatilityMarketMaker(Strategy):
 
     Parameters
     ----------
-    config : VolatilityMarketMakerConfig
+    config : TOBQuoterConfig
         The configuration for the instance.
 
     """
 
-    def __init__(self, config: VolatilityMarketMakerConfig) -> None:
+    def __init__(self, config: TOBQuoterConfig) -> None:
         super().__init__(config)
 
         # Configuration
         self.instrument_id = config.instrument_id
-        self.bar_type = config.bar_type
-        self.atr_multiple = config.atr_multiple
         self.trade_size = Decimal(config.trade_size)
-        self.emulation_trigger = TriggerType[config.emulation_trigger]
-
         self.instrument: Instrument | None = None  # Initialized in on_start
-
-        # Create the indicators for the strategy
-        self.atr = AverageTrueRange(config.atr_period)
 
         # Users order management variables
         self.buy_order: LimitOrder | None = None
@@ -211,15 +184,11 @@ class VolatilityMarketMaker(Strategy):
             self.stop()
             return
 
-        # Register the indicators for updating
-        self.register_indicator_for_bars(self.bar_type, self.atr)
-
         # Subscribe to live data
-        self.subscribe_bars(self.bar_type)
         self.subscribe_quote_ticks(self.instrument_id)
         self.subscribe_trade_ticks(self.instrument_id)
 
-        # self.subscribe_order_book_deltas(self.instrument_id)  # For debugging
+        self.subscribe_order_book_deltas(self.instrument_id)
         # self.subscribe_order_book_at_interval(
         #     self.instrument_id,
         #     depth=20,
@@ -277,7 +246,27 @@ class VolatilityMarketMaker(Strategy):
 
         """
         # For debugging (must add a subscription)
-        self.log.info(repr(deltas), LogColor.CYAN)
+        # self.log.info(repr(deltas), LogColor.CYAN)
+
+        book = self.cache.order_book(deltas.instrument_id)
+
+        # Maintain buy orders
+        if self.buy_order and (self.buy_order.is_emulated or self.buy_order.is_open):
+            # TODO: Optionally cancel-replace
+            # self.cancel_order(self.buy_order)
+            pass
+
+        if not self.buy_order or self.buy_order.is_closed:
+            self.create_buy_order(book.best_bid_price())
+
+        # Maintain sell orders
+        if self.sell_order and (self.sell_order.is_emulated or self.sell_order.is_open):
+            # TODO: Optionally cancel-replace
+            # self.cancel_order(self.sell_order)
+            pass
+
+        if not self.sell_order or self.sell_order.is_closed:
+            self.create_sell_order(book.best_ask_price())
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """
@@ -292,6 +281,24 @@ class VolatilityMarketMaker(Strategy):
         # For debugging (must add a subscription)
         self.log.info(repr(tick), LogColor.CYAN)
 
+        # Maintain buy orders
+        if self.buy_order and (self.buy_order.is_emulated or self.buy_order.is_open):
+            # TODO: Optionally cancel-replace
+            # self.cancel_order(self.buy_order)
+            pass
+
+        if not self.buy_order or self.buy_order.is_closed:
+            self.create_buy_order(tick.bid_price)
+
+        # Maintain sell orders
+        if self.sell_order and (self.sell_order.is_emulated or self.sell_order.is_open):
+            # TODO: Optionally cancel-replace
+            # self.cancel_order(self.sell_order)
+            pass
+
+        if not self.sell_order or self.sell_order.is_closed:
+            self.create_sell_order(tick.ask_price)
+
     def on_trade_tick(self, tick: TradeTick) -> None:
         """
         Actions to be performed when the strategy is running and receives a trade tick.
@@ -305,46 +312,7 @@ class VolatilityMarketMaker(Strategy):
         # For debugging (must add a subscription)
         self.log.info(repr(tick), LogColor.CYAN)
 
-    def on_bar(self, bar: Bar) -> None:
-        """
-        Actions to be performed when the strategy is running and receives a bar.
-
-        Parameters
-        ----------
-        bar : Bar
-            The bar received.
-
-        """
-        self.log.info(repr(bar), LogColor.CYAN)
-
-        if not self.instrument:
-            self.log.error("No instrument loaded.")
-            return
-
-        last: QuoteTick = self.cache.quote_tick(self.instrument_id)
-        if last is None:
-            self.log.info("No quotes yet")
-            return
-
-        # Maintain buy orders
-        if self.buy_order and (self.buy_order.is_emulated or self.buy_order.is_open):
-            # TODO: Optionally cancel-replace on every bar
-            # self.cancel_order(self.buy_order)
-            pass
-
-        if not self.buy_order or self.buy_order.is_closed:
-            self.create_buy_order(last)
-
-        # Maintain sell orders
-        if self.sell_order and (self.sell_order.is_emulated or self.sell_order.is_open):
-            # TODO: Optionally cancel-replace on every bar
-            # self.cancel_order(self.sell_order)
-            pass
-
-        if not self.sell_order or self.sell_order.is_closed:
-            self.create_sell_order(last)
-
-    def create_buy_order(self, last: QuoteTick) -> None:
+    def create_buy_order(self, price: Price) -> None:
         """
         Market maker simple buy limit method (example).
         """
@@ -352,26 +320,20 @@ class VolatilityMarketMaker(Strategy):
             self.log.error("No instrument loaded")
             return
 
-        # price: Decimal = last.ask_price + (self.atr.value * self.atr_multiple)
-        # price: Decimal = last.bid_price - (self.atr.value * self.atr_multiple)
-        price: Decimal = last.bid_price
         order: LimitOrder = self.order_factory.limit(
             instrument_id=self.instrument_id,
             order_side=OrderSide.BUY,
             quantity=self.instrument.make_qty(self.trade_size),
-            price=self.instrument.make_price(price),
-            time_in_force=TimeInForce.GTD,
-            expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
+            price=price,
+            # time_in_force=TimeInForce.GTD,
+            # expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
             post_only=False,  # Not supported on Polymarket
-            emulation_trigger=self.emulation_trigger,
         )
 
         self.buy_order = order
         self.submit_order(order)
-        # order_list = self.order_factory.create_list([order])
-        # self.submit_order_list(order_list)
 
-    def create_sell_order(self, last: QuoteTick) -> None:
+    def create_sell_order(self, price: Price) -> None:
         """
         Market maker simple sell limit method (example).
         """
@@ -379,49 +341,18 @@ class VolatilityMarketMaker(Strategy):
             self.log.error("No instrument loaded")
             return
 
-        # price: Decimal = last.bid_price - (self.atr.value * self.atr_multiple)
-        # price: Decimal = last.ask_price + (self.atr.value * self.atr_multiple)
-        price: Decimal = last.ask_price
         order: LimitOrder = self.order_factory.limit(
             instrument_id=self.instrument_id,
             order_side=OrderSide.SELL,
             quantity=self.instrument.make_qty(self.trade_size),
-            price=self.instrument.make_price(price),
-            time_in_force=TimeInForce.GTD,
-            expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
+            price=price,
+            # time_in_force=TimeInForce.GTD,
+            # expire_time=self.clock.utc_now() + pd.Timedelta(minutes=10),
             post_only=False,  # Not supported on Polymarket
-            emulation_trigger=self.emulation_trigger,
         )
 
         self.sell_order = order
         self.submit_order(order)
-        # order_list = self.order_factory.create_list([order])
-        # self.submit_order_list(order_list)
-
-    def on_event(self, event: Event) -> None:
-        """
-        Actions to be performed when the strategy is running and receives an event.
-
-        Parameters
-        ----------
-        event : Event
-            The event received.
-
-        """
-        last: QuoteTick = self.cache.quote_tick(self.instrument_id)
-        if last is None:
-            self.log.info("No quotes yet")
-            return
-
-        # If order filled then replace order
-        if isinstance(event, OrderFilled):
-            if self.buy_order and event.order_side == OrderSide.BUY:
-                if self.buy_order.is_closed:
-                    self.create_buy_order(last)
-            elif (
-                self.sell_order and event.order_side == OrderSide.SELL and self.sell_order.is_closed
-            ):
-                self.create_sell_order(last)
 
     def on_stop(self) -> None:
         """
@@ -429,11 +360,6 @@ class VolatilityMarketMaker(Strategy):
         """
         self.cancel_all_orders(self.instrument_id)
         self.close_all_positions(self.instrument_id)
-
-        # TODO: Use this to test batch cancels
-        # open_orders = self.cache.orders_open(instrument_id=self.instrument_id)
-        # if open_orders:
-        #     self.cancel_orders(open_orders)
 
     def on_reset(self) -> None:
         """
@@ -446,16 +372,13 @@ instrument_id = instrument_ids[0]
 trade_size = Decimal("5")
 
 # Configure your strategy
-strat_config = VolatilityMarketMakerConfig(
+strat_config = TOBQuoterConfig(
     instrument_id=instrument_id,
     external_order_claims=[instrument_id],
-    bar_type=BarType.from_str(f"{instrument_id}-1-MINUTE-MID-INTERNAL"),
-    atr_period=20,
-    atr_multiple=6.0,
     trade_size=trade_size,
 )
 # Instantiate your strategy
-strategy = VolatilityMarketMaker(config=strat_config)
+strategy = TOBQuoter(config=strat_config)
 
 # Add your strategies and modules
 node.trader.add_strategy(strategy)

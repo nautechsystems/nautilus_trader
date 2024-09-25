@@ -15,6 +15,7 @@
 
 import msgspec
 
+from nautilus_trader.adapters.polymarket.common.constants import USDC_POS
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketLiquiditySide
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderSide
 from nautilus_trader.adapters.polymarket.common.parsing import parse_order_side
@@ -28,6 +29,7 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import BinaryOption
+from nautilus_trader.model.objects import Money
 
 
 class PolymarketTradeReport(msgspec.Struct, frozen=True):
@@ -65,9 +67,12 @@ class PolymarketTradeReport(msgspec.Struct, frozen=True):
         else:
             return LiquiditySide.TAKER
 
-    def venue_order_id(self) -> VenueOrderId:
+    def venue_order_id(self, maker_address: str) -> VenueOrderId:
         if self.trader_side == PolymarketLiquiditySide.MAKER:
-            return VenueOrderId(self.maker_orders[-1].order_id)
+            for order in reversed(self.maker_orders):
+                if order.maker_address == maker_address:
+                    return VenueOrderId(order.order_id)
+            raise ValueError("Invalid array of maker orders (`maker_address` not found)")
         else:
             return VenueOrderId(self.taker_order_id)
 
@@ -76,18 +81,20 @@ class PolymarketTradeReport(msgspec.Struct, frozen=True):
         account_id: AccountId,
         instrument: BinaryOption,
         client_order_id: ClientOrderId | None,
+        maker_address: str,
         ts_init: int,
     ) -> FillReport:
         return FillReport(
             account_id=account_id,
             instrument_id=instrument.id,
             client_order_id=client_order_id,
-            venue_order_id=self.venue_order_id(),
+            venue_order_id=self.venue_order_id(maker_address),
             trade_id=TradeId(self.id),
             order_side=parse_order_side(self.side),
             last_qty=instrument.make_qty(float(self.size)),
             last_px=instrument.make_price(float(self.price)),
             liquidity_side=self.liqudity_side(),
+            commission=Money(0, USDC_POS),  # TBC: Hard coded for now
             report_id=UUID4(),
             ts_event=millis_to_nanos(int(self.match_time)),
             ts_init=ts_init,
