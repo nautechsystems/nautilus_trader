@@ -102,8 +102,6 @@ pub const extern "C" fn cvec_new() -> CVec {
 
 #[cfg(test)]
 mod tests {
-    use std::ptr::null;
-
     use rstest::*;
 
     use super::CVec;
@@ -171,6 +169,6 @@ mod tests {
     fn empty_vec_should_give_null_ptr() {
         let data: Vec<u64> = vec![];
         let cvec: CVec = data.into();
-        assert_eq!(cvec.ptr.cast::<u64>(), null::<u64>().cast_mut());
+        assert_eq!(cvec.ptr.cast::<u64>(), std::ptr::null_mut::<u64>());
     }
 }
