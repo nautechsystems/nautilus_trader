@@ -36,7 +36,7 @@ pub trait LogWriter {
 #[derive(Debug)]
 pub struct StdoutWriter {
     pub is_colored: bool,
-    buf: BufWriter<Stdout>,
+    io: Stdout,
     level: LevelFilter,
 }
 
@@ -45,7 +45,7 @@ impl StdoutWriter {
     #[must_use]
     pub fn new(level: LevelFilter, is_colored: bool) -> Self {
         Self {
-            buf: BufWriter::new(io::stdout()),
+            io: io::stdout(),
             level,
             is_colored,
         }
@@ -54,14 +54,14 @@ impl StdoutWriter {
 
 impl LogWriter for StdoutWriter {
     fn write(&mut self, line: &str) {
-        match self.buf.write_all(line.as_bytes()) {
+        match self.io.write_all(line.as_bytes()) {
             Ok(()) => {}
             Err(e) => eprintln!("Error writing to stdout: {e:?}"),
         }
     }
 
     fn flush(&mut self) {
-        match self.buf.flush() {
+        match self.io.flush() {
             Ok(()) => {}
             Err(e) => eprintln!("Error flushing stdout: {e:?}"),
         }
@@ -76,7 +76,7 @@ impl LogWriter for StdoutWriter {
 #[derive(Debug)]
 pub struct StderrWriter {
     pub is_colored: bool,
-    buf: BufWriter<Stderr>,
+    io: Stderr,
 }
 
 impl StderrWriter {
@@ -84,7 +84,7 @@ impl StderrWriter {
     #[must_use]
     pub fn new(is_colored: bool) -> Self {
         Self {
-            buf: BufWriter::new(io::stderr()),
+            io: io::stderr(),
             is_colored,
         }
     }
@@ -92,14 +92,14 @@ impl StderrWriter {
 
 impl LogWriter for StderrWriter {
     fn write(&mut self, line: &str) {
-        match self.buf.write_all(line.as_bytes()) {
+        match self.io.write_all(line.as_bytes()) {
             Ok(()) => {}
             Err(e) => eprintln!("Error writing to stderr: {e:?}"),
         }
     }
 
     fn flush(&mut self) {
-        match self.buf.flush() {
+        match self.io.flush() {
             Ok(()) => {}
             Err(e) => eprintln!("Error flushing stderr: {e:?}"),
         }
