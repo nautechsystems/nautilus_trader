@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 This will be the final release with support for Python 3.10.
+
 The `numpy` version requirement has been relaxed to >= 1.26.4.
 
 ### Enhancements
