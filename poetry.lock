@@ -1311,20 +1311,20 @@ tools = ["hypothesis (>=4.18.2,<5.0.0)"]
 
 [[package]]
 name = "eth-account"
-version = "0.13.3"
+version = "0.13.4"
 description = "eth-account: Sign Ethereum transactions and messages with local private keys"
 optional = true
 python-versions = "<4,>=3.8"
 files = [
-    {file = "eth_account-0.13.3-py3-none-any.whl", hash = "sha256:c8f3dae3403b8647f386fcc081fb8c2a0970991cf3e00af7e7ebd73f95d6a319"},
-    {file = "eth_account-0.13.3.tar.gz", hash = "sha256:03d6af5d314e64b3dd53283e15b24736c5caa24542e5edac0455d6ff87d8b1e0"},
+    {file = "eth_account-0.13.4-py3-none-any.whl", hash = "sha256:a4c109e9bad3a278243fcc028b755fb72b43e25b1e6256b3f309a44f5f7d87c3"},
+    {file = "eth_account-0.13.4.tar.gz", hash = "sha256:2e1f2de240bef3d9f3d8013656135d2a79b6be6d4e7885bce9cace4334a4a376"},
 ]
 
 [package.dependencies]
 bitarray = ">=2.4.0"
 ckzg = ">=2.0.0"
 eth-abi = ">=4.0.0-b.2"
-eth-keyfile = ">=0.7.0"
+eth-keyfile = ">=0.7.0,<0.9.0"
 eth-keys = ">=0.4.0"
 eth-rlp = ">=2.1.0"
 eth-utils = ">=2.0.0"
