@@ -13,7 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import datetime as dt
+
+from datetime import time
 from enum import Enum
 from io import TextIOWrapper
 from typing import Any, BinaryIO
@@ -72,16 +73,16 @@ class StreamingFeatherWriter:
     include_types : list[type], optional
         A list of Arrow serializable types to write.
         If this is specified then **only** the included types will be written.
-    rotation_mode : RotationMode, default `RotationMode.NO_ROTATION`
+    rotation_mode : RotationMode, default RotationMode.NO_ROTATION
         The mode for file rotation.
     max_file_size : int, default 1GB
-        The maximum file size in bytes before rotation (for `SIZE` mode).
+        The maximum file size in bytes before rotation (for SIZE mode).
     rotation_interval : pd.Timedelta, default 1 day
-        The time interval for file rotation (for `INTERVAL` mode and `SCHEDULED_DATES` mode).
-    rotation_time : datetime.time, default 00:00
-        The time of day for file rotation (for `SCHEDULED_DATES` mode).
+        The time interval for file rotation (for INTERVAL mode and SCHEDULED_DATES mode).
+    rotation_time : time, default 00:00
+        The time of day for file rotation (for SCHEDULED_DATES mode).
     rotation_timezone : str, default 'UTC'
-        The timezone for rotation calculations(for `SCHEDULED_DATES` mode).
+        The timezone for rotation calculations(for SCHEDULED_DATES mode).
 
     """
 
@@ -97,25 +98,27 @@ class StreamingFeatherWriter:
         rotation_mode: RotationMode = RotationMode.NO_ROTATION,
         max_file_size: int = 1024 * 1024 * 1024,  # 1GB
         rotation_interval: pd.Timedelta = pd.Timedelta(days=1),
-        rotation_time: dt.time = dt.time(0, 0, 0, 0),
+        rotation_time: time = time(0, 0, 0, 0),
         rotation_timezone: str = "UTC",
     ) -> None:
+        # Ensure the path is a directory or create it
         self.path = path
         self.cache = cache
         self.clock = clock
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(fs_protocol)
         self.fs.makedirs(self.fs._parent(self.path), exist_ok=True)
 
-        if self.fs.exists(self.path) and not self.fs.isdir(self.path):
-            raise FileNotFoundError("Path must be directory or empty")
+        if self.fs.exists(self.path):
+            if not self.fs.isdir(self.path):
+                raise FileNotFoundError("Path must be directory or empty")
+        else:
+            self.fs.makedirs(self.path, exist_ok=True)  # Create directory if it doesn't exist
 
         self.include_types = include_types
         if self.fs.exists(self.path) and replace:
             for fn in self.fs.ls(self.path):
                 self.fs.rm(fn)
             self.fs.rmdir(self.path)
-
-        self.fs.makedirs(self.path, exist_ok=True)
 
         self._schemas = list_schemas()
         self.logger = Logger(type(self).__name__)
@@ -137,43 +140,47 @@ class StreamingFeatherWriter:
         self.rotation_timezone = pytz.timezone(rotation_timezone)
         self._file_sizes: dict[str | tuple[str, str], int] = {}
         self._file_creation_times: dict[str | tuple[str, str], pd.Timestamp] = {}
-        self._next_rotation_time: pd.Timestamp | None = None
+        self._next_rotation_times: dict[str | tuple[str, str], pd.Timestamp | None] = {}
 
         self._create_writers()
-        self._update_next_rotation_time()
 
         self.flush_interval_ms = flush_interval_ms or 1000
         self._last_flush = self.clock.utc_now()
         self.missing_writers: set[type] = set()
 
-    def _update_next_rotation_time(self) -> None:
+    def _update_next_rotation_time(self, table_name: str | tuple[str, str]) -> None:
         """
-        Update the next rotation time based on the current rotation mode and clock.
+        Update the next rotation time for a specific table based on the current rotation
+        mode and clock.
         """
         now = self.clock.utc_now()
         if self.rotation_mode == RotationMode.INTERVAL:
-            self._next_rotation_time = now + self.rotation_interval
+            self._next_rotation_times[table_name] = now + self.rotation_interval
         elif self.rotation_mode == RotationMode.SCHEDULED_DATES:
-            if self._next_rotation_time is None:
+            if (
+                table_name not in self._next_rotation_times
+                or self._next_rotation_times[table_name] is None
+            ):
                 user_rotation_time = pd.Timestamp.combine(now.date(), self.rotation_time)
-                self._next_rotation_time = pd.Timestamp(
+                next_rotation_time = pd.Timestamp(
                     user_rotation_time,
                     tz=self.rotation_timezone,
                 ).tz_convert("UTC")
-                while self._next_rotation_time <= now:
-                    self._next_rotation_time += self.rotation_interval
+                while next_rotation_time <= now:
+                    next_rotation_time += self.rotation_interval
+                self._next_rotation_times[table_name] = next_rotation_time
             else:
-                self._next_rotation_time = now + self.rotation_interval
+                self._next_rotation_times[table_name] = now + self.rotation_interval
         elif self.rotation_mode in (RotationMode.SIZE, RotationMode.NO_ROTATION):
-            self._next_rotation_time = None
+            self._next_rotation_times[table_name] = None
 
-    def _check_file_rotation(self, table_name: str) -> bool:
+    def _check_file_rotation(self, table_name: str | tuple[str, str]) -> bool:
         """
         Check if file rotation is needed for the given table.
 
         Parameters
         ----------
-        table_name : str
+        table_name : str | tuple[str, str]
             The name of the table to check.
 
         Returns
@@ -188,8 +195,12 @@ class StreamingFeatherWriter:
             return self._file_sizes.get(table_name, 0) >= self.max_file_size
         elif self.rotation_mode in (RotationMode.INTERVAL, RotationMode.SCHEDULED_DATES):
             now = self.clock.utc_now()
-            if self._next_rotation_time and now >= self._next_rotation_time:
-                self._update_next_rotation_time()
+            next_rotation_time = self._next_rotation_times.get(table_name)
+            if next_rotation_time is None:
+                self._update_next_rotation_time(table_name)
+                return False
+            elif now >= next_rotation_time:
+                self._update_next_rotation_time(table_name)
                 return True
         return False
 
@@ -296,8 +307,8 @@ class StreamingFeatherWriter:
         f = self.fs.open(full_path, "wb")
         self._files[key] = f
         self._instrument_writers[key] = pa.ipc.new_stream(f, schema)
-        self._file_sizes[table_name] = 0
-        self._file_creation_times[table_name] = self.clock.utc_now()
+        self._file_sizes[key] = 0
+        self._file_creation_times[key] = self.clock.utc_now()
         self.logger.info(f"Created writer for table '{table_name}'")
 
     def _extract_obj_metadata(
@@ -453,17 +464,25 @@ class StreamingFeatherWriter:
             for table_name in self._writers
         }
 
-    def get_next_rotation_time(self) -> pd.Timestamp | None:
+    def get_next_rotation_time(
+        self,
+        table_name: str | tuple[str, str],
+    ) -> pd.Timestamp | None:
         """
         Get the expected time for the next file rotation.
+
+        Parameters
+        ----------
+        table_name : str | tuple[str, str]
+            The specific table name to get the next rotation time for.
 
         Returns
         -------
         pd.Timestamp | None
-            The next rotation time, or None if not applicable.
+            The next rotation time for the specified table, or None if not set.
 
         """
-        return self._next_rotation_time
+        return self._next_rotation_times.get(table_name)
 
     @property
     def is_closed(self) -> bool:
