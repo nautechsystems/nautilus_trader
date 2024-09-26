@@ -12,16 +12,20 @@ The `numpy` version requirement has been relaxed to >= 1.26.4.
 - Added `LiveExecutionEngine.inflight_check_retries` config option to limit in-flight order query attempts
 - Added `Symbol.root()` method for obtaining the root of parent or composite symbols
 - Added `Symbol.topic()` method for obtaining the subscription topic of parent or composite symbols
-- Added `Symbol.is_composite()` method to determine if symbol is made up of parts with period delimiters
+- Added `Symbol.is_composite()` method to determine if symbol is made up of parts with period (`.`) delimiters
 - Added `underlying` filter param for `Cache.instruments(...)` method
-- Implemented `OrderTestBuilder` to assist testing in Rust (#1952), thanks @filipmacek
 - Implemented flush with truncate Postgres function for `PostgresCacheDatabase` (#1928), thanks @filipmacek
-- Improved `StreamingFeatherWriter` with file rotation and use of `Clock` and `Cache` (#1954), thanks @graceyangfan
+- Implemented file rotation for `StreamingFeatherWriter` with internal improvements using `Clock` and `Cache` (#1954), thanks @graceyangfan
 - Improved dYdX execution client to use `RetryManager` for HTTP requests (#1941), thanks @davidsblom
 - Improved Interactive Brokers adapter to use a dynamic IB gateway `container_image` from config (#1940), thanks @rsmb7z
 - Improved `OrderBookDeltas` streaming and batching based on the `F_LAST` flag
 - Standardized underscore thousands separators for backtest logging
 - Updated Databento `publishers.json`
+
+### Internal Improvements
+- Implemented `OrderTestBuilder` to assist testing in Rust (#1952), thanks @filipmacek
+- Implemented quote tick processing for SimulatedExchange in Rust (#1956), thanks @filipmacek
+- Implemented trade tick processing for SimulatedExchange in Rust (#1956), thanks @filipmacek
 
 ### Breaking Changes
 - Renamed `batch_size_bytes` to `chunk_size` (more accurate naming for number of data points to process per chunk in backtest streaming mode)
