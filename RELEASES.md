@@ -29,6 +29,7 @@ The `numpy` version requirement has been relaxed to >= 1.26.4.
 - Implemented `OrderTestBuilder` to assist testing in Rust (#1952), thanks @filipmacek
 - Implemented quote tick processing for SimulatedExchange in Rust (#1956), thanks @filipmacek
 - Implemented trade tick processing for SimulatedExchange in Rust (#1956), thanks @filipmacek
+- Refined `Logger` to use unbuffered stdout/stderr writers (#1960), thanks @twitu
 
 ### Breaking Changes
 - Renamed `batch_size_bytes` to `chunk_size` (more accurate naming for number of data points to process per chunk in backtest streaming mode)
