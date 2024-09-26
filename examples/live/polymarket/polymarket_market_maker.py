@@ -104,7 +104,7 @@ config_node = TradingNodeConfig(
             private_key=None,  # 'POLYMARKET_PK' env var
             api_key=None,  # 'POLYMARKET_API_KEY' env var
             api_secret=None,  # 'POLYMARKET_API_SECRET' env var
-            api_passphrase=None,  # 'POLYMARKET_API_SECRET' env var
+            passphrase=None,  # 'POLYMARKET_PASSPHRASE' env var
             instrument_provider=instrument_provider_config,
             ws_connection_delay_secs=5,
         ),
@@ -114,7 +114,7 @@ config_node = TradingNodeConfig(
             private_key=None,  # 'POLYMARKET_PK' env var
             api_key=None,  # 'POLYMARKET_API_KEY' env var
             api_secret=None,  # 'POLYMARKET_API_SECRET' env var
-            api_passphrase=None,  # 'POLYMARKET_API_SECRET' env var
+            passphrase=None,  # 'POLYMARKET_PASSPHRASE' env var
             instrument_provider=instrument_provider_config,
         ),
     },

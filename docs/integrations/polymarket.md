@@ -156,7 +156,7 @@ The script will generate and print API credentials, which you should save to the
 
 - `POLYMARKET_API_KEY`
 - `POLYMARKET_API_SECRET`
-- `POLYMARKET_API_PASSPHRASE`
+- `POLYMARKET_PASSPHRASE`
 
 These can then be used for Polymarket client configurations:
 
@@ -174,7 +174,7 @@ When setting up NautilusTrader to work with Polymarket, it’s crucial to proper
 - API credentials: You will need to provide the following API credentials to interact with the Polymarket CLOB:
   - `api_key`: If not provided, will source the `POLYMARKET_API_KEY` environment variable.
   - `api_secret`: If not provided, will source the `POLYMARKET_API_SECRET` environment variable.
-  - `api_passphrase`: If not provided, will source the `POLYMARKET_API_PASSPHRASE` environment variable.
+  - `passphrase`: If not provided, will source the `POLYMARKET_PASSPHRASE` environment variable.
 
 :::tip
 It's recommended you use environment variables for API credentials.

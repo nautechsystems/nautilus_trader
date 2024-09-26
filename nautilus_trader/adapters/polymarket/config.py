@@ -43,9 +43,9 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
     api_secret : str, optional
         The Polymarket API public key.
         If ``None`` then will source the `POLYMARKET_API_SECRET` environment variable.
-    api_passphrase : str, optional
-        The Polymarket API pass phrase.
-        If ``None`` then will source the `POLYMARKET_API_PASSPHRASE` environment variable.
+    passphrase : str, optional
+        The Polymarket API passphrase.
+        If ``None`` then will source the `POLYMARKET_PASSPHRASE` environment variable.
     base_url_http : str, optional
         The HTTP client custom endpoint override.
     base_url_ws : str, optional
@@ -63,7 +63,7 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
     funder: str | None = None
     api_key: str | None = None
     api_secret: str | None = None
-    api_passphrase: str | None = None
+    passphrase: str | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
     ws_connection_delay_secs: PositiveInt = 5
@@ -92,9 +92,9 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
     api_secret : str, optional
         The Polymarket API public key.
         If ``None`` then will source the `POLYMARKET_API_SECRET` environment variables.
-    api_passphrase : str, optional
-        The Polymarket API pass phrase.
-        If ``None`` then will source the `POLYMARKET_API_PASSPHRASE` environment variable.
+    passphrase : str, optional
+        The Polymarket API passphrase.
+        If ``None`` then will source the `POLYMARKET_PASSPHRASE` environment variable.
     base_url_http : str, optional
         The HTTP client custom endpoint override.
     base_url_ws : str, optional
@@ -112,7 +112,7 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
     funder: str | None = None
     api_key: str | None = None
     api_secret: str | None = None
-    api_passphrase: str | None = None
+    passphrase: str | None = None
     base_url_http: str | None = None
     base_url_ws: str | None = None
     max_retries: PositiveInt | None = None
