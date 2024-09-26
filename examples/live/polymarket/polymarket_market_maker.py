@@ -122,7 +122,7 @@ config_node = TradingNodeConfig(
     timeout_reconciliation=20.0,
     timeout_portfolio=10.0,
     timeout_disconnection=10.0,
-    timeout_post_stop=5.0,
+    timeout_post_stop=10.0,
 )
 
 # Instantiate the node with a configuration
@@ -250,23 +250,7 @@ class TOBQuoter(Strategy):
 
         book = self.cache.order_book(deltas.instrument_id)
 
-        # Maintain buy orders
-        if self.buy_order and (self.buy_order.is_emulated or self.buy_order.is_open):
-            # TODO: Optionally cancel-replace
-            # self.cancel_order(self.buy_order)
-            pass
-
-        if not self.buy_order or self.buy_order.is_closed:
-            self.create_buy_order(book.best_bid_price())
-
-        # Maintain sell orders
-        if self.sell_order and (self.sell_order.is_emulated or self.sell_order.is_open):
-            # TODO: Optionally cancel-replace
-            # self.cancel_order(self.sell_order)
-            pass
-
-        if not self.sell_order or self.sell_order.is_closed:
-            self.create_sell_order(book.best_ask_price())
+        self.maintain_orders(book.best_bid_price(), book.best_ask_price())
 
     def on_quote_tick(self, tick: QuoteTick) -> None:
         """
@@ -281,23 +265,7 @@ class TOBQuoter(Strategy):
         # For debugging (must add a subscription)
         self.log.info(repr(tick), LogColor.CYAN)
 
-        # Maintain buy orders
-        if self.buy_order and (self.buy_order.is_emulated or self.buy_order.is_open):
-            # TODO: Optionally cancel-replace
-            # self.cancel_order(self.buy_order)
-            pass
-
-        if not self.buy_order or self.buy_order.is_closed:
-            self.create_buy_order(tick.bid_price)
-
-        # Maintain sell orders
-        if self.sell_order and (self.sell_order.is_emulated or self.sell_order.is_open):
-            # TODO: Optionally cancel-replace
-            # self.cancel_order(self.sell_order)
-            pass
-
-        if not self.sell_order or self.sell_order.is_closed:
-            self.create_sell_order(tick.ask_price)
+        self.maintain_orders(tick.bid_price, tick.ask_price)
 
     def on_trade_tick(self, tick: TradeTick) -> None:
         """
@@ -312,10 +280,25 @@ class TOBQuoter(Strategy):
         # For debugging (must add a subscription)
         self.log.info(repr(tick), LogColor.CYAN)
 
+    def maintain_orders(self, best_bid: Price, best_ask: Price) -> None:
+        if self.buy_order and (self.buy_order.is_emulated or self.buy_order.is_open):
+            # TODO: Optionally cancel-replace
+            # self.cancel_order(self.buy_order)
+            pass
+
+        if not self.buy_order or self.buy_order.is_closed:
+            self.create_buy_order(best_bid)
+
+        # Maintain sell orders
+        if self.sell_order and (self.sell_order.is_emulated or self.sell_order.is_open):
+            # TODO: Optionally cancel-replace
+            # self.cancel_order(self.sell_order)
+            pass
+
+        if not self.sell_order or self.sell_order.is_closed:
+            self.create_sell_order(best_ask)
+
     def create_buy_order(self, price: Price) -> None:
-        """
-        Market maker simple buy limit method (example).
-        """
         if not self.instrument:
             self.log.error("No instrument loaded")
             return
@@ -334,9 +317,6 @@ class TOBQuoter(Strategy):
         self.submit_order(order)
 
     def create_sell_order(self, price: Price) -> None:
-        """
-        Market maker simple sell limit method (example).
-        """
         if not self.instrument:
             self.log.error("No instrument loaded")
             return
@@ -359,7 +339,7 @@ class TOBQuoter(Strategy):
         Actions to be performed when the strategy is stopped.
         """
         self.cancel_all_orders(self.instrument_id)
-        self.close_all_positions(self.instrument_id)
+        self.close_all_positions(self.instrument_id, reduce_only=False)
 
     def on_reset(self) -> None:
         """

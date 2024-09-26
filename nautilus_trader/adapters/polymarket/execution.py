@@ -859,15 +859,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 if order.is_closed:
                     return  # Already closed (only status update)
 
-                # Determine solution for commissions
-                # last_qty = instrument.make_qty(msg.size_matched)
-                # last_px = instrument.make_price(msg.price)
-                # commission = float(last_qty * last_px) * basis_points_as_percentage(
-                #     float(msg.fee_rate_bps)
-                # )
-
                 matched_qty = instrument.make_qty(float(msg.size_matched))
-                last_qty = matched_qty.sub(order.filled_qty)
+                last_qty = instrument.make_qty(float(matched_qty - order.filled_qty))
 
                 self.generate_order_filled(
                     strategy_id=strategy_id,
@@ -881,7 +874,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     last_qty=last_qty,
                     last_px=instrument.make_price(msg.price),
                     quote_currency=USDC_POS,
-                    commission=Money(0.0, USDC_POS),  #  TBD
+                    commission=Money(0.0, USDC_POS),  # TBD: determine solution for commissions
                     liquidity_side=liquidity_side,
                     ts_event=millis_to_nanos(int(msg.timestamp)),
                     info=msgspec.structs.asdict(msg),
