@@ -28,11 +28,7 @@ use crate::{
     },
     enums::{BookType, OrderSide},
     identifiers::InstrumentId,
-    orderbook::{
-        aggregation::{update_book_with_quote_tick, update_book_with_trade_tick},
-        analysis::book_check_integrity,
-        book::OrderBook,
-    },
+    orderbook::{analysis::book_check_integrity, book::OrderBook},
     types::{price::Price, quantity::Quantity},
 };
 
@@ -258,7 +254,7 @@ pub extern "C" fn orderbook_get_quantity_for_price(
 /// - If book type is not `L1_MBP`.
 #[no_mangle]
 pub extern "C" fn orderbook_update_quote_tick(book: &mut OrderBook_API, quote: &QuoteTick) {
-    update_book_with_quote_tick(book, quote).unwrap();
+    book.update_quote_tick(quote).unwrap();
 }
 
 /// Updates the order book with a trade tick.
@@ -269,7 +265,7 @@ pub extern "C" fn orderbook_update_quote_tick(book: &mut OrderBook_API, quote: &
 /// - If book type is not `L1_MBP`.
 #[no_mangle]
 pub extern "C" fn orderbook_update_trade_tick(book: &mut OrderBook_API, tick: &TradeTick) {
-    update_book_with_trade_tick(book, tick).unwrap();
+    book.update_trade_tick(tick).unwrap();
 }
 
 #[no_mangle]
