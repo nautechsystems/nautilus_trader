@@ -1255,9 +1255,9 @@ checksum = "e8566979429cf69b49a5c740c60791108e86440e8be149bbea4fe54d2c32d6e2"
 
 [[package]]
 name = "databento"
-version = "0.12.1"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "301ca93b890dadb1cb022c4e341c362c4fa529effb0ee99508b50f30d02373f7"
+checksum = "4778983b23e529e1b2acb295f6c8796f547867e7999932b580aad946d22c9bdb"
 dependencies = [
  "dbn",
  "futures",
@@ -1585,9 +1585,9 @@ dependencies = [
 
 [[package]]
 name = "dbn"
-version = "0.20.1"
+version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a90702f28b07e5a367d580677400cad0646084b9345017fd4c2c8b1af809705"
+checksum = "2b98e42b50ac7e2af044bb0f35c5bdde8629cc2a986dce3837306be9beca796a"
 dependencies = [
  "async-compression",
  "csv",
@@ -1605,9 +1605,9 @@ dependencies = [
 
 [[package]]
 name = "dbn-macros"
-version = "0.20.1"
+version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0a9a3831bcc4c75f2456f8c2b7eb8937b4f787f9204610748db16748f045a00"
+checksum = "418fa244bde106364095a1a9498452ff03081a8dcbedbf84007e7a144f91817c"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -3924,9 +3924,9 @@ dependencies = [
 
 [[package]]
 name = "redox_syscall"
-version = "0.5.5"
+version = "0.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62871f2d65009c0256aed1b9cfeeb8ac272833c404e13d53d400cd0dad7a2ac0"
+checksum = "355ae415ccd3a04315d3f8246e86d67689ea74d88d915576e1589a351062a13b"
 dependencies = [
  "bitflags 2.6.0",
 ]
@@ -5393,18 +5393,18 @@ dependencies = [
 
 [[package]]
 name = "typed-builder"
-version = "0.18.2"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77739c880e00693faef3d65ea3aad725f196da38b22fdc7ea6ded6e1ce4d3add"
+checksum = "7e14ed59dc8b7b26cacb2a92bad2e8b1f098806063898ab42a3bd121d7d45e75"
 dependencies = [
  "typed-builder-macro",
 ]
 
 [[package]]
 name = "typed-builder-macro"
-version = "0.18.2"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f718dfaf347dcb5b983bfc87608144b0bad87970aebcbea5ce44d2a30c08e63"
+checksum = "560b82d656506509d43abe30e0ba64c56b1953ab3d4fe7ba5902747a7a3cedd5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5968,9 +5968,9 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
 name = "winnow"
-version = "0.6.19"
+version = "0.6.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c52ac009d615e79296318c1bcce2d422aaca15ad08515e344feeda07df67a587"
+checksum = "36c1fec1a2bb5866f07c25f68c26e565c4c200aebb96d7e55710c19d3e8ac49b"
 dependencies = [
  "memchr",
 ]
