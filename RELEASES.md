@@ -39,6 +39,7 @@ The `numpy` version requirement has been relaxed to >= 1.26.4.
 - Fixed `Cfd` instrument Arrow schema and serialization
 - Fixed bar subscriptions on TWS/GW restart for Interactive Brokers (#1950), thanks @rsmb7z
 - Fixed Databento parent and continuous contract subscriptions (using new symbol root)
+- Fixed Databento `FuturesSpread` and `OptionsSpread` instrument decoding (was not correctly handling price increments and empty underlyings)
 - Fixed `FuturesSpread` serialization
 - Fixed `OptionsSpread` serialization
 

@@ -51,6 +51,8 @@ use super::{
     types::{DatabentoImbalance, DatabentoStatistics},
 };
 
+const ONE_CENT_INCREMENT: i64 = 10_000_000;
+
 const BAR_SPEC_1S: BarSpecification = BarSpecification {
     step: 1,
     aggregation: BarAggregation::Second,
@@ -344,6 +346,12 @@ pub fn decode_futures_spread_v1(
         other => f64::from(other),
     };
 
+    let price_precision = if msg.min_price_increment < ONE_CENT_INCREMENT {
+        4
+    } else {
+        currency.precision
+    };
+
     Ok(FuturesSpread::new(
         instrument_id,
         instrument_id.symbol,
@@ -354,8 +362,8 @@ pub fn decode_futures_spread_v1(
         msg.activation.into(),
         msg.expiration.into(),
         currency,
-        currency.precision,
-        decode_price(msg.min_price_increment, currency.precision)?, // TODO: Can be zero?
+        price_precision,
+        decode_price(msg.min_price_increment, price_precision)?,
         Quantity::new(unit_of_measure_qty, 0),
         Quantity::new(lot_size_round, 0),
         None,               // TBD
@@ -988,6 +996,12 @@ pub fn decode_futures_spread(
         other => f64::from(other),
     };
 
+    let price_precision = if msg.min_price_increment < ONE_CENT_INCREMENT {
+        4
+    } else {
+        currency.precision
+    };
+
     Ok(FuturesSpread::new(
         instrument_id,
         instrument_id.symbol,
@@ -998,8 +1012,8 @@ pub fn decode_futures_spread(
         msg.activation.into(),
         msg.expiration.into(),
         currency,
-        currency.precision,
-        decode_price(msg.min_price_increment, currency.precision)?,
+        price_precision,
+        decode_price(msg.min_price_increment, price_precision)?,
         Quantity::new(unit_of_measure_qty, 0),
         Quantity::new(lot_size_round, 0),
         None,               // TBD
@@ -1181,6 +1195,12 @@ mod tests {
 
     pub const TEST_DATA_PATH: &str =
         concat!(env!("CARGO_MANIFEST_DIR"), "/src/databento/test_data");
+
+    #[rstest]
+    fn test_decode_price() {
+        assert_eq!(decode_price(2500000, 4).unwrap(), Price::from("0.0025"));
+        assert_eq!(decode_price(10000000, 2).unwrap(), Price::from("0.01"));
+    }
 
     #[rstest]
     fn test_decode_mbo_msg() {
