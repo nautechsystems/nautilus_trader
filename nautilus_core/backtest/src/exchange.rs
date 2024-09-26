@@ -305,8 +305,32 @@ impl SimulatedExchange {
         }
     }
 
-    pub fn process_trade_tick(&mut self, _tick: TradeTick) {
-        todo!("process trade tick")
+    pub fn process_trade_tick(&mut self, tick: &TradeTick) {
+        for module in &self.modules {
+            module.pre_process(Data::Trade(tick.to_owned()));
+        }
+
+        if !self.matching_engines.contains_key(&tick.instrument_id) {
+            let instrument = {
+                let cache = self.cache.as_ref().borrow();
+                cache.instrument(&tick.instrument_id).cloned()
+            };
+
+            if let Some(instrument) = instrument {
+                self.add_instrument(instrument).unwrap();
+            } else {
+                panic!(
+                    "No matching engine found for instrument {}",
+                    tick.instrument_id
+                );
+            }
+        }
+
+        if let Some(matching_engine) = self.matching_engines.get_mut(&tick.instrument_id) {
+            matching_engine.process_trade_tick(tick);
+        } else {
+            panic!("Matching engine should be initialized");
+        }
     }
 
     pub fn process_bar(&mut self, _bar: Bar) {
@@ -344,9 +368,9 @@ mod tests {
     use nautilus_common::{cache::Cache, msgbus::MessageBus};
     use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
     use nautilus_model::{
-        data::quote::QuoteTick,
-        enums::{AccountType, BookType, OmsType},
-        identifiers::Venue,
+        data::{quote::QuoteTick, trade::TradeTick},
+        enums::{AccountType, AggressorSide, BookType, OmsType},
+        identifiers::{TradeId, Venue},
         instruments::{
             any::InstrumentAny, crypto_perpetual::CryptoPerpetual, stubs::crypto_perpetual_ethusdt,
         },
@@ -447,5 +471,32 @@ mod tests {
         assert_eq!(best_bid_price, Some(Price::from("1000")));
         let best_ask_price = exchange.best_ask_price(crypto_perpetual_ethusdt.id);
         assert_eq!(best_ask_price, Some(Price::from("1001")));
+    }
+
+    #[rstest]
+    fn test_exchange_process_trade_tick(crypto_perpetual_ethusdt: CryptoPerpetual) {
+        let mut exchange: SimulatedExchange =
+            get_exchange(Venue::new("BINANCE"), AccountType::Margin, BookType::L1_MBP);
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+
+        // register instrument
+        exchange.add_instrument(instrument).unwrap();
+
+        // process tick
+        let trade_tick = TradeTick::new(
+            crypto_perpetual_ethusdt.id,
+            Price::from("1000"),
+            Quantity::from(1),
+            AggressorSide::Buyer,
+            TradeId::from("1"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        exchange.process_trade_tick(&trade_tick);
+
+        let best_bid_price = exchange.best_bid_price(crypto_perpetual_ethusdt.id);
+        assert_eq!(best_bid_price, Some(Price::from("1000")));
+        let best_ask = exchange.best_ask_price(crypto_perpetual_ethusdt.id);
+        assert_eq!(best_ask, Some(Price::from("1000")));
     }
 }
