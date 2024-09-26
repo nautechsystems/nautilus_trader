@@ -211,16 +211,18 @@ impl SimulatedExchange {
         Ok(())
     }
 
+    #[must_use]
     pub fn best_bid_price(&self, instrument_id: InstrumentId) -> Option<Price> {
         self.matching_engines
             .get(&instrument_id)
-            .and_then(|matching_engine| matching_engine.best_bid_price())
+            .and_then(super::matching_engine::OrderMatchingEngine::best_bid_price)
     }
 
+    #[must_use]
     pub fn best_ask_price(&self, instrument_id: InstrumentId) -> Option<Price> {
         self.matching_engines
             .get(&instrument_id)
-            .and_then(|matching_engine| matching_engine.best_ask_price())
+            .and_then(super::matching_engine::OrderMatchingEngine::best_ask_price)
     }
 
     pub fn get_book(&self, _instrument_id: InstrumentId) {
@@ -276,7 +278,7 @@ impl SimulatedExchange {
     }
 
     pub fn process_quote_tick(&mut self, tick: &QuoteTick) {
-        for module in self.modules.iter() {
+        for module in &self.modules {
             module.pre_process(Data::Quote(tick.to_owned()));
         }
 
