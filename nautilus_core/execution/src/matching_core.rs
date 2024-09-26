@@ -107,6 +107,10 @@ impl OrderMatchingCore {
 
     // -- COMMANDS --------------------------------------------------------------------------------
 
+    pub fn set_last_raw(&mut self, last: Price) {
+        self.last = Some(last);
+    }
+
     pub fn reset(&mut self) {
         self.bid = None;
         self.ask = None;
