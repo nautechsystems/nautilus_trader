@@ -43,7 +43,7 @@ from nautilus_trader.live.factories import LiveExecClientFactory
 def get_polymarket_http_client(
     api_key: str | None = None,
     api_secret: str | None = None,
-    api_passphrase: str | None = None,
+    passphrase: str | None = None,
     base_url: str | None = None,
     chain_id: int = POLYGON,
     signature_type: int = 0,
@@ -59,8 +59,8 @@ def get_polymarket_http_client(
         The API key for the client.
     api_secret : str, optional
         The API secret for the client.
-    api_passphrase : str, optional
-        The API pass phrase for the client.
+    passphrase : str, optional
+        The passphrase for the client.
     base_url : str, optional
         The base URL for the API endpoints.
     chain_id : int, default POLYGON
@@ -80,7 +80,7 @@ def get_polymarket_http_client(
     creds = ApiCreds(
         api_key=api_key or get_polymarket_api_key(),
         api_secret=api_secret or get_polymarket_api_secret(),
-        api_passphrase=api_passphrase or get_polymarket_passphrase(),
+        api_passphrase=passphrase or get_polymarket_passphrase(),
     )
     key = private_key or get_polymarket_private_key()
     funder = funder or get_polymarket_funder()
@@ -170,7 +170,7 @@ class PolymarketLiveDataClientFactory(LiveDataClientFactory):
             funder=config.funder,
             api_key=config.api_key,
             api_secret=config.api_secret,
-            api_passphrase=config.api_passphrase,
+            passphrase=config.passphrase,
             base_url=config.base_url_http,
         )
         provider = get_polymarket_instrument_provider(
@@ -233,13 +233,13 @@ class PolymarketLiveExecClientFactory(LiveExecClientFactory):
             funder=config.funder,
             api_key=config.api_key,
             api_secret=config.api_secret,
-            api_passphrase=config.api_passphrase,
+            passphrase=config.passphrase,
             base_url=config.base_url_http,
         )
         ws_auth = PolymarketWebSocketAuth(
             apiKey=config.api_key or get_polymarket_api_key(),
             secret=config.api_secret or get_polymarket_api_secret(),
-            passphrase=config.api_passphrase or get_polymarket_passphrase(),
+            passphrase=config.passphrase or get_polymarket_passphrase(),
         )
         provider = get_polymarket_instrument_provider(
             client=http_client,
