@@ -14,7 +14,9 @@ The `numpy` version requirement has been relaxed to >= 1.26.4.
 - Added `Symbol.root()` method for obtaining the root of parent or composite symbols
 - Added `Symbol.topic()` method for obtaining the subscription topic of parent or composite symbols
 - Added `Symbol.is_composite()` method to determine if symbol is made up of parts with period (`.`) delimiters
-- Added `underlying` filter param for `Cache.instruments(...)` method
+- Added `underlying` filter parameter for `Cache.instruments(...)` method
+- Added `reduce_only` parameter for `Strategy.close_position(...)` method (`True` by default to maintain current behavior)
+- Added `reduce_only` parameter for `Strategy.close_all_positions(...)` method (`True` by default to maintain current behavior)
 - Implemented flush with truncate Postgres function for `PostgresCacheDatabase` (#1928), thanks @filipmacek
 - Implemented file rotation for `StreamingFeatherWriter` with internal improvements using `Clock` and `Cache` (#1954), thanks @graceyangfan
 - Improved dYdX execution client to use `RetryManager` for HTTP requests (#1941), thanks @davidsblom

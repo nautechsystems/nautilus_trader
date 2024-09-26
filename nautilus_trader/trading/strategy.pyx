@@ -1195,6 +1195,7 @@ cdef class Strategy(Actor):
         Position position,
         ClientId client_id = None,
         list[str] tags = None,
+        bint reduce_only = True,
     ):
         """
         Close the given position.
@@ -1211,6 +1212,9 @@ cdef class Strategy(Actor):
             If ``None`` then will be inferred from the venue in the instrument ID.
         tags : list[str], optional
             The tags for the market order closing the position.
+        reduce_only : bool, default True
+            If the market order to close the position should carry the 'reduce-only' execution instruction.
+            Optional, as not all venues support this feature.
 
         """
         Condition.true(self.trader_id is not None, "The strategy has not been registered")
@@ -1231,7 +1235,7 @@ cdef class Strategy(Actor):
             order_side=Order.closing_side_c(position.side),
             quantity=position.quantity,
             time_in_force=TimeInForce.GTC,
-            reduce_only=True,
+            reduce_only=reduce_only,
             quote_quantity=False,
             exec_algorithm_id=None,
             exec_algorithm_params=None,
@@ -1246,6 +1250,7 @@ cdef class Strategy(Actor):
         PositionSide position_side = PositionSide.NO_POSITION_SIDE,
         ClientId client_id = None,
         list[str] tags = None,
+        bint reduce_only = True,
     ):
         """
         Close all positions for the given instrument ID for this strategy.
@@ -1261,6 +1266,9 @@ cdef class Strategy(Actor):
             If ``None`` then will be inferred from the venue in the instrument ID.
         tags : list[str], optional
             The tags for the market orders closing the positions.
+        reduce_only : bool, default True
+            If the market orders to close positions should carry the 'reduce-only' execution instruction.
+            Optional, as not all venues support this feature.
 
         """
         # instrument_id can be None
@@ -1287,7 +1295,7 @@ cdef class Strategy(Actor):
 
         cdef Position position
         for position in positions_open:
-            self.close_position(position, client_id, tags)
+            self.close_position(position, client_id, tags, reduce_only)
 
     cpdef void query_order(self, Order order, ClientId client_id = None):
         """
