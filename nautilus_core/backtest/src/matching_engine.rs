@@ -29,6 +29,7 @@ use nautilus_model::{
         bar::{Bar, BarType},
         delta::OrderBookDelta,
         quote::QuoteTick,
+        trade::TradeTick,
     },
     enums::{
         AccountType, BookType, ContingencyType, LiquiditySide, MarketStatus, OmsType, OrderSide,
@@ -260,6 +261,17 @@ impl OrderMatchingEngine {
         if self.book_type == BookType::L1_MBP {
             self.book.update_quote_tick(tick).unwrap();
         }
+
+        self.iterate(tick.ts_event);
+    }
+
+    pub fn process_trade_tick(&mut self, tick: &TradeTick) {
+        log::debug!("Processing {tick}");
+
+        if self.book_type == BookType::L1_MBP {
+            self.book.update_trade_tick(tick).unwrap();
+        }
+        self.core.set_last_raw(tick.price);
 
         self.iterate(tick.ts_event);
     }
