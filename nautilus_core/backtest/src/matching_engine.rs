@@ -21,6 +21,7 @@
 
 use std::{any::Any, cell::RefCell, collections::HashMap, rc::Rc};
 
+use chrono::TimeDelta;
 use nautilus_common::{cache::Cache, msgbus::MessageBus};
 use nautilus_core::{nanos::UnixNanos, time::AtomicTime, uuid::UUID4};
 use nautilus_execution::matching_core::OrderMatchingCore;
@@ -32,8 +33,8 @@ use nautilus_model::{
         trade::TradeTick,
     },
     enums::{
-        AccountType, BookType, ContingencyType, LiquiditySide, MarketStatus, OmsType, OrderSide,
-        OrderStatus, OrderType,
+        AccountType, AggregationSource, AggressorSide, BookType, ContingencyType, LiquiditySide,
+        MarketStatus, OmsType, OrderSide, OrderStatus, OrderType, PriceType,
     },
     events::order::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderExpired,
@@ -137,7 +138,7 @@ pub struct OrderMatchingEngine {
     last_bar_bid: Option<Bar>,
     last_bar_ask: Option<Bar>,
     execution_bar_types: HashMap<InstrumentId, BarType>,
-    execution_bar_deltas: HashMap<InstrumentId, u64>,
+    execution_bar_deltas: HashMap<BarType, TimeDelta>,
     account_ids: HashMap<TraderId, AccountId>,
     position_count: usize,
     order_count: usize,
@@ -263,6 +264,190 @@ impl OrderMatchingEngine {
         }
 
         self.iterate(tick.ts_event);
+    }
+
+    pub fn process_bar(&mut self, bar: &Bar) {
+        log::debug!("Processing {bar}");
+
+        // check if configured for bar execution
+        // can only process an L1 book with bars
+        if !self.config.bar_execution || self.book_type != BookType::L1_MBP {
+            return;
+        }
+
+        let bar_type = bar.bar_type;
+        // do not process internally aggregated bars
+        if bar_type.aggregation_source() == AggregationSource::Internal {
+            return;
+        }
+
+        let execution_bar_type =
+            if let Some(execution_bar_type) = self.execution_bar_types.get(&bar.instrument_id()) {
+                execution_bar_type.to_owned()
+            } else {
+                self.execution_bar_types
+                    .insert(bar.instrument_id(), bar_type);
+                self.execution_bar_deltas
+                    .insert(bar_type, bar_type.spec().timedelta());
+                bar_type
+            };
+
+        if execution_bar_type != bar_type {
+            let mut bar_type_timedelta = self.execution_bar_deltas.get(&bar_type).cloned();
+            if bar_type_timedelta.is_none() {
+                bar_type_timedelta = Some(bar_type.spec().timedelta());
+                self.execution_bar_deltas
+                    .insert(bar_type, bar_type_timedelta.unwrap());
+            }
+            if self.execution_bar_deltas.get(&execution_bar_type).unwrap()
+                >= &bar_type_timedelta.unwrap()
+            {
+                self.execution_bar_types
+                    .insert(bar_type.instrument_id(), bar_type);
+            } else {
+                return;
+            }
+        }
+
+        match bar_type.spec().price_type {
+            PriceType::Last | PriceType::Mid => self.process_trade_ticks_from_bar(bar),
+            PriceType::Bid => {
+                self.last_bar_bid = Some(bar.to_owned());
+                self.process_quote_ticks_from_bar(bar);
+            }
+            PriceType::Ask => {
+                self.last_bar_ask = Some(bar.to_owned());
+                self.process_quote_ticks_from_bar(bar);
+            }
+        }
+    }
+
+    fn process_trade_ticks_from_bar(&mut self, bar: &Bar) {
+        // split the bar into 4 trade ticks with quarter volume
+        let size = Quantity::new(bar.volume.as_f64() / 4.0, bar.volume.precision);
+
+        let aggressor_side = if !self.core.is_last_initialized || bar.open > self.core.last.unwrap()
+        {
+            AggressorSide::Buyer
+        } else {
+            AggressorSide::Seller
+        };
+
+        // create reusable trade tick
+        let mut trade_tick = TradeTick::new(
+            bar.instrument_id(),
+            bar.open,
+            size,
+            aggressor_side,
+            self.generate_trade_id(),
+            bar.ts_event,
+            bar.ts_event,
+        );
+
+        // open
+        // check if not initialized, if it is, it will be updated by the close or last
+        if !self.core.is_last_initialized {
+            self.book.update_trade_tick(&trade_tick).unwrap();
+            self.iterate(trade_tick.ts_init);
+            self.core.set_last_raw(trade_tick.price);
+        }
+
+        // high
+        // check if higher than last
+        if self.core.last.is_some_and(|last| bar.high > last) {
+            trade_tick.price = bar.high;
+            trade_tick.aggressor_side = AggressorSide::Buyer;
+            trade_tick.trade_id = self.generate_trade_id();
+
+            self.book.update_trade_tick(&trade_tick).unwrap();
+            self.iterate(trade_tick.ts_init);
+
+            self.core.set_last_raw(trade_tick.price);
+        }
+
+        // low
+        // check if lower than last
+        // assumption: market traded down, aggressor hitting the bid(setting aggressor to seller)
+        if self.core.last.is_some_and(|last| bar.low < last) {
+            trade_tick.price = bar.low;
+            trade_tick.aggressor_side = AggressorSide::Seller;
+            trade_tick.trade_id = self.generate_trade_id();
+
+            self.book.update_trade_tick(&trade_tick).unwrap();
+            self.iterate(trade_tick.ts_init);
+
+            self.core.set_last_raw(trade_tick.price);
+        }
+
+        // close
+        // check if not the same as last
+        // assumption: if close price is higher then last, aggressor is buyer
+        // assumption: if close price is lower then last, aggressor is seller
+        if self.core.last.is_some_and(|last| bar.close != last) {
+            trade_tick.price = bar.close;
+            trade_tick.aggressor_side = if bar.close > self.core.last.unwrap() {
+                AggressorSide::Buyer
+            } else {
+                AggressorSide::Seller
+            };
+            trade_tick.trade_id = self.generate_trade_id();
+
+            self.book.update_trade_tick(&trade_tick).unwrap();
+            self.iterate(trade_tick.ts_init);
+
+            self.core.set_last_raw(trade_tick.price);
+        }
+    }
+
+    fn process_quote_ticks_from_bar(&mut self, bar: &Bar) {
+        // wait for next bar
+        if self.last_bar_bid.is_none()
+            || self.last_bar_ask.is_none()
+            || self.last_bar_bid.unwrap().ts_event != self.last_bar_ask.unwrap().ts_event
+        {
+            return;
+        }
+        let bid_bar = self.last_bar_bid.unwrap();
+        let ask_bar = self.last_bar_ask.unwrap();
+        let bid_size = Quantity::new(bid_bar.volume.as_f64() / 4.0, bar.volume.precision);
+        let ask_size = Quantity::new(ask_bar.volume.as_f64() / 4.0, bar.volume.precision);
+
+        // create reusable quote tick
+        let mut quote_tick = QuoteTick::new(
+            self.book.instrument_id,
+            bid_bar.open,
+            ask_bar.open,
+            bid_size,
+            ask_size,
+            bid_bar.ts_init,
+            bid_bar.ts_init,
+        );
+
+        // open
+        self.book.update_quote_tick(&quote_tick).unwrap();
+        self.iterate(quote_tick.ts_init);
+
+        // high
+        quote_tick.bid_price = bid_bar.high;
+        quote_tick.ask_price = ask_bar.high;
+        self.book.update_quote_tick(&quote_tick).unwrap();
+        self.iterate(quote_tick.ts_init);
+
+        // low
+        quote_tick.bid_price = bid_bar.low;
+        quote_tick.ask_price = ask_bar.low;
+        self.book.update_quote_tick(&quote_tick).unwrap();
+        self.iterate(quote_tick.ts_init);
+
+        // close
+        quote_tick.bid_price = bid_bar.close;
+        quote_tick.ask_price = ask_bar.close;
+        self.book.update_quote_tick(&quote_tick).unwrap();
+        self.iterate(quote_tick.ts_init);
+
+        // reset last bars
+        self.last_bar_bid = None;
+        self.last_bar_ask = None;
     }
 
     pub fn process_trade_tick(&mut self, tick: &TradeTick) {
