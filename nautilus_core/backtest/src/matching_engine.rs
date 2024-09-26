@@ -28,6 +28,7 @@ use nautilus_model::{
     data::{
         bar::{Bar, BarType},
         delta::OrderBookDelta,
+        quote::QuoteTick,
     },
     enums::{
         AccountType, BookType, ContingencyType, LiquiditySide, MarketStatus, OmsType, OrderSide,
@@ -251,6 +252,16 @@ impl OrderMatchingEngine {
         log::debug!("Processing {delta}");
 
         self.book.apply_delta(delta);
+    }
+
+    pub fn process_quote_tick(&mut self, tick: &QuoteTick) {
+        log::debug!("Processing {tick}");
+
+        if self.book_type == BookType::L1_MBP {
+            self.book.update_quote_tick(tick).unwrap();
+        }
+
+        self.iterate(tick.ts_event);
     }
 
     // -- TRADING COMMANDS ------------------------------------------------------------------------
