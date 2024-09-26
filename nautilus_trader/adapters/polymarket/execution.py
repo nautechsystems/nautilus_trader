@@ -36,6 +36,7 @@ from nautilus_trader.adapters.polymarket.common.constants import USDC_POS
 from nautilus_trader.adapters.polymarket.common.constants import VALID_POLYMARKET_TIME_IN_FORCE
 from nautilus_trader.adapters.polymarket.common.credentials import PolymarketWebSocketAuth
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketEventType
+from nautilus_trader.adapters.polymarket.common.enums import PolymarketLiquiditySide
 from nautilus_trader.adapters.polymarket.common.parsing import parse_order_side
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_condition_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
@@ -58,6 +59,7 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.datetime import nanos_to_secs
+from nautilus_trader.core.stats import basis_points_as_percentage
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.messages import BatchCancelOrders
 from nautilus_trader.execution.messages import CancelAllOrders
@@ -738,6 +740,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 self._handle_ws_order_msg(ws_message, wait_for_ack=True)
             elif isinstance(ws_message, PolymarketUserTrade):
                 self._add_trade_to_cache(ws_message, raw)
+                self._handle_ws_trade_msg(ws_message, wait_for_ack=True)
             else:
                 self._log.error(f"Unrecognized websocket message {ws_message}")
         except Exception as e:
@@ -791,7 +794,6 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
     def _handle_ws_order_msg(self, msg: PolymarketUserOrder, wait_for_ack: bool):
         venue_order_id = msg.venue_order_id()
-
         instrument_id = get_polymarket_instrument_id(msg.market, msg.asset_id)
         instrument = self._cache.instrument(instrument_id)
         if instrument is None:
@@ -874,8 +876,69 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     last_qty=last_qty,
                     last_px=instrument.make_price(msg.price),
                     quote_currency=USDC_POS,
-                    commission=Money(0.0, USDC_POS),  # TBD: determine solution for commissions
+                    commission=Money(0.0, USDC_POS),  # TBD: maker commissions
                     liquidity_side=liquidity_side,
                     ts_event=millis_to_nanos(int(msg.timestamp)),
                     info=msgspec.structs.asdict(msg),
                 )
+
+                self._loop.create_task(self._update_account_state())
+
+    def _handle_ws_trade_msg(self, msg: PolymarketUserTrade, wait_for_ack: bool):
+        if msg.trader_side == PolymarketLiquiditySide.MAKER:
+            return  # Handled by order update
+
+        venue_order_id = msg.venue_order_id(self._wallet_address)
+        instrument_id = get_polymarket_instrument_id(msg.market, msg.asset_id)
+        instrument = self._cache.instrument(instrument_id)
+        if instrument is None:
+            raise ValueError(f"Cannot handle ws message: instrument {instrument_id} not found")
+
+        if wait_for_ack:
+            self._loop.create_task(self._wait_for_ack_trade(msg, venue_order_id))
+            return
+
+        client_order_id = self._cache.client_order_id(venue_order_id)
+
+        strategy_id = None
+        if client_order_id:
+            strategy_id = self._cache.strategy_id_for_order(client_order_id)
+
+        if strategy_id is None:
+            report = msg.parse_to_fill_report(
+                account_id=self.account_id,
+                instrument=instrument,
+                client_order_id=client_order_id,
+                maker_address=self._wallet_address,
+                ts_init=self._clock.timestamp_ns(),
+            )
+            self._send_fill_report(report)
+            return
+
+        order = self._cache.order(client_order_id)
+        if order.is_closed:
+            return  # Already closed (only status update)
+
+        last_qty = instrument.make_qty(msg.size)
+        last_px = instrument.make_price(msg.price)
+        commission = float(last_qty * last_px) * basis_points_as_percentage(float(msg.fee_rate_bps))
+
+        self.generate_order_filled(
+            strategy_id=strategy_id,
+            instrument_id=instrument_id,
+            client_order_id=client_order_id,
+            venue_order_id=venue_order_id,
+            venue_position_id=None,  # Not applicable on Polymarket
+            trade_id=TradeId(msg.id),
+            order_side=parse_order_side(msg.side),
+            order_type=order.order_type,
+            last_qty=instrument.make_qty(msg.size),
+            last_px=instrument.make_price(msg.price),
+            quote_currency=USDC_POS,
+            commission=Money(commission, USDC_POS),
+            liquidity_side=msg.liqudity_side(),
+            ts_event=millis_to_nanos(int(msg.match_time)),
+            info=msgspec.structs.asdict(msg),
+        )
+
+        self._loop.create_task(self._update_account_state())
