@@ -449,7 +449,6 @@ impl Logger {
                         } else {
                             stderr_writer.write(wrapper.get_string());
                         }
-                        stderr_writer.flush();
                     }
 
                     if stdout_writer.enabled(&wrapper.line) {
@@ -458,7 +457,6 @@ impl Logger {
                         } else {
                             stdout_writer.write(wrapper.get_string());
                         }
-                        stdout_writer.flush();
                     }
 
                     if let Some(ref mut writer) = file_writer_opt {
