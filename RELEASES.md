@@ -1,6 +1,6 @@
 # NautilusTrader 1.202.0 Beta
 
-Released on TBD (UTC).
+Released on 27th September 2024 (UTC).
 
 This will be the final release with support for Python 3.10.
 
@@ -18,7 +18,7 @@ The `numpy` version requirement has been relaxed to >= 1.26.4.
 - Added `reduce_only` parameter for `Strategy.close_position(...)` method (`True` by default to maintain current behavior)
 - Added `reduce_only` parameter for `Strategy.close_all_positions(...)` method (`True` by default to maintain current behavior)
 - Implemented flush with truncate Postgres function for `PostgresCacheDatabase` (#1928), thanks @filipmacek
-- Implemented file rotation for `StreamingFeatherWriter` with internal improvements using `Clock` and `Cache` (#1954), thanks @graceyangfan
+- Implemented file rotation for `StreamingFeatherWriter` with internal improvements using `Clock` and `Cache` (#1954, #1961), thanks @graceyangfan
 - Improved dYdX execution client to use `RetryManager` for HTTP requests (#1941), thanks @davidsblom
 - Improved Interactive Brokers adapter to use a dynamic IB gateway `container_image` from config (#1940), thanks @rsmb7z
 - Improved `OrderBookDeltas` streaming and batching based on the `F_LAST` flag
