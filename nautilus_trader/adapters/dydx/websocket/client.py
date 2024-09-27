@@ -271,6 +271,27 @@ class DYDXWebsocketClient:
         msg = {"type": "unsubscribe", "channel": "v4_trades", "id": symbol}
         await self._send(msg)
 
+    async def resubscribe_order_book(self, symbol: str) -> None:
+        if self._client is None:
+            self._log.warning("Cannot unsubscribe: not connected")
+            return
+
+        subscription = ("v4_orderbook", symbol)
+        if subscription not in self._subscriptions:
+            self._log.warning(f"Cannot unsubscribe '{subscription}': not subscribed")
+            return
+
+        unsubscribe_msg = {"type": "unsubscribe", "channel": "v4_orderbook", "id": symbol}
+        await self._send(unsubscribe_msg)
+
+        subscribe_msg = {
+            "type": "subscribe",
+            "channel": "v4_orderbook",
+            "id": symbol,
+            "batched": True,
+        }
+        await self._send(subscribe_msg)
+
     async def unsubscribe_order_book(self, symbol: str) -> None:
         """
         Unsubscribe to trades messages.
@@ -341,7 +362,4 @@ class DYDXWebsocketClient:
 
         self._log.debug(f"SENDING: {msg}")
 
-        try:
-            await self._client.send_text(msgspec.json.encode(msg))
-        except WebSocketClientError as e:
-            self._log.error(f"Failed to send websocket message: {e}")
+        await self._client.send_text(msgspec.json.encode(msg))

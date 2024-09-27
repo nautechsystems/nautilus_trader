@@ -44,6 +44,7 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.core.nautilus_pyo3 import WebSocketClientError
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.book import OrderBook
@@ -147,10 +148,38 @@ class DYDXDataClient(LiveMarketDataClient):
         self._last_quotes: dict[InstrumentId, QuoteTick] = {}
         self._orderbook_subscriptions: set[str] = set()
         self._resubscribe_orderbook_lock = asyncio.Lock()
-        self._message_id: int | None = None
+        self._is_reconnecting = False
 
         # Hot caches
         self._bars: dict[BarType, Bar] = {}
+
+    async def _ws_reconnect(self) -> None:
+        if self._is_reconnecting:
+            return
+
+        self._log.info("Reconnecting websocket client...")
+
+        self._is_reconnecting = True
+
+        try:
+            while True:
+                try:
+                    await self._ws_client.disconnect()
+                    self._log.info("Websocket client disconnected")
+
+                    await self._ws_client.connect()
+                    self._log.info("Websocket client connected")
+
+                    self._ws_client.reconnect()
+
+                    self._is_reconnecting = False
+                    return
+                except WebSocketClientError as e:
+                    self._log.error(f"Failed to reconnect the websocket client: {e}")
+                    await asyncio.sleep(1.0)
+        except asyncio.CancelledError:
+            self._log.debug("Canceled `_ws_reconnect` task")
+            self._is_reconnecting = False
 
     async def _connect(self) -> None:
         self._log.info("Initializing instruments...")
@@ -205,7 +234,12 @@ class DYDXDataClient(LiveMarketDataClient):
                     f"Scheduled `resubscribe_order_book` to run in {self._update_orderbook_interval}s",
                 )
                 await asyncio.sleep(self._update_orderbook_interval)
-                await self._resubscribe_orderbooks()
+
+                try:
+                    await self._resubscribe_orderbooks()
+                except WebSocketClientError as e:
+                    self._log.error(f"Failed to resubscribe to the orderbooks: {e}")
+                    self.create_task(self._ws_reconnect())
         except asyncio.CancelledError:
             self._log.debug("Canceled `resubscribe_orderbook` task")
 
@@ -215,8 +249,7 @@ class DYDXDataClient(LiveMarketDataClient):
         """
         async with self._resubscribe_orderbook_lock:
             for symbol in self._orderbook_subscriptions:
-                await self._ws_client.unsubscribe_order_book(symbol)
-                await self._ws_client.subscribe_order_book(symbol)
+                await self._ws_client.resubscribe_order_book(symbol)
 
     def _send_all_instruments_to_data_engine(self) -> None:
         for instrument in self._instrument_provider.get_all().values():
@@ -239,14 +272,6 @@ class DYDXDataClient(LiveMarketDataClient):
         }
         try:
             ws_message = self._decoder_ws_msg_general.decode(raw)
-
-            if self._message_id is not None and ws_message.message_id != self._message_id + 1:
-                self._log.error(
-                    f"Inconsistent message IDs. {self._message_id=} {ws_message.message_id=}",
-                )
-
-            self._message_id = ws_message.message_id
-
             key = (ws_message.channel, ws_message.type)
 
             if key in callbacks:
@@ -263,9 +288,9 @@ class DYDXDataClient(LiveMarketDataClient):
             elif ws_message.type == "connected":
                 self._log.info("Websocket connected")
             elif ws_message.type == "error":
-                if (
-                    ws_message.message
-                    == "Internal error, could not fetch data for subscription: v4_orderbook"
+                if ws_message.message is not None and (
+                    "Internal error, could not fetch data for subscription: v4_orderbook"
+                    in ws_message.message
                 ):
                     # This error occurs when the websocket service fails to request the initial
                     # orderbook snapshot.
