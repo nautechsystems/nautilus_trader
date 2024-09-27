@@ -556,7 +556,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     instrument_id=order.instrument_id,
                     client_order_id=order.client_order_id,
                     venue_order_id=order.venue_order_id,
-                    reason=reason,
+                    reason=str(reason),
                     ts_event=self._clock.timestamp_ns(),
                 )
 
@@ -602,7 +602,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                         instrument_id=command.instrument_id,
                         client_order_id=client_order_id,
                         venue_order_id=venue_order_id,
-                        reason=reason,
+                        reason=str(reason),
                         ts_event=self._clock.timestamp_ns(),
                     )
 
@@ -641,7 +641,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                         instrument_id=command.instrument_id,
                         client_order_id=client_order_id,
                         venue_order_id=venue_order_id,
-                        reason=reason,
+                        reason=str(reason),
                         ts_event=self._clock.timestamp_ns(),
                     )
 
@@ -719,7 +719,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     strategy_id=order.strategy_id,
                     instrument_id=order.instrument_id,
                     client_order_id=order.client_order_id,
-                    reason=retry_manager.message,
+                    reason=str(retry_manager.message),
                     ts_event=self._clock.timestamp_ns(),
                 )
             else:
