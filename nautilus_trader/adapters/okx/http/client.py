@@ -23,14 +23,14 @@ from urllib import parse
 import msgspec
 
 import nautilus_trader
-from nautilus_trader.adapters.okx.common.error import raise_okx_error
-from nautilus_trader.adapters.okx.http.errors import OKXHttpError
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 from nautilus_trader.core.nautilus_pyo3 import HttpResponse
 from nautilus_trader.core.nautilus_pyo3 import Quota
+from nautilus_trader.okx.common.error import raise_okx_error
+from nautilus_trader.okx.http.errors import OKXHttpError
 
 
 class OKXResponseCode(msgspec.Struct):
@@ -128,6 +128,8 @@ class OKXHttpClient:
         return t.split("+")[0] + "Z"
 
     def _sign(self, timestamp: str, method: str, url_path: str, body: str) -> str:
+        if body == "{}" or body == "None":
+            body = ""
         message = str(timestamp) + method.upper() + url_path + body
         digest = hmac.new(self._api_secret.encode(), message.encode(), "sha256").digest()
         return base64.b64encode(digest).decode()
@@ -145,9 +147,9 @@ class OKXHttpClient:
             url_path += "?" + parse.urlencode(payload)
             payload = None
         url = self._base_url + url_path
+        body = json.dumps(payload) if http_method == HttpMethod.POST else ""
         if sign:
             timestamp = self._get_timestamp()
-            body = json.dumps(payload) if http_method == HttpMethod.POST else ""
             signature = self._sign(timestamp, HTTP_METHOD_STRINGS[http_method], url_path, body)
             headers = {
                 **self._headers,
@@ -169,7 +171,7 @@ class OKXHttpClient:
             method=http_method,
             url=url,
             headers=headers,
-            body=msgspec.json.encode(payload) if payload else None,
+            body=body.encode(),
             keys=ratelimiter_keys,
             timeout_secs=timeout_secs or self._default_timeout_secs,
         )

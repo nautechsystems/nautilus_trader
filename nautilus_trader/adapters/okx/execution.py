@@ -243,7 +243,7 @@ class OKXExecutionClient(LiveExecutionClient):
             api_key=config.api_key or get_api_key(config.is_demo),
             api_secret=config.api_secret or get_api_secret(config.is_demo),
             passphrase=config.passphrase or get_passphrase(config.is_demo),
-            base_url=config.get_applicable_ws_base_url(OKXWsBaseUrlType.PRIVATE),
+            base_url=config.base_url_ws,
             ws_base_url_type=OKXWsBaseUrlType.PRIVATE,
             is_demo=config.is_demo,
             loop=self._loop,

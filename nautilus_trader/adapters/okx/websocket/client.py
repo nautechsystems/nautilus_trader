@@ -129,6 +129,21 @@ def get_book_channel(depth: SUPPORTED_WS_DEPTHS) -> str:
     return SUPPORTED_OKX_ORDER_BOOK_DEPTH_CHANNELS[depth]
 
 
+def get_ws_url(base_url_ws: str, ws_base_url_type: OKXWsBaseUrlType) -> str:
+    match ws_base_url_type:
+        case OKXWsBaseUrlType.PUBLIC:
+            return f"{base_url_ws}/public"
+        case OKXWsBaseUrlType.PRIVATE:
+            return f"{base_url_ws}/private"
+        case OKXWsBaseUrlType.BUSINESS:
+            return f"{base_url_ws}/business"
+        case _:
+            raise ValueError(
+                f"unknown websocket base url type {ws_base_url_type} - must be one of "
+                f"{list(OKXWsBaseUrlType)}",
+            )
+
+
 class OKXWebsocketClient:
     """
     Provides an OKX streaming WebSocket client.
@@ -148,11 +163,8 @@ class OKXWebsocketClient:
     passphrase : str, optional
         The passphrase used when creating the OKX API keys.
     base_url: str, None
-        The base endpoint URL for the client. If None, the url will be chosen from one of the
-        public, private, or business websocket urls stored and taken from the OKX docs, depending
-        on the arguments to `ws_base_url_type` and `is_demo`. If provided, the url should correspond
-        to the url implied by the arguments to `ws_base_url_type` and `is_demo`, or else a mismatch
-        may occur due to internal websocket logic.
+        The base websocket endpoint URL for the client. If None, the url will be chosen from
+        `get_ws_base_url(is_demo=...)`
     ws_base_url_type: OKXWsBaseUrlType
         The websocket's base url type, one of
         {OKXWsBaseUrlType.PUBLIC, OKXWsBaseUrlType.PRIVATE, OKXWsBaseUrlType.BUSINESS}.
@@ -195,7 +207,7 @@ class OKXWebsocketClient:
         self._clock = clock
         self._log: Logger = Logger(name=type(self).__name__)
 
-        self._base_url: str = base_url or get_ws_base_url(ws_base_url_type, is_demo)
+        self._base_url: str = get_ws_url(base_url or get_ws_base_url(is_demo), ws_base_url_type)
         self._handler: Callable[[bytes], None] = handler or self.default_handler
         self._handler_reconnect: Callable[..., Awaitable[None]] | None = handler_reconnect
         self._loop = loop
