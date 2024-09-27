@@ -110,6 +110,9 @@ This project makes the [Soundness Pledge](https://raphlinus.github.io/rust/2020/
 > “The intent of this project is to be free of soundness bugs.
 > The developers will do their best to avoid them, and welcome help in analyzing and fixing them.”
 
+**MSRV:** NautilusTrader relies heavily on improvements in the Rust language and compiler.
+As a result, the Minimum Supported Rust Version (MSRV) is generally equal to the latest stable release of Rust.
+
 ## Architecture (data flow)
 
 ![Architecture](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/architecture-overview.png?raw=true "architecture")
