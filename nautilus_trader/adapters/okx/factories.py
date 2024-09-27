@@ -206,7 +206,7 @@ class OKXLiveDataClientFactory(LiveDataClientFactory):
             key=config.api_key,
             secret=config.api_secret,
             passphrase=config.passphrase,
-            base_url=get_http_base_url(),
+            base_url=config.base_url_http,
             is_demo=config.is_demo,
         )
         provider = get_cached_okx_instrument_provider(
@@ -272,7 +272,7 @@ class OKXLiveExecClientFactory(LiveExecClientFactory):
             key=config.api_key,
             secret=config.api_secret,
             passphrase=config.passphrase,
-            base_url=get_http_base_url(),
+            base_url=config.base_url_http,
             is_demo=config.is_demo,
         )
         provider = get_cached_okx_instrument_provider(
