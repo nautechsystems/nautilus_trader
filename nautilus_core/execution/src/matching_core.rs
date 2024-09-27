@@ -107,6 +107,10 @@ impl OrderMatchingCore {
 
     // -- COMMANDS --------------------------------------------------------------------------------
 
+    pub fn set_last_raw(&mut self, last: Price) {
+        self.last = Some(last);
+    }
+
     pub fn reset(&mut self) {
         self.bid = None;
         self.ask = None;
@@ -220,7 +224,9 @@ mod tests {
     use std::sync::Mutex;
 
     use nautilus_model::{
-        enums::OrderSide, orders::stubs::TestOrderStubs, types::quantity::Quantity,
+        enums::{OrderSide, OrderType},
+        orders::builder::OrderTestBuilder,
+        types::quantity::Quantity,
     };
     use rstest::rstest;
 
@@ -241,14 +247,12 @@ mod tests {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
 
-        let order = TestOrderStubs::limit_order(
-            instrument_id,
-            OrderSide::Buy,
-            Price::from("100.00"),
-            Quantity::from("100"),
-            None,
-            None,
-        );
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("100.00"))
+            .quantity(Quantity::from("100"))
+            .build();
 
         matching_core.add_order(order.clone().into()).unwrap();
 
@@ -265,14 +269,12 @@ mod tests {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
 
-        let order = TestOrderStubs::limit_order(
-            instrument_id,
-            OrderSide::Sell,
-            Price::from("100.00"),
-            Quantity::from("100"),
-            None,
-            None,
-        );
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Sell)
+            .price(Price::from("100.00"))
+            .quantity(Quantity::from("100"))
+            .build();
 
         matching_core.add_order(order.clone().into()).unwrap();
 
@@ -289,14 +291,13 @@ mod tests {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
 
-        let order = TestOrderStubs::limit_order(
-            instrument_id,
-            OrderSide::Sell,
-            Price::from("100.00"),
-            Quantity::from("100"),
-            None,
-            None,
-        );
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Sell)
+            .price(Price::from("100.00"))
+            .quantity(Quantity::from("100"))
+            .build();
+
         let client_order_id = order.client_order_id();
 
         matching_core.add_order(order.into()).unwrap();
@@ -319,14 +320,12 @@ mod tests {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
 
-        let order = TestOrderStubs::limit_order(
-            instrument_id,
-            OrderSide::Buy,
-            Price::from("100.00"),
-            Quantity::from("100"),
-            None,
-            None,
-        );
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(OrderSide::Buy)
+            .price(Price::from("100.00"))
+            .quantity(Quantity::from("100"))
+            .build();
 
         let result = matching_core.delete_order(&order.into());
         assert!(result.is_err());
@@ -339,14 +338,12 @@ mod tests {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
 
-        let order = TestOrderStubs::limit_order(
-            instrument_id,
-            order_side,
-            Price::from("100.00"),
-            Quantity::from("100"),
-            None,
-            None,
-        );
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(order_side)
+            .price(Price::from("100.00"))
+            .quantity(Quantity::from("100"))
+            .build();
 
         matching_core.add_order(order.clone().into()).unwrap();
         matching_core.delete_order(&order.into()).unwrap();
@@ -412,14 +409,12 @@ mod tests {
         matching_core.bid = bid;
         matching_core.ask = ask;
 
-        let order = TestOrderStubs::limit_order(
-            instrument_id,
-            order_side,
-            price,
-            Quantity::from("100"),
-            None,
-            None,
-        );
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(order_side)
+            .price(price)
+            .quantity(Quantity::from("100"))
+            .build();
 
         let result = matching_core.is_limit_matched(&order.into());
         assert_eq!(result, expected);
@@ -482,18 +477,12 @@ mod tests {
         matching_core.bid = bid;
         matching_core.ask = ask;
 
-        let order = TestOrderStubs::stop_market_order(
-            instrument_id,
-            order_side,
-            trigger_price,
-            Quantity::from("100"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
+        let order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument_id)
+            .side(order_side)
+            .trigger_price(trigger_price)
+            .quantity(Quantity::from("100"))
+            .build();
 
         let result = matching_core.is_stop_matched(&order.into());
         assert_eq!(result, expected);
@@ -522,18 +511,12 @@ mod tests {
         matching_core.bid = Some(Price::from("100.00"));
         matching_core.ask = Some(Price::from("100.00"));
 
-        let order = TestOrderStubs::stop_market_order(
-            instrument_id,
-            order_side,
-            trigger_price,
-            Quantity::from("100"),
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-        );
+        let order = OrderTestBuilder::new(OrderType::StopMarket)
+            .instrument_id(instrument_id)
+            .side(order_side)
+            .trigger_price(trigger_price)
+            .quantity(Quantity::from("100"))
+            .build();
 
         matching_core.match_stop_order(&order.clone().into());
 
@@ -564,14 +547,12 @@ mod tests {
         matching_core.bid = Some(Price::from("100.00"));
         matching_core.ask = Some(Price::from("100.00"));
 
-        let order = TestOrderStubs::limit_order(
-            instrument_id,
-            order_side,
-            price,
-            Quantity::from("100.00"),
-            None,
-            None,
-        );
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .side(order_side)
+            .price(price)
+            .quantity(Quantity::from("100"))
+            .build();
 
         matching_core.match_limit_order(&order.clone().into());
 

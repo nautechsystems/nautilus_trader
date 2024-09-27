@@ -228,6 +228,8 @@ pub enum InstrumentClass {
     Warrant = 10,
     /// A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
     SportsBetting = 11,
+    /// A binary option instrument class. A type of derivative where the payoff is either a fixed monetary amount or nothing, based on a yes/no proposition about an underlying event.
+    BinaryOption = 12,
 }
 
 /// The aggregation method through which a bar is generated and closed.
@@ -956,7 +958,7 @@ pub enum PriceType {
     Bid = 1,
     /// A quoted order price where a seller is willing to sell a quantity of an instrument.
     Ask = 2,
-    /// The midpoint between the bid and ask prices.
+    /// The midpoint between the best bid and best ask prices.
     Mid = 3,
     /// The last price at which a trade was made for an instrument.
     Last = 4,
@@ -1033,13 +1035,13 @@ impl RecordFlag {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model.enums")
 )]
 pub enum TimeInForce {
-    /// Good Till Canceled (GTC) - the order remains active until canceled.
+    /// Good-Till-Canceled (GTC) - the order remains active until canceled.
     Gtc = 1,
-    /// Immediate or Cancel (IOC) - the order is filled as much as possible, the rest is canceled.
+    /// Immediate-Or-Cancel (IOC) - the order is filled as much as possible, the rest is canceled.
     Ioc = 2,
-    /// Fill or Kill (FOK) - the order must be executed in full immediately, or it is canceled.
+    /// Fill-Or-Kill (FOK) - the order must be executed in full immediately, or it is canceled.
     Fok = 3,
-    /// Good Till Date/Time (GTD) - the order is active until a specified date or time.
+    /// Good-Till-Date/Time (GTD) - the order is active until a specified date or time.
     Gtd = 4,
     /// Day - the order is active until the end of the current trading session.
     Day = 5,

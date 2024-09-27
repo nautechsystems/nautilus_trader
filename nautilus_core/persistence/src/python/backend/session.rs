@@ -36,7 +36,7 @@ pub enum NautilusDataType {
 #[pymethods]
 impl DataBackendSession {
     #[new]
-    #[pyo3(signature=(chunk_size=5_000))]
+    #[pyo3(signature=(chunk_size=10_000))]
     fn new_session(chunk_size: usize) -> Self {
         Self::new(chunk_size)
     }

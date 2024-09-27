@@ -720,6 +720,7 @@ cdef class ExecutionClient(Component):
         Money commission,
         LiquiditySide liquidity_side,
         uint64_t ts_event,
+        dict info = None,
     ):
         """
         Generate an `OrderFilled` event and send it to the `ExecutionEngine`.
@@ -757,6 +758,8 @@ cdef class ExecutionClient(Component):
             The execution liquidity side.
         ts_event : uint64_t
             UNIX timestamp (nanoseconds) when the order filled event occurred.
+        info : dict[str, object], optional
+            The additional fill information.
 
         """
         Condition.not_none(instrument_id, "instrument_id")
@@ -781,6 +784,7 @@ cdef class ExecutionClient(Component):
             event_id=UUID4(),
             ts_event=ts_event,
             ts_init=self._clock.timestamp_ns(),
+            info=info,
         )
 
         self._send_order_event(fill)

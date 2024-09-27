@@ -82,7 +82,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         cancellation_method: Callable,
         *args: Any,
         **kwargs: Any,
-    ) -> Subscription | None:
+    ) -> Subscription:
         """
         Manage the subscription and unsubscription process for market data. This
         internal method is responsible for handling the logic to subscribe or
@@ -104,10 +104,13 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
         Returns
         -------
-        Subscription | ``None``
+        Subscription
 
         """
         if not (subscription := self._subscriptions.get(name=name)):
+            self._log.info(
+                f"Creating and registering a new Subscription instance for {subscription}",
+            )
             req_id = self._next_req_id()
             if subscription_method == self.subscribe_historical_bars:
                 handle_func = functools.partial(
@@ -117,22 +120,25 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
                 )
             else:
                 handle_func = functools.partial(subscription_method, req_id, *args, **kwargs)
+
+            # Add subscription
             subscription = self._subscriptions.add(
                 req_id=req_id,
                 name=name,
                 handle=handle_func,
                 cancel=functools.partial(cancellation_method, req_id),
             )
-            if not subscription:
-                return None
-            if iscoroutinefunction(subscription.handle):
-                await subscription.handle()
-            else:
-                subscription.handle()
-            return subscription
+
+            # Intentionally skipping the call to historical request handler
+            if subscription_method != self.subscribe_historical_bars:
+                if iscoroutinefunction(subscription.handle):
+                    await subscription.handle()
+                else:
+                    subscription.handle()
         else:
-            self._log.info(f"Subscription already exists for {subscription}")
-            return None
+            self._log.info(f"Reusing existing Subscription instance for {subscription}")
+
+        return subscription
 
     async def _unsubscribe(
         self,
@@ -286,8 +292,6 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
             use_rth=use_rth,
             handle_revised_bars=handle_revised_bars,
         )
-        if not subscription:
-            return
 
         # Check and download the gaps or approx 300 bars whichever is less
         last_bar: Bar = self._cache.bar(bar_type)

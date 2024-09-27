@@ -247,6 +247,7 @@ class TestInstrumentClass:
             [InstrumentClass.OPTION_SPREAD, "OPTION_SPREAD"],
             [InstrumentClass.WARRANT, "WARRANT"],
             [InstrumentClass.SPORTS_BETTING, "SPORTS_BETTING"],
+            [InstrumentClass.BINARY_OPTION, "BINARY_OPTION"],
         ],
     )
     def test_instrument_class_to_str(self, enum, expected):
@@ -270,6 +271,7 @@ class TestInstrumentClass:
             ["OPTION_SPREAD", InstrumentClass.OPTION_SPREAD],
             ["WARRANT", InstrumentClass.WARRANT],
             ["SPORTS_BETTING", InstrumentClass.SPORTS_BETTING],
+            ["BINARY_OPTION", InstrumentClass.BINARY_OPTION],
         ],
     )
     def test_instrument_class_from_str(self, string, expected):

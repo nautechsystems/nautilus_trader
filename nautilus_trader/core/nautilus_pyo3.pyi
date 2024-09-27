@@ -818,6 +818,7 @@ class InstrumentClass(Enum):
     OPTION_SPREAD = "OPTION_SPEAD"
     WARRANT = "WARRANT"
     SPORTS_BETTING = "SPORTS_BETTING"
+    BINARY_OPTION = "BINARY_OPTION"
 
 class BarAggregation(Enum):
     TICK = "TICK"
@@ -1074,6 +1075,12 @@ class Symbol:
     def from_str(cls, value: str) -> Symbol: ...
     @property
     def value(self) -> str: ...
+    @property
+    def is_composite(self) -> bool: ...
+    @property
+    def root(self) -> str: ...
+    @property
+    def topic(self) -> str: ...
 
 class TradeId:
     def __init__(self, value: str) -> None: ...
@@ -1674,6 +1681,58 @@ class AccountState:
     def margins(self) -> list[MarginBalance]: ...
 
 # Instruments
+
+class BinaryOption:
+    def __init__(
+        self,
+        id: InstrumentId,
+        raw_symbol: Symbol,
+        asset_class: AssetClass,
+        currency: Currency,
+        activation_ns: int,
+        expiration_ns: int,
+        price_precision: int,
+        size_precision: int,
+        price_increment: Price,
+        size_increment: Quantity,
+        maker_fee: Decimal,
+        taker_fee: Decimal,
+        margin_init: Decimal,
+        margin_maint: Decimal,
+        ts_event: int,
+        ts_init: int,
+        outcome: str | None = None,
+        description: str | None = None,
+        max_quantity: Quantity | None = None,
+        min_quantity: Quantity | None = None,
+        max_notional: Money | None = None,
+        min_notional: Money | None = None,
+        max_price: Price | None = None,
+        min_price: Price | None = None,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> BinaryOption: ...
+    @property
+    def id(self) -> InstrumentId: ...
+    @property
+    def raw_symbol(self) -> Symbol: ...
+    @property
+    def asset_class(self) -> AssetClass: ...
+    @property
+    def currency(self) -> Currency: ...
+    @property
+    def price_precision(self) -> int: ...
+    @property
+    def size_precision(self) -> int: ...
+    @property
+    def price_increment(self) -> Price: ...
+    @property
+    def size_increment(self) -> Quantity: ...
+    @property
+    def outcome(self) -> str | None: ...
+    @property
+    def description(self) -> str | None: ...
+    def to_dict(self) -> dict[str, Any]: ...
 
 class CryptoFuture:
     def __init__(
@@ -2512,7 +2571,6 @@ class PostgresCacheDatabase:
     def add_bar(self, bar: Bar) -> None: ...
     def load_bars(self, instrument_id: InstrumentId) -> list[Bar]: ...
     def flush_db(self) -> None: ...
-    def truncate(self, table: str) -> None: ...
 
 ###################################################################################################
 # Network
@@ -2628,7 +2686,7 @@ class NautilusDataType(Enum):
     Bar = 5
 
 class DataBackendSession:
-    def __init__(self, chunk_size: int = 5000) -> None: ...
+    def __init__(self, chunk_size: int = 10_000) -> None: ...
     def add_file(
         self,
         data_type: NautilusDataType,
@@ -3878,9 +3936,7 @@ class DatabentoLiveClient:
     def key(self) -> str: ...
     @property
     def dataset(self) -> str: ...
-    @property
     def is_running(self) -> bool: ...
-    @property
     def is_closed(self) -> bool: ...
     def subscribe(
         self,
@@ -3901,3 +3957,68 @@ class DatabentoLiveClient:
 def hmac_sign(secret: str, data: str) -> str: ...
 def rsa_signature(private_key_pem: str, data: str) -> str: ...
 def ed25519_signature(private_key: bytes, data: str) -> str: ...
+
+
+# Greeks
+
+class GreeksData(Data):
+    instrument_id: InstrumentId
+    is_call: bool
+    strike: float
+    expiry: int
+    forward: float
+    expiry_in_years: float
+    interest_rate: float
+    vol: float
+    price: float
+    delta: float
+    gamma: float
+    vega: float
+    theta: float
+    quantity: int
+
+    def __init__(
+        self,
+        ts_event: int = 0,
+        ts_init: int = 0,
+        instrument_id: InstrumentId = ...,
+        is_call: bool = True,
+        strike: float = 0.0,
+        expiry: int = 0,
+        forward: float = 0.0,
+        expiry_in_years: float = 0.0,
+        interest_rate: float = 0.0,
+        vol: float = 0.0,
+        price: float = 0.0,
+        delta: float = 0.0,
+        gamma: float = 0.0,
+        vega: float = 0.0,
+        theta: float = 0.0,
+        quantity: int = 1,
+    ): ...
+
+    @classmethod
+    def from_delta(cls, instrument_id: InstrumentId, delta: float) -> GreeksData: ...
+
+
+class PortfolioGreeks(Data):
+    delta: float
+    gamma: float
+    vega: float
+    theta: float
+
+    def __init__(
+        self,
+        ts_event: int = 0,
+        ts_init: int = 0,
+        delta: float = 0.0,
+        gamma: float = 0.0,
+        vega: float = 0.0,
+        theta: float = 0.0,
+    ): ...
+
+###################################################################################################
+# Test Kit
+###################################################################################################
+
+def ensure_file_exists_or_download_http(path: str, url: str): ...

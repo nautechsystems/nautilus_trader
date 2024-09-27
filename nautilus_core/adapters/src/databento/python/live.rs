@@ -40,10 +40,8 @@ pub struct DatabentoLiveClient {
     pub key: String,
     #[pyo3(get)]
     pub dataset: String,
-    #[pyo3(get)]
-    pub is_running: bool,
-    #[pyo3(get)]
-    pub is_closed: bool,
+    is_running: bool,
+    is_closed: bool,
     cmd_tx: tokio::sync::mpsc::UnboundedSender<LiveCommand>,
     cmd_rx: Option<tokio::sync::mpsc::UnboundedReceiver<LiveCommand>>,
     buffer_size: usize,
@@ -72,7 +70,7 @@ impl DatabentoLiveClient {
                 }),
                 LiveMessage::Instrument(data) => Python::with_gil(|py| {
                     let py_obj =
-                        instrument_any_to_pyobject(py, data).expect("Error creating instrument");
+                        instrument_any_to_pyobject(py, data).expect("Failed creating instrument");
                     call_python(py, &callback, py_obj)
                 }),
                 LiveMessage::Status(data) => Python::with_gil(|py| {
@@ -94,6 +92,9 @@ impl DatabentoLiveClient {
                 LiveMessage::Error(e) => {
                     // Return error to Python
                     return Err(to_pyruntime_err(e));
+                }
+                _ => {
+                    panic!("Message did not match any case: {msg:?}");
                 }
             };
 
@@ -146,6 +147,16 @@ impl DatabentoLiveClient {
             is_closed: false,
             publisher_venue_map,
         })
+    }
+
+    #[pyo3(name = "is_running")]
+    fn py_is_running(&self) -> bool {
+        self.is_running
+    }
+
+    #[pyo3(name = "is_closed")]
+    fn py_is_closed(&self) -> bool {
+        self.is_closed
     }
 
     #[pyo3(name = "subscribe")]

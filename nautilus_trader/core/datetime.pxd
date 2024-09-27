@@ -21,6 +21,7 @@ from libc.stdint cimport uint64_t
 
 cpdef unix_nanos_to_dt(uint64_t nanos)
 cpdef dt_to_unix_nanos(dt: pd.Timestamp)
+cpdef str unix_nanos_to_str(uint64_t unix_nanos)
 cpdef maybe_unix_nanos_to_dt(nanos)
 cpdef maybe_dt_to_unix_nanos(dt: pd.Timestamp)
 cpdef bint is_datetime_utc(datetime dt)

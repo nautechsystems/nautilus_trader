@@ -80,7 +80,7 @@ cdef class CacheFacade:
 
     cpdef Instrument instrument(self, InstrumentId instrument_id)
     cpdef list instrument_ids(self, Venue venue=*)
-    cpdef list instruments(self, Venue venue=*)
+    cpdef list instruments(self, Venue venue=*, str underlying=*)
 
 # -- SYNTHETIC QUERIES ----------------------------------------------------------------------------
 

@@ -281,6 +281,10 @@ typedef enum InstrumentClass {
      * A warrant instrument class. A derivative that gives the holder the right, but not the obligation, to buy or sell a security—most commonly an equity—at a certain price before expiration.
      */
     SPORTS_BETTING = 11,
+    /**
+     * A binary option instrument class. A type of derivative where the payoff is either a fixed monetary amount or nothing, based on a yes/no proposition about an underlying event.
+     */
+    BINARY_OPTION = 12,
 } InstrumentClass;
 
 /**
@@ -622,7 +626,7 @@ typedef enum PriceType {
      */
     ASK = 2,
     /**
-     * The midpoint between the bid and ask prices.
+     * The midpoint between the best bid and best ask prices.
      */
     MID = 3,
     /**
@@ -666,19 +670,19 @@ typedef enum RecordFlag {
  */
 typedef enum TimeInForce {
     /**
-     * Good Till Canceled (GTC) - the order remains active until canceled.
+     * Good-Till-Canceled (GTC) - the order remains active until canceled.
      */
     GTC = 1,
     /**
-     * Immediate or Cancel (IOC) - the order is filled as much as possible, the rest is canceled.
+     * Immediate-Or-Cancel (IOC) - the order is filled as much as possible, the rest is canceled.
      */
     IOC = 2,
     /**
-     * Fill or Kill (FOK) - the order must be executed in full immediately, or it is canceled.
+     * Fill-Or-Kill (FOK) - the order must be executed in full immediately, or it is canceled.
      */
     FOK = 3,
     /**
-     * Good Till Date/Time (GTD) - the order is active until a specified date or time.
+     * Good-Till-Date/Time (GTD) - the order is active until a specified date or time.
      */
     GTD = 4,
     /**
@@ -1249,6 +1253,23 @@ typedef struct Data_t {
     };
 } Data_t;
 
+typedef struct BlackScholesGreeksResult {
+    double price;
+    double delta;
+    double gamma;
+    double vega;
+    double theta;
+} BlackScholesGreeksResult;
+
+typedef struct ImplyVolAndGreeksResult {
+    double vol;
+    double price;
+    double delta;
+    double gamma;
+    double vega;
+    double theta;
+} ImplyVolAndGreeksResult;
+
 /**
  * Represents a valid trader ID.
  */
@@ -1677,6 +1698,32 @@ const struct BookOrder_t *orderbook_depth10_asks_array(const struct OrderBookDep
 const uint32_t *orderbook_depth10_bid_counts_array(const struct OrderBookDepth10_t *depth);
 
 const uint32_t *orderbook_depth10_ask_counts_array(const struct OrderBookDepth10_t *depth);
+
+struct BlackScholesGreeksResult greeks_black_scholes_greeks(double s,
+                                                            double r,
+                                                            double b,
+                                                            double sigma,
+                                                            uint8_t is_call,
+                                                            double k,
+                                                            double t,
+                                                            double multiplier);
+
+double greeks_imply_vol(double s,
+                        double r,
+                        double b,
+                        uint8_t is_call,
+                        double k,
+                        double t,
+                        double price);
+
+struct ImplyVolAndGreeksResult greeks_imply_vol_and_greeks(double s,
+                                                           double r,
+                                                           double b,
+                                                           uint8_t is_call,
+                                                           double k,
+                                                           double t,
+                                                           double price,
+                                                           double multiplier);
 
 struct BookOrder_t book_order_from_raw(enum OrderSide order_side,
                                        int64_t price_raw,
@@ -2223,6 +2270,12 @@ uint64_t strategy_id_hash(const struct StrategyId_t *id);
 struct Symbol_t symbol_new(const char *ptr);
 
 uint64_t symbol_hash(const struct Symbol_t *id);
+
+uint8_t symbol_is_composite(const struct Symbol_t *id);
+
+const char *symbol_root(const struct Symbol_t *id);
+
+const char *symbol_topic(const struct Symbol_t *id);
 
 /**
  * Returns a Nautilus identifier from a C string pointer.

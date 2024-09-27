@@ -14,9 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use derive_builder::Builder;
-use sqlx::{postgres::PgConnectOptions, query, ConnectOptions, PgPool};
-
-use crate::sql::NAUTILUS_TABLES;
+use sqlx::{postgres::PgConnectOptions, ConnectOptions, PgPool};
 
 #[derive(Debug, Clone, Builder)]
 #[builder(default)]
@@ -113,19 +111,8 @@ pub fn get_postgres_connect_options(
     ))
 }
 
-pub async fn delete_nautilus_postgres_tables(db: &PgPool) -> anyhow::Result<()> {
-    // Iterate over NAUTILUS_TABLES and delete all rows
-    for table in NAUTILUS_TABLES {
-        query(format!("DELETE FROM \"{}\" WHERE true", table).as_str())
-            .execute(db)
-            .await
-            .unwrap_or_else(|err| panic!("Failed to delete table {} because: {}", table, err));
-    }
-    Ok(())
-}
-
 pub async fn connect_pg(options: PgConnectOptions) -> anyhow::Result<PgPool> {
-    Ok(PgPool::connect_with(options).await.unwrap())
+    Ok(PgPool::connect_with(options).await?)
 }
 
 /// Scans current path with keyword nautilus_trader and build schema dir
@@ -150,15 +137,15 @@ pub async fn init_postgres(
     password: String,
     schema_dir: Option<String>,
 ) -> anyhow::Result<()> {
-    tracing::info!("Initializing Postgres database with target permissions and schema");
+    log::info!("Initializing Postgres database with target permissions and schema");
 
     // Create public schema
     match sqlx::query("CREATE SCHEMA IF NOT EXISTS public;")
         .execute(pg)
         .await
     {
-        Ok(_) => tracing::info!("Schema public created successfully"),
-        Err(e) => tracing::error!("Error creating schema public: {:?}", e),
+        Ok(_) => log::info!("Schema public created successfully"),
+        Err(e) => log::error!("Error creating schema public: {:?}", e),
     }
 
     // Create role if not exists
@@ -166,12 +153,12 @@ pub async fn init_postgres(
         .execute(pg)
         .await
     {
-        Ok(_) => tracing::info!("Role {} created successfully", database),
+        Ok(_) => log::info!("Role {} created successfully", database),
         Err(e) => {
             if e.to_string().contains("already exists") {
-                tracing::info!("Role {} already exists", database);
+                log::info!("Role {} already exists", database);
             } else {
-                tracing::error!("Error creating role {}: {:?}", database, e);
+                log::error!("Error creating role {}: {:?}", database, e);
             }
         }
     }
@@ -182,16 +169,26 @@ pub async fn init_postgres(
         std::fs::read_dir(schema_dir)?.collect::<Result<Vec<_>, std::io::Error>>()?;
     for file in &mut sql_files {
         let file_name = file.file_name();
-        tracing::info!("Executing schema file: {:?}", file_name);
+        log::info!("Executing schema file: {:?}", file_name);
         let file_path = file.path();
         let sql_content = std::fs::read_to_string(file_path.clone())?;
-        for sql_statement in sql_content.split(';').filter(|s| !s.trim().is_empty()) {
-            sqlx::query(sql_statement)
+        // if filename is functions.sql, split by plpgsql; if not then by ;
+        let delimiter = match file_name.to_str() {
+            Some("functions.sql") => "$$ LANGUAGE plpgsql;",
+            _ => ";",
+        };
+        let sql_statements = sql_content
+            .split(delimiter)
+            .filter(|s| !s.trim().is_empty())
+            .map(|s| format!("{}{}", s, delimiter));
+
+        for sql_statement in sql_statements {
+            sqlx::query(&sql_statement)
                 .execute(pg)
                 .await
                 .map_err(|err| {
                     if err.to_string().contains("already exists") {
-                        tracing::info!("Already exists error on statement, skipping");
+                        log::info!("Already exists error on statement, skipping");
                     } else {
                         panic!(
                             "Error executing statement {} with error: {:?}",
@@ -208,8 +205,8 @@ pub async fn init_postgres(
         .execute(pg)
         .await
     {
-        Ok(_) => tracing::info!("Connect privileges granted to role {}", database),
-        Err(e) => tracing::error!(
+        Ok(_) => log::info!("Connect privileges granted to role {}", database),
+        Err(e) => log::error!(
             "Error granting connect privileges to role {}: {:?}",
             database,
             e
@@ -221,8 +218,8 @@ pub async fn init_postgres(
         .execute(pg)
         .await
     {
-        Ok(_) => tracing::info!("All schema privileges granted to role {}", database),
-        Err(e) => tracing::error!(
+        Ok(_) => log::info!("All schema privileges granted to role {}", database),
+        Err(e) => log::error!(
             "Error granting all privileges to role {}: {:?}",
             database,
             e
@@ -240,8 +237,8 @@ pub async fn init_postgres(
     .execute(pg)
     .await
     {
-        Ok(_) => tracing::info!("All tables privileges granted to role {}", database),
-        Err(e) => tracing::error!(
+        Ok(_) => log::info!("All tables privileges granted to role {}", database),
+        Err(e) => log::error!(
             "Error granting all privileges to role {}: {:?}",
             database,
             e
@@ -259,8 +256,8 @@ pub async fn init_postgres(
     .execute(pg)
     .await
     {
-        Ok(_) => tracing::info!("All sequences privileges granted to role {}", database),
-        Err(e) => tracing::error!(
+        Ok(_) => log::info!("All sequences privileges granted to role {}", database),
+        Err(e) => log::error!(
             "Error granting all privileges to role {}: {:?}",
             database,
             e
@@ -278,8 +275,8 @@ pub async fn init_postgres(
     .execute(pg)
     .await
     {
-        Ok(_) => tracing::info!("All functions privileges granted to role {}", database),
-        Err(e) => tracing::error!(
+        Ok(_) => log::info!("All functions privileges granted to role {}", database),
+        Err(e) => log::error!(
             "Error granting all privileges to role {}: {:?}",
             database,
             e
@@ -295,8 +292,8 @@ pub async fn drop_postgres(pg: &PgPool, database: String) -> anyhow::Result<()> 
         .execute(pg)
         .await
     {
-        Ok(_) => tracing::info!("Dropped owned objects by role {}", database),
-        Err(e) => tracing::error!("Error dropping owned by role {}: {:?}", database, e),
+        Ok(_) => log::info!("Dropped owned objects by role {}", database),
+        Err(e) => log::error!("Error dropping owned by role {}: {:?}", database, e),
     }
 
     // Revoke connect
@@ -304,8 +301,8 @@ pub async fn drop_postgres(pg: &PgPool, database: String) -> anyhow::Result<()> 
         .execute(pg)
         .await
     {
-        Ok(_) => tracing::info!("Revoked connect privileges from role {}", database),
-        Err(e) => tracing::error!(
+        Ok(_) => log::info!("Revoked connect privileges from role {}", database),
+        Err(e) => log::error!(
             "Error revoking connect privileges from role {}: {:?}",
             database,
             e
@@ -317,8 +314,8 @@ pub async fn drop_postgres(pg: &PgPool, database: String) -> anyhow::Result<()> 
         .execute(pg)
         .await
     {
-        Ok(_) => tracing::info!("Revoked all privileges from role {}", database),
-        Err(e) => tracing::error!(
+        Ok(_) => log::info!("Revoked all privileges from role {}", database),
+        Err(e) => log::error!(
             "Error revoking all privileges from role {}: {:?}",
             database,
             e
@@ -330,8 +327,8 @@ pub async fn drop_postgres(pg: &PgPool, database: String) -> anyhow::Result<()> 
         .execute(pg)
         .await
     {
-        Ok(_) => tracing::info!("Dropped schema public"),
-        Err(e) => tracing::error!("Error dropping schema public: {:?}", e),
+        Ok(_) => log::info!("Dropped schema public"),
+        Err(e) => log::error!("Error dropping schema public: {:?}", e),
     }
 
     // Drop role
@@ -339,8 +336,8 @@ pub async fn drop_postgres(pg: &PgPool, database: String) -> anyhow::Result<()> 
         .execute(pg)
         .await
     {
-        Ok(_) => tracing::info!("Dropped role {}", database),
-        Err(e) => tracing::error!("Error dropping role {}: {:?}", database, e),
+        Ok(_) => log::info!("Dropped role {}", database),
+        Err(e) => log::error!("Error dropping role {}: {:?}", database, e),
     }
     Ok(())
 }

@@ -97,19 +97,19 @@
   },
   {
     "publisher_id": 17,
-    "dataset": "FINN.NLS",
+    "dataset": "XNAS.NLS",
     "venue": "FINN",
     "description": "FINRA/Nasdaq TRF Carteret"
   },
   {
     "publisher_id": 18,
-    "dataset": "FINN.NLS",
+    "dataset": "XNAS.NLS",
     "venue": "FINC",
     "description": "FINRA/Nasdaq TRF Chicago"
   },
   {
     "publisher_id": 19,
-    "dataset": "FINY.TRADES",
+    "dataset": "XNYS.TRADES",
     "venue": "FINY",
     "description": "FINRA/NYSE TRF"
   },
@@ -321,13 +321,13 @@
     "publisher_id": 54,
     "dataset": "DBEQ.PLUS",
     "venue": "FINN",
-    "description": "DBEQ Plus - FINRA/NYSE TRF"
+    "description": "DBEQ Plus - FINRA/Nasdaq TRF Carteret"
   },
   {
     "publisher_id": 55,
     "dataset": "DBEQ.PLUS",
     "venue": "FINY",
-    "description": "DBEQ Plus - FINRA/Nasdaq TRF Carteret"
+    "description": "DBEQ Plus - FINRA/NYSE TRF"
   },
   {
     "publisher_id": 56,
@@ -405,13 +405,13 @@
     "publisher_id": 68,
     "dataset": "DBEQ.MAX",
     "venue": "FINN",
-    "description": "DBEQ Max - FINRA/NYSE TRF"
+    "description": "DBEQ Max - FINRA/Nasdaq TRF Carteret"
   },
   {
     "publisher_id": 69,
     "dataset": "DBEQ.MAX",
     "venue": "FINY",
-    "description": "DBEQ Max - FINRA/Nasdaq TRF Carteret"
+    "description": "DBEQ Max - FINRA/NYSE TRF"
   },
   {
     "publisher_id": 70,
@@ -478,5 +478,89 @@
     "dataset": "DBEQ.MAX",
     "venue": "LTSE",
     "description": "DBEQ Max - Long-Term Stock Exchange"
+  },
+  {
+    "publisher_id": 81,
+    "dataset": "XNAS.BASIC",
+    "venue": "XNAS",
+    "description": "Nasdaq Basic - Nasdaq"
+  },
+  {
+    "publisher_id": 82,
+    "dataset": "XNAS.BASIC",
+    "venue": "FINN",
+    "description": "Nasdaq Basic - FINRA/Nasdaq TRF Carteret"
+  },
+  {
+    "publisher_id": 83,
+    "dataset": "XNAS.BASIC",
+    "venue": "FINC",
+    "description": "Nasdaq Basic - FINRA/Nasdaq TRF Chicago"
+  },
+  {
+    "publisher_id": 84,
+    "dataset": "IFEU.IMPACT",
+    "venue": "XOFF",
+    "description": "ICE Futures Europe - Off-Market Trades"
+  },
+  {
+    "publisher_id": 85,
+    "dataset": "NDEX.IMPACT",
+    "venue": "XOFF",
+    "description": "ICE Endex - Off-Market Trades"
+  },
+  {
+    "publisher_id": 86,
+    "dataset": "XNAS.NLS",
+    "venue": "XBOS",
+    "description": "Nasdaq NLS - Nasdaq BX"
+  },
+  {
+    "publisher_id": 87,
+    "dataset": "XNAS.NLS",
+    "venue": "XPSX",
+    "description": "Nasdaq NLS - Nasdaq PSX"
+  },
+  {
+    "publisher_id": 88,
+    "dataset": "XNAS.BASIC",
+    "venue": "XBOS",
+    "description": "Nasdaq Basic - Nasdaq BX"
+  },
+  {
+    "publisher_id": 89,
+    "dataset": "XNAS.BASIC",
+    "venue": "XPSX",
+    "description": "Nasdaq Basic - Nasdaq PSX"
+  },
+  {
+    "publisher_id": 90,
+    "dataset": "DBEQ.SUMMARY",
+    "venue": "DBEQ",
+    "description": "Databento Equities Summary"
+  },
+  {
+    "publisher_id": 91,
+    "dataset": "XCIS.BBOTRADES",
+    "venue": "XCIS",
+    "description": "NYSE National BBO and Trades"
+  },
+  {
+    "publisher_id": 92,
+    "dataset": "XNYS.BBOTRADES",
+    "venue": "XNYS",
+    "description": "NYSE BBO and Trades"
+  },
+  {
+    "publisher_id": 93,
+    "dataset": "XNAS.BASIC",
+    "venue": "DBEQ",
+    "description": "Nasdaq Basic - Consolidated"
+  },
+  {
+    "publisher_id": 94,
+    "dataset": "DBEQ.MAX",
+    "venue": "DBEQ",
+    "description": "DBEQ Max - Consolidated"
   }
 ]

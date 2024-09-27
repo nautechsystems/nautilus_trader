@@ -33,7 +33,10 @@ from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import ImportableActorConfig
 from nautilus_trader.common.executor import ActorExecutor
 from nautilus_trader.common.executor import TaskId
+from nautilus_trader.model.greeks import GreeksData
+from nautilus_trader.model.greeks import PortfolioGreeks
 from nautilus_trader.persistence.writer import generate_signal_class
+from nautilus_trader.risk.greeks import greeks_key
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
@@ -44,8 +47,6 @@ from nautilus_trader.common.component cimport REQ
 from nautilus_trader.common.component cimport SENT
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Component
-from nautilus_trader.common.component cimport LiveClock
-from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport MessageBus
 from nautilus_trader.common.component cimport is_logging_initialized
 from nautilus_trader.core.correctness cimport Condition
@@ -54,6 +55,7 @@ from nautilus_trader.core.message cimport Event
 from nautilus_trader.core.rust.common cimport ComponentState
 from nautilus_trader.core.rust.common cimport LogColor
 from nautilus_trader.core.rust.model cimport BookType
+from nautilus_trader.core.rust.model cimport PositionSide
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
@@ -72,6 +74,7 @@ from nautilus_trader.model.data cimport TradeTick
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport ComponentId
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.identifiers cimport StrategyId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
@@ -125,6 +128,8 @@ cdef class Actor(Component):
         self._indicators_for_bars: dict[BarType, list[Indicator]] = {}
 
         self._pyo3_conversion_types = set()
+
+        self._future_greeks: dict[InstrumentId, list[GreeksData]] = {}
 
         # Configuration
         self.config = config
@@ -685,14 +690,16 @@ cdef class Actor(Component):
         if indicator not in self._indicators:
             self._indicators.append(indicator)
 
-        if bar_type not in self._indicators_for_bars:
-            self._indicators_for_bars[bar_type] = []  # type: list[Indicator]
+        cdef BarType standard_bar_type = bar_type.standard()
 
-        if indicator not in self._indicators_for_bars[bar_type]:
-            self._indicators_for_bars[bar_type].append(indicator)
-            self.log.info(f"Registered Indicator {indicator} for {bar_type} bars")
+        if standard_bar_type not in self._indicators_for_bars:
+            self._indicators_for_bars[standard_bar_type] = []  # type: list[Indicator]
+
+        if indicator not in self._indicators_for_bars[standard_bar_type]:
+            self._indicators_for_bars[standard_bar_type].append(indicator)
+            self.log.info(f"Registered Indicator {indicator} for {standard_bar_type} bars")
         else:
-            self.log.error(f"Indicator {indicator} already registered for {bar_type} bars")
+            self.log.error(f"Indicator {indicator} already registered for {standard_bar_type} bars")
 
 # -- ACTOR COMMANDS -------------------------------------------------------------------------------
 
@@ -1148,7 +1155,7 @@ cdef class Actor(Component):
         self._msgbus.subscribe(
             topic=f"data.instrument"
                   f".{instrument_id.venue}"
-                  f".{instrument_id.symbol}",
+                  f".{instrument_id.symbol.topic()}",
             handler=self.handle_instrument,
         )
 
@@ -1205,7 +1212,7 @@ cdef class Actor(Component):
         self._msgbus.subscribe(
             topic=f"data.book.deltas"
                   f".{instrument_id.venue}"
-                  f".{instrument_id.symbol}",
+                  f".{instrument_id.symbol.topic()}",
             handler=self.handle_order_book_deltas,
         )
 
@@ -1287,7 +1294,7 @@ cdef class Actor(Component):
         self._msgbus.subscribe(
             topic=f"data.book.snapshots"
                   f".{instrument_id.venue}"
-                  f".{instrument_id.symbol}"
+                  f".{instrument_id.symbol.topic()}"
                   f".{interval_ms}",
             handler=self.handle_order_book,
         )
@@ -1328,7 +1335,7 @@ cdef class Actor(Component):
         self._msgbus.subscribe(
             topic=f"data.quotes"
                   f".{instrument_id.venue}"
-                  f".{instrument_id.symbol}",
+                  f".{instrument_id.symbol.topic()}",
             handler=self.handle_quote_tick,
         )
 
@@ -1361,7 +1368,7 @@ cdef class Actor(Component):
         self._msgbus.subscribe(
             topic=f"data.trades"
                   f".{instrument_id.venue}"
-                  f".{instrument_id.symbol}",
+                  f".{instrument_id.symbol.topic()}",
             handler=self.handle_trade_tick,
         )
 
@@ -1436,7 +1443,7 @@ cdef class Actor(Component):
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
-            topic=f"data.status.{instrument_id.venue}.{instrument_id.symbol}",
+            topic=f"data.status.{instrument_id.venue}.{instrument_id.symbol.topic()}",
             handler=self.handle_instrument_status,
         )
 
@@ -1566,7 +1573,7 @@ cdef class Actor(Component):
         self._msgbus.unsubscribe(
             topic=f"data.instrument"
                   f".{instrument_id.venue}"
-                  f".{instrument_id.symbol}",
+                  f".{instrument_id.symbol.topic()}",
             handler=self.handle_instrument,
         )
 
@@ -1599,7 +1606,7 @@ cdef class Actor(Component):
         self._msgbus.unsubscribe(
             topic=f"data.book.deltas"
                   f".{instrument_id.venue}"
-                  f".{instrument_id.symbol}",
+                  f".{instrument_id.symbol.topic()}",
             handler=self.handle_order_book_deltas,
         )
 
@@ -1641,7 +1648,7 @@ cdef class Actor(Component):
         self._msgbus.unsubscribe(
             topic=f"data.book.snapshots"
                   f".{instrument_id.venue}"
-                  f".{instrument_id.symbol}"
+                  f".{instrument_id.symbol.topic()}"
                   f".{interval_ms}",
             handler=self.handle_order_book,
         )
@@ -1678,7 +1685,7 @@ cdef class Actor(Component):
         self._msgbus.unsubscribe(
             topic=f"data.quotes"
                   f".{instrument_id.venue}"
-                  f".{instrument_id.symbol}",
+                  f".{instrument_id.symbol.topic()}",
             handler=self.handle_quote_tick,
         )
 
@@ -1711,7 +1718,7 @@ cdef class Actor(Component):
         self._msgbus.unsubscribe(
             topic=f"data.trades"
                   f".{instrument_id.venue}"
-                  f".{instrument_id.symbol}",
+                  f".{instrument_id.symbol.topic()}",
             handler=self.handle_trade_tick,
         )
 
@@ -1741,21 +1748,23 @@ cdef class Actor(Component):
         Condition.not_none(bar_type, "bar_type")
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
+        standard_bar_type = bar_type.standard()
+
         self._msgbus.unsubscribe(
-            topic=f"data.bars.{bar_type}",
+            topic=f"data.bars.{standard_bar_type}",
             handler=self.handle_bar,
         )
 
         cdef Unsubscribe command = Unsubscribe(
             client_id=client_id,
             venue=bar_type.instrument_id.venue,
-            data_type=DataType(Bar, metadata={"bar_type": bar_type}),
+            data_type=DataType(Bar, metadata={"bar_type": standard_bar_type}),
             command_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
         )
 
         self._send_data_cmd(command)
-        self._log.info(f"Unsubscribed from {bar_type} bar data")
+        self._log.info(f"Unsubscribed from {standard_bar_type} bar data")
 
     cpdef void unsubscribe_instrument_status(self, InstrumentId instrument_id, ClientId client_id = None):
         """
@@ -1774,7 +1783,7 @@ cdef class Actor(Component):
         Condition.true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
-            topic=f"data.status.{instrument_id.venue}.{instrument_id.symbol}",
+            topic=f"data.status.{instrument_id.venue}.{instrument_id.symbol.topic()}",
             handler=self.handle_instrument_status,
         )
 
@@ -2856,3 +2865,37 @@ cdef class Actor(Component):
         if is_logging_initialized():
             self._log.info(f"{REQ}{SENT} {request}")
         self._msgbus.request(endpoint="DataEngine.request", request=request)
+
+    # -- GREEKS ---------------------------------------------------------------------------------------
+
+    def instrument_greeks_data(self, InstrumentId instrument_id) -> GreeksData:
+        # option case, to avoid querying definition
+        if ' ' in instrument_id.symbol.value:
+            return GreeksData.from_bytes(self.cache.get(greeks_key(instrument_id)))
+
+        # future case
+        if instrument_id not in self._future_greeks:
+            future_definition = self.cache.instrument(instrument_id)
+            self._future_greeks[instrument_id] = GreeksData.from_delta(instrument_id, int(future_definition.multiplier))
+
+        return self._future_greeks[instrument_id]
+
+    def portfolio_greeks(self, str underlying = "", Venue venue = None, InstrumentId instrument_id = None,
+                         StrategyId strategy_id = None,
+                         PositionSide side = PositionSide.NO_POSITION_SIDE) -> PortfolioGreeks:
+        ts_event = self.clock.timestamp_ns()
+        portfolio_greeks = PortfolioGreeks(ts_event, ts_event)
+        open_positions = self.cache.positions_open(venue, instrument_id, strategy_id, side)
+
+        for position in open_positions:
+            position_instrument_id = position.instrument_id
+
+            if underlying != "" and not position_instrument_id.value.startswith(underlying):
+                continue
+
+            quantity = int(position.signed_qty)
+            instrument_greeks = self.instrument_greeks_data(position_instrument_id)
+            position_greeks = quantity * instrument_greeks
+            portfolio_greeks += position_greeks
+
+        return portfolio_greeks

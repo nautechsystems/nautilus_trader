@@ -193,13 +193,13 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         # Close all live clients
         for dataset, live_client in self._live_clients.items():
-            if not live_client.is_running:
+            if not live_client.is_running():
                 continue
             self._log.info(f"Stopping {dataset} live feed", LogColor.BLUE)
             live_client.close()
 
         for dataset, live_client in self._live_clients_mbo.items():
-            if not live_client.is_running:
+            if not live_client.is_running():
                 continue
             self._log.info(f"Stopping {dataset} MBO/L3 live feed", LogColor.BLUE)
             live_client.close()
@@ -509,16 +509,6 @@ class DatabentoDataClient(LiveMarketDataClient):
                     "No subscriptions for order book deltas (`instrument_ids` was empty)",
                 )
                 return
-
-            for instrument_id in instrument_ids:
-                if not self._cache.instrument(instrument_id):
-                    self._log.error(
-                        f"Cannot subscribe to order book deltas for {instrument_id}, "
-                        "instrument must be pre-loaded via the `DatabentoDataClientConfig` "
-                        "or a specific subscription on start",
-                    )
-                    instrument_ids.remove(instrument_id)
-                    continue
 
             if not instrument_ids:
                 return  # No subscribing instrument IDs were loaded in the cache

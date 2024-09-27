@@ -95,6 +95,9 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
         is checked with the venue.
         As a rule of thumb, you shouldn't consider reducing this setting unless you
         are colocated with the venue (to avoid the potential for race conditions).
+    inflight_check_retries : NonNegativeInt, default 5
+        The number of retry attempts the engine will make to verify the status of an
+        in-flight order with the venue, should the initial attempt fail.
     qsize : PositiveInt, default 100_000
         The queue size for the engines internal queue buffers.
 
@@ -107,6 +110,7 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     generate_missing_orders: bool = True
     inflight_check_interval_ms: NonNegativeInt = 2_000
     inflight_check_threshold_ms: NonNegativeInt = 5_000
+    inflight_check_retries: NonNegativeInt = 5
     qsize: PositiveInt = 100_000
 
 

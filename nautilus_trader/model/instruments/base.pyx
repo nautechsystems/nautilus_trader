@@ -32,7 +32,9 @@ from nautilus_trader.model.functions cimport instrument_class_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.instruments.equity cimport Equity
 from nautilus_trader.model.instruments.futures_contract cimport FuturesContract
+from nautilus_trader.model.instruments.futures_spread cimport FuturesSpread
 from nautilus_trader.model.instruments.options_contract cimport OptionsContract
+from nautilus_trader.model.instruments.options_spread cimport OptionsSpread
 from nautilus_trader.model.objects cimport Currency
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.tick_scheme.base cimport TICK_SCHEMES
@@ -600,8 +602,12 @@ cpdef list[Instrument] instruments_from_pyo3(list pyo3_instruments):
             instruments.append(Equity.from_pyo3_c(pyo3_instrument))
         elif isinstance(pyo3_instrument, nautilus_pyo3.FuturesContract):
             instruments.append(FuturesContract.from_pyo3_c(pyo3_instrument))
+        elif isinstance(pyo3_instrument, nautilus_pyo3.FuturesSpread):
+            instruments.append(FuturesSpread.from_pyo3_c(pyo3_instrument))
         elif isinstance(pyo3_instrument, nautilus_pyo3.OptionsContract):
             instruments.append(OptionsContract.from_pyo3_c(pyo3_instrument))
+        elif isinstance(pyo3_instrument, nautilus_pyo3.OptionsSpread):
+            instruments.append(OptionsSpread.from_pyo3_c(pyo3_instrument))
         else:
             RuntimeError(f"Instrument {pyo3_instrument} not supported")
 

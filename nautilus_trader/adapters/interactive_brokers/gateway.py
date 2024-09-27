@@ -38,7 +38,6 @@ class DockerizedIBGateway:
     A class to manage starting an Interactive Brokers Gateway docker container.
     """
 
-    IMAGE: ClassVar[str] = "ghcr.io/gnzsnz/ib-gateway:stable"
     CONTAINER_NAME: ClassVar[str] = "nautilus-ib-gateway"
     PORTS: ClassVar[dict[str, int]] = {"paper": 4002, "live": 4001}
 
@@ -58,6 +57,7 @@ class DockerizedIBGateway:
         self.host = "127.0.0.1"
         self.port = self.PORTS[config.trading_mode]
         self.timeout = config.timeout
+        self.container_image = config.container_image
 
         try:
             import docker
@@ -134,7 +134,7 @@ class DockerizedIBGateway:
 
         self.log.debug("Starting new container")
         self._container = self._docker.containers.run(
-            image=self.IMAGE,
+            image=self.container_image,
             name=f"{self.CONTAINER_NAME}-{self.port}",
             restart_policy={"Name": "always"},
             detach=True,

@@ -1,3 +1,58 @@
+# NautilusTrader 1.202.0 Beta
+
+Released on 27th September 2024 (UTC).
+
+This will be the final release with support for Python 3.10.
+
+The `numpy` version requirement has been relaxed to >= 1.26.4.
+
+### Enhancements
+- Added Polymarket decentralized prediction market integration
+- Added OKX crypto exchange integration (#1951), thanks @miller-moore
+- Added `BinaryOption` instrument (supports Polymarket integration)
+- Added `LiveExecutionEngine.inflight_check_retries` config option to limit in-flight order query attempts
+- Added `Symbol.root()` method for obtaining the root of parent or composite symbols
+- Added `Symbol.topic()` method for obtaining the subscription topic of parent or composite symbols
+- Added `Symbol.is_composite()` method to determine if symbol is made up of parts with period (`.`) delimiters
+- Added `underlying` filter parameter for `Cache.instruments(...)` method
+- Added `reduce_only` parameter for `Strategy.close_position(...)` method (`True` by default to maintain current behavior)
+- Added `reduce_only` parameter for `Strategy.close_all_positions(...)` method (`True` by default to maintain current behavior)
+- Implemented flush with truncate Postgres function for `PostgresCacheDatabase` (#1928), thanks @filipmacek
+- Implemented file rotation for `StreamingFeatherWriter` with internal improvements using `Clock` and `Cache` (#1954, #1961), thanks @graceyangfan
+- Improved dYdX execution client to use `RetryManager` for HTTP requests (#1941), thanks @davidsblom
+- Improved Interactive Brokers adapter to use a dynamic IB gateway `container_image` from config (#1940), thanks @rsmb7z
+- Improved `OrderBookDeltas` streaming and batching based on the `F_LAST` flag
+- Standardized underscore thousands separators for backtest logging
+- Updated Databento `publishers.json`
+
+### Internal Improvements
+- Implemented `OrderTestBuilder` to assist testing in Rust (#1952), thanks @filipmacek
+- Implemented quote tick processing for SimulatedExchange in Rust (#1956), thanks @filipmacek
+- Implemented trade tick processing for SimulatedExchange in Rust (#1956), thanks @filipmacek
+- Refined `Logger` to use unbuffered stdout/stderr writers (#1960), thanks @twitu
+
+### Breaking Changes
+- Renamed `batch_size_bytes` to `chunk_size` (more accurate naming for number of data points to process per chunk in backtest streaming mode)
+- Standardized Stop-Loss (SL) and Take-Profit (TP) param ordering for `OrderFactory.bracket(...)` including: `tp_time_in_force`, `tp_exec_algorithm_params`, `tp_tags`, `tp_client_order_id`
+
+### Fixes
+- Fixed `LoggingConfig` issue for `level_file` when used with `use_pyo3=True` (was not passing through the `level_file` setting), thanks for reporting @xt2014
+- Fixed composite bar requests (#1923), thanks @faysou
+- Fixed average price calculation for `ValueBarAggregator` (#1927), thanks @faysou
+- Fixed breaking protobuf issue by pinning `protobuf` and `grpcio` for dYdX (#1929), thanks @davidsblom
+- Fixed edge case where exceptions raised in `BacktestNode` prior to engine initialization would not produce logs, thanks for reporting @faysou
+- Fixed handling of internal server error for dYdX (#1938), thanks @davidsblom
+- Fixed `BybitWebSocketClient` private channel authentication on reconnect, thanks for reporting @miller-moore
+- Fixed `OrderFactory.bracket(...)` param ordering for `sl_time_in_force` and `tp_time_in_force`, thanks for reporting @marcodambros
+- Fixed `Cfd` instrument Arrow schema and serialization
+- Fixed bar subscriptions on TWS/GW restart for Interactive Brokers (#1950), thanks @rsmb7z
+- Fixed Databento parent and continuous contract subscriptions (using new symbol root)
+- Fixed Databento `FuturesSpread` and `OptionsSpread` instrument decoding (was not correctly handling price increments and empty underlyings)
+- Fixed `FuturesSpread` serialization
+- Fixed `OptionsSpread` serialization
+
+---
+
 # NautilusTrader 1.201.0 Beta
 
 Released on 9th September 2024 (UTC).

@@ -253,14 +253,14 @@ mod tests {
 
     use crate::{
         accounts::{base::Account, cash::CashAccount, stubs::*},
-        enums::{AccountType, LiquiditySide, OrderSide},
+        enums::{AccountType, LiquiditySide, OrderSide, OrderType},
         events::account::{state::AccountState, stubs::*},
         identifiers::{position_id::PositionId, AccountId},
         instruments::{
             any::InstrumentAny, crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair,
             equity::Equity, stubs::*, Instrument,
         },
-        orders::stubs::{TestOrderEventStubs, TestOrderStubs},
+        orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         position::Position,
         types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
     };
@@ -465,13 +465,11 @@ mod tests {
         audusd_sim: CurrencyPair,
     ) {
         let audusd_sim = InstrumentAny::CurrencyPair(audusd_sim);
-        let order = TestOrderStubs::market_order(
-            audusd_sim.id(),
-            OrderSide::Buy,
-            Quantity::from("1000000"),
-            None,
-            None,
-        );
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(audusd_sim.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1000000"))
+            .build();
         let fill = TestOrderEventStubs::order_filled(
             &order,
             &audusd_sim,
@@ -497,13 +495,11 @@ mod tests {
         currency_pair_btcusdt: CurrencyPair,
     ) {
         let btcusdt = InstrumentAny::CurrencyPair(currency_pair_btcusdt);
-        let order1 = TestOrderStubs::market_order(
-            currency_pair_btcusdt.id,
-            OrderSide::Sell,
-            Quantity::from("0.5"),
-            None,
-            None,
-        );
+        let order1 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(currency_pair_btcusdt.id)
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("0.5"))
+            .build();
         let fill1 = TestOrderEventStubs::order_filled(
             &order1,
             &btcusdt,
@@ -524,13 +520,11 @@ mod tests {
                 Some(position.clone()),
             )
             .unwrap();
-        let order2 = TestOrderStubs::market_order(
-            currency_pair_btcusdt.id,
-            OrderSide::Buy,
-            Quantity::from("0.5"),
-            None,
-            None,
-        );
+        let order2 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(currency_pair_btcusdt.id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("0.5"))
+            .build();
         let fill2 = TestOrderEventStubs::order_filled(
             &order2,
             &btcusdt,

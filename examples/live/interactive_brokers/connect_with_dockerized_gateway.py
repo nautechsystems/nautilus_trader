@@ -61,7 +61,7 @@ ib_contracts = [
         symbol="ES",
         build_futures_chain=True,
     ),
-    IBContract(secType="FUT", exchange="NYMEX", localSymbol="CLV3", build_futures_chain=False),
+    IBContract(secType="FUT", exchange="NYMEX", localSymbol="CLV7", build_futures_chain=False),
 ]
 
 dockerized_gateway = DockerizedIBGatewayConfig(

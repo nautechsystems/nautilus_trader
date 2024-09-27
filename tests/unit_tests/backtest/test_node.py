@@ -26,7 +26,6 @@ from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.identifiers import InstrumentId
-from nautilus_trader.persistence.funcs import parse_bytes
 from nautilus_trader.test_kit.mocks.data import load_catalog_with_stub_quote_ticks_audusd
 from nautilus_trader.test_kit.mocks.data import setup_catalog
 
@@ -72,6 +71,7 @@ class TestBacktestNode:
                 ),
                 venues=[self.venue_config],
                 data=[self.data_config],
+                chunk_size=5_000,
             ),
         ]
         load_catalog_with_stub_quote_ticks_audusd(self.catalog)  # Load sample data
@@ -108,6 +108,7 @@ class TestBacktestNode:
             ),
             venues=[self.venue_config, venue_l3],
             data=[self.data_config],
+            chunk_size=None,  # No streaming
         )
 
         with pytest.raises(InvalidConfiguration) as exc_info:
@@ -134,7 +135,7 @@ class TestBacktestNode:
             engine=BacktestEngineConfig(strategies=self.strategies),
             venues=[self.venue_config],
             data=[self.data_config],
-            batch_size_bytes=parse_bytes("10kib"),
+            chunk_size=5_000,
         )
 
         node = BacktestNode(configs=[config])

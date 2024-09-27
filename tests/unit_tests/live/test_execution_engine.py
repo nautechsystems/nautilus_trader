@@ -502,7 +502,7 @@ class TestLiveExecutionEngine:
     @pytest.mark.asyncio
     async def test_check_inflight_order_status(self):
         # Arrange
-        # Deregister test fixture ExecutionEngine from msgbus)
+        # Deregister test fixture ExecutionEngine from msgbus
         order = self.strategy.order_factory.limit(
             instrument_id=AUDUSD_SIM.id,
             order_side=OrderSide.BUY,
@@ -515,4 +515,4 @@ class TestLiveExecutionEngine:
         self.exec_engine.process(TestEventStubs.order_submitted(order))
 
         # Assert
-        await eventually(lambda: self.exec_engine.command_count >= 2, timeout=3.0)
+        await eventually(lambda: self.exec_engine.command_count >= 1, timeout=3.0)

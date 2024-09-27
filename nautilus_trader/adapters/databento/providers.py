@@ -127,7 +127,13 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         parent_symbols = list(filters.get("parent_symbols", [])) if filters is not None else None
 
         pyo3_instruments = []
-        success_msg = "All instruments received and decoded."
+        success_msg = "All instruments received and decoded"
+        timeout_secs = 10.0
+
+        self._log.info(
+            f"Awaiting instrument definitions ({timeout_secs}s timeout)...",
+            LogColor.BLUE,
+        )
 
         def receive_instruments(pyo3_instrument: Any) -> None:
             pyo3_instruments.append(pyo3_instrument)
@@ -142,10 +148,9 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         )
 
         if parent_symbols:
-            self._log.info(f"Requesting parent symbols {parent_symbols}.", LogColor.BLUE)
+            self._log.info(f"Requesting parent symbols {parent_symbols}", LogColor.BLUE)
             live_client.subscribe(
                 schema=DatabentoSchema.DEFINITION.value,
-                stype_in="parent",
                 symbols=parent_symbols,
                 start=0,  # From start of current week (latest definitions)
             )
@@ -157,18 +162,20 @@ class DatabentoInstrumentProvider(InstrumentProvider):
                 ),
                 timeout=10.0,
             )
-        except Exception as e:
+        except asyncio.TimeoutError:
+            pass  # Expected for parent and continuous for now
+        except asyncio.CancelledError as e:
             if success_msg in str(e):
                 # Expected on decode completion, continue
                 self._log.info(success_msg)
-            else:
-                self._log.error(repr(e))
+        except Exception as e:
+            self._log.error(repr(e))
 
         instruments = instruments_from_pyo3(pyo3_instruments)
 
         for instrument in instruments:
             self.add(instrument=instrument)
-            self._log.debug(f"Added instrument {instrument.id}.")
+            self._log.debug(f"Added instrument {instrument.id}")
 
         await asyncio.sleep(1.0)
         live_client.close()

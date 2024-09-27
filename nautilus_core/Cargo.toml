@@ -4,6 +4,7 @@ members = [
     "adapters",
     "analysis",
     "backtest",
+    "cli",
     "common",
     "core",
     "data",
@@ -14,20 +15,20 @@ members = [
     "network",
     "persistence",
     "pyo3",
-    "cli"
+    "test_kit",
 ]
 
 [workspace.package]
 rust-version = "1.81.0"
-version = "0.31.0"
+version = "0.32.0"
 edition = "2021"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 documentation = "https://nautilustrader.io/docs"
 
 [workspace.dependencies]
-anyhow = "1.0.87"
-bytes = { version = "1.7.1", features = ["serde"] }
+anyhow = "1.0.89"
+bytes = { version = "1.7.2", features = ["serde"] }
 chrono = "0.4.38"
 derive_builder = "0.20.1"
 futures = "0.3.30"
@@ -39,6 +40,7 @@ log = { version = "0.4.22", features = ["std", "kv_unstable", "serde", "release_
 pyo3 = { version = "0.21.2", features = ["rust_decimal"] }
 pyo3-asyncio-0-21 = { version = "0.21.0", features = ["tokio-runtime", "tokio", "attributes"] }
 rand = "0.8.5"
+reqwest = { version = "0.12.7", features = ["blocking"] }
 rmp-serde = "1.3.0"
 rust_decimal = "1.36.0"
 rust_decimal_macros = "1.36.0"
@@ -46,7 +48,7 @@ semver = "1.0.23"
 serde = { version = "1.0.210", features = ["derive"] }
 serde_json = "1.0.128"
 strum = { version = "0.26.3", features = ["derive"] }
-thiserror = "1.0.63"
+thiserror = "1.0.64"
 thousands = "0.2.0"
 tracing = "0.1.40"
 tokio = { version = "1.40.0", features = ["full"] }
@@ -54,10 +56,11 @@ ustr = { version = "1.0.0", features = ["serde"] }
 uuid = { version = "1.10.0", features = ["v4"] }
 
 # dev-dependencies
+axum = "0.7.6"
 criterion = "0.5.1"
 float-cmp = "0.9.0"
 iai = "0.1.1"
-pretty_assertions = "1.4.0"
+pretty_assertions = "1.4.1"
 rstest = "0.21.0"
 tempfile = "3.12.0"
 

@@ -18,67 +18,7 @@ from nautilus_trader.core.nautilus_pyo3 import convert_to_snake_case
 from nautilus_trader.model.identifiers import InstrumentId
 
 
-INVALID_WINDOWS_CHARS = r'<>:"/\|?* '
 CUSTOM_DATA_PREFIX = "custom_"
-
-# Taken from https://github.com/dask/dask/blob/261bf174931580230717abca93fe172e166cc1e8/dask/utils.py
-byte_sizes = {
-    "kB": 10**3,
-    "MB": 10**6,
-    "GB": 10**9,
-    "TB": 10**12,
-    "PB": 10**15,
-    "KiB": 2**10,
-    "MiB": 2**20,
-    "GiB": 2**30,
-    "TiB": 2**40,
-    "PiB": 2**50,
-    "B": 1,
-    "": 1,
-}
-byte_sizes = {k.lower(): v for k, v in byte_sizes.items()}
-byte_sizes.update({k[0]: v for k, v in byte_sizes.items() if k and "i" not in k})
-byte_sizes.update({k[:-1]: v for k, v in byte_sizes.items() if k and "i" in k})
-
-
-def parse_bytes(s: float | str) -> int:
-    if isinstance(s, int | float):
-        return int(s)
-    s = s.replace(" ", "")
-    if not any(char.isdigit() for char in s):
-        s = "1" + s
-
-    i = 0
-    for i in range(len(s) - 1, -1, -1):
-        if not s[i].isalpha():
-            break
-    index = i + 1
-
-    prefix = s[:index]
-    suffix = s[index:]
-
-    try:
-        n = float(prefix)
-    except ValueError as e:
-        raise ValueError(f"Could not interpret '{prefix}' as a number") from e
-
-    try:
-        multiplier = byte_sizes[suffix.lower()]
-    except KeyError as e:
-        raise ValueError(f"Could not interpret '{suffix}' as a byte unit") from e
-
-    result = n * multiplier
-    return int(result)
-
-
-def clean_windows_key(s: str) -> str:
-    """
-    Clean characters that are illegal on Windows from the string `s`.
-    """
-    for ch in INVALID_WINDOWS_CHARS:
-        if ch in s:
-            s = s.replace(ch, "-")
-    return s
 
 
 def class_to_filename(cls: type) -> str:

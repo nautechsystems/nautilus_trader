@@ -156,5 +156,6 @@ class TestConfigStubs:
                 for cls in data_types
                 for instrument_id in instrument_ids
             ],
+            chunk_size=5_000,
         )
         return run_config

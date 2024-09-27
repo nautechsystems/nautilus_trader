@@ -48,14 +48,19 @@ class DYDXGetAddressEndpoint(DYDXHttpEndpoint):
         super().__init__(
             client=client,
             endpoint_type=DYDXEndpointType.ACCOUNT,
+            name="DYDXGetAddressEndpoint",
         )
         self.http_method = HttpMethod.GET
         self._get_resp_decoder = msgspec.json.Decoder(DYDXAddressResponse)
 
-    async def get(self, params: DYDXGetAddressGetParams) -> DYDXAddressResponse:
+    async def get(self, params: DYDXGetAddressGetParams) -> DYDXAddressResponse | None:
         """
         Call the endpoint to list the instruments.
         """
         url_path = f"/addresses/{params.address}"
         raw = await self._method(self.http_method, params=None, url_path=url_path)
-        return self._get_resp_decoder.decode(raw)
+
+        if raw is not None:
+            return self._get_resp_decoder.decode(raw)
+
+        return None

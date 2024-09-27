@@ -9,10 +9,10 @@ into a unified interface.
 ## Structure of an adapter
 
 An adapter typically consists of several components:
-1. **Instrument Provider:** Supplies instrument definitions
-2. **Data Client:** Handles live market data feeds and historical data requests
-3. **Execution Client:** Handles order execution and management
-5. **Configuration:** Configures the client settings
+1. **Instrument Provider**: Supplies instrument definitions
+2. **Data Client**: Handles live market data feeds and historical data requests
+3. **Execution Client**: Handles order execution and management
+5. **Configuration**: Configures the client settings
 
 ## Adapter implementation steps
 
@@ -52,7 +52,7 @@ class TemplateInstrumentProvider(InstrumentProvider):
         raise NotImplementedError("method `load_async` must be implemented in the subclass")
 ```
 
-**Key Methods:**
+**Key Methods**:
 - `load_all_async`: Loads all instruments asynchronously, optionally applying filters
 - `load_ids_async`: Loads specific instruments by their IDs
 - `load_async`: Loads a single instrument by its ID
@@ -95,7 +95,7 @@ class TemplateLiveDataClient(LiveDataClient):
         raise NotImplementedError("method `_request` must be implemented in the subclass")
 ```
 
-**Key Methods:**
+**Key Methods**:
 - `_connect`: Establishes a connection to the data provider
 - `_disconnect`: Closes the connection to the data provider
 - `reset`: Resets the state of the client
@@ -146,7 +146,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         raise NotImplementedError("method `_unsubscribe_order_book_deltas` must be implemented in the subclass")
 ```
 
-**Key Methods:**
+**Key Methods**:
 - `_connect`: Establishes a connection to the venues APIs
 - `_disconnect`: Closes the connection to the venues APIs
 - `reset`: Resets the state of the client
@@ -215,7 +215,7 @@ class TemplateLiveExecutionClient(LiveExecutionClient):
         raise NotImplementedError("method `generate_position_status_reports` must be implemented in the subclass")
 ```
 
-**Key Methods:**
+**Key Methods**:
 - `_connect`: Establishes a connection to the venues APIs
 - `_disconnect`: Closes the connection to the venues APIs
 - `_submit_order`: Submits a new order to the venue
@@ -256,7 +256,7 @@ class TemplateExecClientConfig(LiveExecClientConfig):
     base_url: str
 ```
 
-**Key Attributes:**
+**Key Attributes**:
 - `api_key`: The API key for authenticating with the data provider
 - `api_secret`: The API secret for authenticating with the data provider
 - `base_url`: The base URL for connecting to the data provider’s API

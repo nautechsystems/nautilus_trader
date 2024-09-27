@@ -180,6 +180,7 @@ class NautilusKernel:
                         trader_id=nautilus_pyo3.TraderId(self._trader_id.value),
                         instance_id=nautilus_pyo3.UUID4(self._instance_id.value),
                         level_stdout=nautilus_pyo3.LogLevel(logging.log_level),
+                        level_file=nautilus_pyo3.LogLevel(logging.log_level_file or "OFF"),
                         directory=logging.log_directory,
                         file_name=logging.log_file_name,
                         file_format=logging.log_file_format,
@@ -515,9 +516,16 @@ class NautilusKernel:
         path = f"{config.catalog_path}/{self._environment.value}/{self.instance_id}"
         self._writer = StreamingFeatherWriter(
             path=path,
+            cache=self._cache,
+            clock=self._clock,
             fs_protocol=config.fs_protocol,
             flush_interval_ms=config.flush_interval_ms,
             include_types=config.include_types,
+            rotation_mode=config.rotation_mode,
+            max_file_size=config.max_file_size,
+            rotation_interval=config.rotation_interval,
+            rotation_time=config.rotation_time,
+            rotation_timezone=config.rotation_timezone,
         )
         self._trader.subscribe("*", self._writer.write)
         self._log.info(f"Writing data & events to {path}")

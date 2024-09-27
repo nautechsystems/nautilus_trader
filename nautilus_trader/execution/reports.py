@@ -217,7 +217,7 @@ class OrderStatusReport(ExecutionReport):
         self.quantity = quantity
         self.filled_qty = filled_qty
         self.leaves_qty = Quantity(
-            self.quantity - self.filled_qty,
+            float(self.quantity - self.filled_qty),
             self.quantity.precision,
         )
         self.display_qty = display_qty

@@ -16,11 +16,13 @@
 use chrono::{TimeZone, Utc};
 use nautilus_core::nanos::UnixNanos;
 use rstest::*;
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 use super::{
-    futures_spread::FuturesSpread, options_spread::OptionsSpread, synthetic::SyntheticInstrument,
+    binary_option::BinaryOption, futures_spread::FuturesSpread, options_spread::OptionsSpread,
+    synthetic::SyntheticInstrument,
 };
 use crate::{
     enums::{AssetClass, OptionKind},
@@ -277,6 +279,7 @@ pub fn default_fx_ccy(symbol: Symbol, venue: Option<Venue>) -> CurrencyPair {
         0.into(),
     )
 }
+
 #[fixture]
 pub fn audusd_sim() -> CurrencyPair {
     default_fx_ccy(Symbol::from("AUD/USD"), Some(Venue::from("SIM")))
@@ -447,6 +450,47 @@ pub fn options_spread() -> OptionsSpread {
         Price::from("0.01"),
         Quantity::from(1),
         Quantity::from(1),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        0.into(),
+        0.into(),
+    )
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// BinaryOption
+////////////////////////////////////////////////////////////////////////////////
+
+#[fixture]
+pub fn binary_option() -> BinaryOption {
+    let raw_symbol = Symbol::new(
+        "0x12a0cb60174abc437bf1178367c72d11f069e1a3add20b148fb0ab4279b772b2-92544998123698303655208967887569360731013655782348975589292031774495159624905",
+    );
+    let activation = Utc.with_ymd_and_hms(2023, 11, 6, 20, 54, 7).unwrap();
+    let expiration = Utc.with_ymd_and_hms(2024, 2, 23, 22, 59, 0).unwrap();
+    let price_increment = Price::from("0.001");
+    let size_increment = Quantity::from("0.01");
+    BinaryOption::new(
+        InstrumentId::from("{raw_symbol}.POLYMARKET"),
+        raw_symbol,
+        AssetClass::Alternative,
+        Currency::USDC(),
+        UnixNanos::from(activation.timestamp_nanos_opt().unwrap() as u64),
+        UnixNanos::from(expiration.timestamp_nanos_opt().unwrap() as u64),
+        price_increment.precision,
+        size_increment.precision,
+        price_increment,
+        size_increment,
+        Decimal::from(0), // TBD
+        Decimal::from(0), // TBD
+        Decimal::from(0), // TBD
+        Decimal::from(0), // TBD
+        None,
+        None,
         None,
         None,
         None,

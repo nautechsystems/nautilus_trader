@@ -16,9 +16,7 @@
 Provides a dYdX asynchronous HTTP client.
 """
 
-import asyncio
 import urllib.parse
-from random import randint
 from typing import Any
 
 import msgspec
@@ -29,10 +27,8 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
-from nautilus_trader.core.nautilus_pyo3 import HttpError
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 from nautilus_trader.core.nautilus_pyo3 import HttpResponse
-from nautilus_trader.core.nautilus_pyo3 import HttpTimeoutError
 from nautilus_trader.core.nautilus_pyo3 import Quota
 
 
@@ -118,9 +114,6 @@ class DYDXHttpClient:
         url_path: str,
         payload: dict[str, Any] | None = None,
         ratelimiter_keys: list[str] | None = None,
-        max_tries: int = 5,
-        initial_sleep_duration_ms: int = 1000,
-        max_sleep_ms: int = 30_000,
         timeout_secs: int = 10,
     ) -> bytes | None:
         """
@@ -134,38 +127,15 @@ class DYDXHttpClient:
             payload = None  # Don't send payload in the body
 
         self._log.debug(f"{self._base_url + url_path}", LogColor.MAGENTA)
-        done = False
-        sleep_duration_ms = initial_sleep_duration_ms
 
-        for retry_counter in range(max_tries):
-            if not done:
-                try:
-                    response: HttpResponse = await self._client.request(
-                        http_method,
-                        url=self._base_url + url_path,
-                        headers=self._headers,
-                        body=msgspec.json.encode(payload) if payload else None,
-                        keys=ratelimiter_keys,
-                        timeout_secs=timeout_secs,
-                    )
-                    done = True
-                except HttpTimeoutError as e:
-                    if retry_counter < max_tries - 1:
-                        sleep_duration_ms = randint(  # noqa: S311
-                            initial_sleep_duration_ms,
-                            min(max_sleep_ms, initial_sleep_duration_ms * 2**retry_counter),
-                        )
-                        sleep_duration_secs = sleep_duration_ms / 1_000
-                        self._log.warning(
-                            f"Failed to perform HTTP request: {e}. Retry {retry_counter + 1}/{max_tries}. Sleep {sleep_duration_secs:0.1f}s",
-                        )
-                        await asyncio.sleep(sleep_duration_secs)
-                    else:
-                        self._log.error(f"Failed to perform HTTP request: {e}")
-                        raise
-                except HttpError as e:
-                    self._log.error(f"Failed to perform HTTP request: {e}")
-                    raise
+        response: HttpResponse = await self._client.request(
+            http_method,
+            url=self._base_url + url_path,
+            headers=self._headers,
+            body=msgspec.json.encode(payload) if payload else None,
+            keys=ratelimiter_keys,
+            timeout_secs=timeout_secs,
+        )
 
         if BAD_REQUEST_ERROR_CODE <= response.status < INTERNAL_SERVER_ERROR_CODE:
             raise DYDXError(

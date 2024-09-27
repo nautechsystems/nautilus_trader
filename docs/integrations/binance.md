@@ -5,6 +5,20 @@ of daily trading volume, and open interest of crypto assets and crypto
 derivative products. This integration supports live market data ingest and order
 execution with Binance.
 
+## Installation
+
+To install the latest `nautilus_trader` package along with the `binance` dependencies using pip:
+
+```
+pip install -U "nautilus_trader[binance]"
+```
+
+To install from source using poetry:
+
+```
+poetry install --extras binance
+```
+
 ## Overview
 
 The following documentation assumes a trader is setting up for both live market

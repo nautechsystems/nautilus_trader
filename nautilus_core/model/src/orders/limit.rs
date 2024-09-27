@@ -485,54 +485,50 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        enums::{OrderSide, TimeInForce},
+        enums::{OrderSide, OrderType, TimeInForce},
         instruments::{currency_pair::CurrencyPair, stubs::*},
-        orders::stubs::TestOrderStubs,
+        orders::builder::OrderTestBuilder,
         types::{price::Price, quantity::Quantity},
     };
 
     #[rstest]
     fn test_display(audusd_sim: CurrencyPair) {
-        let order = TestOrderStubs::limit_order(
-            audusd_sim.id,
-            OrderSide::Buy,
-            Price::from("1.00000"),
-            Quantity::from(100_000),
-            None,
-            None,
-        );
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .price(Price::from("1.00000"))
+            .quantity(Quantity::from(100_000))
+            .build();
+
         assert_eq!(
             order.to_string(),
             "LimitOrder(BUY 100_000 AUD/USD.SIM LIMIT @ 1.00000 GTC, \
             status=INITIALIZED, client_order_id=O-19700101-000000-001-001-1, \
             venue_order_id=None, position_id=None, exec_algorithm_id=None, \
-            exec_spawn_id=O-19700101-000000-001-001-1, tags=None)"
+            exec_spawn_id=None, tags=None)"
         );
     }
 
     #[rstest]
     #[should_panic(expected = "Condition failed: invalid `Quantity`, should be positive and was 0")]
     fn test_positive_quantity_condition(audusd_sim: CurrencyPair) {
-        let _ = TestOrderStubs::limit_order(
-            audusd_sim.id,
-            OrderSide::Buy,
-            Price::from("0.8"),
-            Quantity::from(0),
-            None,
-            None,
-        );
+        let _ = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .price(Price::from("0.8"))
+            .quantity(Quantity::from(0))
+            .build();
     }
 
     #[rstest]
     #[should_panic(expected = "Condition failed: `expire_time` is required for `GTD` order")]
     fn test_correct_expiration_with_time_in_force_gtd(audusd_sim: CurrencyPair) {
-        let _ = TestOrderStubs::limit_order(
-            audusd_sim.id,
-            OrderSide::Buy,
-            Price::from("0.8"),
-            Quantity::from(1),
-            None,
-            Some(TimeInForce::Gtd),
-        );
+        let _ = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(audusd_sim.id)
+            .side(OrderSide::Buy)
+            .price(Price::from("0.8"))
+            .quantity(Quantity::from(1))
+            .time_in_force(TimeInForce::Gtd)
+            .build();
     }
 }

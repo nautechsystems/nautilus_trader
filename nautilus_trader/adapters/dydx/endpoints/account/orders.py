@@ -64,12 +64,17 @@ class DYDXGetOrdersEndpoint(DYDXHttpEndpoint):
             client=client,
             endpoint_type=DYDXEndpointType.ACCOUNT,
             url_path=url_path,
+            name="DYDXGetOrdersEndpoint",
         )
         self.http_method = HttpMethod.GET
 
-    async def get(self, params: DYDXGetOrdersGetParams) -> list[DYDXOrderResponse]:
+    async def get(self, params: DYDXGetOrdersGetParams) -> list[DYDXOrderResponse] | None:
         """
         Call the endpoint to list the instruments.
         """
         raw = await self._method(self.http_method, params)
-        return msgspec.json.decode(raw, type=list[DYDXOrderResponse], strict=True)
+
+        if raw is not None:
+            return msgspec.json.decode(raw, type=list[DYDXOrderResponse], strict=True)
+
+        return None
