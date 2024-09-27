@@ -915,6 +915,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
             self._send_fill_report(report)
             return
 
+        self._loop.create_task(self._update_account_state())
+
         order = self._cache.order(client_order_id)
         if order.is_closed:
             return  # Already closed (only status update)
@@ -940,5 +942,3 @@ class PolymarketExecutionClient(LiveExecutionClient):
             ts_event=millis_to_nanos(int(msg.match_time)),
             info=msgspec.structs.asdict(msg),
         )
-
-        self._loop.create_task(self._update_account_state())
