@@ -120,17 +120,19 @@ impl TestClock {
 
     /// Advances the internal clock to the specified `to_time_ns` and optionally sets the clock to that time.
     ///
-    /// This function ensures that the clock moves forward monotonically. If `set_time` is `true`,
+    /// This function ensures that the clock behaves in a non-decreasing manner. If `set_time` is `true`,
     /// the internal clock will be updated to the value of `to_time_ns`. Otherwise, the clock will advance
     /// without explicitly setting the time.
     ///
     /// The method processes active timers, advancing them to `to_time_ns`, and collects any `TimeEvent`
     /// objects that are triggered as a result. Only timers that are not expired are processed.
     pub fn advance_time(&mut self, to_time_ns: UnixNanos, set_time: bool) -> Vec<TimeEvent> {
-        // Time should increase monotonically
+        // Time should be non-decreasing
         assert!(
             to_time_ns >= self.time.get_time_ns(),
-            "`to_time_ns` was < `self.time.get_time_ns()`"
+            "`to_time_ns` {} was < `self.time.get_time_ns()` {}",
+            to_time_ns,
+            self.time.get_time_ns()
         );
 
         if set_time {
