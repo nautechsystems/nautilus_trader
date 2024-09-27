@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "nautilus_trader"
-version = "1.202.0"
+version = "1.203.0"
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 license = "LGPL-3.0-or-later"
@@ -41,7 +41,6 @@ requires = [
     "poetry-core>=1.9.0",
     "numpy>=1.26.4",
     "Cython==3.0.11",
-    "toml>=0.10.2",
 ]
 build-backend = "poetry.core.masonry.api"
 
@@ -50,11 +49,10 @@ script = "build.py"
 generate-setup-file = false
 
 [tool.poetry.dependencies]
-python = ">=3.10,<3.13"
+python = ">=3.11,<3.13"
 cython = "==3.0.11"  # Build dependency (pinned for stability)
 numpy = ">=1.26.4"  # Build dependency
 setuptools = ">=73" # Build dependency
-toml = "^0.10.2"  # Build dependency
 click = "^8.1.7"
 fsspec = "==2023.6.0"  # Pinned due breaking changes
 msgspec = "^0.18.6"
@@ -123,7 +121,7 @@ sphinx_comments = "^0.0.3"
 sphinx_markdown_builder = "^0.6.6"
 
 [tool.isort]  # Used by legacy isort for Cython modules
-py_version = "310"
+py_version = "311"
 skip_glob = ["**/core/rust/*"]
 combine_as_imports = true
 line_length = 100
@@ -136,7 +134,7 @@ use_parentheses = true
 filter_files = true
 
 [tool.black]
-target_version = ["py310", "py311", "py312"]
+target_version = ["py311", "py312"]
 line_length = 100
 
 [tool.docformatter]
@@ -148,7 +146,7 @@ recursive = true
 in-place = true
 
 [tool.ruff]
-target-version = "py310"
+target-version = "py311"
 line-length = 150  # Reduce to 100
 
 exclude = [
@@ -239,7 +237,7 @@ max-complexity = 10
 "test_perf_logger.py" = ["S311"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 disallow_incomplete_defs = true
 explicit_package_bases = true
 ignore_missing_imports = true

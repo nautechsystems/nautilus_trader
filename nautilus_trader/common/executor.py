@@ -145,7 +145,7 @@ class ActorExecutor:
             await asyncio.wait_for(self._worker_task, timeout=2.0)
         except asyncio.CancelledError:
             pass  # Ignore the exception since we intentionally cancelled the task
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self._log.error("Executor: TimeoutError shutting down worker")
 
     def _drain_queue(self) -> None:
