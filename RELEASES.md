@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Improved OKX configuration (#1966), thanks @miller-moore
 
 ### Internal Improvements
 None
@@ -12,7 +12,7 @@ None
 None
 
 ### Fixes
-None
+- Fixed OKX HTTP client signatures (#1966), thanks @miller-moore
 
 ---
 
