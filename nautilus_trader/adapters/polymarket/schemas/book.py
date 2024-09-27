@@ -18,7 +18,7 @@ import uuid
 import msgspec
 
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderSide
-from nautilus_trader.core.datetime import secs_to_nanos
+from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.model.data import BookOrder
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
@@ -159,7 +159,7 @@ class PolymarketQuote(msgspec.Struct, tag="price_change", tag_field="event_type"
             order=order,
             flags=RecordFlag.F_LAST,
             sequence=0,  # N/A
-            ts_event=secs_to_nanos(float(self.timestamp)),
+            ts_event=millis_to_nanos(float(self.timestamp)),
             ts_init=ts_init,
         )
 
@@ -186,7 +186,7 @@ class PolymarketQuote(msgspec.Struct, tag="price_change", tag_field="event_type"
             ask_price=ask_price,
             bid_size=bid_size,
             ask_size=ask_size,
-            ts_event=secs_to_nanos(float(self.timestamp)),
+            ts_event=millis_to_nanos(float(self.timestamp)),
             ts_init=ts_init,
         )
 
@@ -214,6 +214,6 @@ class PolymarketTrade(msgspec.Struct, tag="last_trade_price", tag_field="event_t
             size=instrument.make_qty(float(self.size)),
             aggressor_side=aggressor_side,
             trade_id=TradeId(str(uuid.uuid4())),
-            ts_event=secs_to_nanos(float(self.timestamp)),
+            ts_event=millis_to_nanos(float(self.timestamp)),
             ts_init=ts_init,
         )

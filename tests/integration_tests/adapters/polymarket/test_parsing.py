@@ -111,7 +111,7 @@ def test_parse_order_book_delta() -> None:
     assert delta.order.price == instrument.make_price(0.514)
     assert delta.order.size == instrument.make_qty(21_574.08)
     assert delta.flags == RecordFlag.F_LAST
-    assert delta.ts_event == 18446744073709551615
+    assert delta.ts_event == 1723967931411000064
     assert delta.ts_init == 2
 
 
@@ -142,7 +142,7 @@ def test_parse_quote_tick() -> None:
     assert quote.ask_price == instrument.make_price(0.514)
     assert quote.bid_size == instrument.make_qty(100_000.0)
     assert quote.ask_size == instrument.make_qty(21_574.08)
-    assert quote.ts_event == 18446744073709551615
+    assert quote.ts_event == 1723967931411000064
     assert quote.ts_init == 2
 
 
@@ -169,7 +169,7 @@ def test_parse_trade_tick() -> None:
     assert trade.price == instrument.make_price(0.491)
     assert trade.size == instrument.make_qty(85.36)
     assert trade.aggressor_side == AggressorSide.SELLER
-    assert trade.ts_event == 18446744073709551615
+    assert trade.ts_event == 1724564136087000064
     assert trade.ts_init == 2
 
 
