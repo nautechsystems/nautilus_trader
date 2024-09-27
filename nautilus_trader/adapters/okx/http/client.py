@@ -123,7 +123,7 @@ class OKXHttpClient:
         return self._is_demo
 
     def _get_timestamp(self) -> str:
-        now = datetime.datetime.now(datetime.UTC)  # type: ignore
+        now = datetime.datetime.now(datetime.UTC)
         t = now.isoformat("T", "milliseconds")
         return t.split("+")[0] + "Z"
 

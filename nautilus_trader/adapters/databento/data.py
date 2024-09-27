@@ -173,7 +173,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 await asyncio.wait_for(asyncio.gather(*coros), timeout=self._timeout_initial_load)
             else:
                 await asyncio.gather(*coros)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             self._log.warning("Timeout waiting for instruments")
 
         self._send_all_instruments_to_data_engine()

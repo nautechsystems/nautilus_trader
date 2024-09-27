@@ -162,7 +162,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
                 ),
                 timeout=10.0,
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass  # Expected for parent and continuous for now
         except asyncio.CancelledError as e:
             if success_msg in str(e):
