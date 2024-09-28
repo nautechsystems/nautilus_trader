@@ -27,6 +27,7 @@ use nautilus_core::{
 };
 use nautilus_execution::{client::ExecutionClient, messages::TradingCommand};
 use nautilus_model::{
+    accounts::any::AccountAny,
     data::{
         bar::Bar, delta::OrderBookDelta, deltas::OrderBookDeltas, quote::QuoteTick,
         status::InstrumentStatus, trade::TradeTick, Data,
@@ -34,6 +35,8 @@ use nautilus_model::{
     enums::{AccountType, BookType, OmsType},
     identifiers::{InstrumentId, Venue},
     instruments::any::InstrumentAny,
+    orderbook::book::OrderBook,
+    orders::any::PassiveOrderAny,
     types::{currency::Currency, money::Money, price::Price},
 };
 use rust_decimal::Decimal;
@@ -146,7 +149,7 @@ impl SimulatedExchange {
         for matching_engine in self.matching_engines.values_mut() {
             matching_engine.set_fill_model(fill_model.clone());
             log::info!(
-                "Changed fill model for {} to {}",
+                "Setting fill model for {} to {}",
                 matching_engine.venue,
                 self.fill_model
             );
@@ -154,8 +157,9 @@ impl SimulatedExchange {
         self.fill_model = fill_model;
     }
 
-    pub fn set_latency_model(&mut self, _latency_model: LatencyModel) {
-        todo!("set latency model")
+    pub fn set_latency_model(&mut self, latency_model: LatencyModel) {
+        self.latency_model = latency_model;
+        log::info!("Setting latency model to {}", self.latency_model);
     }
 
     pub fn initialize_account(&mut self, _account_id: u64) {
@@ -225,36 +229,75 @@ impl SimulatedExchange {
             .and_then(super::matching_engine::OrderMatchingEngine::best_ask_price)
     }
 
-    pub fn get_book(&self, _instrument_id: InstrumentId) {
-        todo!("best bid qty")
+    pub fn get_book(&self, instrument_id: InstrumentId) -> Option<&OrderBook> {
+        self.matching_engines
+            .get(&instrument_id)
+            .map(super::matching_engine::OrderMatchingEngine::get_book)
     }
 
-    pub fn get_matching_engine(&self, _instrument_id: InstrumentId) {
-        todo!("get matching engine")
+    pub fn get_matching_engine(&self, instrument_id: InstrumentId) -> Option<&OrderMatchingEngine> {
+        self.matching_engines.get(&instrument_id)
     }
 
-    pub fn get_matching_engines(&self) {
-        todo!("get matching engines")
+    pub fn get_matching_engines(&self) -> &HashMap<InstrumentId, OrderMatchingEngine> {
+        &self.matching_engines
     }
 
-    pub fn get_books(&self) {
-        todo!("get books")
+    pub fn get_books(&self) -> HashMap<InstrumentId, OrderBook> {
+        let mut books = HashMap::new();
+        for (instrument_id, matching_engine) in &self.matching_engines {
+            books.insert(*instrument_id, matching_engine.get_book().clone());
+        }
+        books
     }
 
-    pub fn get_open_orders(&self, _instrument_id: Option<InstrumentId>) {
-        todo!("get open orders")
+    pub fn get_open_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<PassiveOrderAny> {
+        instrument_id
+            .and_then(|id| {
+                self.matching_engines
+                    .get(&id)
+                    .map(|engine| engine.get_open_orders())
+            })
+            .unwrap_or_else(|| {
+                self.matching_engines
+                    .values()
+                    .flat_map(|engine| engine.get_open_orders())
+                    .collect()
+            })
     }
 
-    pub fn get_open_bid_orders(&self, _instrument_id: Option<InstrumentId>) {
-        todo!("get open bid orders")
+    pub fn get_open_bid_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<PassiveOrderAny> {
+        instrument_id
+            .and_then(|id| {
+                self.matching_engines
+                    .get(&id)
+                    .map(|engine| engine.get_open_bid_orders().to_vec())
+            })
+            .unwrap_or_else(|| {
+                self.matching_engines
+                    .values()
+                    .flat_map(|engine| engine.get_open_bid_orders().to_vec())
+                    .collect()
+            })
     }
 
-    pub fn get_open_ask_orders(&self, _instrument_id: Option<InstrumentId>) {
-        todo!("get open ask orders")
+    pub fn get_open_ask_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<PassiveOrderAny> {
+        instrument_id
+            .and_then(|id| {
+                self.matching_engines
+                    .get(&id)
+                    .map(|engine| engine.get_open_ask_orders().to_vec())
+            })
+            .unwrap_or_else(|| {
+                self.matching_engines
+                    .values()
+                    .flat_map(|engine| engine.get_open_ask_orders().to_vec())
+                    .collect()
+            })
     }
 
-    pub fn get_account(&self) {
-        todo!("get account")
+    pub fn get_account(&self) -> Option<AccountAny> {
+        self.exec_client.as_ref().map(|client| client.get_account())
     }
 
     pub fn adjust_account(&mut self, _adjustment: Money) {
