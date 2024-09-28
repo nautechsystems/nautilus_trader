@@ -68,9 +68,9 @@ def get_polymarket_http_client(
     signature_type : int, default 0 (EOA)
         The Polymarket signature type.
     private_key : str, optional
-        The private key for the client.
+        The private key for the wallet on the **Polygon** network.
     funder : str, optional
-        The Polymarket USDC wallet address for the client.
+        The wallet address (public key) on the **Polygon** network used for funding USDC.
 
     Returns
     -------
