@@ -1,4 +1,4 @@
-use std::{cmp::max, collections::VecDeque};
+use std::{cell::RefCell, cmp::max, collections::VecDeque, rc::Rc};
 
 use nautilus_core::nanos::UnixNanos;
 
@@ -22,7 +22,7 @@ pub struct InnerThrottler<T, F> {
     /// The interval between messages in nanoseconds.
     interval: u64,
     /// The clock used to keep track of time.
-    pub clock: Box<dyn Clock>,
+    pub clock: Rc<RefCell<dyn Clock>>,
     /// The name of the timer.
     timer_name: String,
     /// The callback to send a message.
@@ -36,7 +36,7 @@ impl<T, F> InnerThrottler<T, F> {
     pub fn new(
         limit: usize,
         interval: u64,
-        clock: Box<dyn Clock>,
+        clock: Rc<RefCell<dyn Clock>>,
         timer_name: String,
         output_send: F,
         output_drop: Option<F>,
@@ -59,12 +59,16 @@ impl<T, F> InnerThrottler<T, F> {
 
     #[inline]
     pub fn set_timer(&mut self, callback: Option<TimeEventCallback>) {
+        let delta = self.delta_next();
+        let mut clock = self.clock.borrow_mut();
         // Cancel any existing timer
-        self.clock.cancel_timer(&self.timer_name);
-        let alert_ts = self.clock.timestamp_ns() + self.delta_next();
+        if clock.timer_names().contains(&self.timer_name.as_str()) {
+            clock.cancel_timer(&self.timer_name);
+        }
+        // self.clock.cancel_timer(&self.timer_name);
+        let alert_ts = clock.timestamp_ns() + delta;
 
-        self.clock
-            .set_time_alert_ns(&self.timer_name, alert_ts, callback);
+        clock.set_time_alert_ns(&self.timer_name, alert_ts, callback);
     }
 
     #[inline]
@@ -74,7 +78,7 @@ impl<T, F> InnerThrottler<T, F> {
         }
         self.warm = true;
 
-        let diff = self.clock.timestamp_ns().as_u64()
+        let diff = self.clock.borrow().timestamp_ns().as_u64()
             - self
                 .timestamps
                 .back()
@@ -101,14 +105,14 @@ impl<T, F> InnerThrottler<T, F> {
         let diff = max(
             0,
             self.interval as i64
-                - (self.clock.timestamp_ns().as_i64() - self.timestamps.back().unwrap().as_i64()),
+                - (self.clock.borrow().timestamp_ns().as_i64()
+                    - self.timestamps.back().unwrap().as_i64()),
         );
         let mut used = diff as f64 / self.interval as f64;
 
         if !self.warm {
             used *= self.sent_count as f64 / self.limit as f64;
         }
-
         used
     }
 
@@ -126,7 +130,10 @@ where
 {
     #[inline]
     pub fn send_msg(&mut self, msg: T) {
-        let ts = self.clock.timestamp_ns();
+        let ts = {
+            let clock = self.clock.borrow();
+            clock.timestamp_ns()
+        };
         self.timestamps.push_front(ts);
         (self.output_send)(msg);
         self.sent_count += 1;
