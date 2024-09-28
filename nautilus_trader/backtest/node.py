@@ -134,7 +134,7 @@ class BacktestNode:
         """
         return list(self._engines.values())
 
-    def run(self) -> list[BacktestResult]:
+    def run(self, raise_exception=False) -> list[BacktestResult]:
         """
         Run the backtest node which will synchronously execute the list of loaded
         backtest run configs.
@@ -168,6 +168,9 @@ class BacktestNode:
                 log = Logger(type(self).__name__)
                 log.error(f"Error running backtest: {e}")
                 log.info(f"Config: {config}")
+
+                if raise_exception:
+                    raise e
 
         return results
 
@@ -346,9 +349,10 @@ class BacktestNode:
                 # TODO: Temporary hack - improve bars config and decide implementation with `filter_expr`
                 assert config.instrument_id, "No `instrument_id` for Bar data config"
                 assert config.bar_spec, "No `bar_spec` for Bar data config"
-                bar_type = config.instrument_id + "-" + config.bar_spec + "-EXTERNAL"
+                bar_type = f"{config.instrument_id}-{config.bar_spec}-EXTERNAL"
             else:
                 bar_type = None
+
             session = catalog.backend_session(
                 data_cls=config.data_type,
                 instrument_ids=(

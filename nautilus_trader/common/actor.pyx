@@ -2869,6 +2869,25 @@ cdef class Actor(Component):
     # -- GREEKS ---------------------------------------------------------------------------------------
 
     def instrument_greeks_data(self, InstrumentId instrument_id) -> GreeksData:
+        """
+        Retrieve the Greeks data for a given instrument.
+
+        This method handles both options and futures instruments. For options,
+        it retrieves the Greeks data from the cache. For futures, it creates
+        a GreeksData object based on the instrument's delta and multiplier.
+
+        Parameters
+        ----------
+        instrument_id : InstrumentId
+            The identifier of the instrument for which to retrieve Greeks data.
+
+        Returns
+        -------
+        GreeksData
+            The Greeks data for the specified instrument, including vol, price, delta, gamma, vega, theta.
+        """
+
+
         # option case, to avoid querying definition
         if ' ' in instrument_id.symbol.value:
             return GreeksData.from_bytes(self.cache.get(greeks_key(instrument_id)))
@@ -2883,6 +2902,32 @@ cdef class Actor(Component):
     def portfolio_greeks(self, str underlying = "", Venue venue = None, InstrumentId instrument_id = None,
                          StrategyId strategy_id = None,
                          PositionSide side = PositionSide.NO_POSITION_SIDE) -> PortfolioGreeks:
+        """
+        Calculate the portfolio Greeks for a given set of positions.
+
+        This method aggregates the Greeks data for all open positions that match the specified criteria.
+
+        Parameters
+        ----------
+        underlying : str, optional
+            The underlying asset symbol to filter positions. If provided, only positions with instruments
+            starting with this symbol will be included. Default is an empty string (no filtering).
+        venue : Venue, optional
+            The venue to filter positions. If provided, only positions from this venue will be included.
+        instrument_id : InstrumentId, optional
+            The instrument ID to filter positions. If provided, only positions for this instrument will be included.
+        strategy_id : StrategyId, optional
+            The strategy ID to filter positions. If provided, only positions for this strategy will be included.
+        side : PositionSide, optional
+            The position side to filter. If provided, only positions with this side will be included.
+            Default is PositionSide.NO_POSITION_SIDE (no filtering).
+
+        Returns
+        -------
+        PortfolioGreeks
+            The aggregated Greeks data for the portfolio, including delta, gamma, vega, theta.
+        """
+
         ts_event = self.clock.timestamp_ns()
         portfolio_greeks = PortfolioGreeks(ts_event, ts_event)
         open_positions = self.cache.positions_open(venue, instrument_id, strategy_id, side)
@@ -2893,7 +2938,7 @@ cdef class Actor(Component):
             if underlying != "" and not position_instrument_id.value.startswith(underlying):
                 continue
 
-            quantity = int(position.signed_qty)
+            quantity = float(position.signed_qty)
             instrument_greeks = self.instrument_greeks_data(position_instrument_id)
             position_greeks = quantity * instrument_greeks
             portfolio_greeks += position_greeks
