@@ -17,6 +17,7 @@ Provide a dYdX streaming WebSocket client.
 """
 
 import asyncio
+from collections.abc import Awaitable
 from collections.abc import Callable
 from typing import Any
 
@@ -53,6 +54,7 @@ class DYDXWebsocketClient:
         clock: LiveClock,
         base_url: str,
         handler: Callable[[bytes], None],
+        handler_reconnect: Callable[..., Awaitable[None]] | None,
         loop: asyncio.AbstractEventLoop,
     ) -> None:
         """
@@ -62,10 +64,33 @@ class DYDXWebsocketClient:
         self._log: Logger = Logger(name=type(self).__name__)
         self._base_url: str = base_url
         self._handler: Callable[[bytes], None] = handler
+        self._handler_reconnect: Callable[..., Awaitable[None]] | None = handler_reconnect
         self._loop = loop
         self._client: WebSocketClient | None = None
         self._is_running = False
         self._subscriptions: set[tuple[str, str]] = set()
+
+    def is_connected(self) -> bool:
+        """
+        Return whether the client is connected.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._client is not None and self._client.is_alive()
+
+    def is_disconnected(self) -> bool:
+        """
+        Return whether the client is disconnected.
+
+        Returns
+        -------
+        bool
+
+        """
+        return not self.is_connected()
 
     @property
     def subscriptions(self) -> set[tuple[str, str]]:
@@ -123,6 +148,9 @@ class DYDXWebsocketClient:
 
         # Re-subscribe to all streams
         self._loop.create_task(self._subscribe_all())
+
+        if self._handler_reconnect:
+            self._loop.create_task(self._handler_reconnect())  # type: ignore
 
     async def disconnect(self) -> None:
         """

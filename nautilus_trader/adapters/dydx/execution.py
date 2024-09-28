@@ -231,6 +231,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         self._ws_client = DYDXWebsocketClient(
             clock=clock,
             handler=self._handle_ws_message,
+            handler_reconnect=None,
             base_url=base_url_ws,
             loop=loop,
         )
