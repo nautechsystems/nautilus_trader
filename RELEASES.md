@@ -12,6 +12,7 @@ None
 None
 
 ### Fixes
+- Fixed `Condition` method name collisions with C `true` and `false` macros, which occurred during compilation in profiling mode
 - Fixed OKX HTTP client signatures (#1966), thanks @miller-moore
 
 ---

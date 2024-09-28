@@ -1021,7 +1021,7 @@ cdef class Cache(CacheFacade):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.true(instrument_id.is_synthetic(), "instrument_id was not a synthetic")
+        Condition.is_true(instrument_id.is_synthetic(), "instrument_id was not a synthetic")
 
         cdef SyntheticInstrument synthetic = self._synthetics.get(instrument_id)
         if synthetic is None and self._database is not None:
@@ -2568,7 +2568,7 @@ cdef class Cache(CacheFacade):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.true(instrument_id.is_synthetic(), "instrument_id was not a synthetic")
+        Condition.is_true(instrument_id.is_synthetic(), "instrument_id was not a synthetic")
 
         return self._synthetics.get(instrument_id)
 

@@ -630,7 +630,7 @@ cdef class BacktestEngine:
             first = data[0]
 
             if hasattr(first, "instrument_id"):
-                Condition.true(
+                Condition.is_true(
                     first.instrument_id in self.kernel.cache.instrument_ids(),
                     f"`Instrument` {first.instrument_id} for the given data not found in the cache. "
                     "Add the instrument through `add_instrument()` prior to adding related data.",
@@ -639,7 +639,7 @@ cdef class BacktestEngine:
                 self._add_market_data_client_if_not_exists(first.instrument_id.venue)
                 data_added_str = f"{first.instrument_id} {type(first).__name__}"
             elif isinstance(first, Bar):
-                Condition.true(
+                Condition.is_true(
                     first.bar_type.instrument_id in self.kernel.cache.instrument_ids(),
                     f"`Instrument` {first.bar_type.instrument_id} for the given data not found in the cache. "
                     "Add the instrument through `add_instrument()` prior to adding related data.",
@@ -1019,7 +1019,7 @@ cdef class BacktestEngine:
         else:
             end = pd.to_datetime(end, utc=True)
             end_ns = end.value
-        Condition.true(start_ns < end_ns, "start was >= end")
+        Condition.is_true(start_ns < end_ns, "start was >= end")
         Condition.not_empty(self._data, "data")
 
         # Set clocks

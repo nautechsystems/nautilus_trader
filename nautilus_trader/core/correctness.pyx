@@ -33,7 +33,7 @@ cdef class Condition:
     """
 
     @staticmethod
-    cdef void true(bint predicate, str fail_msg, ex_type = None):
+    cdef void is_true(bint predicate, str fail_msg, ex_type = None):
         """
         Check the condition predicate is True.
 
@@ -62,7 +62,7 @@ cdef class Condition:
         )
 
     @staticmethod
-    cdef void false(bint predicate, str fail_msg, ex_type = None):
+    cdef void is_false(bint predicate, str fail_msg, ex_type = None):
         """
         Check the condition predicate is False.
 
@@ -807,7 +807,7 @@ cdef class Condition:
 class PyCondition:
 
     @staticmethod
-    def true(bint predicate, str fail_msg, ex_type = None):
+    def is_true(bint predicate, str fail_msg, ex_type = None):
         """
         Check the condition predicate is True.
 
@@ -826,10 +826,10 @@ class PyCondition:
             If `predicate` condition is False.
 
         """
-        Condition.true(predicate, fail_msg, ex_type)
+        Condition.is_true(predicate, fail_msg, ex_type)
 
     @staticmethod
-    def false(bint predicate, str fail_msg, ex_type = None):
+    def is_false(bint predicate, str fail_msg, ex_type = None):
         """
         Check the condition predicate is False.
 
@@ -848,7 +848,7 @@ class PyCondition:
             If `predicate` condition is True.
 
         """
-        Condition.false(predicate, fail_msg, ex_type)
+        Condition.is_false(predicate, fail_msg, ex_type)
 
     @staticmethod
     def none(argument, str param, ex_type = None):

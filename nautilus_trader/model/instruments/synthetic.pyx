@@ -101,8 +101,8 @@ cdef class SyntheticInstrument(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     ):
-        Condition.true(price_precision <= 9, f"invalid `price_precision` greater than max 9, was {price_precision}")
-        Condition.true(len(components) >= 2, "There must be at least two component instruments")
+        Condition.is_true(price_precision <= 9, f"invalid `price_precision` greater than max 9, was {price_precision}")
+        Condition.is_true(len(components) >= 2, "There must be at least two component instruments")
         Condition.list_type(components, InstrumentId, "components")
         Condition.valid_string(formula, "formula")
 

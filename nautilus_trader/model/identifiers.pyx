@@ -597,7 +597,7 @@ cdef class StrategyId(Identifier):
 
     def __init__(self, str value) -> None:
         Condition.valid_string(value, "value")
-        Condition.true(value == "EXTERNAL" or "-" in value, "value was malformed: did not contain a hyphen '-'")
+        Condition.is_true(value == "EXTERNAL" or "-" in value, "value was malformed: did not contain a hyphen '-'")
 
         self._mem = strategy_id_new(pystr_to_cstr(value))
 
@@ -724,7 +724,7 @@ cdef class AccountId(Identifier):
 
     def __init__(self, str value not None) -> None:
         Condition.valid_string(value, "value")
-        Condition.true("-" in value, "value was malformed: did not contain a hyphen '-'")
+        Condition.is_true("-" in value, "value was malformed: did not contain a hyphen '-'")
         self._mem = account_id_new(pystr_to_cstr(value))
 
     def __getstate__(self):

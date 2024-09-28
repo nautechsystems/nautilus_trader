@@ -70,7 +70,7 @@ class ForexSessionFilter:
 
         """
         PyCondition.type(session, ForexSession, "session")
-        PyCondition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
+        PyCondition.is_true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
         if session == ForexSession.SYDNEY:
             return time_now.astimezone(self._tz_sydney)
@@ -116,7 +116,7 @@ class ForexSessionFilter:
 
         """
         PyCondition.type(session, ForexSession, "session")
-        PyCondition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
+        PyCondition.is_true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
         local_now: datetime = self.local_from_utc(session, time_now)
         next_start: datetime | None = None
@@ -184,7 +184,7 @@ class ForexSessionFilter:
 
         """
         PyCondition.type(session, ForexSession, "session")
-        PyCondition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
+        PyCondition.is_true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
         local_now: datetime = self.local_from_utc(session, time_now)
         prev_start: datetime | None = None
@@ -252,7 +252,7 @@ class ForexSessionFilter:
 
         """
         PyCondition.type(session, ForexSession, "session")
-        PyCondition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
+        PyCondition.is_true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
         local_now: datetime = self.local_from_utc(session, time_now)
         next_end: datetime | None = None
@@ -320,7 +320,7 @@ class ForexSessionFilter:
 
         """
         PyCondition.type(session, ForexSession, "session")
-        PyCondition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
+        PyCondition.is_true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
         local_now: datetime = self.local_from_utc(session, time_now)
         prev_end: datetime | None = None
@@ -524,7 +524,7 @@ class EconomicNewsEventFilter:
             If `time_now` is not tz aware UTC.
 
         """
-        PyCondition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
+        PyCondition.is_true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
         if time_now < self._unfiltered_data_start:
             raise ValueError(
@@ -579,7 +579,7 @@ class EconomicNewsEventFilter:
             If `time_now` is not tz aware UTC.
 
         """
-        PyCondition.true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
+        PyCondition.is_true(is_datetime_utc(time_now), "time_now was not tz aware UTC")
 
         if time_now < self._unfiltered_data_start:
             raise ValueError(

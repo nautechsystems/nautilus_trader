@@ -301,7 +301,7 @@ class BybitExecutionClient(LiveExecutionClient):
         client_order_id: ClientOrderId | None = None,
         venue_order_id: VenueOrderId | None = None,
     ) -> OrderStatusReport | None:
-        PyCondition.false(
+        PyCondition.is_false(
             client_order_id is None and venue_order_id is None,
             "both `client_order_id` and `venue_order_id` were `None`",
         )
