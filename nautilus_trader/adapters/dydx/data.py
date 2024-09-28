@@ -216,7 +216,7 @@ class DYDXDataClient(LiveMarketDataClient):
         """
         async with self._resubscribe_orderbook_lock:
             for symbol in self._orderbook_subscriptions:
-                await self._ws_client.unsubscribe_order_book(symbol)
+                await self._ws_client.unsubscribe_order_book(symbol, remove_subscription=False)
                 await self._ws_client.subscribe_order_book(symbol)
 
     def _send_all_instruments_to_data_engine(self) -> None:

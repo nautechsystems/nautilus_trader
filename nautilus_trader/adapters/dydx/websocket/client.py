@@ -299,7 +299,7 @@ class DYDXWebsocketClient:
         msg = {"type": "unsubscribe", "channel": "v4_trades", "id": symbol}
         await self._send(msg)
 
-    async def unsubscribe_order_book(self, symbol: str) -> None:
+    async def unsubscribe_order_book(self, symbol: str, remove_subscription: bool = True) -> None:
         """
         Unsubscribe to trades messages.
         """
@@ -312,7 +312,9 @@ class DYDXWebsocketClient:
             self._log.warning(f"Cannot unsubscribe '{subscription}': not subscribed")
             return
 
-        self._subscriptions.remove(subscription)
+        if remove_subscription:
+            self._subscriptions.remove(subscription)
+
         msg = {"type": "unsubscribe", "channel": "v4_orderbook", "id": symbol}
         await self._send(msg)
 
