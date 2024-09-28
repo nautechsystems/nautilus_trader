@@ -333,8 +333,32 @@ impl SimulatedExchange {
         }
     }
 
-    pub fn process_bar(&mut self, _bar: Bar) {
-        todo!("process bar")
+    pub fn process_bar(&mut self, bar: Bar) {
+        for module in &self.modules {
+            module.pre_process(Data::Bar(bar.to_owned()));
+        }
+
+        if !self.matching_engines.contains_key(&bar.instrument_id()) {
+            let instrument = {
+                let cache = self.cache.as_ref().borrow();
+                cache.instrument(&bar.instrument_id()).cloned()
+            };
+
+            if let Some(instrument) = instrument {
+                self.add_instrument(instrument).unwrap();
+            } else {
+                panic!(
+                    "No matching engine found for instrument {}",
+                    bar.instrument_id()
+                );
+            }
+        }
+
+        if let Some(matching_engine) = self.matching_engines.get_mut(&bar.instrument_id()) {
+            matching_engine.process_bar(&bar);
+        } else {
+            panic!("Matching engine should be initialized");
+        }
     }
 
     pub fn process_instrument_status(&mut self, _status: InstrumentStatus) {
@@ -368,7 +392,11 @@ mod tests {
     use nautilus_common::{cache::Cache, msgbus::MessageBus};
     use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
     use nautilus_model::{
-        data::{quote::QuoteTick, trade::TradeTick},
+        data::{
+            bar::{Bar, BarType},
+            quote::QuoteTick,
+            trade::TradeTick,
+        },
         enums::{AccountType, AggressorSide, BookType, OmsType},
         identifiers::{TradeId, Venue},
         instruments::{
@@ -498,5 +526,80 @@ mod tests {
         assert_eq!(best_bid_price, Some(Price::from("1000")));
         let best_ask = exchange.best_ask_price(crypto_perpetual_ethusdt.id);
         assert_eq!(best_ask, Some(Price::from("1000")));
+    }
+
+    #[rstest]
+    fn test_exchange_process_bar_last_bar_spec(crypto_perpetual_ethusdt: CryptoPerpetual) {
+        let mut exchange: SimulatedExchange =
+            get_exchange(Venue::new("BINANCE"), AccountType::Margin, BookType::L1_MBP);
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+
+        // register instrument
+        exchange.add_instrument(instrument).unwrap();
+
+        // process bar
+        let bar = Bar::new(
+            BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL"),
+            Price::from("1500.00"),
+            Price::from("1505.00"),
+            Price::from("1490.00"),
+            Price::from("1502.00"),
+            Quantity::from(100),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        exchange.process_bar(bar);
+
+        // this will be processed as ticks so both bid and ask will be the same as close of the bar
+        let best_bid_price = exchange.best_bid_price(crypto_perpetual_ethusdt.id);
+        assert_eq!(best_bid_price, Some(Price::from("1502.00")));
+        let best_ask_price = exchange.best_ask_price(crypto_perpetual_ethusdt.id);
+        assert_eq!(best_ask_price, Some(Price::from("1502.00")));
+    }
+
+    #[rstest]
+    fn test_exchange_process_bar_bid_ask_bar_spec(crypto_perpetual_ethusdt: CryptoPerpetual) {
+        let mut exchange: SimulatedExchange =
+            get_exchange(Venue::new("BINANCE"), AccountType::Margin, BookType::L1_MBP);
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+
+        // register instrument
+        exchange.add_instrument(instrument).unwrap();
+
+        // create both bid and ask based bars
+        // add +1 on ask to make sure it is different from bid
+        let bar_bid = Bar::new(
+            BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-BID-EXTERNAL"),
+            Price::from("1500.00"),
+            Price::from("1505.00"),
+            Price::from("1490.00"),
+            Price::from("1502.00"),
+            Quantity::from(100),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        )
+        .unwrap();
+        let bar_ask = Bar::new(
+            BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-ASK-EXTERNAL"),
+            Price::from("1501.00"),
+            Price::from("1506.00"),
+            Price::from("1491.00"),
+            Price::from("1503.00"),
+            Quantity::from(100),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        )
+        .unwrap();
+
+        // process them
+        exchange.process_bar(bar_bid);
+        exchange.process_bar(bar_ask);
+
+        // current bid and ask prices will be the corresponding close of the ask and bid bar
+        let best_bid_price = exchange.best_bid_price(crypto_perpetual_ethusdt.id);
+        assert_eq!(best_bid_price, Some(Price::from("1502.00")));
+        let best_ask_price = exchange.best_ask_price(crypto_perpetual_ethusdt.id);
+        assert_eq!(best_ask_price, Some(Price::from("1503.00")));
     }
 }
