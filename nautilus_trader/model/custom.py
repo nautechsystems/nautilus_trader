@@ -19,8 +19,8 @@ from typing import Any
 import msgspec
 import pyarrow as pa
 
-from nautilus_trader.core.datetime import format_iso8601
 from nautilus_trader.core.datetime import unix_nanos_to_dt
+from nautilus_trader.core.datetime import unix_nanos_to_str
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.serialization.arrow.serializer import register_arrow
 from nautilus_trader.serialization.base import register_serializable_type
@@ -57,8 +57,8 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
             def __repr__(self):
                 repr = self.fields_repr()
                 time_repr = (
-                    f", ts_event={format_iso8601(unix_nanos_to_dt(self._ts_event))}, "
-                    + f"ts_init={format_iso8601(unix_nanos_to_dt(self._ts_init))})"
+                    f", ts_event={unix_nanos_to_str(self._ts_event)}, "
+                    + f"ts_init={unix_nanos_to_str(self._ts_init)})"
                 )
 
                 return repr[:-1] + time_repr
@@ -152,6 +152,7 @@ def customdataclass(*args, **kwargs):  # noqa: C901 (too complex)
                 "float": pa.float64(),
                 "int": pa.int64(),
                 "bytes": pa.binary(),
+                "ndarray": pa.binary(),
             }
 
             cls._schema = pa.schema(

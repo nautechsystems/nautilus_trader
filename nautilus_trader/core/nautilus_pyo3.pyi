@@ -9,6 +9,8 @@ from enum import Enum
 from os import PathLike
 from typing import Any, TypeAlias, Union
 
+import numpy as np
+
 from nautilus_trader.core.data import Data
 
 # Python Interface typing:
@@ -3961,6 +3963,81 @@ def ed25519_signature(private_key: bytes, data: str) -> str: ...
 
 # Greeks
 
+class BlackScholesGreeksResult:
+    price: float
+    delta: float
+    gamma: float
+    vega: float
+    theta: float
+
+class ImplyVolAndGreeksResult:
+    vol: float
+    price: float
+    delta: float
+    gamma: float
+    vega: float
+    theta: float
+
+
+def black_scholes_greeks(s: float, r: float, b: float, sigma: float, is_call: bool, k: float, t: float,
+                         multiplier: float) -> BlackScholesGreeksResult:
+    """
+    Calculate the Black-Scholes Greeks for a given option contract.
+
+    Args:
+        s (float): The current price of the underlying asset.
+        r (float): The risk-free interest rate.
+        b (float): The cost of carry of the underlying asset.
+        sigma (float): The volatility of the underlying asset.
+        is_call (bool): Whether the option is a call (True) or a put (False).
+        k (float): The strike price of the option.
+        t (float): The time to expiration of the option in years.
+        multiplier (float): The multiplier for the option contract.
+
+    Returns:
+        BlackScholesGreeksResult: A named tuple containing the calculated option price, delta, gamma, vega, and theta.
+    """
+
+
+def imply_vol(s: float, r: float, b: float, is_call: bool, k: float, t: float, price: float) -> float:
+    """
+    Calculate the implied volatility and Greeks for an option contract.
+
+    Args:
+        s (float): The current price of the underlying asset.
+        r (float): The risk-free interest rate.
+        b (float): The cost of carry of the underlying asset.
+        is_call (bool): Whether the option is a call (True) or a put (False).
+        k (float): The strike price of the option.
+        t (float): The time to expiration of the option in years.
+        price (float): The current market price of the option.
+        multiplier (float): The multiplier for the option contract.
+
+    Returns:
+        float: An implied volatility value.
+    """
+
+
+def imply_vol_and_greeks(s: float, r: float, b: float, is_call: bool, k: float, t: float,
+                         price: float, multiplier: float) -> ImplyVolAndGreeksResult :
+    """
+    Calculate the implied volatility and Greeks for an option contract.
+
+    Args:
+        s (float): The current price of the underlying asset.
+        r (float): The risk-free interest rate.
+        b (float): The cost of carry of the underlying asset.
+        is_call (bool): Whether the option is a call (True) or a put (False).
+        k (float): The strike price of the option.
+        t (float): The time to expiration of the option in years.
+        price (float): The current market price of the option.
+        multiplier (float): The multiplier for the option contract.
+
+    Returns:
+        ImplyVolAndGreeksResult: A named tuple containing the calculated implied volatility, option price, delta, gamma, vega, and theta.
+    """
+
+
 class GreeksData(Data):
     instrument_id: InstrumentId
     is_call: bool
@@ -4015,6 +4092,34 @@ class PortfolioGreeks(Data):
         gamma: float = 0.0,
         vega: float = 0.0,
         theta: float = 0.0,
+    ): ...
+
+
+class InterestRateData(Data):
+    curve_name: str
+    interest_rate: float
+
+    def __init__(
+            self,
+            ts_event: int = 0,
+            ts_init: int = 0,
+            curve_name: str = "USD",
+            interest_rate: float = 0.05,
+    ): ...
+
+
+class InterestRateCurveData(Data):
+    curve_name: str
+    tenors: np.ndarray
+    interest_rates: np.ndarray
+
+    def __init__(
+            self,
+            ts_event: int,
+            ts_init: int,
+            curve_name: str,
+            tenors: np.ndarray,
+            interest_rates: np.ndarray,
     ): ...
 
 ###################################################################################################
