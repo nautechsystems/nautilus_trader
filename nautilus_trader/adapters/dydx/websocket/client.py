@@ -22,6 +22,7 @@ from collections.abc import Callable
 from typing import Any
 
 import msgspec
+import pandas as pd
 
 from nautilus_trader.adapters.dydx.common.enums import DYDXCandlesResolution
 from nautilus_trader.common.component import LiveClock
@@ -69,6 +70,13 @@ class DYDXWebsocketClient:
         self._client: WebSocketClient | None = None
         self._is_running = False
         self._subscriptions: set[tuple[str, str]] = set()
+
+        # Every 30 seconds, the dYdX websocket API will send a heartbeat ping control
+        # frame to the connected client. If a pong event is not received within 10
+        # seconds back, the websocket API will disconnect.
+        self._ping_timestamp: pd.Timestamp | None = None
+        self._ping_interval_secs: int = 40
+        self._reconnect_task: asyncio.Task | None = None
 
     def is_connected(self) -> bool:
         """
@@ -125,7 +133,11 @@ class DYDXWebsocketClient:
         self._client = client
         self._log.info(f"Connected to {self._base_url}", LogColor.BLUE)
 
+        if self._reconnect_task is None:
+            self._reconnect_task = self._loop.create_task(self._reconnect_ping())
+
     def _handle_ping(self, raw: bytes) -> None:
+        self._ping_timestamp = self._clock.utc_now()
         self._loop.create_task(self.send_pong(raw))
 
     async def send_pong(self, raw: bytes) -> None:
@@ -136,6 +148,34 @@ class DYDXWebsocketClient:
             return
 
         await self._client.send_pong(raw)
+
+    async def _reconnect_ping(self) -> None:
+        """
+        Reconnect the websocket client when a ping message has not been received.
+        """
+        try:
+            while True:
+                self._log.debug(
+                    f"Scheduled `reconnect_ping` to run in {self._ping_interval_secs}s",
+                )
+                await asyncio.sleep(self._ping_interval_secs)
+
+                now_timestamp = self._clock.utc_now()
+                time_since_previous_ping = now_timestamp - self._ping_timestamp
+
+                if self._ping_timestamp is not None and time_since_previous_ping > pd.Timedelta(
+                    seconds=self._ping_interval_secs,
+                ):
+                    try:
+                        await self.disconnect()
+                        await self.connect()
+                        self.reconnect()
+                    except Exception as e:
+                        self._log.error(f"Failed to connect the websocket: {e}")
+                        self._client = None
+
+        except asyncio.CancelledError:
+            self._log.debug("Canceled `reconnect_ping` task")
 
     def reconnect(self) -> None:
         """
