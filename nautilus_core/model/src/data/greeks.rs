@@ -60,7 +60,7 @@ pub fn black_scholes_greeks(
     let theta = multiplier
         * (s_t * (-dist_d1 * sigma / (2.0 * t.sqrt()) - phi * (b - r) * cdf_phi_d1)
             - phi * r * k_t * cdf_phi_d2)
-        * 0.0027397260273972603; // 1/ 365. in change per calendar day
+        * 0.0027378507871321013; // 1 / 365.25 in change per calendar day
 
     BlackScholesGreeksResult {
         price,
@@ -141,7 +141,7 @@ fn test_greeks_accuracy_call() {
     let theta_bnr = (black_scholes_greeks(s, r, b, sigma, is_call, k, t - eps, 1.0).price
         - black_scholes_greeks(s, r, b, sigma, is_call, k, t + eps, 1.0).price)
         / (2.0 * eps)
-        / 365.0;
+        / 365.25;
 
     let tolerance = 1e-5;
     assert!(
@@ -186,7 +186,7 @@ fn test_greeks_accuracy_put() {
     let theta_bnr = (black_scholes_greeks(s, r, b, sigma, is_call, k, t - eps, 1.0).price
         - black_scholes_greeks(s, r, b, sigma, is_call, k, t + eps, 1.0).price)
         / (2.0 * eps)
-        / 365.0;
+        / 365.25;
 
     let tolerance = 1e-5;
     assert!(
@@ -225,7 +225,7 @@ fn test_imply_vol_and_greeks_accuracy_call() {
     let tolerance = 1e-5;
     assert!(
         (implied_result.vol - sigma).abs() < tolerance,
-        "Implied volatility difference exceeds tolerance"
+        "Vol difference exceeds tolerance"
     );
     assert!(
         (implied_result.price - base_greeks.price).abs() < tolerance,
@@ -267,7 +267,7 @@ fn test_imply_vol_and_greeks_accuracy_put() {
     let tolerance = 1e-5;
     assert!(
         (implied_result.vol - sigma).abs() < tolerance,
-        "Implied volatility difference exceeds tolerance"
+        "Vol difference exceeds tolerance"
     );
     assert!(
         (implied_result.price - base_greeks.price).abs() < tolerance,

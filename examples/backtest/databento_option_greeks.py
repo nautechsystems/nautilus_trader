@@ -33,6 +33,8 @@ from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.risk.greeks import GreeksCalculator
 from nautilus_trader.risk.greeks import GreeksCalculatorConfig
+from nautilus_trader.risk.greeks import InterestRateProvider
+from nautilus_trader.risk.greeks import InterestRateProviderConfig
 from nautilus_trader.trading.strategy import Strategy
 
 
@@ -86,6 +88,16 @@ class OptionConfig(StrategyConfig, frozen=True):
 
 
 class OptionStrategy(Strategy):
+    """
+    An options trading strategy that calculates and displays the portfolio greeks.
+
+    The strategy subscribes to quote ticks for two options and a futures contract, and
+    initializes a portfolio with some trades. It can optionally load greeks from a
+    catalog, or compute them on the fly. The strategy logs the portfolio greeks at
+    regular intervals.
+
+    """
+
     def __init__(self, config: OptionConfig):
         super().__init__(config=config)
 
@@ -172,6 +184,12 @@ actors = [
         config_path=GreeksCalculatorConfig.fully_qualified_name(),
         config={
             "load_greeks": load_greeks,
+        },
+    ),
+    ImportableActorConfig(
+        actor_path=InterestRateProvider.fully_qualified_name(),
+        config_path=InterestRateProviderConfig.fully_qualified_name(),
+        config={
             "interest_rates_file": str(data_path(catalog_folder, "usd_short_term_rate.xml")),
         },
     ),
@@ -219,7 +237,8 @@ data = [
     BacktestDataConfig(
         data_cls=Bar,
         catalog_path=catalog.path,
-        # instrument_id=InstrumentId.from_str(nautilus_symbol(symbol)),
+        instrument_id=InstrumentId.from_str(f"{future_symbols[0]}.GLBX"),
+        bar_spec="1-MINUTE-LAST",
         # start_time=start_time,
         # end_time=end_time,
     ),
@@ -232,7 +251,7 @@ data = [
 if load_greeks:
     data.append(
         BacktestDataConfig(
-            data_cls="GreeksData",
+            data_cls=GreeksData.fully_qualified_name(),
             catalog_path=catalog.path,
             client_id="GreeksDataProvider",
             metadata={"instrument_id": "ES"},
@@ -254,13 +273,14 @@ configs = [
         engine=engine_config,
         data=data,
         venues=venues,
+        chunk_size=10_000,  # use None when using load_greeks ?
     ),
 ]
 
 node = BacktestNode(configs=configs)
 
 # %%
-results = node.run()
+results = node.run(raise_exception=True)
 
 # %%
 if stream_data:
