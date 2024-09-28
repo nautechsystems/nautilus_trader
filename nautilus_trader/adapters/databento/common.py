@@ -39,7 +39,7 @@ def databento_schema_from_nautilus_bar_type(bar_type: BarType) -> DatabentoSchem
         If any property of `bar_type` is invalid to map to a Databento schema.
 
     """
-    PyCondition.true(bar_type.is_externally_aggregated(), "aggregation_source is not EXTERNAL")
+    PyCondition.is_true(bar_type.is_externally_aggregated(), "aggregation_source is not EXTERNAL")
 
     if not bar_type.spec.is_time_aggregated():
         raise ValueError(

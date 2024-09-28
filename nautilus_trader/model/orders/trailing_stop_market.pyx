@@ -161,10 +161,10 @@ cdef class TrailingStopMarketOrder(Order):
 
         if time_in_force == TimeInForce.GTD:
             # Must have an expire time
-            Condition.true(expire_time_ns > 0, "`expire_time_ns` cannot be <= UNIX epoch.")
+            Condition.is_true(expire_time_ns > 0, "`expire_time_ns` cannot be <= UNIX epoch.")
         else:
             # Should not have an expire time
-            Condition.true(expire_time_ns == 0, "`expire_time_ns` was set when `time_in_force` not GTD.")
+            Condition.is_true(expire_time_ns == 0, "`expire_time_ns` was set when `time_in_force` not GTD.")
 
         # Set options
         cdef dict options = {

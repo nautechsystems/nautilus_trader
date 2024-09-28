@@ -770,10 +770,10 @@ cdef class Strategy(Actor):
         not be what you intended.
 
         """
-        Condition.true(self.trader_id is not None, "The strategy has not been registered")
+        Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
         if order._fsm.state != OrderStatus.INITIALIZED:  # Check predicate first for efficiency
-            Condition.true(
+            Condition.is_true(
                 order.status_c() == OrderStatus.INITIALIZED,
                 f"Invalid order status on submit: expected 'INITIALIZED', was '{order.status_string_c()}'",
             )
@@ -851,7 +851,7 @@ cdef class Strategy(Actor):
         not be what you intended.
 
         """
-        Condition.true(self.trader_id is not None, "The strategy has not been registered")
+        Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order_list, "order_list")
 
         cdef Order order
@@ -961,7 +961,7 @@ cdef class Strategy(Actor):
         https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_G_71.html
 
         """
-        Condition.true(self.trader_id is not None, "The strategy has not been registered")
+        Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
 
         cdef ModifyOrder command = self._create_modify_order(
@@ -995,7 +995,7 @@ cdef class Strategy(Actor):
             If ``None`` then will be inferred from the venue in the instrument ID.
 
         """
-        Condition.true(self.trader_id is not None, "The strategy has not been registered")
+        Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
 
         cdef CancelOrder command = self._create_cancel_order(
@@ -1114,7 +1114,7 @@ cdef class Strategy(Actor):
             If ``None`` then will be inferred from the venue in the instrument ID.
 
         """
-        Condition.true(self.trader_id is not None, "The strategy has not been registered")
+        Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(instrument_id, "instrument_id")
 
         cdef list open_orders = self.cache.orders_open(
@@ -1217,7 +1217,7 @@ cdef class Strategy(Actor):
             Optional, as not all venues support this feature.
 
         """
-        Condition.true(self.trader_id is not None, "The strategy has not been registered")
+        Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(position, "position")
         Condition.not_none(self.trader_id, "self.trader_id")
         Condition.not_none(self.order_factory, "self.order_factory")
@@ -1272,7 +1272,7 @@ cdef class Strategy(Actor):
 
         """
         # instrument_id can be None
-        Condition.true(self.trader_id is not None, "The strategy has not been registered")
+        Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
 
         cdef list positions_open = self.cache.positions_open(
             venue=None,  # Faster query filtering
@@ -1315,7 +1315,7 @@ cdef class Strategy(Actor):
             If ``None`` then will be inferred from the venue in the instrument ID.
 
         """
-        Condition.true(self.trader_id is not None, "The strategy has not been registered")
+        Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
 
         cdef QueryOrder command = QueryOrder(
@@ -1345,7 +1345,7 @@ cdef class Strategy(Actor):
             updating = True
 
         if price is not None:
-            Condition.true(
+            Condition.is_true(
                 order.order_type in LIMIT_ORDER_TYPES,
                 fail_msg=f"{order.type_string_c()} orders do not have a LIMIT price",
             )
@@ -1353,7 +1353,7 @@ cdef class Strategy(Actor):
                 updating = True
 
         if trigger_price is not None:
-            Condition.true(
+            Condition.is_true(
                 order.order_type in STOP_ORDER_TYPES,
                 fail_msg=f"{order.type_string_c()} orders do not have a STOP trigger price",
             )

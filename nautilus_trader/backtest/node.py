@@ -71,7 +71,7 @@ class BacktestNode:
     def __init__(self, configs: list[BacktestRunConfig]):
         PyCondition.not_none(configs, "configs")
         PyCondition.not_empty(configs, "configs")
-        PyCondition.true(
+        PyCondition.is_true(
             all(isinstance(config, BacktestRunConfig) for config in configs),
             "configs",
         )

@@ -172,9 +172,9 @@ cdef class SimulatedExchange:
         Condition.list_type(starting_balances, Money, "starting_balances")
         Condition.list_type(modules, SimulationModule, "modules", "SimulationModule")
         if base_currency:
-            Condition.true(len(starting_balances) == 1, "single-currency account has multiple starting currencies")
+            Condition.is_true(len(starting_balances) == 1, "single-currency account has multiple starting currencies")
         if default_leverage and default_leverage > 1 or leverages:
-            Condition.true(account_type == AccountType.MARGIN, "leverages defined when account type is not `MARGIN`")
+            Condition.is_true(account_type == AccountType.MARGIN, "leverages defined when account type is not `MARGIN`")
 
         self._clock = clock
         self._log = Logger(name=f"{type(self).__name__}({venue})")

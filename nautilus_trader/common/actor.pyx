@@ -791,7 +791,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(synthetic, "synthetic")
-        Condition.true(self.cache.synthetic(synthetic.id) is None, f"`synthetic` {synthetic.id} already exists")
+        Condition.is_true(self.cache.synthetic(synthetic.id) is None, f"`synthetic` {synthetic.id} already exists")
 
         self.cache.add_synthetic(synthetic)
 
@@ -815,7 +815,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(synthetic, "synthetic")
-        Condition.true(self.cache.synthetic(synthetic.id) is not None, f"`synthetic` {synthetic.id} does not exist")
+        Condition.is_true(self.cache.synthetic(synthetic.id) is not None, f"`synthetic` {synthetic.id} does not exist")
 
         # This will replace the previous synthetic
         self.cache.add_synthetic(synthetic)
@@ -1085,7 +1085,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(data_type, "data_type")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
             topic=f"data.{data_type.topic}",
@@ -1119,7 +1119,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(venue, "venue")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
             topic=f"data.instrument.{venue}.*",
@@ -1150,7 +1150,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
             topic=f"data.instrument"
@@ -1204,7 +1204,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         if pyo3_conversion:
             self._pyo3_conversion_types.add(OrderBookDeltas)
@@ -1282,7 +1282,7 @@ cdef class Actor(Component):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_negative(depth, "depth")
         Condition.positive_int(interval_ms, "interval_ms")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         if book_type == BookType.L1_MBP and depth > 1:
             self._log.error(
@@ -1330,7 +1330,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
             topic=f"data.quotes"
@@ -1363,7 +1363,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
             topic=f"data.trades"
@@ -1404,7 +1404,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(bar_type, "bar_type")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
             topic=f"data.bars.{bar_type.standard()}",
@@ -1440,7 +1440,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
             topic=f"data.status.{instrument_id.venue}.{instrument_id.symbol.topic()}",
@@ -1472,7 +1472,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.subscribe(
             topic=f"data.venue.close_price.{instrument_id.to_str()}",
@@ -1503,7 +1503,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(data_type, "data_type")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
             topic=f"data.{data_type.topic}",
@@ -1537,7 +1537,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(venue, "venue")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
             topic=f"data.instrument.{venue}.*",
@@ -1568,7 +1568,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
             topic=f"data.instrument"
@@ -1601,7 +1601,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
             topic=f"data.book.deltas"
@@ -1643,7 +1643,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
             topic=f"data.book.snapshots"
@@ -1680,7 +1680,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
             topic=f"data.quotes"
@@ -1713,7 +1713,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
             topic=f"data.trades"
@@ -1746,7 +1746,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(bar_type, "bar_type")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         standard_bar_type = bar_type.standard()
 
@@ -1780,7 +1780,7 @@ cdef class Actor(Component):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.unsubscribe(
             topic=f"data.status.{instrument_id.venue}.{instrument_id.symbol.topic()}",
@@ -1813,7 +1813,7 @@ cdef class Actor(Component):
         Condition.not_none(data_type, "data_type")
         Condition.not_none(data, "data")
         Condition.type(data, data_type.type, "data", "data.type")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         self._msgbus.publish_c(topic=f"data.{data_type.topic}", msg=data)
 
@@ -1837,7 +1837,7 @@ cdef class Actor(Component):
         Condition.not_none(name, "name")
         Condition.not_none(value, "value")
         Condition.is_in(type(value), (int, float, str), "value", "int, float, str")
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
 
         cdef type cls = self._signal_classes.get(name)
         if cls is None:
@@ -1906,7 +1906,7 @@ cdef class Actor(Component):
             If `callback` is not `None` and not of type `Callable`.
 
         """
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(client_id, "client_id")
         Condition.not_none(data_type, "data_type")
         Condition.callable_or_none(callback, "callback")
@@ -1968,10 +1968,10 @@ cdef class Actor(Component):
             If `callback` is not `None` and not of type `Callable`.
 
         """
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(instrument_id, "instrument_id")
         if start is not None and end is not None:
-            Condition.true(start < end, "start was >= end")
+            Condition.is_true(start < end, "start was >= end")
         Condition.callable_or_none(callback, "callback")
 
         cdef UUID4 request_id = UUID4()
@@ -2035,10 +2035,10 @@ cdef class Actor(Component):
             If `callback` is not `None` and not of type `Callable`.
 
         """
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(venue, "venue")
         if start is not None and end is not None:
-            Condition.true(start < end, "start was >= end")
+            Condition.is_true(start < end, "start was >= end")
         Condition.callable_or_none(callback, "callback")
 
         cdef UUID4 request_id = UUID4()
@@ -2095,7 +2095,7 @@ cdef class Actor(Component):
             If callback is not None and not of type Callable.
 
         """
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(instrument_id, "instrument_id")
         Condition.callable_or_none(callback, "callback")
 
@@ -2159,10 +2159,10 @@ cdef class Actor(Component):
             If `callback` is not `None` and not of type `Callable`.
 
         """
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(instrument_id, "instrument_id")
         if start is not None and end is not None:
-            Condition.true(start < end, "start was >= end")
+            Condition.is_true(start < end, "start was >= end")
         Condition.callable_or_none(callback, "callback")
 
         cdef UUID4 request_id = UUID4()
@@ -2226,10 +2226,10 @@ cdef class Actor(Component):
             If `callback` is not `None` and not of type `Callable`.
 
         """
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(instrument_id, "instrument_id")
         if start is not None and end is not None:
-            Condition.true(start < end, "start was >= end")
+            Condition.is_true(start < end, "start was >= end")
         Condition.callable_or_none(callback, "callback")
 
         cdef UUID4 request_id = UUID4()
@@ -2293,10 +2293,10 @@ cdef class Actor(Component):
             If `callback` is not `None` and not of type `Callable`.
 
         """
-        Condition.true(self.trader_id is not None, "The actor has not been registered")
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(bar_type, "bar_type")
         if start is not None and end is not None:
-            Condition.true(start < end, "start was >= end")
+            Condition.is_true(start < end, "start was >= end")
         Condition.callable_or_none(callback, "callback")
 
         cdef UUID4 request_id = UUID4()

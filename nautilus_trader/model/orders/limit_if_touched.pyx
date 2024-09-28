@@ -172,11 +172,11 @@ cdef class LimitIfTouchedOrder(Order):
 
         if time_in_force == TimeInForce.GTD:
             # Must have an expire time
-            Condition.true(expire_time_ns > 0, "`expire_time_ns` cannot be <= UNIX epoch.")
+            Condition.is_true(expire_time_ns > 0, "`expire_time_ns` cannot be <= UNIX epoch.")
         else:
             # Should not have an expire time
-            Condition.true(expire_time_ns == 0, "`expire_time_ns` was set when `time_in_force` not GTD.")
-        Condition.true(
+            Condition.is_true(expire_time_ns == 0, "`expire_time_ns` was set when `time_in_force` not GTD.")
+        Condition.is_true(
             display_qty is None or 0 <= display_qty <= quantity,
             fail_msg="`display_qty` was negative or greater than `quantity`",
         )

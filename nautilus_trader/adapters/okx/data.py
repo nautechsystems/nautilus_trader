@@ -331,7 +331,10 @@ class OKXDataClient(LiveMarketDataClient):
         await ws_client.subscribe_trades(okx_symbol.raw_symbol)
 
     async def _subscribe_bars(self, bar_type: BarType) -> None:
-        PyCondition.true(bar_type.is_externally_aggregated(), "aggregation_source is not EXTERNAL")
+        PyCondition.is_true(
+            bar_type.is_externally_aggregated(),
+            "aggregation_source is not EXTERNAL",
+        )
         self._log.error("OKX bar subscriptions are not yet implemented")
 
     async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:

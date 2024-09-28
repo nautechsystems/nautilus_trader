@@ -52,7 +52,7 @@ cdef class ArcherMovingAveragesTrends(Indicator):
     ):
         Condition.positive_int(fast_period, "fast_period")
         Condition.positive_int(slow_period, "slow_period")
-        Condition.true(slow_period > fast_period, "fast_period was >= slow_period")
+        Condition.is_true(slow_period > fast_period, "fast_period was >= slow_period")
         Condition.positive_int(signal_period, "signal_period")
         params = [
             fast_period,

@@ -610,8 +610,8 @@ cdef class TestClock(Clock):
         if start_time_ns == 0:
             start_time_ns = ts_now
         if stop_time_ns:
-            Condition.true(stop_time_ns > ts_now, "`stop_time_ns` was < `ts_now`")
-            Condition.true(start_time_ns + interval_ns <= stop_time_ns, "`start_time_ns` + `interval_ns` was > `stop_time_ns`")
+            Condition.is_true(stop_time_ns > ts_now, "`stop_time_ns` was < `ts_now`")
+            Condition.is_true(start_time_ns + interval_ns <= stop_time_ns, "`start_time_ns` + `interval_ns` was > `stop_time_ns`")
 
         test_clock_set_timer(
             &self._mem,
@@ -648,7 +648,7 @@ cdef class TestClock(Clock):
         test_clock_set_time(&self._mem, to_time_ns)
 
     cdef CVec advance_time_c(self, uint64_t to_time_ns, bint set_time=True):
-        Condition.true(to_time_ns >= test_clock_timestamp_ns(&self._mem), "to_time_ns was < time_ns (not monotonic)")
+        Condition.is_true(to_time_ns >= test_clock_timestamp_ns(&self._mem), "to_time_ns was < time_ns (not monotonic)")
 
         return <CVec>test_clock_advance_time(&self._mem, to_time_ns, set_time)
 

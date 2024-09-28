@@ -313,7 +313,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         order_side: OrderSide | None = None,
         order_type: OrderType | None = None,
     ) -> OrderStatusReport | None:
-        PyCondition.false(
+        PyCondition.is_false(
             client_order_id is None and venue_order_id is None,
             "both `client_order_id` and `venue_order_id` were `None`",
         )
@@ -383,7 +383,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         Create an order status report for a specific order.
         """
         self._log.info("Requesting OrderStatusReport...")
-        PyCondition.false(
+        PyCondition.is_false(
             client_order_id is None and venue_order_id is None,
             "both `client_order_id` and `venue_order_id` were `None`",
         )

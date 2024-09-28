@@ -1285,7 +1285,7 @@ cdef class DataEngine(Component):
                 return  # No client to handle request
 
         if request.data_type.type == Instrument:
-            Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
+            Condition.is_true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
             instrument_id = request.data_type.metadata.get("instrument_id")
             if instrument_id is None:
                 client.request_instruments(
@@ -1302,14 +1302,14 @@ cdef class DataEngine(Component):
                     request.data_type.metadata.get("end"),
                 )
         elif request.data_type.type == OrderBookDeltas:
-            Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
+            Condition.is_true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
             client.request_order_book_snapshot(
                 request.data_type.metadata.get("instrument_id"),
                 request.data_type.metadata.get("limit", 0),
                 request.id
             )
         elif request.data_type.type == QuoteTick:
-            Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
+            Condition.is_true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
             client.request_quote_ticks(
                 request.data_type.metadata.get("instrument_id"),
                 request.data_type.metadata.get("limit", 0),
@@ -1318,7 +1318,7 @@ cdef class DataEngine(Component):
                 request.data_type.metadata.get("end"),
             )
         elif request.data_type.type == TradeTick:
-            Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
+            Condition.is_true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
             client.request_trade_ticks(
                 request.data_type.metadata.get("instrument_id"),
                 request.data_type.metadata.get("limit", 0),
@@ -1327,7 +1327,7 @@ cdef class DataEngine(Component):
                 request.data_type.metadata.get("end"),
             )
         elif request.data_type.type == Bar:
-            Condition.true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
+            Condition.is_true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
             client.request_bars(
                 request.data_type.metadata.get("bar_type"),
                 request.data_type.metadata.get("limit", 0),
@@ -1350,7 +1350,7 @@ cdef class DataEngine(Component):
         cdef uint64_t ts_end = dt_to_unix_nanos(end) if end is not None else ts_now
 
         # Validate request time range
-        Condition.true(ts_start <= ts_end, f"{ts_start=} was greater than {ts_end=}")
+        Condition.is_true(ts_start <= ts_end, f"{ts_start=} was greater than {ts_end=}")
 
         if end is not None and ts_end > ts_now:
             self._log.warning(
