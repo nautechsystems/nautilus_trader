@@ -94,6 +94,7 @@ impl<T, F> InnerThrottler<T, F> {
         self.recv_count = 0;
         self.sent_count = 0;
         self.is_limiting = false;
+        self.timestamps.clear();
     }
 
     #[inline]

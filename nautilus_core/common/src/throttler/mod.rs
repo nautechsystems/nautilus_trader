@@ -44,8 +44,6 @@ impl<T, F> Throttler<T, F> {
         }
     }
 
-    /// Returns the number of messages in the buffer.
-    // #[must_use]
     #[must_use]
     pub fn qsize(&self) -> usize {
         let inner = self.inner.borrow();
@@ -253,6 +251,45 @@ mod tests {
             assert_eq!(inner.used(), 0.0);
             assert_eq!(inner.recv_count, 6);
             assert_eq!(inner.sent_count, 6);
+            assert_eq!(inner.qsize(), 0);
+        }
+    }
+
+    #[rstest]
+    fn test_buffering_send_message_after_buffering_message(
+        mut test_throttler_buffered: TestThrottler,
+    ) {
+        let throttler = &mut test_throttler_buffered.throttler;
+
+        for _ in 0..6 {
+            throttler.send("MESSAGE".to_string());
+        }
+
+        // Advance time and process events
+        {
+            let mut clock = test_throttler_buffered.clock.borrow_mut();
+            let time_events = clock.advance_time(1_000_000_000.into(), true);
+            for each_event in clock.match_handlers(time_events) {
+                drop(clock); // Release the mutable borrow
+
+                each_event.callback.call(each_event.event);
+
+                // Re-borrow the clock for the next iteration
+                clock = test_throttler_buffered.clock.borrow_mut();
+            }
+        }
+
+        for _ in 0..6 {
+            throttler.send("MESSAGE".to_string());
+        }
+
+        // Assert final state
+        {
+            let inner = throttler.inner.borrow();
+            // Some Logical Error? It should not be 0.
+            assert_eq!(inner.used(), 0.0);
+            assert_eq!(inner.recv_count, 12);
+            assert_eq!(inner.sent_count, 12);
             assert_eq!(inner.qsize(), 0);
         }
     }

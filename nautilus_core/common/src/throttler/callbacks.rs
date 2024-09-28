@@ -26,6 +26,12 @@ pub struct ThrottlerProcess<T, F> {
     inner: Rc<RefCell<InnerThrottler<T, F>>>,
 }
 
+impl<T, F> ThrottlerProcess<T, F> {
+    pub const fn new(inner: Rc<RefCell<InnerThrottler<T, F>>>) -> Self {
+        Self { inner }
+    }
+}
+
 impl<T: 'static, F: Fn(T) + 'static> From<ThrottlerProcess<T, F>> for TimeEventCallback {
     fn from(value: ThrottlerProcess<T, F>) -> Self {
         Self::Rust(Rc::new(move |_event: TimeEvent| {
@@ -44,11 +50,5 @@ impl<T: 'static, F: Fn(T) + 'static> From<ThrottlerProcess<T, F>> for TimeEventC
 
             core.is_limiting = false;
         }))
-    }
-}
-
-impl<T, F> ThrottlerProcess<T, F> {
-    pub const fn new(inner: Rc<RefCell<InnerThrottler<T, F>>>) -> Self {
-        Self { inner }
     }
 }
