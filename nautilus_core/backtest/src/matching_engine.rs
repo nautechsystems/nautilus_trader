@@ -243,6 +243,15 @@ impl OrderMatchingEngine {
     }
 
     #[must_use]
+    pub fn get_open_orders(&self) -> Vec<PassiveOrderAny> {
+        // get orders from both open bid orders and open ask orders
+        let mut orders = Vec::new();
+        orders.extend_from_slice(self.core.get_orders_bid());
+        orders.extend_from_slice(self.core.get_orders_ask());
+        orders
+    }
+
+    #[must_use]
     pub fn order_exists(&self, client_order_id: ClientOrderId) -> bool {
         self.core.order_exists(client_order_id)
     }
