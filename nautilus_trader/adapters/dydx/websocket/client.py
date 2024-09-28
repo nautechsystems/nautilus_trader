@@ -166,6 +166,9 @@ class DYDXWebsocketClient:
                 if self._ping_timestamp is not None and time_since_previous_ping > pd.Timedelta(
                     seconds=self._ping_interval_secs,
                 ):
+                    self._log.error(
+                        f"Time since previous received ping message is {time_since_previous_ping}",
+                    )
                     try:
                         await self.disconnect()
                         await self.connect()
