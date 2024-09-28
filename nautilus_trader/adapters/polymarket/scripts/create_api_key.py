@@ -17,7 +17,6 @@ import os
 
 from py_clob_client.client import ClobClient
 from py_clob_client.constants import POLYGON
-from py_clob_client.exceptions import PolyApiException
 
 
 client = ClobClient(
@@ -28,9 +27,5 @@ client = ClobClient(
     funder=os.environ["POLYMARKET_FUNDER"],
 )
 
-try:
-    response = client.create_api_key()
-except PolyApiException:
-    response = client.derive_api_key()
-
+response = client.create_or_derive_api_creds()
 print(response)
