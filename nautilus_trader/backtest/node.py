@@ -139,8 +139,11 @@ class BacktestNode:
         Run the backtest node which will synchronously execute the list of loaded
         backtest run configs.
 
-        Any exceptions raised from a backtest will be printed to stdout and
-        the next backtest run will commence (if any).
+        Parameters
+        ----------
+        raise_exception : bool, default False
+            If True, an exception raised from a backtest will be re-raised and halt the node.
+            If False, exceptions raised from backtest(s) will be printed to stdout.
 
         Returns
         -------
