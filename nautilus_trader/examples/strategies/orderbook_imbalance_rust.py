@@ -105,7 +105,7 @@ class OrderBookImbalance(Strategy):
 
         # We need to initialize the Rust pyo3 objects
         pyo3_instrument_id = nautilus_pyo3.InstrumentId.from_str(self.instrument_id.value)
-        self.book = nautilus_pyo3.OrderBook(self.book_type, pyo3_instrument_id)
+        self.book = nautilus_pyo3.OrderBook(pyo3_instrument_id, self.book_type)
         self.imbalance = nautilus_pyo3.BookImbalanceRatio()
 
     def on_start(self) -> None:
