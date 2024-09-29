@@ -4,9 +4,11 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Improved OKX configuration (#1966), thanks @miller-moore
+- Improved option greeks (#1964), thanks @faysou
 
 ### Internal Improvements
-None
+- Implemented remaining getter functions in `SimulatedExchange` (#1970), thanks @filipmacek
+- Implemented bar processing for `SimulatedExchange` (#1969), thanks @filipmacek
 
 ### Breaking Changes
 None
