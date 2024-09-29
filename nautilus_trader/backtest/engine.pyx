@@ -392,7 +392,7 @@ cdef class BacktestEngine:
             The order management system type for the exchange. If ``HEDGING`` will
             generate new position IDs.
         account_type : AccountType
-            The account type for the client.
+            The account type for the exchange.
         starting_balances : list[Money]
             The starting account balances (specify one for a single asset account).
         base_currency : Currency, optional
@@ -410,7 +410,7 @@ cdef class BacktestEngine:
         latency_model : LatencyModel, optional
             The latency model for the exchange.
         book_type : BookType, default ``BookType.L1_MBP``
-            The default order book type for fill modelling.
+            The default order book type.
         routing : bool, default False
             If multi-venue routing should be enabled for the execution client.
         frozen_account : bool, default False
@@ -423,7 +423,7 @@ cdef class BacktestEngine:
             If orders with GTD time in force will be supported by the venue.
         support_contingent_orders : bool, default True
             If contingent orders will be supported/respected by the venue.
-            If False then its expected the strategy will be managing any contingent orders.
+            If False then it's expected the strategy will be managing any contingent orders.
         use_position_ids : bool, default True
             If venue position IDs will be generated on order fills.
         use_random_ids : bool, default False
