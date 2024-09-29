@@ -279,7 +279,7 @@ class BacktestNode:
         if is_nautilus_class(result.data_cls):
             engine.add_data(
                 data=result.data,
-                sort=False,  # Already sorted from backend
+                sort=True,  # Already sorted from backend
             )
         else:
             if not result.client_id:
@@ -289,7 +289,7 @@ class BacktestNode:
             engine.add_data(
                 data=result.data,
                 client_id=result.client_id,
-                sort=False,  # Already sorted from backend
+                sort=True,  # Already sorted from backend
             )
 
     def _run(
@@ -369,7 +369,7 @@ class BacktestNode:
             engine.add_data(
                 data=capsule_to_list(chunk),
                 validate=False,  # Cannot validate mixed type stream
-                sort=False,  # Already sorted from backend
+                sort=True,  # Already sorted from backend
             )
             engine.run(
                 run_config_id=run_config_id,

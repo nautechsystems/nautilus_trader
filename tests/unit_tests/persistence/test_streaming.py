@@ -141,7 +141,7 @@ class TestPersistenceStreaming:
         )
 
         result = Counter([r.__class__.__name__ for r in result])  # type: ignore
-        assert result["NewsEventData"] == 79_039  # type: ignore
+        assert result["NewsEventData"] == 86_985  # type: ignore
 
     def test_feather_writer_include_types(
         self,
@@ -193,7 +193,7 @@ class TestPersistenceStreaming:
         )
 
         result = Counter([r.__class__.__name__ for r in result])  # type: ignore
-        assert result["NewsEventData"] == 79_039  # type: ignore
+        assert result["NewsEventData"] == 86_985  # type: ignore
         assert len(result) == 1
 
     def test_feather_writer_stream_to_data(
@@ -251,7 +251,7 @@ class TestPersistenceStreaming:
         )
 
         result = Counter([r.__class__.__name__ for r in result])  # type: ignore
-        assert result["NewsEventData"] == 79_039  # type: ignore
+        assert result["NewsEventData"] == 86_985  # type: ignore
 
     def test_feather_writer_signal_data(
         self,
