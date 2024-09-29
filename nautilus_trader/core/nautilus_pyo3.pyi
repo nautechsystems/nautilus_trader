@@ -2471,8 +2471,8 @@ class Level:
 class OrderBook:
     def __init__(
         self,
-        book_type: BookType,
         instrument_id: InstrumentId,
+        book_type: BookType,
     ) -> None: ...
     @property
     def instrument_id(self) -> InstrumentId: ...

@@ -82,8 +82,8 @@ impl OrderBook {
     #[must_use]
     pub fn new(instrument_id: InstrumentId, book_type: BookType) -> Self {
         Self {
-            book_type,
             instrument_id,
+            book_type,
             sequence: 0,
             ts_last: UnixNanos::default(),
             count: 0,
