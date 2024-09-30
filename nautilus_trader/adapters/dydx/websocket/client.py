@@ -74,7 +74,7 @@ class DYDXWebsocketClient:
         # Every 30 seconds, the dYdX websocket API will send a heartbeat ping control
         # frame to the connected client. If a pong event is not received within 10
         # seconds back, the websocket API will disconnect.
-        self._ping_timestamp: pd.Timestamp | None = None
+        self._ping_timestamp = self._clock.utc_now()
         self._ping_interval_secs: int = 40
         self._reconnect_task: asyncio.Task | None = None
 
@@ -133,6 +133,8 @@ class DYDXWebsocketClient:
         self._client = client
         self._log.info(f"Connected to {self._base_url}", LogColor.BLUE)
 
+        self._ping_timestamp = self._clock.utc_now()
+
         if self._reconnect_task is None:
             self._reconnect_task = self._loop.create_task(self._reconnect_ping())
 
@@ -163,9 +165,7 @@ class DYDXWebsocketClient:
                 now_timestamp = self._clock.utc_now()
                 time_since_previous_ping = now_timestamp - self._ping_timestamp
 
-                if self._ping_timestamp is not None and time_since_previous_ping > pd.Timedelta(
-                    seconds=self._ping_interval_secs,
-                ):
+                if time_since_previous_ping > pd.Timedelta(seconds=self._ping_interval_secs):
                     self._log.error(
                         f"Time since previous received ping message is {time_since_previous_ping}",
                     )
@@ -232,7 +232,11 @@ class DYDXWebsocketClient:
         self._log.debug(f"Subscribe to {symbol} trade ticks")
         await self._send(msg)
 
-    async def subscribe_order_book(self, symbol: str) -> None:
+    async def subscribe_order_book(
+        self,
+        symbol: str,
+        bypass_subscription_validation: bool = False,
+    ) -> None:
         """
         Subscribe to trades messages.
         """
@@ -241,7 +245,7 @@ class DYDXWebsocketClient:
             return
 
         subscription = ("v4_orderbook", symbol)
-        if subscription in self._subscriptions:
+        if subscription in self._subscriptions and bypass_subscription_validation is False:
             self._log.warning(f"Cannot subscribe '{subscription}': already subscribed")
             return
 
