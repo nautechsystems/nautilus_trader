@@ -1,4 +1,4 @@
-use std::{cell::RefCell, cmp::max, collections::VecDeque, rc::Rc};
+use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
 use nautilus_core::nanos::UnixNanos;
 
@@ -61,11 +61,9 @@ impl<T, F> InnerThrottler<T, F> {
     pub fn set_timer(&mut self, callback: Option<TimeEventCallback>) {
         let delta = self.delta_next();
         let mut clock = self.clock.borrow_mut();
-        // Cancel any existing timer
         if clock.timer_names().contains(&self.timer_name.as_str()) {
             clock.cancel_timer(&self.timer_name);
         }
-        // self.clock.cancel_timer(&self.timer_name);
         let alert_ts = clock.timestamp_ns() + delta;
 
         clock.set_time_alert_ns(&self.timer_name, alert_ts, callback);
@@ -99,25 +97,22 @@ impl<T, F> InnerThrottler<T, F> {
 
     #[inline]
     pub fn used(&self) -> f64 {
-        if !self.warm && self.sent_count < 2 {
+        if self.timestamps.is_empty() {
             return 0.0;
         }
 
-        let diff = max(
-            0,
-            self.interval as i64
-                - (self.clock.borrow().timestamp_ns().as_i64()
-                    - self.timestamps.back().unwrap().as_i64()),
-        );
-        let mut used = diff as f64 / self.interval as f64;
+        let now = self.clock.borrow().timestamp_ns().as_i64();
+        let interval_start = now - self.interval as i64;
 
-        if !self.warm {
-            used *= self.sent_count as f64 / self.limit as f64;
-        }
-        used
+        let messages_in_current_interval = self
+            .timestamps
+            .iter()
+            .take_while(|&&ts| ts.as_i64() > interval_start)
+            .count();
+
+        (messages_in_current_interval as f64) / (self.limit as f64)
     }
 
-    /// Returns the number of messages in the buffer.
     #[inline]
     pub fn qsize(&self) -> usize {
         self.buffer.len()
@@ -131,18 +126,19 @@ where
 {
     #[inline]
     pub fn send_msg(&mut self, msg: T) {
-        let ts = {
-            let clock = self.clock.borrow();
-            clock.timestamp_ns()
-        };
-        self.timestamps.push_front(ts);
+        let now = self.clock.borrow().timestamp_ns();
+
+        if self.timestamps.len() >= self.limit {
+            self.timestamps.pop_back();
+        }
+        self.timestamps.push_front(now);
+
         (self.output_send)(msg);
         self.sent_count += 1;
     }
 
     #[inline]
     pub fn limit_msg(&mut self, msg: T, throttler: Throttler<T, F>) {
-        // TODO: turn off clippy lint because callback is used
         let callback = if self.output_drop.is_none() {
             self.buffer.push_front(msg);
             log::debug!("Buffering {}", self.buffer.len());

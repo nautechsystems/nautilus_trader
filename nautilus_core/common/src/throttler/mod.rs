@@ -184,7 +184,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_buffering_used_when_half_interval_from_limit_returns_half(
+    fn test_buffering_used_when_half_interval_from_limit_returns_one(
         mut test_throttler_buffered: TestThrottler,
     ) {
         let throttler = &mut test_throttler_buffered.throttler;
@@ -200,7 +200,7 @@ mod tests {
         }
 
         let inner = throttler.inner.borrow();
-        assert_eq!(inner.used(), 0.5);
+        assert_eq!(inner.used(), 1.0);
         assert_eq!(inner.recv_count, 5);
         assert_eq!(inner.sent_count, 5);
     }
@@ -248,7 +248,7 @@ mod tests {
         // Assert final state
         {
             let inner = throttler.inner.borrow();
-            assert_eq!(inner.used(), 0.0);
+            assert_eq!(inner.used(), 0.2);
             assert_eq!(inner.recv_count, 6);
             assert_eq!(inner.sent_count, 6);
             assert_eq!(inner.qsize(), 0);
@@ -286,10 +286,47 @@ mod tests {
         // Assert final state
         {
             let inner = throttler.inner.borrow();
-            // Some Logical Error? It should not be 0.
-            assert_eq!(inner.used(), 0.0);
+            assert_eq!(inner.used(), 1.0);
             assert_eq!(inner.recv_count, 12);
-            assert_eq!(inner.sent_count, 12);
+            assert_eq!(inner.sent_count, 10);
+            assert_eq!(inner.qsize(), 2);
+        }
+    }
+
+    #[rstest]
+    fn test_buffering_send_message_after_halfway_after_buffering_message(
+        mut test_throttler_buffered: TestThrottler,
+    ) {
+        let throttler = &mut test_throttler_buffered.throttler;
+
+        for _ in 0..6 {
+            throttler.send("MESSAGE".to_string());
+        }
+
+        // Advance time and process events
+        {
+            let mut clock = test_throttler_buffered.clock.borrow_mut();
+            let time_events = clock.advance_time(1_000_000_000.into(), true);
+            for each_event in clock.match_handlers(time_events) {
+                drop(clock); // Release the mutable borrow
+
+                each_event.callback.call(each_event.event);
+
+                // Re-borrow the clock for the next iteration
+                clock = test_throttler_buffered.clock.borrow_mut();
+            }
+        }
+
+        for _ in 0..3 {
+            throttler.send("MESSAGE".to_string());
+        }
+
+        // Assert final state
+        {
+            let inner = throttler.inner.borrow();
+            assert_eq!(inner.used(), 0.8);
+            assert_eq!(inner.recv_count, 9);
+            assert_eq!(inner.sent_count, 9);
             assert_eq!(inner.qsize(), 0);
         }
     }
@@ -379,6 +416,7 @@ mod tests {
         throttler.send("MESSAGE".to_string());
 
         let inner = throttler.inner.borrow();
+        assert_eq!(inner.used(), 0.2);
         assert_eq!(inner.clock.borrow().timer_count(), 0);
         assert!(!inner.is_limiting);
         assert_eq!(inner.recv_count, 7);
