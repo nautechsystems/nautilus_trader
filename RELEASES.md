@@ -15,9 +15,10 @@ None
 
 ### Fixes
 - Fixed circular imports for `Actor`, thanks @limx0
-- Fixed `BacktestNode` data sorting regression causing inner clock non-decreasing time assertion error
+- Fixed `BacktestNode` data sorting regression causing clock non-decreasing time assertion error
 - Fixed `Condition` method name collisions with C `true` and `false` macros, which occurred during compilation in profiling mode
 - Fixed OKX HTTP client signatures (#1966), thanks @miller-moore
+- Fixed resubscribing to orderbooks for dYdX (#1973), thanks @davidsblom
 
 ---
 
