@@ -245,7 +245,7 @@ fn test_quote_tick_query_with_filter() {
         .add_file::<QuoteTick>(
             "quote_005",
             file_path,
-            Some("SELECT * FROM quote_005 WHERE ts_init >= 1701388832486000000"),
+            Some("SELECT * FROM quote_005 WHERE ts_init >= 1701388832486000000 ORDER BY ts_init"),
         )
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();

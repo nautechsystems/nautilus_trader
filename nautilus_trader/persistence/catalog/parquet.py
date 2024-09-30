@@ -590,6 +590,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         if conditions:
             query += f" WHERE {' AND '.join(conditions)}"
 
+        query += " ORDER BY ts_init"
         return query
 
     @staticmethod
