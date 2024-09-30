@@ -217,7 +217,10 @@ class DYDXDataClient(LiveMarketDataClient):
         async with self._resubscribe_orderbook_lock:
             for symbol in self._orderbook_subscriptions:
                 await self._ws_client.unsubscribe_order_book(symbol, remove_subscription=False)
-                await self._ws_client.subscribe_order_book(symbol)
+                await self._ws_client.subscribe_order_book(
+                    symbol,
+                    bypass_subscription_validation=True,
+                )
 
     def _send_all_instruments_to_data_engine(self) -> None:
         for instrument in self._instrument_provider.get_all().values():
@@ -269,7 +272,7 @@ class DYDXDataClient(LiveMarketDataClient):
             elif ws_message.type == "error":
                 if (
                     ws_message.message
-                    == "Internal error, could not fetch data for subscription: v4_orderbook"
+                    == "Internal error, could not fetch data for subscription: v4_orderbook."
                 ):
                     # This error occurs when the websocket service fails to request the initial
                     # orderbook snapshot.
