@@ -47,8 +47,8 @@ impl MessageHandler for PythonMessageHandler {
         let py_event = ();
         let result =
             pyo3::Python::with_gil(|py| self.handler.call_method1(py, "handle", (py_event,)));
-        if let Err(err) = result {
-            eprintln!("Error calling handle method: {:?}", err);
+        if let Err(e) = result {
+            eprintln!("Error calling handle method: {e:?}");
         }
     }
 
@@ -61,8 +61,8 @@ impl MessageHandler for PythonMessageHandler {
         let py_event = ();
         let result =
             pyo3::Python::with_gil(|py| self.handler.call_method1(py, "handle", (py_event,)));
-        if let Err(err) = result {
-            eprintln!("Error calling handle method: {:?}", err);
+        if let Err(e) = result {
+            eprintln!("Error calling handle method: {e:?}");
         }
     }
 
@@ -70,8 +70,8 @@ impl MessageHandler for PythonMessageHandler {
         let py_event = ();
         let result =
             pyo3::Python::with_gil(|py| self.handler.call_method1(py, "handle", (py_event,)));
-        if let Err(err) = result {
-            eprintln!("Error calling handle method: {:?}", err);
+        if let Err(e) = result {
+            eprintln!("Error calling handle method: {e:?}");
         }
     }
 
