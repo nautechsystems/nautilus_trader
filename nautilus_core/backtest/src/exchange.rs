@@ -235,14 +235,17 @@ impl SimulatedExchange {
             .map(super::matching_engine::OrderMatchingEngine::get_book)
     }
 
+    #[must_use]
     pub fn get_matching_engine(&self, instrument_id: InstrumentId) -> Option<&OrderMatchingEngine> {
         self.matching_engines.get(&instrument_id)
     }
 
-    pub fn get_matching_engines(&self) -> &HashMap<InstrumentId, OrderMatchingEngine> {
+    #[must_use]
+    pub const fn get_matching_engines(&self) -> &HashMap<InstrumentId, OrderMatchingEngine> {
         &self.matching_engines
     }
 
+    #[must_use]
     pub fn get_books(&self) -> HashMap<InstrumentId, OrderBook> {
         let mut books = HashMap::new();
         for (instrument_id, matching_engine) in &self.matching_engines {
@@ -251,21 +254,23 @@ impl SimulatedExchange {
         books
     }
 
+    #[must_use]
     pub fn get_open_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<PassiveOrderAny> {
         instrument_id
             .and_then(|id| {
                 self.matching_engines
                     .get(&id)
-                    .map(|engine| engine.get_open_orders())
+                    .map(super::matching_engine::OrderMatchingEngine::get_open_orders)
             })
             .unwrap_or_else(|| {
                 self.matching_engines
                     .values()
-                    .flat_map(|engine| engine.get_open_orders())
+                    .flat_map(super::matching_engine::OrderMatchingEngine::get_open_orders)
                     .collect()
             })
     }
 
+    #[must_use]
     pub fn get_open_bid_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<PassiveOrderAny> {
         instrument_id
             .and_then(|id| {
@@ -281,6 +286,7 @@ impl SimulatedExchange {
             })
     }
 
+    #[must_use]
     pub fn get_open_ask_orders(&self, instrument_id: Option<InstrumentId>) -> Vec<PassiveOrderAny> {
         instrument_id
             .and_then(|id| {
@@ -296,8 +302,11 @@ impl SimulatedExchange {
             })
     }
 
+    #[must_use]
     pub fn get_account(&self) -> Option<AccountAny> {
-        self.exec_client.as_ref().map(|client| client.get_account())
+        self.exec_client
+            .as_ref()
+            .map(nautilus_execution::client::ExecutionClient::get_account)
     }
 
     pub fn adjust_account(&mut self, _adjustment: Money) {
@@ -378,7 +387,7 @@ impl SimulatedExchange {
 
     pub fn process_bar(&mut self, bar: Bar) {
         for module in &self.modules {
-            module.pre_process(Data::Bar(bar.to_owned()));
+            module.pre_process(Data::Bar(bar));
         }
 
         if !self.matching_engines.contains_key(&bar.instrument_id()) {

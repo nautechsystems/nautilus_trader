@@ -302,7 +302,7 @@ impl OrderMatchingEngine {
             };
 
         if execution_bar_type != bar_type {
-            let mut bar_type_timedelta = self.execution_bar_deltas.get(&bar_type).cloned();
+            let mut bar_type_timedelta = self.execution_bar_deltas.get(&bar_type).copied();
             if bar_type_timedelta.is_none() {
                 bar_type_timedelta = Some(bar_type.spec().timedelta());
                 self.execution_bar_deltas
