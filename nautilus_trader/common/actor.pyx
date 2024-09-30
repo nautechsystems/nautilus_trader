@@ -35,8 +35,6 @@ from nautilus_trader.common.executor import ActorExecutor
 from nautilus_trader.common.executor import TaskId
 from nautilus_trader.model.greeks import GreeksData
 from nautilus_trader.model.greeks import PortfolioGreeks
-from nautilus_trader.persistence.writer import generate_signal_class
-from nautilus_trader.risk.greeks import greeks_key
 
 from cpython.datetime cimport datetime
 from libc.stdint cimport uint64_t
@@ -1834,6 +1832,7 @@ cdef class Actor(Component):
             If ``None`` then will timestamp current time.
 
         """
+        from nautilus_trader.persistence.writer import generate_signal_class
         Condition.not_none(name, "name")
         Condition.not_none(value, "value")
         Condition.is_in(type(value), (int, float, str), "value", "int, float, str")
@@ -2866,7 +2865,7 @@ cdef class Actor(Component):
             self._log.info(f"{REQ}{SENT} {request}")
         self._msgbus.request(endpoint="DataEngine.request", request=request)
 
-    # -- GREEKS ---------------------------------------------------------------------------------------
+# -- GREEKS ---------------------------------------------------------------------------------------
 
     def instrument_greeks_data(self, InstrumentId instrument_id) -> GreeksData:
         """
@@ -2885,8 +2884,9 @@ cdef class Actor(Component):
         -------
         GreeksData
             The Greeks data for the specified instrument, including vol, price, delta, gamma, vega, theta.
-        """
 
+        """
+        from nautilus_trader.risk.greeks import greeks_key
 
         # option case, to avoid querying definition
         if ' ' in instrument_id.symbol.value:
@@ -2926,8 +2926,8 @@ cdef class Actor(Component):
         -------
         PortfolioGreeks
             The aggregated Greeks data for the portfolio, including delta, gamma, vega, theta.
-        """
 
+        """
         ts_event = self.clock.timestamp_ns()
         portfolio_greeks = PortfolioGreeks(ts_event, ts_event)
         open_positions = self.cache.positions_open(venue, instrument_id, strategy_id, side)
