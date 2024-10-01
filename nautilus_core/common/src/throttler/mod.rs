@@ -111,14 +111,14 @@ mod tests {
     /// - Rate limit is 5 messages in 10 intervals.
     /// - Message handling is decided by specific fixture
     struct TestThrottler {
-        throttler: Throttler<String, Box<dyn Fn(String)>>,
+        throttler: Throttler<u64, Box<dyn Fn(u64)>>,
         clock: Rc<RefCell<TestClock>>,
         interval: u64,
     }
 
     #[fixture]
     pub fn test_throttler_buffered() -> TestThrottler {
-        let output_send: Box<dyn Fn(String)> = Box::new(|msg: String| {
+        let output_send: Box<dyn Fn(u64)> = Box::new(|msg: u64| {
             log::debug!("Sent: {}", msg);
         });
         let clock = Rc::new(RefCell::new(TestClock::new()));
@@ -141,10 +141,10 @@ mod tests {
 
     #[fixture]
     pub fn test_throttler_unbuffered() -> TestThrottler {
-        let output_send: Box<dyn Fn(String)> = Box::new(|msg: String| {
+        let output_send: Box<dyn Fn(u64)> = Box::new(|msg: u64| {
             log::debug!("Sent: {}", msg);
         });
-        let output_drop: Box<dyn Fn(String)> = Box::new(|msg: String| {
+        let output_drop: Box<dyn Fn(u64)> = Box::new(|msg: u64| {
             log::debug!("Dropped: {}", msg);
         });
         let clock = Rc::new(RefCell::new(TestClock::new()));
@@ -169,7 +169,7 @@ mod tests {
     fn test_buffering_send_to_limit_becomes_throttled(mut test_throttler_buffered: TestThrottler) {
         let throttler = &mut test_throttler_buffered.throttler;
         for _ in 0..6 {
-            throttler.send("MESSAGE".to_string());
+            throttler.send(42);
         }
         assert_eq!(throttler.qsize(), 1);
 
@@ -187,7 +187,7 @@ mod tests {
         let throttler = &mut test_throttler_buffered.throttler;
 
         for _ in 0..5 {
-            throttler.send("MESSAGE".to_string());
+            throttler.send(42);
         }
 
         let inner = throttler.inner.borrow();
@@ -203,7 +203,7 @@ mod tests {
         let throttler = &mut test_throttler_buffered.throttler;
 
         for _ in 0..5 {
-            throttler.send("MESSAGE".to_string());
+            throttler.send(42);
         }
 
         let half_interval = test_throttler_buffered.interval / 2;
@@ -226,7 +226,7 @@ mod tests {
         let throttler = &mut test_throttler_buffered.throttler;
 
         for _ in 0..3 {
-            throttler.send("MESSAGE".to_string());
+            throttler.send(42);
         }
 
         let inner = throttler.inner.borrow();
@@ -242,7 +242,7 @@ mod tests {
         let throttler = &mut test_throttler_buffered.throttler;
 
         for _ in 0..6 {
-            throttler.send("MESSAGE".to_string());
+            throttler.send(42);
         }
 
         // Advance time and process events
@@ -276,7 +276,7 @@ mod tests {
         let throttler = &mut test_throttler_buffered.throttler;
 
         for _ in 0..6 {
-            throttler.send("MESSAGE".to_string());
+            throttler.send(42);
         }
 
         // Advance time and process events
@@ -294,7 +294,7 @@ mod tests {
         }
 
         for _ in 0..6 {
-            throttler.send("MESSAGE".to_string());
+            throttler.send(42);
         }
 
         // Assert final state
@@ -314,7 +314,7 @@ mod tests {
         let throttler = &mut test_throttler_buffered.throttler;
 
         for _ in 0..6 {
-            throttler.send("MESSAGE".to_string());
+            throttler.send(42);
         }
 
         // Advance time and process events
@@ -332,7 +332,7 @@ mod tests {
         }
 
         for _ in 0..3 {
-            throttler.send("MESSAGE".to_string());
+            throttler.send(42);
         }
 
         // Assert final state
@@ -348,7 +348,7 @@ mod tests {
     #[rstest]
     fn test_dropping_send_sends_message_to_handler(mut test_throttler_unbuffered: TestThrottler) {
         let throttler = &mut test_throttler_unbuffered.throttler;
-        throttler.send("MESSAGE".to_string());
+        throttler.send(42);
         let inner = throttler.inner.borrow();
 
         assert!(!inner.is_limiting);
@@ -360,7 +360,7 @@ mod tests {
     fn test_dropping_send_to_limit_drops_message(mut test_throttler_unbuffered: TestThrottler) {
         let throttler = &mut test_throttler_unbuffered.throttler;
         for _ in 0..6 {
-            throttler.send("MESSAGE".to_string());
+            throttler.send(42);
         }
         assert_eq!(throttler.qsize(), 0);
 
@@ -379,7 +379,7 @@ mod tests {
     ) {
         let throttler = &mut test_throttler_unbuffered.throttler;
         for _ in 0..6 {
-            throttler.send("MESSAGE".to_string());
+            throttler.send(42);
         }
 
         // Advance time and process events
@@ -410,7 +410,7 @@ mod tests {
     ) {
         let throttler = &mut test_throttler_unbuffered.throttler;
         for _ in 0..6 {
-            throttler.send("MESSAGE".to_string());
+            throttler.send(42);
         }
 
         // Advance time and process events
@@ -427,7 +427,7 @@ mod tests {
             }
         }
 
-        throttler.send("MESSAGE".to_string());
+        throttler.send(42);
 
         let inner = throttler.inner.borrow();
         assert_eq!(inner.used(), 0.2);
