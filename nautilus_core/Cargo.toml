@@ -40,7 +40,7 @@ log = { version = "0.4.22", features = ["std", "kv_unstable", "serde", "release_
 pyo3 = { version = "0.21.2", features = ["rust_decimal"] }
 pyo3-asyncio-0-21 = { version = "0.21.0", features = ["tokio-runtime", "tokio", "attributes"] }
 rand = "0.8.5"
-reqwest = { version = "0.12.7", features = ["blocking"] }
+reqwest = { version = "0.12.8", features = ["blocking"] }
 rmp-serde = "1.3.0"
 rust_decimal = "1.36.0"
 rust_decimal_macros = "1.36.0"
