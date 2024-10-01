@@ -7,8 +7,9 @@ Released on TBD (UTC).
 - Improved option greeks (#1964), thanks @faysou
 
 ### Internal Improvements
-- Implemented remaining getter functions in `SimulatedExchange` (#1970), thanks @filipmacek
+- Implemented order book delta processing for `SimulatedExchange` (#1975), thanks @filipmacek
 - Implemented bar processing for `SimulatedExchange` (#1969), thanks @filipmacek
+- Implemented remaining getter functions in `SimulatedExchange` (#1970), thanks @filipmacek
 
 ### Breaking Changes
 None
