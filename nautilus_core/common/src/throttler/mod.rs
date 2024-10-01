@@ -460,13 +460,12 @@ mod tests {
     }
 
     proptest! {
-        // Property: Message Conservation
         #[test]
-        fn prop_message_conservation(inputs in throttler_test_strategy()) {
+        fn test(inputs in throttler_test_strategy()) {
             let TestThrottler {
                 throttler,
                 clock: test_clock,
-                interval: _,
+                interval,
             } = test_throttler_buffered();
             let mut sent_count = 0;
 
@@ -487,10 +486,31 @@ mod tests {
                         }
                     }
                 }
+
+                // TODO: Fix limit consistency test
+                // Check the throttler rate limits on the appropriate conditions
+                // let inner = throttler.inner.borrow();
+                // let buffered_messages = inner.qsize() > 0;
+                // let reached_limit = inner.timestamps.len() == inner.limit;
+                // let last_interval =
+                //     inner.clock.borrow().timestamp_ns().as_u64().saturating_sub(interval);
+                // let first_message_processed_within_interval = inner.timestamps.back().map_or(false, |&ts| {
+                //     ts.as_u64() > last_interval
+                // });
+                // let expected_limiting =
+                //     buffered_messages || (reached_limit && first_message_processed_within_interval);
+                // prop_assert_eq!(inner.is_limiting, expected_limiting);
+
+                // Message conservation
+                let inner = throttler.inner.borrow();
+                prop_assert_eq!(sent_count, inner.sent_count + inner.qsize());
             }
 
-            let inner = throttler.inner.borrow();
-            prop_assert_eq!(sent_count, inner.sent_count + inner.qsize());
+            // Advance clock by a large amount to process all messages
+            test_clock
+                .borrow_mut()
+                .advance_time((interval * 100).into(), true);
+            prop_assert_eq!(throttler.qsize(), 0);
         }
     }
 }

@@ -20,7 +20,7 @@ pub struct InnerThrottler<T, F> {
     /// The buffer of messages to be sent.
     pub buffer: VecDeque<T>,
     /// The timestamps of the sent messages.
-    timestamps: VecDeque<UnixNanos>,
+    pub timestamps: VecDeque<UnixNanos>,
     /// Whether the throttler has warmed up.
     warm: bool,
     /// The interval between messages in nanoseconds.
