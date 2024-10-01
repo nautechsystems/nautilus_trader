@@ -13,8 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod common;
-pub mod files;
+use std::path::PathBuf;
 
-#[cfg(feature = "python")]
-pub mod python;
+pub fn get_project_testdata_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("Failed to get workspace root")
+        .parent()
+        .expect("Failed to get project root")
+        .join("tests")
+        .join("test_data")
+        .to_path_buf()
+}
+
+pub fn get_testdata_large_checksums_filepath() -> PathBuf {
+    get_project_testdata_path()
+        .join("large")
+        .join("checksums.json")
+        .to_path_buf()
+}

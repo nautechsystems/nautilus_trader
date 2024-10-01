@@ -135,6 +135,14 @@ jobs:
           path: ${{ env.POETRY_CACHE_DIR }}
           key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
+      - name: Cached test data
+        id: cached-testdata-large
+        uses: actions/cache@v4
+        with:
+          path: tests/test_data/large
+          key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
+          restore-keys: ${{ runner.os }}-large-files-
+
       - name: Run pre-commit
         run: |
           # pre-commit run --hook-stage manual gitlint-ci

@@ -78,9 +78,11 @@ bench_data/
 nautilus_trader/**/.gitignore
 nautilus_trader/test_kit/mocks/.nautilus/
 tests/test_data/catalog/
+tests/test_data/large/*
 tests/unit_tests/catalog/
 tests/unit_tests/persistence/catalog/
 
 # Exceptions
 !/nautilus_core/adapters/src/databento/test_data/*
+!tests/test_data/large/checksums.json
 !tests/integration_tests/adapters/betfair/responses/*.log
