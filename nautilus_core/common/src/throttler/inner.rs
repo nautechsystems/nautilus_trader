@@ -78,6 +78,7 @@ impl<T, F> InnerThrottler<T, F> {
         clock.set_time_alert_ns(&self.timer_name, alert_ts, callback);
     }
 
+    /// Return delta between curren time and next time interval
     #[inline]
     pub fn delta_next(&mut self) -> u64 {
         if !self.warm && self.sent_count < self.limit {
