@@ -321,8 +321,32 @@ impl SimulatedExchange {
         todo!("generate inflight command")
     }
 
-    pub fn process_order_book_delta(&mut self, _delta: OrderBookDelta) {
-        todo!("process order book delta")
+    pub fn process_order_book_delta(&mut self, delta: OrderBookDelta) {
+        for module in &self.modules {
+            module.pre_process(Data::Delta(delta.to_owned()));
+        }
+
+        if !self.matching_engines.contains_key(&delta.instrument_id) {
+            let instrument = {
+                let cache = self.cache.as_ref().borrow();
+                cache.instrument(&delta.instrument_id).cloned()
+            };
+
+            if let Some(instrument) = instrument {
+                self.add_instrument(instrument).unwrap();
+            } else {
+                panic!(
+                    "No matching engine found for instrument {}",
+                    delta.instrument_id
+                );
+            }
+        }
+
+        if let Some(matching_engine) = self.matching_engines.get_mut(&delta.instrument_id) {
+            matching_engine.process_order_book_delta(&delta);
+        } else {
+            panic!("Matching engine should be initialized");
+        }
     }
 
     pub fn process_order_book_deltas(&mut self, _deltas: OrderBookDeltas) {
@@ -446,10 +470,12 @@ mod tests {
     use nautilus_model::{
         data::{
             bar::{Bar, BarType},
+            delta::OrderBookDelta,
+            order::BookOrder,
             quote::QuoteTick,
             trade::TradeTick,
         },
-        enums::{AccountType, AggressorSide, BookType, OmsType},
+        enums::{AccountType, AggressorSide, BookAction, BookType, OmsType, OrderSide},
         identifiers::{TradeId, Venue},
         instruments::{
             any::InstrumentAny, crypto_perpetual::CryptoPerpetual, stubs::crypto_perpetual_ethusdt,
@@ -653,5 +679,53 @@ mod tests {
         assert_eq!(best_bid_price, Some(Price::from("1502.00")));
         let best_ask_price = exchange.best_ask_price(crypto_perpetual_ethusdt.id);
         assert_eq!(best_ask_price, Some(Price::from("1503.00")));
+    }
+
+    #[rstest]
+    fn test_exchange_process_orderbook_delta(crypto_perpetual_ethusdt: CryptoPerpetual) {
+        let mut exchange: SimulatedExchange =
+            get_exchange(Venue::new("BINANCE"), AccountType::Margin, BookType::L2_MBP);
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+
+        // register instrument
+        exchange.add_instrument(instrument).unwrap();
+
+        // create order book delta at both bid and ask with incremented ts init and sequence
+        let delta_buy = OrderBookDelta::new(
+            crypto_perpetual_ethusdt.id,
+            BookAction::Add,
+            BookOrder::new(OrderSide::Buy, Price::from("1000.00"), Quantity::from(1), 1),
+            0,
+            0,
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        );
+        let delta_sell = OrderBookDelta::new(
+            crypto_perpetual_ethusdt.id,
+            BookAction::Add,
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from("1001.00"),
+                Quantity::from(1),
+                1,
+            ),
+            0,
+            1,
+            UnixNanos::from(2),
+            UnixNanos::from(2),
+        );
+
+        // process both deltas
+        exchange.process_order_book_delta(delta_buy);
+        exchange.process_order_book_delta(delta_sell);
+
+        let book = exchange.get_book(crypto_perpetual_ethusdt.id).unwrap();
+        assert_eq!(book.count, 2);
+        assert_eq!(book.sequence, 1);
+        assert_eq!(book.ts_last, UnixNanos::from(2));
+        let best_bid_price = exchange.best_bid_price(crypto_perpetual_ethusdt.id);
+        assert_eq!(best_bid_price, Some(Price::from("1000.00")));
+        let best_ask_price = exchange.best_ask_price(crypto_perpetual_ethusdt.id);
+        assert_eq!(best_ask_price, Some(Price::from("1001.00")));
     }
 }
