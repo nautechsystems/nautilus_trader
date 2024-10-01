@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Improved option greeks (#1964), thanks @faysou
 
 ### Internal Improvements
+- Added large test data files download and caching capability
 - Implemented order book delta processing for `SimulatedExchange` (#1975), thanks @filipmacek
 - Implemented bar processing for `SimulatedExchange` (#1969), thanks @filipmacek
 - Implemented remaining getter functions in `SimulatedExchange` (#1970), thanks @filipmacek

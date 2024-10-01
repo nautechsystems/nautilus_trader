@@ -2955,6 +2955,7 @@ dependencies = [
  "implied-vol",
  "indexmap 2.5.0",
  "nautilus-core",
+ "nautilus-test-kit",
  "once_cell",
  "pyo3",
  "rstest",
@@ -3045,12 +3046,15 @@ version = "0.33.0"
 dependencies = [
  "anyhow",
  "axum",
+ "hex",
  "nautilus-common",
  "nautilus-core",
  "nautilus-model",
  "pyo3",
  "reqwest",
+ "ring",
  "rstest",
+ "serde_json",
  "tempfile",
  "tokio",
 ]

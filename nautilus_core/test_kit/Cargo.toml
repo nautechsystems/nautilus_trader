@@ -15,9 +15,12 @@ nautilus-core = { path = "../core" }
 nautilus-common = { path = "../common" }
 nautilus-model = { path = "../model", features = ["stubs"] }
 anyhow = { workspace = true }
+hex = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 tokio = { workspace = true }
 reqwest = { workspace = true }
+ring = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 axum = { workspace = true }
