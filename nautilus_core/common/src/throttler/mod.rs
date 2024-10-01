@@ -511,6 +511,39 @@ mod tests {
                 .borrow_mut()
                 .advance_time((interval * 100).into(), true);
             prop_assert_eq!(throttler.qsize(), 0);
+
+
+            // TODO: Add test to check qsize and used values
+            // merge below logic in with above test
+            // let mut expected_sent = 0;
+            // let mut expected_buffered = 0;
+
+            // for input in inputs {
+            //     match input {
+            //         ThrottlerInput::SendMessage(msg) => {
+            //             throttler.send(msg);
+            //             if expected_sent < 5 {
+            //                 expected_sent += 1;
+            //             } else {
+            //                 expected_buffered += 1;
+            //             }
+            //         }
+            //         ThrottlerInput::AdvanceClock(duration) => {
+            //             clock.borrow_mut().advance_time(UnixNanos::from(duration), true);
+            //             let messages_to_send = expected_buffered.min(5 - expected_sent);
+            //             expected_sent = (expected_sent + messages_to_send).min(5);
+            //             expected_buffered -= messages_to_send;
+            //         }
+            //     }
+
+            //     let inner = throttler.inner.borrow();
+            //     let actual_used = throttler.used();
+            //     let actual_qsize = throttler.qsize();
+            //     let expected_used = expected_sent as f64 / 5.0;
+
+            //     prop_assert!((actual_used - expected_used).abs() < 1e-6, "Used capacity mismatch: actual = {}, expected = {}", actual_used, expected_used);
+            //     prop_assert_eq!(actual_qsize, expected_buffered, "QSize mismatch: actual = {}, expected = {}", actual_qsize, expected_buffered);
+            // }
         }
     }
 }
