@@ -262,7 +262,11 @@ impl OrderMatchingEngine {
     pub fn process_order_book_delta(&mut self, delta: &OrderBookDelta) {
         log::debug!("Processing {delta}");
 
-        self.book.apply_delta(delta);
+        if self.book_type == BookType::L2_MBP || self.book_type == BookType::L3_MBO {
+            self.book.apply_delta(delta);
+        }
+
+        self.iterate(delta.ts_event);
     }
 
     pub fn process_quote_tick(&mut self, tick: &QuoteTick) {
