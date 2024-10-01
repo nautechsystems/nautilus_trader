@@ -91,7 +91,8 @@ impl<T, F> InnerThrottler<T, F> {
                 .back()
                 .unwrap_or_else(|| panic!("Failed to get timestamp"))
                 .as_u64();
-        self.interval - diff
+
+        self.interval.saturating_sub(diff)
     }
 
     #[inline]

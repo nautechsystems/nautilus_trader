@@ -101,6 +101,7 @@ where
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
+    use nautilus_core::nanos::UnixNanos;
     use rstest::{fixture, rstest};
 
     use super::Throttler;
@@ -435,5 +436,61 @@ mod tests {
         assert!(!inner.is_limiting);
         assert_eq!(inner.recv_count, 7);
         assert_eq!(inner.sent_count, 6);
+    }
+
+    use proptest::prelude::*;
+
+    #[derive(Clone, Debug)]
+    enum ThrottlerInput {
+        SendMessage(u64),
+        AdvanceClock(u8),
+    }
+
+    // Custom strategy for ThrottlerInput
+    fn throttler_input_strategy() -> impl Strategy<Value = ThrottlerInput> {
+        prop_oneof![
+            2 => prop::bool::ANY.prop_map(|_| ThrottlerInput::SendMessage(42)),
+            8 => prop::num::u8::ANY.prop_map(|v| ThrottlerInput::AdvanceClock(v % 5 + 5)),
+        ]
+    }
+
+    // Custom strategy for ThrottlerTest
+    fn throttler_test_strategy() -> impl Strategy<Value = Vec<ThrottlerInput>> {
+        prop::collection::vec(throttler_input_strategy(), 10..=150)
+    }
+
+    proptest! {
+        // Property: Message Conservation
+        #[test]
+        fn prop_message_conservation(inputs in throttler_test_strategy()) {
+            let TestThrottler {
+                throttler,
+                clock: test_clock,
+                interval: _,
+            } = test_throttler_buffered();
+            let mut sent_count = 0;
+
+            for input in inputs {
+                match input {
+                    ThrottlerInput::SendMessage(msg) => {
+                        throttler.send(msg);
+                        sent_count += 1;
+                    }
+                    ThrottlerInput::AdvanceClock(duration) => {
+                        let mut clock_ref = test_clock.borrow_mut();
+                        let current_time = clock_ref.get_time_ns();
+                        let time_events = clock_ref.advance_time(current_time + duration as u64, true);
+                        for each_event in clock_ref.match_handlers(time_events) {
+                            drop(clock_ref);
+                            each_event.callback.call(each_event.event);
+                            clock_ref = test_clock.borrow_mut();
+                        }
+                    }
+                }
+            }
+
+            let inner = throttler.inner.borrow();
+            prop_assert_eq!(sent_count, inner.sent_count + inner.qsize());
+        }
     }
 }

@@ -35,6 +35,7 @@ use nautilus_core::{
 };
 #[cfg(feature = "python")]
 use pyo3::{PyObject, Python};
+use std::fmt::Debug;
 use tokio::{
     sync::oneshot,
     time::{Duration, Instant},
@@ -106,6 +107,16 @@ pub enum TimeEventCallback {
     Rust(Rc<RustTimeEventCallback>),
 }
 
+impl Debug for TimeEventCallback {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            #[cfg(feature = "python")]
+            Self::Python(_) => f.write_str("Python callback"),
+            Self::Rust(_) => f.write_str("Rust callback"),
+        }
+    }
+}
+
 impl TimeEventCallback {
     pub fn call(&self, event: TimeEvent) {
         match self {
@@ -138,7 +149,7 @@ unsafe impl Send for TimeEventCallback {}
 unsafe impl Sync for TimeEventCallback {}
 
 #[repr(C)]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 /// Represents a time event and its associated handler.
 ///
 /// `TimeEventHandler` associates a `TimeEvent` with a callback function that is triggered
