@@ -5,6 +5,10 @@ use nautilus_core::nanos::UnixNanos;
 use super::Throttler;
 use crate::{clock::Clock, timer::TimeEventCallback};
 
+/// Throttler rate limits messages by dropping or buffering them
+///
+/// Throttler takes messages of type T and callback of type F for dropping
+/// or processing messages.
 pub struct InnerThrottler<T, F> {
     pub recv_count: usize,
     /// The number of messages sent.
@@ -57,6 +61,11 @@ impl<T, F> InnerThrottler<T, F> {
         }
     }
 
+    /// Set timer with a callback to be triggered on next interval
+    ///
+    /// Typically used to register callbacks
+    /// - [`super::callbacks::ThrottlerProcess`] to process buffered messages
+    /// - [`super::callbacks::ThrottlerResume`] to stop buffering
     #[inline]
     pub fn set_timer(&mut self, callback: Option<TimeEventCallback>) {
         let delta = self.delta_next();
@@ -95,6 +104,7 @@ impl<T, F> InnerThrottler<T, F> {
         self.timestamps.clear();
     }
 
+    /// Fractional value of rate limit consumed in current interval
     #[inline]
     pub fn used(&self) -> f64 {
         if self.timestamps.is_empty() {
@@ -113,6 +123,7 @@ impl<T, F> InnerThrottler<T, F> {
         (messages_in_current_interval as f64) / (self.limit as f64)
     }
 
+    /// Number of messages queued in buffer
     #[inline]
     pub fn qsize(&self) -> usize {
         self.buffer.len()

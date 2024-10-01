@@ -23,6 +23,10 @@ use inner::InnerThrottler;
 
 use crate::clock::Clock;
 
+/// Shareable reference to an [`InnerThrottler`]
+///
+/// Throttler takes messages of type T and callback of type F for dropping
+/// or processing messages.
 #[derive(Clone)]
 pub struct Throttler<T, F> {
     inner: Rc<RefCell<InnerThrottler<T, F>>>,
@@ -102,9 +106,14 @@ mod tests {
     use super::Throttler;
     use crate::clock::TestClock;
 
+    /// Test throttler with default values for testing
+    ///
+    /// - Rate limit is 5 messages in 10 intervals.
+    /// - Message handling is decided by specific fixture
     struct TestThrottler {
         throttler: Throttler<String, Box<dyn Fn(String)>>,
         clock: Rc<RefCell<TestClock>>,
+        interval: u64,
     }
 
     #[fixture]
@@ -114,17 +123,19 @@ mod tests {
         });
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let inner_clock = Rc::clone(&clock);
+        let interval = 10;
 
         TestThrottler {
             throttler: Throttler::new(
                 5,
-                1_000_000_000,
+                interval,
                 clock,
                 "buffer_timer".to_string(),
                 output_send,
                 None,
             ),
             clock: inner_clock,
+            interval,
         }
     }
 
@@ -138,17 +149,19 @@ mod tests {
         });
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let inner_clock = Rc::clone(&clock);
+        let interval = 10;
 
         TestThrottler {
             throttler: Throttler::new(
                 5,
-                1_000_000_000,
+                interval,
                 clock,
                 "dropper_timer".to_string(),
                 output_send,
                 Some(output_drop),
             ),
             clock: inner_clock,
+            interval,
         }
     }
 
@@ -193,10 +206,11 @@ mod tests {
             throttler.send("MESSAGE".to_string());
         }
 
+        let half_interval = test_throttler_buffered.interval / 2;
         // Advance the clock by half the interval
         {
             let mut clock = test_throttler_buffered.clock.borrow_mut();
-            clock.advance_time(500_000_000.into(), true);
+            clock.advance_time(half_interval.into(), true);
         }
 
         let inner = throttler.inner.borrow();
@@ -234,7 +248,7 @@ mod tests {
         // Advance time and process events
         {
             let mut clock = test_throttler_buffered.clock.borrow_mut();
-            let time_events = clock.advance_time(1_000_000_000.into(), true);
+            let time_events = clock.advance_time(test_throttler_buffered.interval.into(), true);
             for each_event in clock.match_handlers(time_events) {
                 drop(clock); // Release the mutable borrow
 
@@ -268,7 +282,7 @@ mod tests {
         // Advance time and process events
         {
             let mut clock = test_throttler_buffered.clock.borrow_mut();
-            let time_events = clock.advance_time(1_000_000_000.into(), true);
+            let time_events = clock.advance_time(test_throttler_buffered.interval.into(), true);
             for each_event in clock.match_handlers(time_events) {
                 drop(clock); // Release the mutable borrow
 
@@ -306,7 +320,7 @@ mod tests {
         // Advance time and process events
         {
             let mut clock = test_throttler_buffered.clock.borrow_mut();
-            let time_events = clock.advance_time(1_000_000_000.into(), true);
+            let time_events = clock.advance_time(test_throttler_buffered.interval.into(), true);
             for each_event in clock.match_handlers(time_events) {
                 drop(clock); // Release the mutable borrow
 
@@ -371,7 +385,7 @@ mod tests {
         // Advance time and process events
         {
             let mut clock = test_throttler_unbuffered.clock.borrow_mut();
-            let time_events = clock.advance_time(1_000_000_000.into(), true);
+            let time_events = clock.advance_time(test_throttler_unbuffered.interval.into(), true);
             for each_event in clock.match_handlers(time_events) {
                 drop(clock); // Release the mutable borrow
 
@@ -402,7 +416,7 @@ mod tests {
         // Advance time and process events
         {
             let mut clock = test_throttler_unbuffered.clock.borrow_mut();
-            let time_events = clock.advance_time(1_000_000_000.into(), true);
+            let time_events = clock.advance_time(test_throttler_unbuffered.interval.into(), true);
             for each_event in clock.match_handlers(time_events) {
                 drop(clock); // Release the mutable borrow
 

@@ -3,6 +3,7 @@ use std::{cell::RefCell, rc::Rc};
 use super::inner::InnerThrottler;
 use crate::timer::{TimeEvent, TimeEventCallback};
 
+/// Stop rate limiting messages
 pub struct ThrottlerResume<T, F> {
     inner: Rc<RefCell<InnerThrottler<T, F>>>,
 }
@@ -21,6 +22,7 @@ impl<T: 'static, F: Fn(T) + 'static> From<ThrottlerResume<T, F>> for TimeEventCa
     }
 }
 
+/// Process buffered messages
 #[derive(Clone)]
 pub struct ThrottlerProcess<T, F> {
     inner: Rc<RefCell<InnerThrottler<T, F>>>,
