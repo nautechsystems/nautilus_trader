@@ -79,7 +79,7 @@ jobs:
       - name: Set poetry cache-dir
         run: echo "POETRY_CACHE_DIR=$(poetry config cache-dir)" >> $GITHUB_ENV
 
-      - name: Poetry cache
+      - name: Cached poetry
         id: cached-poetry
         uses: actions/cache@v4
         with:
