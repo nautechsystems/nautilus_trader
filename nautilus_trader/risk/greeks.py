@@ -38,12 +38,18 @@ class GreeksCalculatorConfig(ActorConfig, frozen=True):
     """
     Configuration settings for the GreeksCalculator actor.
 
-    Attributes:
-        load_greeks (bool): Flag to determine whether to load pre-calculated Greeks.
-        underlying (str): The underlying asset symbol.
-        bar_spec (str): The bar specification for data subscription.
-        curve_name (str): The name of the interest rate curve.
-        interest_rate (float): The interest rate used for calculations.
+    Parameters
+    ----------
+    load_greeks : bool, default False
+        Flag to determine whether to load pre-calculated Greeks.
+    underlying : str, default "ES"
+        The underlying asset symbol.
+    bar_spec : str, default "1-MINUTE-LAST"
+        The bar specification for data subscription.
+    curve_name : str, default "USD_ShortTerm"
+        The name of the interest rate curve.
+    interest_rate : float, default 0.05
+        The interest rate used for calculations.
 
     """
 
@@ -61,19 +67,34 @@ class GreeksCalculator(Actor):
     This calculator works specifically for European options on futures with no dividends.
     It computes the Greeks for all options of a given underlying when a bar of the future is received.
 
-    Attributes:
-        load_greeks (bool): Flag to determine whether to load pre-calculated Greeks.
-        underlying (str): The underlying asset symbol.
-        bar_spec (str): The bar specification for data subscription.
-        curve_name (str): The name of the interest rate curve.
-        interest_rate (InterestRateData or InterestRateCurveData): The interest rate data used for calculations.
+    Parameters
+    ----------
+    config : GreeksCalculatorConfig
+        The configuration settings for the GreeksCalculator.
 
-    Methods:
-        on_start(): Initializes data subscriptions when the actor starts.
-        on_data(data): Handles incoming data updates (GreeksData, InterestRateData or InterestRateCurveData).
-        on_bar(bar: Bar): Processes incoming bar data and triggers Greek calculations.
-        compute_greeks(instrument_id: InstrumentId, future_price: float, ts_event: int):
-            Computes Greeks for options based on the future price.
+    Attributes
+    ----------
+    load_greeks : bool
+        Flag to determine whether to load pre-calculated Greeks.
+    underlying : str
+        The underlying asset symbol.
+    bar_spec : str
+        The bar specification for data subscription.
+    curve_name : str
+        The name of the interest rate curve.
+    interest_rate : float
+        The interest rate used for calculations.
+
+    Methods
+    -------
+    on_start()
+        Initializes data subscriptions when the actor starts.
+    on_data(data)
+        Handles incoming data updates (GreeksData, InterestRateData or InterestRateCurveData).
+    on_bar(bar: Bar)
+        Processes incoming bar data and triggers Greek calculations.
+    compute_greeks(instrument_id: InstrumentId, future_price: float, ts_event: int)
+        Computes Greeks for options based on the future price.
 
     """
 
@@ -192,9 +213,12 @@ class InterestRateProviderConfig(ActorConfig, frozen=True):
     """
     Configuration for the InterestRateProvider actor.
 
-    Attributes:
-        interest_rates_file (str): Path to the file containing interest rate data.
-        curve_name (str): Name of the interest rate curve, defaulting to "USD_ShortTerm".
+    Parameters
+    ----------
+    interest_rates_file : str
+        Path to the file containing interest rate data.
+    curve_name : str, default "USD_ShortTerm"
+        Name of the interest rate curve. Default is "USD_ShortTerm".
 
     """
 
@@ -210,14 +234,19 @@ class InterestRateProvider(Actor):
     updating the current interest rate, and publishing interest rate data
     on the message bus.
 
-    Attributes:
-        interest_rates_file (str): Path to the file containing interest rate data.
-        curve_name (str): Name of the interest rate curve.
-        interest_rates_df (pandas.DataFrame): DataFrame containing imported interest rate data.
+    Parameters
+    ----------
+    interest_rates_file : str
+        Path to the file containing interest rate data.
+    curve_name : str
+        Name of the interest rate curve.
 
-    Methods:
-        on_start(): Initializes the interest rate data on actor start.
-        update_interest_rate(alert=None): Updates and publishes the current interest rate.
+    Methods
+    -------
+    on_start()
+        Initializes the interest rate data on actor start.
+    update_interest_rate(alert=None)
+        Updates and publishes the current interest rate.
 
     """
 
