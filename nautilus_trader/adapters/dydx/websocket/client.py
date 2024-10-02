@@ -19,6 +19,7 @@ Provide a dYdX streaming WebSocket client.
 import asyncio
 from collections.abc import Awaitable
 from collections.abc import Callable
+from datetime import timedelta
 from typing import Any
 
 import msgspec
@@ -27,6 +28,7 @@ import pandas as pd
 from nautilus_trader.adapters.dydx.common.enums import DYDXCandlesResolution
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
+from nautilus_trader.common.component import Throttler
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClient
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClientError
@@ -57,6 +59,7 @@ class DYDXWebsocketClient:
         handler: Callable[[bytes], None],
         handler_reconnect: Callable[..., Awaitable[None]] | None,
         loop: asyncio.AbstractEventLoop,
+        subscription_rate_limit_per_second: int = 2,
     ) -> None:
         """
         Provide a dYdX streaming WebSocket client.
@@ -70,6 +73,14 @@ class DYDXWebsocketClient:
         self._client: WebSocketClient | None = None
         self._is_running = False
         self._subscriptions: set[tuple[str, str]] = set()
+
+        self._subscribe_throttler = Throttler(
+            name="dydx_websocket_subscribe_throttler",
+            limit=subscription_rate_limit_per_second,
+            interval=timedelta(seconds=1),
+            clock=self._clock,
+            output_send=self._send_subscribe_msg,
+        )
 
         # Every 30 seconds, the dYdX websocket API will send a heartbeat ping control
         # frame to the connected client. If a pong event is not received within 10
@@ -230,7 +241,7 @@ class DYDXWebsocketClient:
         self._subscriptions.add(subscription)
         msg = {"type": "subscribe", "channel": "v4_trades", "id": symbol}
         self._log.debug(f"Subscribe to {symbol} trade ticks")
-        await self._send(msg)
+        self._subscribe_throttler.send(msg)
 
     async def subscribe_order_book(
         self,
@@ -252,7 +263,7 @@ class DYDXWebsocketClient:
         self._subscriptions.add(subscription)
         msg = {"type": "subscribe", "channel": "v4_orderbook", "id": symbol, "batched": True}
         self._log.debug(f"Subscribe to {symbol} order book")
-        await self._send(msg)
+        self._subscribe_throttler.send(msg)
 
     async def subscribe_klines(self, symbol: str, interval: DYDXCandlesResolution) -> None:
         """
@@ -269,7 +280,7 @@ class DYDXWebsocketClient:
 
         self._subscriptions.add(subscription)
         msg = {"type": "subscribe", "channel": "v4_candles", "id": f"{symbol}/{interval.value}"}
-        await self._send(msg)
+        self._subscribe_throttler.send(msg)
 
     async def subscribe_markets(self) -> None:
         """
@@ -286,7 +297,7 @@ class DYDXWebsocketClient:
 
         self._subscriptions.add((subscription, ""))
         msg = {"type": "subscribe", "channel": "v4_markets"}
-        await self._send(msg)
+        self._subscribe_throttler.send(msg)
 
     async def subscribe_account_update(self, wallet_address: str, subaccount_number: int) -> None:
         """
@@ -307,7 +318,7 @@ class DYDXWebsocketClient:
 
         self._subscriptions.add(subscription)
         msg = {"type": "subscribe", "channel": channel, "id": channel_id}
-        await self._send(msg)
+        self._subscribe_throttler.send(msg)
 
     async def unsubscribe_account_update(self, wallet_address: str, subaccount_number: int) -> None:
         """
@@ -410,6 +421,9 @@ class DYDXWebsocketClient:
         for subscription in self._subscriptions:
             msg = {"type": "subscribe", "channel": subscription[0], "id": subscription[1]}
             await self._send(msg)
+
+    def _send_subscribe_msg(self, msg: dict[str, Any]) -> None:
+        self._loop.create_task(self._send(msg))
 
     async def _send(self, msg: dict[str, Any]) -> None:
         if self._client is None:
