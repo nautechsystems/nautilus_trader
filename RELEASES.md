@@ -12,6 +12,7 @@ Released on TBD (UTC).
 - Implemented order book delta processing for `SimulatedExchange` (#1975), thanks @filipmacek
 - Implemented bar processing for `SimulatedExchange` (#1969), thanks @filipmacek
 - Implemented remaining getter functions in `SimulatedExchange` (#1970), thanks @filipmacek
+- Implemented rate limiting for dYdX websocket subscriptions (#1977), thanks @davidsblom
 
 ### Breaking Changes
 None
