@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added `mode` parameter to `ParquetDataCatalog.write_data` to control data writing behavior (#1976), thanks @faysou
 - Improved OKX configuration (#1966), thanks @miller-moore
 - Improved option greeks (#1964), thanks @faysou
 
