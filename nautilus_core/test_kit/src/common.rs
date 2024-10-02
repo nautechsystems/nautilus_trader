@@ -15,6 +15,7 @@
 
 use std::path::PathBuf;
 
+#[must_use]
 pub fn get_project_testdata_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -23,12 +24,11 @@ pub fn get_project_testdata_path() -> PathBuf {
         .expect("Failed to get project root")
         .join("tests")
         .join("test_data")
-        .to_path_buf()
 }
 
+#[must_use]
 pub fn get_testdata_large_checksums_filepath() -> PathBuf {
     get_project_testdata_path()
         .join("large")
         .join("checksums.json")
-        .to_path_buf()
 }

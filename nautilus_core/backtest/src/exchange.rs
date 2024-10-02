@@ -323,7 +323,7 @@ impl SimulatedExchange {
 
     pub fn process_order_book_delta(&mut self, delta: OrderBookDelta) {
         for module in &self.modules {
-            module.pre_process(Data::Delta(delta.to_owned()));
+            module.pre_process(Data::Delta(delta));
         }
 
         if !self.matching_engines.contains_key(&delta.instrument_id) {
