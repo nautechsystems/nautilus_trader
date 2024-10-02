@@ -105,14 +105,14 @@ jobs:
       #     make install-talib
       #     poetry run pip install setuptools numpy==1.26.4 ta-lib
 
-      - name: Set up cached pre-commit
+      - name: Cached pre-commit
         id: cached-pre-commit
         uses: actions/cache@v4
         with:
           path: ~/.cache/pre-commit
           key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
 
-      - name: Set up cached cargo
+      - name: Cached cargo
         id: cached-cargo
         uses: actions/cache@v4
         with:
@@ -128,7 +128,7 @@ jobs:
       - name: Set poetry cache-dir
         run: echo "POETRY_CACHE_DIR=$(poetry config cache-dir)" >> $GITHUB_ENV
 
-      - name: Poetry cache
+      - name: Cached poetry
         id: cached-poetry
         uses: actions/cache@v4
         with:
@@ -237,14 +237,14 @@ jobs:
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools wheel pre-commit msgspec
 
-      - name: Set up cached pre-commit
+      - name: Cached pre-commit
         id: cached-pre-commit
         uses: actions/cache@v4
         with:
           path: ~/.cache/pre-commit
           key: ${{ runner.os }}-${{ matrix.python-version }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
 
-      - name: Set up cached cargo
+      - name: Cached cargo
         id: cached-cargo
         uses: actions/cache@v4
         with:
@@ -260,12 +260,20 @@ jobs:
       - name: Set poetry cache-dir
         run: echo "POETRY_CACHE_DIR=$(poetry config cache-dir)" >> $GITHUB_ENV
 
-      - name: Poetry cache
+      - name: Cached poetry
         id: cached-poetry
         uses: actions/cache@v4
         with:
           path: ${{ env.POETRY_CACHE_DIR }}
           key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Cached test data
+        id: cached-testdata-large
+        uses: actions/cache@v4
+        with:
+          path: tests/test_data/large
+          key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
+          restore-keys: ${{ runner.os }}-large-files-
 
       - name: Run pre-commit
         run: |
@@ -346,14 +354,14 @@ jobs:
       - name: Install build dependencies
         run: python -m pip install --upgrade pip setuptools wheel pre-commit msgspec
 
-      - name: Set up cached pre-commit
+      - name: Cached pre-commit
         id: cached-pre-commit
         uses: actions/cache@v4
         with:
           path: ~/.cache/pre-commit
           key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
 
-      - name: Set up cached cargo
+      - name: Cached cargo
         id: cached-cargo
         uses: actions/cache@v4
         with:
@@ -369,12 +377,20 @@ jobs:
       - name: Set poetry cache-dir
         run: echo "POETRY_CACHE_DIR=$(poetry config cache-dir)" >> $GITHUB_ENV
 
-      - name: Poetry cache
+      - name: Cached poetry
         id: cached-poetry
         uses: actions/cache@v4
         with:
           path: ${{ env.POETRY_CACHE_DIR }}
           key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-poetry-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Cached test data
+        id: cached-testdata-large
+        uses: actions/cache@v4
+        with:
+          path: tests/test_data/large
+          key: ${{ runner.os }}-large-files-${{ hashFiles('tests/test_data/large/checksums.json') }}
+          restore-keys: ${{ runner.os }}-large-files-
 
       - name: Run pre-commit
         run: |
