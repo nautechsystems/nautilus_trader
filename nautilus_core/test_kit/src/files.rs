@@ -23,6 +23,15 @@ use reqwest::blocking::Client;
 use ring::digest;
 use serde_json::Value;
 
+/// Ensures that a file exists at the specified path by downloading it if necessary.
+///
+/// If the file already exists, it checks the integrity of the file using a SHA-256 checksum
+/// from the optional `checksums` file. If the checksum is valid, the function exits early. If
+/// the checksum is invalid or missing, the function updates the checksums file with the correct
+/// hash for the existing file without redownloading it.
+///
+/// If the file does not exist, it downloads the file from the specified `url` and updates the
+/// checksums file (if provided) with the calculated SHA-256 checksum of the downloaded file.
 pub fn ensure_file_exists_or_download_http(
     filepath: &Path,
     url: &str,
@@ -56,7 +65,7 @@ pub fn ensure_file_exists_or_download_http(
     Ok(())
 }
 
-pub fn download_file(filepath: &Path, url: &str) -> anyhow::Result<()> {
+fn download_file(filepath: &Path, url: &str) -> anyhow::Result<()> {
     println!("Downloading file from {url} to {}", filepath.display());
 
     if let Some(parent) = filepath.parent() {
@@ -75,7 +84,7 @@ pub fn download_file(filepath: &Path, url: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub fn calculate_sha256(filepath: &Path) -> anyhow::Result<String> {
+fn calculate_sha256(filepath: &Path) -> anyhow::Result<String> {
     let mut file = File::open(filepath)?;
     let mut context = digest::Context::new(&digest::SHA256);
     let mut buffer = [0; 4096];
@@ -92,7 +101,7 @@ pub fn calculate_sha256(filepath: &Path) -> anyhow::Result<String> {
     Ok(hex::encode(digest.as_ref()))
 }
 
-pub fn verify_sha256_checksum(filepath: &Path, checksums: &Path) -> anyhow::Result<bool> {
+fn verify_sha256_checksum(filepath: &Path, checksums: &Path) -> anyhow::Result<bool> {
     let file = File::open(checksums)?;
     let reader = BufReader::new(file);
     let checksums: Value = serde_json::from_reader(reader)?;
@@ -112,7 +121,7 @@ pub fn verify_sha256_checksum(filepath: &Path, checksums: &Path) -> anyhow::Resu
     Ok(false)
 }
 
-pub fn update_sha256_checksums(
+fn update_sha256_checksums(
     filepath: &Path,
     checksums_file: &Path,
     new_checksum: &str,
