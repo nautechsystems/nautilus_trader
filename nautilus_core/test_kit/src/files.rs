@@ -138,7 +138,7 @@ fn update_sha256_checksums(
 
     // Add or update the checksum
     let filename = filepath.file_name().unwrap().to_str().unwrap().to_string();
-    let prefixed_checksum = format!("sha256:{}", new_checksum);
+    let prefixed_checksum = format!("sha256:{new_checksum}");
     checksums_map.insert(filename, Value::String(prefixed_checksum));
 
     let file = OpenOptions::new()
