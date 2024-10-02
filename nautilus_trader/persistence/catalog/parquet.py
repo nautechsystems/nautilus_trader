@@ -236,6 +236,7 @@ class ParquetDataCatalog(BaseDataCatalog):
         data_cls: type[Data],
         instrument_id: str | None = None,
         basename_template: str = "part-{i}",
+        mode: str = "overwrite",
         **kwargs: Any,
     ) -> None:
         if isinstance(data[0], CustomData):
@@ -250,6 +251,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 path=path,
                 fs=self.fs,
                 basename_template=basename_template,
+                mode=mode,
             )
         else:
             # Write parquet file
@@ -261,8 +263,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 filesystem=self.fs,
                 min_rows_per_group=self.min_rows_per_group,
                 max_rows_per_group=self.max_rows_per_group,
-                **self.dataset_kwargs,
-                **kwargs,
+                **kw,
             )
 
     def _fast_write(
@@ -271,20 +272,43 @@ class ParquetDataCatalog(BaseDataCatalog):
         path: str,
         fs: fsspec.AbstractFileSystem,
         basename_template: str,
+        mode: str = "overwrite",
     ) -> None:
         name = basename_template.format(i=0)
         fs.mkdirs(path, exist_ok=True)
-        pq.write_table(
-            table,
-            where=f"{path}/{name}.parquet",
-            filesystem=fs,
-            row_group_size=self.max_rows_per_group,
-        )
+        parquet_file = f"{path}/{name}.parquet"
+
+        # following solution from https://stackoverflow.com/a/70817689
+        if mode != "overwrite" and Path(parquet_file).exists():
+            existing_table = pq.read_table(source=parquet_file, pre_buffer=False, memory_map=True)
+
+            with pq.ParquetWriter(
+                where=parquet_file,
+                schema=existing_table.schema,
+                filesystem=fs,
+                write_batch_size=self.max_rows_per_group,
+            ) as pq_writer:
+                table = table.cast(existing_table.schema)
+
+                if mode == "append":
+                    pq_writer.write_table(existing_table)
+                    pq_writer.write_table(table)
+                elif mode == "prepend":
+                    pq_writer.write_table(table)
+                    pq_writer.write_table(existing_table)
+        else:
+            pq.write_table(
+                table,
+                where=parquet_file,
+                filesystem=fs,
+                row_group_size=self.max_rows_per_group,
+            )
 
     def write_data(
         self,
         data: list[Data | Event] | list[NautilusRustDataType],
         basename_template: str = "part-{i}",
+        mode: str = "overwrite",
         **kwargs: Any,
     ) -> None:
         """
@@ -303,6 +327,13 @@ class ParquetDataCatalog(BaseDataCatalog):
             The token '{i}' will be replaced with an automatically incremented
             integer as files are partitioned.
             If not specified, it defaults to 'part-{i}' + the default extension '.parquet'.
+        mode : str, optional
+            The mode to use when writing data and when not using using the "partitioning" option.
+            Can be one of the following:
+            - "append": Appends the data to the existing data.
+            - "prepend": Prepends the data to the existing data.
+            - "overwrite": Overwrites the existing data.
+            If not specified, it defaults to "overwrite".
         kwargs : Any
             Additional keyword arguments to be passed to the `write_chunk` method.
 
@@ -352,6 +383,7 @@ class ParquetDataCatalog(BaseDataCatalog):
                 data_cls=name_to_cls[cls_name],
                 instrument_id=instrument_id,
                 basename_template=basename_template,
+                mode=mode,
                 **kwargs,
             )
 

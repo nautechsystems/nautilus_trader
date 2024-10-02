@@ -5,6 +5,7 @@
 # Note: Use the python extension jupytext to be able to open this python file in jupyter as a notebook
 
 # %%
+# from nautilus_trader.adapters.databento.data_utils import init_databento_client
 import nautilus_trader.adapters.databento.data_utils as db_data_utils
 from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.adapters.databento.data_utils import data_path
@@ -175,8 +176,8 @@ class OptionStrategy(Strategy):
 # %%
 # BacktestEngineConfig
 
-load_greeks = False
-stream_data = False
+# for saving and loading custom data greeks, use False, True then True, False below
+load_greeks, stream_data = False, False
 
 actors = [
     ImportableActorConfig(
@@ -273,7 +274,7 @@ configs = [
         engine=engine_config,
         data=data,
         venues=venues,
-        chunk_size=10_000,  # use None when using load_greeks ?
+        chunk_size=None,  # use None when loading custom data
     ),
 ]
 
