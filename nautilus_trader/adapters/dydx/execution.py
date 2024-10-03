@@ -27,6 +27,7 @@ import pandas as pd
 from grpc.aio._call import AioRpcError
 from v4_proto.dydxprotocol.clob.order_pb2 import Order as DYDXOrder
 from v4_proto.dydxprotocol.clob.order_pb2 import OrderId as DYDXOrderId
+from v4_proto.dydxprotocol.clob.tx_pb2 import OrderBatch
 
 from nautilus_trader.adapters.dydx.common.common import DYDXOrderTags
 from nautilus_trader.adapters.dydx.common.constants import DYDX_VENUE
@@ -1133,22 +1134,37 @@ class DYDXExecutionClient(LiveExecutionClient):
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
         # Check open orders for the strategy
         open_orders_strategy: list[Order] = self._cache.orders_open(strategy_id=command.strategy_id)
-        open_order_ids = {order.client_order_id for order in open_orders_strategy}
+        open_orders = {order.client_order_id: order for order in open_orders_strategy}
 
         # Filter orders that are actually open
-        valid_cancels: list[CancelOrder] = []
+        valid_orders: list[Order] = []
 
         for cancel in command.cancels:
-            if cancel.client_order_id in open_order_ids:
-                valid_cancels.append(cancel)
+            order = open_orders.get(cancel.client_order_id)
+            if order is not None:
+                valid_orders.append(order)
             else:
                 self._log.warning(f"{cancel.client_order_id!r} not open for cancel")
 
-        if not valid_cancels:
+        if not valid_orders:
             self._log.warning("No orders open for batch cancel")
             return
 
-        for order in valid_cancels:
+        short_term_orders = []
+        long_term_orders = []
+
+        for order in valid_orders:
+            dydx_order_tags = self._parse_order_tags(order=order)
+
+            if dydx_order_tags.is_short_term_order:
+                short_term_orders.append(order)
+            else:
+                long_term_orders.append(order)
+
+        if short_term_orders:
+            await self._cancel_short_term_orders(orders=short_term_orders)
+
+        for order in long_term_orders:
             await self._cancel_order_single(
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
@@ -1160,11 +1176,98 @@ class DYDXExecutionClient(LiveExecutionClient):
             strategy_id=command.strategy_id,
         )
 
+        short_term_orders = []
+        long_term_orders = []
+
         for order in open_orders_strategy:
+            dydx_order_tags = self._parse_order_tags(order=order)
+
+            if dydx_order_tags.is_short_term_order:
+                short_term_orders.append(order)
+            else:
+                long_term_orders.append(order)
+
+        if short_term_orders:
+            await self._cancel_short_term_orders(orders=short_term_orders)
+
+        for order in long_term_orders:
             await self._cancel_order_single(
                 instrument_id=order.instrument_id,
                 client_order_id=order.client_order_id,
             )
+
+    async def _cancel_short_term_orders(self, orders: list[Order]) -> None:
+        """
+        Cancel multiple short order terms at once.
+        """
+        orders_per_instrument_id: dict[str, list[Order]] = defaultdict(list)
+
+        for order in orders:
+            orders_per_instrument_id[order.instrument_id].append(order)
+
+        # List of a batch of orders per instrument
+        order_batch_list: list[OrderBatch] = []
+
+        for instrument_id, current_orders in orders_per_instrument_id.items():
+            instrument = self._cache.instrument(instrument_id)
+
+            if instrument is None:
+                self._log.error(
+                    f"Cannot cancel batch of orders: no instrument for {instrument_id}",
+                )
+                return
+
+            client_ids = []
+
+            for order in current_orders:
+                client_order_id_int = self._client_order_id_generator.get_client_order_id_int(
+                    client_order_id=order.client_order_id,
+                )
+
+                if client_order_id_int is None:
+                    self._log.error(
+                        f"Cannot cancel order: ClientOrderId integer not found for {order.client_order_id!r}",
+                    )
+                    return
+
+                client_ids.append(client_order_id_int)
+
+            if client_ids:
+                order_batch = OrderBatch(
+                    clob_pair_id=int(instrument.info["clobPairId"]),
+                    client_ids=client_ids,
+                )
+                order_batch_list.append(order_batch)
+
+        latest_block_height = await self._grpc_account.latest_block_height()
+
+        if self._wallet is None:
+            self._log.error("Cannot cancel batch of orders: no wallet available")
+            return
+
+        # Execute batch cancel
+        if order_batch_list:
+            async with self._retry_manager_pool as retry_manager:
+                await retry_manager.run(
+                    name="batch_cancel_orders",
+                    details=[order.client_order_id for order in orders],
+                    func=self._grpc_account.batch_cancel_orders,
+                    wallet=self._wallet,
+                    wallet_address=self._wallet_address,
+                    subaccount=self._subaccount,
+                    short_term_cancels=order_batch_list,
+                    good_til_block=latest_block_height + 10,
+                )
+                if not retry_manager.result:
+                    self._log.error(f"Failed to cancel batch of orders: {retry_manager.message}")
+                    self.generate_order_cancel_rejected(
+                        strategy_id=order.strategy_id,
+                        instrument_id=order.instrument_id,
+                        client_order_id=order.client_order_id,
+                        venue_order_id=order.venue_order_id,
+                        reason=retry_manager.message,
+                        ts_event=self._clock.timestamp_ns(),
+                    )
 
     async def _cancel_order_single(
         self,
