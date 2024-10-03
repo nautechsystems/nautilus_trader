@@ -238,6 +238,22 @@ fn test_quote_tick_query() {
 }
 
 #[rstest]
+fn test_quote_tick_query_with_filter() {
+    let file_path = "../../tests/test_data/nautilus/quotes-3-groups-filter-query.parquet";
+    let mut catalog = DataBackendSession::new(10);
+    catalog
+        .add_file::<QuoteTick>(
+            "quote_005",
+            file_path,
+            Some("SELECT * FROM quote_005 WHERE ts_init >= 1701388832486000000 ORDER BY ts_init"),
+        )
+        .unwrap();
+    let query_result: QueryResult = catalog.get_query_result();
+    let ticks: Vec<Data> = query_result.collect();
+    assert!(is_monotonically_increasing_by_init(&ticks));
+}
+
+#[rstest]
 fn test_quote_tick_multiple_query() {
     let expected_length = 9_600;
     let mut catalog = DataBackendSession::new(5_000);
