@@ -1161,7 +1161,8 @@ class DYDXExecutionClient(LiveExecutionClient):
             else:
                 long_term_orders.append(order)
 
-        await self._cancel_short_term_orders(orders=short_term_orders)
+        if short_term_orders:
+            await self._cancel_short_term_orders(orders=short_term_orders)
 
         for order in long_term_orders:
             await self._cancel_order_single(
@@ -1186,7 +1187,8 @@ class DYDXExecutionClient(LiveExecutionClient):
             else:
                 long_term_orders.append(order)
 
-        await self._cancel_short_term_orders(orders=short_term_orders)
+        if short_term_orders:
+            await self._cancel_short_term_orders(orders=short_term_orders)
 
         for order in long_term_orders:
             await self._cancel_order_single(
