@@ -408,8 +408,8 @@ impl WebSocketClient {
                 sleep(Duration::from_millis(100)).await;
 
                 // Check if client needs to disconnect
-                let disconnected = disconnect_mode.load(Ordering::SeqCst);
-                match (disconnected, inner.is_alive()) {
+                let disconnect = disconnect_mode.load(Ordering::SeqCst);
+                match (disconnect, inner.is_alive()) {
                     (false, false) => match inner.reconnect().await {
                         Ok(()) => {
                             tracing::debug!("Reconnected successfully");
@@ -434,10 +434,10 @@ impl WebSocketClient {
                         inner.shutdown().await;
                         if let Some(ref handler) = post_disconnection {
                             Python::with_gil(|py| match handler.call0(py) {
-                                Ok(_) => tracing::debug!("Called `post_reconnection` handler"),
+                                Ok(_) => tracing::debug!("Called `post_disconnection` handler"),
                                 Err(e) => {
                                     tracing::error!(
-                                        "Error calling `post_reconnection` handler: {e}"
+                                        "Error calling `post_disconnection` handler: {e}"
                                     );
                                 }
                             });
