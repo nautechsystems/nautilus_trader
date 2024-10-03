@@ -18,6 +18,7 @@ Released on TBD (UTC).
 None
 
 ### Fixes
+- Fixed out of order row groups in DataFusion filter query (#1974), thanks @twitu
 - Fixed circular imports for `Actor`, thanks @limx0
 - Fixed `BacktestNode` data sorting regression causing clock non-decreasing time assertion error
 - Fixed `Condition` method name collisions with C `true` and `false` macros, which occurred during compilation in profiling mode
