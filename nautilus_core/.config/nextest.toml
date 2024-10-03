@@ -2,12 +2,12 @@
 serial-tests = { max-threads = 1 }
 
 [profile.default]
-# Default settings for the 'default' profile
+# Default settings
 
 [[profile.default.overrides]]
-filter = 'test(serial_tests::)'
+filter = 'test(serial_tests)'
 test-group = 'serial-tests'
 
 [[profile.default.overrides]]
-filter = 'test(test_order_book::)'
-timeout = "120s"
+filter = 'test(test_order_book)'
+slow-timeout = { period = "300s" }
