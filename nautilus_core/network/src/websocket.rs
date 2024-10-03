@@ -444,7 +444,12 @@ impl WebSocketClient {
                         }
                         break;
                     }
-                    (true, false) => break,
+                    // Close the heartbeat task on disconnect if the connection is already closed
+                    (true, false) => {
+                        tracing::debug!("Inner client is disconnected");
+                        tracing::debug!("Shutting down inner client to clean up running tasks");
+                        inner.shutdown().await
+                    }
                     _ => (),
                 }
             }
