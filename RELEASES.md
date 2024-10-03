@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added `mode` parameter to `ParquetDataCatalog.write_data` to control data writing behavior (#1976), thanks @faysou
+- Added batch cancel for short terms orders of dYdX (#1978), thanks @davidsblom
 - Improved OKX configuration (#1966), thanks @miller-moore
 - Improved option greeks (#1964), thanks @faysou
 
@@ -19,11 +20,12 @@ None
 
 ### Fixes
 - Fixed out of order row groups in DataFusion filter query (#1974), thanks @twitu
-- Fixed circular imports for `Actor`, thanks @limx0
 - Fixed `BacktestNode` data sorting regression causing clock non-decreasing time assertion error
+- Fixed circular imports for `Actor`, thanks @limx0
 - Fixed `Condition` method name collisions with C `true` and `false` macros, which occurred during compilation in profiling mode
 - Fixed OKX HTTP client signatures (#1966), thanks @miller-moore
 - Fixed resubscribing to orderbooks for dYdX (#1973), thanks @davidsblom
+- Fixed `WebSocketClient` task cleanup on disconnect (#1981), thanks @twitu
 
 ---
 
