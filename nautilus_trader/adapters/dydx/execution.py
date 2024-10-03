@@ -1247,13 +1247,27 @@ class DYDXExecutionClient(LiveExecutionClient):
 
         # Execute batch cancel
         if order_batch_list:
-            await self._grpc_account.batch_cancel_orders(
-                wallet=self._wallet,
-                wallet_address=self._wallet_address,
-                subaccount=self._subaccount,
-                short_term_cancels=order_batch_list,
-                good_til_block=latest_block_height + 10,
-            )
+            async with self._retry_manager_pool as retry_manager:
+                await retry_manager.run(
+                    name="batch_cancel_orders",
+                    details=[order.client_order_id for order in orders],
+                    func=self._grpc_account.batch_cancel_orders,
+                    wallet=self._wallet,
+                    wallet_address=self._wallet_address,
+                    subaccount=self._subaccount,
+                    short_term_cancels=order_batch_list,
+                    good_til_block=latest_block_height + 10,
+                )
+                if not retry_manager.result:
+                    self._log.error(f"Failed to cancel batch of orders: {retry_manager.message}")
+                    self.generate_order_cancel_rejected(
+                        strategy_id=order.strategy_id,
+                        instrument_id=order.instrument_id,
+                        client_order_id=order.client_order_id,
+                        venue_order_id=order.venue_order_id,
+                        reason=retry_manager.message,
+                        ts_event=self._clock.timestamp_ns(),
+                    )
 
     async def _cancel_order_single(
         self,
