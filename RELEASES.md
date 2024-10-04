@@ -22,10 +22,11 @@ None
 - Fixed out of order row groups in DataFusion filter query (#1974), thanks @twitu
 - Fixed `BacktestNode` data sorting regression causing clock non-decreasing time assertion error
 - Fixed circular imports for `Actor`, thanks @limx0
-- Fixed `Condition` method name collisions with C `true` and `false` macros, which occurred during compilation in profiling mode
 - Fixed OKX HTTP client signatures (#1966), thanks @miller-moore
 - Fixed resubscribing to orderbooks for dYdX (#1973), thanks @davidsblom
+- Fixed generating cancel rejections for dYdX (#1982), thanks @davidsblom
 - Fixed `WebSocketClient` task cleanup on disconnect (#1981), thanks @twitu
+- Fixed `Condition` method name collisions with C `true` and `false` macros, which occurred during compilation in profiling mode
 
 ---
 
