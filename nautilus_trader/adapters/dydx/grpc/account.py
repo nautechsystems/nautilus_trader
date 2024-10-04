@@ -382,14 +382,22 @@ class DYDXAccountGRPCAPI:
         """
         Batch cancels orders for a subaccount.
 
-        Args:
-            wallet (Wallet): The wallet to use for signing the transaction.
-            wallet_address (str): The dYdX wallet address.
-            subaccount (int): The subaccount number.
-            short_term_cancels (List[OrderBatch]): List of OrderBatch objects containing the orders to cancel.
-            good_til_block (int): The last block the short term order cancellations can be executed at.
+        Parameters
+        ----------
+        wallet : Wallet
+            The wallet to use for signing the transaction.
+        wallet_address : str
+            The dYdX wallet address.
+        subaccount : int
+            The subaccount number.
+        short_term_cancels : list[OrderBatch]
+            List of OrderBatch objects containing the orders to cancel.
+        good_til_block : int
+            The last block the short term order cancellations can be executed at.
 
-        Returns:
+        Returns
+        -------
+        BroadcastTxResponse
             The response from the transaction broadcast.
 
         """
@@ -419,15 +427,20 @@ class DYDXAccountGRPCAPI:
         """
         Cancel an order.
 
-        Args:
-        ----
-            wallet (Wallet): The wallet to use for signing the transaction.
-            order_id (OrderId): The ID of the order to cancel.
-            good_til_block (int, optional): The block number until which the order is valid. Defaults to None.
-            good_til_block_time (int, optional): The block time until which the order is valid. Defaults to None.
+        Parameters
+        ----------
+        wallet : Wallet
+            The wallet to use for signing the transaction.
+        order_id : OrderId
+            The ID of the order to cancel.
+        good_til_block : int, optional
+            The block number until which the order is valid. Defaults to None.
+        good_til_block_time: int, optional
+            The block time until which the order is valid. Defaults to None.
 
-        Returns:
+        Returns
         -------
+        BroadcastTxResponse
             The response from the transaction broadcast.
 
         """

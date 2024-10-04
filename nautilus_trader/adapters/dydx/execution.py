@@ -1196,7 +1196,7 @@ class DYDXExecutionClient(LiveExecutionClient):
                 client_order_id=order.client_order_id,
             )
 
-    async def _cancel_short_term_orders(self, orders: list[Order]) -> None:
+    async def _cancel_short_term_orders(self, orders: list[Order]) -> None:  # noqa: C901
         """
         Cancel multiple short order terms at once.
         """
@@ -1260,14 +1260,16 @@ class DYDXExecutionClient(LiveExecutionClient):
                 )
                 if not retry_manager.result:
                     self._log.error(f"Failed to cancel batch of orders: {retry_manager.message}")
-                    self.generate_order_cancel_rejected(
-                        strategy_id=order.strategy_id,
-                        instrument_id=order.instrument_id,
-                        client_order_id=order.client_order_id,
-                        venue_order_id=order.venue_order_id,
-                        reason=retry_manager.message,
-                        ts_event=self._clock.timestamp_ns(),
-                    )
+
+                    for order in orders:
+                        self.generate_order_cancel_rejected(
+                            strategy_id=order.strategy_id,
+                            instrument_id=order.instrument_id,
+                            client_order_id=order.client_order_id,
+                            venue_order_id=order.venue_order_id,
+                            reason=retry_manager.message,
+                            ts_event=self._clock.timestamp_ns(),
+                        )
 
     async def _cancel_order_single(
         self,
