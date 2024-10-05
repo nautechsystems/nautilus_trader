@@ -14,6 +14,7 @@ Released on TBD (UTC).
 - Implemented bar processing for `SimulatedExchange` (#1969), thanks @filipmacek
 - Implemented remaining getter functions in `SimulatedExchange` (#1970), thanks @filipmacek
 - Implemented rate limiting for dYdX websocket subscriptions (#1977), thanks @davidsblom
+- Refined `DatabentoDataLoader` internals to accommodate usage from Rust
 
 ### Breaking Changes
 None

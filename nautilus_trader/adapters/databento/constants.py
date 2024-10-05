@@ -24,4 +24,4 @@ DATABENTO_CLIENT_ID: Final[ClientId] = ClientId(DATABENTO)
 
 ALL_SYMBOLS: Final[str] = "ALL_SYMBOLS"
 
-PUBLISHERS_PATH: Final[Path] = (Path(__file__).resolve().parent / "publishers.json").resolve()
+PUBLISHERS_FILEPATH: Final[Path] = (Path(__file__).resolve().parent / "publishers.json").resolve()
