@@ -35,12 +35,12 @@ pub fn test_order_book_databento_mbo_nasdaq() {
     let instrument_id = InstrumentId::from("AAPL.XNAS");
     let mut _book = OrderBook::new(instrument_id, BookType::L3_MBO);
 
-    let publishers_path = get_workspace_root_path()
+    let publishers_filepath = get_workspace_root_path()
         .join("adapters")
         .join("src")
         .join("databento")
         .join("publishers.json");
-    let _loader = DatabentoDataLoader::new(Some(publishers_path)).unwrap();
+    let _loader = DatabentoDataLoader::new(Some(publishers_filepath)).unwrap();
     // let deltas = loader
     //     .load_order_book_deltas(filepath, Some(instrument_id))
     //     .unwrap();
