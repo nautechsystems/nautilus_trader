@@ -24,7 +24,7 @@ from nautilus_trader.adapters.databento.common import databento_schema_from_naut
 from nautilus_trader.adapters.databento.config import DatabentoDataClientConfig
 from nautilus_trader.adapters.databento.constants import ALL_SYMBOLS
 from nautilus_trader.adapters.databento.constants import DATABENTO
-from nautilus_trader.adapters.databento.constants import PUBLISHERS_PATH
+from nautilus_trader.adapters.databento.constants import PUBLISHERS_FILEPATH
 from nautilus_trader.adapters.databento.enums import DatabentoSchema
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.adapters.databento.providers import DatabentoInstrumentProvider
@@ -254,7 +254,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             live_client = nautilus_pyo3.DatabentoLiveClient(
                 key=self._live_api_key,
                 dataset=dataset,
-                publishers_path=str(PUBLISHERS_PATH),
+                publishers_filepath=str(PUBLISHERS_FILEPATH),
             )
             self._live_clients[dataset] = live_client
 
@@ -268,7 +268,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             live_client = nautilus_pyo3.DatabentoLiveClient(
                 key=self._live_api_key,
                 dataset=dataset,
-                publishers_path=str(PUBLISHERS_PATH),
+                publishers_filepath=str(PUBLISHERS_FILEPATH),
             )
             self._live_clients_mbo[dataset] = live_client
 

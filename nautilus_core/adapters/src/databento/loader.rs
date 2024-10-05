@@ -23,7 +23,10 @@ use dbn::{
 use fallible_streaming_iterator::FallibleStreamingIterator;
 use indexmap::IndexMap;
 use nautilus_model::{
-    data::{status::InstrumentStatus, Data},
+    data::{
+        bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick,
+        status::InstrumentStatus, trade::TradeTick, Data,
+    },
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::any::InstrumentAny,
     types::currency::Currency,
@@ -88,14 +91,19 @@ impl DatabentoDataLoader {
             exe_path
         };
 
-        loader.load_publishers(publishers_path)?;
+        let publishers_path_clone = publishers_path.clone();
+        loader
+            .load_publishers(publishers_path_clone)
+            .unwrap_or_else(|_| {
+                panic!("No such file or directory '{}'", publishers_path.display())
+            });
 
         Ok(loader)
     }
 
-    /// Load the publishers data from the file at the given `path`.
-    pub fn load_publishers(&mut self, path: PathBuf) -> anyhow::Result<()> {
-        let file_content = fs::read_to_string(path)?;
+    /// Load the publishers data from the file at the given `filepath`.
+    pub fn load_publishers(&mut self, filepath: PathBuf) -> anyhow::Result<()> {
+        let file_content = fs::read_to_string(filepath)?;
         let publishers: Vec<DatabentoPublisher> = serde_json::from_str(&file_content)?;
 
         self.publishers_map = publishers
@@ -140,17 +148,17 @@ impl DatabentoDataLoader {
         self.publisher_venue_map.get(&publisher_id)
     }
 
-    pub fn schema_from_file(&self, path: PathBuf) -> anyhow::Result<Option<String>> {
-        let decoder = Decoder::from_zstd_file(path)?;
+    pub fn schema_from_file(&self, filepath: PathBuf) -> anyhow::Result<Option<String>> {
+        let decoder = Decoder::from_zstd_file(filepath)?;
         let metadata = decoder.metadata();
         Ok(metadata.schema.map(|schema| schema.to_string()))
     }
 
     pub fn read_definition_records(
         &mut self,
-        path: PathBuf,
+        filepath: PathBuf,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<InstrumentAny>> + '_> {
-        let mut decoder = Decoder::from_zstd_file(path)?;
+        let mut decoder = Decoder::from_zstd_file(filepath)?;
         decoder.set_upgrade_policy(dbn::VersionUpgradePolicy::Upgrade);
         let mut dbn_stream = decoder.decode_stream::<InstrumentDefMsgV1>();
 
@@ -187,14 +195,14 @@ impl DatabentoDataLoader {
 
     pub fn read_records<T>(
         &self,
-        path: PathBuf,
+        filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
         include_trades: bool,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<(Option<Data>, Option<Data>)>> + '_>
     where
         T: dbn::Record + dbn::HasRType + 'static,
     {
-        let decoder = Decoder::from_zstd_file(path)?;
+        let decoder = Decoder::from_zstd_file(filepath)?;
         let metadata = decoder.metadata().clone();
         let mut dbn_stream = decoder.decode_stream::<T>();
 
@@ -233,15 +241,140 @@ impl DatabentoDataLoader {
         }))
     }
 
+    pub fn load_instruments(&mut self, filepath: PathBuf) -> anyhow::Result<Vec<InstrumentAny>> {
+        self.read_definition_records(filepath)?
+            .collect::<Result<Vec<_>, _>>()
+    }
+
+    // Cannot include trades
+    pub fn load_order_book_deltas(
+        &self,
+        filepath: PathBuf,
+        instrument_id: Option<InstrumentId>,
+    ) -> anyhow::Result<Vec<OrderBookDelta>> {
+        self.read_records::<dbn::MboMsg>(filepath, instrument_id, false)?
+            .filter_map(|result| match result {
+                Ok((Some(item1), _)) => {
+                    if let Data::Delta(delta) = item1 {
+                        Some(Ok(delta))
+                    } else {
+                        None
+                    }
+                }
+                Ok((None, _)) => None,
+                Err(e) => Some(Err(e)),
+            })
+            .collect()
+    }
+
+    pub fn load_order_book_depth10(
+        &self,
+        filepath: PathBuf,
+        instrument_id: Option<InstrumentId>,
+    ) -> anyhow::Result<Vec<OrderBookDepth10>> {
+        self.read_records::<dbn::Mbp10Msg>(filepath, instrument_id, false)?
+            .filter_map(|result| match result {
+                Ok((Some(item1), _)) => {
+                    if let Data::Depth10(depth) = item1 {
+                        Some(Ok(depth))
+                    } else {
+                        None
+                    }
+                }
+                Ok((None, _)) => None,
+                Err(e) => Some(Err(e)),
+            })
+            .collect()
+    }
+
+    pub fn load_quotes(
+        &self,
+        filepath: PathBuf,
+        instrument_id: Option<InstrumentId>,
+    ) -> anyhow::Result<Vec<QuoteTick>> {
+        self.read_records::<dbn::Mbp1Msg>(filepath, instrument_id, false)?
+            .filter_map(|result| match result {
+                Ok((Some(item1), _)) => {
+                    if let Data::Quote(quote) = item1 {
+                        Some(Ok(quote))
+                    } else {
+                        None
+                    }
+                }
+                Ok((None, _)) => None,
+                Err(e) => Some(Err(e)),
+            })
+            .collect()
+    }
+
+    pub fn load_tbbo_trades(
+        &self,
+        filepath: PathBuf,
+        instrument_id: Option<InstrumentId>,
+    ) -> anyhow::Result<Vec<TradeTick>> {
+        self.read_records::<dbn::TbboMsg>(filepath, instrument_id, false)?
+            .filter_map(|result| match result {
+                Ok((_, maybe_item2)) => {
+                    if let Some(Data::Trade(trade)) = maybe_item2 {
+                        Some(Ok(trade))
+                    } else {
+                        None
+                    }
+                }
+                Err(e) => Some(Err(e)),
+            })
+            .collect()
+    }
+
+    pub fn load_trades(
+        &self,
+        filepath: PathBuf,
+        instrument_id: Option<InstrumentId>,
+    ) -> anyhow::Result<Vec<TradeTick>> {
+        self.read_records::<dbn::TradeMsg>(filepath, instrument_id, false)?
+            .filter_map(|result| match result {
+                Ok((Some(item1), _)) => {
+                    if let Data::Trade(trade) = item1 {
+                        Some(Ok(trade))
+                    } else {
+                        None
+                    }
+                }
+                Ok((None, _)) => None,
+                Err(e) => Some(Err(e)),
+            })
+            .collect()
+    }
+
+    pub fn load_bars(
+        &self,
+        filepath: PathBuf,
+        instrument_id: Option<InstrumentId>,
+    ) -> anyhow::Result<Vec<Bar>> {
+        self.read_records::<dbn::OhlcvMsg>(filepath, instrument_id, false)?
+            .filter_map(|result| match result {
+                Ok((Some(item1), _)) => {
+                    if let Data::Bar(bar) = item1 {
+                        Some(Ok(bar))
+                    } else {
+                        None
+                    }
+                }
+                Ok((None, _)) => None,
+                Err(e) => Some(Err(e)),
+            })
+            .collect()
+    }
+
     pub fn read_status_records<T>(
         &self,
-        path: PathBuf,
+        filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<InstrumentStatus>> + '_>
     where
         T: dbn::Record + dbn::HasRType + 'static,
     {
-        let decoder = Decoder::from_zstd_file(path)?;
+        let decoder = Decoder::from_zstd_file(filepath)?;
         let metadata = decoder.metadata().clone();
         let mut dbn_stream = decoder.decode_stream::<T>();
 
@@ -275,13 +408,13 @@ impl DatabentoDataLoader {
 
     pub fn read_imbalance_records<T>(
         &self,
-        path: PathBuf,
+        filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<DatabentoImbalance>> + '_>
     where
         T: dbn::Record + dbn::HasRType + 'static,
     {
-        let decoder = Decoder::from_zstd_file(path)?;
+        let decoder = Decoder::from_zstd_file(filepath)?;
         let metadata = decoder.metadata().clone();
         let mut dbn_stream = decoder.decode_stream::<T>();
 
@@ -324,13 +457,13 @@ impl DatabentoDataLoader {
 
     pub fn read_statistics_records<T>(
         &self,
-        path: PathBuf,
+        filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<DatabentoStatistics>> + '_>
     where
         T: dbn::Record + dbn::HasRType + 'static,
     {
-        let decoder = Decoder::from_zstd_file(path)?;
+        let decoder = Decoder::from_zstd_file(filepath)?;
         let metadata = decoder.metadata().clone();
         let mut dbn_stream = decoder.decode_stream::<T>();
 

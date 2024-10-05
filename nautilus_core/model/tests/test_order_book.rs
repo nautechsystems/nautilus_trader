@@ -13,9 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_adapters::databento::loader::DatabentoDataLoader;
 use nautilus_model::{enums::BookType, identifiers::InstrumentId, orderbook::book::OrderBook};
 use nautilus_test_kit::{
-    common::{get_project_testdata_path, get_testdata_large_checksums_filepath},
+    common::{
+        get_project_testdata_path, get_testdata_large_checksums_filepath, get_workspace_root_path,
+    },
     files::ensure_file_exists_or_download_http,
 };
 use rstest::*;
@@ -30,7 +33,21 @@ pub fn test_order_book_databento_mbo_nasdaq() {
     ensure_file_exists_or_download_http(&filepath, url, Some(&checksums)).unwrap();
 
     let instrument_id = InstrumentId::from("AAPL.XNAS");
-    let _ = OrderBook::new(instrument_id, BookType::L3_MBO);
+    let mut _book = OrderBook::new(instrument_id, BookType::L3_MBO);
+
+    let publishers_path = get_workspace_root_path()
+        .join("adapters")
+        .join("src")
+        .join("databento")
+        .join("publishers.json");
+    let _loader = DatabentoDataLoader::new(Some(publishers_path)).unwrap();
+    // let deltas = loader
+    //     .load_order_book_deltas(filepath, Some(instrument_id))
+    //     .unwrap();
+    //
+    // for delta in deltas.iter() {
+    //     book.apply_delta(delta);
+    // }
 
     // assert_eq!(book.best_bid_price().unwrap(), price);
     // assert_eq!(book.best_ask_price().unwrap(), price);

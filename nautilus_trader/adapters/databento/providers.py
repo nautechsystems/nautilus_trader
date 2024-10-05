@@ -21,7 +21,7 @@ import pandas as pd
 import pytz
 
 from nautilus_trader.adapters.databento.constants import ALL_SYMBOLS
-from nautilus_trader.adapters.databento.constants import PUBLISHERS_PATH
+from nautilus_trader.adapters.databento.constants import PUBLISHERS_FILEPATH
 from nautilus_trader.adapters.databento.enums import DatabentoSchema
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.common.component import LiveClock
@@ -121,7 +121,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         live_client = nautilus_pyo3.DatabentoLiveClient(
             key=self._live_api_key,
             dataset=dataset,
-            publishers_path=str(PUBLISHERS_PATH),
+            publishers_filepath=str(PUBLISHERS_FILEPATH),
         )
 
         parent_symbols = list(filters.get("parent_symbols", [])) if filters is not None else None

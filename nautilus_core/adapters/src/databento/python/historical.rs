@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{fs, num::NonZeroU64, str::FromStr, sync::Arc};
+use std::{fs, num::NonZeroU64, path::PathBuf, str::FromStr, sync::Arc};
 
 use databento::{
     dbn::{self, SType},
@@ -63,14 +63,14 @@ pub struct DatabentoHistoricalClient {
 #[pymethods]
 impl DatabentoHistoricalClient {
     #[new]
-    fn py_new(key: String, publishers_path: &str) -> PyResult<Self> {
+    fn py_new(key: String, publishers_filepath: PathBuf) -> PyResult<Self> {
         let client = databento::HistoricalClient::builder()
             .key(key.clone())
             .map_err(to_pyvalue_err)?
             .build()
             .map_err(to_pyvalue_err)?;
 
-        let file_content = fs::read_to_string(publishers_path)?;
+        let file_content = fs::read_to_string(publishers_filepath)?;
         let publishers_vec: Vec<DatabentoPublisher> =
             serde_json::from_str(&file_content).map_err(to_pyvalue_err)?;
 

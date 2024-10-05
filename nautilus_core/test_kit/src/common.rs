@@ -16,14 +16,22 @@
 use std::path::PathBuf;
 
 #[must_use]
-pub fn get_project_testdata_path() -> PathBuf {
+pub fn get_workspace_root_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
-        .expect("Failed to get workspace root")
-        .parent()
         .expect("Failed to get project root")
-        .join("tests")
-        .join("test_data")
+        .to_path_buf()
+}
+
+pub fn get_project_root_path() -> PathBuf {
+    get_workspace_root_path()
+        .parent()
+        .expect("Failed to get workspace root")
+        .to_path_buf()
+}
+
+pub fn get_project_testdata_path() -> PathBuf {
+    get_project_root_path().join("tests").join("test_data")
 }
 
 #[must_use]
