@@ -41,13 +41,14 @@ use crate::databento::{
 #[pymethods]
 impl DatabentoDataLoader {
     #[new]
-    fn py_new(path: Option<String>) -> PyResult<Self> {
-        Self::new(path.map(PathBuf::from)).map_err(to_pyvalue_err)
+    fn py_new(publishers_filepath: Option<PathBuf>) -> PyResult<Self> {
+        Self::new(publishers_filepath).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_publishers")]
-    fn py_load_publishers(&mut self, path: PathBuf) -> PyResult<()> {
-        self.load_publishers(path).map_err(to_pyvalue_err)
+    fn py_load_publishers(&mut self, publishers_filepath: PathBuf) -> PyResult<()> {
+        self.load_publishers(publishers_filepath)
+            .map_err(to_pyvalue_err)
     }
 
     #[must_use]

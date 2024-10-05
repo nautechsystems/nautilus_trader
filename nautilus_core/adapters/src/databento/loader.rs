@@ -73,7 +73,7 @@ pub struct DatabentoDataLoader {
 
 impl DatabentoDataLoader {
     /// Creates a new [`DatabentoDataLoader`] instance.
-    pub fn new(path: Option<PathBuf>) -> anyhow::Result<Self> {
+    pub fn new(publishers_filepath: Option<PathBuf>) -> anyhow::Result<Self> {
         let mut loader = Self {
             publishers_map: IndexMap::new(),
             venue_dataset_map: IndexMap::new(),
@@ -81,7 +81,7 @@ impl DatabentoDataLoader {
         };
 
         // Load publishers
-        let publishers_path = if let Some(p) = path {
+        let publishers_filepath = if let Some(p) = publishers_filepath {
             p
         } else {
             // Use built-in publishers path
@@ -91,11 +91,13 @@ impl DatabentoDataLoader {
             exe_path
         };
 
-        let publishers_path_clone = publishers_path.clone();
         loader
-            .load_publishers(publishers_path_clone)
+            .load_publishers(publishers_filepath.clone())
             .unwrap_or_else(|_| {
-                panic!("No such file or directory '{}'", publishers_path.display())
+                panic!(
+                    "No such file or directory '{}'",
+                    publishers_filepath.display()
+                )
             });
 
         Ok(loader)
