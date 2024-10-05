@@ -82,11 +82,8 @@ class DYDXWebsocketClient:
             output_send=self._send_subscribe_msg,
         )
 
-        # Every 30 seconds, the dYdX websocket API will send a heartbeat ping control
-        # frame to the connected client. If a pong event is not received within 10
-        # seconds back, the websocket API will disconnect.
-        self._ping_timestamp = self._clock.utc_now()
-        self._ping_interval_secs: int = 40
+        self._msg_timestamp = self._clock.utc_now()
+        self._msg_interval_secs: int = 60
         self._reconnect_task: asyncio.Task | None = None
 
     def is_connected(self) -> bool:
@@ -132,7 +129,7 @@ class DYDXWebsocketClient:
         self._log.debug(f"Connecting to {self._base_url} websocket stream")
         config = WebSocketConfig(
             url=self._base_url,
-            handler=self._handler,
+            handler=self._msg_handler,
             heartbeat=10,
             headers=[],
             ping_handler=self._handle_ping,
@@ -144,13 +141,16 @@ class DYDXWebsocketClient:
         self._client = client
         self._log.info(f"Connected to {self._base_url}", LogColor.BLUE)
 
-        self._ping_timestamp = self._clock.utc_now()
+        self._msg_timestamp = self._clock.utc_now()
 
         if self._reconnect_task is None:
-            self._reconnect_task = self._loop.create_task(self._reconnect_ping())
+            self._reconnect_task = self._loop.create_task(self._reconnect_guard())
+
+    def _msg_handler(self, raw: bytes) -> None:
+        self._msg_timestamp = self._clock.utc_now()
+        self._handler(raw)
 
     def _handle_ping(self, raw: bytes) -> None:
-        self._ping_timestamp = self._clock.utc_now()
         self._loop.create_task(self.send_pong(raw))
 
     async def send_pong(self, raw: bytes) -> None:
@@ -162,23 +162,24 @@ class DYDXWebsocketClient:
 
         await self._client.send_pong(raw)
 
-    async def _reconnect_ping(self) -> None:
+    async def _reconnect_guard(self) -> None:
         """
-        Reconnect the websocket client when a ping message has not been received.
+        Reconnect the websocket client when a message has not been received for some
+        time.
         """
         try:
             while True:
                 self._log.debug(
-                    f"Scheduled `reconnect_ping` to run in {self._ping_interval_secs}s",
+                    f"Scheduled `reconnect_guard` to run in {self._msg_interval_secs}s",
                 )
-                await asyncio.sleep(self._ping_interval_secs)
+                await asyncio.sleep(self._msg_interval_secs)
 
                 now_timestamp = self._clock.utc_now()
-                time_since_previous_ping = now_timestamp - self._ping_timestamp
+                time_since_previous_msg = now_timestamp - self._msg_timestamp
 
-                if time_since_previous_ping > pd.Timedelta(seconds=self._ping_interval_secs):
+                if time_since_previous_msg > pd.Timedelta(seconds=self._msg_interval_secs):
                     self._log.error(
-                        f"Time since previous received ping message is {time_since_previous_ping}",
+                        f"Time since previous received message is {time_since_previous_msg}",
                     )
                     try:
                         await self.disconnect()
@@ -189,7 +190,7 @@ class DYDXWebsocketClient:
                         self._client = None
 
         except asyncio.CancelledError:
-            self._log.debug("Canceled `reconnect_ping` task")
+            self._log.debug("Canceled `reconnect_guard` task")
 
     def reconnect(self) -> None:
         """
