@@ -1,6 +1,6 @@
 # NautilusTrader 1.203.0 Beta
 
-Released on TBD (UTC).
+Released on 5th October 2024 (UTC).
 
 ### Enhancements
 - Added `mode` parameter to `ParquetDataCatalog.write_data` to control data writing behavior (#1976), thanks @faysou
@@ -9,12 +9,12 @@ Released on TBD (UTC).
 - Improved option greeks (#1964), thanks @faysou
 
 ### Internal Improvements
-- Added large test data files download and caching capability
 - Implemented order book delta processing for `SimulatedExchange` (#1975), thanks @filipmacek
 - Implemented bar processing for `SimulatedExchange` (#1969), thanks @filipmacek
 - Implemented remaining getter functions in `SimulatedExchange` (#1970), thanks @filipmacek
 - Implemented rate limiting for dYdX websocket subscriptions (#1977), thanks @davidsblom
 - Refined `DatabentoDataLoader` internals to accommodate usage from Rust
+- Added initial large test data files download and caching capability
 
 ### Breaking Changes
 None
