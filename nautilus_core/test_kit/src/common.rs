@@ -23,6 +23,7 @@ pub fn get_workspace_root_path() -> PathBuf {
         .to_path_buf()
 }
 
+#[must_use]
 pub fn get_project_root_path() -> PathBuf {
     get_workspace_root_path()
         .parent()
@@ -30,6 +31,7 @@ pub fn get_project_root_path() -> PathBuf {
         .to_path_buf()
 }
 
+#[must_use]
 pub fn get_project_testdata_path() -> PathBuf {
     get_project_root_path().join("tests").join("test_data")
 }
