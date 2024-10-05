@@ -148,7 +148,6 @@ class DYDXDataClient(LiveMarketDataClient):
         self._last_quotes: dict[InstrumentId, QuoteTick] = {}
         self._orderbook_subscriptions: set[str] = set()
         self._resubscribe_orderbook_lock = asyncio.Lock()
-        self._message_ids: dict[str, int] = {}
 
         # Hot caches
         self._bars: dict[BarType, Bar] = {}
@@ -243,17 +242,6 @@ class DYDXDataClient(LiveMarketDataClient):
         }
         try:
             ws_message = self._decoder_ws_msg_general.decode(raw)
-            stream_id = f"{ws_message.connection_id}-{ws_message.channel}-{ws_message.id}"
-            previous_message_id = self._message_ids.get(stream_id, -1)
-
-            if ws_message.message_id is not None and ws_message.message_id <= previous_message_id:
-                self._log.error(
-                    f"Inconsistent message IDs. {previous_message_id=} {ws_message.message_id=} {stream_id=} {ws_message=}",
-                )
-
-            if ws_message.message_id is not None:
-                self._message_ids[stream_id] = ws_message.message_id
-
             key = (ws_message.channel, ws_message.type)
 
             if key in callbacks:
@@ -270,18 +258,7 @@ class DYDXDataClient(LiveMarketDataClient):
             elif ws_message.type == "connected":
                 self._log.info("Websocket connected")
             elif ws_message.type == "error":
-                if (
-                    ws_message.message
-                    == "Internal error, could not fetch data for subscription: v4_orderbook."
-                ):
-                    # This error occurs when the websocket service fails to request the initial
-                    # orderbook snapshot.
-                    self._log.warning(
-                        f"Websocket error: {ws_message.message}. Resubscribe to order books",
-                    )
-                    self.create_task(self._resubscribe_orderbooks())
-                else:
-                    self._log.error(f"Websocket error: {ws_message.message}")
+                self._log.error(f"Websocket error: {ws_message.message}")
             else:
                 self._log.error(
                     f"Unknown message `{ws_message.channel}` `{ws_message.type}`: {raw.decode()}",
