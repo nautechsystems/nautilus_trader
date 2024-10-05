@@ -9,6 +9,8 @@ from enum import Enum
 from os import PathLike
 from typing import Any, TypeAlias, Union
 
+import numpy as np
+
 from nautilus_trader.core.data import Data
 
 # Python Interface typing:
@@ -2469,8 +2471,8 @@ class Level:
 class OrderBook:
     def __init__(
         self,
-        book_type: BookType,
         instrument_id: InstrumentId,
+        book_type: BookType,
     ) -> None: ...
     @property
     def instrument_id(self) -> InstrumentId: ...
@@ -3837,32 +3839,32 @@ class DatabentoStatistics:
 class DatabentoDataLoader:
     def __init__(
         self,
-        path: PathLike[str] | str,
+        publishers_filepath: PathLike[str] | str,
     ) -> None: ...
-    def load_publishers(self, path: PathLike[str] | str) -> None: ...
+    def load_publishers(self, filepath: PathLike[str] | str) -> None: ...
     def get_publishers(self) -> dict[int, DatabentoPublisher]: ...
     def get_dataset_for_venue(self, venue: Venue) -> str: ...
-    def schema_for_file(self, path: str) -> str: ...
-    def load_instruments(self, path: str) -> list[Instrument]: ...
-    def load_order_book_deltas(self, path: str, instrument_id: InstrumentId | None) -> list[OrderBookDelta]: ...
-    def load_order_book_deltas_as_pycapsule(self, path: str, instrument_id: InstrumentId | None, include_trades: bool | None) -> object: ...
-    def load_order_book_depth10(self, path: str, instrument_id: InstrumentId | None) -> list[OrderBookDepth10]: ...
-    def load_order_book_depth10_as_pycapsule(self, path: str, instrument_id: InstrumentId | None) -> object: ...
-    def load_quotes(self, path: str, instrument_id: InstrumentId | None) -> list[QuoteTick]: ...
-    def load_quotes_as_pycapsule(self, path: str, instrument_id: InstrumentId | None, include_trades: bool | None) -> object: ...
-    def load_trades(self, path: str, instrument_id: InstrumentId | None) -> list[TradeTick]: ...
-    def load_trades_as_pycapsule(self, path: str, instrument_id: InstrumentId | None) -> object: ...
-    def load_bars(self, path: str, instrument_id: InstrumentId | None) -> list[Bar]: ...
-    def load_bars_as_pycapsule(self, path: str, instrument_id: InstrumentId | None) -> object: ...
-    def load_status(self, path: str, instrument_id: InstrumentId | None) -> list[InstrumentStatus]: ...
-    def load_imbalance(self, path: str, instrument_id: InstrumentId | None) -> list[DatabentoImbalance]: ...
-    def load_statistics(self, path: str, instrument_id: InstrumentId | None) -> list[DatabentoStatistics]: ...
+    def schema_for_file(self, filepath: str) -> str: ...
+    def load_instruments(self, filepath: str) -> list[Instrument]: ...
+    def load_order_book_deltas(self, filepath: str, instrument_id: InstrumentId | None) -> list[OrderBookDelta]: ...
+    def load_order_book_deltas_as_pycapsule(self, filepath: str, instrument_id: InstrumentId | None, include_trades: bool | None) -> object: ...
+    def load_order_book_depth10(self, filepath: str, instrument_id: InstrumentId | None) -> list[OrderBookDepth10]: ...
+    def load_order_book_depth10_as_pycapsule(self, filepath: str, instrument_id: InstrumentId | None) -> object: ...
+    def load_quotes(self, filepath: str, instrument_id: InstrumentId | None) -> list[QuoteTick]: ...
+    def load_quotes_as_pycapsule(self, filepath: str, instrument_id: InstrumentId | None, include_trades: bool | None) -> object: ...
+    def load_trades(self, filepath: str, instrument_id: InstrumentId | None) -> list[TradeTick]: ...
+    def load_trades_as_pycapsule(self, filepath: str, instrument_id: InstrumentId | None) -> object: ...
+    def load_bars(self, filepath: str, instrument_id: InstrumentId | None) -> list[Bar]: ...
+    def load_bars_as_pycapsule(self, filepath: str, instrument_id: InstrumentId | None) -> object: ...
+    def load_status(self, filepath: str, instrument_id: InstrumentId | None) -> list[InstrumentStatus]: ...
+    def load_imbalance(self, filepath: str, instrument_id: InstrumentId | None) -> list[DatabentoImbalance]: ...
+    def load_statistics(self, filepath: str, instrument_id: InstrumentId | None) -> list[DatabentoStatistics]: ...
 
 class DatabentoHistoricalClient:
     def __init__(
         self,
         key: str,
-        publishers_path: str,
+        publishers_filepath: str,
     ) -> None: ...
     @property
     def key(self) -> str: ...
@@ -3930,7 +3932,7 @@ class DatabentoLiveClient:
         self,
         key: str,
         dataset: str,
-        publishers_path: str,
+        publishers_filepath: str,
     ) -> None: ...
     @property
     def key(self) -> str: ...
@@ -3960,6 +3962,81 @@ def ed25519_signature(private_key: bytes, data: str) -> str: ...
 
 
 # Greeks
+
+class BlackScholesGreeksResult:
+    price: float
+    delta: float
+    gamma: float
+    vega: float
+    theta: float
+
+class ImplyVolAndGreeksResult:
+    vol: float
+    price: float
+    delta: float
+    gamma: float
+    vega: float
+    theta: float
+
+
+def black_scholes_greeks(s: float, r: float, b: float, sigma: float, is_call: bool, k: float, t: float,
+                         multiplier: float) -> BlackScholesGreeksResult:
+    """
+    Calculate the Black-Scholes Greeks for a given option contract.
+
+    Args:
+        s (float): The current price of the underlying asset.
+        r (float): The risk-free interest rate.
+        b (float): The cost of carry of the underlying asset.
+        sigma (float): The volatility of the underlying asset.
+        is_call (bool): Whether the option is a call (True) or a put (False).
+        k (float): The strike price of the option.
+        t (float): The time to expiration of the option in years.
+        multiplier (float): The multiplier for the option contract.
+
+    Returns:
+        BlackScholesGreeksResult: A named tuple containing the calculated option price, delta, gamma, vega, and theta.
+    """
+
+
+def imply_vol(s: float, r: float, b: float, is_call: bool, k: float, t: float, price: float) -> float:
+    """
+    Calculate the implied volatility and Greeks for an option contract.
+
+    Args:
+        s (float): The current price of the underlying asset.
+        r (float): The risk-free interest rate.
+        b (float): The cost of carry of the underlying asset.
+        is_call (bool): Whether the option is a call (True) or a put (False).
+        k (float): The strike price of the option.
+        t (float): The time to expiration of the option in years.
+        price (float): The current market price of the option.
+        multiplier (float): The multiplier for the option contract.
+
+    Returns:
+        float: An implied volatility value.
+    """
+
+
+def imply_vol_and_greeks(s: float, r: float, b: float, is_call: bool, k: float, t: float,
+                         price: float, multiplier: float) -> ImplyVolAndGreeksResult :
+    """
+    Calculate the implied volatility and Greeks for an option contract.
+
+    Args:
+        s (float): The current price of the underlying asset.
+        r (float): The risk-free interest rate.
+        b (float): The cost of carry of the underlying asset.
+        is_call (bool): Whether the option is a call (True) or a put (False).
+        k (float): The strike price of the option.
+        t (float): The time to expiration of the option in years.
+        price (float): The current market price of the option.
+        multiplier (float): The multiplier for the option contract.
+
+    Returns:
+        ImplyVolAndGreeksResult: A named tuple containing the calculated implied volatility, option price, delta, gamma, vega, and theta.
+    """
+
 
 class GreeksData(Data):
     instrument_id: InstrumentId
@@ -4017,8 +4094,36 @@ class PortfolioGreeks(Data):
         theta: float = 0.0,
     ): ...
 
+
+class InterestRateData(Data):
+    curve_name: str
+    interest_rate: float
+
+    def __init__(
+            self,
+            ts_event: int = 0,
+            ts_init: int = 0,
+            curve_name: str = "USD",
+            interest_rate: float = 0.05,
+    ): ...
+
+
+class InterestRateCurveData(Data):
+    curve_name: str
+    tenors: np.ndarray
+    interest_rates: np.ndarray
+
+    def __init__(
+            self,
+            ts_event: int,
+            ts_init: int,
+            curve_name: str,
+            tenors: np.ndarray,
+            interest_rates: np.ndarray,
+    ): ...
+
 ###################################################################################################
 # Test Kit
 ###################################################################################################
 
-def ensure_file_exists_or_download_http(path: str, url: str): ...
+def ensure_file_exists_or_download_http(filepath: str, url: str, checksums: str | None = None): ...

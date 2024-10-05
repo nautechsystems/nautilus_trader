@@ -81,7 +81,7 @@ class BinanceFuturesDataClient(BinanceCommonDataClient):
         account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURE,
         name: str | None = None,
     ) -> None:
-        PyCondition.true(
+        PyCondition.is_true(
             account_type.is_futures,
             "account_type was not USDT_FUTURE or COIN_FUTURE",
         )

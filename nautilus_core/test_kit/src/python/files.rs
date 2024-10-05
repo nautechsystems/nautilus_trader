@@ -13,13 +13,23 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::path::Path;
+
 use nautilus_core::python::to_pyruntime_err;
 use pyo3::prelude::*;
 
-use crate::files::ensure_file_exists_or_download_http;
+use crate::{
+    common::get_testdata_large_checksums_filepath, files::ensure_file_exists_or_download_http,
+};
 
 #[must_use]
 #[pyfunction(name = "ensure_file_exists_or_download_http")]
-pub fn py_ensure_file_exists_or_download_http(path: &str, url: &str) -> PyResult<()> {
-    ensure_file_exists_or_download_http(path, url).map_err(to_pyruntime_err)
+pub fn py_ensure_file_exists_or_download_http(
+    filepath: &str,
+    url: &str,
+    checksums: Option<&str>,
+) -> PyResult<()> {
+    let filepath = Path::new(filepath);
+    let checksums = checksums.map(Path::new);
+    ensure_file_exists_or_download_http(filepath, url, checksums).map_err(to_pyruntime_err)
 }

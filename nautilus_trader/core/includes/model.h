@@ -1253,23 +1253,6 @@ typedef struct Data_t {
     };
 } Data_t;
 
-typedef struct BlackScholesGreeksResult {
-    double price;
-    double delta;
-    double gamma;
-    double vega;
-    double theta;
-} BlackScholesGreeksResult;
-
-typedef struct ImplyVolAndGreeksResult {
-    double vol;
-    double price;
-    double delta;
-    double gamma;
-    double vega;
-    double theta;
-} ImplyVolAndGreeksResult;
-
 /**
  * Represents a valid trader ID.
  */
@@ -1698,32 +1681,6 @@ const struct BookOrder_t *orderbook_depth10_asks_array(const struct OrderBookDep
 const uint32_t *orderbook_depth10_bid_counts_array(const struct OrderBookDepth10_t *depth);
 
 const uint32_t *orderbook_depth10_ask_counts_array(const struct OrderBookDepth10_t *depth);
-
-struct BlackScholesGreeksResult greeks_black_scholes_greeks(double s,
-                                                            double r,
-                                                            double b,
-                                                            double sigma,
-                                                            uint8_t is_call,
-                                                            double k,
-                                                            double t,
-                                                            double multiplier);
-
-double greeks_imply_vol(double s,
-                        double r,
-                        double b,
-                        uint8_t is_call,
-                        double k,
-                        double t,
-                        double price);
-
-struct ImplyVolAndGreeksResult greeks_imply_vol_and_greeks(double s,
-                                                           double r,
-                                                           double b,
-                                                           uint8_t is_call,
-                                                           double k,
-                                                           double t,
-                                                           double price,
-                                                           double multiplier);
 
 struct BookOrder_t book_order_from_raw(enum OrderSide order_side,
                                        int64_t price_raw,

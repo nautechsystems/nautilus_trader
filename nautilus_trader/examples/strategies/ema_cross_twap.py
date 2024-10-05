@@ -102,11 +102,11 @@ class EMACrossTWAP(Strategy):
     """
 
     def __init__(self, config: EMACrossTWAPConfig) -> None:
-        PyCondition.true(
+        PyCondition.is_true(
             config.fast_ema_period < config.slow_ema_period,
             "{config.fast_ema_period=} must be less than {config.slow_ema_period=}",
         )
-        PyCondition.true(
+        PyCondition.is_true(
             config.twap_interval_secs <= config.twap_horizon_secs,
             "{config.twap_interval_secs=} must be less than or equal to {config.twap_horizon_secs=}",
         )

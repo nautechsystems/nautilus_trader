@@ -16,7 +16,7 @@
 from os import PathLike
 from pathlib import Path
 
-from nautilus_trader.adapters.databento.constants import PUBLISHERS_PATH
+from nautilus_trader.adapters.databento.constants import PUBLISHERS_FILEPATH
 from nautilus_trader.adapters.databento.enums import DatabentoSchema
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.data import Data
@@ -55,7 +55,7 @@ class DatabentoDataLoader:
 
     def __init__(self) -> None:
         self._pyo3_loader: nautilus_pyo3.DatabentoDataLoader = nautilus_pyo3.DatabentoDataLoader(
-            str(PUBLISHERS_PATH),
+            str(PUBLISHERS_FILEPATH),
         )
 
     def load_publishers(self, path: PathLike[str] | str) -> None:
@@ -171,7 +171,7 @@ class DatabentoDataLoader:
             case DatabentoSchema.MBO.value:
                 if as_legacy_cython:
                     capsule = self._pyo3_loader.load_order_book_deltas_as_pycapsule(
-                        path=str(path),
+                        filepath=str(path),
                         instrument_id=pyo3_instrument_id,
                         include_trades=include_trades,
                     )
@@ -186,13 +186,13 @@ class DatabentoDataLoader:
                             "set `include_trades` to False",
                         )
                     return self._pyo3_loader.load_order_book_deltas(
-                        path=str(path),
+                        filepath=str(path),
                         instrument_id=pyo3_instrument_id,
                     )
             case DatabentoSchema.MBP_1.value | DatabentoSchema.TBBO.value:
                 if as_legacy_cython:
                     capsule = self._pyo3_loader.load_quotes_as_pycapsule(
-                        path=str(path),
+                        filepath=str(path),
                         instrument_id=pyo3_instrument_id,
                         include_trades=include_trades,
                     )
@@ -207,13 +207,13 @@ class DatabentoDataLoader:
                             "set `include_trades` to False",
                         )
                     return self._pyo3_loader.load_quotes(
-                        path=str(path),
+                        filepath=str(path),
                         instrument_id=pyo3_instrument_id,
                     )
             case DatabentoSchema.MBP_10.value:
                 if as_legacy_cython:
                     capsule = self._pyo3_loader.load_order_book_depth10_as_pycapsule(
-                        path=str(path),
+                        filepath=str(path),
                         instrument_id=pyo3_instrument_id,
                     )
                     data = capsule_to_list(capsule)
@@ -225,7 +225,7 @@ class DatabentoDataLoader:
             case DatabentoSchema.TRADES.value:
                 if as_legacy_cython:
                     capsule = self._pyo3_loader.load_trades_as_pycapsule(
-                        path=str(path),
+                        filepath=str(path),
                         instrument_id=pyo3_instrument_id,
                     )
                     data = capsule_to_list(capsule)
@@ -243,7 +243,7 @@ class DatabentoDataLoader:
             ):
                 if as_legacy_cython:
                     capsule = self._pyo3_loader.load_bars_as_pycapsule(
-                        path=str(path),
+                        filepath=str(path),
                         instrument_id=pyo3_instrument_id,
                     )
                     data = capsule_to_list(capsule)

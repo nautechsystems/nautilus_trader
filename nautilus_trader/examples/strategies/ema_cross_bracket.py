@@ -100,7 +100,7 @@ class EMACrossBracket(Strategy):
     """
 
     def __init__(self, config: EMACrossBracketConfig) -> None:
-        PyCondition.true(
+        PyCondition.is_true(
             config.fast_ema_period < config.slow_ema_period,
             "{config.fast_ema_period=} must be less than {config.slow_ema_period=}",
         )

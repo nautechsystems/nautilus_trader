@@ -255,7 +255,7 @@ cdef class MarginAccount(Account):
 
         """
         Condition.type(leverage, Decimal, "leverage")
-        Condition.true(leverage >= 1, "leverage was not >= 1")
+        Condition.is_true(leverage >= 1, "leverage was not >= 1")
 
         self.default_leverage = leverage
 
@@ -280,7 +280,7 @@ cdef class MarginAccount(Account):
         """
         Condition.not_none(instrument_id, "instrument_id")
         Condition.type(leverage, Decimal, "leverage")
-        Condition.true(leverage >= 1, "leverage was not >= 1")
+        Condition.is_true(leverage >= 1, "leverage was not >= 1")
 
         self._leverages[instrument_id] = leverage
 

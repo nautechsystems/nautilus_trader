@@ -12,23 +12,3 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
-
-from nautilus_trader.model.greeks import GreeksData
-from nautilus_trader.common.actor cimport Actor
-
-
-cpdef dict black_scholes_greeks(double s, double r, double b, double vol, bint is_call, double k, double t,
-                                double multiplier)
-
-cpdef double imply_vol(double s, double r, double b, bint is_call, double k, double t, double price)
-
-cpdef dict imply_vol_and_greeks(double s, double r, double b, bint is_call, double k, double t, double price,
-                                double multiplier)
-
-cdef class GreeksCalculator(Actor):
-    cdef readonly bint load_greeks
-    cdef readonly str underlying
-    cdef readonly str update_period
-    cdef readonly object interest_rates_file
-    cdef readonly float interest_rate
-    cdef object interest_rates_df

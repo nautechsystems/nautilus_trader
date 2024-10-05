@@ -527,7 +527,10 @@ class LiveMarketDataClient(MarketDataClient):
         )
 
     def subscribe_bars(self, bar_type: BarType) -> None:
-        PyCondition.true(bar_type.is_externally_aggregated(), "aggregation_source is not EXTERNAL")
+        PyCondition.is_true(
+            bar_type.is_externally_aggregated(),
+            "aggregation_source is not EXTERNAL",
+        )
 
         self._add_subscription_bars(bar_type)
         self.create_task(

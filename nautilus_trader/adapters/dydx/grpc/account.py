@@ -54,10 +54,13 @@ from v4_proto.cosmos.tx.v1beta1.tx_pb2 import Tx
 from v4_proto.cosmos.tx.v1beta1.tx_pb2 import TxBody
 from v4_proto.dydxprotocol.clob.order_pb2 import Order
 from v4_proto.dydxprotocol.clob.order_pb2 import OrderId
+from v4_proto.dydxprotocol.clob.tx_pb2 import MsgBatchCancel
 from v4_proto.dydxprotocol.clob.tx_pb2 import MsgCancelOrder
 from v4_proto.dydxprotocol.clob.tx_pb2 import MsgPlaceOrder
+from v4_proto.dydxprotocol.clob.tx_pb2 import OrderBatch
 from v4_proto.dydxprotocol.feetiers import query_pb2 as fee_tier_query
 from v4_proto.dydxprotocol.feetiers import query_pb2_grpc as fee_tier_query_grpc
+from v4_proto.dydxprotocol.subaccounts.subaccount_pb2 import SubaccountId
 
 from nautilus_trader.adapters.dydx.common.constants import ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODE
 from nautilus_trader.adapters.dydx.grpc.errors import DYDXGRPCError
@@ -368,6 +371,52 @@ class DYDXAccountGRPCAPI:
 
         return response
 
+    async def batch_cancel_orders(
+        self,
+        wallet: Wallet,
+        wallet_address: str,
+        subaccount: int,
+        short_term_cancels: list[OrderBatch],
+        good_til_block: int,
+    ) -> BroadcastTxResponse:
+        """
+        Batch cancels orders for a subaccount.
+
+        Parameters
+        ----------
+        wallet : Wallet
+            The wallet to use for signing the transaction.
+        wallet_address : str
+            The dYdX wallet address.
+        subaccount : int
+            The subaccount number.
+        short_term_cancels : list[OrderBatch]
+            List of OrderBatch objects containing the orders to cancel.
+        good_til_block : int
+            The last block the short term order cancellations can be executed at.
+
+        Returns
+        -------
+        BroadcastTxResponse
+            The response from the transaction broadcast.
+
+        """
+        subaccount_id = SubaccountId(owner=wallet_address, number=subaccount)
+        batch_cancel_msg = MsgBatchCancel(
+            subaccount_id=subaccount_id,
+            short_term_cancels=short_term_cancels,
+            good_til_block=good_til_block,
+        )
+        response = await self.broadcast_message(wallet, batch_cancel_msg)
+
+        is_success = response.tx_response.code == 0
+
+        if not is_success:
+            message = f"Failed to cancel the orders: {response}"
+            raise DYDXGRPCError(code=response.tx_response.code, message=message)
+
+        return response
+
     async def cancel_order(
         self,
         wallet: Wallet,
@@ -378,15 +427,20 @@ class DYDXAccountGRPCAPI:
         """
         Cancel an order.
 
-        Args:
-        ----
-            wallet (Wallet): The wallet to use for signing the transaction.
-            order_id (OrderId): The ID of the order to cancel.
-            good_til_block (int, optional): The block number until which the order is valid. Defaults to None.
-            good_til_block_time (int, optional): The block time until which the order is valid. Defaults to None.
+        Parameters
+        ----------
+        wallet : Wallet
+            The wallet to use for signing the transaction.
+        order_id : OrderId
+            The ID of the order to cancel.
+        good_til_block : int, optional
+            The block number until which the order is valid. Defaults to None.
+        good_til_block_time: int, optional
+            The block time until which the order is valid. Defaults to None.
 
-        Returns:
+        Returns
         -------
+        BroadcastTxResponse
             The response from the transaction broadcast.
 
         """

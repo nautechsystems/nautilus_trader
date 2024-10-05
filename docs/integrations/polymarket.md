@@ -145,7 +145,7 @@ To trade with Polymarket using an EOA wallet, follow these steps to generate you
 
 1. Ensure the following environment variables are set:
   - `POLYMARKET_PK`: Your private key for signing transactions.
-  - `POLYMARKET_FUNDER`: The wallet address used for funding trades.
+  - `POLYMARKET_FUNDER`: The wallet address (public key) on the **Polygon** network used for funding trades on Polymarket.
 
 2. Run the script using:
    ```bash

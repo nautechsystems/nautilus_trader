@@ -1401,7 +1401,7 @@ cdef class OrderMatchingEngine:
             If the `order` does not have a LIMIT `price`.
 
         """
-        Condition.true(order.has_price_c(), "order has no limit `price`")
+        Condition.is_true(order.has_price_c(), "order has no limit `price`")
 
         cdef list fills = self._book.simulate_fills(
             order,
@@ -1607,7 +1607,7 @@ cdef class OrderMatchingEngine:
             If the `order` does not have a LIMIT `price`.
 
         """
-        Condition.true(order.has_price_c(), "order has no limit `price`")
+        Condition.is_true(order.has_price_c(), "order has no limit `price`")
 
         cdef Quantity cached_filled_qty = self._cached_filled_qty.get(order.client_order_id)
         if cached_filled_qty is not None and cached_filled_qty._mem.raw >= order.quantity._mem.raw:

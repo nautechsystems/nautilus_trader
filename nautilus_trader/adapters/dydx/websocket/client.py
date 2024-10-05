@@ -17,14 +17,18 @@ Provide a dYdX streaming WebSocket client.
 """
 
 import asyncio
+from collections.abc import Awaitable
 from collections.abc import Callable
+from datetime import timedelta
 from typing import Any
 
 import msgspec
+import pandas as pd
 
 from nautilus_trader.adapters.dydx.common.enums import DYDXCandlesResolution
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
+from nautilus_trader.common.component import Throttler
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClient
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClientError
@@ -53,7 +57,9 @@ class DYDXWebsocketClient:
         clock: LiveClock,
         base_url: str,
         handler: Callable[[bytes], None],
+        handler_reconnect: Callable[..., Awaitable[None]] | None,
         loop: asyncio.AbstractEventLoop,
+        subscription_rate_limit_per_second: int = 2,
     ) -> None:
         """
         Provide a dYdX streaming WebSocket client.
@@ -62,10 +68,45 @@ class DYDXWebsocketClient:
         self._log: Logger = Logger(name=type(self).__name__)
         self._base_url: str = base_url
         self._handler: Callable[[bytes], None] = handler
+        self._handler_reconnect: Callable[..., Awaitable[None]] | None = handler_reconnect
         self._loop = loop
         self._client: WebSocketClient | None = None
         self._is_running = False
         self._subscriptions: set[tuple[str, str]] = set()
+
+        self._subscribe_throttler = Throttler(
+            name="dydx_websocket_subscribe_throttler",
+            limit=subscription_rate_limit_per_second,
+            interval=timedelta(seconds=1),
+            clock=self._clock,
+            output_send=self._send_subscribe_msg,
+        )
+
+        self._msg_timestamp = self._clock.utc_now()
+        self._msg_interval_secs: int = 60
+        self._reconnect_task: asyncio.Task | None = None
+
+    def is_connected(self) -> bool:
+        """
+        Return whether the client is connected.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self._client is not None and self._client.is_alive()
+
+    def is_disconnected(self) -> bool:
+        """
+        Return whether the client is disconnected.
+
+        Returns
+        -------
+        bool
+
+        """
+        return not self.is_connected()
 
     @property
     def subscriptions(self) -> set[tuple[str, str]]:
@@ -88,7 +129,7 @@ class DYDXWebsocketClient:
         self._log.debug(f"Connecting to {self._base_url} websocket stream")
         config = WebSocketConfig(
             url=self._base_url,
-            handler=self._handler,
+            handler=self._msg_handler,
             heartbeat=10,
             headers=[],
             ping_handler=self._handle_ping,
@@ -99,6 +140,15 @@ class DYDXWebsocketClient:
         )
         self._client = client
         self._log.info(f"Connected to {self._base_url}", LogColor.BLUE)
+
+        self._msg_timestamp = self._clock.utc_now()
+
+        if self._reconnect_task is None:
+            self._reconnect_task = self._loop.create_task(self._reconnect_guard())
+
+    def _msg_handler(self, raw: bytes) -> None:
+        self._msg_timestamp = self._clock.utc_now()
+        self._handler(raw)
 
     def _handle_ping(self, raw: bytes) -> None:
         self._loop.create_task(self.send_pong(raw))
@@ -112,6 +162,36 @@ class DYDXWebsocketClient:
 
         await self._client.send_pong(raw)
 
+    async def _reconnect_guard(self) -> None:
+        """
+        Reconnect the websocket client when a message has not been received for some
+        time.
+        """
+        try:
+            while True:
+                self._log.debug(
+                    f"Scheduled `reconnect_guard` to run in {self._msg_interval_secs}s",
+                )
+                await asyncio.sleep(self._msg_interval_secs)
+
+                now_timestamp = self._clock.utc_now()
+                time_since_previous_msg = now_timestamp - self._msg_timestamp
+
+                if time_since_previous_msg > pd.Timedelta(seconds=self._msg_interval_secs):
+                    self._log.error(
+                        f"Time since previous received message is {time_since_previous_msg}",
+                    )
+                    try:
+                        await self.disconnect()
+                        await self.connect()
+                        self.reconnect()
+                    except Exception as e:
+                        self._log.error(f"Failed to connect the websocket: {e}")
+                        self._client = None
+
+        except asyncio.CancelledError:
+            self._log.debug("Canceled `reconnect_guard` task")
+
     def reconnect(self) -> None:
         """
         Reconnect the client to the server and resubscribe to all streams.
@@ -123,6 +203,9 @@ class DYDXWebsocketClient:
 
         # Re-subscribe to all streams
         self._loop.create_task(self._subscribe_all())
+
+        if self._handler_reconnect:
+            self._loop.create_task(self._handler_reconnect())  # type: ignore
 
     async def disconnect(self) -> None:
         """
@@ -159,9 +242,13 @@ class DYDXWebsocketClient:
         self._subscriptions.add(subscription)
         msg = {"type": "subscribe", "channel": "v4_trades", "id": symbol}
         self._log.debug(f"Subscribe to {symbol} trade ticks")
-        await self._send(msg)
+        self._subscribe_throttler.send(msg)
 
-    async def subscribe_order_book(self, symbol: str) -> None:
+    async def subscribe_order_book(
+        self,
+        symbol: str,
+        bypass_subscription_validation: bool = False,
+    ) -> None:
         """
         Subscribe to trades messages.
         """
@@ -170,14 +257,14 @@ class DYDXWebsocketClient:
             return
 
         subscription = ("v4_orderbook", symbol)
-        if subscription in self._subscriptions:
+        if subscription in self._subscriptions and bypass_subscription_validation is False:
             self._log.warning(f"Cannot subscribe '{subscription}': already subscribed")
             return
 
         self._subscriptions.add(subscription)
         msg = {"type": "subscribe", "channel": "v4_orderbook", "id": symbol, "batched": True}
         self._log.debug(f"Subscribe to {symbol} order book")
-        await self._send(msg)
+        self._subscribe_throttler.send(msg)
 
     async def subscribe_klines(self, symbol: str, interval: DYDXCandlesResolution) -> None:
         """
@@ -194,7 +281,7 @@ class DYDXWebsocketClient:
 
         self._subscriptions.add(subscription)
         msg = {"type": "subscribe", "channel": "v4_candles", "id": f"{symbol}/{interval.value}"}
-        await self._send(msg)
+        self._subscribe_throttler.send(msg)
 
     async def subscribe_markets(self) -> None:
         """
@@ -211,7 +298,7 @@ class DYDXWebsocketClient:
 
         self._subscriptions.add((subscription, ""))
         msg = {"type": "subscribe", "channel": "v4_markets"}
-        await self._send(msg)
+        self._subscribe_throttler.send(msg)
 
     async def subscribe_account_update(self, wallet_address: str, subaccount_number: int) -> None:
         """
@@ -232,7 +319,7 @@ class DYDXWebsocketClient:
 
         self._subscriptions.add(subscription)
         msg = {"type": "subscribe", "channel": channel, "id": channel_id}
-        await self._send(msg)
+        self._subscribe_throttler.send(msg)
 
     async def unsubscribe_account_update(self, wallet_address: str, subaccount_number: int) -> None:
         """
@@ -271,7 +358,7 @@ class DYDXWebsocketClient:
         msg = {"type": "unsubscribe", "channel": "v4_trades", "id": symbol}
         await self._send(msg)
 
-    async def unsubscribe_order_book(self, symbol: str) -> None:
+    async def unsubscribe_order_book(self, symbol: str, remove_subscription: bool = True) -> None:
         """
         Unsubscribe to trades messages.
         """
@@ -284,7 +371,9 @@ class DYDXWebsocketClient:
             self._log.warning(f"Cannot unsubscribe '{subscription}': not subscribed")
             return
 
-        self._subscriptions.remove(subscription)
+        if remove_subscription:
+            self._subscriptions.remove(subscription)
+
         msg = {"type": "unsubscribe", "channel": "v4_orderbook", "id": symbol}
         await self._send(msg)
 
@@ -333,6 +422,9 @@ class DYDXWebsocketClient:
         for subscription in self._subscriptions:
             msg = {"type": "subscribe", "channel": subscription[0], "id": subscription[1]}
             await self._send(msg)
+
+    def _send_subscribe_msg(self, msg: dict[str, Any]) -> None:
+        self._loop.create_task(self._send(msg))
 
     async def _send(self, msg: dict[str, Any]) -> None:
         if self._client is None:

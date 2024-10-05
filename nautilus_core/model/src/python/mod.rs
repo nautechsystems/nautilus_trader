@@ -44,9 +44,23 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::data::delta::OrderBookDelta>()?;
     m.add_class::<crate::data::deltas::OrderBookDeltas>()?;
     m.add_class::<crate::data::depth::OrderBookDepth10>()?;
+    m.add_class::<crate::data::greeks::BlackScholesGreeksResult>()?;
+    m.add_class::<crate::data::greeks::ImplyVolAndGreeksResult>()?;
     m.add_class::<crate::data::quote::QuoteTick>()?;
     m.add_class::<crate::data::status::InstrumentStatus>()?;
     m.add_class::<crate::data::trade::TradeTick>()?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::data::greeks::py_black_scholes_greeks,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::data::greeks::py_imply_vol,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::data::greeks::py_imply_vol_and_greeks,
+        m
+    )?)?;
     // Enums
     m.add_class::<crate::enums::AccountType>()?;
     m.add_class::<crate::enums::AggregationSource>()?;

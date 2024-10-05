@@ -1,3 +1,37 @@
+# NautilusTrader 1.203.0 Beta
+
+Released on 5th October 2024 (UTC).
+
+### Enhancements
+- Added `mode` parameter to `ParquetDataCatalog.write_data` to control data writing behavior (#1976), thanks @faysou
+- Added batch cancel for short terms orders of dYdX (#1978), thanks @davidsblom
+- Improved OKX configuration (#1966), thanks @miller-moore
+- Improved option greeks (#1964), thanks @faysou
+
+### Internal Improvements
+- Implemented order book delta processing for `SimulatedExchange` (#1975), thanks @filipmacek
+- Implemented bar processing for `SimulatedExchange` (#1969), thanks @filipmacek
+- Implemented remaining getter functions in `SimulatedExchange` (#1970), thanks @filipmacek
+- Implemented rate limiting for dYdX websocket subscriptions (#1977), thanks @davidsblom
+- Refactored reconnection handling for dYdX (#1983), thanks @davidsblom
+- Refined `DatabentoDataLoader` internals to accommodate usage from Rust
+- Added initial large test data files download and caching capability
+
+### Breaking Changes
+None
+
+### Fixes
+- Fixed out of order row groups in DataFusion filter query (#1974), thanks @twitu
+- Fixed `BacktestNode` data sorting regression causing clock non-decreasing time assertion error
+- Fixed circular imports for `Actor`, thanks @limx0
+- Fixed OKX HTTP client signatures (#1966), thanks @miller-moore
+- Fixed resubscribing to orderbooks for dYdX (#1973), thanks @davidsblom
+- Fixed generating cancel rejections for dYdX (#1982), thanks @davidsblom
+- Fixed `WebSocketClient` task cleanup on disconnect (#1981), thanks @twitu
+- Fixed `Condition` method name collisions with C `true` and `false` macros, which occurred during compilation in profiling mode
+
+---
+
 # NautilusTrader 1.202.0 Beta
 
 Released on 27th September 2024 (UTC).

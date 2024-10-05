@@ -71,7 +71,7 @@ class BacktestNode:
     def __init__(self, configs: list[BacktestRunConfig]):
         PyCondition.not_none(configs, "configs")
         PyCondition.not_empty(configs, "configs")
-        PyCondition.true(
+        PyCondition.is_true(
             all(isinstance(config, BacktestRunConfig) for config in configs),
             "configs",
         )
@@ -134,13 +134,16 @@ class BacktestNode:
         """
         return list(self._engines.values())
 
-    def run(self) -> list[BacktestResult]:
+    def run(self, raise_exception=False) -> list[BacktestResult]:
         """
         Run the backtest node which will synchronously execute the list of loaded
         backtest run configs.
 
-        Any exceptions raised from a backtest will be printed to stdout and
-        the next backtest run will commence (if any).
+        Parameters
+        ----------
+        raise_exception : bool, default False
+            If True, an exception raised from a backtest will be re-raised and halt the node.
+            If False, exceptions raised from backtest(s) will be printed to stdout.
 
         Returns
         -------
@@ -168,6 +171,9 @@ class BacktestNode:
                 log = Logger(type(self).__name__)
                 log.error(f"Error running backtest: {e}")
                 log.info(f"Config: {config}")
+
+                if raise_exception:
+                    raise e
 
         return results
 
@@ -276,7 +282,7 @@ class BacktestNode:
         if is_nautilus_class(result.data_cls):
             engine.add_data(
                 data=result.data,
-                sort=False,  # Already sorted from backend
+                sort=True,  # Already sorted from backend
             )
         else:
             if not result.client_id:
@@ -286,7 +292,7 @@ class BacktestNode:
             engine.add_data(
                 data=result.data,
                 client_id=result.client_id,
-                sort=False,  # Already sorted from backend
+                sort=True,  # Already sorted from backend
             )
 
     def _run(
@@ -346,9 +352,10 @@ class BacktestNode:
                 # TODO: Temporary hack - improve bars config and decide implementation with `filter_expr`
                 assert config.instrument_id, "No `instrument_id` for Bar data config"
                 assert config.bar_spec, "No `bar_spec` for Bar data config"
-                bar_type = config.instrument_id + "-" + config.bar_spec + "-EXTERNAL"
+                bar_type = f"{config.instrument_id}-{config.bar_spec}-EXTERNAL"
             else:
                 bar_type = None
+
             session = catalog.backend_session(
                 data_cls=config.data_type,
                 instrument_ids=(
@@ -365,7 +372,7 @@ class BacktestNode:
             engine.add_data(
                 data=capsule_to_list(chunk),
                 validate=False,  # Cannot validate mixed type stream
-                sort=False,  # Already sorted from backend
+                sort=True,  # Already sorted from backend
             )
             engine.run(
                 run_config_id=run_config_id,

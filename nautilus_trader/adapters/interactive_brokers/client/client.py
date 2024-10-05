@@ -194,7 +194,7 @@ class InteractiveBrokersClient(
                 # seconds, so we wait for it here.
                 await asyncio.wait_for(self._is_ib_connected.wait(), 15)
                 self._start_connection_watchdog()
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 self._log.error("Client failed to initialize. Connection timeout.")
             except Exception as e:
                 self._log.exception("Unhandled exception in client startup", e)
@@ -336,7 +336,7 @@ class InteractiveBrokersClient(
         try:
             if not self._is_client_ready.is_set():
                 await asyncio.wait_for(self._is_client_ready.wait(), timeout)
-        except asyncio.TimeoutError as e:
+        except TimeoutError as e:
             self._log.error(f"Client is not ready. {e}")
 
     async def _run_connection_watchdog(self) -> None:
@@ -499,7 +499,7 @@ class InteractiveBrokersClient(
         """
         try:
             return await asyncio.wait_for(request.future, timeout)
-        except asyncio.TimeoutError as e:
+        except TimeoutError as e:
             self._log.warning(f"Request timed out for {request}. Ending request.")
             self._end_request(request.req_id, success=False, exception=e)
             return default_value

@@ -456,7 +456,10 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             await self._ws_client.subscribe_trades(instrument_id.symbol.value)
 
     async def _subscribe_bars(self, bar_type: BarType) -> None:
-        PyCondition.true(bar_type.is_externally_aggregated(), "aggregation_source is not EXTERNAL")
+        PyCondition.is_true(
+            bar_type.is_externally_aggregated(),
+            "aggregation_source is not EXTERNAL",
+        )
 
         if not bar_type.spec.is_time_aggregated():
             self._log.error(

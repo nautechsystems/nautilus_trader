@@ -38,7 +38,7 @@ cdef class EfficiencyRatio(Indicator):
     """
 
     def __init__(self, int period):
-        Condition.true(period >= 2, "period was < 2")
+        Condition.is_true(period >= 2, "period was < 2")
         super().__init__(params=[period])
 
         self.period = period

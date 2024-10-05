@@ -47,7 +47,7 @@ pub trait Serializable: Serialize + for<'de> Deserialize<'de> {
     }
 }
 
-impl<'de> Visitor<'de> for BoolVisitor {
+impl Visitor<'_> for BoolVisitor {
     type Value = u8;
 
     fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {

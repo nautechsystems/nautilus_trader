@@ -44,6 +44,7 @@ pub struct OrderMatchingCore {
     pub last: Option<Price>,
     pub is_bid_initialized: bool,
     pub is_ask_initialized: bool,
+    pub is_last_initialized: bool,
     orders_bid: Vec<PassiveOrderAny>,
     orders_ask: Vec<PassiveOrderAny>,
     trigger_stop_order: Option<fn(&StopOrderAny)>,
@@ -69,6 +70,7 @@ impl OrderMatchingCore {
             last: None,
             is_bid_initialized: false,
             is_ask_initialized: false,
+            is_last_initialized: false,
             orders_bid: Vec::new(),
             orders_ask: Vec::new(),
             trigger_stop_order,
@@ -109,6 +111,7 @@ impl OrderMatchingCore {
 
     pub fn set_last_raw(&mut self, last: Price) {
         self.last = Some(last);
+        self.is_last_initialized = true;
     }
 
     pub fn reset(&mut self) {
