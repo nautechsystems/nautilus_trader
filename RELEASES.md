@@ -13,6 +13,7 @@ Released on 5th October 2024 (UTC).
 - Implemented bar processing for `SimulatedExchange` (#1969), thanks @filipmacek
 - Implemented remaining getter functions in `SimulatedExchange` (#1970), thanks @filipmacek
 - Implemented rate limiting for dYdX websocket subscriptions (#1977), thanks @davidsblom
+- Refactored reconnection handling for dYdX (#1983), thanks @davidsblom
 - Refined `DatabentoDataLoader` internals to accommodate usage from Rust
 - Added initial large test data files download and caching capability
 
