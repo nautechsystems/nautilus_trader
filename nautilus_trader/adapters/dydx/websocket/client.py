@@ -420,7 +420,15 @@ class DYDXWebsocketClient:
             return
 
         for subscription in self._subscriptions:
-            msg = {"type": "subscribe", "channel": subscription[0], "id": subscription[1]}
+            msg: dict[str, Any] = {
+                "type": "subscribe",
+                "channel": subscription[0],
+                "id": subscription[1],
+            }
+
+            if subscription[0] == "v4_orderbook":
+                msg["batched"] = True
+
             await self._send(msg)
 
     def _send_subscribe_msg(self, msg: dict[str, Any]) -> None:
