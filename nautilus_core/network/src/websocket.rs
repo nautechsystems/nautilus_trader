@@ -258,6 +258,19 @@ impl WebSocketClientInner {
     /// Make a new connection with server. Use the new read and write halves
     /// to update self writer and read and heartbeat tasks.
     pub async fn reconnect(&mut self) -> Result<(), Error> {
+        if !self.read_task.is_finished() {
+            self.read_task.abort();
+            tracing::debug!("Aborted message read task");
+        }
+
+        // Cancel heart beat task
+        if let Some(ref handle) = self.heartbeat_task.take() {
+            if !handle.is_finished() {
+                handle.abort();
+                tracing::debug!("Aborted heartbeat task");
+            }
+        }
+
         let (new_writer, reader) =
             Self::connect_with_server(&self.config.url, self.config.headers.clone()).await?;
         let mut guard = self.writer.lock().await;
