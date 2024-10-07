@@ -390,9 +390,8 @@ impl From<OrderAny> for TrailingStopLimitOrder {
             OrderAny::TrailingStopLimit(order) => order,
             _ => {
                 panic!(
-                    "Invalid `OrderAny` not `{}`, was {:?}",
+                    "Invalid `OrderAny` not `{}`, was {order:?}",
                     stringify!(TrailingStopLimitOrder),
-                    order
                 )
             }
         }

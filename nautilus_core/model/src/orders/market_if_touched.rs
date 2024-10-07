@@ -373,9 +373,8 @@ impl From<OrderAny> for MarketIfTouchedOrder {
             OrderAny::MarketIfTouched(order) => order,
             _ => {
                 panic!(
-                    "Invalid `OrderAny` not `{}`, was {:?}",
+                    "Invalid `OrderAny` not `{}`, was {order:?}",
                     stringify!(MarketIfTouchedOrder),
-                    order
                 )
             }
         }
