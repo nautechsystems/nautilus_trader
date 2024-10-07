@@ -349,6 +349,31 @@ class TestSimulatedExchangeMarginAccount:
         assert isinstance(self.strategy.store[3], OrderAccepted)
         assert isinstance(self.strategy.store[4], OrderUpdated)
 
+    def test_submit_multiple_limit_orders_then_accepts_both(self) -> None:
+        # Arrange
+        order1 = self.strategy.order_factory.limit(
+            _USDJPY_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("110.010"),
+        )
+
+        order2 = self.strategy.order_factory.limit(
+            _USDJPY_SIM.id,
+            OrderSide.SELL,
+            Quantity.from_int(100_000),
+            Price.from_str("110.011"),
+        )
+
+        # Act
+        self.strategy.submit_order(order1)
+        self.strategy.submit_order(order2)
+        self.exchange.process(0)
+
+        # Assert
+        assert order1.status == OrderStatus.ACCEPTED
+        assert order2.status == OrderStatus.ACCEPTED
+
     @pytest.mark.parametrize(
         ("side", "price"),
         [
