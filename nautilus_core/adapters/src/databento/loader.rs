@@ -48,6 +48,8 @@ use super::{
 ///  - MBO -> `OrderBookDelta`
 ///  - MBP_1 -> `(QuoteTick, Option<TradeTick>)`
 ///  - MBP_10 -> `OrderBookDepth10`
+///  - BBO_1S -> `QuoteTick`
+///  - BBO_1M -> `QuoteTick`
 ///  - TBBO -> `(QuoteTick, TradeTick)`
 ///  - TRADES -> `TradeTick`
 ///  - OHLCV_1S -> `Bar`
@@ -60,7 +62,8 @@ use super::{
 ///  - STATUS -> `InstrumentStatus`
 ///
 /// # References
-/// <https://databento.com/docs/knowledge-base/new-users/dbn-encoding>
+///
+/// <https://databento.com/docs/schemas-and-data-formats>
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.databento")

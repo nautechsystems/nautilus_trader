@@ -63,6 +63,8 @@ The following Databento schemas are supported by NautilusTrader:
 | MBO              | `OrderBookDelta`                  |
 | MBP_1            | `(QuoteTick, Option<TradeTick>)`  |
 | MBP_10           | `OrderBookDepth10`                |
+| BBO_1S           | `QuoteTick`                       |
+| BBO_1M           | `QuoteTick`                       |
 | TBBO             | `(QuoteTick, TradeTick)`          |
 | TRADES           | `TradeTick`                       |
 | OHLCV_1S         | `Bar`                             |
@@ -73,6 +75,10 @@ The following Databento schemas are supported by NautilusTrader:
 | IMBALANCE        | `DatabentoImbalance`              |
 | STATISTICS       | `DatabentoStatistics`             |
 | STATUS           | `InstrumentStatus`                |
+
+:::info
+See also the Databento [Schemas and data formats](https://databento.com/docs/schemas-and-data-formats) guide.
+:::
 
 ## Instrument IDs and symbology
 
