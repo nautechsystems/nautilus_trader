@@ -184,7 +184,7 @@ async def test_place_orders(betfair_client):
     _, request = betfair_client._request.call_args[0]
     expected = PlaceOrders(
         params=_PlaceOrdersParams(
-            market_id="1.179082386",
+            market_id="1-179082386",
             instructions=[
                 PlaceInstruction(
                     order_type=OrderType.LIMIT,
@@ -229,7 +229,7 @@ async def test_place_orders_handicap(betfair_client):
     _, request = betfair_client._request.call_args[0]
     expected = PlaceOrders(
         params=_PlaceOrdersParams(
-            market_id="1.186249896",
+            market_id="1-186249896",
             instructions=[
                 PlaceInstruction(
                     order_type=OrderType.LIMIT,
@@ -284,7 +284,7 @@ async def test_place_orders_market_on_close(betfair_client):
     _, request = betfair_client._request.call_args[0]
     expected = PlaceOrders(
         params=_PlaceOrdersParams(
-            market_id="1.179082386",
+            market_id="1-179082386",
             instructions=[
                 PlaceInstruction(
                     order_type=OrderType.MARKET_ON_CLOSE,
@@ -328,7 +328,7 @@ async def test_replace_orders_single(betfair_client):
     _, request = betfair_client._request.call_args[0]
     expected = ReplaceOrders(
         params=_ReplaceOrdersParams(
-            market_id="1.179082386",
+            market_id="1-179082386",
             instructions=[ReplaceInstruction(bet_id=240718603398, new_price=2.0)],
             customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
             market_version=None,
@@ -357,7 +357,7 @@ async def test_cancel_orders(betfair_client):
     _, request = betfair_client._request.call_args[0]
     expected = CancelOrders(
         params=_CancelOrdersParams(
-            market_id="1.179082386",
+            market_id="1-179082386",
             customer_ref="038990c619d2b5c837a6fe91f9b7b9ed",
             instructions=[CancelInstruction(bet_id=228302937743)],
         ),
