@@ -60,14 +60,15 @@ uuid = { version = "1.10.0", features = ["v4"] }
 # dev-dependencies
 axum = "0.7.7"
 criterion = "0.5.1"
-float-cmp = "0.9.0"
+float-cmp = "0.10.0"
 iai = "0.1.1"
 pretty_assertions = "1.4.1"
-rstest = "0.21.0"
+proptest = "1.5.0"
+rstest = "0.23.0"
 tempfile = "3.13.0"
 
 # build-dependencies
-cbindgen = "0.26.0"
+cbindgen = "0.27.0"
 
 [profile.dev]
 opt-level = 0
