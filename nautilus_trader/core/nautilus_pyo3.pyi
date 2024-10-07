@@ -3981,62 +3981,119 @@ class ImplyVolAndGreeksResult:
     theta: float
 
 
-def black_scholes_greeks(s: float, r: float, b: float, sigma: float, is_call: bool, k: float, t: float,
-                         multiplier: float) -> BlackScholesGreeksResult:
+def black_scholes_greeks(
+    s: float,
+    r: float,
+    b: float,
+    sigma: float,
+    is_call: bool,
+    k: float,
+    t: float,
+    multiplier: float,
+) -> BlackScholesGreeksResult:
     """
     Calculate the Black-Scholes Greeks for a given option contract.
 
-    Args:
-        s (float): The current price of the underlying asset.
-        r (float): The risk-free interest rate.
-        b (float): The cost of carry of the underlying asset.
-        sigma (float): The volatility of the underlying asset.
-        is_call (bool): Whether the option is a call (True) or a put (False).
-        k (float): The strike price of the option.
-        t (float): The time to expiration of the option in years.
-        multiplier (float): The multiplier for the option contract.
+    Parameters
+    ----------
+    s : float
+        The current price of the underlying asset.
+    r : float
+        The risk-free interest rate.
+    b : float
+        The cost of carry of the underlying asset.
+    sigma : float
+        The volatility of the underlying asset.
+    is_call : bool
+        Whether the option is a call (True) or a put (False).
+    k : float
+        The strike price of the option.
+    t : float
+        The time to expiration of the option in years.
+    multiplier : float
+        The multiplier for the option contract.
 
-    Returns:
-        BlackScholesGreeksResult: A named tuple containing the calculated option price, delta, gamma, vega, and theta.
+    Returns
+    -------
+    BlackScholesGreeksResult
+        A named tuple containing the calculated option price, delta, gamma, vega, and theta.
     """
 
 
-def imply_vol(s: float, r: float, b: float, is_call: bool, k: float, t: float, price: float) -> float:
+def imply_vol(
+    s: float,
+    r: float,
+    b: float,
+    is_call: bool,
+    k: float,
+    t: float,
+    price: float,
+) -> float:
     """
     Calculate the implied volatility and Greeks for an option contract.
 
-    Args:
-        s (float): The current price of the underlying asset.
-        r (float): The risk-free interest rate.
-        b (float): The cost of carry of the underlying asset.
-        is_call (bool): Whether the option is a call (True) or a put (False).
-        k (float): The strike price of the option.
-        t (float): The time to expiration of the option in years.
-        price (float): The current market price of the option.
-        multiplier (float): The multiplier for the option contract.
+    Parameters
+    ----------
+    s : float
+        The current price of the underlying asset.
+    r : float
+        The risk-free interest rate.
+    b : float
+        The cost of carry of the underlying asset.
+    is_call : bool
+        Whether the option is a call (True) or a put (False).
+    k : float
+        The strike price of the option.
+    t : float
+        The time to expiration of the option in years.
+    price : float
+        The current market price of the option.
+    multiplier : float
+        The multiplier for the option contract.
 
-    Returns:
-        float: An implied volatility value.
+    Returns
+    -------
+    float
+        An implied volatility value.
     """
 
 
-def imply_vol_and_greeks(s: float, r: float, b: float, is_call: bool, k: float, t: float,
-                         price: float, multiplier: float) -> ImplyVolAndGreeksResult :
+def imply_vol_and_greeks(
+    s: float,
+    r: float,
+    b: float,
+    is_call: bool,
+    k: float,
+    t: float,
+    price: float,
+    multiplier: float,
+) -> ImplyVolAndGreeksResult :
     """
     Calculate the implied volatility and Greeks for an option contract.
 
-    Args:
-        s (float): The current price of the underlying asset.
-        r (float): The risk-free interest rate.
-        b (float): The cost of carry of the underlying asset.
-        is_call (bool): Whether the option is a call (True) or a put (False).
-        k (float): The strike price of the option.
-        t (float): The time to expiration of the option in years.
-        price (float): The current market price of the option.
-        multiplier (float): The multiplier for the option contract.
+    Parameters
+    ----------
+    s : float
+        The current price of the underlying asset.
+    r : float
+        The risk-free interest rate.
+    b : float
+        The cost of carry of the underlying asset.
+    is_call : bool
+        Whether the option is a call (True) or a put (False).
+    k : float
+        The strike price of the option.
+    t : float
+        The time to expiration of the option in years.
+    price : float
+        The current market price of the option.
+    multiplier : float
+        The multiplier for the option contract.
 
-    Returns:
-        ImplyVolAndGreeksResult: A named tuple containing the calculated implied volatility, option price, delta, gamma, vega, and theta.
+    Returns
+    -------
+    ImplyVolAndGreeksResult
+        A named tuple containing the calculated implied volatility, option price, delta, gamma, vega, and theta
     """
 
 
@@ -4102,11 +4159,11 @@ class InterestRateData(Data):
     interest_rate: float
 
     def __init__(
-            self,
-            ts_event: int = 0,
-            ts_init: int = 0,
-            curve_name: str = "USD",
-            interest_rate: float = 0.05,
+        self,
+        ts_event: int = 0,
+        ts_init: int = 0,
+        curve_name: str = "USD",
+        interest_rate: float = 0.05,
     ): ...
 
 
@@ -4116,12 +4173,12 @@ class InterestRateCurveData(Data):
     interest_rates: np.ndarray
 
     def __init__(
-            self,
-            ts_event: int,
-            ts_init: int,
-            curve_name: str,
-            tenors: np.ndarray,
-            interest_rates: np.ndarray,
+        self,
+        ts_event: int,
+        ts_init: int,
+        curve_name: str,
+        tenors: np.ndarray,
+        interest_rates: np.ndarray,
     ): ...
 
 ###################################################################################################
