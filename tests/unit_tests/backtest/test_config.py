@@ -263,7 +263,7 @@ class TestBacktestConfigParsing:
         print("token:", token)
         value: bytes = self.backtest_config.json()
         print("token_value:", value.decode())
-        assert token == "bd1d6f5e506506ed251fb6a683045bfca30b937f0726eefc41abe40f87c9a53d"
+        assert token == "3c7139dc67cc3047c33a17d51ce47971671f18246c1e2e411654a35cfe04e903"
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     @pytest.mark.parametrize(

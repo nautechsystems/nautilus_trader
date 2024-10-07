@@ -670,7 +670,7 @@ class TestInstrumentProvider:
             event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00"),
             event_type_id=6423,
             event_type_name="American Football",
-            market_id="1.123456789",
+            market_id="1-123456789",
             market_name="AFC Conference Winner",
             market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00"),
             market_type="SPECIAL",

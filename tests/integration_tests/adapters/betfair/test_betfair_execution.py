@@ -307,7 +307,7 @@ async def test_modify_order_error_order_doesnt_exist(
     expected_args = tuple(
         {
             "strategy_id": StrategyId("S-001"),
-            "instrument_id": InstrumentId.from_str("1.179082386-50214-None.BETFAIR"),
+            "instrument_id": InstrumentId.from_str("1-179082386-50214-None.BETFAIR"),
             "client_order_id": ClientOrderId("O-20210410-022422-001-001-1"),
             "venue_order_id": None,
             "reason": "ORDER NOT IN CACHE",
@@ -936,7 +936,7 @@ async def test_check_cache_against_order_image_passes(
 async def test_fok_order_found_in_cache(exec_client, setup_order_state, strategy, cache):
     # Arrange
     instrument = betting_instrument(
-        market_id="1.219194342",
+        market_id="1-219194342",
         selection_id=61288616,
         selection_handicap=0.0,
     )
