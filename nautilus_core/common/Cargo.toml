@@ -33,11 +33,11 @@ tracing-subscriber = { version = "0.3.18", default-features = false, features = 
 tracing = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
-sysinfo = "0.31.4"
+sysinfo = "0.32.0"
 
 [dev-dependencies]
+proptest = { workspace = true }
 tempfile = { workspace = true }
-proptest = "1.5.0"
 
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }
