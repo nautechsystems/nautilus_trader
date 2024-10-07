@@ -1,3 +1,21 @@
+# NautilusTrader 1.204.0 Beta
+
+Released on TBD (UTC).
+
+### Enhancements
+None
+
+### Internal Improvements
+None
+
+### Breaking Changes
+None
+
+### Fixes
+None
+
+---
+
 # NautilusTrader 1.203.0 Beta
 
 Released on 5th October 2024 (UTC).
