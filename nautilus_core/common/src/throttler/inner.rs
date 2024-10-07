@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::VecDeque, rc::Rc};
+use std::{cell::RefCell, collections::VecDeque, fmt::Debug, rc::Rc};
 
 use nautilus_core::nanos::UnixNanos;
 
@@ -31,6 +31,24 @@ pub struct InnerThrottler<T, F> {
     output_send: F,
     /// The callback to drop a message.
     output_drop: Option<F>,
+}
+
+impl<T, F> Debug for InnerThrottler<T, F>
+where
+    T: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InnerThrottler")
+            .field("recv_count", &self.recv_count)
+            .field("sent_count", &self.sent_count)
+            .field("is_limiting", &self.is_limiting)
+            .field("limit", &self.limit)
+            .field("buffer", &self.buffer)
+            .field("timestamps", &self.timestamps)
+            .field("interval", &self.interval)
+            .field("timer_name", &self.timer_name)
+            .finish()
+    }
 }
 
 impl<T, F> InnerThrottler<T, F> {

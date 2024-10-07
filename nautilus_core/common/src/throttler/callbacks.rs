@@ -44,7 +44,10 @@ impl<T: 'static, F: Fn(T) + 'static> From<ThrottlerProcess<T, F>> for TimeEventC
             while let Some(msg) = core.buffer.pop_back() {
                 core.send_msg(msg);
 
-                if core.delta_next() > 0 {
+                // Set timer to process more buffered messages
+                // if interval limit reached and there are more
+                // buffered messages to process
+                if !core.buffer.is_empty() && core.delta_next() > 0 {
                     core.is_limiting = true;
                     core.set_timer(Some(process_clone.into()));
                     return;

@@ -16,7 +16,7 @@
 pub mod callbacks;
 pub mod inner;
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, fmt::Debug, rc::Rc};
 
 use callbacks::{ThrottlerProcess, ThrottlerResume};
 use inner::InnerThrottler;
@@ -31,6 +31,18 @@ use crate::clock::Clock;
 pub struct Throttler<T, F> {
     inner: Rc<RefCell<InnerThrottler<T, F>>>,
 }
+
+impl<T, F> Debug for Throttler<T, F>
+where
+    T: Debug,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Throttler")
+            .field("inner", &self.inner)
+            .finish()
+    }
+}
+
 impl<T, F> Throttler<T, F> {
     pub fn new(
         limit: usize,
@@ -101,7 +113,6 @@ where
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
-    use nautilus_core::nanos::UnixNanos;
     use rstest::{fixture, rstest};
 
     use super::Throttler;
@@ -459,21 +470,7 @@ mod tests {
         prop::collection::vec(throttler_input_strategy(), 10..=150)
     }
 
-    // proptest! {
-    #[test]
-    fn test() {
-        let inputs = [
-            ThrottlerInput::AdvanceClock(5),
-            ThrottlerInput::SendMessage(42),
-            ThrottlerInput::SendMessage(42),
-            ThrottlerInput::SendMessage(42),
-            ThrottlerInput::SendMessage(42),
-            ThrottlerInput::SendMessage(42),
-            ThrottlerInput::SendMessage(42),
-            ThrottlerInput::SendMessage(42),
-            ThrottlerInput::SendMessage(42),
-            ThrottlerInput::SendMessage(42),
-        ];
+    fn test_throttler_with_inputs(inputs: Vec<ThrottlerInput>) {
         let TestThrottler {
             throttler,
             clock: test_clock,
@@ -505,17 +502,12 @@ mod tests {
             // * Least recent timestamp in queue exceeds interval
             let inner = throttler.inner.borrow();
             let buffered_messages = inner.qsize() > 0;
-            let last_interval = inner
-                .clock
-                .borrow()
-                .timestamp_ns()
-                .as_u64()
-                .saturating_sub(interval);
-            let first_message_processed_within_interval = inner
+            let now = inner.clock.borrow().timestamp_ns().as_u64();
+            let limit_filled_within_interval = inner
                 .timestamps
                 .get(inner.limit - 1)
-                .map_or(false, |&ts| ts.as_u64() > last_interval);
-            let expected_limiting = buffered_messages && first_message_processed_within_interval;
+                .map_or(false, |&ts| (now - ts.as_u64()) < interval);
+            let expected_limiting = buffered_messages && limit_filled_within_interval;
             assert_eq!(inner.is_limiting, expected_limiting);
 
             // Message conservation
@@ -524,50 +516,42 @@ mod tests {
         }
 
         // Advance clock by a large amount to process all messages
-        {
-            let time_events = test_clock
-                .borrow_mut()
-                .advance_time((interval * 100).into(), true);
-            let mut clock_ref = test_clock.borrow_mut();
-            for each_event in clock_ref.match_handlers(time_events) {
-                drop(clock_ref);
-                each_event.callback.call(each_event.event);
-                clock_ref = test_clock.borrow_mut();
-            }
+        let time_events = test_clock
+            .borrow_mut()
+            .advance_time((interval * 100).into(), true);
+        let mut clock_ref = test_clock.borrow_mut();
+        for each_event in clock_ref.match_handlers(time_events) {
+            drop(clock_ref);
+            each_event.callback.call(each_event.event);
+            clock_ref = test_clock.borrow_mut();
         }
         assert_eq!(throttler.qsize(), 0);
-
-        // TODO: Add test to check qsize and used values
-        // merge below logic in with above test
-        // let mut expected_sent = 0;
-        // let mut expected_buffered = 0;
-
-        // for input in inputs {
-        //     match input {
-        //         ThrottlerInput::SendMessage(msg) => {
-        //             throttler.send(msg);
-        //             if expected_sent < 5 {
-        //                 expected_sent += 1;
-        //             } else {
-        //                 expected_buffered += 1;
-        //             }
-        //         }
-        //         ThrottlerInput::AdvanceClock(duration) => {
-        //             clock.borrow_mut().advance_time(UnixNanos::from(duration), true);
-        //             let messages_to_send = expected_buffered.min(5 - expected_sent);
-        //             expected_sent = (expected_sent + messages_to_send).min(5);
-        //             expected_buffered -= messages_to_send;
-        //         }
-        //     }
-
-        //     let inner = throttler.inner.borrow();
-        //     let actual_used = throttler.used();
-        //     let actual_qsize = throttler.qsize();
-        //     let expected_used = expected_sent as f64 / 5.0;
-
-        //     prop_assert!((actual_used - expected_used).abs() < 1e-6, "Used capacity mismatch: actual = {}, expected = {}", actual_used, expected_used);
-        //     prop_assert_eq!(actual_qsize, expected_buffered, "QSize mismatch: actual = {}, expected = {}", actual_qsize, expected_buffered);
-        // }
     }
-    // }
+
+    #[test]
+    #[ignore = "Used for manually testing failing cases"]
+    fn test_case() {
+        let inputs = [
+            ThrottlerInput::SendMessage(42),
+            ThrottlerInput::AdvanceClock(5),
+            ThrottlerInput::SendMessage(42),
+            ThrottlerInput::SendMessage(42),
+            ThrottlerInput::SendMessage(42),
+            ThrottlerInput::SendMessage(42),
+            ThrottlerInput::SendMessage(42),
+            ThrottlerInput::AdvanceClock(5),
+            ThrottlerInput::SendMessage(42),
+            ThrottlerInput::SendMessage(42),
+        ]
+        .to_vec();
+
+        test_throttler_with_inputs(inputs);
+    }
+
+    proptest! {
+        #[test]
+        fn test(inputs in throttler_test_strategy()) {
+            test_throttler_with_inputs(inputs);
+        }
+    }
 }
