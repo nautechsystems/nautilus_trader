@@ -85,7 +85,7 @@ def instrument_list(mock_load_markets_metadata):
 
     # Fill INSTRUMENTS global cache
     INSTRUMENTS.extend(instrument_provider.list_all())
-    # assert INSTRUMENTS  # TODO: Fix Betfair symbology
+    assert INSTRUMENTS  # TODO: Fix Betfair symbology
 
 
 @pytest.mark.asyncio()
