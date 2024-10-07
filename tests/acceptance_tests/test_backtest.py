@@ -651,7 +651,7 @@ class TestBacktestAcceptanceTestsOrderBookImbalance:
         )
 
         # Set up data
-        data = BetfairDataProvider.betfair_feed_parsed(market_id="1.166811431")
+        data = BetfairDataProvider.betfair_feed_parsed(market_id="1-166811431")
         instruments = [d for d in data if isinstance(d, BettingInstrument)]
         assert instruments
 
@@ -710,7 +710,7 @@ class TestBacktestAcceptanceTestsMarketMaking:
             book_type=BookType.L2_MBP,
         )
 
-        data = BetfairDataProvider.betfair_feed_parsed(market_id="1.166811431")
+        data = BetfairDataProvider.betfair_feed_parsed(market_id="1-166811431")
         instruments = [d for d in data if isinstance(d, BettingInstrument)]
 
         for instrument in instruments[:1]:

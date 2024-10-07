@@ -1,3 +1,21 @@
+# NautilusTrader 1.204.0 Beta
+
+Released on TBD (UTC).
+
+### Enhancements
+- Standardized Betfair symbology to use hyphens instead of periods (preventing them being treated as composite symbols)
+
+### Internal Improvements
+None
+
+### Breaking Changes
+None
+
+### Fixes
+- Fixed resubscribing to orderbook in batched mode for dYdX (#1985), thanks @davidsblom
+
+---
+
 # NautilusTrader 1.203.0 Beta
 
 Released on 5th October 2024 (UTC).

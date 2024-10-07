@@ -150,7 +150,7 @@ class BetfairTestStubs:
 
     @staticmethod
     def make_order_place_response(
-        market_id="1.182127885",
+        market_id="1-182127885",
         customer_order_ref="O-20210418-015047-001-001-3",
         bet_id="230486317487",
     ):
@@ -650,7 +650,7 @@ class BetfairStreaming:
 class BetfairDataProvider:
     @staticmethod
     def betting_instrument(
-        market_id: str = "1.179082386",
+        market_id: str = "1-179082386",
         selection_id: str = "50214",
         handicap: str | None = None,
     ) -> BettingInstrument:
@@ -686,53 +686,53 @@ class BetfairDataProvider:
 
         """
         return (
-            "1.148894697",
-            "1.159045690",
-            "1.160683973",
-            "1.160740937",
-            "1.160837650",
-            "1.163016936",
-            "1.164555327",
-            "1.166577732",
-            "1.166881256",
-            "1.167249009",
-            "1.167249195",
-            "1.167249197",
-            "1.170262001",
-            "1.170262002",
-            "1.170436895",
-            "1.170508139",
-            "1.171431228",
-            "1.172698506",
-            "1.173509358",
-            "1.175061137",
-            "1.175061138",
-            "1.175135109",
-            "1.175492291",
-            "1.175492292",
-            "1.175492293",
-            "1.175492294",
-            "1.175492295",
-            "1.175492296",
-            "1.175775529",
-            "1.175776462",
-            "1.176584117",
-            "1.176621195",
-            "1.177125720",
-            "1.177125722",
-            "1.177126187",
-            "1.177126652",
-            "1.177126864",
-            "1.178198625",
-            "1.180294966",
-            "1.180294971",
-            "1.180434883",
-            "1.180604981",
-            "1.180727728",
-            "1.180737193",
-            "1.180770798",
-            "1.180737206",
-            "1.165003060",
+            "1-148894697",
+            "1-159045690",
+            "1-160683973",
+            "1-160740937",
+            "1-160837650",
+            "1-163016936",
+            "1-164555327",
+            "1-166577732",
+            "1-166881256",
+            "1-167249009",
+            "1-167249195",
+            "1-167249197",
+            "1-170262001",
+            "1-170262002",
+            "1-170436895",
+            "1-170508139",
+            "1-171431228",
+            "1-172698506",
+            "1-173509358",
+            "1-175061137",
+            "1-175061138",
+            "1-175135109",
+            "1-175492291",
+            "1-175492292",
+            "1-175492293",
+            "1-175492294",
+            "1-175492295",
+            "1-175492296",
+            "1-175775529",
+            "1-175776462",
+            "1-176584117",
+            "1-176621195",
+            "1-177125720",
+            "1-177125722",
+            "1-177126187",
+            "1-177126652",
+            "1-177126864",
+            "1-178198625",
+            "1-180294966",
+            "1-180294971",
+            "1-180434883",
+            "1-180604981",
+            "1-180727728",
+            "1-180737193",
+            "1-180770798",
+            "1-180737206",
+            "1-165003060",
         )
 
     @staticmethod
@@ -747,7 +747,7 @@ class BetfairDataProvider:
         ]
 
     @staticmethod
-    def read_lines(filename: str = "1.166811431.bz2") -> list[bytes]:
+    def read_lines(filename: str = "1-166811431.bz2") -> list[bytes]:
         path = TEST_DATA_DIR / "betfair" / filename
 
         if path.suffix == ".bz2":
@@ -764,13 +764,13 @@ class BetfairDataProvider:
         return [stream_decode(line) for line in BetfairDataProvider.read_lines(filename)]
 
     @staticmethod
-    def market_updates(filename="1.166811431.bz2", runner1="60424", runner2="237478") -> list:
+    def market_updates(filename="1-166811431.bz2", runner1="60424", runner2="237478") -> list:
         market_id = pathlib.Path(filename).name
-        assert market_id.startswith("1.")
+        assert market_id.startswith("1-")
 
         def _fix_ids(r):
             return (
-                r.replace(market_id.encode(), b"1.180737206")
+                r.replace(market_id.encode(), b"1-180737206")
                 .replace(runner1.encode(), b"19248890")
                 .replace(runner2.encode(), b"38848248")
             )
@@ -790,7 +790,7 @@ class BetfairDataProvider:
         return instruments
 
     @staticmethod
-    def betfair_feed_parsed(market_id: str = "1.166564490"):
+    def betfair_feed_parsed(market_id: str = "1-166564490"):
         parser = BetfairParser(currency="GBP")
 
         instruments: list[BettingInstrument] = []
@@ -809,7 +809,7 @@ class BetfairDataProvider:
 
 
 def betting_instrument(
-    market_id: MarketId = "1.179082386",
+    market_id: MarketId = "1-179082386",
     selection_id: SelectionId = 50214,
     selection_handicap: Handicap | None = None,
 ) -> BettingInstrument:
@@ -853,7 +853,7 @@ def betting_instrument_handicap() -> BettingInstrument:
             "event_country_code": "AU",
             "event_open_date": "2021-08-13T09:50:00+00:00",
             "betting_type": "ASIAN_HANDICAP_DOUBLE_LINE",
-            "market_id": "1.186249896",
+            "market_id": "1-186249896",
             "market_name": "Handicap",
             "market_start_time": "2021-08-13T09:50:00+00:00",
             "market_type": "HANDICAP",
@@ -870,7 +870,7 @@ def betting_instrument_handicap() -> BettingInstrument:
 
 
 def load_betfair_data(catalog: ParquetDataCatalog) -> ParquetDataCatalog:
-    filename = TEST_DATA_DIR / "betfair" / "1.166564490.bz2"
+    filename = TEST_DATA_DIR / "betfair" / "1-166564490.bz2"
 
     # Write betting instruments
     instruments = betting_instruments_from_file(filename, currency="GBP", ts_event=0, ts_init=0)

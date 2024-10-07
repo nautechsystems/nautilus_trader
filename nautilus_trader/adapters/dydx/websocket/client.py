@@ -83,7 +83,7 @@ class DYDXWebsocketClient:
         )
 
         self._msg_timestamp = self._clock.utc_now()
-        self._msg_interval_secs: int = 60
+        self._msg_timeout_secs: int = 60
         self._reconnect_task: asyncio.Task | None = None
 
     def is_connected(self) -> bool:
@@ -160,7 +160,10 @@ class DYDXWebsocketClient:
         if self._client is None:
             return
 
-        await self._client.send_pong(raw)
+        try:
+            await self._client.send_pong(raw)
+        except WebSocketClientError as e:
+            self._log.error(str(e))
 
     async def _reconnect_guard(self) -> None:
         """
@@ -169,18 +172,12 @@ class DYDXWebsocketClient:
         """
         try:
             while True:
-                self._log.debug(
-                    f"Scheduled `reconnect_guard` to run in {self._msg_interval_secs}s",
-                )
-                await asyncio.sleep(self._msg_interval_secs)
+                await asyncio.sleep(1)
+                time_since_previous_msg = self._clock.utc_now() - self._msg_timestamp
 
-                now_timestamp = self._clock.utc_now()
-                time_since_previous_msg = now_timestamp - self._msg_timestamp
-
-                if time_since_previous_msg > pd.Timedelta(seconds=self._msg_interval_secs):
-                    self._log.error(
-                        f"Time since previous received message is {time_since_previous_msg}",
-                    )
+                if self.is_disconnected() or time_since_previous_msg > pd.Timedelta(
+                    seconds=self._msg_timeout_secs,
+                ):
                     try:
                         await self.disconnect()
                         await self.connect()
@@ -420,7 +417,15 @@ class DYDXWebsocketClient:
             return
 
         for subscription in self._subscriptions:
-            msg = {"type": "subscribe", "channel": subscription[0], "id": subscription[1]}
+            msg: dict[str, Any] = {
+                "type": "subscribe",
+                "channel": subscription[0],
+                "id": subscription[1],
+            }
+
+            if subscription[0] == "v4_orderbook":
+                msg["batched"] = True
+
             await self._send(msg)
 
     def _send_subscribe_msg(self, msg: dict[str, Any]) -> None:
