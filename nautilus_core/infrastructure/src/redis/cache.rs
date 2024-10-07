@@ -175,7 +175,7 @@ impl RedisCacheDatabase {
         log::debug!("Awaiting task '{CACHE_WRITE}'");
         tokio::task::block_in_place(|| {
             if let Err(e) = get_runtime().block_on(&mut self.handle) {
-                log::error!("Error awaiting task '{CACHE_WRITE}': {:?}", e);
+                log::error!("Error awaiting task '{CACHE_WRITE}': {e:?}");
             }
         });
 
@@ -184,12 +184,12 @@ impl RedisCacheDatabase {
 
     pub fn flushdb(&mut self) {
         if let Err(e) = redis::cmd(REDIS_FLUSHDB).query::<()>(&mut self.con) {
-            log::error!("Failed to flush database: {:?}", e);
+            log::error!("Failed to flush database: {e:?}");
         }
     }
 
     pub fn keys(&mut self, pattern: &str) -> anyhow::Result<Vec<String>> {
-        let pattern = format!("{}{REDIS_DELIMITER}{}", self.trader_key, pattern);
+        let pattern = format!("{}{REDIS_DELIMITER}{pattern}", self.trader_key);
         log::debug!("Querying keys: {pattern}");
         match self.con.keys(pattern) {
             Ok(keys) => Ok(keys),

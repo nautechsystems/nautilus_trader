@@ -147,7 +147,7 @@ impl DatabentoFeedHandler {
 
             match self.cmd_rx.try_recv() {
                 Ok(cmd) => {
-                    tracing::debug!("Received command: {:?}", cmd);
+                    tracing::debug!("Received command: {cmd:?}");
                     match cmd {
                         LiveCommand::Subscribe(sub) => {
                             if !self.replay & sub.start.is_some() {
@@ -269,10 +269,8 @@ impl DatabentoFeedHandler {
                         // TODO: Temporary for debugging
                         deltas_count += 1;
                         tracing::trace!(
-                            "Buffering delta: {} {} {:?} flags={}",
-                            deltas_count,
+                            "Buffering delta: {deltas_count} {} {buffering_start:?} flags={}",
                             delta.ts_event,
-                            buffering_start,
                             msg.flags.raw(),
                         );
 

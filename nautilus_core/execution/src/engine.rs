@@ -149,7 +149,7 @@ where
     // -- COMMAND HANDLERS ----------------------------------------------------
 
     fn execute_command(&self, command: TradingCommand) {
-        log::debug!("<--[CMD] {:?}", command); // TODO: Log constants
+        log::debug!("<--[CMD] {command:?}"); // TODO: Log constants
 
         let client = self
             .clients

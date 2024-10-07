@@ -132,7 +132,7 @@ impl WebSocketClient {
         data: Vec<u8>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        tracing::trace!("Sending binary: {:?}", data);
+        tracing::trace!("Sending binary: {data:?}");
         let writer = slf.writer.clone();
         pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
             let mut guard = writer.lock().await;
@@ -155,7 +155,7 @@ impl WebSocketClient {
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let data = String::from_utf8(data).map_err(to_pyvalue_err)?;
-        tracing::trace!("Sending text: {}", data);
+        tracing::trace!("Sending text: {data}");
         let writer = slf.writer.clone();
         pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
             let mut guard = writer.lock().await;
@@ -178,7 +178,7 @@ impl WebSocketClient {
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let data_str = String::from_utf8(data.clone()).map_err(to_pyvalue_err)?;
-        tracing::trace!("Sending pong: {}", data_str);
+        tracing::trace!("Sending pong: {data_str}");
         let writer = slf.writer.clone();
         pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
             let mut guard = writer.lock().await;

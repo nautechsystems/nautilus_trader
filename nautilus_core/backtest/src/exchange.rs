@@ -208,10 +208,7 @@ impl SimulatedExchange {
         );
         self.matching_engines.insert(instrument_id, matching_engine);
 
-        log::info!(
-            "Added instrument {} and created matching engine",
-            instrument_id
-        );
+        log::info!("Added instrument {instrument_id} and created matching engine");
         Ok(())
     }
 

@@ -575,9 +575,7 @@ impl Cache {
                 .contains_key(&account_id.get_issuer())
             {
                 log::error!(
-                    "{} in accounts: {} not found in `self.index.venue_account`",
-                    failure,
-                    account_id
+                    "{failure} in accounts: {account_id} not found in `self.index.venue_account`",
                 );
                 error_count += 1;
             }
@@ -586,41 +584,31 @@ impl Cache {
         for (client_order_id, order) in &self.orders {
             if !self.index.order_strategy.contains_key(client_order_id) {
                 log::error!(
-                    "{} in orders: {} not found in `self.index.order_strategy`",
-                    failure,
-                    client_order_id
+                    "{failure} in orders: {client_order_id} not found in `self.index.order_strategy`"
                 );
                 error_count += 1;
             }
             if !self.index.orders.contains(client_order_id) {
                 log::error!(
-                    "{} in orders: {} not found in `self.index.orders`",
-                    failure,
-                    client_order_id
+                    "{failure} in orders: {client_order_id} not found in `self.index.orders`",
                 );
                 error_count += 1;
             }
             if order.is_inflight() && !self.index.orders_inflight.contains(client_order_id) {
                 log::error!(
-                    "{} in orders: {} not found in `self.index.orders_inflight`",
-                    failure,
-                    client_order_id
+                    "{failure} in orders: {client_order_id} not found in `self.index.orders_inflight`",
                 );
                 error_count += 1;
             }
             if order.is_open() && !self.index.orders_open.contains(client_order_id) {
                 log::error!(
-                    "{} in orders: {} not found in `self.index.orders_open`",
-                    failure,
-                    client_order_id
+                    "{failure} in orders: {client_order_id} not found in `self.index.orders_open`",
                 );
                 error_count += 1;
             }
             if order.is_closed() && !self.index.orders_closed.contains(client_order_id) {
                 log::error!(
-                    "{} in orders: {} not found in `self.index.orders_closed`",
-                    failure,
-                    client_order_id
+                    "{failure} in orders: {client_order_id} not found in `self.index.orders_closed`",
                 );
                 error_count += 1;
             }
@@ -631,9 +619,7 @@ impl Cache {
                     .contains_key(&exec_algorithm_id)
                 {
                     log::error!(
-                        "{} in orders: {} not found in `self.index.exec_algorithm_orders`",
-                        failure,
-                        exec_algorithm_id
+                        "{failure} in orders: {client_order_id} not found in `self.index.exec_algorithm_orders`",
                     );
                     error_count += 1;
                 }
@@ -641,9 +627,7 @@ impl Cache {
                     && !self.index.exec_spawn_orders.contains_key(client_order_id)
                 {
                     log::error!(
-                        "{} in orders: {} not found in `self.index.exec_spawn_orders`",
-                        failure,
-                        exec_algorithm_id
+                        "{failure} in orders: {client_order_id} not found in `self.index.exec_spawn_orders`",
                     );
                     error_count += 1;
                 }
@@ -653,41 +637,31 @@ impl Cache {
         for (position_id, position) in &self.positions {
             if !self.index.position_strategy.contains_key(position_id) {
                 log::error!(
-                    "{} in positions: {} not found in `self.index.position_strategy`",
-                    failure,
-                    position_id
+                    "{failure} in positions: {position_id} not found in `self.index.position_strategy`",
                 );
                 error_count += 1;
             }
             if !self.index.position_orders.contains_key(position_id) {
                 log::error!(
-                    "{} in positions: {} not found in `self.index.position_orders`",
-                    failure,
-                    position_id
+                    "{failure} in positions: {position_id} not found in `self.index.position_orders`",
                 );
                 error_count += 1;
             }
             if !self.index.positions.contains(position_id) {
                 log::error!(
-                    "{} in positions: {} not found in `self.index.positions`",
-                    failure,
-                    position_id
+                    "{failure} in positions: {position_id} not found in `self.index.positions`",
                 );
                 error_count += 1;
             }
             if position.is_open() && !self.index.positions_open.contains(position_id) {
                 log::error!(
-                    "{} in positions: {} not found in `self.index.positions_open`",
-                    failure,
-                    position_id
+                    "{failure} in positions: {position_id} not found in `self.index.positions_open`",
                 );
                 error_count += 1;
             }
             if position.is_closed() && !self.index.positions_closed.contains(position_id) {
                 log::error!(
-                    "{} in positions: {} not found in `self.index.positions_closed`",
-                    failure,
-                    position_id
+                    "{failure} in positions: {position_id} not found in `self.index.positions_closed`",
                 );
                 error_count += 1;
             }
@@ -697,9 +671,7 @@ impl Cache {
         for account_id in self.index.venue_account.values() {
             if !self.accounts.contains_key(account_id) {
                 log::error!(
-                    "{} in `index.venue_account`: {} not found in `self.accounts`",
-                    failure,
-                    account_id
+                    "{failure} in `index.venue_account`: {account_id} not found in `self.accounts`",
                 );
                 error_count += 1;
             }
@@ -708,9 +680,7 @@ impl Cache {
         for client_order_id in self.index.venue_order_ids.values() {
             if !self.orders.contains_key(client_order_id) {
                 log::error!(
-                    "{} in `index.venue_order_ids`: {} not found in `self.orders`",
-                    failure,
-                    client_order_id
+                    "{failure} in `index.venue_order_ids`: {client_order_id} not found in `self.orders`",
                 );
                 error_count += 1;
             }
@@ -719,9 +689,7 @@ impl Cache {
         for client_order_id in self.index.client_order_ids.keys() {
             if !self.orders.contains_key(client_order_id) {
                 log::error!(
-                    "{} in `index.client_order_ids`: {} not found in `self.orders`",
-                    failure,
-                    client_order_id
+                    "{failure} in `index.client_order_ids`: {client_order_id} not found in `self.orders`",
                 );
                 error_count += 1;
             }
@@ -730,9 +698,7 @@ impl Cache {
         for client_order_id in self.index.order_position.keys() {
             if !self.orders.contains_key(client_order_id) {
                 log::error!(
-                    "{} in `index.order_position`: {} not found in `self.orders`",
-                    failure,
-                    client_order_id
+                    "{failure} in `index.order_position`: {client_order_id} not found in `self.orders`",
                 );
                 error_count += 1;
             }
@@ -742,9 +708,7 @@ impl Cache {
         for client_order_id in self.index.order_strategy.keys() {
             if !self.orders.contains_key(client_order_id) {
                 log::error!(
-                    "{} in `index.order_strategy`: {} not found in `self.orders`",
-                    failure,
-                    client_order_id
+                    "{failure} in `index.order_strategy`: {client_order_id} not found in `self.orders`",
                 );
                 error_count += 1;
             }
@@ -753,9 +717,7 @@ impl Cache {
         for position_id in self.index.position_strategy.keys() {
             if !self.positions.contains_key(position_id) {
                 log::error!(
-                    "{} in `index.position_strategy`: {} not found in `self.positions`",
-                    failure,
-                    position_id
+                    "{failure} in `index.position_strategy`: {position_id} not found in `self.positions`",
                 );
                 error_count += 1;
             }
@@ -764,9 +726,7 @@ impl Cache {
         for position_id in self.index.position_orders.keys() {
             if !self.positions.contains_key(position_id) {
                 log::error!(
-                    "{} in `index.position_orders`: {} not found in `self.positions`",
-                    failure,
-                    position_id
+                    "{failure} in `index.position_orders`: {position_id} not found in `self.positions`",
                 );
                 error_count += 1;
             }
@@ -776,9 +736,7 @@ impl Cache {
             for client_order_id in client_order_ids {
                 if !self.orders.contains_key(client_order_id) {
                     log::error!(
-                        "{} in `index.instrument_orders`: {} not found in `self.orders`",
-                        failure,
-                        instrument_id
+                        "{failure} in `index.instrument_orders`: {instrument_id} not found in `self.orders`",
                     );
                     error_count += 1;
                 }
@@ -788,9 +746,7 @@ impl Cache {
         for instrument_id in self.index.instrument_positions.keys() {
             if !self.index.instrument_orders.contains_key(instrument_id) {
                 log::error!(
-                    "{} in `index.instrument_positions`: {} not found in `index.instrument_orders`",
-                    failure,
-                    instrument_id
+                    "{failure} in `index.instrument_positions`: {instrument_id} not found in `index.instrument_orders`",
                 );
                 error_count += 1;
             }
@@ -800,9 +756,7 @@ impl Cache {
             for client_order_id in client_order_ids {
                 if !self.orders.contains_key(client_order_id) {
                     log::error!(
-                        "{} in `index.strategy_orders`: {} not found in `self.orders`",
-                        failure,
-                        client_order_id
+                        "{failure} in `index.strategy_orders`: {client_order_id} not found in `self.orders`",
                     );
                     error_count += 1;
                 }
@@ -813,9 +767,7 @@ impl Cache {
             for position_id in position_ids {
                 if !self.positions.contains_key(position_id) {
                     log::error!(
-                        "{} in `index.strategy_positions`: {} not found in `self.positions`",
-                        failure,
-                        position_id
+                        "{failure} in `index.strategy_positions`: {position_id} not found in `self.positions`",
                     );
                     error_count += 1;
                 }
@@ -825,9 +777,7 @@ impl Cache {
         for client_order_id in &self.index.orders {
             if !self.orders.contains_key(client_order_id) {
                 log::error!(
-                    "{} in `index.orders`: {} not found in `self.orders`",
-                    failure,
-                    client_order_id
+                    "{failure} in `index.orders`: {client_order_id} not found in `self.orders`",
                 );
                 error_count += 1;
             }
@@ -836,9 +786,7 @@ impl Cache {
         for client_order_id in &self.index.orders_emulated {
             if !self.orders.contains_key(client_order_id) {
                 log::error!(
-                    "{} in `index.orders_emulated`: {} not found in `self.orders`",
-                    failure,
-                    client_order_id
+                    "{failure} in `index.orders_emulated`: {client_order_id} not found in `self.orders`",
                 );
                 error_count += 1;
             }
@@ -847,9 +795,7 @@ impl Cache {
         for client_order_id in &self.index.orders_inflight {
             if !self.orders.contains_key(client_order_id) {
                 log::error!(
-                    "{} in `index.orders_inflight`: {} not found in `self.orders`",
-                    failure,
-                    client_order_id
+                    "{failure} in `index.orders_inflight`: {client_order_id} not found in `self.orders`",
                 );
                 error_count += 1;
             }
@@ -858,9 +804,7 @@ impl Cache {
         for client_order_id in &self.index.orders_open {
             if !self.orders.contains_key(client_order_id) {
                 log::error!(
-                    "{} in `index.orders_open`: {} not found in `self.orders`",
-                    failure,
-                    client_order_id
+                    "{failure} in `index.orders_open`: {client_order_id} not found in `self.orders`",
                 );
                 error_count += 1;
             }
@@ -869,9 +813,7 @@ impl Cache {
         for client_order_id in &self.index.orders_closed {
             if !self.orders.contains_key(client_order_id) {
                 log::error!(
-                    "{} in `index.orders_closed`: {} not found in `self.orders`",
-                    failure,
-                    client_order_id
+                    "{failure} in `index.orders_closed`: {client_order_id} not found in `self.orders`",
                 );
                 error_count += 1;
             }
@@ -880,9 +822,7 @@ impl Cache {
         for position_id in &self.index.positions {
             if !self.positions.contains_key(position_id) {
                 log::error!(
-                    "{} in `index.positions`: {} not found in `self.positions`",
-                    failure,
-                    position_id
+                    "{failure} in `index.positions`: {position_id} not found in `self.positions`",
                 );
                 error_count += 1;
             }
@@ -891,9 +831,7 @@ impl Cache {
         for position_id in &self.index.positions_open {
             if !self.positions.contains_key(position_id) {
                 log::error!(
-                    "{} in `index.positions_open`: {} not found in `self.positions`",
-                    failure,
-                    position_id
+                    "{failure} in `index.positions_open`: {position_id} not found in `self.positions`",
                 );
                 error_count += 1;
             }
@@ -902,9 +840,7 @@ impl Cache {
         for position_id in &self.index.positions_closed {
             if !self.positions.contains_key(position_id) {
                 log::error!(
-                    "{} in `index.positions_closed`: {} not found in `self.positions`",
-                    failure,
-                    position_id
+                    "{failure} in `index.positions_closed`: {position_id} not found in `self.positions`",
                 );
                 error_count += 1;
             }
@@ -913,9 +849,7 @@ impl Cache {
         for strategy_id in &self.index.strategies {
             if !self.index.strategy_orders.contains_key(strategy_id) {
                 log::error!(
-                    "{} in `index.strategies`: {} not found in `index.strategy_orders`",
-                    failure,
-                    strategy_id
+                    "{failure} in `index.strategies`: {strategy_id} not found in `index.strategy_orders`",
                 );
                 error_count += 1;
             }
@@ -928,9 +862,7 @@ impl Cache {
                 .contains_key(exec_algorithm_id)
             {
                 log::error!(
-                    "{} in `index.exec_algorithms`: {} not found in `index.exec_algorithm_orders`",
-                    failure,
-                    exec_algorithm_id
+                    "{failure} in `index.exec_algorithms`: {exec_algorithm_id} not found in `index.exec_algorithm_orders`",
                 );
                 error_count += 1;
             }
@@ -943,14 +875,12 @@ impl Cache {
             - timestamp_us;
 
         if error_count == 0 {
-            log::info!("Integrity check passed in {}μs", total_us);
+            log::info!("Integrity check passed in {total_us}μs");
             true
         } else {
             log::error!(
-                "Integrity check failed with {} error{} in {}μs",
-                error_count,
+                "Integrity check failed with {error_count} error{} in {total_us}μs",
                 if error_count == 1 { "" } else { "s" },
-                total_us
             );
             false
         }
@@ -968,13 +898,13 @@ impl Cache {
         // Check for any open orders
         for order in self.orders_open(None, None, None, None) {
             residuals = true;
-            log::warn!("Residual {:?}", order);
+            log::warn!("Residual {order:?}");
         }
 
         // Check for any open positions
         for position in self.positions_open(None, None, None, None) {
             residuals = true;
-            log::warn!("Residual {}", position);
+            log::warn!("Residual {position}");
         }
 
         residuals
@@ -1079,7 +1009,7 @@ impl Cache {
         check_slice_not_empty(quotes, stringify!(quotes)).unwrap();
 
         let instrument_id = quotes[0].instrument_id;
-        log::debug!("Adding `QuoteTick`[{}] {}", quotes.len(), instrument_id);
+        log::debug!("Adding `QuoteTick`[{}] {instrument_id}", quotes.len());
 
         if self.config.save_market_data {
             if let Some(database) = &mut self.database {
@@ -1123,7 +1053,7 @@ impl Cache {
         check_slice_not_empty(trades, stringify!(trades)).unwrap();
 
         let instrument_id = trades[0].instrument_id;
-        log::debug!("Adding `TradeTick`[{}] {}", trades.len(), instrument_id);
+        log::debug!("Adding `TradeTick`[{}] {instrument_id}", trades.len());
 
         if self.config.save_market_data {
             if let Some(database) = &mut self.database {
@@ -1167,7 +1097,7 @@ impl Cache {
         check_slice_not_empty(bars, stringify!(bars)).unwrap();
 
         let bar_type = bars[0].bar_type;
-        log::debug!("Adding `Bar`[{}] {}", bars.len(), bar_type);
+        log::debug!("Adding `Bar`[{}] {bar_type}", bars.len());
 
         if self.config.save_market_data {
             if let Some(database) = &mut self.database {
@@ -1327,7 +1257,7 @@ impl Cache {
             .expect(FAILED);
         };
 
-        log::debug!("Adding {:?}", order);
+        log::debug!("Adding {order:?}");
 
         self.index.orders.insert(client_order_id);
         self.index
@@ -1396,7 +1326,7 @@ impl Cache {
         // Index client ID if provided
         if let Some(client_id) = client_id {
             self.index.order_client.insert(client_order_id, client_id);
-            log::debug!("Indexed {:?}", client_id);
+            log::debug!("Indexed {client_id:?}");
         }
 
         if let Some(database) = &mut self.database {

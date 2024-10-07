@@ -386,7 +386,7 @@ impl WebSocketClient {
     }
 
     pub async fn send_bytes(&self, data: Vec<u8>) -> Result<(), Error> {
-        tracing::trace!("Sending bytes: {:?}", data);
+        tracing::trace!("Sending bytes: {data:?}");
         let mut guard = self.writer.lock().await;
         guard.send(Message::Binary(data)).await
     }
