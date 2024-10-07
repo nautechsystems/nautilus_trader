@@ -615,6 +615,26 @@ pub fn decode_mbp1_msg(
     Ok((quote, maybe_trade))
 }
 
+pub fn decode_bbo_msg(
+    msg: &dbn::BboMsg,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<QuoteTick> {
+    let top_level = &msg.levels[0];
+    let quote = QuoteTick::new(
+        instrument_id,
+        Price::from_raw(top_level.bid_px, price_precision),
+        Price::from_raw(top_level.ask_px, price_precision),
+        Quantity::from_raw(u64::from(top_level.bid_sz) * FIXED_SCALAR as u64, 0),
+        Quantity::from_raw(u64::from(top_level.ask_sz) * FIXED_SCALAR as u64, 0),
+        msg.ts_recv.into(),
+        ts_init,
+    );
+
+    Ok(quote)
+}
+
 pub fn decode_mbp10_msg(
     msg: &dbn::Mbp10Msg,
     instrument_id: InstrumentId,
@@ -801,6 +821,14 @@ pub fn decode_record(
             (quote, None) => (Some(Data::Quote(quote)), None),
             (quote, Some(trade)) => (Some(Data::Quote(quote)), Some(Data::Trade(trade))),
         }
+    } else if let Some(msg) = record.get::<dbn::Bbo1SMsg>() {
+        let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
+        let quote = decode_bbo_msg(msg, instrument_id, price_precision, ts_init)?;
+        (Some(Data::Quote(quote)), None)
+    } else if let Some(msg) = record.get::<dbn::Bbo1MMsg>() {
+        let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
+        let quote = decode_bbo_msg(msg, instrument_id, price_precision, ts_init)?;
+        (Some(Data::Quote(quote)), None)
     } else if let Some(msg) = record.get::<dbn::Mbp10Msg>() {
         let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
         let depth = decode_mbp10_msg(msg, instrument_id, price_precision, ts_init)?;
@@ -1245,6 +1273,48 @@ mod tests {
         assert_eq!(quote.ask_size, Quantity::from("11"));
         assert_eq!(quote.ts_event, msg.ts_recv);
         assert_eq!(quote.ts_event, 1_609_160_400_006_136_329);
+        assert_eq!(quote.ts_init, 0);
+    }
+
+    #[rstest]
+    fn test_decode_bbo_1s_msg() {
+        let path = PathBuf::from(format!("{TEST_DATA_PATH}/test_data.bbo-1s.dbn.zst"));
+        let mut dbn_stream = Decoder::from_zstd_file(path)
+            .unwrap()
+            .decode_stream::<dbn::BboMsg>();
+        let msg = dbn_stream.next().unwrap().unwrap();
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let quote = decode_bbo_msg(msg, instrument_id, 2, 0.into()).unwrap();
+
+        assert_eq!(quote.instrument_id, instrument_id);
+        assert_eq!(quote.bid_price, Price::from("5199.50"));
+        assert_eq!(quote.ask_price, Price::from("5199.75"));
+        assert_eq!(quote.bid_size, Quantity::from("26"));
+        assert_eq!(quote.ask_size, Quantity::from("23"));
+        assert_eq!(quote.ts_event, msg.ts_recv);
+        assert_eq!(quote.ts_event, 1715248801000000000);
+        assert_eq!(quote.ts_init, 0);
+    }
+
+    #[rstest]
+    fn test_decode_bbo_1m_msg() {
+        let path = PathBuf::from(format!("{TEST_DATA_PATH}/test_data.bbo-1m.dbn.zst"));
+        let mut dbn_stream = Decoder::from_zstd_file(path)
+            .unwrap()
+            .decode_stream::<dbn::BboMsg>();
+        let msg = dbn_stream.next().unwrap().unwrap();
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let quote = decode_bbo_msg(msg, instrument_id, 2, 0.into()).unwrap();
+
+        assert_eq!(quote.instrument_id, instrument_id);
+        assert_eq!(quote.bid_price, Price::from("5199.50"));
+        assert_eq!(quote.ask_price, Price::from("5199.75"));
+        assert_eq!(quote.bid_size, Quantity::from("33"));
+        assert_eq!(quote.ask_size, Quantity::from("17"));
+        assert_eq!(quote.ts_event, msg.ts_recv);
+        assert_eq!(quote.ts_event, 1715248800000000000);
         assert_eq!(quote.ts_init, 0);
     }
 

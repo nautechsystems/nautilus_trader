@@ -24,6 +24,8 @@ class DatabentoSchema(Enum):
     MBO = "mbo"
     MBP_1 = "mbp-1"
     MBP_10 = "mbp-10"
+    BBO_1S = "bbo-1s"
+    BBO_1M = "bbo-1m"
     TBBO = "tbbo"
     TRADES = "trades"
     OHLCV_1S = "ohlcv-1s"
