@@ -3,16 +3,18 @@
 Released on TBD (UTC).
 
 ### Enhancements
-- Standardized Betfair symbology to use hyphens instead of periods (preventing them being treated as composite symbols)
+- Standardized Betfair symbology to use hyphens instead of periods (prevents Betfair symbols being treated as composite)
 
 ### Internal Improvements
-None
+- Ported `Throttler` to Rust (#1988), thanks @Pushkarm029 and @twitu
+- Refined `WebSocketClient` to close existing tasks on reconnect (#1986), thanks @davidsblom
 
 ### Breaking Changes
 None
 
 ### Fixes
 - Fixed resubscribing to orderbook in batched mode for dYdX (#1985), thanks @davidsblom
+- Fixed Betfair tests related to symbology (#1988), thanks @limx0
 
 ---
 
@@ -27,9 +29,9 @@ Released on 5th October 2024 (UTC).
 - Improved option greeks (#1964), thanks @faysou
 
 ### Internal Improvements
-- Implemented order book delta processing for `SimulatedExchange` (#1975), thanks @filipmacek
-- Implemented bar processing for `SimulatedExchange` (#1969), thanks @filipmacek
-- Implemented remaining getter functions in `SimulatedExchange` (#1970), thanks @filipmacek
+- Implemented order book delta processing for `SimulatedExchange` in Rust (#1975), thanks @filipmacek
+- Implemented bar processing for `SimulatedExchange` in Rust (#1969), thanks @filipmacek
+- Implemented remaining getter functions for `SimulatedExchange` in Rust (#1970), thanks @filipmacek
 - Implemented rate limiting for dYdX websocket subscriptions (#1977), thanks @davidsblom
 - Refactored reconnection handling for dYdX (#1983), thanks @davidsblom
 - Refined `DatabentoDataLoader` internals to accommodate usage from Rust
