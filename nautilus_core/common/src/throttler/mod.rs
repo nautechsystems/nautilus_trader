@@ -487,7 +487,8 @@ mod tests {
                 ThrottlerInput::AdvanceClock(duration) => {
                     let mut clock_ref = test_clock.borrow_mut();
                     let current_time = clock_ref.get_time_ns();
-                    let time_events = clock_ref.advance_time(current_time + duration as u64, true);
+                    let time_events =
+                        clock_ref.advance_time(current_time + u64::from(duration), true);
                     for each_event in clock_ref.match_handlers(time_events) {
                         drop(clock_ref);
                         each_event.callback.call(each_event.event);

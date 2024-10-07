@@ -450,7 +450,7 @@ impl Clock for LiveClock {
             None => {}
             Some(mut timer) => {
                 if let Err(e) = timer.cancel() {
-                    log::error!("Error on timer cancel: {:?}", e);
+                    log::error!("Error on timer cancel: {e:?}");
                 }
             }
         }
@@ -459,7 +459,7 @@ impl Clock for LiveClock {
     fn cancel_timers(&mut self) {
         for timer in &mut self.timers.values_mut() {
             if let Err(e) = timer.cancel() {
-                log::error!("Error on timer cancel: {:?}", e);
+                log::error!("Error on timer cancel: {e:?}");
             }
         }
         self.timers.clear();
