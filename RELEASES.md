@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Standardized Betfair symbology to use hyphens instead of periods (preventing them being treated as composite symbols)
 
 ### Internal Improvements
 None
@@ -12,7 +12,7 @@ None
 None
 
 ### Fixes
-None
+- Fixed resubscribing to orderbook in batched mode for dYdX (#1985), thanks @davidsblom
 
 ---
 
