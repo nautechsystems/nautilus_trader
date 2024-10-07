@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added support for `bbo-1s` and `bbo-1m` quote schemas for Databento adapter (#1990), thanks @faysou
 - Standardized Betfair symbology to use hyphens instead of periods (prevents Betfair symbols being treated as composite)
 
 ### Internal Improvements
