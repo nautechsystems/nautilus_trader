@@ -1430,7 +1430,7 @@ mod tests {
         let cache = &data_engine.cache.borrow();
         let messages = get_saved_messages::<QuoteTick>(handler);
 
-        assert_eq!(cache.quote_tick(&quote.instrument_id), Some(quote).as_ref());
+        assert_eq!(cache.quote(&quote.instrument_id), Some(quote).as_ref());
         assert_eq!(messages.len(), 1);
         assert!(messages.contains(&quote));
     }
@@ -1481,7 +1481,7 @@ mod tests {
         let cache = &data_engine.cache.borrow();
         let messages = get_saved_messages::<TradeTick>(handler);
 
-        assert_eq!(cache.trade_tick(&trade.instrument_id), Some(trade).as_ref());
+        assert_eq!(cache.trade(&trade.instrument_id), Some(trade).as_ref());
         assert_eq!(messages.len(), 1);
         assert!(messages.contains(&trade));
     }

@@ -269,14 +269,14 @@ impl OrderMatchingEngine {
         self.iterate(delta.ts_event);
     }
 
-    pub fn process_quote_tick(&mut self, tick: &QuoteTick) {
-        log::debug!("Processing {tick}");
+    pub fn process_quote_tick(&mut self, quote: &QuoteTick) {
+        log::debug!("Processing {quote}");
 
         if self.book_type == BookType::L1_MBP {
-            self.book.update_quote_tick(tick).unwrap();
+            self.book.update_quote_tick(quote).unwrap();
         }
 
-        self.iterate(tick.ts_event);
+        self.iterate(quote.ts_event);
     }
 
     pub fn process_bar(&mut self, bar: &Bar) {
@@ -463,15 +463,15 @@ impl OrderMatchingEngine {
         self.last_bar_ask = None;
     }
 
-    pub fn process_trade_tick(&mut self, tick: &TradeTick) {
-        log::debug!("Processing {tick}");
+    pub fn process_trade_tick(&mut self, trade: &TradeTick) {
+        log::debug!("Processing {trade}");
 
         if self.book_type == BookType::L1_MBP {
-            self.book.update_trade_tick(tick).unwrap();
+            self.book.update_trade_tick(trade).unwrap();
         }
-        self.core.set_last_raw(tick.price);
+        self.core.set_last_raw(trade.price);
 
-        self.iterate(tick.ts_event);
+        self.iterate(trade.ts_event);
     }
 
     // -- TRADING COMMANDS ------------------------------------------------------------------------

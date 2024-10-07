@@ -70,15 +70,15 @@ impl Indicator for BollingerBands {
         self.initialized
     }
 
-    fn handle_quote_tick(&mut self, tick: &QuoteTick) {
-        let bid = tick.bid_price.raw as f64;
-        let ask = tick.ask_price.raw as f64;
+    fn handle_quote(&mut self, quote: &QuoteTick) {
+        let bid = quote.bid_price.raw as f64;
+        let ask = quote.ask_price.raw as f64;
         let mid = (bid + ask) / 2.0;
         self.update_raw(ask, bid, mid);
     }
 
-    fn handle_trade_tick(&mut self, tick: &TradeTick) {
-        let price = tick.price.raw as f64;
+    fn handle_trade(&mut self, trade: &TradeTick) {
+        let price = trade.price.raw as f64;
         self.update_raw(price, price, price);
     }
 

@@ -264,8 +264,8 @@ pub extern "C" fn orderbook_update_quote_tick(book: &mut OrderBook_API, quote: &
 /// This function panics:
 /// - If book type is not `L1_MBP`.
 #[no_mangle]
-pub extern "C" fn orderbook_update_trade_tick(book: &mut OrderBook_API, tick: &TradeTick) {
-    book.update_trade_tick(tick).unwrap();
+pub extern "C" fn orderbook_update_trade_tick(book: &mut OrderBook_API, trade: &TradeTick) {
+    book.update_trade_tick(trade).unwrap();
 }
 
 #[no_mangle]

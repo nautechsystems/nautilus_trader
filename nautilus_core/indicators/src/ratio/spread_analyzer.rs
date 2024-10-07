@@ -63,8 +63,8 @@ impl Indicator for SpreadAnalyzer {
         self.initialized
     }
 
-    fn handle_quote_tick(&mut self, tick: &QuoteTick) {
-        if tick.instrument_id != self.instrument_id {
+    fn handle_quote(&mut self, quote: &QuoteTick) {
+        if quote.instrument_id != self.instrument_id {
             return;
         }
 
@@ -76,8 +76,8 @@ impl Indicator for SpreadAnalyzer {
             }
         }
 
-        let bid: f64 = tick.bid_price.into();
-        let ask: f64 = tick.ask_price.into();
+        let bid: f64 = quote.bid_price.into();
+        let ask: f64 = quote.ask_price.into();
         let spread = ask - bid;
 
         self.current = spread;
@@ -180,14 +180,14 @@ mod tests {
             "100.54", "100.56",
         ];
         for i in 1..10 {
-            spread_analyzer_10.handle_quote_tick(&quote_tick(bid_price[i], ask_price[i]));
+            spread_analyzer_10.handle_quote(&stub_quote(bid_price[i], ask_price[i]));
         }
         assert!(!spread_analyzer_10.initialized);
     }
 
     #[rstest]
     fn test_value_with_one_input(mut spread_analyzer_10: SpreadAnalyzer) {
-        spread_analyzer_10.handle_quote_tick(&quote_tick("100.50", "100.55"));
+        spread_analyzer_10.handle_quote(&stub_quote("100.50", "100.55"));
         assert_eq!(spread_analyzer_10.average, 0.049_999_999_999_997_16);
     }
 
@@ -205,7 +205,7 @@ mod tests {
             "100.54", "100.56", "100.59", "100.61", "100.63", "100.55", "100.57",
         ];
         for i in 0..10 {
-            spread_analyzer_10.handle_quote_tick(&quote_tick(bid_price[i], ask_price[i]));
+            spread_analyzer_10.handle_quote(&stub_quote(bid_price[i], ask_price[i]));
         }
 
         assert_eq!(spread_analyzer_10.average, 0.050_000_000_000_001_9);
@@ -215,7 +215,7 @@ mod tests {
     fn test_reset_successfully_returns_indicator_to_fresh_state(
         mut spread_analyzer_10: SpreadAnalyzer,
     ) {
-        spread_analyzer_10.handle_quote_tick(&quote_tick("100.50", "100.55"));
+        spread_analyzer_10.handle_quote(&stub_quote("100.50", "100.55"));
         spread_analyzer_10.reset();
         assert!(!spread_analyzer_10.initialized());
         assert_eq!(spread_analyzer_10.current, 0.0);

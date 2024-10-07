@@ -65,6 +65,6 @@ pub extern "C" fn trade_tick_hash(delta: &TradeTick) -> u64 {
 
 /// Returns a [`TradeTick`] as a C string pointer.
 #[no_mangle]
-pub extern "C" fn trade_tick_to_cstr(tick: &TradeTick) -> *const c_char {
-    str_to_cstr(&tick.to_string())
+pub extern "C" fn trade_tick_to_cstr(trade: &TradeTick) -> *const c_char {
+    str_to_cstr(&trade.to_string())
 }

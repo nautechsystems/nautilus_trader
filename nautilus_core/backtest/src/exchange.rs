@@ -353,15 +353,15 @@ impl SimulatedExchange {
         todo!("process order book deltas")
     }
 
-    pub fn process_quote_tick(&mut self, tick: &QuoteTick) {
+    pub fn process_quote_tick(&mut self, quote: &QuoteTick) {
         for module in &self.modules {
-            module.pre_process(Data::Quote(tick.to_owned()));
+            module.pre_process(Data::Quote(quote.to_owned()));
         }
 
-        if !self.matching_engines.contains_key(&tick.instrument_id) {
+        if !self.matching_engines.contains_key(&quote.instrument_id) {
             let instrument = {
                 let cache = self.cache.as_ref().borrow();
-                cache.instrument(&tick.instrument_id).cloned()
+                cache.instrument(&quote.instrument_id).cloned()
             };
 
             if let Some(instrument) = instrument {
@@ -369,27 +369,27 @@ impl SimulatedExchange {
             } else {
                 panic!(
                     "No matching engine found for instrument {}",
-                    tick.instrument_id
+                    quote.instrument_id
                 );
             }
         }
 
-        if let Some(matching_engine) = self.matching_engines.get_mut(&tick.instrument_id) {
-            matching_engine.process_quote_tick(tick);
+        if let Some(matching_engine) = self.matching_engines.get_mut(&quote.instrument_id) {
+            matching_engine.process_quote_tick(quote);
         } else {
             panic!("Matching engine should be initialized");
         }
     }
 
-    pub fn process_trade_tick(&mut self, tick: &TradeTick) {
+    pub fn process_trade_tick(&mut self, trade: &TradeTick) {
         for module in &self.modules {
-            module.pre_process(Data::Trade(tick.to_owned()));
+            module.pre_process(Data::Trade(trade.to_owned()));
         }
 
-        if !self.matching_engines.contains_key(&tick.instrument_id) {
+        if !self.matching_engines.contains_key(&trade.instrument_id) {
             let instrument = {
                 let cache = self.cache.as_ref().borrow();
-                cache.instrument(&tick.instrument_id).cloned()
+                cache.instrument(&trade.instrument_id).cloned()
             };
 
             if let Some(instrument) = instrument {
@@ -397,13 +397,13 @@ impl SimulatedExchange {
             } else {
                 panic!(
                     "No matching engine found for instrument {}",
-                    tick.instrument_id
+                    trade.instrument_id
                 );
             }
         }
 
-        if let Some(matching_engine) = self.matching_engines.get_mut(&tick.instrument_id) {
-            matching_engine.process_trade_tick(tick);
+        if let Some(matching_engine) = self.matching_engines.get_mut(&trade.instrument_id) {
+            matching_engine.process_trade_tick(trade);
         } else {
             panic!("Matching engine should be initialized");
         }

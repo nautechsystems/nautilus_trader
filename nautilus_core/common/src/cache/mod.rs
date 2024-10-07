@@ -2430,7 +2430,7 @@ impl Cache {
 
     /// Gets all quote ticks for the given `instrument_id`.
     #[must_use]
-    pub fn quote_ticks(&self, instrument_id: &InstrumentId) -> Option<Vec<QuoteTick>> {
+    pub fn quotes(&self, instrument_id: &InstrumentId) -> Option<Vec<QuoteTick>> {
         self.quotes
             .get(instrument_id)
             .map(|quotes| quotes.iter().copied().collect())
@@ -2438,7 +2438,7 @@ impl Cache {
 
     /// Gets all trade ticks for the given `instrument_id`.
     #[must_use]
-    pub fn trade_ticks(&self, instrument_id: &InstrumentId) -> Option<Vec<TradeTick>> {
+    pub fn trades(&self, instrument_id: &InstrumentId) -> Option<Vec<TradeTick>> {
         self.trades
             .get(instrument_id)
             .map(|trades| trades.iter().copied().collect())
@@ -2460,7 +2460,7 @@ impl Cache {
 
     /// Gets a reference to the latest quote tick for the given `instrument_id`.
     #[must_use]
-    pub fn quote_tick(&self, instrument_id: &InstrumentId) -> Option<&QuoteTick> {
+    pub fn quote(&self, instrument_id: &InstrumentId) -> Option<&QuoteTick> {
         self.quotes
             .get(instrument_id)
             .and_then(|quotes| quotes.front())
@@ -2468,7 +2468,7 @@ impl Cache {
 
     /// Gets a refernece to the latest trade tick for the given `instrument_id`.
     #[must_use]
-    pub fn trade_tick(&self, instrument_id: &InstrumentId) -> Option<&TradeTick> {
+    pub fn trade(&self, instrument_id: &InstrumentId) -> Option<&TradeTick> {
         self.trades
             .get(instrument_id)
             .and_then(|trades| trades.front())
@@ -2488,7 +2488,7 @@ impl Cache {
 
     /// Gets the quote tick count for the given `instrument_id`.
     #[must_use]
-    pub fn quote_tick_count(&self, instrument_id: &InstrumentId) -> usize {
+    pub fn quote_count(&self, instrument_id: &InstrumentId) -> usize {
         self.quotes
             .get(instrument_id)
             .map_or(0, std::collections::VecDeque::len)
@@ -2496,7 +2496,7 @@ impl Cache {
 
     /// Gets the trade tick count for the given `instrument_id`.
     #[must_use]
-    pub fn trade_tick_count(&self, instrument_id: &InstrumentId) -> usize {
+    pub fn trade_count(&self, instrument_id: &InstrumentId) -> usize {
         self.trades
             .get(instrument_id)
             .map_or(0, std::collections::VecDeque::len)
@@ -2519,13 +2519,13 @@ impl Cache {
     /// Returns whether the cache contains quote ticks for the given `instrument_id`.
     #[must_use]
     pub fn has_quote_ticks(&self, instrument_id: &InstrumentId) -> bool {
-        self.quote_tick_count(instrument_id) > 0
+        self.quote_count(instrument_id) > 0
     }
 
     /// Returns whether the cache contains trade ticks for the given `instrument_id`.
     #[must_use]
     pub fn has_trade_ticks(&self, instrument_id: &InstrumentId) -> bool {
-        self.trade_tick_count(instrument_id) > 0
+        self.trade_count(instrument_id) > 0
     }
 
     /// Returns whether the cache contains bars for the given `bar_type`.
@@ -3101,7 +3101,7 @@ mod tests {
 
     #[rstest]
     fn test_quote_tick_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
-        let result = cache.quote_tick(&audusd_sim.id);
+        let result = cache.quote(&audusd_sim.id);
         assert!(result.is_none());
     }
 
@@ -3109,13 +3109,13 @@ mod tests {
     fn test_quote_tick_when_some(mut cache: Cache) {
         let quote = QuoteTick::default();
         cache.add_quote(quote).unwrap();
-        let result = cache.quote_tick(&quote.instrument_id);
+        let result = cache.quote(&quote.instrument_id);
         assert_eq!(result, Some(&quote));
     }
 
     #[rstest]
     fn test_quote_ticks_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
-        let result = cache.quote_ticks(&audusd_sim.id);
+        let result = cache.quotes(&audusd_sim.id);
         assert!(result.is_none());
     }
 
@@ -3127,13 +3127,13 @@ mod tests {
             QuoteTick::default(),
         ];
         cache.add_quotes(&quotes).unwrap();
-        let result = cache.quote_ticks(&quotes[0].instrument_id);
+        let result = cache.quotes(&quotes[0].instrument_id);
         assert_eq!(result, Some(quotes));
     }
 
     #[rstest]
     fn test_trade_tick_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
-        let result = cache.trade_tick(&audusd_sim.id);
+        let result = cache.trade(&audusd_sim.id);
         assert!(result.is_none());
     }
 
@@ -3141,13 +3141,13 @@ mod tests {
     fn test_trade_tick_when_some(mut cache: Cache) {
         let trade = TradeTick::default();
         cache.add_trade(trade).unwrap();
-        let result = cache.trade_tick(&trade.instrument_id);
+        let result = cache.trade(&trade.instrument_id);
         assert_eq!(result, Some(&trade));
     }
 
     #[rstest]
     fn test_trade_ticks_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
-        let result = cache.trade_ticks(&audusd_sim.id);
+        let result = cache.trades(&audusd_sim.id);
         assert!(result.is_none());
     }
 
@@ -3159,7 +3159,7 @@ mod tests {
             TradeTick::default(),
         ];
         cache.add_trades(&trades).unwrap();
-        let result = cache.trade_ticks(&trades[0].instrument_id);
+        let result = cache.trades(&trades[0].instrument_id);
         assert_eq!(result, Some(trades));
     }
 
