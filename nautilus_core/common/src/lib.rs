@@ -40,6 +40,7 @@ pub mod messages;
 pub mod msgbus;
 pub mod runtime;
 pub mod testing;
+pub mod throttler;
 pub mod timer;
 pub mod xrate;
 
