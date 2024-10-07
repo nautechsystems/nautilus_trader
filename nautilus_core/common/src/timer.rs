@@ -17,7 +17,7 @@
 
 use std::{
     cmp::Ordering,
-    fmt::Display,
+    fmt::{Debug, Display},
     num::NonZeroU64,
     rc::Rc,
     sync::{
@@ -35,7 +35,6 @@ use nautilus_core::{
 };
 #[cfg(feature = "python")]
 use pyo3::{PyObject, Python};
-use std::fmt::Debug;
 use tokio::{
     sync::oneshot,
     time::{Duration, Instant},
