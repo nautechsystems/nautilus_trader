@@ -105,10 +105,7 @@ impl<'r> FromRow<'r, PgRow> for OrderEventAnyModel {
             let model = OrderUpdatedModel::from_row(row)?;
             Ok(OrderEventAnyModel(OrderEventAny::Updated(model.0)))
         } else {
-            panic!(
-                "Unknown order event kind: {} in Postgres transformation",
-                kind
-            )
+            panic!("Unknown order event kind: {kind} in Postgres transformation",)
         }
     }
 }

@@ -390,9 +390,8 @@ impl From<OrderAny> for StopLimitOrder {
             OrderAny::StopLimit(order) => order,
             _ => {
                 panic!(
-                    "Invalid `OrderAny` not `{}`, was {:?}",
+                    "Invalid `OrderAny` not `{}`, was {order:?}",
                     stringify!(StopLimitOrder),
-                    order
                 )
             }
         }

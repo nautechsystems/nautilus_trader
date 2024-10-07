@@ -686,9 +686,8 @@ impl AsRef<StopMarketOrder> for OrderAny {
         match self {
             OrderAny::StopMarket(ref order) => order,
             _ => panic!(
-                "Invalid `OrderAny` not `{}`, was {:?}",
+                "Invalid `OrderAny` not `{}`, was {self:?}",
                 stringify!(StopMarketOrder),
-                self
             ),
         }
     }
