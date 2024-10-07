@@ -1,3 +1,18 @@
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
+
 use std::{cell::RefCell, collections::VecDeque, fmt::Debug, rc::Rc};
 
 use nautilus_core::nanos::UnixNanos;
@@ -5,11 +20,12 @@ use nautilus_core::nanos::UnixNanos;
 use super::Throttler;
 use crate::{clock::Clock, timer::TimeEventCallback};
 
-/// Throttler rate limits messages by dropping or buffering them
+/// Throttler rate limits messages by dropping or buffering them.
 ///
 /// Throttler takes messages of type T and callback of type F for dropping
 /// or processing messages.
 pub struct InnerThrottler<T, F> {
+    /// The number of messages received.
     pub recv_count: usize,
     /// The number of messages sent.
     pub sent_count: usize,
@@ -76,9 +92,9 @@ impl<T, F> InnerThrottler<T, F> {
         }
     }
 
-    /// Set timer with a callback to be triggered on next interval
+    /// Set timer with a callback to be triggered on next interval.
     ///
-    /// Typically used to register callbacks
+    /// Typically used to register callbacks:
     /// - [`super::callbacks::ThrottlerProcess`] to process buffered messages
     /// - [`super::callbacks::ThrottlerResume`] to stop buffering
     #[inline]
@@ -93,7 +109,7 @@ impl<T, F> InnerThrottler<T, F> {
         clock.set_time_alert_ns(&self.timer_name, alert_ts, callback);
     }
 
-    /// Time delta when the next message can be sent
+    /// Time delta when the next message can be sent.
     #[inline]
     pub fn delta_next(&mut self) -> u64 {
         match self.timestamps.get(self.limit - 1) {
@@ -105,6 +121,7 @@ impl<T, F> InnerThrottler<T, F> {
         }
     }
 
+    /// Reset the throttler which clears internal state.
     #[inline]
     pub fn reset(&mut self) {
         self.buffer.clear();
@@ -114,7 +131,7 @@ impl<T, F> InnerThrottler<T, F> {
         self.timestamps.clear();
     }
 
-    /// Fractional value of rate limit consumed in current interval
+    /// Fractional value of rate limit consumed in current interval.
     #[inline]
     pub fn used(&self) -> f64 {
         if self.timestamps.is_empty() {
@@ -133,7 +150,7 @@ impl<T, F> InnerThrottler<T, F> {
         (messages_in_current_interval as f64) / (self.limit as f64)
     }
 
-    /// Number of messages queued in buffer
+    /// Number of messages queued in buffer.
     #[inline]
     pub fn qsize(&self) -> usize {
         self.buffer.len()
