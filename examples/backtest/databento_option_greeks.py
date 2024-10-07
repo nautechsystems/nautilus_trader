@@ -1,3 +1,18 @@
+# ---
+# jupyter:
+#   jupytext:
+#     formats: py:percent
+#     text_representation:
+#       extension: .py
+#       format_name: percent
+#       format_version: '1.3'
+#       jupytext_version: 1.16.4
+#   kernelspec:
+#     display_name: Python 3 (ipykernel)
+#     language: python
+#     name: python3
+# ---
+
 # %% [markdown]
 # ## imports
 
@@ -5,9 +20,6 @@
 # Note: Use the python extension jupytext to be able to open this python file in jupyter as a notebook
 
 # %%
-# from nautilus_trader.adapters.databento.data_utils import init_databento_client
-import nautilus_trader.adapters.databento.data_utils as db_data_utils
-from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.adapters.databento.data_utils import data_path
 from nautilus_trader.adapters.databento.data_utils import databento_data
 from nautilus_trader.adapters.databento.data_utils import load_catalog
@@ -43,8 +55,6 @@ from nautilus_trader.trading.strategy import Strategy
 # ## parameters
 
 # %%
-db_data_utils.DATA_PATH = PACKAGE_ROOT / "tests" / "test_data" / "databento"
-
 catalog_folder = "option_catalog_example"
 catalog = load_catalog(catalog_folder)
 

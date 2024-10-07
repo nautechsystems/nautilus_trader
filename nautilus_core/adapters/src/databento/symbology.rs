@@ -47,6 +47,10 @@ pub fn get_nautilus_instrument_id_for_record(
         (msg.hd.instrument_id, msg.ts_recv)
     } else if let Some(msg) = record.get::<dbn::Mbp1Msg>() {
         (msg.hd.instrument_id, msg.ts_recv)
+    } else if let Some(msg) = record.get::<dbn::Bbo1SMsg>() {
+        (msg.hd.instrument_id, msg.ts_recv)
+    } else if let Some(msg) = record.get::<dbn::Bbo1MMsg>() {
+        (msg.hd.instrument_id, msg.ts_recv)
     } else if let Some(msg) = record.get::<dbn::Mbp10Msg>() {
         (msg.hd.instrument_id, msg.ts_recv)
     } else if let Some(msg) = record.get::<dbn::OhlcvMsg>() {

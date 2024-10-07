@@ -1,12 +1,14 @@
 from datetime import datetime
 from datetime import timedelta
-from pathlib import Path
 
+from nautilus_trader import PACKAGE_ROOT
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
 
 
-DATA_PATH = Path("~/databento_data").expanduser()
+# Note: when using the functions below, change the variable below to a folder path
+# where you store all your databento data
+DATA_PATH = PACKAGE_ROOT / "tests" / "test_data" / "databento"
 
 # this variable can be modified with a valid key if downloading data is needed
 DATABENTO_API_KEY = "db-XXXXX"
