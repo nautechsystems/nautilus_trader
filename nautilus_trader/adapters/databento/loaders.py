@@ -36,6 +36,8 @@ class DatabentoDataLoader:
      - MBO -> `OrderBookDelta`
      - MBP_1 -> `(QuoteTick, TradeTick | None)`
      - MBP_10 -> `OrderBookDepth10`
+     - BBO_1S -> `QuoteTick`
+     - BBO_1M -> `QuoteTick`
      - TBBO -> `(QuoteTick, TradeTick)`
      - TRADES -> `TradeTick`
      - OHLCV_1S -> `Bar`
@@ -49,7 +51,7 @@ class DatabentoDataLoader:
 
     References
     ----------
-    https://databento.com/docs/knowledge-base/new-users/dbn-encoding
+    https://databento.com/docs/schemas-and-data-formats
 
     """
 
