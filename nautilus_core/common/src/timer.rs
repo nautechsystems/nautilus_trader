@@ -35,6 +35,7 @@ use nautilus_core::{
 };
 #[cfg(feature = "python")]
 use pyo3::{PyObject, Python};
+use std::fmt::Debug;
 use tokio::{
     sync::oneshot,
     time::{Duration, Instant},
@@ -97,15 +98,23 @@ impl PartialEq for TimeEvent {
     }
 }
 
-pub trait RustTimeEventCallback {
-    fn call(&self, event: TimeEvent);
-}
+pub type RustTimeEventCallback = dyn Fn(TimeEvent);
 
 #[derive(Clone)]
 pub enum TimeEventCallback {
     #[cfg(feature = "python")]
     Python(PyObject),
-    Rust(Rc<dyn RustTimeEventCallback>),
+    Rust(Rc<RustTimeEventCallback>),
+}
+
+impl Debug for TimeEventCallback {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            #[cfg(feature = "python")]
+            Self::Python(_) => f.write_str("Python callback"),
+            Self::Rust(_) => f.write_str("Rust callback"),
+        }
+    }
 }
 
 impl TimeEventCallback {
@@ -117,13 +126,13 @@ impl TimeEventCallback {
                     callback.call1(py, (event,)).unwrap();
                 });
             }
-            Self::Rust(callback) => callback.call(event),
+            Self::Rust(callback) => callback(event),
         }
     }
 }
 
-impl From<Rc<dyn RustTimeEventCallback>> for TimeEventCallback {
-    fn from(value: Rc<dyn RustTimeEventCallback>) -> Self {
+impl From<Rc<RustTimeEventCallback>> for TimeEventCallback {
+    fn from(value: Rc<RustTimeEventCallback>) -> Self {
         Self::Rust(value)
     }
 }
@@ -140,7 +149,7 @@ unsafe impl Send for TimeEventCallback {}
 unsafe impl Sync for TimeEventCallback {}
 
 #[repr(C)]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 /// Represents a time event and its associated handler.
 ///
 /// `TimeEventHandler` associates a `TimeEvent` with a callback function that is triggered

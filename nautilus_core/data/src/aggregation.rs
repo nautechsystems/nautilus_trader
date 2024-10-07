@@ -24,7 +24,7 @@ use std::{cell::RefCell, ops::Add, rc::Rc};
 use chrono::TimeDelta;
 use nautilus_common::{
     clock::Clock,
-    timer::{RustTimeEventCallback, TimeEvent},
+    timer::{TimeEvent, TimeEventCallback},
 };
 use nautilus_core::{
     correctness::{self, FAILED},
@@ -478,9 +478,11 @@ impl<C: Clock> NewBarCallback<C> {
     }
 }
 
-impl<C: Clock + 'static> RustTimeEventCallback for NewBarCallback<C> {
-    fn call(&self, event: TimeEvent) {
-        self.aggregator.borrow_mut().build_bar(event);
+impl<C: Clock + 'static> From<NewBarCallback<C>> for TimeEventCallback {
+    fn from(value: NewBarCallback<C>) -> Self {
+        Self::Rust(Rc::new(move |event: TimeEvent| {
+            value.aggregator.borrow_mut().build_bar(event);
+        }))
     }
 }
 
@@ -528,7 +530,6 @@ where
         let now = self.clock.utc_now();
         let start_time = get_time_bar_start(now, &self.bar_type());
         let start_time_ns = UnixNanos::from(start_time.timestamp_nanos_opt().unwrap() as u64);
-        let callback: Rc<dyn RustTimeEventCallback> = Rc::new(callback);
 
         self.clock.set_timer_ns(
             &self.timer_name,

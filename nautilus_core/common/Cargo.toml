@@ -37,6 +37,7 @@ sysinfo = "0.31.4"
 
 [dev-dependencies]
 tempfile = { workspace = true }
+proptest = "1.5.0"
 
 [build-dependencies]
 cbindgen = { workspace = true, optional = true }
