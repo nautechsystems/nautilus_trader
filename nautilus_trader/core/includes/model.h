@@ -1726,7 +1726,7 @@ uint64_t quote_tick_hash(const struct QuoteTick_t *delta);
 /**
  * Returns a [`QuoteTick`] as a C string pointer.
  */
-const char *quote_tick_to_cstr(const struct QuoteTick_t *tick);
+const char *quote_tick_to_cstr(const struct QuoteTick_t *quote);
 
 struct TradeTick_t trade_tick_new(struct InstrumentId_t instrument_id,
                                   int64_t price_raw,
@@ -1745,7 +1745,7 @@ uint64_t trade_tick_hash(const struct TradeTick_t *delta);
 /**
  * Returns a [`TradeTick`] as a C string pointer.
  */
-const char *trade_tick_to_cstr(const struct TradeTick_t *tick);
+const char *trade_tick_to_cstr(const struct TradeTick_t *trade);
 
 const char *account_type_to_cstr(enum AccountType value);
 
@@ -2438,7 +2438,7 @@ void orderbook_update_quote_tick(struct OrderBook_API *book, const struct QuoteT
  * This function panics:
  * - If book type is not `L1_MBP`.
  */
-void orderbook_update_trade_tick(struct OrderBook_API *book, const struct TradeTick_t *tick);
+void orderbook_update_trade_tick(struct OrderBook_API *book, const struct TradeTick_t *trade);
 
 CVec orderbook_simulate_fills(const struct OrderBook_API *book, struct BookOrder_t order);
 

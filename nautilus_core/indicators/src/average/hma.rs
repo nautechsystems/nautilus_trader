@@ -65,11 +65,11 @@ impl Indicator for HullMovingAverage {
         self.initialized
     }
 
-    fn handle_quote_tick(&mut self, quote: &QuoteTick) {
+    fn handle_quote(&mut self, quote: &QuoteTick) {
         self.update_raw(quote.extract_price(self.price_type).into());
     }
 
-    fn handle_trade_tick(&mut self, trade: &TradeTick) {
+    fn handle_trade(&mut self, trade: &TradeTick) {
         self.update_raw((&trade.price).into());
     }
 
@@ -217,14 +217,14 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_quote_tick(mut indicator_hma_10: HullMovingAverage, quote_tick: QuoteTick) {
-        indicator_hma_10.handle_quote_tick(&quote_tick);
+    fn test_handle_quote_tick(mut indicator_hma_10: HullMovingAverage, stub_quote: QuoteTick) {
+        indicator_hma_10.handle_quote(&stub_quote);
         assert_eq!(indicator_hma_10.value, 1501.0);
     }
 
     #[rstest]
-    fn test_handle_trade_tick(mut indicator_hma_10: HullMovingAverage, trade_tick: TradeTick) {
-        indicator_hma_10.handle_trade_tick(&trade_tick);
+    fn test_handle_trade_tick(mut indicator_hma_10: HullMovingAverage, stub_trade: TradeTick) {
+        indicator_hma_10.handle_trade(&stub_trade);
         assert_eq!(indicator_hma_10.value, 1500.0);
     }
 

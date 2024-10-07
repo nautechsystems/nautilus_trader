@@ -53,7 +53,7 @@ use crate::{
 // Common
 ////////////////////////////////////////////////////////////////////////////////
 #[fixture]
-pub fn quote_tick(
+pub fn stub_quote(
     #[default("1500")] bid_price: &str,
     #[default("1502")] ask_price: &str,
 ) -> QuoteTick {
@@ -69,7 +69,7 @@ pub fn quote_tick(
 }
 
 #[fixture]
-pub fn trade_tick() -> TradeTick {
+pub fn stub_trade() -> TradeTick {
     TradeTick {
         instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
         price: Price::from("1500.0000"),

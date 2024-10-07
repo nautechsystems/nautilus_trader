@@ -51,11 +51,11 @@ pub trait Indicator {
         panic!("`handle_book_mbo` {} `{}`", IMPL_ERR, self.name());
     }
 
-    fn handle_quote_tick(&mut self, quote: &QuoteTick) {
+    fn handle_quote(&mut self, quote: &QuoteTick) {
         panic!("`handle_quote_tick` {} `{}`", IMPL_ERR, self.name());
     }
 
-    fn handle_trade_tick(&mut self, trade: &TradeTick) {
+    fn handle_trade(&mut self, trade: &TradeTick) {
         panic!("`handle_trade_tick` {} `{}`", IMPL_ERR, self.name());
     }
 

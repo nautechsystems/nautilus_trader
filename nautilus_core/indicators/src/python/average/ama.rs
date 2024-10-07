@@ -77,13 +77,13 @@ impl AdaptiveMovingAverage {
     }
 
     #[pyo3(name = "handle_quote_tick")]
-    fn py_handle_quote_tick(&mut self, tick: &QuoteTick) {
-        self.py_update_raw(tick.extract_price(self.price_type).into());
+    fn py_handle_quote_tick(&mut self, quote: &QuoteTick) {
+        self.py_update_raw(quote.extract_price(self.price_type).into());
     }
 
     #[pyo3(name = "handle_trade_tick")]
-    fn py_handle_trade_tick(&mut self, tick: &TradeTick) {
-        self.update_raw((&tick.price).into());
+    fn py_handle_trade_tick(&mut self, trade: &TradeTick) {
+        self.update_raw((&trade.price).into());
     }
 
     #[pyo3(name = "handle_bar")]

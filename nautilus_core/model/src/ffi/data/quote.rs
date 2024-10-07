@@ -74,6 +74,6 @@ pub extern "C" fn quote_tick_hash(delta: &QuoteTick) -> u64 {
 
 /// Returns a [`QuoteTick`] as a C string pointer.
 #[no_mangle]
-pub extern "C" fn quote_tick_to_cstr(tick: &QuoteTick) -> *const c_char {
-    str_to_cstr(&tick.to_string())
+pub extern "C" fn quote_tick_to_cstr(quote: &QuoteTick) -> *const c_char {
+    str_to_cstr(&quote.to_string())
 }
