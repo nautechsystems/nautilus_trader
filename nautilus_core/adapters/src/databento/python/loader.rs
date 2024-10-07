@@ -170,6 +170,31 @@ impl DatabentoDataLoader {
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
     }
 
+    #[pyo3(name = "load_bbo_quotes")]
+    fn py_load_bbo_quotes(
+        &self,
+        filepath: PathBuf,
+        instrument_id: Option<InstrumentId>,
+    ) -> PyResult<Vec<QuoteTick>> {
+        Ok(self
+            .load_bbo_quotes(filepath, instrument_id)
+            .map_err(to_pyvalue_err)?)
+    }
+
+    #[pyo3(name = "load_bbo_quotes_as_pycapsule")]
+    fn py_load_bbo_quotes_as_pycapsule(
+        &self,
+        py: Python,
+        filepath: PathBuf,
+        instrument_id: Option<InstrumentId>,
+    ) -> PyResult<PyObject> {
+        let iter = self
+            .read_records::<dbn::BboMsg>(filepath, instrument_id, false)
+            .map_err(to_pyvalue_err)?;
+
+        exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
+    }
+
     #[pyo3(name = "load_tbbo_trades")]
     fn py_load_tbbo_trades(
         &self,

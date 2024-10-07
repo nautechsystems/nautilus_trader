@@ -309,6 +309,26 @@ impl DatabentoDataLoader {
             .collect()
     }
 
+    pub fn load_bbo_quotes(
+        &self,
+        filepath: PathBuf,
+        instrument_id: Option<InstrumentId>,
+    ) -> anyhow::Result<Vec<QuoteTick>> {
+        self.read_records::<dbn::BboMsg>(filepath, instrument_id, false)?
+            .filter_map(|result| match result {
+                Ok((Some(item1), _)) => {
+                    if let Data::Quote(quote) = item1 {
+                        Some(Ok(quote))
+                    } else {
+                        None
+                    }
+                }
+                Ok((None, _)) => None,
+                Err(e) => Some(Err(e)),
+            })
+            .collect()
+    }
+
     pub fn load_tbbo_trades(
         &self,
         filepath: PathBuf,

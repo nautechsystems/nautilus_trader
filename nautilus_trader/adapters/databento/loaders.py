@@ -210,6 +210,21 @@ class DatabentoDataLoader:
                         filepath=str(path),
                         instrument_id=pyo3_instrument_id,
                     )
+            case DatabentoSchema.BBO_1S.value | DatabentoSchema.BBO_1M.value:
+                if as_legacy_cython:
+                    capsule = self._pyo3_loader.load_bbo_quotes_as_pycapsule(
+                        filepath=str(path),
+                        instrument_id=pyo3_instrument_id,
+                    )
+                    data = capsule_to_list(capsule)
+                    # Drop encapsulated `CVec` as data is now transferred
+                    drop_cvec_pycapsule(capsule)
+                    return data
+                else:
+                    return self._pyo3_loader.load_bbo_quotes(
+                        filepath=str(path),
+                        instrument_id=pyo3_instrument_id,
+                    )
             case DatabentoSchema.MBP_10.value:
                 if as_legacy_cython:
                     capsule = self._pyo3_loader.load_order_book_depth10_as_pycapsule(
