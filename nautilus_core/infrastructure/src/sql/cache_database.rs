@@ -319,7 +319,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         tokio::spawn(async move {
             let result = pool.close().await;
             if let Err(e) = tx.send(()) {
-                log::error!("Failed to send close result: {:?}", e);
+                log::error!("Failed to send close result: {e:?}");
             }
         });
         Ok(rx.recv()?)
@@ -331,7 +331,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         tokio::spawn(async move {
             let result = DatabaseQueries::truncate(&pool).await;
             if let Err(e) = tx.send(()) {
-                log::error!("Failed to send flush result: {:?}", e);
+                log::error!("Failed to send flush result: {e:?}");
             }
         });
         Ok(rx.recv()?)
@@ -349,13 +349,13 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
                         .map(|(k, v)| (k, Bytes::from(v)))
                         .collect();
                     if let Err(e) = tx.send(mapping) {
-                        log::error!("Failed to send general items: {:?}", e);
+                        log::error!("Failed to send general items: {e:?}");
                     }
                 }
                 Err(e) => {
-                    log::error!("Failed to load general items: {:?}", e);
+                    log::error!("Failed to load general items: {e:?}");
                     if let Err(e) = tx.send(HashMap::new()) {
-                        log::error!("Failed to send empty general items: {:?}", e);
+                        log::error!("Failed to send empty general items: {e:?}");
                     }
                 }
             }
@@ -375,13 +375,13 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
                         .map(|currency| (currency.code, currency))
                         .collect();
                     if let Err(e) = tx.send(mapping) {
-                        log::error!("Failed to send currencies: {:?}", e);
+                        log::error!("Failed to send currencies: {e:?}");
                     }
                 }
                 Err(e) => {
-                    log::error!("Failed to load currencies: {:?}", e);
+                    log::error!("Failed to load currencies: {e:?}");
                     if let Err(e) = tx.send(HashMap::new()) {
-                        log::error!("Failed to send empty currencies: {:?}", e);
+                        log::error!("Failed to send empty currencies: {e:?}");
                     }
                 }
             }
@@ -401,13 +401,13 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
                         .map(|instrument| (instrument.id(), instrument))
                         .collect();
                     if let Err(e) = tx.send(mapping) {
-                        log::error!("Failed to send instruments: {:?}", e);
+                        log::error!("Failed to send instruments: {e:?}");
                     }
                 }
                 Err(e) => {
-                    log::error!("Failed to load instruments: {:?}", e);
+                    log::error!("Failed to load instruments: {e:?}");
                     if let Err(e) = tx.send(HashMap::new()) {
-                        log::error!("Failed to send empty instruments: {:?}", e);
+                        log::error!("Failed to send empty instruments: {e:?}");
                     }
                 }
             }
@@ -431,13 +431,13 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
                         .map(|account| (account.id(), account))
                         .collect();
                     if let Err(e) = tx.send(mapping) {
-                        log::error!("Failed to send accounts: {:?}", e);
+                        log::error!("Failed to send accounts: {e:?}");
                     }
                 }
                 Err(e) => {
-                    log::error!("Failed to load accounts: {:?}", e);
+                    log::error!("Failed to load accounts: {e:?}");
                     if let Err(e) = tx.send(HashMap::new()) {
-                        log::error!("Failed to send empty accounts: {:?}", e);
+                        log::error!("Failed to send empty accounts: {e:?}");
                     }
                 }
             }
@@ -457,13 +457,13 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
                         .map(|order| (order.client_order_id(), order))
                         .collect();
                     if let Err(e) = tx.send(mapping) {
-                        log::error!("Failed to send orders: {:?}", e);
+                        log::error!("Failed to send orders: {e:?}");
                     }
                 }
                 Err(e) => {
-                    log::error!("Failed to load orders: {:?}", e);
+                    log::error!("Failed to load orders: {e:?}");
                     if let Err(e) = tx.send(HashMap::new()) {
-                        log::error!("Failed to send empty orders: {:?}", e);
+                        log::error!("Failed to send empty orders: {e:?}");
                     }
                 }
             }
@@ -487,19 +487,13 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
             match result {
                 Ok(currency) => {
                     if let Err(e) = tx.send(currency) {
-                        log::error!("Failed to send load_index_order_client result : {:?}", e);
+                        log::error!("Failed to send load_index_order_client result: {e:?}");
                     }
                 }
                 Err(e) => {
-                    log::error!(
-                        "Failed to run query load_distinct_order_event_client_ids: {:?}",
-                        e
-                    );
+                    log::error!("Failed to run query load_distinct_order_event_client_ids: {e:?}");
                     if let Err(e) = tx.send(HashMap::new()) {
-                        log::error!(
-                            "Failed to send empty load_index_order_client result : {:?}",
-                            e
-                        );
+                        log::error!("Failed to send empty load_index_order_client result: {e:?}");
                     }
                 }
             }
@@ -516,13 +510,13 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
             match result {
                 Ok(currency) => {
                     if let Err(e) = tx.send(currency) {
-                        log::error!("Failed to send currency {}: {:?}", code, e);
+                        log::error!("Failed to send currency {code}: {e:?}");
                     }
                 }
                 Err(e) => {
-                    log::error!("Failed to load currency {}: {:?}", code, e);
+                    log::error!("Failed to load currency {code}: {e:?}");
                     if let Err(e) = tx.send(None) {
-                        log::error!("Failed to send None for currency {}: {:?}", code, e);
+                        log::error!("Failed to send None for currency {code}: {e:?}");
                     }
                 }
             }
@@ -542,17 +536,13 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
             match result {
                 Ok(instrument) => {
                     if let Err(e) = tx.send(instrument) {
-                        log::error!("Failed to send instrument {}: {:?}", instrument_id, e);
+                        log::error!("Failed to send instrument {instrument_id}: {e:?}");
                     }
                 }
                 Err(e) => {
-                    log::error!("Failed to load instrument {}: {:?}", instrument_id, e);
+                    log::error!("Failed to load instrument {instrument_id}: {e:?}");
                     if let Err(e) = tx.send(None) {
-                        log::error!(
-                            "Failed to send None for instrument {}: {:?}",
-                            instrument_id,
-                            e
-                        );
+                        log::error!("Failed to send None for instrument {instrument_id}: {e:?}");
                     }
                 }
             }
@@ -576,13 +566,13 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
             match result {
                 Ok(account) => {
                     if let Err(e) = tx.send(account) {
-                        log::error!("Failed to send account {}: {:?}", account_id, e);
+                        log::error!("Failed to send account {account_id}: {e:?}");
                     }
                 }
                 Err(e) => {
-                    log::error!("Failed to load account {}: {:?}", account_id, e);
+                    log::error!("Failed to load account {account_id}: {e:?}");
                     if let Err(e) = tx.send(None) {
-                        log::error!("Failed to send None for account {}: {:?}", account_id, e);
+                        log::error!("Failed to send None for account {account_id}: {e:?}");
                     }
                 }
             }
@@ -599,11 +589,11 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
             match result {
                 Ok(order) => {
                     if let Err(e) = tx.send(order) {
-                        log::error!("Failed to send order {}: {:?}", client_order_id, e);
+                        log::error!("Failed to send order {client_order_id}: {e:?}");
                     }
                 }
                 Err(e) => {
-                    log::error!("Failed to load order {}: {:?}", client_order_id, e);
+                    log::error!("Failed to load order {client_order_id}: {e:?}");
                     let _ = tx.send(None);
                 }
             }
@@ -698,25 +688,15 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
             let result = DatabaseQueries::load_quotes(&pool, &instrument_id).await;
             match result {
                 Ok(quotes) => {
-                    if let Err(er) = tx.send(quotes) {
-                        log::error!(
-                            "Failed to send quotes for instrument {}: {:?}",
-                            instrument_id,
-                            er
-                        );
+                    if let Err(e) = tx.send(quotes) {
+                        log::error!("Failed to send quotes for instrument {instrument_id}: {e:?}");
                     }
                 }
                 Err(e) => {
-                    log::error!(
-                        "Failed to load quotes for instrument {}: {:?}",
-                        instrument_id,
-                        e
-                    );
+                    log::error!("Failed to load quotes for instrument {instrument_id}: {e:?}");
                     if let Err(e) = tx.send(Vec::new()) {
                         log::error!(
-                            "Failed to send empty quotes for instrument {}: {:?}",
-                            instrument_id,
-                            e
+                            "Failed to send empty quotes for instrument {instrument_id}: {e:?}"
                         );
                     }
                 }
@@ -727,8 +707,8 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
 
     fn add_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddTrade(trade.to_owned());
-        self.tx.send(query).map_err(|err| {
-            anyhow::anyhow!("Failed to send query add_trade to database message handler: {err}")
+        self.tx.send(query).map_err(|e| {
+            anyhow::anyhow!("Failed to send query add_trade to database message handler: {e}")
         })
     }
 
@@ -741,24 +721,14 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
             match result {
                 Ok(trades) => {
                     if let Err(e) = tx.send(trades) {
-                        log::error!(
-                            "Failed to send trades for instrument {}: {:?}",
-                            instrument_id,
-                            e
-                        );
+                        log::error!("Failed to send trades for instrument {instrument_id}: {e:?}");
                     }
                 }
                 Err(e) => {
-                    log::error!(
-                        "Failed to load trades for instrument {}: {:?}",
-                        instrument_id,
-                        e
-                    );
+                    log::error!("Failed to load trades for instrument {instrument_id}: {e:?}");
                     if let Err(e) = tx.send(Vec::new()) {
                         log::error!(
-                            "Failed to send empty trades for instrument {}: {:?}",
-                            instrument_id,
-                            e
+                            "Failed to send empty trades for instrument {instrument_id}: {e:?}"
                         );
                     }
                 }
@@ -769,8 +739,8 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
 
     fn add_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddBar(bar.to_owned());
-        self.tx.send(query).map_err(|err| {
-            anyhow::anyhow!("Failed to send query add_bar to database message handler: {err}")
+        self.tx.send(query).map_err(|e| {
+            anyhow::anyhow!("Failed to send query add_bar to database message handler: {e}")
         })
     }
 
@@ -783,24 +753,14 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
             match result {
                 Ok(bars) => {
                     if let Err(e) = tx.send(bars) {
-                        log::error!(
-                            "Failed to send bars for instrument {}: {:?}",
-                            instrument_id,
-                            e
-                        );
+                        log::error!("Failed to send bars for instrument {instrument_id}: {e:?}");
                     }
                 }
                 Err(e) => {
-                    log::error!(
-                        "Failed to load bars for instrument {}: {:?}",
-                        instrument_id,
-                        e
-                    );
+                    log::error!("Failed to load bars for instrument {instrument_id}: {e:?}");
                     if let Err(e) = tx.send(Vec::new()) {
                         log::error!(
-                            "Failed to send empty bars for instrument {}: {:?}",
-                            instrument_id,
-                            e
+                            "Failed to send empty bars for instrument {instrument_id}: {e:?}"
                         );
                     }
                 }
@@ -835,15 +795,15 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
 
     fn update_account(&mut self, account: &AccountAny) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddAccount(account.clone(), true);
-        self.tx.send(query).map_err(|err| {
-            anyhow::anyhow!("Failed to send query add_account to database message handler: {err}")
+        self.tx.send(query).map_err(|e| {
+            anyhow::anyhow!("Failed to send query add_account to database message handler: {e}")
         })
     }
 
     fn update_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddOrder(order.clone(), None, true);
-        self.tx.send(query).map_err(|err| {
-            anyhow::anyhow!("Failed to send query add_order to database message handler: {err}")
+        self.tx.send(query).map_err(|e| {
+            anyhow::anyhow!("Failed to send query add_order to database message handler: {e}")
         })
     }
 

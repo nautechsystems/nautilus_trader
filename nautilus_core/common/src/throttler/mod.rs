@@ -131,7 +131,7 @@ mod tests {
     #[fixture]
     pub fn test_throttler_buffered() -> TestThrottler {
         let output_send: Box<dyn Fn(u64)> = Box::new(|msg: u64| {
-            log::debug!("Sent: {}", msg);
+            log::debug!("Sent: {msg}");
         });
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let inner_clock = Rc::clone(&clock);
@@ -154,10 +154,10 @@ mod tests {
     #[fixture]
     pub fn test_throttler_unbuffered() -> TestThrottler {
         let output_send: Box<dyn Fn(u64)> = Box::new(|msg: u64| {
-            log::debug!("Sent: {}", msg);
+            log::debug!("Sent: {msg}");
         });
         let output_drop: Box<dyn Fn(u64)> = Box::new(|msg: u64| {
-            log::debug!("Dropped: {}", msg);
+            log::debug!("Dropped: {msg}");
         });
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let inner_clock = Rc::clone(&clock);

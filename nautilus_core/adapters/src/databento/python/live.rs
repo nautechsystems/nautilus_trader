@@ -62,7 +62,7 @@ impl DatabentoLiveClient {
         tracing::debug!("Processing messages...");
         // Continue to process messages until channel is hung up
         while let Some(msg) = msg_rx.recv().await {
-            tracing::trace!("Received message: {:?}", msg);
+            tracing::trace!("Received message: {msg:?}");
             let result = match msg {
                 LiveMessage::Data(data) => Python::with_gil(|py| {
                     let py_obj = data_to_pycapsule(py, data);

@@ -346,7 +346,7 @@ impl LiveTimer {
         // SAFETY: Guaranteed to be non-zero
         let interval_ns = NonZeroU64::new(std::cmp::max(interval_ns, 1)).unwrap();
 
-        log::debug!("Creating timer '{}'", name);
+        log::debug!("Creating timer '{name}'");
         Self {
             name: Ustr::from(name),
             interval_ns,
@@ -459,7 +459,7 @@ impl LiveTimer {
         if !self.is_expired.load(atomic::Ordering::SeqCst) {
             if let Some(sender) = self.canceler.take() {
                 // Send cancellation signal
-                sender.send(()).map_err(|e| anyhow::anyhow!("{:?}", e))?;
+                sender.send(()).map_err(|e| anyhow::anyhow!("{e:?}"))?;
             }
         }
         Ok(())
@@ -484,7 +484,7 @@ fn call_python_with_time_event(
 
         match callback.call1(py, (capsule,)) {
             Ok(_) => {}
-            Err(e) => tracing::error!("Error on callback: {:?}", e),
+            Err(e) => tracing::error!("Error on callback: {e:?}"),
         };
     });
 }

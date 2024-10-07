@@ -545,9 +545,8 @@ impl OrderMatchingEngine {
                             && parent_order.status() == OrderStatus::Triggered
                         {
                             log::info!(
-                                "Pending OTO order {} triggers from {}",
+                                "Pending OTO order {} triggers from {parent_order_id}",
                                 order.client_order_id(),
-                                parent_order_id
                             );
                             return;
                         }

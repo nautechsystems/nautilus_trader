@@ -25,6 +25,6 @@ async fn main() {
         .init()
         .unwrap();
     if let Err(e) = nautilus_cli::run(NautilusCli::parse()).await {
-        log::error!("Error executing Nautilus CLI: {}", e);
+        log::error!("Error executing Nautilus CLI: {e}");
     }
 }
