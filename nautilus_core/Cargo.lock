@@ -783,9 +783,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.1.25"
+version = "1.1.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e8d9e0b4957f635b8d3da819d0db5603620467ecf1f692d22a8c2717ce27e6d8"
+checksum = "2e80e3b6a3ab07840e1cae9b0666a63970dc28e8ed5ffbcdacbfc760c281bfc1"
 dependencies = [
  "jobserver",
  "libc",
@@ -2711,7 +2711,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-adapters"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "anyhow",
  "base64",
@@ -2745,7 +2745,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-analysis"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2765,7 +2765,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2787,7 +2787,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cli"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "anyhow",
  "clap 4.5.19",
@@ -2804,7 +2804,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2834,7 +2834,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2856,7 +2856,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-data"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2882,7 +2882,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-execution"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -2906,7 +2906,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "anyhow",
  "log",
@@ -2919,7 +2919,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-infrastructure"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -2948,7 +2948,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2979,7 +2979,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -3009,7 +3009,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "anyhow",
  "binary-heap-plus",
@@ -3033,7 +3033,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "nautilus-adapters",
  "nautilus-common",
@@ -3049,7 +3049,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-test-kit"
-version = "0.33.0"
+version = "0.34.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -3270,12 +3270,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.20.1"
+version = "1.20.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82881c4be219ab5faaf2ad5e5e5ecdff8c66bd7402ca3160975c93b24961afd1"
-dependencies = [
- "portable-atomic",
-]
+checksum = "1261fe7e33c73b354eab43b1273a57c8f967d0391e80353e51f764ac02cf6775"
 
 [[package]]
 name = "oorandom"
@@ -3906,9 +3903,9 @@ dependencies = [
 
 [[package]]
 name = "redis"
-version = "0.27.2"
+version = "0.27.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7e86f5670bd8b028edfb240f0616cad620705b31ec389d55e4f3da2c38dcd48"
+checksum = "92f61607c4c4442b575fbc3f31a5dd4e5dd69cfea8f6afec5b83e24f61c126ab"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -3929,7 +3926,7 @@ dependencies = [
  "sha1_smol",
  "socket2",
  "tokio",
- "tokio-retry",
+ "tokio-retry2",
  "tokio-rustls",
  "tokio-util",
  "url",
@@ -4318,9 +4315,9 @@ dependencies = [
 
 [[package]]
 name = "schannel"
-version = "0.1.24"
+version = "0.1.26"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9aaafd5a2b6e3d657ff009d82fbd630b6bd54dd4eb06f21693925cdf80f9b8b"
+checksum = "01227be5826fa0690321a2ba6c5cd57a19cf3f6a09e76973b58e61de6ab9d1c1"
 dependencies = [
  "windows-sys 0.59.0",
 ]
@@ -5170,10 +5167,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "tokio-retry"
-version = "0.3.0"
+name = "tokio-retry2"
+version = "0.5.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f57eb36ecbe0fc510036adff84824dd3c24bb781e21bfa67b69d556aa85214f"
+checksum = "903934dba1c4c2f2e9cb460ef10b5695e0b0ecad3bf9ee7c8675e540c5e8b2d1"
 dependencies = [
  "pin-project",
  "rand",
