@@ -47,7 +47,7 @@ pub trait BarAggregator {
     /// Updates theaggregator  with the given price and size.
     fn update(&mut self, price: Price, size: Quantity, ts_event: UnixNanos);
     /// Updates the aggregator with the given quote.
-    fn handle_quote_tick(&mut self, quote: QuoteTick) {
+    fn handle_quote(&mut self, quote: QuoteTick) {
         let spec = self.bar_type().spec();
 
         self.update(
@@ -57,7 +57,7 @@ pub trait BarAggregator {
         );
     }
     /// Updates the aggregator with the given trade.
-    fn handle_trade_tick(&mut self, trade: TradeTick) {
+    fn handle_trade(&mut self, trade: TradeTick) {
         self.update(trade.price, trade.size, trade.ts_event);
     }
 }
