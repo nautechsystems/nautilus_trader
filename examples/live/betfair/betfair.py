@@ -130,7 +130,7 @@ if __name__ == "__main__":
     # The market ID will appear in the browser query string.
     config = BetfairInstrumentProviderConfig(
         account_currency="GBP",
-        market_ids=["1.223041451"],
+        market_ids=["1.176878927"],
     )
     node = asyncio.run(main(instrument_config=config, log_level="DEBUG"))
     node.dispose()
