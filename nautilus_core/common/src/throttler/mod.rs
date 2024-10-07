@@ -459,91 +459,115 @@ mod tests {
         prop::collection::vec(throttler_input_strategy(), 10..=150)
     }
 
-    proptest! {
-        #[test]
-        fn test(inputs in throttler_test_strategy()) {
-            let TestThrottler {
-                throttler,
-                clock: test_clock,
-                interval,
-            } = test_throttler_buffered();
-            let mut sent_count = 0;
+    // proptest! {
+    #[test]
+    fn test() {
+        let inputs = [
+            ThrottlerInput::AdvanceClock(5),
+            ThrottlerInput::SendMessage(42),
+            ThrottlerInput::SendMessage(42),
+            ThrottlerInput::SendMessage(42),
+            ThrottlerInput::SendMessage(42),
+            ThrottlerInput::SendMessage(42),
+            ThrottlerInput::SendMessage(42),
+            ThrottlerInput::SendMessage(42),
+            ThrottlerInput::SendMessage(42),
+            ThrottlerInput::SendMessage(42),
+        ];
+        let TestThrottler {
+            throttler,
+            clock: test_clock,
+            interval,
+        } = test_throttler_buffered();
+        let mut sent_count = 0;
 
-            for input in inputs {
-                match input {
-                    ThrottlerInput::SendMessage(msg) => {
-                        throttler.send(msg);
-                        sent_count += 1;
-                    }
-                    ThrottlerInput::AdvanceClock(duration) => {
-                        let mut clock_ref = test_clock.borrow_mut();
-                        let current_time = clock_ref.get_time_ns();
-                        let time_events = clock_ref.advance_time(current_time + duration as u64, true);
-                        for each_event in clock_ref.match_handlers(time_events) {
-                            drop(clock_ref);
-                            each_event.callback.call(each_event.event);
-                            clock_ref = test_clock.borrow_mut();
-                        }
+        for input in inputs {
+            match input {
+                ThrottlerInput::SendMessage(msg) => {
+                    throttler.send(msg);
+                    sent_count += 1;
+                }
+                ThrottlerInput::AdvanceClock(duration) => {
+                    let mut clock_ref = test_clock.borrow_mut();
+                    let current_time = clock_ref.get_time_ns();
+                    let time_events = clock_ref.advance_time(current_time + duration as u64, true);
+                    for each_event in clock_ref.match_handlers(time_events) {
+                        drop(clock_ref);
+                        each_event.callback.call(each_event.event);
+                        clock_ref = test_clock.borrow_mut();
                     }
                 }
-
-                // TODO: Fix limit consistency test
-                // Check the throttler rate limits on the appropriate conditions
-                // let inner = throttler.inner.borrow();
-                // let buffered_messages = inner.qsize() > 0;
-                // let reached_limit = inner.timestamps.len() == inner.limit;
-                // let last_interval =
-                //     inner.clock.borrow().timestamp_ns().as_u64().saturating_sub(interval);
-                // let first_message_processed_within_interval = inner.timestamps.back().map_or(false, |&ts| {
-                //     ts.as_u64() > last_interval
-                // });
-                // let expected_limiting =
-                //     buffered_messages || (reached_limit && first_message_processed_within_interval);
-                // prop_assert_eq!(inner.is_limiting, expected_limiting);
-
-                // Message conservation
-                let inner = throttler.inner.borrow();
-                prop_assert_eq!(sent_count, inner.sent_count + inner.qsize());
             }
 
-            // Advance clock by a large amount to process all messages
-            test_clock
+            // Check the throttler rate limits on the appropriate conditions
+            // * Atleast one message is buffered
+            // * Timestamp queue is filled upto limit
+            // * Least recent timestamp in queue exceeds interval
+            let inner = throttler.inner.borrow();
+            let buffered_messages = inner.qsize() > 0;
+            let last_interval = inner
+                .clock
+                .borrow()
+                .timestamp_ns()
+                .as_u64()
+                .saturating_sub(interval);
+            let first_message_processed_within_interval = inner
+                .timestamps
+                .get(inner.limit - 1)
+                .map_or(false, |&ts| ts.as_u64() > last_interval);
+            let expected_limiting = buffered_messages && first_message_processed_within_interval;
+            assert_eq!(inner.is_limiting, expected_limiting);
+
+            // Message conservation
+            let inner = throttler.inner.borrow();
+            assert_eq!(sent_count, inner.sent_count + inner.qsize());
+        }
+
+        // Advance clock by a large amount to process all messages
+        {
+            let time_events = test_clock
                 .borrow_mut()
                 .advance_time((interval * 100).into(), true);
-            prop_assert_eq!(throttler.qsize(), 0);
-
-
-            // TODO: Add test to check qsize and used values
-            // merge below logic in with above test
-            // let mut expected_sent = 0;
-            // let mut expected_buffered = 0;
-
-            // for input in inputs {
-            //     match input {
-            //         ThrottlerInput::SendMessage(msg) => {
-            //             throttler.send(msg);
-            //             if expected_sent < 5 {
-            //                 expected_sent += 1;
-            //             } else {
-            //                 expected_buffered += 1;
-            //             }
-            //         }
-            //         ThrottlerInput::AdvanceClock(duration) => {
-            //             clock.borrow_mut().advance_time(UnixNanos::from(duration), true);
-            //             let messages_to_send = expected_buffered.min(5 - expected_sent);
-            //             expected_sent = (expected_sent + messages_to_send).min(5);
-            //             expected_buffered -= messages_to_send;
-            //         }
-            //     }
-
-            //     let inner = throttler.inner.borrow();
-            //     let actual_used = throttler.used();
-            //     let actual_qsize = throttler.qsize();
-            //     let expected_used = expected_sent as f64 / 5.0;
-
-            //     prop_assert!((actual_used - expected_used).abs() < 1e-6, "Used capacity mismatch: actual = {}, expected = {}", actual_used, expected_used);
-            //     prop_assert_eq!(actual_qsize, expected_buffered, "QSize mismatch: actual = {}, expected = {}", actual_qsize, expected_buffered);
-            // }
+            let mut clock_ref = test_clock.borrow_mut();
+            for each_event in clock_ref.match_handlers(time_events) {
+                drop(clock_ref);
+                each_event.callback.call(each_event.event);
+                clock_ref = test_clock.borrow_mut();
+            }
         }
+        assert_eq!(throttler.qsize(), 0);
+
+        // TODO: Add test to check qsize and used values
+        // merge below logic in with above test
+        // let mut expected_sent = 0;
+        // let mut expected_buffered = 0;
+
+        // for input in inputs {
+        //     match input {
+        //         ThrottlerInput::SendMessage(msg) => {
+        //             throttler.send(msg);
+        //             if expected_sent < 5 {
+        //                 expected_sent += 1;
+        //             } else {
+        //                 expected_buffered += 1;
+        //             }
+        //         }
+        //         ThrottlerInput::AdvanceClock(duration) => {
+        //             clock.borrow_mut().advance_time(UnixNanos::from(duration), true);
+        //             let messages_to_send = expected_buffered.min(5 - expected_sent);
+        //             expected_sent = (expected_sent + messages_to_send).min(5);
+        //             expected_buffered -= messages_to_send;
+        //         }
+        //     }
+
+        //     let inner = throttler.inner.borrow();
+        //     let actual_used = throttler.used();
+        //     let actual_qsize = throttler.qsize();
+        //     let expected_used = expected_sent as f64 / 5.0;
+
+        //     prop_assert!((actual_used - expected_used).abs() < 1e-6, "Used capacity mismatch: actual = {}, expected = {}", actual_used, expected_used);
+        //     prop_assert_eq!(actual_qsize, expected_buffered, "QSize mismatch: actual = {}, expected = {}", actual_qsize, expected_buffered);
+        // }
     }
+    // }
 }

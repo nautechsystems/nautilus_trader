@@ -45,6 +45,7 @@ impl<T: 'static, F: Fn(T) + 'static> From<ThrottlerProcess<T, F>> for TimeEventC
                 core.send_msg(msg);
 
                 if core.delta_next() > 0 {
+                    core.is_limiting = true;
                     core.set_timer(Some(process_clone.into()));
                     return;
                 }

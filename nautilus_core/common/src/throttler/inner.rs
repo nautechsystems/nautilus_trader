@@ -21,8 +21,6 @@ pub struct InnerThrottler<T, F> {
     pub buffer: VecDeque<T>,
     /// The timestamps of the sent messages.
     pub timestamps: VecDeque<UnixNanos>,
-    /// Whether the throttler has warmed up.
-    warm: bool,
     /// The interval between messages in nanoseconds.
     interval: u64,
     /// The clock used to keep track of time.
@@ -52,7 +50,6 @@ impl<T, F> InnerThrottler<T, F> {
             limit,
             buffer: VecDeque::new(),
             timestamps: VecDeque::with_capacity(limit),
-            warm: false,
             interval,
             clock,
             timer_name,
@@ -78,28 +75,21 @@ impl<T, F> InnerThrottler<T, F> {
         clock.set_time_alert_ns(&self.timer_name, alert_ts, callback);
     }
 
-    /// Return delta between curren time and next time interval
+    /// Time delta when the next message can be sent
     #[inline]
     pub fn delta_next(&mut self) -> u64 {
-        if !self.warm && self.sent_count < self.limit {
-            return 0;
+        match self.timestamps.get(self.limit - 1) {
+            Some(ts) => {
+                let diff = self.clock.borrow().timestamp_ns().as_u64() - ts.as_u64();
+                self.interval.saturating_sub(diff)
+            }
+            None => 0,
         }
-        self.warm = true;
-
-        let diff = self.clock.borrow().timestamp_ns().as_u64()
-            - self
-                .timestamps
-                .back()
-                .unwrap_or_else(|| panic!("Failed to get timestamp"))
-                .as_u64();
-
-        self.interval.saturating_sub(diff)
     }
 
     #[inline]
     pub fn reset(&mut self) {
         self.buffer.clear();
-        self.warm = false;
         self.recv_count = 0;
         self.sent_count = 0;
         self.is_limiting = false;
