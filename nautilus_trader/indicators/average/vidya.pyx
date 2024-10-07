@@ -56,7 +56,7 @@ cdef class VariableIndexDynamicAverage(MovingAverage):
         cmo_ma_type not None: MovingAverageType=MovingAverageType.SIMPLE,
     ):
         Condition.positive_int(period, "period")
-        Condition.true(cmo_ma_type != MovingAverageType.VARIABLE_INDEX_DYNAMIC, "cmo_ma_type was invalid (VARIABLE_INDEX_DYNAMIC)")
+        Condition.is_true(cmo_ma_type != MovingAverageType.VARIABLE_INDEX_DYNAMIC, "cmo_ma_type was invalid (VARIABLE_INDEX_DYNAMIC)")
         super().__init__(period, params=[period], price_type=price_type)
 
         self.cmo = ChandeMomentumOscillator(period, cmo_ma_type)

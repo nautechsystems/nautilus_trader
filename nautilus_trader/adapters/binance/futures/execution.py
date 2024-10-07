@@ -95,7 +95,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURE,
         name: str | None = None,
     ) -> None:
-        PyCondition.true(
+        PyCondition.is_true(
             account_type.is_futures,
             "account_type was not USDT_FUTURE or COIN_FUTURE",
         )
@@ -177,7 +177,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         # "true": Hedge Mode; "false": One-way Mode
         self._is_dual_side_position = binance_futures_dual_side_position.dualSidePosition
         if self._is_dual_side_position:
-            PyCondition.false(
+            PyCondition.is_false(
                 self._use_reduce_only,
                 "Cannot use `reduce_only` with Binance Hedge Mode",
             )

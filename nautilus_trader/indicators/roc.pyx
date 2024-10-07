@@ -40,7 +40,7 @@ cdef class RateOfChange(Indicator):
     """
 
     def __init__(self, int period, bint use_log=False):
-        Condition.true(period > 1, "period was <= 1")
+        Condition.is_true(period > 1, "period was <= 1")
         super().__init__(params=[period])
 
         self.period = period

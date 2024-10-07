@@ -71,8 +71,9 @@ impl DataBackendSession {
             .enable_all()
             .build()
             .unwrap();
-        let session_cfg =
-            SessionConfig::new().set_str("datafusion.optimizer.repartition_file_scans", "false");
+        let session_cfg = SessionConfig::new()
+            .set_str("datafusion.optimizer.repartition_file_scans", "false")
+            .set_str("datafusion.optimizer.prefer_existing_sort", "true");
         let session_ctx = SessionContext::new_with_config(session_cfg);
         Self {
             session_ctx,
@@ -119,7 +120,7 @@ impl DataBackendSession {
             file_sort_order: vec![vec![Expr::Sort(Sort {
                 expr: Box::new(col("ts_init")),
                 asc: true,
-                nulls_first: true,
+                nulls_first: false,
             })]],
             ..Default::default()
         };
@@ -129,7 +130,7 @@ impl DataBackendSession {
             parquet_options,
         ))?;
 
-        let default_query = format!("SELECT * FROM {}", &table_name);
+        let default_query = format!("SELECT * FROM {} ORDER BY ts_init", &table_name);
         let sql_query = sql_query.unwrap_or(&default_query);
         let query = self.runtime.block_on(self.session_ctx.sql(sql_query))?;
 

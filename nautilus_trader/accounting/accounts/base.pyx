@@ -376,7 +376,7 @@ cdef class Account:
 
         if self.base_currency:
             # Single-currency account
-            Condition.true(len(event.balances) == 1, "single-currency account has multiple currency update")
+            Condition.is_true(len(event.balances) == 1, "single-currency account has multiple currency update")
             Condition.equal(event.balances[0].currency, self.base_currency, "event.balances[0].currency", "self.base_currency")
 
         self._events.append(event)

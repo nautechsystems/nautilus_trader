@@ -55,7 +55,7 @@ cdef class AdaptiveMovingAverage(MovingAverage):
         Condition.positive_int(period_er, "period_er")
         Condition.positive_int(period_alpha_fast, "period_alpha_fast")
         Condition.positive_int(period_alpha_slow, "period_alpha_slow")
-        Condition.true(period_alpha_slow > period_alpha_fast, "period_alpha_slow was <= period_alpha_fast")
+        Condition.is_true(period_alpha_slow > period_alpha_fast, "period_alpha_slow was <= period_alpha_fast")
 
         params = [
             period_er,

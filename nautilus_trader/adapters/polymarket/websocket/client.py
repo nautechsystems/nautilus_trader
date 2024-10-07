@@ -153,7 +153,7 @@ class PolymarketWebSocketClient:
         config = WebSocketConfig(
             url=self._ws_url,
             handler=self._handler,
-            heartbeat=60,
+            heartbeat=10,
             headers=[],
         )
 

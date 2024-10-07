@@ -27,5 +27,5 @@ client = ClobClient(
     funder=os.environ["POLYMARKET_FUNDER"],
 )
 
-response = client.create_api_key()
+response = client.create_or_derive_api_creds()
 print(response)

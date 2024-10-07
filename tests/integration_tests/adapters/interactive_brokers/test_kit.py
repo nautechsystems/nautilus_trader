@@ -747,7 +747,7 @@ class IBTestExecStubs:
         exec_timestamp: dt.datetime | None = None,
         tz: str = "US/Eastern",
     ) -> Execution:
-        random_default = dt.datetime(2022, 1, 4, 19, 32, 36, 0, tzinfo=dt.timezone.utc)
+        random_default = dt.datetime(2022, 1, 4, 19, 32, 36, 0, tzinfo=dt.UTC)
         exec_timestamp = exec_timestamp or random_default
         exec_timestamp = exec_timestamp.astimezone(pytz.timezone(tz))
         params = {

@@ -309,8 +309,8 @@ class Trader(Component):
             If `actor.id` already exists in the trader.
 
         """
-        PyCondition.true(not actor.is_running, "actor.state was RUNNING")
-        PyCondition.true(not actor.is_disposed, "actor.state was DISPOSED")
+        PyCondition.is_true(not actor.is_running, "actor.state was RUNNING")
+        PyCondition.is_true(not actor.is_disposed, "actor.state was DISPOSED")
 
         if self.is_running and not self._has_controller:
             self._log.error("Cannot add an actor/component to a running trader")
@@ -375,8 +375,8 @@ class Trader(Component):
 
         """
         PyCondition.not_none(strategy, "strategy")
-        PyCondition.true(not strategy.is_running, "strategy.state was RUNNING")
-        PyCondition.true(not strategy.is_disposed, "strategy.state was DISPOSED")
+        PyCondition.is_true(not strategy.is_running, "strategy.state was RUNNING")
+        PyCondition.is_true(not strategy.is_disposed, "strategy.state was DISPOSED")
 
         if self.is_running and not self._has_controller:
             self._log.error("Cannot add a strategy to a running trader")
@@ -460,8 +460,8 @@ class Trader(Component):
 
         """
         PyCondition.not_none(exec_algorithm, "exec_algorithm")
-        PyCondition.true(not exec_algorithm.is_running, "exec_algorithm.state was RUNNING")
-        PyCondition.true(not exec_algorithm.is_disposed, "exec_algorithm.state was DISPOSED")
+        PyCondition.is_true(not exec_algorithm.is_running, "exec_algorithm.state was RUNNING")
+        PyCondition.is_true(not exec_algorithm.is_disposed, "exec_algorithm.state was DISPOSED")
 
         if self.is_running:
             self._log.error("Cannot add an execution algorithm to a running trader")

@@ -94,7 +94,7 @@ cdef class BacktestExecClient(ExecutionClient):
 # -- COMMAND HANDLERS -----------------------------------------------------------------------------
 
     cpdef void submit_order(self, SubmitOrder command):
-        Condition.true(self.is_connected, "not connected")
+        Condition.is_true(self.is_connected, "not connected")
 
         self.generate_order_submitted(
             strategy_id=command.strategy_id,
@@ -106,7 +106,7 @@ cdef class BacktestExecClient(ExecutionClient):
         self._exchange.send(command)
 
     cpdef void submit_order_list(self, SubmitOrderList command):
-        Condition.true(self.is_connected, "not connected")
+        Condition.is_true(self.is_connected, "not connected")
 
         cdef Order order
         for order in command.order_list.orders:
@@ -120,21 +120,21 @@ cdef class BacktestExecClient(ExecutionClient):
         self._exchange.send(command)
 
     cpdef void modify_order(self, ModifyOrder command):
-        Condition.true(self.is_connected, "not connected")
+        Condition.is_true(self.is_connected, "not connected")
 
         self._exchange.send(command)
 
     cpdef void cancel_order(self, CancelOrder command):
-        Condition.true(self.is_connected, "not connected")
+        Condition.is_true(self.is_connected, "not connected")
 
         self._exchange.send(command)
 
     cpdef void cancel_all_orders(self, CancelAllOrders command):
-        Condition.true(self.is_connected, "not connected")
+        Condition.is_true(self.is_connected, "not connected")
 
         self._exchange.send(command)
 
     cpdef void batch_cancel_orders(self, BatchCancelOrders command):
-        Condition.true(self.is_connected, "not connected")
+        Condition.is_true(self.is_connected, "not connected")
 
         self._exchange.send(command)

@@ -522,7 +522,7 @@ cdef class CacheDatabaseAdapter(CacheDatabaseFacade):
 
         """
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.true(instrument_id.is_synthetic(), "instrument_id was not for a synthetic instrument")
+        Condition.is_true(instrument_id.is_synthetic(), "instrument_id was not for a synthetic instrument")
 
         cdef str key = f"{_SYNTHETICS}:{instrument_id.to_str()}"
         cdef list result = self._backing.read(key)

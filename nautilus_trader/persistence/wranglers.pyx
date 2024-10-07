@@ -212,7 +212,7 @@ cdef class OrderBookDeltaDataWrangler:
 
         """
         Condition.not_none(data, "data")
-        Condition.false(data.empty, "data.empty")
+        Condition.is_false(data.empty, "data.empty")
 
         data = as_utc_index(data)
         ts_events, ts_inits = prepare_event_and_init_timestamps(data.index, ts_init_delta)
@@ -359,7 +359,7 @@ cdef class QuoteTickDataWrangler:
         list[QuoteTick]
 
         """
-        Condition.false(data.empty, "data.empty")
+        Condition.is_false(data.empty, "data.empty")
         Condition.not_none(default_volume, "default_volume")
 
         data = as_utc_index(data)
@@ -436,8 +436,8 @@ cdef class QuoteTickDataWrangler:
         """
         Condition.type(bid_data, pd.DataFrame, "bid_data")
         Condition.type(ask_data, pd.DataFrame, "ask_data")
-        Condition.false(bid_data.empty, "bid_data.empty")
-        Condition.false(ask_data.empty, "ask_data.empty")
+        Condition.is_false(bid_data.empty, "bid_data.empty")
+        Condition.is_false(ask_data.empty, "ask_data.empty")
         Condition.type(bid_data.index, pd.DatetimeIndex, "bid_data.index")
         Condition.type(ask_data.index, pd.DatetimeIndex, "ask_data.index")
         Condition.not_none(default_volume, "default_volume")
@@ -604,7 +604,7 @@ cdef class TradeTickDataWrangler:
 
         """
         Condition.not_none(data, "data")
-        Condition.false(data.empty, "data.empty")
+        Condition.is_false(data.empty, "data.empty")
 
         data = as_utc_index(data)
         ts_events, ts_inits = prepare_event_and_init_timestamps(data.index, ts_init_delta)
@@ -672,7 +672,7 @@ cdef class TradeTickDataWrangler:
 
         """
         Condition.type(data, pd.DataFrame, "data")
-        Condition.false(data.empty, "data.empty")
+        Condition.is_false(data.empty, "data.empty")
         Condition.type(data.index, pd.DatetimeIndex, "data.index")
         for col in BAR_COLUMNS:
             Condition.is_in(col, data.columns, col, "data.columns")
@@ -838,7 +838,7 @@ cdef class BarDataWrangler:
 
         """
         Condition.not_none(data, "data")
-        Condition.false(data.empty, "data.empty")
+        Condition.is_false(data.empty, "data.empty")
         Condition.not_none(default_volume, "default_volume")
 
         data = as_utc_index(data)

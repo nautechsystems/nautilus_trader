@@ -16,8 +16,6 @@
 import copy
 from collections import Counter
 
-import pytest
-
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.backtest.results import BacktestResult
 from nautilus_trader.config import BacktestDataConfig
@@ -61,7 +59,6 @@ class TestPersistenceStreaming:
 
         return backtest_result
 
-    @pytest.mark.skip(reason="Unskip once Betfair symbol conventions changed")
     def test_feather_writer(self, catalog_betfair: ParquetDataCatalog) -> None:
         # Arrange
         backtest_result = self._run_default_backtest(catalog_betfair)
@@ -141,7 +138,7 @@ class TestPersistenceStreaming:
         )
 
         result = Counter([r.__class__.__name__ for r in result])  # type: ignore
-        assert result["NewsEventData"] == 79_039  # type: ignore
+        assert result["NewsEventData"] == 86_985  # type: ignore
 
     def test_feather_writer_include_types(
         self,
@@ -193,7 +190,7 @@ class TestPersistenceStreaming:
         )
 
         result = Counter([r.__class__.__name__ for r in result])  # type: ignore
-        assert result["NewsEventData"] == 79_039  # type: ignore
+        assert result["NewsEventData"] == 86_985  # type: ignore
         assert len(result) == 1
 
     def test_feather_writer_stream_to_data(
@@ -251,7 +248,7 @@ class TestPersistenceStreaming:
         )
 
         result = Counter([r.__class__.__name__ for r in result])  # type: ignore
-        assert result["NewsEventData"] == 79_039  # type: ignore
+        assert result["NewsEventData"] == 86_985  # type: ignore
 
     def test_feather_writer_signal_data(
         self,
@@ -297,7 +294,7 @@ class TestPersistenceStreaming:
         )
 
         result = Counter([r.__class__.__name__ for r in result])  # type: ignore
-        assert result["SignalCounter"] == 283  # type: ignore
+        assert result["SignalCounter"] == 179  # type: ignore
 
     def test_generate_signal_class(self) -> None:
         # Arrange
@@ -400,7 +397,6 @@ class TestPersistenceStreaming:
             book.apply_delta(update)
             copy.deepcopy(book)
 
-    @pytest.mark.skip(reason="Unskip once Betfair symbol conventions changed")
     def test_read_backtest(
         self,
         catalog_betfair: ParquetDataCatalog,

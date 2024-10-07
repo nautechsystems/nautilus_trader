@@ -162,6 +162,7 @@ class OKXAccountMode(Enum):
 class OKXMarginMode(Enum):
     ISOLATED = "isolated"
     CROSS = "cross"
+    NONE = ""
 
 
 @unique
@@ -196,6 +197,7 @@ class OKXPositionSide(Enum):
     NET = "net"
     LONG = "long"
     SHORT = "short"
+    NONE = ""
 
     def parse_to_position_side(self, pos_qty: str) -> PositionSide:
         if pos_qty == "" or float(pos_qty) == 0:

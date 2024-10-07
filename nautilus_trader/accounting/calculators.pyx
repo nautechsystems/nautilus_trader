@@ -77,7 +77,7 @@ cdef class ExchangeRateCalculator:
         Condition.not_none(to_currency, "to_currency")
         Condition.not_none(bid_quotes, "bid_quotes")
         Condition.not_none(ask_quotes, "ask_quotes")
-        Condition.true(price_type != PriceType.LAST, "price_type was invalid (LAST)")
+        Condition.is_true(price_type != PriceType.LAST, "price_type was invalid (LAST)")
 
         if from_currency == to_currency:
             return 1.0  # No conversion necessary

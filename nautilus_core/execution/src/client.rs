@@ -68,8 +68,9 @@ pub struct ExecutionClient {
 
 impl ExecutionClient {
     #[must_use]
-    pub fn get_account(&self) -> &AccountAny {
-        todo!();
+    pub fn get_account(&self) -> AccountAny {
+        let cache = self.cache.as_ref().borrow();
+        cache.account(&self.account_id).unwrap().clone()
     }
 
     // -- COMMAND HANDLERS ----------------------------------------------------

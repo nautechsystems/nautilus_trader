@@ -28,7 +28,7 @@ def test_condition_none(benchmark):
 
 def test_condition_true(benchmark):
     benchmark.pedantic(
-        target=PyCondition.true,
+        target=PyCondition.is_true,
         args=(True, "this should be true"),
         iterations=100_000,
         rounds=1,

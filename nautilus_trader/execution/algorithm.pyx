@@ -206,7 +206,7 @@ cdef class ExecAlgorithm(Actor):
         return ClientOrderId(f"{primary.client_order_id.to_str()}-E{spawn_sequence}")
 
     cdef void _reduce_primary_order(self, Order primary, Quantity spawn_qty):
-        Condition.true(primary.quantity >= spawn_qty, "Spawn order quantity was greater than or equal to primary order")
+        Condition.is_true(primary.quantity >= spawn_qty, "Spawn order quantity was greater than or equal to primary order")
 
         cdef Quantity new_qty = Quantity.from_raw_c(
             primary.quantity._mem.raw - spawn_qty._mem.raw,
@@ -1050,10 +1050,10 @@ cdef class ExecAlgorithm(Actor):
         Emulated orders cannot be sent from execution algorithms (intentionally constraining complexity).
 
         """
-        Condition.true(self.trader_id is not None, "The execution algorithm has not been registered")
+        Condition.is_true(self.trader_id is not None, "The execution algorithm has not been registered")
         Condition.not_none(order, "order")
         Condition.equal(order.emulation_trigger, TriggerType.NO_TRIGGER, "order.emulation_trigger", "NO_TRIGGER")
-        Condition.true(
+        Condition.is_true(
             order.status_c() in (OrderStatus.INITIALIZED, OrderStatus.RELEASED),
             "order",
             "order status was not either ``INITIALIZED`` or ``RELEASED``",
@@ -1174,7 +1174,7 @@ cdef class ExecAlgorithm(Actor):
         https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_G_71.html
 
         """
-        Condition.true(self.trader_id is not None, "The strategy has not been registered")
+        Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
 
         cdef bint updating = False  # Set validation flag (must become true)
@@ -1183,7 +1183,7 @@ cdef class ExecAlgorithm(Actor):
             updating = True
 
         if price is not None:
-            Condition.true(
+            Condition.is_true(
                 order.order_type in LIMIT_ORDER_TYPES,
                 fail_msg=f"{order.type_string_c()} orders do not have a LIMIT price",
             )
@@ -1191,7 +1191,7 @@ cdef class ExecAlgorithm(Actor):
                 updating = True
 
         if trigger_price is not None:
-            Condition.true(
+            Condition.is_true(
                 order.order_type in STOP_ORDER_TYPES,
                 fail_msg=f"{order.type_string_c()} orders do not have a STOP trigger price",
             )
@@ -1288,9 +1288,9 @@ cdef class ExecAlgorithm(Actor):
         https://www.onixs.biz/fix-dictionary/5.0.SP2/msgType_G_71.html
 
         """
-        Condition.true(self.trader_id is not None, "The strategy has not been registered")
+        Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
-        Condition.true(
+        Condition.is_true(
             order.status_c() in (OrderStatus.INITIALIZED, OrderStatus.RELEASED),
             "order",
             "order status was not either ``INITIALIZED`` or ``RELEASED``",
@@ -1302,7 +1302,7 @@ cdef class ExecAlgorithm(Actor):
             updating = True
 
         if price is not None:
-            Condition.true(
+            Condition.is_true(
                 order.order_type in LIMIT_ORDER_TYPES,
                 fail_msg=f"{order.type_string_c()} orders do not have a LIMIT price",
             )
@@ -1310,7 +1310,7 @@ cdef class ExecAlgorithm(Actor):
                 updating = True
 
         if trigger_price is not None:
-            Condition.true(
+            Condition.is_true(
                 order.order_type in STOP_ORDER_TYPES,
                 fail_msg=f"{order.type_string_c()} orders do not have a STOP trigger price",
             )
@@ -1371,7 +1371,7 @@ cdef class ExecAlgorithm(Actor):
             If ``None`` then will be inferred from the venue in the instrument ID.
 
         """
-        Condition.true(self.trader_id is not None, "The strategy has not been registered")
+        Condition.is_true(self.trader_id is not None, "The strategy has not been registered")
         Condition.not_none(order, "order")
 
         if order.is_closed_c() or order.is_pending_cancel_c():

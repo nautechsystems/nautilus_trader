@@ -945,11 +945,11 @@ cdef class Bar(Data):
         uint64_t ts_init,
         bint is_revision = False,
     ) -> None:
-        Condition.true(high._mem.raw >= open._mem.raw, "high was < open")
-        Condition.true(high._mem.raw >= low._mem.raw, "high was < low")
-        Condition.true(high._mem.raw >= close._mem.raw, "high was < close")
-        Condition.true(low._mem.raw <= close._mem.raw, "low was > close")
-        Condition.true(low._mem.raw <= open._mem.raw, "low was > open")
+        Condition.is_true(high._mem.raw >= open._mem.raw, "high was < open")
+        Condition.is_true(high._mem.raw >= low._mem.raw, "high was < low")
+        Condition.is_true(high._mem.raw >= close._mem.raw, "high was < close")
+        Condition.is_true(low._mem.raw <= close._mem.raw, "low was > close")
+        Condition.is_true(low._mem.raw <= open._mem.raw, "low was > open")
 
         self._mem = bar_new(
             bar_type._mem,
@@ -1187,7 +1187,7 @@ cdef class Bar(Data):
         uint64_t[:] ts_events,
         uint64_t[:] ts_inits,
     ):
-        Condition.true(
+        Condition.is_true(
             len(opens) == len(highs) == len(lows) == len(lows) ==
             len(closes) == len(volumes) == len(ts_events) == len(ts_inits),
             "Array lengths must be equal",
@@ -2802,10 +2802,10 @@ cdef class OrderBookDepth10(Data):
     ) -> None:
         Condition.not_empty(bids, "bids")
         Condition.not_empty(asks, "asks")
-        Condition.true(len(bids) == DEPTH10_LEN, f"`bids` length != 10, was {len(bids)}")
-        Condition.true(len(asks) == DEPTH10_LEN, f"`asks` length != 10, was {len(asks)}")
-        Condition.true(len(bid_counts) == DEPTH10_LEN, f"`bid_counts` length != 10, was {len(bid_counts)}")
-        Condition.true(len(ask_counts) == DEPTH10_LEN, f"`ask_counts` length != 10, was {len(ask_counts)}")
+        Condition.is_true(len(bids) == DEPTH10_LEN, f"`bids` length != 10, was {len(bids)}")
+        Condition.is_true(len(asks) == DEPTH10_LEN, f"`asks` length != 10, was {len(asks)}")
+        Condition.is_true(len(bid_counts) == DEPTH10_LEN, f"`bid_counts` length != 10, was {len(bid_counts)}")
+        Condition.is_true(len(ask_counts) == DEPTH10_LEN, f"`ask_counts` length != 10, was {len(ask_counts)}")
 
         # Create temporary arrays to copy data to Rust
         cdef BookOrder_t *bids_array = <BookOrder_t *>PyMem_Malloc(DEPTH10_LEN * sizeof(BookOrder_t))
@@ -3821,7 +3821,7 @@ cdef class QuoteTick(Data):
         uint64_t[:] ts_events,
         uint64_t[:] ts_inits,
     ):
-        Condition.true(len(bid_prices_raw) == len(ask_prices_raw) == len(bid_sizes_raw) == len(ask_sizes_raw)
+        Condition.is_true(len(bid_prices_raw) == len(ask_prices_raw) == len(bid_sizes_raw) == len(ask_sizes_raw)
                        == len(ts_events) == len(ts_inits), "Array lengths must be equal")
 
         cdef int count = ts_events.shape[0]
@@ -4395,7 +4395,7 @@ cdef class TradeTick(Data):
         uint64_t[:] ts_events,
         uint64_t[:] ts_inits,
     ):
-        Condition.true(len(prices_raw) == len(sizes_raw) == len(aggressor_sides) == len(trade_ids) ==
+        Condition.is_true(len(prices_raw) == len(sizes_raw) == len(aggressor_sides) == len(trade_ids) ==
                        len(ts_events) == len(ts_inits), "Array lengths must be equal")
 
         cdef int count = ts_events.shape[0]

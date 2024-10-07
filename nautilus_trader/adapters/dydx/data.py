@@ -130,6 +130,7 @@ class DYDXDataClient(LiveMarketDataClient):
         self._ws_client = DYDXWebsocketClient(
             clock=clock,
             handler=self._handle_ws_message,
+            handler_reconnect=None,
             base_url=ws_base_url,
             loop=loop,
         )
@@ -147,7 +148,6 @@ class DYDXDataClient(LiveMarketDataClient):
         self._last_quotes: dict[InstrumentId, QuoteTick] = {}
         self._orderbook_subscriptions: set[str] = set()
         self._resubscribe_orderbook_lock = asyncio.Lock()
-        self._message_id: int | None = None
 
         # Hot caches
         self._bars: dict[BarType, Bar] = {}
@@ -215,8 +215,11 @@ class DYDXDataClient(LiveMarketDataClient):
         """
         async with self._resubscribe_orderbook_lock:
             for symbol in self._orderbook_subscriptions:
-                await self._ws_client.unsubscribe_order_book(symbol)
-                await self._ws_client.subscribe_order_book(symbol)
+                await self._ws_client.unsubscribe_order_book(symbol, remove_subscription=False)
+                await self._ws_client.subscribe_order_book(
+                    symbol,
+                    bypass_subscription_validation=True,
+                )
 
     def _send_all_instruments_to_data_engine(self) -> None:
         for instrument in self._instrument_provider.get_all().values():
@@ -239,14 +242,6 @@ class DYDXDataClient(LiveMarketDataClient):
         }
         try:
             ws_message = self._decoder_ws_msg_general.decode(raw)
-
-            if self._message_id is not None and ws_message.message_id != self._message_id + 1:
-                self._log.error(
-                    f"Inconsistent message IDs. {self._message_id=} {ws_message.message_id=}",
-                )
-
-            self._message_id = ws_message.message_id
-
             key = (ws_message.channel, ws_message.type)
 
             if key in callbacks:
@@ -263,18 +258,7 @@ class DYDXDataClient(LiveMarketDataClient):
             elif ws_message.type == "connected":
                 self._log.info("Websocket connected")
             elif ws_message.type == "error":
-                if (
-                    ws_message.message
-                    == "Internal error, could not fetch data for subscription: v4_orderbook"
-                ):
-                    # This error occurs when the websocket service fails to request the initial
-                    # orderbook snapshot.
-                    self._log.warning(
-                        f"Websocket error: {ws_message.message}. Resubscribe to order books",
-                    )
-                    self.create_task(self._resubscribe_orderbooks())
-                else:
-                    self._log.error(f"Websocket error: {ws_message.message}")
+                self._log.error(f"Websocket error: {ws_message.message}")
             else:
                 self._log.error(
                     f"Unknown message `{ws_message.channel}` `{ws_message.type}`: {raw.decode()}",

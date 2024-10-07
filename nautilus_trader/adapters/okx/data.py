@@ -131,7 +131,7 @@ class OKXDataClient(LiveMarketDataClient):
                 api_key=config.api_key or get_api_key(config.is_demo),
                 api_secret=config.api_secret or get_api_secret(config.is_demo),
                 passphrase=config.passphrase or get_passphrase(config.is_demo),
-                base_url=config.get_applicable_ws_base_url(ws_base_url_type),
+                base_url=config.base_url_ws,
                 ws_base_url_type=ws_base_url_type,
                 is_demo=config.is_demo,
                 loop=loop,
@@ -148,7 +148,7 @@ class OKXDataClient(LiveMarketDataClient):
             api_key=config.api_key or get_api_key(config.is_demo),
             api_secret=config.api_secret or get_api_secret(config.is_demo),
             passphrase=config.passphrase or get_passphrase(config.is_demo),
-            base_url=config.get_applicable_ws_base_url(OKXWsBaseUrlType.PUBLIC),
+            base_url=config.base_url_ws,
             ws_base_url_type=OKXWsBaseUrlType.PUBLIC,
             is_demo=config.is_demo,
             loop=loop,
@@ -331,7 +331,10 @@ class OKXDataClient(LiveMarketDataClient):
         await ws_client.subscribe_trades(okx_symbol.raw_symbol)
 
     async def _subscribe_bars(self, bar_type: BarType) -> None:
-        PyCondition.true(bar_type.is_externally_aggregated(), "aggregation_source is not EXTERNAL")
+        PyCondition.is_true(
+            bar_type.is_externally_aggregated(),
+            "aggregation_source is not EXTERNAL",
+        )
         self._log.error("OKX bar subscriptions are not yet implemented")
 
     async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:

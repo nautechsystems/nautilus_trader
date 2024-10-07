@@ -23,6 +23,17 @@ def init_databento_client():
 
 
 def data_path(*folders, base_path=None):
+    """
+    Get the path to a data folder, creating it if it doesn't exist.
+
+    Args:
+        *folders (str): The folders to include in the path.
+        base_path (pathlib.Path, optional): The base path to use, defaults to `DATA_PATH`.
+
+    Returns:
+        pathlib.Path: The full path to the data folder.
+
+    """
     used_base_path = base_path if base_path is not None else DATA_PATH
     result = used_base_path
 
@@ -48,10 +59,35 @@ def databento_definition_dates(start_time):
     return definition_date, used_end_date
 
 
-def databento_cost(symbols, start_time, end_time, schema, dataset="GLBX.MDP3", **kwargs):
+def databento_cost(symbols, start_time, end_time, schema, dataset="GLBX.MDP3", **kwargs) -> float:
+    """
+    Calculate the cost of retrieving data from the Databento API for the given
+    parameters.
+
+    Parameters
+    ----------
+    symbols : list of str
+        The symbols to retrieve data for.
+    start_time : str
+        The start time of the data in ISO 8601 format.
+    end_time : str
+        The end time of the data in ISO 8601 format.
+    schema : str
+        The data schema to retrieve.
+    dataset : str, optional
+        The Databento dataset to use, defaults to "GLBX.MDP3".
+    **kwargs
+        Additional keyword arguments to pass to the Databento API.
+
+    Returns
+    -------
+    float
+        The estimated cost of retrieving the data.
+
+    """
     definition_start_date, definition_end_date = databento_definition_dates(start_time)
 
-    return client.metadata.get_cost(
+    return client.metadata.get_cost(  # type: ignore[union-attr]
         dataset=dataset,
         symbols=symbols,
         schema=schema,
@@ -71,10 +107,47 @@ def databento_data(
     dataset="GLBX.MDP3",
     to_catalog=True,
     base_path=None,
+    write_data_mode="overwrite",
     **kwargs,
 ):
     """
-    If schema is equal to definition then no data is downloaded or saved to the catalog.
+    Download and save Databento data and definition files, and optionally save the data
+    to a catalog.
+
+    Parameters
+    ----------
+    symbols : list of str
+        The symbols to retrieve data for.
+    start_time : str
+        The start time of the data in ISO 8601 format.
+    end_time : str
+        The end time of the data in ISO 8601 format.
+    schema : str
+        The data schema to retrieve, either "definition" or another valid schema.
+    file_prefix : str
+        The prefix to use for the downloaded data files.
+    *folders : str
+        Additional folders to create in the data path.
+    dataset : str, optional
+        The Databento dataset to use, defaults to "GLBX.MDP3".
+    to_catalog : bool, optional
+        Whether to save the data to a catalog, defaults to True.
+    base_path : str, optional
+        The base path to use for the data folder, defaults to None.
+    write_data_mode : str, optional
+        Whether to "append", "prepend" or "overwrite" data to an existing catalog, defaults to "overwrite".
+    **kwargs
+        Additional keyword arguments to pass to the Databento API.
+
+    Returns
+    -------
+    dict
+        A dictionary containing the downloaded data and metadata.
+
+    Notes
+    -----
+    If schema is equal to 'definition' then no data is downloaded or saved to the catalog.
+
     """
     used_path = create_data_folder(*folders, "databento", base_path=base_path)
 
@@ -138,13 +211,20 @@ def databento_data(
             data_file,
             *folders,
             base_path=base_path,
+            write_data_mode=write_data_mode,
         )
         result.update(catalog_data)
 
     return result
 
 
-def save_data_to_catalog(definition_file, data_file, *folders, base_path=None):
+def save_data_to_catalog(
+    definition_file,
+    data_file,
+    *folders,
+    base_path=None,
+    write_data_mode="overwrite",
+):
     catalog = load_catalog(*folders, base_path=base_path)
 
     loader = DatabentoDataLoader()
@@ -152,7 +232,7 @@ def save_data_to_catalog(definition_file, data_file, *folders, base_path=None):
     nautilus_data = loader.from_dbn_file(data_file, as_legacy_cython=False)
 
     catalog.write_data(nautilus_definition)
-    catalog.write_data(nautilus_data)
+    catalog.write_data(nautilus_data, mode=write_data_mode)
 
     return {
         "catalog": catalog,
@@ -162,6 +242,17 @@ def save_data_to_catalog(definition_file, data_file, *folders, base_path=None):
 
 
 def load_catalog(*folders, base_path=None):
+    """
+    Load a ParquetDataCatalog from the specified folders and base path.
+
+    Args:
+        *folders (str): The folders to create the data path from.
+        base_path (str, optional): The base path to use for the data folder, defaults to None.
+
+    Returns:
+        ParquetDataCatalog: The loaded ParquetDataCatalog.
+
+    """
     catalog_path = create_data_folder(*folders, base_path=base_path)
 
     return ParquetDataCatalog(catalog_path)

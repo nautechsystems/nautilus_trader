@@ -55,6 +55,9 @@ class PolymarketEventType(Enum):
 
 @unique
 class PolymarketOrderStatus(Enum):
+    # Order was invalid
+    INVALID = "INVALID"
+
     # Order placed and live
     LIVE = "LIVE"
 

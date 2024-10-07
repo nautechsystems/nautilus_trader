@@ -91,7 +91,8 @@ def parse_instrument(
     description = market_info["question"]
     price_increment = Price.from_str(str(market_info["minimum_tick_size"]))
     min_quantity = Quantity.from_int(market_info["minimum_order_size"])
-    size_increment = Quantity.from_str("0.01")  # TBD?
+    # size_increment can be 0.01 or 0.001 (precision 2 or 3). Need to determine a reliable solution
+    size_increment = Quantity.from_str("0.001")
     end_date_iso = market_info["end_date_iso"]
 
     if end_date_iso:

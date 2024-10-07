@@ -686,21 +686,6 @@ cdef extern from "../includes/model.h":
         TradeTick_t trade;
         Bar_t bar;
 
-    cdef struct BlackScholesGreeksResult:
-        double price;
-        double delta;
-        double gamma;
-        double vega;
-        double theta;
-
-    cdef struct ImplyVolAndGreeksResult:
-        double vol;
-        double price;
-        double delta;
-        double gamma;
-        double vega;
-        double theta;
-
     # Represents a valid trader ID.
     cdef struct TraderId_t:
         char* _0;
@@ -1040,32 +1025,6 @@ cdef extern from "../includes/model.h":
     const uint32_t *orderbook_depth10_bid_counts_array(const OrderBookDepth10_t *depth);
 
     const uint32_t *orderbook_depth10_ask_counts_array(const OrderBookDepth10_t *depth);
-
-    BlackScholesGreeksResult greeks_black_scholes_greeks(double s,
-                                                         double r,
-                                                         double b,
-                                                         double sigma,
-                                                         uint8_t is_call,
-                                                         double k,
-                                                         double t,
-                                                         double multiplier);
-
-    double greeks_imply_vol(double s,
-                            double r,
-                            double b,
-                            uint8_t is_call,
-                            double k,
-                            double t,
-                            double price);
-
-    ImplyVolAndGreeksResult greeks_imply_vol_and_greeks(double s,
-                                                        double r,
-                                                        double b,
-                                                        uint8_t is_call,
-                                                        double k,
-                                                        double t,
-                                                        double price,
-                                                        double multiplier);
 
     BookOrder_t book_order_from_raw(OrderSide order_side,
                                     int64_t price_raw,

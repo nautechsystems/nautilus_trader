@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-import datetime
+import datetime as dt
 import itertools
 import os
 import platform
@@ -8,10 +8,10 @@ import shutil
 import subprocess
 import sys
 import sysconfig
+import tomllib
 from pathlib import Path
 
 import numpy as np
-import toml
 from Cython.Build import build_ext
 from Cython.Build import cythonize
 from Cython.Compiler import Options
@@ -351,7 +351,9 @@ def build() -> None:
 
 
 if __name__ == "__main__":
-    nautilus_trader_version = toml.load("pyproject.toml")["tool"]["poetry"]["version"]
+    with open("pyproject.toml", "rb") as f:
+        pyproject_data = tomllib.load(f)
+    nautilus_trader_version = pyproject_data["tool"]["poetry"]["version"]
     print("\033[36m")
     print("=====================================================================")
     print(f"Nautilus Builder {nautilus_trader_version}")
@@ -375,7 +377,7 @@ if __name__ == "__main__":
     print(f"LDFLAGS={os.environ['LDFLAGS']}") if "LDFLAGS" in os.environ else None
 
     print("\nStarting build...")
-    ts_start = datetime.datetime.now(datetime.timezone.utc)
+    ts_start = dt.datetime.now(dt.UTC)
     build()
-    print(f"Build time: {datetime.datetime.now(datetime.timezone.utc) - ts_start}")
+    print(f"Build time: {dt.datetime.now(dt.UTC) - ts_start}")
     print("\033[32m" + "Build completed" + "\033[0m")

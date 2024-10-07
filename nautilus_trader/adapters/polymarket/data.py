@@ -419,13 +419,9 @@ class PolymarketDataClient(LiveMarketDataClient):
             quote_price = instrument.make_price(float(ws_message.price))
             if ws_message.side == PolymarketOrderSide.BUY:
                 if quote_price < last_quote.bid_price:
-                    # Uncomment for development
-                    # self._log.debug(f"NOT TOB BUY: {quote_price=} {last_quote=}")
                     return  # No top-of-book change
             else:  # SELL
                 if quote_price > last_quote.ask_price:
-                    # Uncomment for development
-                    # self._log.debug(f"NOT TOB SELL: {quote_price=} {last_quote=}")
                     return  # No top-of-book change
 
             quote = ws_message.parse_to_quote_tick(
@@ -439,8 +435,6 @@ class PolymarketDataClient(LiveMarketDataClient):
                 and quote.bid_size == last_quote.bid_size
                 and quote.ask_size == last_quote.ask_size
             ):
-                # Uncomment for development
-                # self._log.info(f"NO TOB CHANGE: {quote=} {last_quote=}", LogColor.MAGENTA)
                 return  # No top-of-book change
 
             self._last_quotes[instrument.id] = quote

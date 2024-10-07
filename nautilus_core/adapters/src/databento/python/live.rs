@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{fs, i128, str::FromStr};
+use std::{fs, i128, path::PathBuf, str::FromStr};
 
 use databento::{dbn, live::Subscription};
 use indexmap::IndexMap;
@@ -123,8 +123,8 @@ fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) -> PyResult<()
 #[pymethods]
 impl DatabentoLiveClient {
     #[new]
-    pub fn py_new(key: String, dataset: String, publishers_path: String) -> PyResult<Self> {
-        let publishers_json = fs::read_to_string(publishers_path)?;
+    pub fn py_new(key: String, dataset: String, publishers_filepath: PathBuf) -> PyResult<Self> {
+        let publishers_json = fs::read_to_string(publishers_filepath)?;
         let publishers_vec: Vec<DatabentoPublisher> =
             serde_json::from_str(&publishers_json).map_err(to_pyvalue_err)?;
         let publisher_venue_map = publishers_vec

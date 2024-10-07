@@ -204,27 +204,22 @@ cdef class BettingInstrument(Instrument):
         return Money(quantity.as_f64_c() * float(self.multiplier), self.quote_currency)
 
 
-def make_symbol(
-    market_id: str,
-    selection_id: int,
-    selection_handicap: float,
-) -> Symbol:
+cpdef Symbol make_symbol(
+    str market_id,
+    int selection_id,
+    float selection_handicap,
+):
     """
     Make symbol.
 
     >>> make_symbol(market_id="1.201070830", selection_id=123456, selection_handicap=null_handicap())
-    Symbol('1.201070830-123456-None')
+    Symbol('1-201070830-123456-None')
 
     """
-
-    def _clean(s):
-        return str(s).replace(" ", "").replace(":", "")
-
+    market_id = market_id.replace(".", "-")
     handicap = selection_handicap if selection_handicap != null_handicap() else None
 
-    value: str = "-".join(
-        [_clean(k) for k in (market_id, selection_id, handicap)],
-    )
+    cdef str value = f"{market_id}-{selection_id}-{handicap}".replace(" ", "").replace(":", "")
     assert len(value) <= 32, f"Symbol too long ({len(value)}): '{value}'"
     return Symbol(value)
 

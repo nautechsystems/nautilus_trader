@@ -15,12 +15,9 @@
 
 //! Functions related to normalizing and processing top-of-book events.
 
-use nautilus_core::nanos::UnixNanos;
-
-use super::{book::OrderBook, error::InvalidBookOperation};
 use crate::{
-    data::{order::BookOrder, quote::QuoteTick, trade::TradeTick},
-    enums::{BookType, OrderSide, RecordFlag},
+    data::order::BookOrder,
+    enums::{BookType, RecordFlag},
 };
 
 pub(crate) fn pre_process_order(book_type: BookType, mut order: BookOrder, flags: u8) -> BookOrder {
@@ -37,78 +34,4 @@ pub(crate) fn pre_process_order(book_type: BookType, mut order: BookOrder, flags
         }
     };
     order
-}
-
-pub(crate) fn update_book_with_quote_tick(
-    book: &mut OrderBook,
-    quote: &QuoteTick,
-) -> Result<(), InvalidBookOperation> {
-    if book.book_type != BookType::L1_MBP {
-        return Err(InvalidBookOperation::Update(book.book_type));
-    };
-
-    let bid = BookOrder::new(
-        OrderSide::Buy,
-        quote.bid_price,
-        quote.bid_size,
-        OrderSide::Buy as u64,
-    );
-
-    let ask = BookOrder::new(
-        OrderSide::Sell,
-        quote.ask_price,
-        quote.ask_size,
-        OrderSide::Sell as u64,
-    );
-
-    update_book_bid(book, bid, quote.ts_event);
-    update_book_ask(book, ask, quote.ts_event);
-
-    Ok(())
-}
-
-pub(crate) fn update_book_with_trade_tick(
-    book: &mut OrderBook,
-    trade: &TradeTick,
-) -> Result<(), InvalidBookOperation> {
-    if book.book_type != BookType::L1_MBP {
-        return Err(InvalidBookOperation::Update(book.book_type));
-    };
-
-    let bid = BookOrder::new(
-        OrderSide::Buy,
-        trade.price,
-        trade.size,
-        OrderSide::Buy as u64,
-    );
-
-    let ask = BookOrder::new(
-        OrderSide::Sell,
-        trade.price,
-        trade.size,
-        OrderSide::Sell as u64,
-    );
-
-    update_book_bid(book, bid, trade.ts_event);
-    update_book_ask(book, ask, trade.ts_event);
-
-    Ok(())
-}
-
-fn update_book_ask(book: &mut OrderBook, order: BookOrder, ts_event: UnixNanos) {
-    if let Some(top_asks) = book.asks.top() {
-        if let Some(top_ask) = top_asks.first() {
-            book.asks.remove(top_ask.order_id, 0, ts_event);
-        }
-    }
-    book.asks.add(order);
-}
-
-fn update_book_bid(book: &mut OrderBook, order: BookOrder, ts_event: UnixNanos) {
-    if let Some(top_bids) = book.bids.top() {
-        if let Some(top_bid) = top_bids.first() {
-            book.bids.remove(top_bid.order_id, 0, ts_event);
-        }
-    }
-    book.bids.add(order);
 }

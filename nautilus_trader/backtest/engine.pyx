@@ -392,7 +392,7 @@ cdef class BacktestEngine:
             The order management system type for the exchange. If ``HEDGING`` will
             generate new position IDs.
         account_type : AccountType
-            The account type for the client.
+            The account type for the exchange.
         starting_balances : list[Money]
             The starting account balances (specify one for a single asset account).
         base_currency : Currency, optional
@@ -410,7 +410,7 @@ cdef class BacktestEngine:
         latency_model : LatencyModel, optional
             The latency model for the exchange.
         book_type : BookType, default ``BookType.L1_MBP``
-            The default order book type for fill modelling.
+            The default order book type.
         routing : bool, default False
             If multi-venue routing should be enabled for the execution client.
         frozen_account : bool, default False
@@ -423,7 +423,7 @@ cdef class BacktestEngine:
             If orders with GTD time in force will be supported by the venue.
         support_contingent_orders : bool, default True
             If contingent orders will be supported/respected by the venue.
-            If False then its expected the strategy will be managing any contingent orders.
+            If False then it's expected the strategy will be managing any contingent orders.
         use_position_ids : bool, default True
             If venue position IDs will be generated on order fills.
         use_random_ids : bool, default False
@@ -630,7 +630,7 @@ cdef class BacktestEngine:
             first = data[0]
 
             if hasattr(first, "instrument_id"):
-                Condition.true(
+                Condition.is_true(
                     first.instrument_id in self.kernel.cache.instrument_ids(),
                     f"`Instrument` {first.instrument_id} for the given data not found in the cache. "
                     "Add the instrument through `add_instrument()` prior to adding related data.",
@@ -639,7 +639,7 @@ cdef class BacktestEngine:
                 self._add_market_data_client_if_not_exists(first.instrument_id.venue)
                 data_added_str = f"{first.instrument_id} {type(first).__name__}"
             elif isinstance(first, Bar):
-                Condition.true(
+                Condition.is_true(
                     first.bar_type.instrument_id in self.kernel.cache.instrument_ids(),
                     f"`Instrument` {first.bar_type.instrument_id} for the given data not found in the cache. "
                     "Add the instrument through `add_instrument()` prior to adding related data.",
@@ -1019,7 +1019,7 @@ cdef class BacktestEngine:
         else:
             end = pd.to_datetime(end, utc=True)
             end_ns = end.value
-        Condition.true(start_ns < end_ns, "start was >= end")
+        Condition.is_true(start_ns < end_ns, "start was >= end")
         Condition.not_empty(self._data, "data")
 
         # Set clocks
