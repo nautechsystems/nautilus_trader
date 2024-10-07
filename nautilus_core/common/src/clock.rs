@@ -33,6 +33,7 @@ use crate::timer::{LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEvent
 /// Represents a type of clock.
 ///
 /// # Notes
+///
 /// An active timer is one which has not expired (`timer.is_expired == False`).
 pub trait Clock {
     /// Returns the current date and time as a timezone-aware `DateTime<UTC>`.
@@ -83,7 +84,7 @@ pub trait Clock {
         callback: Option<TimeEventCallback>,
     );
 
-    /// Returns the time interval in which the timer `name` is triggered
+    /// Returns the time interval in which the timer `name` is triggered.
     ///
     /// If the timer doesn't exist 0 is returned.
     fn next_time_ns(&self, name: &str) -> UnixNanos;
