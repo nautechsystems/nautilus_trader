@@ -626,24 +626,22 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
 
     fn add(&mut self, key: String, value: Bytes) -> anyhow::Result<()> {
         let query = DatabaseQuery::Add(key, value.into());
-        self.tx.send(query).map_err(|err| {
-            anyhow::anyhow!("Failed to send query to database message handler: {err}")
-        })
+        self.tx
+            .send(query)
+            .map_err(|e| anyhow::anyhow!("Failed to send query to database message handler: {e}"))
     }
 
     fn add_currency(&mut self, currency: &Currency) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddCurrency(*currency);
-        self.tx.send(query).map_err(|err| {
-            anyhow::anyhow!("Failed to query add_currency to database message handler: {err}")
+        self.tx.send(query).map_err(|e| {
+            anyhow::anyhow!("Failed to query add_currency to database message handler: {e}")
         })
     }
 
     fn add_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddInstrument(instrument.clone());
-        self.tx.send(query).map_err(|err| {
-            anyhow::anyhow!(
-                "Failed to send query add_instrument to database message handler: {err}"
-            )
+        self.tx.send(query).map_err(|e| {
+            anyhow::anyhow!("Failed to send query add_instrument to database message handler: {e}")
         })
     }
 
@@ -653,15 +651,15 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
 
     fn add_account(&mut self, account: &AccountAny) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddAccount(account.clone(), false);
-        self.tx.send(query).map_err(|err| {
-            anyhow::anyhow!("Failed to send query add_account to database message handler: {err}")
+        self.tx.send(query).map_err(|e| {
+            anyhow::anyhow!("Failed to send query add_account to database message handler: {e}")
         })
     }
 
     fn add_order(&mut self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddOrder(order.clone(), client_id, false);
-        self.tx.send(query).map_err(|err| {
-            anyhow::anyhow!("Failed to send query add_order to database message handler: {err}")
+        self.tx.send(query).map_err(|e| {
+            anyhow::anyhow!("Failed to send query add_order to database message handler: {e}")
         })
     }
 
@@ -675,8 +673,8 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
 
     fn add_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddQuote(quote.to_owned());
-        self.tx.send(query).map_err(|err| {
-            anyhow::anyhow!("Failed to send query add_quote to database message handler: {err}")
+        self.tx.send(query).map_err(|e| {
+            anyhow::anyhow!("Failed to send query add_quote to database message handler: {e}")
         })
     }
 
