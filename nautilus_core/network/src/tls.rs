@@ -15,8 +15,12 @@
 
 //! Module for wrapping raw socket streams with TLS encryption.
 
-use rustls;
+use std::sync::Arc;
+
+use rustls::{self, pki_types::TrustAnchor, ClientConfig, RootCertStore};
+use rustls_native_certs::load_native_certs;
 use tokio::io::{AsyncRead, AsyncWrite};
+use tokio_rustls::TlsConnector;
 use tokio_tungstenite::{
     tungstenite::{
         client::IntoClientRequest,
@@ -47,6 +51,7 @@ mod encryption {
 
         pub use rustls::ClientConfig;
         use rustls::{pki_types::ServerName, RootCertStore};
+        use rustls_native_certs::load_native_certs;
         use tokio::io::{AsyncRead, AsyncWrite};
         use tokio_rustls::TlsConnector as TokioTlsConnector;
         use tokio_tungstenite::{
@@ -69,8 +74,13 @@ mod encryption {
                     let config = match tls_connector {
                         Some(config) => config,
                         None => {
-                            #[allow(unused_mut)]
+                            tracing::info!("Loading native certificates");
                             let mut root_store = RootCertStore::empty();
+                            let cert_result = load_native_certs();
+                            for e in cert_result.errors {
+                                tracing::error!("Error loading certificates: {e}");
+                            }
+                            root_store.add_parsable_certificates(cert_result.certs);
 
                             Arc::new(
                                 ClientConfig::builder()

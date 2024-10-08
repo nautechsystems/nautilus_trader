@@ -26,7 +26,8 @@ futures-util = "0.3.30"
 http = "1.1.0"
 hyper = "1.4.1"
 nonzero_ext = "0.3.0"
-rustls = "0.23.13"
+rustls = { version = "0.23.14", features = ["ring"] }
+rustls-native-certs = "0.8.0"
 tokio-rustls = "0.26.0"
 tokio-tungstenite = { version = "0.24.0", features = ["rustls-tls-native-roots"] }
 tungstenite = "0.24.0"
