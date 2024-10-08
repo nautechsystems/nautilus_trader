@@ -132,6 +132,7 @@ cdef class BacktestEngine:
 
         # Venues and data
         self._venues: dict[Venue, SimulatedExchange] = {}
+        self._has_data: set[InstrumentId] = set()
         self._has_book_data: set[InstrumentId] = set()
         self._data: list[Data] = []
         self._data_len: uint64_t = 0
@@ -667,6 +668,11 @@ cdef class BacktestEngine:
         if sort:
             self._data = sorted(self._data, key=lambda x: x.ts_init)
 
+        if hasattr(first, "instrument_id"):
+            self._has_data.add(first.instrument_id)
+        elif isinstance(first, Bar):
+            self._has_data.add(first.bar_type.instrument_id)
+
         if type(first) in BOOK_DATA_TYPES:
             self._has_book_data.add(first.instrument_id)
 
@@ -850,6 +856,7 @@ cdef class BacktestEngine:
         Does not clear added instruments.
 
         """
+        self._has_data.clear()
         self._has_book_data.clear()
         self._data.clear()
         self._data_len = 0
@@ -1013,13 +1020,18 @@ cdef class BacktestEngine:
         cdef:
             SimulatedExchange exchange
             InstrumentId instrument_id
+            bint has_data
+            bint missing_book_data
+            bint book_type_has_depth
         for exchange in self._venues.values():
             for instrument_id in exchange.instruments:
-                if exchange.book_type > BookType.L1_MBP and instrument_id not in self._has_book_data:
+                has_data = instrument_id in self._has_data
+                missing_book_data = instrument_id not in self._has_book_data
+                book_type_has_depth = exchange.book_type > BookType.L1_MBP
+                if book_type_has_depth and has_data and missing_book_data:
                     raise InvalidConfiguration(
                         f"No order book data found for instrument '{instrument_id }' when `book_type` is '{book_type_to_str(exchange.book_type)}'. "
-                        "Either set the venue `book_type` to 'L1_MBP' (for top-of-book data like quotes, trades, and bars) or ensure that order book data is provided for this instrument. "
-                        f"If order book data has been added for instrument '{instrument_id}', consider increasing the `chunk_size` for streaming."
+                        "Set the venue `book_type` to 'L1_MBP' (for top-of-book data like quotes, trades, and bars) or provide order book data for this instrument."
                     )
 
         cdef uint64_t start_ns
