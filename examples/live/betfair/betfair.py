@@ -25,8 +25,6 @@ from nautilus_trader.adapters.betfair.factories import BetfairLiveExecClientFact
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_client
 from nautilus_trader.adapters.betfair.factories import get_cached_betfair_instrument_provider
 from nautilus_trader.adapters.betfair.providers import BetfairInstrumentProviderConfig
-from nautilus_trader.common.component import init_logging
-from nautilus_trader.common.component import log_level_from_str
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.examples.strategies.orderbook_imbalance import OrderBookImbalance
@@ -42,8 +40,11 @@ async def main(
     instrument_config: BetfairInstrumentProviderConfig,
     log_level: str = "INFO",
 ) -> TradingNode:
+    # from nautilus_trader.common.component import init_logging
+    # from nautilus_trader.common.component import log_level_from_str
     # Connect to Betfair client early to load instruments and account currency
-    init_logging(level_stdout=log_level_from_str(log_level))
+    # Keep a reference to the log guard to prevent it from being immediately garbage collected
+    # _ = init_logging(level_stdout=log_level_from_str(log_level), print_config=True)
     client = get_cached_betfair_client(
         username=None,  # Pass here or will source from the `BETFAIR_USERNAME` env var
         password=None,  # Pass here or will source from the `BETFAIR_PASSWORD` env var
@@ -58,7 +59,7 @@ async def main(
     )
     await provider.load_all_async()
     instruments = provider.list_all()
-    print(f"Found instruments:\n{[ins.id for ins in instruments]}")
+    print(f"Found instruments:\n{[inst.id for inst in instruments]}")
 
     # Determine account currency - used in execution client
     account = await client.get_account_details()
@@ -68,7 +69,7 @@ async def main(
         timeout_connection=30.0,
         timeout_disconnection=30.0,
         timeout_post_stop=30.0,
-        logging=LoggingConfig(log_level=log_level),
+        logging=LoggingConfig(log_level=log_level, use_pyo3=True),
         data_clients={
             "BETFAIR": BetfairDataClientConfig(
                 account_currency=account.currency_code,
@@ -132,5 +133,5 @@ if __name__ == "__main__":
         account_currency="GBP",
         market_ids=["1.176878927"],
     )
-    node = asyncio.run(main(instrument_config=config, log_level="DEBUG"))
+    node = asyncio.run(main(instrument_config=config, log_level="INFO"))
     node.dispose()
