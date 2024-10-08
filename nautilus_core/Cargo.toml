@@ -30,7 +30,7 @@ documentation = "https://nautilustrader.io/docs"
 anyhow = "1.0.89"
 bytes = { version = "1.7.2", features = ["serde"] }
 chrono = "0.4.38"
-derive_builder = "0.20.1"
+derive_builder = "0.20.2"
 futures = "0.3.31"
 hex = "0.4.3"
 indexmap = { version = "2.6.0", features = ["serde"] }
