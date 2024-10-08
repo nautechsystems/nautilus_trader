@@ -13,7 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-
 from nautilus_trader.adapters.betfair.constants import BETFAIR_VENUE
 from nautilus_trader.adapters.betfair.parsing.core import BetfairParser
 from nautilus_trader.backtest.engine import BacktestEngine
@@ -50,7 +49,7 @@ def test_betfair_backtest():
         account_type=AccountType.CASH,  # Spot CASH account (not for perpetuals or futures)
         base_currency=GBP,  # Multi-currency account
         starting_balances=[Money(100_000, GBP)],
-        book_type=BookType.L2_MBP,
+        book_type=BookType.L1_MBP,
     )
 
     # Add instruments
@@ -95,6 +94,6 @@ def test_betfair_backtest():
     account = engine.trader.generate_account_report(BETFAIR_VENUE)
     fills = engine.trader.generate_order_fills_report()
     positions = engine.trader.generate_positions_report()
-    assert account.iloc[-1]["total"] == "49039.65"
-    assert len(fills) == 2708
+    assert account.iloc[-1]["total"] == "1630955.72"
+    assert len(fills) == 1223
     assert len(positions) == 2
