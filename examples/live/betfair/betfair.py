@@ -73,10 +73,10 @@ async def main(
             "BETFAIR": BetfairDataClientConfig(
                 account_currency=account.currency_code,
                 instrument_config=instrument_config,
-                # username="YOUR_BETFAIR_USERNAME",
-                # password="YOUR_BETFAIR_PASSWORD",
-                # app_key="YOUR_BETFAIR_APP_KEY",
-                # cert_dir="YOUR_BETFAIR_CERT_DIR",
+                # username=None, # 'BETFAIR_USERNAME' env var
+                # password=None, # 'BETFAIR_PASSWORD' env var
+                # app_key=None, # 'BETFAIR_APP_KEY' env var
+                # cert_dir=None, # 'BETFAIR_CERT_DIR' env var
             ),
         },
         exec_clients={
@@ -84,10 +84,10 @@ async def main(
             "BETFAIR": BetfairExecClientConfig(
                 account_currency=account.currency_code,
                 instrument_config=instrument_config,
-                # "username": "YOUR_BETFAIR_USERNAME",
-                # "password": "YOUR_BETFAIR_PASSWORD",
-                # "app_key": "YOUR_BETFAIR_APP_KEY",
-                # "cert_dir": "YOUR_BETFAIR_CERT_DIR",
+                # username=None, # 'BETFAIR_USERNAME' env var
+                # password=None, # 'BETFAIR_PASSWORD' env var
+                # app_key=None, # 'BETFAIR_APP_KEY' env var
+                # cert_dir=None, # 'BETFAIR_CERT_DIR' env var
             ),
         },
     )
