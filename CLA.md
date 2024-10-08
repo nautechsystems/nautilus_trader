@@ -1,6 +1,6 @@
 # CONTRIBUTOR LICENSE Agreement
 
-1. This contributor license agreement (**Agreement**) is between Nautech Systems Pty Ltd (ACN 609 589 237 (**We**, **Us**, **Our**) and the individual contributing to Our open source Software (**You**, **Your**).
+1. This contributor license agreement (**Agreement**) is between Nautech Systems Pty Ltd (ACN 609 589 237) (**We**, **Us**, **Our**) and the individual contributing to Our open source Software (**You**, **Your**).
 2. By submitting a Contribution to Our Software, You accept and agree to be bound by this Agreement.
 
 ## Grant of Licence
