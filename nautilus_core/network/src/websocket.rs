@@ -82,9 +82,12 @@ impl WebSocketClientInner {
     /// Create an inner websocket client.
     pub async fn connect_url(config: WebSocketConfig) -> Result<Self, Error> {
         if CryptoProvider::get_default().is_none() {
-            aws_lc_rs::default_provider()
-                .install_default()
-                .expect("Error installing crypto provider");
+            tracing::debug!("Installing `aws_lc_rs` cryptographic provider");
+            // An error can occur on install if there is a race condition with another component
+            match aws_lc_rs::default_provider().install_default() {
+                Ok(_) => tracing::debug!("Cryptographic provider installed successfully"),
+                Err(e) => tracing::debug!("Error installing cryptographic provider: {e:?}"),
+            }
         }
 
         let WebSocketConfig {

@@ -2959,6 +2959,7 @@ dependencies = [
  "reqwest",
  "rstest",
  "rustls",
+ "rustls-native-certs 0.8.0",
  "serde_json",
  "thiserror",
  "tokio",
