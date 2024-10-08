@@ -1,28 +1,27 @@
 # Data
 
-The NautilusTrader platform defines a range of built-in data types crafted specifically to represent 
-a trading domain:
+The NautilusTrader platform provides a set of built-in data types specifically designed to represent a trading domain. These data types include:
 
-- `OrderBookDelta` (L1/L2/L3): Most granular order book updates
-- `OrderBookDeltas` (L1/L2/L3): Batches multiple order book deltas
-- `OrderBookDepth10`: Aggregated order book snapshot (10 levels per side)
-- `QuoteTick`: Top-of-book best bid and ask prices and sizes
-- `TradeTick`: A single trade/match event between counterparties
-- `Bar`: OHLCV bar data, aggregated using a specific *aggregation method*
-- `Instrument`: General base class for a tradable instrument
-- `InstrumentStatus`: An instrument level status event
-- `InstrumentClose`: An instrument closing price
+- `OrderBookDelta` (L1/L2/L3): Represents the most granular order book updates.
+- `OrderBookDeltas` (L1/L2/L3): Batches multiple order book deltas for more efficient processing.
+- `OrderBookDepth10`: Aggregated order book snapshot (10 levels per bid and ask side).
+- `QuoteTick`: Represents the best bid and ask prices along with their sizes at the top-of-book.
+- `TradeTick`: A single trade/match event between counterparties.
+- `Bar`: OHLCV (Open, High, Low, Close, Volume) bar data, aggregated using a specified *aggregation method*.
+- `Instrument`: A common instrument definition.
+- `InstrumentStatus`: An instrument level status event.
+- `InstrumentClose`: An instrument closing price.
 
-Each of these data types inherits from `Data`, which defines two fields:
-- `ts_event`: UNIX timestamp (nanoseconds) when the data event occurred
-- `ts_init`: UNIX timestamp (nanoseconds) when the object was initialized
+Each of these data types defines two fields that are critical for accurate data handling:
+- `ts_event`: UNIX timestamp (nanoseconds) representing when the data event occurred.
+- `ts_init`: UNIX timestamp (nanoseconds) marking when the object was initialized.
 
-This inheritance ensures chronological data ordering (vital for backtesting), while also enhancing analytics.
+These timestamps ensure proper data ordering, which is crucial for backtesting and enhances analytics.
 
-Consistency is key; data flows through the platform in exactly the same way for all system [environment contexts](/concepts/architecture.md#environment-contexts) (`backtest`, `sandbox`, `live`)
-primarily through the `MessageBus` to the `DataEngine` and onto subscribed or registered handlers.
+The platform ensures consistency by flowing data through the same pathways across all system [environment contexts](/concepts/architecture.md#environment-contexts)
+(e.g., `backtest`, `sandbox`, `live`). Data is primarily transported via the `MessageBus` to the `DataEngine` and then distributed to subscribed or registered handlers.
 
-For those seeking customization, the platform supports user-defined data types. Refer to the advanced [Custom data guide](advanced/custom_data.md) for further details.
+For users who need more flexibility, the platform also supports the creation of custom data types. For details on how to implement user-defined data types, refer to the advanced [Custom data guide](advanced/custom_data.md).
 
 ## Loading data
 
