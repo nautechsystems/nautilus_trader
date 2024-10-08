@@ -190,7 +190,7 @@ class BetfairTestStubs:
     @staticmethod
     def betfair_venue_config(
         name: str = "BETFAIR",
-        book_type: str = "L2_MBP",
+        book_type: str = "L1_MBP",
     ) -> BacktestVenueConfig:
         return BacktestVenueConfig(
             name=name,
@@ -216,7 +216,7 @@ class BetfairTestStubs:
         )
 
     @staticmethod
-    def betfair_backtest_run_config(
+    def backtest_run_config(
         catalog_path: str,
         instrument_id: InstrumentId,
         catalog_fs_protocol: str = "memory",
@@ -227,6 +227,7 @@ class BetfairTestStubs:
         bypass_logging: bool = True,
         log_level: str = "WARNING",
         venue_name: str = "BETFAIR",
+        book_type: str = "L2_MBP",
     ) -> BacktestRunConfig:
         engine_config = BacktestEngineConfig(
             logging=LoggingConfig(
@@ -260,7 +261,7 @@ class BetfairTestStubs:
         )
         run_config = BacktestRunConfig(
             engine=engine_config,
-            venues=[BetfairTestStubs.betfair_venue_config(name=venue_name)],
+            venues=[BetfairTestStubs.betfair_venue_config(name=venue_name, book_type=book_type)],
             data=[
                 BacktestDataConfig(
                     data_cls=TradeTick.fully_qualified_name(),

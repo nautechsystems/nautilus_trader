@@ -48,6 +48,7 @@ from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import AggregationSource
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookAction
+from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import MarketStatusAction
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
@@ -235,7 +236,34 @@ class TestBacktestEngine:
         # Assert
         assert all(f.closed for f in engine.kernel.writer._files.values())
 
-    def test_backtest_engine_multiple_runs(self):
+    def test_run_with_venue_config_raises_invalid_config(
+        self,
+        config: BacktestEngineConfig | None = None,
+    ) -> BacktestEngine:
+        engine = BacktestEngine(config)
+        engine.add_venue(
+            venue=Venue("SIM"),
+            oms_type=OmsType.HEDGING,
+            book_type=BookType.L2_MBP,  # <-- Invalid for data
+            account_type=AccountType.MARGIN,
+            base_currency=USD,
+            starting_balances=[Money(1_000_000, USD)],
+            fill_model=FillModel(),
+        )
+
+        # Set up data
+        wrangler = QuoteTickDataWrangler(self.usdjpy)
+        provider = TestDataProvider()
+        ticks = wrangler.process_bar_data(
+            bid_data=provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv")[:2000],
+            ask_data=provider.read_csv_bars("fxcm/usdjpy-m1-ask-2013.csv")[:2000],
+        )
+        engine.add_instrument(USDJPY_SIM)
+        engine.add_data(ticks)
+        with pytest.raises(InvalidConfiguration):
+            engine.run()
+
+    def test_multiple_runs(self):
         for _ in range(2):
             config = SignalStrategyConfig(instrument_id=USDJPY_SIM.id)
             strategy = SignalStrategy(config)
@@ -249,7 +277,7 @@ class TestBacktestEngine:
             engine.run()
             engine.dispose()
 
-    def test_backtest_engine_strategy_timestamps(self):
+    def test_strategy_timestamps(self):
         # Arrange
         config = SignalStrategyConfig(instrument_id=USDJPY_SIM.id)
         strategy = SignalStrategy(config)

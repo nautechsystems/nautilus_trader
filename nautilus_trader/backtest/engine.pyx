@@ -28,6 +28,7 @@ from nautilus_trader.config import CacheConfig
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.data.config import DataEngineConfig
 from nautilus_trader.execution.config import ExecEngineConfig
+from nautilus_trader.model import BOOK_DATA_TYPES
 from nautilus_trader.model import NAUTILUS_PYO3_DATA_TYPES
 from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.system.kernel import NautilusKernel
@@ -86,6 +87,7 @@ from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.functions cimport book_type_to_str
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -130,6 +132,7 @@ cdef class BacktestEngine:
 
         # Venues and data
         self._venues: dict[Venue, SimulatedExchange] = {}
+        self._has_book_data: set[InstrumentId] = set()
         self._data: list[Data] = []
         self._data_len: uint64_t = 0
         self._index: uint64_t = 0
@@ -626,9 +629,9 @@ cdef class BacktestEngine:
 
         cdef str data_added_str = "data"
 
-        if validate:
-            first = data[0]
+        first = data[0]
 
+        if validate:
             if hasattr(first, "instrument_id"):
                 Condition.is_true(
                     first.instrument_id in self.kernel.cache.instrument_ids(),
@@ -663,6 +666,9 @@ cdef class BacktestEngine:
 
         if sort:
             self._data = sorted(self._data, key=lambda x: x.ts_init)
+
+        if type(first) in BOOK_DATA_TYPES:
+            self._has_book_data.add(first.instrument_id)
 
         self._log.info(
             f"Added {len(data):_} {data_added_str} element{'' if len(data) == 1 else 's'}",
@@ -844,6 +850,7 @@ cdef class BacktestEngine:
         Does not clear added instruments.
 
         """
+        self._has_book_data.clear()
         self._data.clear()
         self._data_len = 0
         self._index = 0
@@ -1002,6 +1009,19 @@ cdef class BacktestEngine:
         end: datetime | str | int | None = None,
         run_config_id: str | None = None,
     ):
+        # Validate data
+        cdef:
+            SimulatedExchange exchange
+            InstrumentId instrument_id
+        for exchange in self._venues.values():
+            for instrument_id in exchange.instruments:
+                if exchange.book_type > BookType.L1_MBP and instrument_id not in self._has_book_data:
+                    raise InvalidConfiguration(
+                        f"No order book data found for instrument '{instrument_id }' when `book_type` is '{book_type_to_str(exchange.book_type)}'. "
+                        "Either set the venue `book_type` to 'L1_MBP' (for top-of-book data like quotes, trades, and bars) or ensure that order book data is provided for this instrument. "
+                        f"If order book data has been added for instrument '{instrument_id}', consider increasing the `chunk_size` for streaming."
+                    )
+
         cdef uint64_t start_ns
         cdef uint64_t end_ns
         # Time range check and set
@@ -1027,7 +1047,6 @@ cdef class BacktestEngine:
         for clock in get_component_clocks(self._instance_id):
             clock.set_time(start_ns)
 
-        cdef SimulatedExchange exchange
         if self._iteration == 0:
             # Initialize run
             self._run_config_id = run_config_id  # Can be None
@@ -1078,7 +1097,6 @@ cdef class BacktestEngine:
         cdef uint64_t raw_handlers_count = 0
         cdef Data data = self._next()
         cdef CVec raw_handlers
-        cdef SimulatedExchange venue
         try:
             while data is not None:
                 if data.ts_init > end_ns:
@@ -1089,28 +1107,28 @@ cdef class BacktestEngine:
                     raw_handlers = self._advance_time(data.ts_init)
                     raw_handlers_count = raw_handlers.len
 
-                # Process data through venue
+                # Process data through exchange
                 if isinstance(data, OrderBookDelta):
-                    venue = self._venues[data.instrument_id.venue]
-                    venue.process_order_book_delta(data)
+                    exchange = self._venues[data.instrument_id.venue]
+                    exchange.process_order_book_delta(data)
                 elif isinstance(data, OrderBookDeltas):
-                    venue = self._venues[data.instrument_id.venue]
-                    venue.process_order_book_deltas(data)
+                    exchange = self._venues[data.instrument_id.venue]
+                    exchange.process_order_book_deltas(data)
                 elif isinstance(data, QuoteTick):
-                    venue = self._venues[data.instrument_id.venue]
-                    venue.process_quote_tick(data)
+                    exchange = self._venues[data.instrument_id.venue]
+                    exchange.process_quote_tick(data)
                 elif isinstance(data, TradeTick):
-                    venue = self._venues[data.instrument_id.venue]
-                    venue.process_trade_tick(data)
+                    exchange = self._venues[data.instrument_id.venue]
+                    exchange.process_trade_tick(data)
                 elif isinstance(data, Bar):
-                    venue = self._venues[data.bar_type.instrument_id.venue]
-                    venue.process_bar(data)
+                    exchange = self._venues[data.bar_type.instrument_id.venue]
+                    exchange.process_bar(data)
                 elif isinstance(data, InstrumentClose):
-                    venue = self._venues[data.instrument_id.venue]
-                    venue.process_instrument_close(data)
+                    exchange = self._venues[data.instrument_id.venue]
+                    exchange.process_instrument_close(data)
                 elif isinstance(data, InstrumentStatus):
-                    venue = self._venues[data.instrument_id.venue]
-                    venue.process_instrument_status(data)
+                    exchange = self._venues[data.instrument_id.venue]
+                    exchange.process_instrument_status(data)
 
                 self._data_engine.process(data)
 
