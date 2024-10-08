@@ -71,6 +71,8 @@ class TestInstrumentProvider:
     Provides instrument template methods for backtesting.
     """
 
+    __test__ = False  # Prevents pytest from collecting this as a test class
+
     @staticmethod
     def adabtc_binance() -> CurrencyPair:
         """
@@ -783,6 +785,8 @@ class TestDataProvider:
 
     """
 
+    __test__ = False  # Prevents pytest from collecting this as a test class
+
     def __init__(self, branch: str = "develop") -> None:
         self.fs: fsspec.AbstractFileSystem | None = None
         self.root: str | None = None
@@ -853,6 +857,9 @@ class TestDataProvider:
 
 
 class TestDataGenerator:
+
+    __test__ = False  # Prevents pytest from collecting this as a test class
+
     @staticmethod
     def simulate_value_diffs(
         count: int,

@@ -547,7 +547,7 @@ cdef class TestClock(Clock):
 
     """
 
-    __test__ = False  # Required so pytest does not consider this a test class
+    __test__ = False  # Prevents pytest from collecting this as a test class
 
     def __init__(self):
         self._mem = test_clock_new()
