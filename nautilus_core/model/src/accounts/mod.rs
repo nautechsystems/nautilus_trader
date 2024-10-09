@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Account types such as `CashAccount` and `MarginAccount`.
+
 pub mod any;
 pub mod base;
 pub mod cash;

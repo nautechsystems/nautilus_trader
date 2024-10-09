@@ -24,7 +24,7 @@
 //! depending on the intended use case, i.e. whether to provide Python bindings
 //! for the main `nautilus_trader` Python package, or as part of a Rust only build.
 //!
-//! - `ffi`: Enables the C foreign function interface (FFI) from `cbindgen`
+//! - `ffi`: Enables the C foreign function interface (FFI) from `cbindgen`.
 
 #![allow(deprecated)] // TODO: Temporary for pyo3 upgrade
 
