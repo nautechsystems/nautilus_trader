@@ -43,6 +43,7 @@ from nautilus_trader.serialization.base cimport Serializer
 cdef class Clock:
     cpdef double timestamp(self)
     cpdef uint64_t timestamp_ms(self)
+    cpdef uint64_t timestamp_us(self)
     cpdef uint64_t timestamp_ns(self)
     cpdef datetime utc_now(self)
     cpdef datetime local_now(self, tzinfo tz=*)
