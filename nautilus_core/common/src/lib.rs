@@ -24,9 +24,9 @@
 //! depending on the intended use case, i.e. whether to provide Python bindings
 //! for the main `nautilus_trader` Python package, or as part of a Rust only build.
 //!
-//! - `ffi`: Enables the C foreign function interface (FFI) from `cbindgen`
-//! - `python`: Enables Python bindings from `pyo3`
-//! - `stubs`: Enables type stubs for use in testing scenarios
+//! - `ffi`: Enables the C foreign function interface (FFI) from `cbindgen`.
+//! - `python`: Enables Python bindings from `pyo3`.
+//! - `stubs`: Enables type stubs for use in testing scenarios.
 
 pub mod actor;
 pub mod cache;
