@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added `compute_effective_deltas` config setting for `PolymarketDataClientConfig`, reducing snapshot size (`False` by default to maintain current behavior)
 - Refined `DatabentoInstrumentProvider` handling of large bulks of instrument definitions (improved parent symbol support)
 - Standardized Betfair symbology to use hyphens instead of periods (prevents Betfair symbols being treated as composite)
+- Integration guide docs fixes (#1991), thanks @FarukhS52
 
 ### Internal Improvements
 - Ported `Throttler` to Rust (#1988), thanks @Pushkarm029 and @twitu
