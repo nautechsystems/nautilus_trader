@@ -44,15 +44,15 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 
 ## Features
 
-- **Fast**: Core written in Rust with asynchronous networking using [tokio](https://crates.io/crates/tokio)
-- **Reliable**: Type safety and thread safety through Rust. Redis backed performant state persistence
-- **Portable**: OS independent, runs on Linux, macOS, Windows. Deploy using Docker
+- **Fast**: Core is written in Rust with asynchronous networking using [tokio](https://crates.io/crates/tokio)
+- **Reliable**: Type safety and thread safety through Rust. Redis-backed performant state persistence
+- **Portable**: OS independent, runs on Linux, macOS, and Windows. Deploy using Docker
 - **Flexible**: Modular adapters mean any REST, WebSocket, or FIX API can be integrated
 - **Advanced**: Time in force `IOC`, `FOK`, `GTD`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO`
 - **Customizable**: Add user-defined custom components, or assemble entire systems from scratch leveraging the cache and message bus
 - **Backtesting**: Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution
 - **Live**: Use identical strategy implementations between backtesting and live deployments
-- **Multi-venue**: Multiple venue capabilities facilitate market making and statistical arbitrage strategies
+- **Multi-venue**: Multiple venue capabilities facilitate market-making and statistical arbitrage strategies
 - **AI Training**: Backtest engine fast enough to be used to train AI trading agents (RL/ES)
 
 ![Alt text](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/nautilus-art.png?raw=true "nautilus")
@@ -313,7 +313,7 @@ class EMACross(Strategy):
     """
     A simple moving average cross example strategy.
 
-    When the fast EMA crosses the slow EMA then enter a position at the market
+    When the fast EMA crosses the slow EMA then enters a position at the market
     in that direction.
 
     Cancels all orders and closes all positions on stop.
