@@ -41,7 +41,7 @@ You can do this through the [Accounts API Demo Tool](https://apps.betfair.com/vi
 See also the [Betfair Getting Started - Application Keys](https://betfair-developer-docs.atlassian.net/wiki/spaces/1smk3cen4v3lu3yomq5qye0ni/pages/2687105/Application+Keys) guide.
 :::
 
-### API credentials
+## API credentials
 
 There are two options for supplying your credentials to the Betfair clients.
 Either pass the corresponding values to the config dictionaries, or
