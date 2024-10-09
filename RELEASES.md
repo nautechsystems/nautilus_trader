@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added `Clock.timestamp_us()` method for UNIX timestamps in microseconds (μs)
 - Added support for `bbo-1s` and `bbo-1m` quote schemas for Databento adapter (#1990), thanks @faysou
 - Added validation for venue `book_type` configuration vs data (prevents an issue where top-of-book data is used when order book data is expected)
 - Added `compute_effective_deltas` config setting for `PolymarketDataClientConfig`, reducing snapshot size (`False` by default to maintain current behavior)

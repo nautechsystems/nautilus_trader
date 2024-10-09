@@ -165,7 +165,7 @@ cdef class Clock:
 
     cpdef double timestamp(self):
         """
-        Return the current UNIX time in seconds.
+        Return the current UNIX timestamp in seconds.
 
         Returns
         -------
@@ -180,7 +180,7 @@ cdef class Clock:
 
     cpdef uint64_t timestamp_ms(self):
         """
-        Return the current UNIX time in milliseconds (ms).
+        Return the current UNIX timestamp in milliseconds (ms).
 
         Returns
         -------
@@ -193,9 +193,24 @@ cdef class Clock:
         """
         raise NotImplementedError("method `timestamp_ms` must be implemented in the subclass")  # pragma: no cover
 
+    cpdef uint64_t timestamp_us(self):
+        """
+        Return the current UNIX timestamp in microseconds (μs).
+
+        Returns
+        -------
+        uint64_t
+
+        References
+        ----------
+        https://en.wikipedia.org/wiki/Unix_time
+
+        """
+        raise NotImplementedError("method `timestamp_us` must be implemented in the subclass")  # pragma: no cover
+
     cpdef uint64_t timestamp_ns(self):
         """
-        Return the current UNIX time in nanoseconds (ns).
+        Return the current UNIX timestamp in nanoseconds (ns).
 
         Returns
         -------
@@ -570,6 +585,9 @@ cdef class TestClock(Clock):
     cpdef uint64_t timestamp_ms(self):
         return test_clock_timestamp_ms(&self._mem)
 
+    cpdef uint64_t timestamp_us(self):
+        return test_clock_timestamp_us(&self._mem)
+
     cpdef uint64_t timestamp_ns(self):
         return test_clock_timestamp_ns(&self._mem)
 
@@ -733,6 +751,9 @@ cdef class LiveClock(Clock):
 
     cpdef uint64_t timestamp_ms(self):
         return live_clock_timestamp_ms(&self._mem)
+
+    cpdef uint64_t timestamp_us(self):
+        return live_clock_timestamp_us(&self._mem)
 
     cpdef uint64_t timestamp_ns(self):
         return live_clock_timestamp_ns(&self._mem)
