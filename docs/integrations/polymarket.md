@@ -79,7 +79,7 @@ A single wallet address is supported per trader instance when using environment 
 or multiple wallets could be configured with multiple `PolymarketExecutionClient` instances.
 
 :::info
-Ensure your wallet is funded with **USDC.e**, otherwise you will encounter the "not enough balance/allowance" API error when submitting orders.
+Ensure your wallet is funded with **USDC.e**, otherwise you will encounter the "not enough balance / allowance" API error when submitting orders.
 :::
 
 ### Setting allowances for Polymarket contracts
