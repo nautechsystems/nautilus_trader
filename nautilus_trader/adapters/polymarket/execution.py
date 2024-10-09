@@ -747,10 +747,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
             self._log.error(f"Error handling websocket message: {e} {raw.decode()}")
 
     def _add_trade_to_cache(self, msg: PolymarketUserTrade, raw: bytes) -> None:
-        start_ns = self._clock.timestamp_ns()
+        start_us = self._clock.timestamp_us()
         cache_key = get_polymarket_trades_key(msg.taker_order_id, msg.id)
         self._cache.add(cache_key, raw)
-        interval_us = int((self._clock.timestamp_ns() - start_ns) / 1_000)
+        interval_us = self._clock.timestamp_us() - start_us
         self._log.info(
             f"Added trade {msg.id} {msg.status.value} to {cache_key} in {interval_us}μs",
             LogColor.BLUE,
