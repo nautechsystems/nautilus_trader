@@ -54,6 +54,9 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
         The delay (seconds) prior to main websocket connection to allow initial subscriptions to arrive.
     update_instruments_interval_mins : PositiveInt, default 60
         The interval (minutes) between updating Polymarket instruments.
+    compute_effective_deltas : bool, default False
+        If True, computes effective deltas by comparing old and new order book states,
+        reducing snapshot size. This takes ~1 millisecond, so is not recommended for latency-sensitive strategies.
 
     """
 
@@ -68,6 +71,7 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_ws: str | None = None
     ws_connection_delay_secs: PositiveInt = 5
     update_instrument_interval_mins: PositiveInt = 60
+    compute_effective_deltas: bool = False
 
 
 class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
