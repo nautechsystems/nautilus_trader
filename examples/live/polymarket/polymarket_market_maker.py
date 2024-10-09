@@ -107,6 +107,7 @@ config_node = TradingNodeConfig(
             passphrase=None,  # 'POLYMARKET_PASSPHRASE' env var
             instrument_provider=instrument_provider_config,
             ws_connection_delay_secs=5,
+            compute_effective_deltas=True,
         ),
     },
     exec_clients={

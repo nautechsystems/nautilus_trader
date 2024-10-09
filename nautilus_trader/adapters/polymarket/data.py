@@ -22,6 +22,7 @@ import pandas as pd
 from py_clob_client.client import ClobClient
 
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
+from nautilus_trader.adapters.polymarket.common.deltas import compute_effective_deltas
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderSide
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
@@ -39,8 +40,10 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.identifiers import ClientId
@@ -118,6 +121,7 @@ class PolymarketDataClient(LiveMarketDataClient):
 
         # Hot caches
         self._last_quotes: dict[InstrumentId, QuoteTick] = {}
+        self._local_books: dict[InstrumentId, OrderBook] = {}
 
     async def _connect(self) -> None:
         self._log.info("Initializing instruments...")
@@ -228,6 +232,10 @@ class PolymarketDataClient(LiveMarketDataClient):
                 "Valid book types are L1_MBP, L2_MBP",
             )
             return
+
+        if self._config.compute_effective_deltas:
+            local_book = OrderBook(instrument_id, book_type=BookType.L2_MBP)
+            self._local_books[instrument_id] = local_book
 
         await self._subscribe_asset_book(instrument_id)
 
@@ -394,12 +402,32 @@ class PolymarketDataClient(LiveMarketDataClient):
             ts_event=now_ns,
             ts_init=now_ns,
         )
-        self._handle_data(deltas)
+
+        self._handle_deltas(instrument, deltas)
 
         if instrument.id in self.subscribed_quote_ticks():
             quote = ws_message.parse_to_quote_tick(instrument=instrument, ts_init=now_ns)
             self._last_quotes[instrument.id] = quote
             self._handle_data(quote)
+
+    def _handle_deltas(self, instrument: BinaryOption, deltas: OrderBookDeltas) -> None:
+        if self._config.compute_effective_deltas:
+            # Compute effective deltas (reduce snapshot based on old and new book states),
+            # prioritizing a smaller data footprint over computational efficiency.
+            t0 = self._clock.timestamp_ns()
+            book_old = self._local_books.get(instrument.id)
+            book_new = OrderBook(instrument.id, book_type=BookType.L2_MBP)
+            book_new.apply_deltas(deltas)
+            self._local_books[instrument.id] = book_new
+            deltas = compute_effective_deltas(book_old, book_new, instrument)
+
+            interval = (self._clock.timestamp_ns() - t0) / 1_000_000
+            self._log.info(f"Computed effective deltas in {interval:.3f}ms", LogColor.BLUE)
+            # self._log.warning(book_new.pprint())  # Uncomment for development
+
+        # Check if any effective deltas remain
+        if deltas:
+            self._handle_data(deltas)
 
     def _handle_quote(
         self,
@@ -408,6 +436,12 @@ class PolymarketDataClient(LiveMarketDataClient):
     ) -> None:
         now_ns = self._clock.timestamp_ns()
         delta = ws_message.parse_to_delta(instrument=instrument, ts_init=now_ns)
+
+        if self._config.compute_effective_deltas:
+            local_book = self._local_books.get(instrument.id)
+            if local_book:
+                local_book.apply_delta(delta)
+
         self._handle_data(delta)
 
         if instrument.id in self.subscribed_quote_ticks():

@@ -97,6 +97,7 @@ config_node = TradingNodeConfig(
             api_secret=None,  # 'POLYMARKET_API_SECRET' env var
             passphrase=None,  # 'POLYMARKET_PASSPHRASE' env var
             instrument_provider=instrument_provider_config,
+            compute_effective_deltas=True,
         ),
     },
     timeout_connection=60.0,
