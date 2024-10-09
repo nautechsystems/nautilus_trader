@@ -89,7 +89,7 @@ Not only that, Python has become the _de facto lingua franca_ of data science, m
 
 The language out of the box is not without its drawbacks however, especially in the context of
 implementing large performance-critical systems. Cython has addressed a lot of these issues, offering all the advantages
-of a statically typed language, embedded into a Python-rich ecosystem of software libraries and
+of a statically typed language, embedded into Pythons rich ecosystem of software libraries and
 developer/user communities.
 
 ## What is Rust?
