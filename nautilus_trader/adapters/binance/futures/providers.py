@@ -72,7 +72,7 @@ class BinanceFuturesInstrumentProvider(InstrumentProvider):
         account_type: BinanceAccountType = BinanceAccountType.USDT_FUTURE,
         config: InstrumentProviderConfig | None = None,
         venue: Venue = BINANCE_VENUE,
-    ):
+    ) -> None:
         super().__init__(config=config)
 
         self._clock = clock
