@@ -47,7 +47,7 @@ Polymarket offers comprehensive resources for different audiences:
 
 The following documentation assumes a trader is setting up for both live market
 data feeds, and trade execution. The full Polymarket integration consists of an assortment of components,
-which can be used together or separately depending on the users needs.
+which can be used together or separately depending on the user's needs.
 
 - `PolymarketWebSocketClient`: Low-level WebSocket API connectivity (built on top of the Nautilus `WebSocketClient` written in Rust).
 - `PolymarketInstrumentProvider`: Instrument parsing and loading functionality for `BinaryOption` instruments.
@@ -79,7 +79,7 @@ A single wallet address is supported per trader instance when using environment 
 or multiple wallets could be configured with multiple `PolymarketExecutionClient` instances.
 
 :::info
-Ensure your wallet is funded with **USDC.e**, otherwise you will encounter the "not enough balance / allowance" API error when submitting orders.
+Ensure your wallet is funded with **USDC.e**, otherwise you will encounter the "not enough balance/allowance" API error when submitting orders.
 :::
 
 ### Setting allowances for Polymarket contracts
@@ -195,7 +195,7 @@ The following time in force options are available:
 
 Trades on Polymarket can have the following statuses:
 - `MATCHED`: Trade has been matched and sent to the executor service by the operator, the executor service submits the trade as a transaction to the Exchange contract.
-- `MINED`: Trade is observed to be mined into the chain, no finality threshold established.
+- `MINED`: Trade is observed to be mined into the chain, and no finality threshold is established.
 - `CONFIRMED`: Trade has achieved strong probabilistic finality and was successful.
 - `RETRYING`: Trade transaction has failed (revert or reorg) and is being retried/resubmitted by the operator.
 - `FAILED`: Trade has failed and is not being retried.
