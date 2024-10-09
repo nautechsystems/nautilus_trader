@@ -27,7 +27,7 @@ poetry install --extras bybit
 
 The following documentation assumes a trader is setting up for both live market
 data feeds, and trade execution. The full Bybit integration consists of an assortment of components,
-which can be used together or separately depending on the users needs.
+which can be used together or separately depending on the user's needs.
 
 - `BybitHttpClient`: Low-level HTTP API connectivity
 - `BybitWebSocketClient`: Low-level WebSocket API connectivity
@@ -44,7 +44,7 @@ and won't need to necessarily work with these lower level components directly.
 
 ## Bybit documentation
 
-Bybit provides extensive documentation for users which can be found in the [Bybit help center](https://www.bybit.com/en/help-center).
+Bybit provides extensive documentation for users which can be found in the [Bybit help centre](https://www.bybit.com/en/help-center).
 It’s recommended you also refer to the Bybit documentation in conjunction with this NautilusTrader integration guide.
 
 ## Products
@@ -67,7 +67,7 @@ Options contracts are not currently supported (will be implemented in a future v
 
 ## Symbology
 
-To distinguish between different product types on Bybit, the following instrument ID suffix’s are used:
+To distinguish between different product types on Bybit, the following instrument ID suffixes are used:
 
 - `-SPOT`: Spot cryptocurrencies
 - `-LINEAR`: Perpetual and futures contracts
