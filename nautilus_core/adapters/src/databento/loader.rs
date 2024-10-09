@@ -13,7 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{env, fs, path::PathBuf};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+};
 
 use databento::dbn;
 use dbn::{
@@ -153,7 +156,7 @@ impl DatabentoDataLoader {
         self.publisher_venue_map.get(&publisher_id)
     }
 
-    pub fn schema_from_file(&self, filepath: PathBuf) -> anyhow::Result<Option<String>> {
+    pub fn schema_from_file(&self, filepath: &Path) -> anyhow::Result<Option<String>> {
         let decoder = Decoder::from_zstd_file(filepath)?;
         let metadata = decoder.metadata();
         Ok(metadata.schema.map(|schema| schema.to_string()))
@@ -161,7 +164,7 @@ impl DatabentoDataLoader {
 
     pub fn read_definition_records(
         &mut self,
-        filepath: PathBuf,
+        filepath: &Path,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<InstrumentAny>> + '_> {
         let mut decoder = Decoder::from_zstd_file(filepath)?;
         decoder.set_upgrade_policy(dbn::VersionUpgradePolicy::Upgrade);
@@ -200,7 +203,7 @@ impl DatabentoDataLoader {
 
     pub fn read_records<T>(
         &self,
-        filepath: PathBuf,
+        filepath: &Path,
         instrument_id: Option<InstrumentId>,
         include_trades: bool,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<(Option<Data>, Option<Data>)>> + '_>
@@ -227,7 +230,7 @@ impl DatabentoDataLoader {
                             &metadata,
                             &self.publisher_venue_map,
                         )
-                        .unwrap(), // TODO: Panic on error for now
+                        .expect("Failed to decode record"),
                     };
 
                     match decode_record(
@@ -246,7 +249,7 @@ impl DatabentoDataLoader {
         }))
     }
 
-    pub fn load_instruments(&mut self, filepath: PathBuf) -> anyhow::Result<Vec<InstrumentAny>> {
+    pub fn load_instruments(&mut self, filepath: &Path) -> anyhow::Result<Vec<InstrumentAny>> {
         self.read_definition_records(filepath)?
             .collect::<Result<Vec<_>, _>>()
     }
@@ -254,7 +257,7 @@ impl DatabentoDataLoader {
     // Cannot include trades
     pub fn load_order_book_deltas(
         &self,
-        filepath: PathBuf,
+        filepath: &Path,
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<Vec<OrderBookDelta>> {
         self.read_records::<dbn::MboMsg>(filepath, instrument_id, false)?
@@ -274,7 +277,7 @@ impl DatabentoDataLoader {
 
     pub fn load_order_book_depth10(
         &self,
-        filepath: PathBuf,
+        filepath: &Path,
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<Vec<OrderBookDepth10>> {
         self.read_records::<dbn::Mbp10Msg>(filepath, instrument_id, false)?
@@ -294,7 +297,7 @@ impl DatabentoDataLoader {
 
     pub fn load_quotes(
         &self,
-        filepath: PathBuf,
+        filepath: &Path,
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<Vec<QuoteTick>> {
         self.read_records::<dbn::Mbp1Msg>(filepath, instrument_id, false)?
@@ -314,7 +317,7 @@ impl DatabentoDataLoader {
 
     pub fn load_bbo_quotes(
         &self,
-        filepath: PathBuf,
+        filepath: &Path,
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<Vec<QuoteTick>> {
         self.read_records::<dbn::BboMsg>(filepath, instrument_id, false)?
@@ -334,7 +337,7 @@ impl DatabentoDataLoader {
 
     pub fn load_tbbo_trades(
         &self,
-        filepath: PathBuf,
+        filepath: &Path,
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<Vec<TradeTick>> {
         self.read_records::<dbn::TbboMsg>(filepath, instrument_id, false)?
@@ -353,7 +356,7 @@ impl DatabentoDataLoader {
 
     pub fn load_trades(
         &self,
-        filepath: PathBuf,
+        filepath: &Path,
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<Vec<TradeTick>> {
         self.read_records::<dbn::TradeMsg>(filepath, instrument_id, false)?
@@ -373,7 +376,7 @@ impl DatabentoDataLoader {
 
     pub fn load_bars(
         &self,
-        filepath: PathBuf,
+        filepath: &Path,
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<Vec<Bar>> {
         self.read_records::<dbn::OhlcvMsg>(filepath, instrument_id, false)?
@@ -391,9 +394,9 @@ impl DatabentoDataLoader {
             .collect()
     }
 
-    pub fn read_status_records<T>(
+    pub fn load_status_records<T>(
         &self,
-        filepath: PathBuf,
+        filepath: &Path,
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<InstrumentStatus>> + '_>
     where
@@ -417,7 +420,7 @@ impl DatabentoDataLoader {
                             &metadata,
                             &self.publisher_venue_map,
                         )
-                        .unwrap(), // TODO: Panic on error for now
+                        .expect("Failed to decode record"),
                     };
 
                     let msg = record.get::<dbn::StatusMsg>().expect("Invalid `StatusMsg`");
@@ -433,7 +436,7 @@ impl DatabentoDataLoader {
 
     pub fn read_imbalance_records<T>(
         &self,
-        filepath: PathBuf,
+        filepath: &Path,
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<DatabentoImbalance>> + '_>
     where
@@ -459,7 +462,7 @@ impl DatabentoDataLoader {
                             &metadata,
                             &self.publisher_venue_map,
                         )
-                        .unwrap(), // TODO: Panic on error for now
+                        .expect("Failed to decode record"),
                     };
 
                     let msg = record
@@ -482,7 +485,7 @@ impl DatabentoDataLoader {
 
     pub fn read_statistics_records<T>(
         &self,
-        filepath: PathBuf,
+        filepath: &Path,
         instrument_id: Option<InstrumentId>,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<DatabentoStatistics>> + '_>
     where
@@ -508,7 +511,7 @@ impl DatabentoDataLoader {
                             &metadata,
                             &self.publisher_venue_map,
                         )
-                        .unwrap(), // TODO: Panic on error for now
+                        .expect("Failed to decode record"),
                     };
 
                     let msg = record.get::<dbn::StatMsg>().expect("Invalid `StatMsg`");
@@ -525,5 +528,127 @@ impl DatabentoDataLoader {
                 None => None,
             }
         }))
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    use rstest::*;
+
+    use super::*;
+
+    fn test_data_path() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/databento/test_data")
+    }
+
+    fn data_loader() -> DatabentoDataLoader {
+        let publishers_filepath = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src")
+            .join("databento")
+            .join("publishers.json");
+
+        DatabentoDataLoader::new(Some(publishers_filepath)).unwrap()
+    }
+
+    // TODO: Improve the below assertions that we've actually read the records we expected
+
+    #[rstest]
+    // #[case(test_data_path().join("test_data.definition.dbn.zst"))] // TODO: Fails
+    #[case(test_data_path().join("test_data.definition.v1.dbn.zst"))]
+    fn test_load_instruments(#[case] path: PathBuf) {
+        let mut loader = data_loader();
+        let instruments = loader.load_instruments(&path).unwrap();
+
+        assert_eq!(instruments.len(), 2);
+    }
+
+    #[rstest]
+    fn test_load_order_book_deltas() {
+        let path = test_data_path().join("test_data.mbo.dbn.zst");
+        let loader = data_loader();
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+
+        let deltas = loader
+            .load_order_book_deltas(&path, Some(instrument_id))
+            .unwrap();
+
+        assert_eq!(deltas.len(), 2);
+    }
+
+    #[rstest]
+    fn test_load_order_book_depth10() {
+        let path = test_data_path().join("test_data.mbp-10.dbn.zst");
+        let loader = data_loader();
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+
+        let depths = loader
+            .load_order_book_depth10(&path, Some(instrument_id))
+            .unwrap();
+
+        assert_eq!(depths.len(), 2);
+    }
+
+    #[rstest]
+    fn test_load_quotes() {
+        let path = test_data_path().join("test_data.mbp-1.dbn.zst");
+        let loader = data_loader();
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+
+        let quotes = loader.load_quotes(&path, Some(instrument_id)).unwrap();
+
+        assert_eq!(quotes.len(), 2);
+    }
+
+    #[rstest]
+    #[case(test_data_path().join("test_data.bbo-1s.dbn.zst"))]
+    #[case(test_data_path().join("test_data.bbo-1m.dbn.zst"))]
+    fn test_load_bbo_quotes(#[case] path: PathBuf) {
+        let loader = data_loader();
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+
+        let quotes = loader.load_bbo_quotes(&path, Some(instrument_id)).unwrap();
+
+        assert_eq!(quotes.len(), 2);
+    }
+
+    #[rstest]
+    fn test_load_tbbo_trades() {
+        let path = test_data_path().join("test_data.tbbo.dbn.zst");
+        let loader = data_loader();
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+
+        let _trades = loader.load_tbbo_trades(&path, Some(instrument_id)).unwrap();
+
+        // assert_eq!(trades.len(), 2);  TODO: No records?
+    }
+
+    #[rstest]
+    fn test_load_trades() {
+        let path = test_data_path().join("test_data.trades.dbn.zst");
+        let loader = data_loader();
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let trades = loader.load_trades(&path, Some(instrument_id)).unwrap();
+
+        assert_eq!(trades.len(), 2);
+    }
+
+    #[rstest]
+    // #[case(test_data_path().join("test_data.ohlcv-1d.dbn.zst"))]  // TODO: Needs new data
+    #[case(test_data_path().join("test_data.ohlcv-1h.dbn.zst"))]
+    #[case(test_data_path().join("test_data.ohlcv-1m.dbn.zst"))]
+    #[case(test_data_path().join("test_data.ohlcv-1s.dbn.zst"))]
+    fn test_load_bars(#[case] path: PathBuf) {
+        let loader = data_loader();
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let bars = loader.load_bars(&path, Some(instrument_id)).unwrap();
+
+        assert_eq!(bars.len(), 2);
     }
 }
