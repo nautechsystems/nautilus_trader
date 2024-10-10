@@ -15,5 +15,9 @@
 
 //! The [Tardis](https://tardis.dev) integration adapter.
 
+pub mod parse;
+pub mod read;
+pub mod record;
+
 #[cfg(feature = "python")]
 pub mod python;

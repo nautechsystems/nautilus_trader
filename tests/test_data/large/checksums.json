@@ -1,3 +1,5 @@
 {
-  "databento_mbo_xnas_itch.csv": "sha256:5481466e7776659f7f093b1ca8b05c7e88b8d586036692089cca5decc7965099"
+  "databento_mbo_xnas_itch.csv": "sha256:5481466e7776659f7f093b1ca8b05c7e88b8d586036692089cca5decc7965099",
+  "tardis_bitmex_trades_2020-03-01_XBTUSD.csv.gz": "sha256:bafdeba528965322baeb0a01b8c3d6bac73891c5a929713b6a6a2f75361200ab",
+  "tardis_deribit_incremental_book_L2_2020-04-01_BTC-PERPETUAL.csv.gz": "sha256:a15aa5d6c52adbdc2e3c5593b487106e1a3fc78f151f939b4d86dbcb5f116876"
 }

@@ -28,6 +28,7 @@ documentation = "https://nautilustrader.io/docs"
 
 [workspace.dependencies]
 anyhow = "1.0.89"
+base64 = "0.22.1"
 bytes = { version = "1.7.2", features = ["serde"] }
 chrono = "0.4.38"
 derive_builder = "0.20.2"
