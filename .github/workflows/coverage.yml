@@ -52,19 +52,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Get Rust version from rust-toolchain.toml
-        id: rust-version
+      - name: Set up Rust toolchain
         run: |
-          version=$(awk -F\" '/version/ {print $2}' nautilus_core/rust-toolchain.toml)
-          echo "Rust toolchain version $version"
-          echo "RUST_VERSION=$version" >> $GITHUB_ENV
-        working-directory: ${{ github.workspace }}
-
-      - name: Set up Rust tool-chain (Linux, Windows) stable
-        uses: actions-rust-lang/setup-rust-toolchain@v1.8
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
-          components: rustfmt, clippy
+          rustup toolchain add --profile minimal stable --component clippy,rustfmt
 
       - name: Set up Python environment
         uses: actions/setup-python@v5
@@ -73,7 +63,7 @@ jobs:
 
       - name: Get Python version
         run: |
-          version=$(python -c "import sys; print('.'.join(map(str, sys.version_info[:3])))")
+          version=$(bash scripts/python-version.sh)
           echo "PYTHON_VERSION=$version" >> $GITHUB_ENV
 
       - name: Get Poetry version from poetry-version
