@@ -13,81 +13,115 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from datetime import datetime
 from os import PathLike
+from pathlib import Path
 
-import pandas as pd
+from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.nautilus_pyo3 import drop_cvec_pycapsule
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.data import capsule_to_list
 
 
-def _ts_parser(time_in_secs: str) -> datetime:
-    return datetime.utcfromtimestamp(int(time_in_secs) / 1_000_000.0)
-
-
-class TardisTradeDataLoader:
+class TardisCSVDataLoader:
     """
-    Provides a means of loading trade data pandas DataFrames from Tardis CSV files.
+    Provides a means of loading data from CSV files in Tardis format.
     """
 
-    @staticmethod
-    def load(file_path: PathLike[str] | str) -> pd.DataFrame:
+    def __init__(self, price_precision: int, size_precision: int) -> None:
+        self._price_precision = price_precision
+        self._size_precision = size_precision
+
+    def load_deltas(
+        self,
+        filepath: PathLike[str] | str,
+        as_legacy_cython: bool = True,
+        limit: int | None = None,
+    ) -> list[OrderBookDelta] | list[nautilus_pyo3.OrderBookDelta]:
         """
-        Return the trade pandas.DataFrame loaded from the given csv file.
+        Load order book deltas data from the given `filepath`.
 
         Parameters
         ----------
-        file_path : str, path object or file-like object
-            The path to the CSV file.
+        filepath : PathLike[str] | str
+            The path for the CSV data file (must be Tardis trades format).
+        as_legacy_cython : bool, True
+            If data should be converted to 'legacy Cython' objects.
+            You would typically only set this False if passing the objects
+            directly to a data catalog for the data to then be written in Nautilus Parquet format.
+        limit : int, optional
+            The limit for the number of records to read.
 
         Returns
         -------
-        pd.DataFrame
+        list[OrderBookDelta] | list[nautilus_pyo3.OrderBookDelta]
 
         """
-        df = pd.read_csv(file_path)
-        df["local_timestamp"] = df["local_timestamp"].apply(_ts_parser)
-        df = df.set_index("local_timestamp")
+        if isinstance(filepath, Path):
+            filepath = str(filepath.resolve())
 
-        df = df.rename(columns={"id": "trade_id", "amount": "quantity"})
-        df["side"] = df.side.str.upper()
-        df = df[["symbol", "trade_id", "price", "quantity", "side"]]
+        if as_legacy_cython:
+            capsule = nautilus_pyo3.load_tardis_deltas_as_pycapsule(
+                filepath=str(filepath),
+                price_precision=self._price_precision,
+                size_precision=self._size_precision,
+                limit=limit,
+            )
+            data = capsule_to_list(capsule)
+            # Drop encapsulated `CVec` as data is now transferred
+            drop_cvec_pycapsule(capsule)
+            return data
 
-        assert isinstance(df, pd.DataFrame)
-
-        return df
-
-
-class TardisQuoteDataLoader:
-    """
-    Provides a means of loading quote tick data pandas DataFrames from Tardis CSV files.
-    """
-
-    @staticmethod
-    def load(file_path: PathLike[str] | str) -> pd.DataFrame:
-        """
-        Return the quote pandas.DataFrame loaded from the given csv file.
-
-        Parameters
-        ----------
-        file_path : str, path object or file-like object
-            The path to the CSV file.
-
-        Returns
-        -------
-        pd.DataFrame
-
-        """
-        df = pd.read_csv(file_path)
-        df["local_timestamp"] = df["local_timestamp"].apply(_ts_parser)
-        df = df.set_index("local_timestamp")
-
-        df = df.rename(
-            columns={
-                "ask_amount": "ask_size",
-                "bid_amount": "bid_size",
-            },
+        return nautilus_pyo3.load_tardis_deltas(
+            filepath=str(filepath),
+            price_precision=self._price_precision,
+            size_precision=self._size_precision,
+            limit=limit,
         )
 
-        df = df[["bid_price", "ask_price", "bid_size", "ask_size"]]
-        assert isinstance(df, pd.DataFrame)
+    def load_trades(
+        self,
+        filepath: PathLike[str] | str,
+        as_legacy_cython: bool = True,
+        limit: int | None = None,
+    ) -> list[TradeTick] | list[nautilus_pyo3.TradeTick]:
+        """
+        Load trade ticks data from the given `filepath`.
 
-        return df
+        Parameters
+        ----------
+        filepath : PathLike[str] | str
+            The path for the CSV data file (must be Tardis trades format).
+        as_legacy_cython : bool, True
+            If data should be converted to 'legacy Cython' objects.
+            You would typically only set this False if passing the objects
+            directly to a data catalog for the data to then be written in Nautilus Parquet format.
+        limit : int, optional
+            The limit for the number of records to read.
+
+        Returns
+        -------
+        list[TradeTick] | list[nautilus_pyo3.TradeTick]
+
+        """
+        if isinstance(filepath, Path):
+            filepath = str(filepath.resolve())
+
+        if as_legacy_cython:
+            capsule = nautilus_pyo3.load_tardis_trades_as_pycapsule(
+                filepath=str(filepath),
+                price_precision=self._price_precision,
+                size_precision=self._size_precision,
+                limit=limit,
+            )
+            data = capsule_to_list(capsule)
+            # Drop encapsulated `CVec` as data is now transferred
+            drop_cvec_pycapsule(capsule)
+            return data
+
+        return nautilus_pyo3.load_tardis_trades(
+            filepath=str(filepath),
+            price_precision=self._price_precision,
+            size_precision=self._size_precision,
+            limit=limit,
+        )

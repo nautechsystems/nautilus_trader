@@ -458,6 +458,7 @@ pub fn load_trade_ticks<P: AsRef<Path>>(
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use nautilus_model::{enums::BookAction, identifiers::InstrumentId};
     use nautilus_test_kit::{
         common::{get_project_testdata_path, get_testdata_large_checksums_filepath},
         files::ensure_file_exists_or_download_http,
@@ -477,7 +478,19 @@ mod tests {
 
         let deltas = load_deltas(filepath, 1, 0, Some(1_000)).unwrap();
 
-        assert_eq!(deltas.len(), 1_000)
+        assert_eq!(deltas.len(), 1_000);
+        assert_eq!(
+            deltas[0].instrument_id,
+            InstrumentId::from("BTC-PERPETUAL.DERIBIT")
+        );
+        assert_eq!(deltas[0].action, BookAction::Add);
+        assert_eq!(deltas[0].order.side, OrderSide::Sell);
+        assert_eq!(deltas[0].order.price, Price::from("6421.5"));
+        assert_eq!(deltas[0].order.size, Quantity::from("18640"));
+        assert_eq!(deltas[0].flags, 0);
+        assert_eq!(deltas[0].sequence, 0);
+        assert_eq!(deltas[0].ts_event, 1585699200245000000);
+        assert_eq!(deltas[0].ts_init, 1585699200355684000);
     }
 
     #[rstest]
@@ -491,7 +504,8 @@ mod tests {
 
         let depths = load_depth10_from_snapshot5(filepath, 1, 0, Some(1_000)).unwrap();
 
-        assert_eq!(depths.len(), 1_000)
+        assert_eq!(depths.len(), 1_000);
+        // TODO: Assert every field
     }
 
     #[rstest]
@@ -505,7 +519,8 @@ mod tests {
 
         let depths = load_depth10_from_snapshot25(filepath, 1, 0, Some(1_000)).unwrap();
 
-        assert_eq!(depths.len(), 1_000)
+        assert_eq!(depths.len(), 1_000);
+        // TODO: Assert every field
     }
 
     #[rstest]
@@ -519,7 +534,8 @@ mod tests {
 
         let quotes = load_quote_ticks(filepath, 1, 0, Some(1_000)).unwrap();
 
-        assert_eq!(quotes.len(), 1_000)
+        assert_eq!(quotes.len(), 1_000);
+        // TODO: Assert every field
     }
 
     #[rstest]
@@ -533,6 +549,7 @@ mod tests {
 
         let trades = load_trade_ticks(filepath, 1, 0, Some(1_000)).unwrap();
 
-        assert_eq!(trades.len(), 1_000)
+        assert_eq!(trades.len(), 1_000);
+        // TODO: Assert every field
     }
 }
