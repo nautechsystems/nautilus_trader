@@ -184,7 +184,9 @@ class DYDXWebsocketClient:
                     # Print error if no message has been received for twice the timeout time
                     # to reduce log noise.
                     if time_since_previous_msg > pd.Timedelta(seconds=2 * self._msg_timeout_secs):
-                        self._log.error("%s since previous received message. Reconnecting.")
+                        self._log.error(
+                            f"{time_since_previous_msg} since previous received message. Reconnecting.",
+                        )
 
                     try:
                         await self.disconnect()
