@@ -72,8 +72,8 @@ jobs:
 
       - name: Get Python version
         run: |
-          PYTHON_VERSION=$(make python-version)
-          echo "PYTHON_VERSION=$PYTHON_VERSION" >> $GITHUB_ENV
+          version=$(bash scripts/python-version.sh)
+          echo "PYTHON_VERSION=$version" >> $GITHUB_ENV
 
       - name: Get Poetry version from poetry-version
         run: |
@@ -201,8 +201,8 @@ jobs:
 
       - name: Get Python version
         run: |
-          PYTHON_VERSION=$(make python-version)
-          echo "PYTHON_VERSION=$PYTHON_VERSION" >> $GITHUB_ENV
+          version=$(bash scripts/python-version.sh)
+          echo "PYTHON_VERSION=$version" >> $GITHUB_ENV
 
       - name: Get Poetry version from poetry-version
         run: |
@@ -306,8 +306,8 @@ jobs:
 
       - name: Get Python version
         run: |
-          PYTHON_VERSION=$(make python-version)
-          echo "PYTHON_VERSION=$PYTHON_VERSION" >> $GITHUB_ENV
+          version=$(bash scripts/python-version.sh)
+          echo "PYTHON_VERSION=$version" >> $GITHUB_ENV
 
       - name: Get Poetry version from poetry-version
         run: |
