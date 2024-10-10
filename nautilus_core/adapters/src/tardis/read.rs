@@ -19,8 +19,14 @@ use csv::{Reader, ReaderBuilder};
 use flate2::read::GzDecoder;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
-    data::{delta::OrderBookDelta, order::BookOrder, quote::QuoteTick, trade::TradeTick},
-    enums::RecordFlag,
+    data::{
+        delta::OrderBookDelta,
+        depth::{OrderBookDepth10, DEPTH10_LEN},
+        order::{BookOrder, NULL_ORDER},
+        quote::QuoteTick,
+        trade::TradeTick,
+    },
+    enums::{OrderSide, RecordFlag},
     identifiers::TradeId,
     types::{price::Price, quantity::Quantity},
 };
@@ -30,7 +36,10 @@ use super::{
         parse_aggressor_side, parse_book_action, parse_instrument_id, parse_order_side,
         parse_timestamp,
     },
-    record::{TardisBookUpdateRecord, TardisQuoteRecord, TardisTradeRecord},
+    record::{
+        TardisBookUpdateRecord, TardisOrderBookSnapshot25Record, TardisOrderBookSnapshot5Record,
+        TardisQuoteRecord, TardisTradeRecord,
+    },
 };
 
 /// Creates a new CSV reader which can handle gzip compression.
@@ -113,6 +122,249 @@ pub fn load_deltas<P: AsRef<Path>>(
     }
 
     Ok(deltas)
+}
+
+fn create_book_order(
+    side: OrderSide,
+    price: Option<f64>,
+    amount: Option<f64>,
+    price_precision: u8,
+    size_precision: u8,
+) -> (BookOrder, u32) {
+    match price {
+        Some(price) => (
+            BookOrder::new(
+                side,
+                Price::new(price, price_precision),
+                Quantity::new(amount.unwrap_or(0.0), size_precision),
+                0,
+            ),
+            1, // Count set to 1 if order exists
+        ),
+        None => (NULL_ORDER, 0), // NULL_ORDER if price is None
+    }
+}
+
+/// Load [`OrderBookDepth10`]s from a Tardis format CSV at the given `filepath`.
+pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
+    filepath: P,
+    price_precision: u8,
+    size_precision: u8,
+    limit: Option<usize>,
+) -> Result<Vec<OrderBookDepth10>, Box<dyn Error>> {
+    let mut csv_reader = create_csv_reader(filepath)?;
+    let mut depths: Vec<OrderBookDepth10> = Vec::new();
+
+    for result in csv_reader.deserialize() {
+        let record: TardisOrderBookSnapshot5Record = result?;
+
+        let instrument_id = parse_instrument_id(&record.exchange, &record.symbol);
+        let flags = RecordFlag::F_LAST.value();
+        let sequence = 0; // Sequence not available
+        let ts_event = parse_timestamp(record.timestamp);
+        let ts_init = parse_timestamp(record.local_timestamp);
+
+        // Initialize empty arrays
+        let mut bids = [NULL_ORDER; DEPTH10_LEN];
+        let mut asks = [NULL_ORDER; DEPTH10_LEN];
+        let mut bid_counts = [0u32; DEPTH10_LEN];
+        let mut ask_counts = [0u32; DEPTH10_LEN];
+
+        for i in 0..=4 {
+            // Create bids
+            let (bid_order, bid_count) = create_book_order(
+                OrderSide::Buy,
+                match i {
+                    0 => record.bids_0_price,
+                    1 => record.bids_1_price,
+                    2 => record.bids_2_price,
+                    3 => record.bids_3_price,
+                    4 => record.bids_4_price,
+                    _ => None, // Unreachable, but for safety
+                },
+                match i {
+                    0 => record.bids_0_amount,
+                    1 => record.bids_1_amount,
+                    2 => record.bids_2_amount,
+                    3 => record.bids_3_amount,
+                    4 => record.bids_4_amount,
+                    _ => None, // Unreachable, but for safety
+                },
+                price_precision,
+                size_precision,
+            );
+            bids[i] = bid_order;
+            bid_counts[i] = bid_count;
+
+            // Create asks
+            let (ask_order, ask_count) = create_book_order(
+                OrderSide::Sell,
+                match i {
+                    0 => record.asks_0_price,
+                    1 => record.asks_1_price,
+                    2 => record.asks_2_price,
+                    3 => record.asks_3_price,
+                    4 => record.asks_4_price,
+                    _ => None, // Unreachable, but for safety
+                },
+                match i {
+                    0 => record.asks_0_amount,
+                    1 => record.asks_1_amount,
+                    2 => record.asks_2_amount,
+                    3 => record.asks_3_amount,
+                    4 => record.asks_4_amount,
+                    _ => None, // Unreachable, but for safety
+                },
+                price_precision,
+                size_precision,
+            );
+            asks[i] = ask_order;
+            ask_counts[i] = ask_count;
+        }
+
+        let depth = OrderBookDepth10::new(
+            instrument_id,
+            bids,
+            asks,
+            bid_counts,
+            ask_counts,
+            flags,
+            sequence,
+            ts_event,
+            ts_init,
+        );
+
+        depths.push(depth);
+
+        if let Some(limit) = limit {
+            if depths.len() >= limit {
+                break;
+            }
+        }
+    }
+
+    Ok(depths)
+}
+
+pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
+    filepath: P,
+    price_precision: u8,
+    size_precision: u8,
+    limit: Option<usize>,
+) -> Result<Vec<OrderBookDepth10>, Box<dyn Error>> {
+    let mut csv_reader = create_csv_reader(filepath)?;
+    let mut depths: Vec<OrderBookDepth10> = Vec::new();
+
+    for result in csv_reader.deserialize() {
+        let record: TardisOrderBookSnapshot25Record = result?;
+
+        let instrument_id = parse_instrument_id(&record.exchange, &record.symbol);
+        let flags = RecordFlag::F_LAST.value();
+        let sequence = 0; // Sequence not available
+        let ts_event = parse_timestamp(record.timestamp);
+        let ts_init = parse_timestamp(record.local_timestamp);
+
+        // Initialize empty arrays for the first 10 levels only
+        let mut bids = [NULL_ORDER; DEPTH10_LEN];
+        let mut asks = [NULL_ORDER; DEPTH10_LEN];
+        let mut bid_counts = [0u32; DEPTH10_LEN];
+        let mut ask_counts = [0u32; DEPTH10_LEN];
+
+        // Fill only the first 10 levels from the 25-level record
+        for i in 0..DEPTH10_LEN {
+            // Create bids
+            let (bid_order, bid_count) = create_book_order(
+                OrderSide::Buy,
+                match i {
+                    0 => record.bids_0_price,
+                    1 => record.bids_1_price,
+                    2 => record.bids_2_price,
+                    3 => record.bids_3_price,
+                    4 => record.bids_4_price,
+                    5 => record.bids_5_price,
+                    6 => record.bids_6_price,
+                    7 => record.bids_7_price,
+                    8 => record.bids_8_price,
+                    9 => record.bids_9_price,
+                    _ => None, // Unreachable, but for safety
+                },
+                match i {
+                    0 => record.bids_0_amount,
+                    1 => record.bids_1_amount,
+                    2 => record.bids_2_amount,
+                    3 => record.bids_3_amount,
+                    4 => record.bids_4_amount,
+                    5 => record.bids_5_amount,
+                    6 => record.bids_6_amount,
+                    7 => record.bids_7_amount,
+                    8 => record.bids_8_amount,
+                    9 => record.bids_9_amount,
+                    _ => None, // Unreachable, but for safety
+                },
+                price_precision,
+                size_precision,
+            );
+            bids[i] = bid_order;
+            bid_counts[i] = bid_count;
+
+            // Create asks
+            let (ask_order, ask_count) = create_book_order(
+                OrderSide::Sell,
+                match i {
+                    0 => record.asks_0_price,
+                    1 => record.asks_1_price,
+                    2 => record.asks_2_price,
+                    3 => record.asks_3_price,
+                    4 => record.asks_4_price,
+                    5 => record.asks_5_price,
+                    6 => record.asks_6_price,
+                    7 => record.asks_7_price,
+                    8 => record.asks_8_price,
+                    9 => record.asks_9_price,
+                    _ => None, // Unreachable, but for safety
+                },
+                match i {
+                    0 => record.asks_0_amount,
+                    1 => record.asks_1_amount,
+                    2 => record.asks_2_amount,
+                    3 => record.asks_3_amount,
+                    4 => record.asks_4_amount,
+                    5 => record.asks_5_amount,
+                    6 => record.asks_6_amount,
+                    7 => record.asks_7_amount,
+                    8 => record.asks_8_amount,
+                    9 => record.asks_9_amount,
+                    _ => None, // Unreachable, but for safety
+                },
+                price_precision,
+                size_precision,
+            );
+            asks[i] = ask_order;
+            ask_counts[i] = ask_count;
+        }
+
+        let depth = OrderBookDepth10::new(
+            instrument_id,
+            bids,
+            asks,
+            bid_counts,
+            ask_counts,
+            flags,
+            sequence,
+            ts_event,
+            ts_init,
+        );
+
+        depths.push(depth);
+
+        if let Some(limit) = limit {
+            if depths.len() >= limit {
+                break;
+            }
+        }
+    }
+
+    Ok(depths)
 }
 
 /// Load [`QuoteTick`]s from a Tardis format CSV at the given `filepath`.
@@ -226,6 +478,34 @@ mod tests {
         let deltas = load_deltas(filepath, 1, 0, Some(1_000)).unwrap();
 
         assert_eq!(deltas.len(), 1_000)
+    }
+
+    #[rstest]
+    pub fn test_read_depth10s_from_snapshot5() {
+        let testdata = get_project_testdata_path();
+        let checksums = get_testdata_large_checksums_filepath();
+        let filename = "tardis_binance-futures_book_snapshot_5_2020-09-01_BTCUSDT.csv.gz";
+        let filepath = testdata.join("large").join(filename);
+        let url = "https://datasets.tardis.dev/v1/binance-futures/book_snapshot_5/2020/09/01/BTCUSDT.csv.gz";
+        ensure_file_exists_or_download_http(&filepath, url, Some(&checksums)).unwrap();
+
+        let depths = load_depth10_from_snapshot5(filepath, 1, 0, Some(1_000)).unwrap();
+
+        assert_eq!(depths.len(), 1_000)
+    }
+
+    #[rstest]
+    pub fn test_read_depth10s_from_snapshot25() {
+        let testdata = get_project_testdata_path();
+        let checksums = get_testdata_large_checksums_filepath();
+        let filename = "tardis_binance-futures_book_snapshot_25_2020-09-01_BTCUSDT.csv.gz";
+        let filepath = testdata.join("large").join(filename);
+        let url = "https://datasets.tardis.dev/v1/binance-futures/book_snapshot_25/2020/09/01/BTCUSDT.csv.gz";
+        ensure_file_exists_or_download_http(&filepath, url, Some(&checksums)).unwrap();
+
+        let depths = load_depth10_from_snapshot25(filepath, 1, 0, Some(1_000)).unwrap();
+
+        assert_eq!(depths.len(), 1_000)
     }
 
     #[rstest]
