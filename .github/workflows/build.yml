@@ -2,7 +2,7 @@ name: build
 
 on:
   push:
-    branches: [master, nightly, develop]
+    branches: [master, nightly, develop, test-ci]
   pull_request:
     branches: [develop]
 
@@ -61,19 +61,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Get Rust version from rust-toolchain.toml
-        id: rust-version
+      - name: Set up Rust toolchain
         run: |
-          version=$(awk -F\" '/version/ {print $2}' nautilus_core/rust-toolchain.toml)
-          echo "Rust toolchain version $version"
-          echo "RUST_VERSION=$version" >> $GITHUB_ENV
-        working-directory: ${{ github.workspace }}
-
-      - name: Set up Rust tool-chain (Linux, Windows) stable
-        uses: actions-rust-lang/setup-rust-toolchain@v1.8
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
-          components: rustfmt, clippy
+          rustup toolchain add --profile minimal stable --component clippy,rustfmt
 
       - name: Set up Python environment
         uses: actions/setup-python@v5
@@ -200,19 +190,9 @@ jobs:
           rm -rf "/c/Program Files/dotnet"
           rm -rf "/c/Program Files (x86)/Microsoft Visual Studio/2019"
 
-      - name: Get Rust version from rust-toolchain.toml
-        id: rust-version
+      - name: Set up Rust toolchain
         run: |
-          version=$(awk -F\" '/version/ {print $2}' nautilus_core/rust-toolchain.toml)
-          echo "Rust toolchain version $version"
-          echo "RUST_VERSION=$version" >> $GITHUB_ENV
-        working-directory: ${{ github.workspace }}
-
-      - name: Set up Rust tool-chain (Linux, Windows) stable
-        uses: actions-rust-lang/setup-rust-toolchain@v1.8
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
-          components: rustfmt, clippy
+          rustup toolchain add --profile minimal stable --component clippy,rustfmt
 
       - name: Set up Python environment
         uses: actions/setup-python@v5
@@ -314,22 +294,10 @@ jobs:
           sudo rm -rf ~/Library/Developer/Xcode/DerivedData/*
           sudo rm -rf /Library/Developer/CommandLineTools
 
-      - name: Get Rust version from rust-toolchain.toml
-        id: rust-version
+      - name: Set up Rust toolchain
         run: |
-          version=$(awk -F\" '/version/ {print $2}' nautilus_core/rust-toolchain.toml)
-          echo "Rust toolchain version $version"
-          echo "RUST_VERSION=$version" >> $GITHUB_ENV
-        working-directory: ${{ github.workspace }}
-
-      # Work around as actions-rust-lang does not seem to work on macOS yet
-      - name: Set up Rust tool-chain (macOS) stable
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
-          override: true
-          components: rustfmt, clippy
-          target: aarch64-apple-darwin
+          rustup toolchain add --profile minimal stable --component clippy,rustfmt
+          rustup target add aarch64-apple-darwin
 
       - name: Set up Python environment
         uses: actions/setup-python@v5
