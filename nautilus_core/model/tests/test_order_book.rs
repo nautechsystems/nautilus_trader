@@ -17,7 +17,7 @@ use nautilus_adapters::databento::loader::DatabentoDataLoader;
 use nautilus_model::{enums::BookType, identifiers::InstrumentId, orderbook::book::OrderBook};
 use nautilus_test_kit::{
     common::{
-        get_project_testdata_path, get_testdata_large_checksums_filepath, get_workspace_root_path,
+        get_test_data_large_checksums_filepath, get_test_data_large_path, get_workspace_root_path,
     },
     files::ensure_file_exists_or_download_http,
 };
@@ -25,8 +25,8 @@ use rstest::*;
 
 #[rstest]
 pub fn test_order_book_databento_mbo_nasdaq() {
-    let testdata = get_project_testdata_path();
-    let checksums = get_testdata_large_checksums_filepath();
+    let testdata = get_test_data_large_path();
+    let checksums = get_test_data_large_checksums_filepath();
     let filename = "databento_mbo_xnas_itch.csv";
     let filepath = testdata.join("large").join(filename);
     let url = "https://hist.databento.com/v0/dataset/sample/download/xnas.itch/mbo";
