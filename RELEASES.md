@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added `TardisCSVDataLoader` for loading data from Tardis format CSV files as either legacy Cython or pyo3 objects
 - Added `Clock.timestamp_us()` method for UNIX timestamps in microseconds (μs)
 - Added support for `bbo-1s` and `bbo-1m` quote schemas for Databento adapter (#1990), thanks @faysou
 - Added validation for venue `book_type` configuration vs data (prevents an issue where top-of-book data is used when order book data is expected)
@@ -19,7 +20,8 @@ Released on TBD (UTC).
 - Standardized log and error message syntax in Rust
 
 ### Breaking Changes
-None
+- Removed legacy `TardisQuoteDataLoader` (now redundant with new Rust implemented loader)
+- Removed legacy `TardisTradeDataLoader` (now redundant with new Rust implemented loader)
 
 ### Fixes
 - Fixed `SocketClient` TLS implementation

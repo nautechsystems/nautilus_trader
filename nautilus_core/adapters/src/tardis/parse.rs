@@ -24,7 +24,7 @@ use nautilus_model::{
 /// Parse an instrument ID from the given venue and symbol values.
 pub fn parse_instrument_id(exchange: &str, symbol: &str) -> InstrumentId {
     let venue = exchange.split('-').next().unwrap_or(exchange);
-    InstrumentId::from_str(&format!("{}.{}", symbol, venue))
+    InstrumentId::from_str(&format!("{}.{}", symbol, venue).to_uppercase())
         .expect("Failed to parse `instrument_id`")
 }
 
@@ -73,10 +73,10 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[case("okex-futures", "BTC-USD-200313", "BTC-USD-200313.okex")]
-    #[case("binance", "ETH-USDT", "ETH-USDT.binance")]
-    #[case("bitmex-perp", "XBTUSD", "XBTUSD.bitmex")]
-    #[case("exchange-with-hyphen", "FOO-BAR", "FOO-BAR.exchange")]
+    #[case("okex-futures", "BTC-USD-200313", "BTC-USD-200313.OKEX")]
+    #[case("binance", "ETH-USDT", "ETH-USDT.BINANCE")]
+    #[case("bitmex-perp", "XBTUSD", "XBTUSD.BITMEX")]
+    #[case("exchange-with-hyphen", "FOO-BAR", "FOO-BAR.EXCHANGE")]
     fn test_parse_instrument_id(
         #[case] exchange: &str,
         #[case] symbol: &str,
