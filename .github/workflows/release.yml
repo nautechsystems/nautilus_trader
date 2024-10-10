@@ -48,20 +48,8 @@ jobs:
           rm -rf "/c/Program Files/dotnet"
           rm -rf "/c/Program Files (x86)/Microsoft Visual Studio/2019"
 
-      - name: Install nasm dependency (Windows)
-        uses: ilammy/setup-nasm@v1
-        if: runner.os == 'Windows'
-
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Get Rust version from rust-toolchain.toml
-        id: rust-version
-        run: |
-          version=$(awk -F\" '/version/ {print $2}' nautilus_core/rust-toolchain.toml)
-          echo "Rust toolchain version $version"
-          echo "RUST_VERSION=$version" >> $GITHUB_ENV
-        working-directory: ${{ github.workspace }}
 
       - name: Set up Rust toolchain (Linux, Windows)
         if: (runner.os == 'Linux') || (runner.os == 'Windows')
@@ -312,10 +300,6 @@ jobs:
         run: |
           rm -rf "/c/Program Files/dotnet"
           rm -rf "/c/Program Files (x86)/Microsoft Visual Studio/2019"
-
-      - name: Install nasm dependency (Windows)
-        uses: ilammy/setup-nasm@v1
-        if: runner.os == 'Windows'
 
       - name: Install runner dependencies (Linux)
         if: runner.os == 'Linux'
