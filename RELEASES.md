@@ -15,6 +15,7 @@ Released on TBD (UTC).
 ### Internal Improvements
 - Ported `Throttler` to Rust (#1988), thanks @Pushkarm029 and @twitu
 - Refined `WebSocketClient` to close existing tasks on reconnect (#1986), thanks @davidsblom
+- Improved error logs for dYdX websocket subscriptions (#1993), thanks @davidsblom
 - Standardized log and error message syntax in Rust
 
 ### Breaking Changes
