@@ -178,10 +178,22 @@ class DYDXWebsocketClient:
                 if self.is_disconnected() or time_since_previous_msg > pd.Timedelta(
                     seconds=self._msg_timeout_secs,
                 ):
+                    if self.is_disconnected():
+                        self._log.error("Websocket disconnected. Reconnecting.")
+
+                    # Print error if no message has been received for twice the timeout time
+                    # to reduce log noise.
+                    if time_since_previous_msg > pd.Timedelta(seconds=2 * self._msg_timeout_secs):
+                        self._log.error(
+                            f"{time_since_previous_msg} since previous received message. Reconnecting.",
+                        )
+
                     try:
                         await self.disconnect()
                         await self.connect()
                         self.reconnect()
+
+                        self._log.info("Websocket connected")
                     except Exception as e:
                         self._log.error(f"Failed to connect the websocket: {e}")
                         self._client = None
