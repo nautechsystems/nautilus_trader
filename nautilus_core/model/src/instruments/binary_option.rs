@@ -30,6 +30,7 @@ use crate::{
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
+/// Represents a generic binary option instrument.
 #[repr(C)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(

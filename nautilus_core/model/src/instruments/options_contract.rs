@@ -32,6 +32,7 @@ use crate::{
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
+/// Represents a generic options contract instrument.
 #[repr(C)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
