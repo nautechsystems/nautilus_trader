@@ -36,6 +36,27 @@ pub struct TardisBookUpdateRecord {
     pub amount: f64,
 }
 
+/// Represents a Tardis format quote record.
+#[derive(Debug, Deserialize)]
+pub struct TardisQuoteRecord {
+    /// The exchande ID.
+    pub exchange: String,
+    /// The instrument symbol as provided by the exchange.
+    pub symbol: String,
+    // UNIX microseconds timestamp provided by the exchange.
+    pub timestamp: u64,
+    // UNIX microseconds timestamp of message received.
+    pub local_timestamp: u64,
+    // The best ask amount as provided by exchange, empty if there aren't any asks.
+    pub ask_amount: Option<f64>,
+    // The best ask price as provided by exchange, empty if there aren't any asks.
+    pub ask_price: Option<f64>,
+    // The best bid price as provided by exchange, empty if there aren't any bids.
+    pub bid_price: Option<f64>,
+    // The best bid amount as provided by exchange, empty if there aren't any bids.
+    pub bid_amount: Option<f64>,
+}
+
 /// Represents a Tardis format trade record.
 #[derive(Debug, Deserialize)]
 pub struct TardisTradeRecord {
