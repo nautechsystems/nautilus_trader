@@ -125,9 +125,9 @@ impl WebSocketClientInner {
 
         // Hacky solution to overcome the new `http` trait bounds
         for (key, val) in headers {
-            let header_value = HeaderValue::from_str(&val).unwrap();
+            let header_value = HeaderValue::from_str(&val)?;
             use http::header::HeaderName;
-            let header_name: HeaderName = key.parse().unwrap();
+            let header_name: HeaderName = key.parse()?;
             let header_name_string = header_name.to_string();
             let header_name_str: &'static str = Box::leak(header_name_string.into_boxed_str());
             req_headers.insert(header_name_str, header_value);
@@ -252,8 +252,11 @@ impl WebSocketClientInner {
 
         tracing::debug!("Closing writer");
         let mut write_half = self.writer.lock().await;
-        write_half.close().await.unwrap();
-        tracing::debug!("Closed connection");
+        if let Err(e) = write_half.close().await {
+            tracing::error!("Error closing writer: {e:?}");
+        } else {
+            tracing::debug!("Closed connection");
+        }
     }
 
     /// Reconnect with server.

@@ -22,6 +22,7 @@ None
 
 ### Fixes
 - Fixed `SocketClient` TLS implementation
+- Fixed `WebSocketClient` error handling on writer close, thanks for reporting @davidsblom
 - Fixed resubscribing to orderbook in batched mode for dYdX (#1985), thanks @davidsblom
 - Fixed Betfair tests related to symbology (#1988), thanks @limx0
 
