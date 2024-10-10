@@ -21,7 +21,7 @@ use nautilus_model::data::{
 };
 use pyo3::{prelude::*, types::PyCapsule};
 
-use crate::tardis::load::{
+use crate::tardis::csv::{
     load_deltas, load_depth10_from_snapshot25, load_depth10_from_snapshot5, load_quote_ticks,
     load_trade_ticks,
 };
