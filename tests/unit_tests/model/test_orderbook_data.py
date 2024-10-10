@@ -702,6 +702,28 @@ def test_depth10_new() -> None:
     assert depth.ts_init == 3
 
 
+def test_depth10_partial_levels() -> None:
+    # Arrange, Act
+    instrument_id = TestIdStubs.aapl_xnas_id()
+    depth = TestDataStubs.order_book_depth10(
+        instrument_id=instrument_id,
+        flags=0,
+        sequence=1,
+        ts_event=2,
+        ts_init=3,
+        levels=3,
+    )
+
+    # Assert
+    assert depth.instrument_id == instrument_id
+    assert len(depth.bids) == 10
+    assert len(depth.asks) == 10
+    assert depth.flags == 0
+    assert depth.sequence == 1
+    assert depth.ts_event == 2
+    assert depth.ts_init == 3
+
+
 def test_depth10_pickle_round_trip() -> None:
     # Arrange
     depth = TestDataStubs.order_book_depth10()

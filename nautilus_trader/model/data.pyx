@@ -29,6 +29,7 @@ from cpython.pycapsule cimport PyCapsule_New
 from libc.stdint cimport uint8_t
 from libc.stdint cimport uint32_t
 from libc.stdint cimport uint64_t
+from libc.stdint cimport uintptr_t
 
 from nautilus_trader.core.correctness cimport Condition
 from nautilus_trader.core.data cimport Data
@@ -2774,17 +2775,9 @@ cdef class OrderBookDepth10(Data):
     Raises
     ------
     ValueError
-        If `bids` is empty.
+        If `bids`, `asks`, `bid_counts`, `ask_counts` lengths are greater than 10.
     ValueError
-        If `asks` is empty.
-    ValueError
-        If `bids` length is not equal to 10.
-    ValueError
-        If `asks` length is not equal to 10.
-    ValueError
-        If `bid_counts` length is not equal to 10.
-    ValueError
-        If `ask_counts` length is not equal to 10.
+        If `bids`, `asks`, `bid_counts`, `ask_counts` lengths are not equal.
 
     """
 
@@ -2800,12 +2793,20 @@ cdef class OrderBookDepth10(Data):
         uint64_t ts_event,
         uint64_t ts_init,
     ) -> None:
-        Condition.not_empty(bids, "bids")
-        Condition.not_empty(asks, "asks")
-        Condition.is_true(len(bids) == DEPTH10_LEN, f"`bids` length != 10, was {len(bids)}")
-        Condition.is_true(len(asks) == DEPTH10_LEN, f"`asks` length != 10, was {len(asks)}")
-        Condition.is_true(len(bid_counts) == DEPTH10_LEN, f"`bid_counts` length != 10, was {len(bid_counts)}")
-        Condition.is_true(len(ask_counts) == DEPTH10_LEN, f"`ask_counts` length != 10, was {len(ask_counts)}")
+        cdef uint32_t bids_len = len(bids)
+        cdef uint32_t asks_len = len(asks)
+        Condition.is_true(bids_len <= 10, f"bids length greater than maximum 10, was {bids_len}")
+        Condition.is_true(asks_len <= 10, f"asks length greater than maximum 10, was {asks_len}")
+        Condition.equal(bids_len, asks_len, "bids length", "asks length")
+        Condition.equal(bids_len, len(bid_counts), "len(bids)", "len(bid_counts)")
+        Condition.equal(asks_len, len(ask_counts), "len(asks)", "len(ask_counts)")
+
+        if bids_len < 10:
+            # Fill remaining levels with with null orders and zero counts
+            bids.extend([NULL_ORDER] * (10 - bids_len))
+            asks.extend([NULL_ORDER] * (10 - asks_len))
+            bid_counts.extend([0] * (10 - bids_len))
+            ask_counts.extend([0] * (10 - asks_len))
 
         # Create temporary arrays to copy data to Rust
         cdef BookOrder_t *bids_array = <BookOrder_t *>PyMem_Malloc(DEPTH10_LEN * sizeof(BookOrder_t))
