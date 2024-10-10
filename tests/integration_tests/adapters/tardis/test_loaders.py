@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from nautilus_trader.adapters.tardis.loaders import TardisCSVDataLoader
-from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
@@ -22,26 +21,13 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from tests import TEST_DATA_DIR
+from nautilus_trader.test_kit.providers import ensure_data_exists_tardis_bitmex_trades
+from nautilus_trader.test_kit.providers import ensure_data_exists_tardis_deribit_book_l2
 
 
 def test_tardis_load_deltas():
     # Arrange
-    filepath = (
-        TEST_DATA_DIR
-        / "large"
-        / "tardis_deribit_incremental_book_L2_2020-04-01_BTC-PERPETUAL.csv.gz"
-    )
-    checksums = TEST_DATA_DIR / "large" / "checksums.json"
-    url = (
-        "https://datasets.tardis.dev/v1/deribit/incremental_book_L2/2020/04/01/BTC-PERPETUAL.csv.gz"
-    )
-    nautilus_pyo3.ensure_file_exists_or_download_http(
-        str(filepath.resolve()),
-        url,
-        str(checksums.resolve()),
-    )
-
+    filepath = ensure_data_exists_tardis_deribit_book_l2()
     loader = TardisCSVDataLoader(price_precision=1, size_precision=0)
 
     # Act
@@ -62,15 +48,7 @@ def test_tardis_load_deltas():
 
 def test_tardis_load_trades():
     # Arrange
-    filepath = TEST_DATA_DIR / "large" / "tardis_bitmex_trades_2020-03-01_XBTUSD.csv.gz"
-    checksums = TEST_DATA_DIR / "large" / "checksums.json"
-    url = "https://datasets.tardis.dev/v1/bitmex/trades/2020/03/01/XBTUSD.csv.gz"
-    nautilus_pyo3.ensure_file_exists_or_download_http(
-        str(filepath.resolve()),
-        url,
-        str(checksums.resolve()),
-    )
-
+    filepath = ensure_data_exists_tardis_bitmex_trades()
     loader = TardisCSVDataLoader(price_precision=1, size_precision=0)
 
     # Act
