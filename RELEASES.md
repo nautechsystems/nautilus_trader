@@ -8,6 +8,8 @@ Released on TBD (UTC).
 - Added support for `bbo-1s` and `bbo-1m` quote schemas for Databento adapter (#1990), thanks @faysou
 - Added validation for venue `book_type` configuration vs data (prevents an issue where top-of-book data is used when order book data is expected)
 - Added `compute_effective_deltas` config setting for `PolymarketDataClientConfig`, reducing snapshot size (`False` by default to maintain current behavior)
+- Added rate limiter for `WebSocketClient` (#1994), thanks @Pushkarm029
+- Added in the money probability field to GreeksData (#1995), thanks @faysou
 - Improved usability of `OrderBookDepth10` by filling partial levels with null orders and zero counts
 - Refined `DatabentoInstrumentProvider` handling of large bulks of instrument definitions (improved parent symbol support)
 - Standardized Betfair symbology to use hyphens instead of periods (prevents Betfair symbols being treated as composite)
