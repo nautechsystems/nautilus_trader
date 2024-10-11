@@ -15,29 +15,28 @@ nautilus-core = { path = "../core" }
 anyhow = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
+futures-util = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-asyncio-0-21 = { workspace = true, optional = true }
 reqwest = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
 dashmap = "6.1.0"
-futures-util = "0.3.30"
 http = "1.1.0"
 hyper = "1.4.1"
 nonzero_ext = "0.3.0"
 rustls = { version = "0.23.14", features = ["ring"] }
 rustls-native-certs = "0.8.0"
 tokio-rustls = "0.26.0"
-tokio-tungstenite = { version = "0.24.0", features = ["rustls-tls-native-roots"] }
-tungstenite = "0.24.0"
 
 [dev-dependencies]
 axum = { workspace = true }
 criterion = { workspace = true }
 serde_json = { workspace = true }
 rstest = { workspace = true }
-tracing-test = "0.2.5"
+tracing-test = { workspace = true }
 
 [features]
 default = ["python"]

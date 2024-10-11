@@ -13,21 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-/// Represents the type of Tardis WebSocket message.
-#[derive(Debug, PartialEq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MessageType {
-    BookChange,
-    BookSnapshot,
-    Trade,
-    Unknown(String),
-}
+use super::enums::Exchange;
 
 /// Represents a single level in the order book (bid or ask).
-#[derive(Debug, Deserialize, Serialize)]
-pub struct OrderBookLevel {
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct BookLevel {
     /// The price at this level.
     pub price: f64,
     /// The amount at this level.
@@ -35,41 +28,33 @@ pub struct OrderBookLevel {
 }
 
 /// Represents a Tardis WebSocket message for book changes.
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(tag = "type")]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct BookChangeMessage {
-    /// The type of message (tagged union).
-    #[serde(rename = "type")]
-    pub msg_type: MessageType,
-    /// The instrument symbol as provided by the exchange.
+pub struct BookChangeMsg {
+    /// The symbol as provided by the exchange.
     pub symbol: String,
     /// The exchange ID.
-    pub exchange: String,
+    pub exchange: Exchange,
     /// Indicates whether this is an initial order book snapshot.
     pub is_snapshot: bool,
     /// Updated bids, with price and amount levels.
-    pub bids: Vec<OrderBookLevel>,
+    pub bids: Vec<BookLevel>,
     /// Updated asks, with price and amount levels.
-    pub asks: Vec<OrderBookLevel>,
+    pub asks: Vec<BookLevel>,
     /// The order book update timestamp provided by the exchange (ISO 8601 format).
-    pub timestamp: String,
-    /// The local timestamp when the message was received (ISO 8601 format).
-    pub local_timestamp: String,
+    pub timestamp: DateTime<Utc>,
+    /// The local timestamp when the message was received.
+    pub local_timestamp: DateTime<Utc>,
 }
 
 /// Represents a Tardis WebSocket message for book snapshots.
-#[derive(Debug, Deserialize, Serialize)]
-#[serde(tag = "type")]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct BookSnapshotMessage {
-    /// The type of message (tagged union).
-    #[serde(rename = "type")]
-    pub msg_type: MessageType,
-    /// The instrument symbol as provided by the exchange.
+pub struct BookSnapshotMsg {
+    /// The symbol as provided by the exchange.
     pub symbol: String,
     /// The exchange ID.
-    pub exchange: String,
+    pub exchange: Exchange,
     /// The name of the snapshot, e.g., `book_snapshot_{depth}_{interval}{time_unit}`.
     pub name: String,
     /// The requested number of levels (top bids/asks).
@@ -77,27 +62,24 @@ pub struct BookSnapshotMessage {
     /// The requested snapshot interval in milliseconds.
     pub interval: u32,
     /// The top bids price-amount levels.
-    pub bids: Vec<OrderBookLevel>,
+    pub bids: Vec<BookLevel>,
     /// The top asks price-amount levels.
-    pub asks: Vec<OrderBookLevel>,
+    pub asks: Vec<BookLevel>,
     /// The snapshot timestamp based on the last book change message processed timestamp.
-    pub timestamp: String,
+    pub timestamp: DateTime<Utc>,
     /// The local timestamp when the message was received.
-    pub local_timestamp: String,
+    pub local_timestamp: DateTime<Utc>,
 }
 
 /// Represents a Tardis WebSocket message for trades.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(tag = "type")]
 #[serde(rename_all = "camelCase")]
-pub struct TradeMessage {
-    /// The type of message (tagged union).
-    #[serde(rename = "type")]
-    pub msg_type: MessageType,
-    /// The instrument symbol as provided by the exchange.
+pub struct TradeMsg {
+    /// The symbol as provided by the exchange.
     pub symbol: String,
     /// The exchange ID.
-    pub exchange: String,
+    pub exchange: Exchange,
     /// The trade ID provided by the exchange (optional).
     pub id: Option<String>,
     /// The trade price as provided by the exchange.
@@ -106,10 +88,87 @@ pub struct TradeMessage {
     pub amount: f64,
     /// The liquidity taker side (aggressor) for the trade.
     pub side: String,
-    /// The trade timestamp provided by the exchange (ISO 8601 format).
-    pub timestamp: String,
-    /// The local timestamp when the message was received (ISO 8601 format).
-    pub local_timestamp: String,
+    /// The trade timestamp provided by the exchange.
+    pub timestamp: DateTime<Utc>,
+    /// The local timestamp when the message was received.
+    pub local_timestamp: DateTime<Utc>,
+}
+
+/// Derivative instrument ticker info sourced from real-time ticker & instrument channels.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DerivativeTickerMsg {
+    /// The symbol as provided by the exchange.
+    pub symbol: String,
+    /// The exchange ID.
+    pub exchange: Exchange,
+    /// The last instrument price if provided by exchange.
+    pub last_price: Option<f64>,
+    /// The last open interest if provided by exchange.
+    pub open_interest: Option<f64>,
+    /// The last funding rate if provided by exchange.
+    pub funding_rate: Option<f64>,
+    /// The last index price if provided by exchange.
+    pub index_price: Option<f64>,
+    /// The last mark price if provided by exchange.
+    pub mark_price: Option<f64>,
+    /// The message timestamp provided by exchange.
+    pub timestamp: DateTime<Utc>,
+    /// The local timestamp when the message was received.
+    pub local_timestamp: DateTime<Utc>,
+}
+
+/// Trades data in aggregated form, known as OHLC, candlesticks, klines etc. Not only most common
+/// time based aggregation is supported, but volume and tick count based as well. Bars are computed
+/// from tick-by-tick raw trade data, if in given interval no trades happened, there is no bar produced.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BarMsg {
+    /// The symbol as provided by the exchange.
+    pub symbol: String,
+    /// The exchange ID.
+    pub exchange: Exchange,
+    /// name with format trade_bar_{interval}
+    pub name: String,
+    /// The requested trade bar interval.
+    pub interval: u64,
+    /// The open price.
+    pub open: f64,
+    /// The high price.
+    pub high: f64,
+    /// The low price.
+    pub low: f64,
+    /// The close price.
+    pub close: f64,
+    /// The total volume traded in given interval.
+    pub volume: f64,
+    /// The buy volume traded in given interval.
+    pub buy_volume: f64,
+    /// The sell volume traded in given interval.
+    pub sell_volume: f64,
+    /// The trades count in given interval.
+    pub trades: u64,
+    /// The volume weighted average price.
+    pub vwap: f64,
+    /// The timestamp of first trade for given bar.
+    pub open_timestamp: DateTime<Utc>,
+    /// The timestamp of last trade for given bar.
+    pub close_timestamp: DateTime<Utc>,
+    /// The end of interval period timestamp.
+    pub timestamp: DateTime<Utc>,
+    /// The message arrival timestamp that triggered given bar computation.
+    pub local_timestamp: DateTime<Utc>,
+}
+
+/// Message that marks events when real-time WebSocket connection that was used to collect the
+/// historical data got disconnected.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DisconnectMsg {
+    /// The exchange ID.
+    pub exchange: Exchange,
+    /// The message arrival timestamp that triggered given bar computation (ISO 8601 format).
+    pub local_timestamp: DateTime<Utc>,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -141,19 +200,23 @@ mod tests {
         }
         "#;
 
-        let message: BookChangeMessage =
-            serde_json::from_str(json_data).expect("Failed to parse JSON");
+        let message: BookChangeMsg = serde_json::from_str(json_data).expect("Failed to parse JSON");
 
-        assert_eq!(message.msg_type, MessageType::BookChange);
         assert_eq!(message.symbol, "XBTUSD");
-        assert_eq!(message.exchange, "bitmex");
+        assert_eq!(message.exchange, Exchange::Bitmex);
         assert_eq!(message.is_snapshot, false);
         assert!(message.bids.is_empty());
         assert_eq!(message.asks.len(), 1);
         assert_eq!(message.asks[0].price, 7985.0);
         assert_eq!(message.asks[0].amount, 283318.0);
-        assert_eq!(message.timestamp, "2019-10-23T11:29:53.469Z");
-        assert_eq!(message.local_timestamp, "2019-10-23T11:29:53.469Z");
+        assert_eq!(
+            message.timestamp,
+            DateTime::parse_from_rfc3339("2019-10-23T11:29:53.469Z").unwrap()
+        );
+        assert_eq!(
+            message.local_timestamp,
+            DateTime::parse_from_rfc3339("2019-10-23T11:29:53.469Z").unwrap()
+        );
     }
 
     #[rstest]
@@ -191,12 +254,11 @@ mod tests {
         }
         "#;
 
-        let message: BookSnapshotMessage =
+        let message: BookSnapshotMsg =
             serde_json::from_str(json_data).expect("Failed to parse JSON");
 
-        assert_eq!(message.msg_type, MessageType::BookSnapshot);
         assert_eq!(message.symbol, "XBTUSD");
-        assert_eq!(message.exchange, "bitmex");
+        assert_eq!(message.exchange, Exchange::Bitmex);
         assert_eq!(message.name, "book_snapshot_2_50ms");
         assert_eq!(message.depth, 2);
         assert_eq!(message.interval, 50);
@@ -206,8 +268,14 @@ mod tests {
         assert_eq!(message.bids[0].amount, 1906067.0);
         assert_eq!(message.asks[0].price, 7634.0);
         assert_eq!(message.asks[0].amount, 1467849.0);
-        assert_eq!(message.timestamp, "2019-10-25T13:39:46.950Z");
-        assert_eq!(message.local_timestamp, "2019-10-25T13:39:46.961Z");
+        assert_eq!(
+            message.timestamp,
+            DateTime::parse_from_rfc3339("2019-10-25T13:39:46.950Z").unwrap(),
+        );
+        assert_eq!(
+            message.local_timestamp,
+            DateTime::parse_from_rfc3339("2019-10-25T13:39:46.961Z").unwrap()
+        )
     }
 
     #[rstest]
@@ -226,11 +294,10 @@ mod tests {
         }
         "#;
 
-        let message: TradeMessage = serde_json::from_str(json_data).expect("Failed to parse JSON");
+        let message: TradeMsg = serde_json::from_str(json_data).expect("Failed to parse JSON");
 
-        assert_eq!(message.msg_type, MessageType::Trade);
         assert_eq!(message.symbol, "XBTUSD");
-        assert_eq!(message.exchange, "bitmex");
+        assert_eq!(message.exchange, Exchange::Bitmex);
         assert_eq!(
             message.id,
             Some("282a0445-0e3a-abeb-f403-11003204ea1b".to_string())
@@ -238,7 +305,127 @@ mod tests {
         assert_eq!(message.price, 7996.0);
         assert_eq!(message.amount, 50.0);
         assert_eq!(message.side, "sell");
-        assert_eq!(message.timestamp, "2019-10-23T10:32:49.669Z");
-        assert_eq!(message.local_timestamp, "2019-10-23T10:32:49.740Z");
+        assert_eq!(
+            message.timestamp,
+            DateTime::parse_from_rfc3339("2019-10-23T10:32:49.669Z").unwrap()
+        );
+        assert_eq!(
+            message.local_timestamp,
+            DateTime::parse_from_rfc3339("2019-10-23T10:32:49.740Z").unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_parse_derivative_ticker_message() {
+        let json_data = r#"
+    {
+      "type": "derivative_ticker",
+      "symbol": "BTC-PERPETUAL",
+      "exchange": "deribit",
+      "lastPrice": 7987.5,
+      "openInterest": 84129491,
+      "fundingRate": -0.00001568,
+      "indexPrice": 7989.28,
+      "markPrice": 7987.56,
+      "timestamp": "2019-10-23T11:34:29.302Z",
+      "localTimestamp": "2019-10-23T11:34:29.416Z"
+    }
+    "#;
+
+        let message: DerivativeTickerMsg =
+            serde_json::from_str(json_data).expect("Failed to parse JSON");
+
+        assert_eq!(message.symbol, "BTC-PERPETUAL");
+        assert_eq!(message.exchange, Exchange::Deribit);
+        assert_eq!(message.last_price, Some(7987.5));
+        assert_eq!(message.open_interest, Some(84129491.0));
+        assert_eq!(message.funding_rate, Some(-0.00001568));
+        assert_eq!(message.index_price, Some(7989.28));
+        assert_eq!(message.mark_price, Some(7987.56));
+        assert_eq!(
+            message.timestamp,
+            DateTime::parse_from_rfc3339("2019-10-23T11:34:29.302Z").unwrap()
+        );
+        assert_eq!(
+            message.local_timestamp,
+            DateTime::parse_from_rfc3339("2019-10-23T11:34:29.416Z").unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_parse_bar_message() {
+        let json_data = r#"
+    {
+      "type": "trade_bar",
+      "symbol": "XBTUSD",
+      "exchange": "bitmex",
+      "name": "trade_bar_10000ms",
+      "interval": 10000,
+      "open": 7623.5,
+      "high": 7623.5,
+      "low": 7623,
+      "close": 7623.5,
+      "volume": 37034,
+      "buyVolume": 24244,
+      "sellVolume": 12790,
+      "trades": 9,
+      "vwap": 7623.327320840309,
+      "openTimestamp": "2019-10-25T13:11:31.574Z",
+      "closeTimestamp": "2019-10-25T13:11:39.212Z",
+      "localTimestamp": "2019-10-25T13:11:40.369Z",
+      "timestamp": "2019-10-25T13:11:40.000Z"
+    }
+    "#;
+
+        let message: BarMsg = serde_json::from_str(json_data).expect("Failed to parse JSON");
+
+        assert_eq!(message.symbol, "XBTUSD");
+        assert_eq!(message.exchange, Exchange::Bitmex);
+        assert_eq!(message.name, "trade_bar_10000ms");
+        assert_eq!(message.interval, 10000);
+        assert_eq!(message.open, 7623.5);
+        assert_eq!(message.high, 7623.5);
+        assert_eq!(message.low, 7623.0);
+        assert_eq!(message.close, 7623.5);
+        assert_eq!(message.volume, 37034.0);
+        assert_eq!(message.buy_volume, 24244.0);
+        assert_eq!(message.sell_volume, 12790.0);
+        assert_eq!(message.trades, 9);
+        assert_eq!(message.vwap, 7623.327320840309);
+        assert_eq!(
+            message.open_timestamp,
+            DateTime::parse_from_rfc3339("2019-10-25T13:11:31.574Z").unwrap()
+        );
+        assert_eq!(
+            message.close_timestamp,
+            DateTime::parse_from_rfc3339("2019-10-25T13:11:39.212Z").unwrap()
+        );
+        assert_eq!(
+            message.local_timestamp,
+            DateTime::parse_from_rfc3339("2019-10-25T13:11:40.369Z").unwrap()
+        );
+        assert_eq!(
+            message.timestamp,
+            DateTime::parse_from_rfc3339("2019-10-25T13:11:40.000Z").unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_parse_disconnect_message() {
+        let json_data = r#"
+    {
+      "type": "disconnect",
+      "exchange": "deribit",
+      "localTimestamp": "2019-10-23T11:34:29.416Z"
+    }
+    "#;
+
+        let message: DisconnectMsg = serde_json::from_str(json_data).expect("Failed to parse JSON");
+
+        assert_eq!(message.exchange, Exchange::Deribit);
+        assert_eq!(
+            message.local_timestamp,
+            DateTime::parse_from_rfc3339("2019-10-23T11:34:29.416Z").unwrap()
+        );
     }
 }

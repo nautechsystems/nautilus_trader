@@ -30,9 +30,10 @@ documentation = "https://nautilustrader.io/docs"
 anyhow = "1.0.89"
 base64 = "0.22.1"
 bytes = { version = "1.7.2", features = ["serde"] }
-chrono = "0.4.38"
+chrono = { version = "0.4.38", features = ["serde"] }
 derive_builder = "0.20.2"
 futures = "0.3.31"
+futures-util = "0.3.31"
 hex = "0.4.3"
 indexmap = { version = "2.6.0", features = ["serde"] }
 itertools = "0.12.1"
@@ -54,7 +55,10 @@ strum = { version = "0.26.3", features = ["derive"] }
 thiserror = "1.0.64"
 thousands = "0.2.0"
 tracing = "0.1.40"
+# Disable default feature "tracing-log" since it interferes with custom logging
+tracing-subscriber = { version = "0.3.18", default-features = false, features = ["smallvec", "fmt", "ansi", "std", "env-filter"] }
 tokio = { version = "1.40.0", features = ["full"] }
+tokio-tungstenite = { version = "0.24.0", features = ["rustls-tls-native-roots"] }
 ustr = { version = "1.0.0", features = ["serde"] }
 uuid = { version = "1.10.0", features = ["v4"] }
 
@@ -67,6 +71,7 @@ pretty_assertions = "1.4.1"
 proptest = "1.5.0"
 rstest = "0.23.0"
 tempfile = "3.13.0"
+tracing-test = "0.2.5"
 
 # build-dependencies
 cbindgen = "0.27.0"

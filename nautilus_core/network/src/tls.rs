@@ -30,7 +30,6 @@ use tokio_tungstenite::{
     },
     MaybeTlsStream,
 };
-use tungstenite;
 
 /// A connector that can be used when establishing connections, allowing to control whether
 /// `native-tls` or `rustls` is used to create a TLS connection. Or TLS can be disabled with the
@@ -149,7 +148,7 @@ where
     }
 }
 
-fn domain(request: &tungstenite::handshake::client::Request) -> Result<String, Error> {
+fn domain(request: &Request) -> Result<String, Error> {
     match request.uri().host() {
         // rustls expects IPv6 addresses without the surrounding [] brackets
         Some(d) if d.starts_with('[') && d.ends_with(']') => Ok(d[1..d.len() - 1].to_string()),
