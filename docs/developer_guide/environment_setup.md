@@ -71,7 +71,9 @@ Used services are:
 - `redis`: Redis server
 - `pgadmin`: PgAdmin4 for database management and administration
 
-> **Note**: Please use this as development environment only. For production, use a proper and  more secure setup.
+:::info
+Please use this as development environment only. For production, use a proper and more secure setup.
+:::
 
 After the services has been started, you must log in with `psql` cli to create `nautilus` Postgres database.
 To do that you can run, and type `POSTGRES_PASSWORD` from docker service setup
@@ -95,16 +97,17 @@ CREATE DATABASE
 
 ## Introduction
 
-The Nautilus CLI is a command-line interface tool designed to interact
-with the Nautilus Trader ecosystem. It provides commands for managing the Postgres database and other trading operations.
+The Nautilus CLI is a command-line interface tool for interacting with the NautilusTrader ecosystem.
+It offers commands for managing the PostgreSQL database and handling various trading operations.
 
-> **Note**: The Nautilus CLI command is only supported on UNIX-like systems.
-
+:::note
+The Nautilus CLI command is only supported on UNIX-like systems.
+:::
 
 ## Install 
 
-You can install nautilus cli command with from Make file target, which will use `cargo install` under the hood.
-And this command will install `nautilus` bin executable in your path if Rust `cargo` is properly configured.
+You can install the Nautilus CLI using the below Makefile target, which leverages `cargo install` under the hood.
+This will place the nautilus binary in your system's PATH, assuming Rust's `cargo` is properly configured.
 
 ```bash
 make install-cli
@@ -112,21 +115,20 @@ make install-cli
 
 ## Commands
 
-You can run `nautilus --help` to inspect structure of CLI and groups of commands:
+You can run `nautilus --help` to view the CLI structure and available command groups:
 
 ### Database
 
-These are commands related to the bootstrapping the Postgres database.
-For that you work, you need to supply right connection configuration. You can do that through 
-command line arguments or `.env` file in the root directory or where the commands is being run.
+These commands handle bootstrapping the PostgreSQL database.
+To use them, you need to provide the correct connection configuration,
+either through command-line arguments or a `.env` file located in the root directory or the current working directory.
 
-- `--host` arg or `POSTGRES_HOST` for database host
-- `--port` arg or `POSTGRES_PORT` for database port
-- `--user` arg or `POSTGRES_USER` for root administrator user to run command with (namely `postgres` root user here)
-- `--password` arg or `POSTGRES_PASSWORD` for root administrator password
-- `--database` arg or `POSTGRES_DATABASE` for both database **name and new user** that will have privileges of this database
-  ( if you provided `nautilus` as value, then new user will be created with name `nautilus` that will inherit the password from `POSTGRES_PASSWORD`
- and `nautilus` database with be bootstrapped with this user as owner)
+- `--host` or `POSTGRES_HOST` for the database host
+- `--port` or `POSTGRES_PORT` for the database port
+- `--user` or `POSTGRES_USER` for the root administrator (typically the postgres user)
+- `--password` or `POSTGRES_PASSWORD` for the root administrator's password
+- `--database` or `POSTGRES_DATABASE` for both the database **name and the new user** with privileges to that database
+    (e.g., if you provide `nautilus` as the value, a new user named nautilus will be created with the password from `POSTGRES_PASSWORD`, and the `nautilus` database will be bootstrapped with this user as the owner).
 
 Example of `.env` file
 
@@ -134,11 +136,11 @@ Example of `.env` file
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
 POSTGRES_USERNAME=postgres
-POSTGRES_DATABASE=nautilus
 POSTGRES_PASSWORD=pass
+POSTGRES_DATABASE=nautilus
 ```
 
 List of commands are:
 
 1. `nautilus database init`: Will bootstrap schema, roles and all sql files located in `schema` root directory (like `tables.sql`)
-2. `nautilus database drop`: Will drop all tables, role and data in target Postgres database
+2. `nautilus database drop`: Will drop all tables, roles and data in target Postgres database
