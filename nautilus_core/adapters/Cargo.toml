@@ -11,8 +11,12 @@ name = "nautilus_adapters"
 crate-type = ["rlib", "staticlib", "cdylib"]
 
 [[bin]]
-name = "sandbox"
+name = "databento-sandbox"
 path = "src/databento/bin/sandbox.rs"
+
+[[bin]]
+name = "tardis-machine"
+path = "src/tardis/bin/example.rs"
 
 [dependencies]
 nautilus-common = { path = "../common" }
@@ -21,6 +25,7 @@ nautilus-model = { path = "../model", features = ["stubs"] }
 anyhow = { workspace = true }
 base64 = { workspace = true }
 chrono = { workspace = true }
+futures-util = { workspace = true }
 hex = { workspace = true }
 indexmap = { workspace = true }
 itoa = { workspace = true }
@@ -34,20 +39,25 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
 tokio = { workspace = true }
+tokio-tungstenite = { workspace = true, optional = true }
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 thiserror = { workspace = true }
 ustr = { workspace = true }
-databento = { version = "0.14.1", optional = true }
+async-stream = "0.3.6"
 csv = "1.3.0"
+databento = { version = "0.14.1", optional = true }
 fallible-streaming-iterator = "0.1.9"
 flate2 = "1.0.34"
 pem = "3.0.4"
 time = "0.3.36"
+urlencoding = { version = "2.1.3", optional = true }
 
 [dev-dependencies]
 nautilus-test-kit = { path = "../test_kit" }
 criterion = { workspace = true }
 rstest = { workspace = true }
+tracing-test = { workspace = true }
 
 [features]
 default = ["databento", "ffi", "python", "tardis"]
@@ -70,4 +80,4 @@ python = [
   "nautilus-core/python",
   "nautilus-model/python",
 ]
-tardis = []
+tardis = ["python", "tokio-tungstenite", "urlencoding"]

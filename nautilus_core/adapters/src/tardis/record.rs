@@ -13,10 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Represents a Tardis format order book update record.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TardisBookUpdateRecord {
     /// The exchange ID.
     pub exchange: String,
@@ -37,7 +37,7 @@ pub struct TardisBookUpdateRecord {
 }
 
 /// Represents a Tardis format order book 5 level snapshot record.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TardisOrderBookSnapshot5Record {
     /// The exchange ID.
     pub exchange: String,
@@ -90,7 +90,7 @@ pub struct TardisOrderBookSnapshot5Record {
 }
 
 /// Represents a Tardis format order book 25 level snapshot record.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TardisOrderBookSnapshot25Record {
     /// The exchange ID.
     pub exchange: String,
@@ -228,7 +228,7 @@ pub struct TardisOrderBookSnapshot25Record {
 }
 
 /// Represents a Tardis format quote record.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TardisQuoteRecord {
     /// The exchande ID.
     pub exchange: String,
@@ -249,7 +249,7 @@ pub struct TardisQuoteRecord {
 }
 
 /// Represents a Tardis format trade record.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TardisTradeRecord {
     /// The exchande ID.
     pub exchange: String,
