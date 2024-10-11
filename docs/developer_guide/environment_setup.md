@@ -37,13 +37,18 @@ The following steps are for UNIX-like systems, and only need to be completed onc
 
 ## Builds
 
-Following any changes to `.pyx` or `.pxd` files, you can re-compile by running:
+Following any changes to `.rs`, `.pyx` or `.pxd` files, you can re-compile by running:
 
     poetry run python build.py
 
 or
 
     make build
+
+If you're developing and iterating frequently, then compiling in debug mode is often sufficient and *significantly* faster than a fully optimized build.
+To compile in debug mode, use:
+
+    make build-debug
 
 ## Services
 
