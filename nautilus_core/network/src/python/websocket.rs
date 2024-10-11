@@ -74,6 +74,8 @@ impl WebSocketClient {
         post_connection: Option<PyObject>,
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
+        keyed_quotas: Option<Vec<(String, Quota)>>,
+        default_quota: Option<Quota>,
         py: Python<'_>,
     ) -> PyResult<Bound<PyAny>> {
         pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
@@ -82,6 +84,8 @@ impl WebSocketClient {
                 post_connection,
                 post_reconnection,
                 post_disconnection,
+                keyed_quotas,
+                default_quota,
             )
             .await
             .map_err(to_websocket_pyerr)
@@ -143,21 +147,41 @@ impl WebSocketClient {
         })
     }
 
-    /// Send UTF-8 encoded bytes as text data to the server.
+    /// Send UTF-8 encoded bytes as text data to the server, respecting rate limits.
+    ///
+    /// `data`: The byte data to be sent, which will be converted to a UTF-8 string.
+    /// `keys`: Optional list of rate limit keys. If provided, the function will wait for rate limits to be met for each key before sending the data.
     ///
     /// # Errors
+    /// - Raises `PyRuntimeError` if unable to send the data.
     ///
-    /// - Raises PyRuntimeError if not able to send data.
+    /// # Example
+    ///
+    /// When a request is made the URL should be split into all relevant keys within it.
+    ///
+    /// For request /foo/bar, should pass keys ["foo/bar", "foo"] for rate limiting.
     #[pyo3(name = "send_text")]
     fn py_send_text<'py>(
         slf: PyRef<'_, Self>,
         data: Vec<u8>,
         py: Python<'py>,
+        keys: Option<Vec<String>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let data = String::from_utf8(data).map_err(to_pyvalue_err)?;
-        tracing::trace!("Sending text: {data}");
+        let keys = keys.unwrap_or_default();
         let writer = slf.writer.clone();
+        let rate_limiter = slf.rate_limiter.clone();
         pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+            let tasks = keys.iter().map(|key| rate_limiter.until_key_ready(key));
+            stream::iter(tasks)
+                .for_each(|key| async move {
+                    key.await;
+                })
+                .await;
+
+            // Log after passing rate limit checks
+            tracing::trace!("Sending text: {data}");
+
             let mut guard = writer.lock().await;
             guard
                 .send(Message::Text(data))
@@ -337,7 +361,7 @@ counter = Counter()",
             None,
             None,
         );
-        let client = WebSocketClient::connect(config, None, None, None)
+        let client = WebSocketClient::connect(config, None, None, None, None, None)
             .await
             .unwrap();
 
@@ -441,7 +465,7 @@ checker = Checker()",
             Some("heartbeat message".to_string()),
             None,
         );
-        let client = WebSocketClient::connect(config, None, None, None)
+        let client = WebSocketClient::connect(config, None, None, None, None, None)
             .await
             .unwrap();
 
