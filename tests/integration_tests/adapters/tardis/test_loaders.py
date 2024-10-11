@@ -52,14 +52,15 @@ def test_tardis_load_deltas():
 def test_tardis_load_depth10_from_snapshot5():
     # Arrange
     filepath = ensure_data_exists_tardis_binance_snapshot5()
-    loader = TardisCSVDataLoader(price_precision=1, size_precision=0)
+    instrument_id = InstrumentId.from_str("BTCUSDT-PERP.BINANCE")  # Override instrument in data
+    loader = TardisCSVDataLoader(price_precision=1, size_precision=0, instrument_id=instrument_id)
 
     # Act
     deltas = loader.load_depth10(filepath, levels=5, limit=1_000)
 
     # Assert
     assert len(deltas) == 1_000
-    assert deltas[0].instrument_id == InstrumentId.from_str("BTCUSDT.BINANCE")
+    assert deltas[0].instrument_id == instrument_id
     assert deltas[0].ts_event == 1598918403696000000
     assert deltas[0].ts_init == 1598918403810979000
 

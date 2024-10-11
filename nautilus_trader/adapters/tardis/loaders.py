@@ -23,16 +23,39 @@ from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_list
+from nautilus_trader.model.identifiers import InstrumentId
 
 
 class TardisCSVDataLoader:
     """
     Provides a means of loading data from CSV files in Tardis format.
+
+    Parameters
+    ----------
+    price_precision : int
+        The price precision for parsing.
+        Necessary as implicit precision in the text data may not be consistent.
+    size_precision : int
+        The size precision for parsing.
+        Necessary as implicit precision in the text data may not be consistent.
+    instrument_id : InstrumentId, optional
+        The instrument ID to override in the data.
+        This can be more efficient if the instrument is definitely know (file does not contain
+        mixed instruments), or to maintain consistent symbology (such as BTCUSDT-PERP.BINANCE).
+
     """
 
-    def __init__(self, price_precision: int, size_precision: int) -> None:
+    def __init__(
+        self,
+        price_precision: int,
+        size_precision: int,
+        instrument_id: InstrumentId | None = None,
+    ) -> None:
         self._price_precision = price_precision
         self._size_precision = size_precision
+        self._instrument_id = (
+            nautilus_pyo3.InstrumentId.from_str(instrument_id.value) if instrument_id else None
+        )
 
     def load_deltas(
         self,
@@ -73,6 +96,7 @@ class TardisCSVDataLoader:
                 filepath=str(filepath),
                 price_precision=self._price_precision,
                 size_precision=self._size_precision,
+                instrument_id=self._instrument_id,
                 limit=limit,
             )
             data = capsule_to_list(capsule)
@@ -84,6 +108,7 @@ class TardisCSVDataLoader:
             filepath=str(filepath),
             price_precision=self._price_precision,
             size_precision=self._size_precision,
+            instrument_id=self._instrument_id,
             limit=limit,
         )
 
@@ -140,6 +165,7 @@ class TardisCSVDataLoader:
                         filepath=str(filepath),
                         price_precision=self._price_precision,
                         size_precision=self._size_precision,
+                        instrument_id=self._instrument_id,
                         limit=limit,
                     )
                     data = capsule_to_list(capsule)
@@ -151,6 +177,7 @@ class TardisCSVDataLoader:
                     filepath=str(filepath),
                     price_precision=self._price_precision,
                     size_precision=self._size_precision,
+                    instrument_id=self._instrument_id,
                     limit=limit,
                 )
             case 25:
@@ -159,6 +186,7 @@ class TardisCSVDataLoader:
                         filepath=str(filepath),
                         price_precision=self._price_precision,
                         size_precision=self._size_precision,
+                        instrument_id=self._instrument_id,
                         limit=limit,
                     )
                     data = capsule_to_list(capsule)
@@ -170,6 +198,7 @@ class TardisCSVDataLoader:
                     filepath=str(filepath),
                     price_precision=self._price_precision,
                     size_precision=self._size_precision,
+                    instrument_id=self._instrument_id,
                     limit=limit,
                 )
             case _:
@@ -216,6 +245,7 @@ class TardisCSVDataLoader:
                 filepath=str(filepath),
                 price_precision=self._price_precision,
                 size_precision=self._size_precision,
+                instrument_id=self._instrument_id,
                 limit=limit,
             )
             data = capsule_to_list(capsule)
@@ -227,6 +257,7 @@ class TardisCSVDataLoader:
             filepath=str(filepath),
             price_precision=self._price_precision,
             size_precision=self._size_precision,
+            instrument_id=self._instrument_id,
             limit=limit,
         )
 
@@ -269,6 +300,7 @@ class TardisCSVDataLoader:
                 filepath=str(filepath),
                 price_precision=self._price_precision,
                 size_precision=self._size_precision,
+                instrument_id=self._instrument_id,
                 limit=limit,
             )
             data = capsule_to_list(capsule)
@@ -280,5 +312,6 @@ class TardisCSVDataLoader:
             filepath=str(filepath),
             price_precision=self._price_precision,
             size_precision=self._size_precision,
+            instrument_id=self._instrument_id,
             limit=limit,
         )
