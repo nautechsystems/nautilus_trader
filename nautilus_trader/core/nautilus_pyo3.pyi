@@ -4126,7 +4126,8 @@ class GreeksData(Data):
     gamma: float
     vega: float
     theta: float
-    quantity: int
+    quantity: float
+    itm_prob: float
 
     def __init__(
         self,
@@ -4145,7 +4146,8 @@ class GreeksData(Data):
         gamma: float = 0.0,
         vega: float = 0.0,
         theta: float = 0.0,
-        quantity: int = 1,
+        quantity: float = 0.0,
+        itm_prob: float = 0.0,
     ): ...
 
     @classmethod

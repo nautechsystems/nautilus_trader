@@ -43,19 +43,22 @@ class GreeksData(Data):
     vega: float = 0.0
     theta: float = 0.0
 
-    quantity: int = 1
+    quantity: float = 0.0
+    # in the money probability, P(phi * S_T > phi * K), phi = 1 if is_call else -1
+    itm_prob: float = 0.0
 
     def __repr__(self):
         return (
             f"GreeksData(instrument_id={self.instrument_id}, "
-            f"expiry={self.expiry}, vol={self.vol * 100:.2f}%, price={self.price:.2f}, delta={self.delta:.2f}, "
+            f"expiry={self.expiry}, itm_prob={self.itm_prob * 100:.2f}%, "
+            f"vol={self.vol * 100:.2f}%, price={self.price:.2f}, delta={self.delta:.2f}, "
             f"gamma={self.gamma:.2f}, vega={self.vega:.2f}, theta={self.theta:.2f}, quantity={self.quantity}, "
             f"ts_event={unix_nanos_to_str(self.ts_event)}, ts_init={unix_nanos_to_str(self.ts_init)})"
         )
 
     @classmethod
     def from_delta(cls, instrument_id: InstrumentId, delta: float):
-        return GreeksData(instrument_id=instrument_id, delta=delta)
+        return GreeksData(instrument_id=instrument_id, delta=delta, quantity=1.0)
 
     def __rmul__(self, quantity):  # quantity * greeks
         return GreeksData(
@@ -75,6 +78,7 @@ class GreeksData(Data):
             quantity * self.vega,
             quantity * self.theta,
             quantity * self.quantity,
+            self.itm_prob,
         )
 
 

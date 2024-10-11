@@ -194,6 +194,8 @@ class GreeksCalculator(Actor):
                 greeks.gamma,
                 greeks.vega,
                 greeks.theta,
+                1.0,
+                abs(greeks.delta / multiplier),
             )
 
             # write greeks to the cache
