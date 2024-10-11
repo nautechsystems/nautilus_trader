@@ -16,8 +16,11 @@
 use std::path::PathBuf;
 
 use nautilus_core::{ffi::cvec::CVec, python::to_pyvalue_err};
-use nautilus_model::data::{
-    delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick, trade::TradeTick, Data,
+use nautilus_model::{
+    data::{
+        delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick, trade::TradeTick, Data,
+    },
+    identifiers::InstrumentId,
 };
 use pyo3::{prelude::*, types::PyCapsule};
 
@@ -32,9 +35,17 @@ pub fn py_load_tardis_deltas(
     filepath: PathBuf,
     price_precision: u8,
     size_precision: u8,
+    instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> PyResult<Vec<OrderBookDelta>> {
-    load_deltas(filepath, price_precision, size_precision, limit).map_err(to_pyvalue_err)
+    load_deltas(
+        filepath,
+        price_precision,
+        size_precision,
+        instrument_id,
+        limit,
+    )
+    .map_err(to_pyvalue_err)
 }
 
 #[must_use]
@@ -44,10 +55,17 @@ pub fn py_load_tardis_deltas_as_pycapsule(
     filepath: PathBuf,
     price_precision: u8,
     size_precision: u8,
+    instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> PyResult<PyObject> {
-    let deltas =
-        load_deltas(filepath, price_precision, size_precision, limit).map_err(to_pyvalue_err)?;
+    let deltas = load_deltas(
+        filepath,
+        price_precision,
+        size_precision,
+        instrument_id,
+        limit,
+    )
+    .map_err(to_pyvalue_err)?;
     let deltas: Vec<Data> = deltas.into_iter().map(Data::Delta).collect();
 
     let cvec: CVec = deltas.into();
@@ -61,10 +79,17 @@ pub fn py_load_tardis_depth10_from_snapshot5(
     filepath: PathBuf,
     price_precision: u8,
     size_precision: u8,
+    instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> PyResult<Vec<OrderBookDepth10>> {
-    load_depth10_from_snapshot5(filepath, price_precision, size_precision, limit)
-        .map_err(to_pyvalue_err)
+    load_depth10_from_snapshot5(
+        filepath,
+        price_precision,
+        size_precision,
+        instrument_id,
+        limit,
+    )
+    .map_err(to_pyvalue_err)
 }
 
 #[must_use]
@@ -74,10 +99,17 @@ pub fn py_load_tardis_depth10_from_snapshot5_as_pycapsule(
     filepath: PathBuf,
     price_precision: u8,
     size_precision: u8,
+    instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> PyResult<PyObject> {
-    let depths = load_depth10_from_snapshot5(filepath, price_precision, size_precision, limit)
-        .map_err(to_pyvalue_err)?;
+    let depths = load_depth10_from_snapshot5(
+        filepath,
+        price_precision,
+        size_precision,
+        instrument_id,
+        limit,
+    )
+    .map_err(to_pyvalue_err)?;
     let depths: Vec<Data> = depths.into_iter().map(Data::Depth10).collect();
 
     let cvec: CVec = depths.into();
@@ -91,10 +123,17 @@ pub fn py_load_tardis_depth10_from_snapshot25(
     filepath: PathBuf,
     price_precision: u8,
     size_precision: u8,
+    instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> PyResult<Vec<OrderBookDepth10>> {
-    load_depth10_from_snapshot25(filepath, price_precision, size_precision, limit)
-        .map_err(to_pyvalue_err)
+    load_depth10_from_snapshot25(
+        filepath,
+        price_precision,
+        size_precision,
+        instrument_id,
+        limit,
+    )
+    .map_err(to_pyvalue_err)
 }
 
 #[must_use]
@@ -104,10 +143,17 @@ pub fn py_load_tardis_depth10_from_snapshot25_as_pycapsule(
     filepath: PathBuf,
     price_precision: u8,
     size_precision: u8,
+    instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> PyResult<PyObject> {
-    let depths = load_depth10_from_snapshot25(filepath, price_precision, size_precision, limit)
-        .map_err(to_pyvalue_err)?;
+    let depths = load_depth10_from_snapshot25(
+        filepath,
+        price_precision,
+        size_precision,
+        instrument_id,
+        limit,
+    )
+    .map_err(to_pyvalue_err)?;
     let depths: Vec<Data> = depths.into_iter().map(Data::Depth10).collect();
 
     let cvec: CVec = depths.into();
@@ -121,9 +167,17 @@ pub fn py_load_tardis_quotes(
     filepath: PathBuf,
     price_precision: u8,
     size_precision: u8,
+    instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> PyResult<Vec<QuoteTick>> {
-    load_quote_ticks(filepath, price_precision, size_precision, limit).map_err(to_pyvalue_err)
+    load_quote_ticks(
+        filepath,
+        price_precision,
+        size_precision,
+        instrument_id,
+        limit,
+    )
+    .map_err(to_pyvalue_err)
 }
 
 #[must_use]
@@ -133,10 +187,17 @@ pub fn py_load_tardis_quotes_as_pycapsule(
     filepath: PathBuf,
     price_precision: u8,
     size_precision: u8,
+    instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> PyResult<PyObject> {
-    let quotes = load_quote_ticks(filepath, price_precision, size_precision, limit)
-        .map_err(to_pyvalue_err)?;
+    let quotes = load_quote_ticks(
+        filepath,
+        price_precision,
+        size_precision,
+        instrument_id,
+        limit,
+    )
+    .map_err(to_pyvalue_err)?;
     let quotes: Vec<Data> = quotes.into_iter().map(Data::Quote).collect();
 
     let cvec: CVec = quotes.into();
@@ -150,9 +211,17 @@ pub fn py_load_tardis_trades(
     filepath: PathBuf,
     price_precision: u8,
     size_precision: u8,
+    instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> PyResult<Vec<TradeTick>> {
-    load_trade_ticks(filepath, price_precision, size_precision, limit).map_err(to_pyvalue_err)
+    load_trade_ticks(
+        filepath,
+        price_precision,
+        size_precision,
+        instrument_id,
+        limit,
+    )
+    .map_err(to_pyvalue_err)
 }
 
 #[must_use]
@@ -162,10 +231,17 @@ pub fn py_load_tardis_trades_as_pycapsule(
     filepath: PathBuf,
     price_precision: u8,
     size_precision: u8,
+    instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> PyResult<PyObject> {
-    let trades = load_trade_ticks(filepath, price_precision, size_precision, limit)
-        .map_err(to_pyvalue_err)?;
+    let trades = load_trade_ticks(
+        filepath,
+        price_precision,
+        size_precision,
+        instrument_id,
+        limit,
+    )
+    .map_err(to_pyvalue_err)?;
     let trades: Vec<Data> = trades.into_iter().map(Data::Trade).collect();
 
     let cvec: CVec = trades.into();

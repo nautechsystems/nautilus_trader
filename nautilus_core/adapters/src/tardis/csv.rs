@@ -27,7 +27,7 @@ use nautilus_model::{
         trade::TradeTick,
     },
     enums::{OrderSide, RecordFlag},
-    identifiers::TradeId,
+    identifiers::{InstrumentId, TradeId},
     types::{price::Price, quantity::Quantity},
 };
 
@@ -65,6 +65,7 @@ pub fn load_deltas<P: AsRef<Path>>(
     filepath: P,
     price_precision: u8,
     size_precision: u8,
+    instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> Result<Vec<OrderBookDelta>, Box<dyn Error>> {
     let mut csv_reader = create_csv_reader(filepath)?;
@@ -74,7 +75,10 @@ pub fn load_deltas<P: AsRef<Path>>(
     for result in csv_reader.deserialize() {
         let record: TardisBookUpdateRecord = result?;
 
-        let instrument_id = parse_instrument_id(&record.exchange, &record.symbol);
+        let instrument_id = match &instrument_id {
+            Some(id) => *id,
+            None => parse_instrument_id(&record.exchange, &record.symbol),
+        };
         let side = parse_order_side(&record.side);
         let price = Price::new(record.price, price_precision);
         let size = Quantity::new(record.amount, size_precision);
@@ -150,6 +154,7 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
     filepath: P,
     price_precision: u8,
     size_precision: u8,
+    instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> Result<Vec<OrderBookDepth10>, Box<dyn Error>> {
     let mut csv_reader = create_csv_reader(filepath)?;
@@ -158,7 +163,10 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
     for result in csv_reader.deserialize() {
         let record: TardisOrderBookSnapshot5Record = result?;
 
-        let instrument_id = parse_instrument_id(&record.exchange, &record.symbol);
+        let instrument_id = match &instrument_id {
+            Some(id) => *id,
+            None => parse_instrument_id(&record.exchange, &record.symbol),
+        };
         let flags = RecordFlag::F_LAST.value();
         let sequence = 0; // Sequence not available
         let ts_event = parse_timestamp(record.timestamp);
@@ -250,6 +258,7 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
     filepath: P,
     price_precision: u8,
     size_precision: u8,
+    instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> Result<Vec<OrderBookDepth10>, Box<dyn Error>> {
     let mut csv_reader = create_csv_reader(filepath)?;
@@ -258,7 +267,10 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
     for result in csv_reader.deserialize() {
         let record: TardisOrderBookSnapshot25Record = result?;
 
-        let instrument_id = parse_instrument_id(&record.exchange, &record.symbol);
+        let instrument_id = match &instrument_id {
+            Some(id) => *id,
+            None => parse_instrument_id(&record.exchange, &record.symbol),
+        };
         let flags = RecordFlag::F_LAST.value();
         let sequence = 0; // Sequence not available
         let ts_event = parse_timestamp(record.timestamp);
@@ -372,6 +384,7 @@ pub fn load_quote_ticks<P: AsRef<Path>>(
     filepath: P,
     price_precision: u8,
     size_precision: u8,
+    instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> Result<Vec<QuoteTick>, Box<dyn Error>> {
     let mut csv_reader = create_csv_reader(filepath)?;
@@ -380,7 +393,10 @@ pub fn load_quote_ticks<P: AsRef<Path>>(
     for result in csv_reader.deserialize() {
         let record: TardisQuoteRecord = result?;
 
-        let instrument_id = parse_instrument_id(&record.exchange, &record.symbol);
+        let instrument_id = match &instrument_id {
+            Some(id) => *id,
+            None => parse_instrument_id(&record.exchange, &record.symbol),
+        };
         let bid_price = Price::new(record.bid_price.unwrap_or(0.0), price_precision);
         let bid_size = Quantity::new(record.bid_amount.unwrap_or(0.0), size_precision);
         let ask_price = Price::new(record.ask_price.unwrap_or(0.0), price_precision);
@@ -415,6 +431,7 @@ pub fn load_trade_ticks<P: AsRef<Path>>(
     filepath: P,
     price_precision: u8,
     size_precision: u8,
+    instrument_id: Option<InstrumentId>,
     limit: Option<usize>,
 ) -> Result<Vec<TradeTick>, Box<dyn Error>> {
     let mut csv_reader = create_csv_reader(filepath)?;
@@ -423,7 +440,10 @@ pub fn load_trade_ticks<P: AsRef<Path>>(
     for result in csv_reader.deserialize() {
         let record: TardisTradeRecord = result?;
 
-        let instrument_id = parse_instrument_id(&record.exchange, &record.symbol);
+        let instrument_id = match &instrument_id {
+            Some(id) => *id,
+            None => parse_instrument_id(&record.exchange, &record.symbol),
+        };
         let price = Price::new(record.price, price_precision);
         let size = Quantity::new(record.amount, size_precision);
         let aggressor_side = parse_aggressor_side(&record.side);
@@ -476,7 +496,7 @@ mod tests {
         let url = "https://datasets.tardis.dev/v1/deribit/incremental_book_L2/2020/04/01/BTC-PERPETUAL.csv.gz";
         ensure_file_exists_or_download_http(&filepath, url, Some(&checksums)).unwrap();
 
-        let deltas = load_deltas(filepath, 1, 0, Some(1_000)).unwrap();
+        let deltas = load_deltas(filepath, 1, 0, None, Some(1_000)).unwrap();
 
         assert_eq!(deltas.len(), 1_000);
         assert_eq!(
@@ -502,7 +522,7 @@ mod tests {
         let url = "https://datasets.tardis.dev/v1/binance-futures/book_snapshot_5/2020/09/01/BTCUSDT.csv.gz";
         ensure_file_exists_or_download_http(&filepath, url, Some(&checksums)).unwrap();
 
-        let depths = load_depth10_from_snapshot5(filepath, 1, 0, Some(1_000)).unwrap();
+        let depths = load_depth10_from_snapshot5(filepath, 1, 0, None, Some(1_000)).unwrap();
 
         assert_eq!(depths.len(), 1_000);
         // TODO: Assert every field
@@ -517,7 +537,7 @@ mod tests {
         let url = "https://datasets.tardis.dev/v1/binance-futures/book_snapshot_25/2020/09/01/BTCUSDT.csv.gz";
         ensure_file_exists_or_download_http(&filepath, url, Some(&checksums)).unwrap();
 
-        let depths = load_depth10_from_snapshot25(filepath, 1, 0, Some(1_000)).unwrap();
+        let depths = load_depth10_from_snapshot25(filepath, 1, 0, None, Some(1_000)).unwrap();
 
         assert_eq!(depths.len(), 1_000);
         // TODO: Assert every field
@@ -532,7 +552,7 @@ mod tests {
         let url = "https://datasets.tardis.dev/v1/huobi-dm-swap/quotes/2020/05/01/BTC-USD.csv.gz";
         ensure_file_exists_or_download_http(&filepath, url, Some(&checksums)).unwrap();
 
-        let quotes = load_quote_ticks(filepath, 1, 0, Some(1_000)).unwrap();
+        let quotes = load_quote_ticks(filepath, 1, 0, None, Some(1_000)).unwrap();
 
         assert_eq!(quotes.len(), 1_000);
         // TODO: Assert every field
@@ -547,7 +567,7 @@ mod tests {
         let url = "https://datasets.tardis.dev/v1/bitmex/trades/2020/03/01/XBTUSD.csv.gz";
         ensure_file_exists_or_download_http(&filepath, url, Some(&checksums)).unwrap();
 
-        let trades = load_trade_ticks(filepath, 1, 0, Some(1_000)).unwrap();
+        let trades = load_trade_ticks(filepath, 1, 0, None, Some(1_000)).unwrap();
 
         assert_eq!(trades.len(), 1_000);
         // TODO: Assert every field

@@ -3965,16 +3965,16 @@ def ed25519_signature(private_key: bytes, data: str) -> str: ...
 
 # Tardis
 
-def load_tardis_deltas(filepath: str, price_precision: int, size_precision: int, limit: int | None = None) -> list[OrderBookDelta]: ...
-def load_tardis_depth10_from_snapshot5(filepath: str, price_precision: int, size_precision: int, limit: int | None = None) -> list[OrderBookDepth10]: ...  # noqa
-def load_tardis_depth10_from_snapshot25(filepath: str, price_precision: int, size_precision: int, limit: int | None = None) -> list[OrderBookDepth10]: ...  # noqa
-def load_tardis_quotes(filepath: str, price_precision: int, size_precision: int, limit: int | None = None) -> list[QuoteTick]: ...
-def load_tardis_trades(filepath: str, price_precision: int, size_precision: int, limit: int | None = None) -> list[TradeTick]: ...
-def load_tardis_deltas_as_pycapsule(filepath: str, price_precision: int, size_precision: int, limit: int | None = None) -> object: ...
-def load_tardis_depth10_from_snapshot5_as_pycapsule(filepath: str, price_precision: int, size_precision: int, limit: int | None = None) -> object: ...
-def load_tardis_depth10_from_snapshot25_as_pycapsule(filepath: str, price_precision: int, size_precision: int, limit: int | None = None) -> object: ...  # noqa
-def load_tardis_quotes_as_pycapsule(filepath: str, price_precision: int, size_precision: int, limit: int | None = None) -> object: ...
-def load_tardis_trades_as_pycapsule(filepath: str, price_precision: int, size_precision: int, limit: int | None = None) -> object: ...
+def load_tardis_deltas(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> list[OrderBookDelta]: ...  # noqa
+def load_tardis_depth10_from_snapshot5(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> list[OrderBookDepth10]: ...  # noqa
+def load_tardis_depth10_from_snapshot25(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> list[OrderBookDepth10]: ...  # noqa
+def load_tardis_quotes(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> list[QuoteTick]: ...  # noqa
+def load_tardis_trades(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> list[TradeTick]: ...  # noqa
+def load_tardis_deltas_as_pycapsule(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> object: ...  # noqa
+def load_tardis_depth10_from_snapshot5_as_pycapsule(filepath: str, price_precision: int, size_precision: int,  instrument_id: InstrumentId | None, limit: int | None = None) -> object: ...  # noqa
+def load_tardis_depth10_from_snapshot25_as_pycapsule(filepath: str, price_precision: int, size_precision: int,  instrument_id: InstrumentId | None, limit: int | None = None) -> object: ...  # noqa
+def load_tardis_quotes_as_pycapsule(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> object: ...  # noqa
+def load_tardis_trades_as_pycapsule(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> object: ...  # noqa
 
 # Greeks
 
