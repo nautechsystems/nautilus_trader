@@ -375,6 +375,11 @@ if __name__ == "__main__":
     print(f"PYO3_ONLY={PYO3_ONLY}")
     print(f"CFLAGS={os.environ['CFLAGS']}") if "CFLAGS" in os.environ else None
     print(f"LDFLAGS={os.environ['LDFLAGS']}") if "LDFLAGS" in os.environ else None
+    (
+        print(f"LD_LIBRARY_PATH={os.environ['LD_LIBRARY_PATH']}")
+        if "LD_LIBRARY_PATH" in os.environ
+        else None
+    )
 
     print("\nStarting build...")
     ts_start = dt.datetime.now(dt.UTC)
