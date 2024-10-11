@@ -479,9 +479,10 @@ pub fn load_trade_ticks<P: AsRef<Path>>(
 #[cfg(test)]
 mod tests {
     use nautilus_model::{enums::BookAction, identifiers::InstrumentId};
-    use nautilus_test_kit::{
-        common::{get_test_data_large_checksums_filepath, get_test_data_large_path},
-        files::ensure_file_exists_or_download_http,
+    use nautilus_test_kit::common::{
+        ensure_data_exists_tardis_binance_snapshot25, ensure_data_exists_tardis_binance_snapshot5,
+        ensure_data_exists_tardis_bitmex_trades, ensure_data_exists_tardis_deribit_book_l2,
+        ensure_data_exists_tardis_huobi_quotes,
     };
     use rstest::*;
 
@@ -489,13 +490,7 @@ mod tests {
 
     #[rstest]
     pub fn test_read_deltas() {
-        let testdata = get_test_data_large_path();
-        let checksums = get_test_data_large_checksums_filepath();
-        let filename = "tardis_deribit_incremental_book_L2_2020-04-01_BTC-PERPETUAL.csv.gz";
-        let filepath = testdata.join("large").join(filename);
-        let url = "https://datasets.tardis.dev/v1/deribit/incremental_book_L2/2020/04/01/BTC-PERPETUAL.csv.gz";
-        ensure_file_exists_or_download_http(&filepath, url, Some(&checksums)).unwrap();
-
+        let filepath = ensure_data_exists_tardis_deribit_book_l2();
         let deltas = load_deltas(filepath, 1, 0, None, Some(1_000)).unwrap();
 
         assert_eq!(deltas.len(), 1_000);
@@ -515,61 +510,37 @@ mod tests {
 
     #[rstest]
     pub fn test_read_depth10s_from_snapshot5() {
-        let testdata = get_test_data_large_path();
-        let checksums = get_test_data_large_checksums_filepath();
-        let filename = "tardis_binance-futures_book_snapshot_5_2020-09-01_BTCUSDT.csv.gz";
-        let filepath = testdata.join("large").join(filename);
-        let url = "https://datasets.tardis.dev/v1/binance-futures/book_snapshot_5/2020/09/01/BTCUSDT.csv.gz";
-        ensure_file_exists_or_download_http(&filepath, url, Some(&checksums)).unwrap();
+        let filepath = ensure_data_exists_tardis_binance_snapshot5();
+        let depths = load_depth10_from_snapshot5(filepath, 1, 0, None, Some(100_000)).unwrap();
 
-        let depths = load_depth10_from_snapshot5(filepath, 1, 0, None, Some(1_000)).unwrap();
-
-        assert_eq!(depths.len(), 1_000);
+        assert_eq!(depths.len(), 100_000);
         // TODO: Assert every field
     }
 
     #[rstest]
     pub fn test_read_depth10s_from_snapshot25() {
-        let testdata = get_test_data_large_path();
-        let checksums = get_test_data_large_checksums_filepath();
-        let filename = "tardis_binance-futures_book_snapshot_25_2020-09-01_BTCUSDT.csv.gz";
-        let filepath = testdata.join("large").join(filename);
-        let url = "https://datasets.tardis.dev/v1/binance-futures/book_snapshot_25/2020/09/01/BTCUSDT.csv.gz";
-        ensure_file_exists_or_download_http(&filepath, url, Some(&checksums)).unwrap();
+        let filepath = ensure_data_exists_tardis_binance_snapshot25();
+        let depths = load_depth10_from_snapshot25(filepath, 1, 0, None, Some(100_000)).unwrap();
 
-        let depths = load_depth10_from_snapshot25(filepath, 1, 0, None, Some(1_000)).unwrap();
-
-        assert_eq!(depths.len(), 1_000);
+        assert_eq!(depths.len(), 100_000);
         // TODO: Assert every field
     }
 
     #[rstest]
     pub fn test_read_quotes() {
-        let testdata = get_test_data_large_path();
-        let checksums = get_test_data_large_checksums_filepath();
-        let filename = "tardis_huobi-dm-swap_quotes_2020-05-01_BTC-USD.csv.gz";
-        let filepath = testdata.join("large").join(filename);
-        let url = "https://datasets.tardis.dev/v1/huobi-dm-swap/quotes/2020/05/01/BTC-USD.csv.gz";
-        ensure_file_exists_or_download_http(&filepath, url, Some(&checksums)).unwrap();
+        let filepath = ensure_data_exists_tardis_huobi_quotes();
+        let quotes = load_quote_ticks(filepath, 1, 0, None, Some(100_000)).unwrap();
 
-        let quotes = load_quote_ticks(filepath, 1, 0, None, Some(1_000)).unwrap();
-
-        assert_eq!(quotes.len(), 1_000);
+        assert_eq!(quotes.len(), 100_000);
         // TODO: Assert every field
     }
 
     #[rstest]
     pub fn test_read_trades() {
-        let testdata = get_test_data_large_path();
-        let checksums = get_test_data_large_checksums_filepath();
-        let filename = "tardis_bitmex_trades_2020-03-01_XBTUSD.csv.gz";
-        let filepath = testdata.join("large").join(filename);
-        let url = "https://datasets.tardis.dev/v1/bitmex/trades/2020/03/01/XBTUSD.csv.gz";
-        ensure_file_exists_or_download_http(&filepath, url, Some(&checksums)).unwrap();
+        let filepath = ensure_data_exists_tardis_bitmex_trades();
+        let trades = load_trade_ticks(filepath, 1, 0, None, Some(100_000)).unwrap();
 
-        let trades = load_trade_ticks(filepath, 1, 0, None, Some(1_000)).unwrap();
-
-        assert_eq!(trades.len(), 1_000);
+        assert_eq!(trades.len(), 100_000);
         // TODO: Assert every field
     }
 }
