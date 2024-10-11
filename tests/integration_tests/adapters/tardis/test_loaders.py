@@ -31,14 +31,19 @@ from nautilus_trader.test_kit.providers import ensure_data_exists_tardis_huobi_q
 def test_tardis_load_deltas():
     # Arrange
     filepath = ensure_data_exists_tardis_deribit_book_l2()
-    loader = TardisCSVDataLoader(price_precision=1, size_precision=0)
+    instrument_id = InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")  # Override instrument in data
+    loader = TardisCSVDataLoader(
+        price_precision=1,
+        size_precision=0,
+        instrument_id=instrument_id,
+    )
 
     # Act
-    deltas = loader.load_deltas(filepath, limit=1_000)
+    deltas = loader.load_deltas(filepath, limit=100_000)
 
     # Assert
-    assert len(deltas) == 1_000
-    assert deltas[0].instrument_id == InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
+    assert len(deltas) == 100_000
+    assert deltas[0].instrument_id == instrument_id
     assert deltas[0].action == BookAction.ADD
     assert deltas[0].order.side == OrderSide.SELL
     assert deltas[0].order.price == Price.from_str("6421.5")
@@ -52,15 +57,14 @@ def test_tardis_load_deltas():
 def test_tardis_load_depth10_from_snapshot5():
     # Arrange
     filepath = ensure_data_exists_tardis_binance_snapshot5()
-    instrument_id = InstrumentId.from_str("BTCUSDT-PERP.BINANCE")  # Override instrument in data
-    loader = TardisCSVDataLoader(price_precision=1, size_precision=0, instrument_id=instrument_id)
+    loader = TardisCSVDataLoader(price_precision=1, size_precision=0)
 
     # Act
-    deltas = loader.load_depth10(filepath, levels=5, limit=1_000)
+    deltas = loader.load_depth10(filepath, levels=5, limit=100_000)
 
     # Assert
-    assert len(deltas) == 1_000
-    assert deltas[0].instrument_id == instrument_id
+    assert len(deltas) == 100_000
+    assert deltas[0].instrument_id == InstrumentId.from_str("BTCUSDT.BINANCE")
     assert deltas[0].ts_event == 1598918403696000000
     assert deltas[0].ts_init == 1598918403810979000
 
@@ -68,14 +72,15 @@ def test_tardis_load_depth10_from_snapshot5():
 def test_tardis_load_depth10_from_snapshot25():
     # Arrange
     filepath = ensure_data_exists_tardis_binance_snapshot25()
-    loader = TardisCSVDataLoader(price_precision=1, size_precision=0)
+    instrument_id = InstrumentId.from_str("BTCUSDT-PERP.BINANCE")  # Override instrument in data
+    loader = TardisCSVDataLoader(price_precision=1, size_precision=0, instrument_id=instrument_id)
 
     # Act
-    deltas = loader.load_depth10(filepath, levels=25, limit=1_000)
+    deltas = loader.load_depth10(filepath, levels=25, limit=100_000)
 
     # Assert
-    assert len(deltas) == 1_000
-    assert deltas[0].instrument_id == InstrumentId.from_str("BTCUSDT.BINANCE")
+    assert len(deltas) == 100_000
+    assert deltas[0].instrument_id == InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
     assert deltas[0].ts_event == 1598918403696000000
     assert deltas[0].ts_init == 1598918403810979000
 
@@ -86,10 +91,10 @@ def test_tardis_load_quotes():
     loader = TardisCSVDataLoader(price_precision=1, size_precision=0)
 
     # Act
-    trades = loader.load_quotes(filepath, limit=1_000)
+    trades = loader.load_quotes(filepath, limit=100_000)
 
     # Assert
-    assert len(trades) == 1_000
+    assert len(trades) == 100_000
     assert trades[0].instrument_id == InstrumentId.from_str("BTC-USD.HUOBI")
     assert trades[0].bid_price == Price.from_str("8629.2")
     assert trades[0].ask_price == Price.from_str("8629.3")
@@ -105,10 +110,10 @@ def test_tardis_load_trades():
     loader = TardisCSVDataLoader(price_precision=1, size_precision=0)
 
     # Act
-    trades = loader.load_trades(filepath, limit=1_000)
+    trades = loader.load_trades(filepath, limit=100_000)
 
     # Assert
-    assert len(trades) == 1_000
+    assert len(trades) == 100_000
     assert trades[0].instrument_id == InstrumentId.from_str("XBTUSD.BITMEX")
     assert trades[0].price == Price.from_str("8531.5")
     assert trades[0].size == Quantity.from_str("2152")
