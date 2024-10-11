@@ -30,7 +30,7 @@ use nautilus_model::{
 };
 use pyo3::prelude::*;
 
-use crate::sql::{cache_database::PostgresCacheDatabase, queries::DatabaseQueries};
+use crate::sql::{cache::PostgresCacheDatabase, queries::DatabaseQueries};
 
 #[pymethods]
 impl PostgresCacheDatabase {

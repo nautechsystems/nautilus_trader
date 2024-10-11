@@ -26,7 +26,7 @@ mod serial_tests {
     use std::time::Duration;
 
     use nautilus_common::{cache::database::CacheDatabaseAdapter, testing::wait_until};
-    use nautilus_infrastructure::sql::cache_database::get_pg_cache_database;
+    use nautilus_infrastructure::sql::cache::get_pg_cache_database;
     use nautilus_model::{
         accounts::any::AccountAny,
         enums::{CurrencyType, OrderSide, OrderType},
