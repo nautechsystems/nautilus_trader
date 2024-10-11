@@ -32,7 +32,7 @@ pub enum WsMessage {
     Disconnect(DisconnectMsg),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 /// The type of the symbol eg. Spot, Perpetual, Future, Option.
 pub enum SymbolType {
@@ -42,7 +42,7 @@ pub enum SymbolType {
     Option,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 /// The type of an option symbol.
 pub enum OptionType {
@@ -51,7 +51,7 @@ pub enum OptionType {
 }
 
 /// The aggressor side of the trade.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TradeSide {
     Buy,
@@ -61,7 +61,7 @@ pub enum TradeSide {
 
 /// The kind of bar.
 #[allow(missing_docs)]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum BarKind {
     Time,
@@ -69,7 +69,7 @@ pub enum BarKind {
     Tick,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 /// Represents a crypto exchange.
 /// See <https://api.tardis.dev/v1/exchanges> for all supported exchanges.

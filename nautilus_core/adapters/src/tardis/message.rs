@@ -128,7 +128,7 @@ pub struct BarMsg {
     pub symbol: String,
     /// The exchange ID.
     pub exchange: Exchange,
-    /// name with format trade_bar_{interval}
+    /// name with format `trade_bar`_{interval}
     pub name: String,
     /// The requested trade bar interval.
     pub interval: u64,
@@ -204,7 +204,7 @@ mod tests {
 
         assert_eq!(message.symbol, "XBTUSD");
         assert_eq!(message.exchange, Exchange::Bitmex);
-        assert_eq!(message.is_snapshot, false);
+        assert!(!message.is_snapshot);
         assert!(message.bids.is_empty());
         assert_eq!(message.asks.len(), 1);
         assert_eq!(message.asks[0].price, 7985.0);
@@ -275,7 +275,7 @@ mod tests {
         assert_eq!(
             message.local_timestamp,
             DateTime::parse_from_rfc3339("2019-10-25T13:39:46.961Z").unwrap()
-        )
+        );
     }
 
     #[rstest]

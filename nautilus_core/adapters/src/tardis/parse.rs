@@ -22,13 +22,15 @@ use nautilus_model::{
 };
 
 /// Parse an instrument ID from the given venue and symbol values.
+#[must_use]
 pub fn parse_instrument_id(exchange: &str, symbol: &str) -> InstrumentId {
     let venue = exchange.split('-').next().unwrap_or(exchange);
-    InstrumentId::from_str(&format!("{}.{}", symbol, venue).to_uppercase())
+    InstrumentId::from_str(&format!("{symbol}.{venue}").to_uppercase())
         .expect("Failed to parse `instrument_id`")
 }
 
 /// Parse an order side from the given string.
+#[must_use]
 pub fn parse_order_side(value: &str) -> OrderSide {
     match value {
         "bid" => OrderSide::Buy,
@@ -38,6 +40,7 @@ pub fn parse_order_side(value: &str) -> OrderSide {
 }
 
 /// Parse an aggressor side from the given string.
+#[must_use]
 pub fn parse_aggressor_side(value: &str) -> AggressorSide {
     match value {
         "buy" => AggressorSide::Buyer,
@@ -47,11 +50,13 @@ pub fn parse_aggressor_side(value: &str) -> AggressorSide {
 }
 
 /// Parse a Tardis timestamp in UNIX microseconds to UNIX nanoseconds.
+#[must_use]
 pub fn parse_timestamp(value: u64) -> UnixNanos {
     UnixNanos::from(value * NANOSECONDS_IN_MICROSECOND)
 }
 
 /// Parse book action inferred from the given values.
+#[must_use]
 pub fn parse_book_action(is_snapshot: bool, amount: f64) -> BookAction {
     if is_snapshot {
         BookAction::Add
