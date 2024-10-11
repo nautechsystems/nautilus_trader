@@ -135,10 +135,22 @@ impl WebSocketClient {
         slf: PyRef<'_, Self>,
         data: Vec<u8>,
         py: Python<'py>,
+        keys: Option<Vec<String>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        tracing::trace!("Sending binary: {data:?}");
+        let keys = keys.unwrap_or_default();
         let writer = slf.writer.clone();
+        let rate_limiter = slf.rate_limiter.clone();
         pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+            let tasks = keys.iter().map(|key| rate_limiter.until_key_ready(key));
+            stream::iter(tasks)
+                .for_each(|key| async move {
+                    key.await;
+                })
+                .await;
+
+            // Log after passing rate limit checks
+            tracing::trace!("Sending binary: {data:?}");
+
             let mut guard = writer.lock().await;
             guard
                 .send(Message::Binary(data))
