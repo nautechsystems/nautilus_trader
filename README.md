@@ -44,16 +44,16 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 
 ## Features
 
-- **Fast**: Core is written in Rust with asynchronous networking using [tokio](https://crates.io/crates/tokio)
-- **Reliable**: Type safety and thread safety through Rust. Redis-backed performant state persistence
-- **Portable**: OS independent, runs on Linux, macOS, and Windows. Deploy using Docker
-- **Flexible**: Modular adapters mean any REST, WebSocket, or FIX API can be integrated
-- **Advanced**: Time in force `IOC`, `FOK`, `GTD`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO`
-- **Customizable**: Add user-defined custom components, or assemble entire systems from scratch leveraging the cache and message bus
-- **Backtesting**: Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution
-- **Live**: Use identical strategy implementations between backtesting and live deployments
-- **Multi-venue**: Multiple venue capabilities facilitate market-making and statistical arbitrage strategies
-- **AI Training**: Backtest engine fast enough to be used to train AI trading agents (RL/ES)
+- **Fast**: Core is written in Rust with asynchronous networking using [tokio](https://crates.io/crates/tokio).
+- **Reliable**: Type safety and thread safety through Rust. Redis-backed performant state persistence.
+- **Portable**: OS independent, runs on Linux, macOS, and Windows. Deploy using Docker.
+- **Flexible**: Modular adapters mean any REST, WebSocket, or FIX API can be integrated.
+- **Advanced**: Time in force `IOC`, `FOK`, `GTD`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO`.
+- **Customizable**: Add user-defined custom components, or assemble entire systems from scratch leveraging the cache and message bus.
+- **Backtesting**: Run with multiple venues, instruments and strategies simultaneously using historical quote tick, trade tick, bar, order book and custom data with nanosecond resolution.
+- **Live**: Use identical strategy implementations between backtesting and live deployments.
+- **Multi-venue**: Multiple venue capabilities facilitate market-making and statistical arbitrage strategies.
+- **AI Training**: Backtest engine fast enough to be used to train AI trading agents (RL/ES).
 
 ![Alt text](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/nautilus-art.png?raw=true "nautilus")
 
@@ -64,10 +64,10 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 
 ## Why NautilusTrader?
 
-- **Highly performant event-driven Python**: Native binary core components
-- **Parity between backtesting and live trading**: Identical strategy code
-- **Reduced operational risk**: Risk management functionality, logical correctness and type safety
-- **Highly extendable**: Message bus, custom components and actors, custom data, custom adapters
+- **Highly performant event-driven Python**: Native binary core components.
+- **Parity between backtesting and live trading**: Identical strategy code.
+- **Reduced operational risk**: Risk management functionality, logical correctness and type safety.
+- **Highly extendable**: Message bus, custom components and actors, custom data, custom adapters.
 
 Traditionally, trading strategy research and backtesting might be conducted in Python (or other suitable language)
 using vectorized methods, with the strategy then needing to be reimplemented in a more event-drive way
@@ -136,14 +136,15 @@ The following integrations are currently supported:
 | [Interactive Brokers](https://www.interactivebrokers.com) | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/ib.html)         |
 | [OKX](https://okx.com)                                    | `OKX`                 | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/building-orange) | [Guide](https://nautilustrader.io/docs/latest/integrations/okx.html)        |
 | [Polymarket](https://polymarket.com)                      | `POLYMARKET`          | Prediction Market (DEX) | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://nautilustrader.io/docs/latest/integrations/polymarket.html) |
+| [Tardis](https://tardis.dev)                              | `TARDIS`              | Data Provider           | ![status](https://img.shields.io/badge/building-orange) | [Guide](https://nautilustrader.io/docs/latest/integrations/tardis.html)     |
 
-- **ID**: The default client ID for the integrations adapter clients
-- **Type**: The type of integration (often the venue type)
+- **ID**: The default client ID for the integrations adapter clients.
+- **Type**: The type of integration (often the venue type).
 
 ### Status
-- `building`: Under construction and likely not in a usable state
-- `beta`: Completed to a minimally working state and in a 'beta' testing phase
-- `stable`: Stabilized feature set and API, the integration has been tested by both developers and users to a reasonable level (some bugs may still remain)
+- `building`: Under construction and likely not in a usable state.
+- `beta`: Completed to a minimally working state and in a 'beta' testing phase.
+- `stable`: Stabilized feature set and API, the integration has been tested by both developers and users to a reasonable level (some bugs may still remain).
 
 See the [Integrations](https://nautilustrader.io/docs/latest/integrations/index.html) documentation for further details.
 
@@ -229,9 +230,9 @@ We strive to document these changes in the release notes on a best-effort basis.
 
 We strive to maintain a stable, passing build across all branches.
 
-- `master`: Reflects the source code for the latest released version 
-- `nightly`: Contains experimental features, merged from the `develop` branch daily or as needed 
-- `develop`: Very active with frequent commits and may include experimental features 
+- `master`: Reflects the source code for the latest released version .
+- `nightly`: Contains experimental features, merged from the `develop` branch daily or as needed.
+- `develop`: Very active with frequent commits and may include experimental features.
 
 Our roadmap aims to achieve a stable API for version 2.x (likely post-Rust port).
 Once we reach this milestone, we will implement a formal release process, including deprecation 
@@ -241,42 +242,42 @@ periods for any API changes. This approach allows us to maintain a rapid develop
 
 A `Makefile` is provided to automate most installation and build tasks for development. It provides the following targets:
 
-- `make install`: Installs in `release` build mode with `main`, `dev` and `test` dependencies then installs the package using poetry (default)
-- `make install-debug`: Same as `make install` but with `debug` build mode
-- `make install-just-deps`: Installs just the `main`, `dev` and `test` dependencies (does not install package)
-- `make install-just-deps-all`: Same as `make install-just-deps` and additionally installs `docs` dependencies
-- `make build`: Runs the build script in `release` build mode (default)
-- `make build-debug`: Runs the build script in `debug` build mode
-- `make build-wheel`: Runs the Poetry build with a wheel format in `release` mode
-- `make build-wheel-debug`: Runs the Poetry build with a wheel format in `debug` mode
-- `make clean`: **CAUTION** Cleans all non-source artifacts from the repository
-- `make docs`: Builds the documentation HTML using Sphinx
-- `make pre-commit`: Runs the pre-commit checks over all files
-- `make ruff`: Runs ruff over all files using the `pyproject.toml` config
-- `make outdated`: Runs commands to show outdated dependencies for both Rust and Python
-- `make pytest`: Runs all tests with `pytest` (except performance tests)
-- `make pytest-coverage`: Same as `make pytest` and additionally runs with test coverage and produces a report
+- `make install`: Installs in `release` build mode with `main`, `dev` and `test` dependencies then installs the package using poetry (default).
+- `make install-debug`: Same as `make install` but with `debug` build mode.
+- `make install-just-deps`: Installs just the `main`, `dev` and `test` dependencies (does not install package).
+- `make install-just-deps-all`: Same as `make install-just-deps` and additionally installs `docs` dependencies.
+- `make build`: Runs the build script in `release` build mode (default).
+- `make build-debug`: Runs the build script in `debug` build mode.
+- `make build-wheel`: Runs the Poetry build with a wheel format in `release` mode.
+- `make build-wheel-debug`: Runs the Poetry build with a wheel format in `debug` mode.
+- `make clean`: **CAUTION** Cleans all non-source artifacts from the repository.
+- `make docs`: Builds the documentation HTML using Sphinx.
+- `make pre-commit`: Runs the pre-commit checks over all files.
+- `make ruff`: Runs ruff over all files using the `pyproject.toml` config.
+- `make outdated`: Runs commands to show outdated dependencies for both Rust and Python.
+- `make pytest`: Runs all tests with `pytest` (except performance tests).
+- `make pytest-coverage`: Same as `make pytest` and additionally runs with test coverage and produces a report.
 
 ## Examples
 
 Indicators and strategies can be developed in both Python and Cython. For performance and
 latency-sensitive applications, we recommend using Cython. Below are some examples:
 
-- [indicator](/nautilus_trader/examples/indicators/ema_python.py) example written in Python
-- [indicator](/nautilus_trader/indicators/) examples written in Cython
-- [strategy](/nautilus_trader/examples/strategies/) examples written in both Python and Cython
-- [backtest](/examples/backtest/) examples using a `BacktestEngine` directly
+- [indicator](/nautilus_trader/examples/indicators/ema_python.py) example written in Python.
+- [indicator](/nautilus_trader/indicators/) examples written in Cython.
+- [strategy](/nautilus_trader/examples/strategies/) examples written in both Python and Cython.
+- [backtest](/examples/backtest/) examples using a `BacktestEngine` directly.
 
 ## Docker
 
 Docker containers are built using the base image `python:3.12-slim` with the following variant tags:
 
-- `nautilus_trader:latest` has the latest release version installed
-- `nautilus_trader:nightly` has the head of the `nightly` branch installed
+- `nautilus_trader:latest` has the latest release version installed.
+- `nautilus_trader:nightly` has the head of the `nightly` branch installed.
 - `jupyterlab:latest` has the latest release version installed along with `jupyterlab` and an
-  example backtest notebook with accompanying data
+  example backtest notebook with accompanying data.
 - `jupyterlab:nightly` has the head of the `nightly` branch installed along with `jupyterlab` and an
-  example backtest notebook with accompanying data
+  example backtest notebook with accompanying data.
 
 The container images can be pulled as follows:
 
