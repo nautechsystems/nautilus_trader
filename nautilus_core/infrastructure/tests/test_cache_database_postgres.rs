@@ -20,7 +20,7 @@ mod serial_tests {
 
     use bytes::Bytes;
     use nautilus_common::{cache::database::CacheDatabaseAdapter, testing::wait_until};
-    use nautilus_infrastructure::sql::cache_database::get_pg_cache_database;
+    use nautilus_infrastructure::sql::cache::get_pg_cache_database;
     use nautilus_model::{
         accounts::{any::AccountAny, cash::CashAccount},
         data::stubs::{quote_tick_ethusdt_binance, stub_bar, stub_trade_tick_ethusdt_buyer},

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod cache_database;
+pub mod cache;
 pub mod models;
 pub mod pg;
 pub mod queries;

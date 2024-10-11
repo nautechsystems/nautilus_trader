@@ -30,6 +30,6 @@ pub fn infrastructure(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     #[cfg(feature = "redis")]
     m.add_class::<crate::redis::msgbus::RedisMessageBusDatabase>()?;
     #[cfg(feature = "postgres")]
-    m.add_class::<crate::sql::cache_database::PostgresCacheDatabase>()?;
+    m.add_class::<crate::sql::cache::PostgresCacheDatabase>()?;
     Ok(())
 }
