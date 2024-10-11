@@ -19,6 +19,8 @@ from pathlib import Path
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import drop_cvec_pycapsule
 from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDepth10
+from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_list
 
@@ -41,6 +43,8 @@ class TardisCSVDataLoader:
         """
         Load order book deltas data from the given `filepath`.
 
+        CSV file must be Tardis incremental book L2 format.
+
         Parameters
         ----------
         filepath : PathLike[str] | str
@@ -55,6 +59,10 @@ class TardisCSVDataLoader:
         Returns
         -------
         list[OrderBookDelta] | list[nautilus_pyo3.OrderBookDelta]
+
+        References
+        ----------
+        https://docs.tardis.dev/downloadable-csv-files#incremental_book_l2
 
         """
         if isinstance(filepath, Path):
@@ -79,6 +87,149 @@ class TardisCSVDataLoader:
             limit=limit,
         )
 
+    def load_depth10(
+        self,
+        filepath: PathLike[str] | str,
+        levels: int,
+        as_legacy_cython: bool = True,
+        limit: int | None = None,
+    ) -> list[OrderBookDepth10] | list[nautilus_pyo3.OrderBookDepth10]:
+        """
+        Load order book depth snapshots from the given `filepath`.
+
+        CSV file must be Tardis book snapshot 5 or snapshot 25 format.
+
+        - For snapshot 5, levels beyond 5 will be filled with null orders.
+        - For snapshot 25, levels beyond 10 are discarded.
+
+        Parameters
+        ----------
+        filepath : PathLike[str] | str
+            The path for the CSV data file (must be Tardis trades format).
+        levels : int
+            The number of levels in the snapshots CSV data (must be either 5 or 25).
+        as_legacy_cython : bool, True
+            If data should be converted to 'legacy Cython' objects.
+            You would typically only set this False if passing the objects
+            directly to a data catalog for the data to then be written in Nautilus Parquet format.
+        limit : int, optional
+            The limit for the number of records to read.
+
+        Returns
+        -------
+        list[OrderBookDepth10] | list[nautilus_pyo3.OrderBookDepth10]
+
+        Raises
+        ------
+        ValueError
+            If `levels` is not either 5 or 25.
+
+        References
+        ----------
+        https://docs.tardis.dev/downloadable-csv-files#book_snapshot_5
+        https://docs.tardis.dev/downloadable-csv-files#book_snapshot_25
+
+        """
+        if isinstance(filepath, Path):
+            filepath = str(filepath.resolve())
+
+        match levels:
+            case 5:
+                if as_legacy_cython:
+                    capsule = nautilus_pyo3.load_tardis_depth10_from_snapshot5_as_pycapsule(
+                        filepath=str(filepath),
+                        price_precision=self._price_precision,
+                        size_precision=self._size_precision,
+                        limit=limit,
+                    )
+                    data = capsule_to_list(capsule)
+                    # Drop encapsulated `CVec` as data is now transferred
+                    drop_cvec_pycapsule(capsule)
+                    return data
+
+                return nautilus_pyo3.load_tardis_depth10_from_snapshot5(
+                    filepath=str(filepath),
+                    price_precision=self._price_precision,
+                    size_precision=self._size_precision,
+                    limit=limit,
+                )
+            case 25:
+                if as_legacy_cython:
+                    capsule = nautilus_pyo3.load_tardis_depth10_from_snapshot25_as_pycapsule(
+                        filepath=str(filepath),
+                        price_precision=self._price_precision,
+                        size_precision=self._size_precision,
+                        limit=limit,
+                    )
+                    data = capsule_to_list(capsule)
+                    # Drop encapsulated `CVec` as data is now transferred
+                    drop_cvec_pycapsule(capsule)
+                    return data
+
+                return nautilus_pyo3.load_tardis_depth10_from_snapshot25(
+                    filepath=str(filepath),
+                    price_precision=self._price_precision,
+                    size_precision=self._size_precision,
+                    limit=limit,
+                )
+            case _:
+                raise ValueError(
+                    "invalid `levels`, use either 5 or 25 corresponding to number of levels in the CSV data",
+                )
+
+    def load_quotes(
+        self,
+        filepath: PathLike[str] | str,
+        as_legacy_cython: bool = True,
+        limit: int | None = None,
+    ) -> list[QuoteTick] | list[nautilus_pyo3.QuoteTick]:
+        """
+        Load quote tick data from the given `filepath`.
+
+        CSV file must be Tardis quotes format.
+
+        Parameters
+        ----------
+        filepath : PathLike[str] | str
+            The path for the CSV data file.
+        as_legacy_cython : bool, True
+            If data should be converted to 'legacy Cython' objects.
+            You would typically only set this False if passing the objects
+            directly to a data catalog for the data to then be written in Nautilus Parquet format.
+        limit : int, optional
+            The limit for the number of records to read.
+
+        Returns
+        -------
+        list[QuoteTick] | list[nautilus_pyo3.QuoteTick]
+
+        References
+        ----------
+        https://docs.tardis.dev/downloadable-csv-files#quotes
+
+        """
+        if isinstance(filepath, Path):
+            filepath = str(filepath.resolve())
+
+        if as_legacy_cython:
+            capsule = nautilus_pyo3.load_tardis_quotes_as_pycapsule(
+                filepath=str(filepath),
+                price_precision=self._price_precision,
+                size_precision=self._size_precision,
+                limit=limit,
+            )
+            data = capsule_to_list(capsule)
+            # Drop encapsulated `CVec` as data is now transferred
+            drop_cvec_pycapsule(capsule)
+            return data
+
+        return nautilus_pyo3.load_tardis_quotes(
+            filepath=str(filepath),
+            price_precision=self._price_precision,
+            size_precision=self._size_precision,
+            limit=limit,
+        )
+
     def load_trades(
         self,
         filepath: PathLike[str] | str,
@@ -86,12 +237,14 @@ class TardisCSVDataLoader:
         limit: int | None = None,
     ) -> list[TradeTick] | list[nautilus_pyo3.TradeTick]:
         """
-        Load trade ticks data from the given `filepath`.
+        Load trade tick data from the given `filepath`.
+
+        CSV file must be Tardis trades format.
 
         Parameters
         ----------
         filepath : PathLike[str] | str
-            The path for the CSV data file (must be Tardis trades format).
+            The path for the CSV data file.
         as_legacy_cython : bool, True
             If data should be converted to 'legacy Cython' objects.
             You would typically only set this False if passing the objects
@@ -102,6 +255,10 @@ class TardisCSVDataLoader:
         Returns
         -------
         list[TradeTick] | list[nautilus_pyo3.TradeTick]
+
+        References
+        ----------
+        https://docs.tardis.dev/downloadable-csv-files#trades
 
         """
         if isinstance(filepath, Path):
