@@ -37,6 +37,7 @@ use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream,
 };
 
+use crate::ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter};
 type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
 type SharedMessageWriter =
     Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>;
@@ -320,6 +321,7 @@ impl Drop for WebSocketClientInner {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
 )]
 pub struct WebSocketClient {
+    pub(crate) rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
     pub(crate) writer: SharedMessageWriter,
     pub(crate) controller_task: task::JoinHandle<()>,
     pub(crate) disconnect_mode: Arc<AtomicBool>,
@@ -335,6 +337,8 @@ impl WebSocketClient {
         post_connection: Option<PyObject>,
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
+        keyed_quotas: Option<Vec<(String, Quota)>>,
+        default_quota: Option<Quota>,
     ) -> Result<Self, Error> {
         tracing::debug!("Connecting");
         let inner = WebSocketClientInner::connect_url(config).await?;
@@ -347,6 +351,10 @@ impl WebSocketClient {
             post_reconnection,
             post_disconnection,
         );
+        let rate_limiter = Arc::new(RateLimiter::new_with_quota(
+            default_quota,
+            keyed_quotas.unwrap_or_default(),
+        ));
 
         if let Some(handler) = post_connection {
             Python::with_gil(|py| match handler.call0(py) {
@@ -356,6 +364,7 @@ impl WebSocketClient {
         };
 
         Ok(Self {
+            rate_limiter,
             writer,
             controller_task,
             disconnect_mode,
