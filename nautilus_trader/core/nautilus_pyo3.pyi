@@ -2547,7 +2547,7 @@ class PostgresCacheDatabase:
     def connect(
         cls,
         host: str | None = None,
-        port: str | None = None,
+        port: int | None = None,
         username: str | None = None,
         password: str | None = None,
         database: str | None = None,
