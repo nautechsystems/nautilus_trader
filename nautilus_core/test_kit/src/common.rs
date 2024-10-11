@@ -48,6 +48,7 @@ pub fn get_test_data_large_checksums_filepath() -> PathBuf {
 #[must_use]
 pub fn ensure_test_data_exists(filename: &str, url: &str) -> PathBuf {
     let filepath = get_test_data_large_path()
+        .join("large")
         .join(filename)
         .canonicalize()
         .unwrap();
