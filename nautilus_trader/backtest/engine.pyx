@@ -582,14 +582,14 @@ cdef class BacktestEngine:
         bint sort = True,
     ) -> None:
         """
-        Add the given custom data to the backtest engine.
+        Add the given `data` to the backtest engine.
 
         Parameters
         ----------
         data : list[Data]
             The data to add.
         client_id : ClientId, optional
-            The data client ID to associate with custom data.
+            The client ID to associate with the data.
         validate : bool, default True
             If `data` should be validated
             (recommended when adding data directly to the engine).
@@ -608,7 +608,7 @@ cdef class BacktestEngine:
         ValueError
             If `data` elements do not have an `instrument_id` and `client_id` is ``None``.
         TypeError
-            If `data` is a type provided by Rust pyo3 (cannot add directly to engine yet).
+            If `data` is a Rust PyO3 data type (cannot add directly to engine yet).
 
         Warnings
         --------
@@ -625,14 +625,13 @@ cdef class BacktestEngine:
         if isinstance(data[0], NAUTILUS_PYO3_DATA_TYPES):
             raise TypeError(
                 f"Cannot add data of type `{type(data[0]).__name__}` from pyo3 directly to engine. "
-                "This will supported in a future release.",
+                "This will be supported in a future release.",
             )
 
         cdef str data_added_str = "data"
 
-        first = data[0]
-
         if validate:
+            first = data[0]
             if hasattr(first, "instrument_id"):
                 Condition.is_true(
                     first.instrument_id in self.kernel.cache.instrument_ids(),
@@ -641,6 +640,7 @@ cdef class BacktestEngine:
                 )
                 # Check client has been registered
                 self._add_market_data_client_if_not_exists(first.instrument_id.venue)
+                self._has_data.add(first.instrument_id)
                 data_added_str = f"{first.instrument_id} {type(first).__name__}"
             elif isinstance(first, Bar):
                 Condition.is_true(
@@ -654,6 +654,7 @@ cdef class BacktestEngine:
                     "bar_type.aggregation_source",
                     "required source",
                 )
+                self._has_data.add(first.bar_type.instrument_id)
                 data_added_str = f"{first.bar_type} {type(first).__name__}"
             else:
                 Condition.not_none(client_id, "client_id")
@@ -662,19 +663,15 @@ cdef class BacktestEngine:
                 if isinstance(first, CustomData):
                     data_added_str = f"{type(first.data).__name__} "
 
+            if type(first) in BOOK_DATA_TYPES:
+                self._has_book_data.add(first.instrument_id)
+
         # Add data
         self._data.extend(data)
 
         if sort:
             self._data = sorted(self._data, key=lambda x: x.ts_init)
 
-        if hasattr(first, "instrument_id"):
-            self._has_data.add(first.instrument_id)
-        elif isinstance(first, Bar):
-            self._has_data.add(first.bar_type.instrument_id)
-
-        if type(first) in BOOK_DATA_TYPES:
-            self._has_book_data.add(first.instrument_id)
 
         self._log.info(
             f"Added {len(data):_} {data_added_str} element{'' if len(data) == 1 else 's'}",
