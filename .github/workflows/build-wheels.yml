@@ -11,7 +11,7 @@ jobs:
       fail-fast: false
       matrix:
         arch: [x64]
-        os: [ubuntu-latest]
+        os: [ubuntu-latest, macos-latest]
         python-version: ["3.11", "3.12"]
     name: build - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -34,9 +34,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Rust toolchain
+      - name: Set up Rust toolchain (Linux, Windows)
+        if: (runner.os == 'Linux') || (runner.os == 'Windows')
         run: |
           rustup toolchain add --profile minimal stable --component clippy,rustfmt
+
+      - name: Set up Rust toolchain (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          rustup toolchain add --profile minimal stable --component clippy,rustfmt
+          rustup target add aarch64-apple-darwin
 
       - name: Set up Python environment
         uses: actions/setup-python@v5
