@@ -114,7 +114,7 @@ impl<'r> FromRow<'r, PgRow> for OrderInitializedModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let event_id = row.try_get::<&str, _>("id").map(UUID4::from)?;
         let client_order_id = row
-            .try_get::<&str, _>("order_id")
+            .try_get::<&str, _>("client_order_id")
             .map(ClientOrderId::from)?;
         let trader_id = row.try_get::<&str, _>("trader_id").map(TraderId::from)?;
         let strategy_id = row
@@ -270,8 +270,8 @@ impl<'r> FromRow<'r, PgRow> for OrderAcceptedModel {
         let instrument_id = row
             .try_get::<&str, _>("instrument_id")
             .map(InstrumentId::from)?;
-        let order_id = row
-            .try_get::<&str, _>("order_id")
+        let client_order_id = row
+            .try_get::<&str, _>("client_order_id")
             .map(ClientOrderId::from)?;
         let venue_order_id = row
             .try_get::<&str, _>("venue_order_id")
@@ -283,7 +283,7 @@ impl<'r> FromRow<'r, PgRow> for OrderAcceptedModel {
             trader_id,
             strategy_id,
             instrument_id,
-            order_id,
+            client_order_id,
             venue_order_id,
             account_id,
             event_id,
@@ -335,8 +335,8 @@ impl<'r> FromRow<'r, PgRow> for OrderFilledModel {
         let instrument_id = row
             .try_get::<&str, _>("instrument_id")
             .map(InstrumentId::from)?;
-        let order_id = row
-            .try_get::<&str, _>("order_id")
+        let client_order_id = row
+            .try_get::<&str, _>("client_order_id")
             .map(ClientOrderId::from)?;
         let venue_order_id = row
             .try_get::<&str, _>("venue_order_id")
@@ -369,7 +369,7 @@ impl<'r> FromRow<'r, PgRow> for OrderFilledModel {
             trader_id,
             strategy_id,
             instrument_id,
-            order_id,
+            client_order_id,
             venue_order_id,
             account_id,
             trade_id,
@@ -430,7 +430,7 @@ impl<'r> FromRow<'r, PgRow> for OrderSubmittedModel {
             .try_get::<&str, _>("instrument_id")
             .map(InstrumentId::from)?;
         let client_order_id = row
-            .try_get::<&str, _>("order_id")
+            .try_get::<&str, _>("client_order_id")
             .map(ClientOrderId::from)?;
         let account_id = row.try_get::<&str, _>("account_id").map(AccountId::from)?;
         let event_id = row.try_get::<&str, _>("id").map(UUID4::from)?;

@@ -37,7 +37,6 @@ CREATE TABLE IF NOT EXISTS "strategy" (
   oms_type TEXT,
   manage_contingent_orders BOOLEAN,
   manage_gtd_expiry BOOLEAN
-
 );
 
 CREATE TABLE IF NOT EXISTS "currency" (
@@ -108,7 +107,7 @@ CREATE TABLE IF NOT EXISTS "order_event" (
     trader_id TEXT REFERENCES trader(id) ON DELETE CASCADE,
     strategy_id TEXT NOT NULL,
     instrument_id TEXT REFERENCES instrument(id) ON DELETE CASCADE,
-    order_id TEXT DEFAULT NULL,
+    client_order_id TEXT DEFAULT NULL,
     client_id TEXT REFERENCES client(id) ON DELETE CASCADE,
     trade_id TEXT,
     currency TEXT REFERENCES currency(id),

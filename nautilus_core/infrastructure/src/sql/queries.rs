@@ -269,12 +269,12 @@ impl DatabaseQueries {
 
     pub async fn check_if_order_initialized_exists(
         pool: &PgPool,
-        order_id: ClientOrderId,
+        client_order_id: ClientOrderId,
     ) -> anyhow::Result<bool> {
         sqlx::query(r#"
-            SELECT EXISTS(SELECT 1 FROM "order_event" WHERE order_id = $1 AND kind = 'OrderInitialized')
+            SELECT EXISTS(SELECT 1 FROM "order_event" WHERE client_order_id = $1 AND kind = 'OrderInitialized')
         "#)
-            .bind(order_id.to_string())
+            .bind(client_order_id.to_string())
             .fetch_one(pool)
             .await
             .map(|row| row.get(0))
@@ -334,7 +334,7 @@ impl DatabaseQueries {
 
         sqlx::query(r#"
             INSERT INTO "order_event" (
-                id, kind, order_id, order_type, order_side, trader_id, client_id, strategy_id, instrument_id, trade_id, currency, quantity, time_in_force, liquidity_side,
+                id, kind, client_order_id, order_type, order_side, trader_id, client_id, strategy_id, instrument_id, trade_id, currency, quantity, time_in_force, liquidity_side,
                 post_only, reduce_only, quote_quantity, reconciliation, price, last_px, last_qty, trigger_price, trigger_type, limit_offset, trailing_offset,
                 trailing_offset_type, expire_time, display_qty, emulation_trigger, trigger_instrument_id, contingency_type,
                 order_list_id, linked_order_ids, parent_order_id,
@@ -347,7 +347,7 @@ impl DatabaseQueries {
             ON CONFLICT (id)
             DO UPDATE
             SET
-                kind = $2, order_id = $3, order_type = $4, order_side=$5, trader_id = $6, client_id = $7, strategy_id = $8, instrument_id = $9, trade_id = $10, currency = $11,
+                kind = $2, client_order_id = $3, order_type = $4, order_side=$5, trader_id = $6, client_id = $7, strategy_id = $8, instrument_id = $9, trade_id = $10, currency = $11,
                 quantity = $12, time_in_force = $13, liquidity_side = $14, post_only = $15, reduce_only = $16, quote_quantity = $17, reconciliation = $18, price = $19, last_px = $20,
                 last_qty = $21, trigger_price = $22, trigger_type = $23, limit_offset = $24, trailing_offset = $25, trailing_offset_type = $26, expire_time = $27, display_qty = $28,
                 emulation_trigger = $29, trigger_instrument_id = $30, contingency_type = $31, order_list_id = $32, linked_order_ids = $33, parent_order_id = $34, exec_algorithm_id = $35,
@@ -408,10 +408,10 @@ impl DatabaseQueries {
 
     pub async fn load_order_events(
         pool: &PgPool,
-        order_id: &ClientOrderId,
+        client_order_id: &ClientOrderId,
     ) -> anyhow::Result<Vec<OrderEventAny>> {
-        sqlx::query_as::<_, OrderEventAnyModel>(r#"SELECT * FROM "order_event" event WHERE event.order_id = $1 ORDER BY created_at ASC"#)
-        .bind(order_id.to_string())
+        sqlx::query_as::<_, OrderEventAnyModel>(r#"SELECT * FROM "order_event" event WHERE event.client_order_id = $1 ORDER BY created_at ASC"#)
+        .bind(client_order_id.to_string())
         .fetch_all(pool)
         .await
         .map(|rows| rows.into_iter().map(|row| row.0).collect())
@@ -420,9 +420,9 @@ impl DatabaseQueries {
 
     pub async fn load_order(
         pool: &PgPool,
-        order_id: &ClientOrderId,
+        client_order_id: &ClientOrderId,
     ) -> anyhow::Result<Option<OrderAny>> {
-        let order_events = DatabaseQueries::load_order_events(pool, order_id).await;
+        let order_events = DatabaseQueries::load_order_events(pool, client_order_id).await;
 
         match order_events {
             Ok(order_events) => {
@@ -440,7 +440,7 @@ impl DatabaseQueries {
         let mut orders: Vec<OrderAny> = Vec::new();
         let client_order_ids: Vec<ClientOrderId> = sqlx::query(
             r#"
-            SELECT DISTINCT order_id FROM "order_event"
+            SELECT DISTINCT client_order_id FROM "order_event"
         "#,
         )
         .fetch_all(pool)
@@ -719,7 +719,7 @@ impl DatabaseQueries {
         let result = sqlx::query_as::<_, OrderEventOrderClientIdCombination>(
             r#"
             SELECT DISTINCT
-                order_id AS "order_id",
+                client_order_id AS "client_order_id",
                 client_id AS "client_id"
             FROM "order_event"
         "#,
@@ -728,7 +728,7 @@ impl DatabaseQueries {
         .await
         .map_err(|e| anyhow::anyhow!("Failed to load account ids: {e}"))?;
         for id in result {
-            map.insert(id.order_id, id.client_id);
+            map.insert(id.client_order_id, id.client_id);
         }
         Ok(map)
     }
