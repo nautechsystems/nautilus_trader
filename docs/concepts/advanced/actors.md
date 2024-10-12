@@ -1,7 +1,7 @@
 # Actors
 
 :::info
-We are currently working on this article.
+We are currently working on this guide.
 :::
 
 The `Strategy` class actually inherits from `Actor`, and additionally provides order management
