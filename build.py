@@ -56,10 +56,8 @@ if platform.system() == "Linux":
     os.environ["LDSHARED"] = "clang -shared"
 
 if platform.system() == "Darwin" and platform.machine() == "arm64":
-    TARGET_DIR = Path.cwd() / "nautilus_core" / "target" / "aarch64-apple-darwin" / BUILD_MODE
     os.environ["CFLAGS"] = "-arch arm64"
     os.environ["LDFLAGS"] = "-arch arm64 -w"
-
 
 if platform.system() == "Windows":
     # Linker error 1181
@@ -89,17 +87,14 @@ RUST_LIBS: list[str] = [str(path) for path in RUST_LIB_PATHS]
 
 
 def _build_rust_libs() -> None:
+    print("Compiling Rust libraries...")
+
     try:
         # Build the Rust libraries using Cargo
         if RUST_TOOLCHAIN not in ("stable", "nightly"):
             raise ValueError(f"Invalid `RUST_TOOLCHAIN` '{RUST_TOOLCHAIN}'")
 
         build_options = " --release" if BUILD_MODE == "release" else ""
-
-        if platform.system() == "Darwin" and platform.machine() == "arm64":
-            build_options += " --target aarch64-apple-darwin"
-
-        print("Compiling Rust libraries...")
 
         cmd_args = [
             "cargo",
@@ -373,6 +368,8 @@ if __name__ == "__main__":
     print(f"PARALLEL_BUILD={PARALLEL_BUILD}")
     print(f"COPY_TO_SOURCE={COPY_TO_SOURCE}")
     print(f"PYO3_ONLY={PYO3_ONLY}")
+    print(f"CC={os.environ['CC']}") if "CC" in os.environ else None
+    print(f"LDSHARED={os.environ['LDSHARED']}") if "LDSHARED" in os.environ else None
     print(f"CFLAGS={os.environ['CFLAGS']}") if "CFLAGS" in os.environ else None
     print(f"LDFLAGS={os.environ['LDFLAGS']}") if "LDFLAGS" in os.environ else None
     (

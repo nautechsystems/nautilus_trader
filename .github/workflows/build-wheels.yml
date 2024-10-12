@@ -35,16 +35,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Rust toolchain (Linux, Windows)
-        if: (runner.os == 'Linux') || (runner.os == 'Windows')
+      - name: Set up Rust toolchain
         run: |
           rustup toolchain add --profile minimal stable --component clippy,rustfmt
-
-      - name: Set up Rust toolchain (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          rustup toolchain add --profile minimal stable --component clippy,rustfmt
-          rustup target add aarch64-apple-darwin
 
       - name: Set up Python environment
         uses: actions/setup-python@v5

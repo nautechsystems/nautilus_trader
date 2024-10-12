@@ -16,13 +16,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64]
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.11", "3.12"]
     defaults:
       run:
         shell: bash
-    name: test-pip-install - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
+    name: test-pip-install - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -51,16 +50,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Rust toolchain (Linux, Windows)
-        if: (runner.os == 'Linux') || (runner.os == 'Windows')
+      - name: Set up Rust toolchain
         run: |
           rustup toolchain add --profile minimal stable --component clippy,rustfmt
-
-      - name: Set up Rust toolchain (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          rustup toolchain add --profile minimal stable --component clippy,rustfmt
-          rustup target add aarch64-apple-darwin
 
       - name: Set up Python environment
         uses: actions/setup-python@v5
@@ -271,13 +263,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64]
         os: [ubuntu-20.04, ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.11", "3.12"]
     defaults:
       run:
         shell: bash
-    name: publish-wheels - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
+    name: publish-wheels - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:
       BUILD_MODE: release
@@ -308,16 +299,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Rust toolchain (Linux, Windows)
-        if: (runner.os == 'Linux') || (runner.os == 'Windows')
+      - name: Set up Rust toolchain
         run: |
           rustup toolchain add --profile minimal stable --component clippy,rustfmt
-
-      - name: Set up Rust toolchain (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          rustup toolchain add --profile minimal stable --component clippy,rustfmt
-          rustup target add aarch64-apple-darwin
 
       - name: Set up Python environment
         uses: actions/setup-python@v5
