@@ -12,7 +12,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest]
         python-version: ["3.11", "3.12"]
-    name: build - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
+    name: build - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
 
     steps:
