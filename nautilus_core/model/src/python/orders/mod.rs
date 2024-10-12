@@ -27,6 +27,16 @@ use crate::{
     },
 };
 
+pub mod limit;
+pub mod limit_if_touched;
+pub mod market;
+pub mod market_if_touched;
+pub mod market_to_limit;
+pub mod stop_limit;
+pub mod stop_market;
+pub mod trailing_stop_limit;
+pub mod trailing_stop_market;
+
 pub fn convert_pyobject_to_order_any(py: Python, order: PyObject) -> PyResult<OrderAny> {
     let order_type = order.getattr(py, "order_type")?.extract::<OrderType>(py)?;
     if order_type == OrderType::Limit {
@@ -80,13 +90,3 @@ pub fn convert_order_any_to_pyobject(py: Python, order: OrderAny) -> PyResult<Py
         }
     }
 }
-
-pub mod limit;
-pub mod limit_if_touched;
-pub mod market;
-pub mod market_if_touched;
-pub mod market_to_limit;
-pub mod stop_limit;
-pub mod stop_market;
-pub mod trailing_stop_limit;
-pub mod trailing_stop_market;
