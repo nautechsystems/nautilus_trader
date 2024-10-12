@@ -143,13 +143,13 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        data::{stubs::stub_trade_tick_ethusdt_buyer, trade::TradeTick},
+        data::{stubs::stub_trade_ethusdt_buyer, trade::TradeTick},
         enums::AggressorSide,
     };
 
     #[rstest]
-    fn test_to_string(stub_trade_tick_ethusdt_buyer: TradeTick) {
-        let trade = stub_trade_tick_ethusdt_buyer;
+    fn test_to_string(stub_trade_ethusdt_buyer: TradeTick) {
+        let trade = stub_trade_ethusdt_buyer;
         assert_eq!(
             trade.to_string(),
             "ETHUSDT-PERP.BINANCE,10000.0000,1.00000000,BUYER,123456789,0"
@@ -175,9 +175,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_pyobject(stub_trade_tick_ethusdt_buyer: TradeTick) {
+    fn test_from_pyobject(stub_trade_ethusdt_buyer: TradeTick) {
         pyo3::prepare_freethreaded_python();
-        let trade = stub_trade_tick_ethusdt_buyer;
+        let trade = stub_trade_ethusdt_buyer;
 
         Python::with_gil(|py| {
             let tick_pyobject = trade.into_py(py);
@@ -187,16 +187,16 @@ mod tests {
     }
 
     #[rstest]
-    fn test_json_serialization(stub_trade_tick_ethusdt_buyer: TradeTick) {
-        let trade = stub_trade_tick_ethusdt_buyer;
+    fn test_json_serialization(stub_trade_ethusdt_buyer: TradeTick) {
+        let trade = stub_trade_ethusdt_buyer;
         let serialized = trade.as_json_bytes().unwrap();
         let deserialized = TradeTick::from_json_bytes(serialized.as_ref()).unwrap();
         assert_eq!(deserialized, trade);
     }
 
     #[rstest]
-    fn test_msgpack_serialization(stub_trade_tick_ethusdt_buyer: TradeTick) {
-        let trade = stub_trade_tick_ethusdt_buyer;
+    fn test_msgpack_serialization(stub_trade_ethusdt_buyer: TradeTick) {
+        let trade = stub_trade_ethusdt_buyer;
         let serialized = trade.as_msgpack_bytes().unwrap();
         let deserialized = TradeTick::from_msgpack_bytes(serialized.as_ref()).unwrap();
         assert_eq!(deserialized, trade);

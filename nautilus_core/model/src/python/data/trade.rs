@@ -338,12 +338,12 @@ mod tests {
     use pyo3::{IntoPy, Python};
     use rstest::rstest;
 
-    use crate::data::{stubs::stub_trade_tick_ethusdt_buyer, trade::TradeTick};
+    use crate::data::{stubs::stub_trade_ethusdt_buyer, trade::TradeTick};
 
     #[rstest]
-    fn test_as_dict(stub_trade_tick_ethusdt_buyer: TradeTick) {
+    fn test_as_dict(stub_trade_ethusdt_buyer: TradeTick) {
         pyo3::prepare_freethreaded_python();
-        let trade = stub_trade_tick_ethusdt_buyer;
+        let trade = stub_trade_ethusdt_buyer;
 
         Python::with_gil(|py| {
             let dict_string = trade.py_as_dict(py).unwrap().to_string();
@@ -353,9 +353,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_dict(stub_trade_tick_ethusdt_buyer: TradeTick) {
+    fn test_from_dict(stub_trade_ethusdt_buyer: TradeTick) {
         pyo3::prepare_freethreaded_python();
-        let trade = stub_trade_tick_ethusdt_buyer;
+        let trade = stub_trade_ethusdt_buyer;
 
         Python::with_gil(|py| {
             let dict = trade.py_as_dict(py).unwrap();
@@ -365,9 +365,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_pyobject(stub_trade_tick_ethusdt_buyer: TradeTick) {
+    fn test_from_pyobject(stub_trade_ethusdt_buyer: TradeTick) {
         pyo3::prepare_freethreaded_python();
-        let trade = stub_trade_tick_ethusdt_buyer;
+        let trade = stub_trade_ethusdt_buyer;
 
         Python::with_gil(|py| {
             let tick_pyobject = trade.into_py(py);

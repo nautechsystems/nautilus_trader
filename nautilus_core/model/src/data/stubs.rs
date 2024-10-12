@@ -287,7 +287,7 @@ pub fn stub_book_order() -> BookOrder {
 }
 
 #[fixture]
-pub fn quote_tick_ethusdt_binance() -> QuoteTick {
+pub fn quote_ethusdt_binance() -> QuoteTick {
     QuoteTick {
         instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
         bid_price: Price::from("10000.0000"),
@@ -300,7 +300,7 @@ pub fn quote_tick_ethusdt_binance() -> QuoteTick {
 }
 
 #[fixture]
-pub fn stub_trade_tick_ethusdt_buyer() -> TradeTick {
+pub fn stub_trade_ethusdt_buyer() -> TradeTick {
     TradeTick {
         instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),
         price: Price::from("10000.0000"),
