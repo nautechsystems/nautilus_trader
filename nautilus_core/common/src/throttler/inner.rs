@@ -37,10 +37,10 @@ pub struct InnerThrottler<T, F> {
     pub buffer: VecDeque<T>,
     /// The timestamps of the sent messages.
     pub timestamps: VecDeque<UnixNanos>,
-    /// The interval between messages in nanoseconds.
-    interval: u64,
     /// The clock used to keep track of time.
     pub clock: Rc<RefCell<dyn Clock>>,
+    /// The interval between messages in nanoseconds.
+    interval: u64,
     /// The name of the timer.
     timer_name: String,
     /// The callback to send a message.
@@ -54,7 +54,7 @@ where
     T: Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("InnerThrottler")
+        f.debug_struct(stringify!(InnerThrottler))
             .field("recv_count", &self.recv_count)
             .field("sent_count", &self.sent_count)
             .field("is_limiting", &self.is_limiting)
@@ -84,8 +84,8 @@ impl<T, F> InnerThrottler<T, F> {
             limit,
             buffer: VecDeque::new(),
             timestamps: VecDeque::with_capacity(limit),
-            interval,
             clock,
+            interval,
             timer_name,
             output_send,
             output_drop,
