@@ -171,6 +171,11 @@ class DYDXWebsocketClient:
     def _handle_ping(self, raw: bytes) -> None:
         """
         Handle ping messages by returning a pong message.
+
+        Parameters
+        ----------
+        raw : bytes
+            The received ping in bytes.
         """
         self._loop.create_task(self.send_pong(raw))
 
