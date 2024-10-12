@@ -114,6 +114,16 @@ impl OrderMatchingCore {
         self.is_last_initialized = true;
     }
 
+    pub fn set_bid_raw(&mut self, bid: Price) {
+        self.bid = Some(bid);
+        self.is_bid_initialized = true;
+    }
+
+    pub fn set_ask_raw(&mut self, ask: Price) {
+        self.ask = Some(ask);
+        self.is_ask_initialized = true;
+    }
+
     pub fn reset(&mut self) {
         self.bid = None;
         self.ask = None;
