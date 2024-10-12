@@ -529,8 +529,6 @@ class DYDXWebsocketClient:
         ----------
         msg : dict[str, Any]
             Dictionary to serialize as JSON message and send
-        keys : list[str], optional
-            List of keys to apply rate limiting.
         """
         if self._client is None:
             self._log.error(f"Cannot send message {msg}: not connected")
