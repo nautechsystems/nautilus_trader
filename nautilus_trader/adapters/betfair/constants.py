@@ -27,6 +27,7 @@ from nautilus_trader.model.objects import Price
 BETFAIR: Final[str] = "BETFAIR"
 BETFAIR_VENUE: Final[Venue] = Venue(BETFAIR)
 BETFAIR_CLIENT_ID: Final[ClientId] = ClientId(BETFAIR)
+
 BETFAIR_PRICE_PRECISION: Final[int] = 2
 BETFAIR_QUANTITY_PRECISION: Final[int] = 2
 BETFAIR_BOOK_TYPE: Final[BookType] = BookType.L2_MBP
