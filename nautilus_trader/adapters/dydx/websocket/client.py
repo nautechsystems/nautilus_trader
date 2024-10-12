@@ -34,9 +34,6 @@ from nautilus_trader.core.nautilus_pyo3 import WebSocketClientError
 from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
 
 
-SUBSCRIBE_KEY = "subscribe"
-
-
 class DYDXWebsocketClient:
     """
     Provide a dYdX streaming WebSocket client.
@@ -51,7 +48,10 @@ class DYDXWebsocketClient:
         The callback handler for message events.
     handler_reconnect : Callable[..., Awaitable[None]], optional
         The callback handler to be called on reconnect.
-
+    loop : asyncio.AbstractEventLoop
+        The event loop for the client.
+    subscription_rate_limit_per_second : int, default 2
+        The maximum number of subscription message to send to the venue.
     """
 
     def __init__(
@@ -105,13 +105,28 @@ class DYDXWebsocketClient:
     @property
     def subscriptions(self) -> set[tuple[str, str]]:
         """
-        Return the list of subscriptions.
+        Return the set of subscriptions.
+
+        Returns
+        -------
+        set[tuple[str, str]]
+            Set of subscriptions.
         """
         return self._subscriptions
 
     def has_subscription(self, item: tuple[str, str]) -> bool:
         """
         Return true if the connection is already subscribed to this topic.
+
+        Parameters
+        ----------
+        item : tuple[str, str]
+            Topic name.
+
+        Returns
+        -------
+        bool
+            Whether the client is already subscribed to this topic.
         """
         return item in self._subscriptions
 
@@ -131,12 +146,7 @@ class DYDXWebsocketClient:
         client = await WebSocketClient.connect(
             config=config,
             post_reconnection=self.reconnect,
-            keyed_quotas=[
-                (
-                    SUBSCRIBE_KEY,
-                    Quota.rate_per_second(self._subscription_rate_limit_per_second),
-                ),
-            ],
+            default_quota=Quota.rate_per_second(self._subscription_rate_limit_per_second),
         )
         self._client = client
         self._log.info(f"Connected to {self._base_url}", LogColor.BLUE)
@@ -147,10 +157,26 @@ class DYDXWebsocketClient:
             self._reconnect_task = self._loop.create_task(self._reconnect_guard())
 
     def _msg_handler(self, raw: bytes) -> None:
+        """
+        Handle pushed websocket messages.
+
+        Parameters
+        ----------
+        raw : bytes
+            The received message in bytes.
+        """
         self._msg_timestamp = self._clock.utc_now()
         self._handler(raw)
 
     def _handle_ping(self, raw: bytes) -> None:
+        """
+        Handle ping messages by returning a pong message.
+
+        Parameters
+        ----------
+        raw : bytes
+            The received ping in bytes.
+        """
         self._loop.create_task(self.send_pong(raw))
 
     async def send_pong(self, raw: bytes) -> None:
@@ -238,6 +264,11 @@ class DYDXWebsocketClient:
     async def subscribe_trades(self, symbol: str) -> None:
         """
         Subscribe to trades messages.
+
+        Parameters
+        ----------
+        symbol : str
+            Symbol of the instrument to subscribe to.
         """
         if self._client is None:
             self._log.warning("Cannot subscribe to trades: not connected")
@@ -251,7 +282,7 @@ class DYDXWebsocketClient:
         self._subscriptions.add(subscription)
         msg = {"type": "subscribe", "channel": "v4_trades", "id": symbol}
         self._log.debug(f"Subscribe to {symbol} trade ticks")
-        await self._send(msg, keys=[SUBSCRIBE_KEY])
+        await self._send(msg)
 
     async def subscribe_order_book(
         self,
@@ -259,7 +290,15 @@ class DYDXWebsocketClient:
         bypass_subscription_validation: bool = False,
     ) -> None:
         """
-        Subscribe to trades messages.
+        Subscribe to order book messages.
+
+        Parameters
+        ----------
+        symbol : str
+            Symbol of the instrument to subscribe to.
+        bypass_subscription_validation : bool, default False
+            Whether to bypass the subscription validation step before sending the
+            subscribe message to the venue.
         """
         if self._client is None:
             self._log.warning("Cannot subscribe to order book: not connected")
@@ -273,11 +312,18 @@ class DYDXWebsocketClient:
         self._subscriptions.add(subscription)
         msg = {"type": "subscribe", "channel": "v4_orderbook", "id": symbol, "batched": True}
         self._log.debug(f"Subscribe to {symbol} order book")
-        await self._send(msg, keys=[SUBSCRIBE_KEY])
+        await self._send(msg)
 
     async def subscribe_klines(self, symbol: str, interval: DYDXCandlesResolution) -> None:
         """
         Subscribe to klines.
+
+        Parameters
+        ----------
+        symbol : str
+            Symbol of the instrument to subscribe to bars.
+        interval : DYDXCandlesResolution
+            Specify the interval between candle updates (for example 1MIN).
         """
         if self._client is None:
             self._log.warning("Cannot subscribe to klines: not connected")
@@ -290,7 +336,7 @@ class DYDXWebsocketClient:
 
         self._subscriptions.add(subscription)
         msg = {"type": "subscribe", "channel": "v4_candles", "id": f"{symbol}/{interval.value}"}
-        await self._send(msg, keys=[SUBSCRIBE_KEY])
+        await self._send(msg)
 
     async def subscribe_markets(self) -> None:
         """
@@ -307,12 +353,20 @@ class DYDXWebsocketClient:
 
         self._subscriptions.add((subscription, ""))
         msg = {"type": "subscribe", "channel": "v4_markets"}
-        await self._send(msg, keys=[SUBSCRIBE_KEY])
+        await self._send(msg)
 
     async def subscribe_account_update(self, wallet_address: str, subaccount_number: int) -> None:
         """
         Subscribe to realtime information about orders, fills, transfers, perpetual
         positions, and perpetual assets for a subaccount.
+
+        Parameters
+        ----------
+        wallet_address : str
+            The dYdX wallet address.
+        subaccount_number : int
+            The subaccount number.
+            The venue creates subaccount 0 by default.
         """
         if self._client is None:
             self._log.warning("Cannot subscribe: not connected")
@@ -328,11 +382,19 @@ class DYDXWebsocketClient:
 
         self._subscriptions.add(subscription)
         msg = {"type": "subscribe", "channel": channel, "id": channel_id}
-        await self._send(msg, keys=[SUBSCRIBE_KEY])
+        await self._send(msg)
 
     async def unsubscribe_account_update(self, wallet_address: str, subaccount_number: int) -> None:
         """
-        Unsubscribe from account messages.
+        Unsubscribe from account updates.
+
+        Parameters
+        ----------
+        wallet_address : str
+            The dYdX wallet address.
+        subaccount_number : int
+            The subaccount number.
+            The venue creates subaccount 0 by default.
         """
         if self._client is None:
             self._log.warning("Cannot unsubscribe: not connected")
@@ -352,7 +414,12 @@ class DYDXWebsocketClient:
 
     async def unsubscribe_trades(self, symbol: str) -> None:
         """
-        Unsubscribe to trades messages.
+        Unsubscribe from trades messages.
+
+        Parameters
+        ----------
+        symbol : str
+            Symbol of the instrument to unsubscribe from.
         """
         if self._client is None:
             self._log.warning("Cannot unsubscribe: not connected")
@@ -369,7 +436,14 @@ class DYDXWebsocketClient:
 
     async def unsubscribe_order_book(self, symbol: str, remove_subscription: bool = True) -> None:
         """
-        Unsubscribe to trades messages.
+        Unsubscribe from order book messages.
+
+        Parameters
+        ----------
+        symbol : str
+            Symbol of the instrument to unsubscribe from.
+        remove_subscription : bool, optional default True
+            Whether to remove the symbol from the list of subscriptions for order book updates.
         """
         if self._client is None:
             self._log.warning("Cannot unsubscribe: not connected")
@@ -388,7 +462,14 @@ class DYDXWebsocketClient:
 
     async def unsubscribe_klines(self, symbol: str, interval: DYDXCandlesResolution) -> None:
         """
-        Unsubscribe to trades messages.
+        Unsubscribe from bar messages.
+
+        Parameters
+        ----------
+        symbol : str
+            Symbol of the instrument to unsubscribe from bars.
+        interval : DYDXCandlesResolution
+            Specify the interval between candle updates (for example 1MIN).
         """
         if self._client is None:
             self._log.warning("Cannot unsubscribe: not connected")
@@ -405,7 +486,7 @@ class DYDXWebsocketClient:
 
     async def unsubscribe_markets(self) -> None:
         """
-        Unsubscribe from instrument updates.
+        Unsubscribe from market updates.
         """
         if self._client is None:
             self._log.warning("Cannot unsubscribe: not connected")
@@ -440,10 +521,15 @@ class DYDXWebsocketClient:
 
             await self._send(msg)
 
-    def _send_subscribe_msg(self, msg: dict[str, Any]) -> None:
-        self._loop.create_task(self._send(msg))
+    async def _send(self, msg: dict[str, Any]) -> None:
+        """
+        Send a message to the venue.
 
-    async def _send(self, msg: dict[str, Any], keys: list[str] | None = None) -> None:
+        Parameters
+        ----------
+        msg : dict[str, Any]
+            Dictionary to serialize as JSON message and send
+        """
         if self._client is None:
             self._log.error(f"Cannot send message {msg}: not connected")
             return
@@ -451,6 +537,6 @@ class DYDXWebsocketClient:
         self._log.debug(f"SENDING: {msg}")
 
         try:
-            await self._client.send_text(msgspec.json.encode(msg), keys=keys)
+            await self._client.send_text(msgspec.json.encode(msg))
         except WebSocketClientError as e:
             self._log.error(f"Failed to send websocket message: {e}")
