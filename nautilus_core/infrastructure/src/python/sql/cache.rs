@@ -149,11 +149,11 @@ impl PostgresCacheDatabase {
     #[pyo3(name = "load_order")]
     fn py_load_order(
         slf: PyRef<'_, Self>,
-        order_id: ClientOrderId,
+        client_order_id: ClientOrderId,
         py: Python<'_>,
     ) -> PyResult<Option<PyObject>> {
         get_runtime().block_on(async {
-            let result = DatabaseQueries::load_order(&slf.pool, &order_id)
+            let result = DatabaseQueries::load_order(&slf.pool, &client_order_id)
                 .await
                 .unwrap();
             match result {
