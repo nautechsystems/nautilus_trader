@@ -2,7 +2,7 @@
 
 # Set variables
 REPO="nautechsystems/nautilus_trader"
-PYTHON_VERSION="cp311"  # Specify Python version (either "cp311" or "cp312")
+PYTHON_VERSION="cp312"  # Specify Python version (either "cp311" or "cp312")
 WORKFLOW_NAME="build-wheels.yml"
 GITHUB_API_URL="https://api.github.com"
 TOKEN="${GITHUB_TOKEN}"  # Assumes you have a GitHub PAT set in the 'GITHUB_TOKEN' env var
