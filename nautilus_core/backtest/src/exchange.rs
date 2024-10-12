@@ -29,8 +29,13 @@ use nautilus_execution::{client::ExecutionClient, messages::TradingCommand};
 use nautilus_model::{
     accounts::any::AccountAny,
     data::{
-        bar::Bar, delta::OrderBookDelta, deltas::OrderBookDeltas, quote::QuoteTick,
-        status::InstrumentStatus, trade::TradeTick, Data,
+        bar::Bar,
+        delta::OrderBookDelta,
+        deltas::{OrderBookDeltas, OrderBookDeltas_API},
+        quote::QuoteTick,
+        status::InstrumentStatus,
+        trade::TradeTick,
+        Data,
     },
     enums::{AccountType, BookType, OmsType},
     identifiers::{InstrumentId, Venue},
@@ -346,8 +351,32 @@ impl SimulatedExchange {
         }
     }
 
-    pub fn process_order_book_deltas(&mut self, _deltas: OrderBookDeltas) {
-        todo!("process order book deltas")
+    pub fn process_order_book_deltas(&mut self, deltas: OrderBookDeltas) {
+        for module in &self.modules {
+            module.pre_process(Data::Deltas(OrderBookDeltas_API::new(deltas.clone())));
+        }
+
+        if !self.matching_engines.contains_key(&deltas.instrument_id) {
+            let instrument = {
+                let cache = self.cache.as_ref().borrow();
+                cache.instrument(&deltas.instrument_id).cloned()
+            };
+
+            if let Some(instrument) = instrument {
+                self.add_instrument(instrument).unwrap();
+            } else {
+                panic!(
+                    "No matching engine found for instrument {}",
+                    deltas.instrument_id
+                );
+            }
+        }
+
+        if let Some(matching_engine) = self.matching_engines.get_mut(&deltas.instrument_id) {
+            matching_engine.process_order_book_deltas(&deltas);
+        } else {
+            panic!("Matching engine should be initialized");
+        }
     }
 
     pub fn process_quote_tick(&mut self, quote: &QuoteTick) {
@@ -468,6 +497,7 @@ mod tests {
         data::{
             bar::{Bar, BarType},
             delta::OrderBookDelta,
+            deltas::OrderBookDeltas,
             order::BookOrder,
             quote::QuoteTick,
             trade::TradeTick,
@@ -724,5 +754,63 @@ mod tests {
         assert_eq!(best_bid_price, Some(Price::from("1000.00")));
         let best_ask_price = exchange.best_ask_price(crypto_perpetual_ethusdt.id);
         assert_eq!(best_ask_price, Some(Price::from("1001.00")));
+    }
+
+    #[rstest]
+    fn test_exchange_process_orderbook_deltas(crypto_perpetual_ethusdt: CryptoPerpetual) {
+        let mut exchange: SimulatedExchange =
+            get_exchange(Venue::new("BINANCE"), AccountType::Margin, BookType::L2_MBP);
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+
+        // register instrument
+        exchange.add_instrument(instrument).unwrap();
+
+        // create two sell order book deltas with same timestamps and higher sequence
+        let delta_sell_1 = OrderBookDelta::new(
+            crypto_perpetual_ethusdt.id,
+            BookAction::Add,
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from("1000.00"),
+                Quantity::from(3),
+                1,
+            ),
+            0,
+            0,
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        );
+        let delta_sell_2 = OrderBookDelta::new(
+            crypto_perpetual_ethusdt.id,
+            BookAction::Add,
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from("1001.00"),
+                Quantity::from(1),
+                1,
+            ),
+            0,
+            1,
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        );
+        let orderbook_deltas = OrderBookDeltas::new(
+            crypto_perpetual_ethusdt.id,
+            vec![delta_sell_1, delta_sell_2],
+        );
+
+        // process both deltas
+        exchange.process_order_book_deltas(orderbook_deltas);
+
+        let book = exchange.get_book(crypto_perpetual_ethusdt.id).unwrap();
+        assert_eq!(book.count, 2);
+        assert_eq!(book.sequence, 1);
+        assert_eq!(book.ts_last, UnixNanos::from(1));
+        let best_bid_price = exchange.best_bid_price(crypto_perpetual_ethusdt.id);
+        // no bid orders in orderbook deltas
+        assert_eq!(best_bid_price, None);
+        let best_ask_price = exchange.best_ask_price(crypto_perpetual_ethusdt.id);
+        // best ask price is the first order in orderbook deltas
+        assert_eq!(best_ask_price, Some(Price::from("1000.00")));
     }
 }
