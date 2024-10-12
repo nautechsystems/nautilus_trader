@@ -23,7 +23,7 @@ mod serial_tests {
     use nautilus_infrastructure::sql::cache::get_pg_cache_database;
     use nautilus_model::{
         accounts::{any::AccountAny, cash::CashAccount},
-        data::stubs::{quote_tick_ethusdt_binance, stub_bar, stub_trade_tick_ethusdt_buyer},
+        data::stubs::{quote_ethusdt_binance, stub_bar, stub_trade_ethusdt_buyer},
         enums::{CurrencyType, OrderSide, OrderStatus, OrderType},
         events::account::stubs::cash_account_state_million_usd,
         identifiers::{
@@ -395,7 +395,7 @@ mod serial_tests {
         pg_cache.add_currency(&instrument.quote_currency()).unwrap();
         pg_cache.add_instrument(&instrument).unwrap();
         // add trade tick
-        let trade_tick = stub_trade_tick_ethusdt_buyer();
+        let trade_tick = stub_trade_ethusdt_buyer();
         pg_cache.add_trade(&trade_tick).unwrap();
         wait_until(
             || {
@@ -423,7 +423,7 @@ mod serial_tests {
         pg_cache.add_currency(&instrument.quote_currency()).unwrap();
         pg_cache.add_instrument(&instrument).unwrap();
         // add quote tick
-        let quote_tick = quote_tick_ethusdt_binance();
+        let quote_tick = quote_ethusdt_binance();
         pg_cache.add_quote(&quote_tick).unwrap();
         wait_until(
             || {

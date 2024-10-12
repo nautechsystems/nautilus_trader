@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A `QuoteTick` data type representing a top-of-book quote state.
+//! A `QuoteTick` data type representing a top-of-book state.
 
 use std::{
     cmp,
@@ -219,15 +219,15 @@ mod tests {
     use rstest::rstest;
 
     use crate::{
-        data::{quote::QuoteTick, stubs::quote_tick_ethusdt_binance},
+        data::{quote::QuoteTick, stubs::quote_ethusdt_binance},
         enums::PriceType,
     };
 
     #[rstest]
-    fn test_to_string(quote_tick_ethusdt_binance: QuoteTick) {
-        let tick = quote_tick_ethusdt_binance;
+    fn test_to_string(quote_ethusdt_binance: QuoteTick) {
+        let quote = quote_ethusdt_binance;
         assert_eq!(
-            tick.to_string(),
+            quote.to_string(),
             "ETHUSDT-PERP.BINANCE,10000.0000,10001.0000,1.00000000,1.00000000,0"
         );
     }
@@ -239,38 +239,38 @@ mod tests {
     fn test_extract_price(
         #[case] input: PriceType,
         #[case] expected: i64,
-        quote_tick_ethusdt_binance: QuoteTick,
+        quote_ethusdt_binance: QuoteTick,
     ) {
-        let tick = quote_tick_ethusdt_binance;
-        let result = tick.extract_price(input).raw;
+        let quote = quote_ethusdt_binance;
+        let result = quote.extract_price(input).raw;
         assert_eq!(result, expected);
     }
 
     #[rstest]
-    fn test_from_pyobject(quote_tick_ethusdt_binance: QuoteTick) {
+    fn test_from_pyobject(quote_ethusdt_binance: QuoteTick) {
         pyo3::prepare_freethreaded_python();
-        let tick = quote_tick_ethusdt_binance;
+        let quote = quote_ethusdt_binance;
 
         Python::with_gil(|py| {
-            let tick_pyobject = tick.into_py(py);
+            let tick_pyobject = quote.into_py(py);
             let parsed_tick = QuoteTick::from_pyobject(tick_pyobject.bind(py)).unwrap();
-            assert_eq!(parsed_tick, tick);
+            assert_eq!(parsed_tick, quote);
         });
     }
 
     #[rstest]
-    fn test_json_serialization(quote_tick_ethusdt_binance: QuoteTick) {
-        let tick = quote_tick_ethusdt_binance;
-        let serialized = tick.as_json_bytes().unwrap();
+    fn test_json_serialization(quote_ethusdt_binance: QuoteTick) {
+        let quote = quote_ethusdt_binance;
+        let serialized = quote.as_json_bytes().unwrap();
         let deserialized = QuoteTick::from_json_bytes(serialized.as_ref()).unwrap();
-        assert_eq!(deserialized, tick);
+        assert_eq!(deserialized, quote);
     }
 
     #[rstest]
-    fn test_msgpack_serialization(quote_tick_ethusdt_binance: QuoteTick) {
-        let tick = quote_tick_ethusdt_binance;
-        let serialized = tick.as_msgpack_bytes().unwrap();
+    fn test_msgpack_serialization(quote_ethusdt_binance: QuoteTick) {
+        let quote = quote_ethusdt_binance;
+        let serialized = quote.as_msgpack_bytes().unwrap();
         let deserialized = QuoteTick::from_msgpack_bytes(serialized.as_ref()).unwrap();
-        assert_eq!(deserialized, tick);
+        assert_eq!(deserialized, quote);
     }
 }

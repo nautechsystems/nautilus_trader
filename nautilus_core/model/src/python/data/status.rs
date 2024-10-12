@@ -280,7 +280,7 @@ mod tests {
     use crate::data::{
         quote::QuoteTick,
         status::InstrumentStatus,
-        stubs::{quote_tick_ethusdt_binance, stub_instrument_status},
+        stubs::{quote_ethusdt_binance, stub_instrument_status},
     };
 
     #[rstest]
