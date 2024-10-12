@@ -15,9 +15,6 @@
 
 import uuid
 
-
-# from nautilus_trader.backtest.auction import default_auction_match
-
 from cpython.datetime cimport timedelta
 from libc.stdint cimport uint64_t
 
@@ -375,8 +372,7 @@ cdef class OrderMatchingEngine:
         if is_logging_initialized():
             self._log.debug(f"Processing {repr(delta)}")
 
-        if self.book_type in (BookType.L2_MBP, BookType.L3_MBO):
-            self._book.apply_delta(delta)
+        self._book.apply_delta(delta)
 
         # TODO: WIP to introduce flags
         # if data.flags == TimeInForce.GTC:
@@ -405,8 +401,7 @@ cdef class OrderMatchingEngine:
         if is_logging_initialized():
             self._log.debug(f"Processing {repr(deltas)}")
 
-        if self.book_type in (BookType.L2_MBP, BookType.L3_MBO):
-            self._book.apply_deltas(deltas)
+        self._book.apply_deltas(deltas)
 
         # TODO: WIP to introduce flags
         # if data.flags == TimeInForce.GTC:
@@ -424,7 +419,7 @@ cdef class OrderMatchingEngine:
         """
         Process the exchanges market for the given quote tick.
 
-        Market dynamics are simulated by auctioning open orders.
+        The internal order book will only be updated if the venue `book_type` is 'L1_MBP'.
 
         Parameters
         ----------
@@ -446,7 +441,7 @@ cdef class OrderMatchingEngine:
         """
         Process the exchanges market for the given trade tick.
 
-        Market dynamics are simulated by auctioning open orders.
+        The internal order book will only be updated if the venue `book_type` is 'L1_MBP'.
 
         Parameters
         ----------

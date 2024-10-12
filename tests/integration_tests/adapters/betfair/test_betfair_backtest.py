@@ -94,6 +94,6 @@ def test_betfair_backtest():
     account = engine.trader.generate_account_report(BETFAIR_VENUE)
     fills = engine.trader.generate_order_fills_report()
     positions = engine.trader.generate_positions_report()
-    assert account.iloc[-1]["total"] == "1630955.72"
-    assert len(fills) == 1223
+    assert account.iloc[-1]["total"] == "80962.97"
+    assert len(fills) == 981
     assert len(positions) == 2
