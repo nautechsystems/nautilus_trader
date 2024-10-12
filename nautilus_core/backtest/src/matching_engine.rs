@@ -29,6 +29,7 @@ use nautilus_model::{
     data::{
         bar::{Bar, BarType},
         delta::OrderBookDelta,
+        deltas::OrderBookDeltas,
         quote::QuoteTick,
         trade::TradeTick,
     },
@@ -267,6 +268,16 @@ impl OrderMatchingEngine {
         }
 
         self.iterate(delta.ts_event);
+    }
+
+    pub fn process_order_book_deltas(&mut self, deltas: &OrderBookDeltas) {
+        log::debug!("Processing {deltas}");
+
+        if self.book_type == BookType::L2_MBP || self.book_type == BookType::L3_MBO {
+            self.book.apply_deltas(deltas);
+        }
+
+        self.iterate(deltas.ts_event);
     }
 
     pub fn process_quote_tick(&mut self, quote: &QuoteTick) {
