@@ -11,13 +11,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64]
         os: [ubuntu-latest]
         python-version: ["3.11", "3.12"]
     defaults:
       run:
         shell: bash
-    name: build - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
+    name: build - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:
       BUILD_MODE: debug
@@ -169,13 +168,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64]
         os: [windows-latest]
         python-version: ["3.11", "3.12"]
     defaults:
       run:
         shell: bash
-    name: build - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
+    name: build - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:
       BUILD_MODE: debug
@@ -272,13 +270,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [arm64]
         os: [macos-latest]
         python-version: ["3.11", "3.12"]
     defaults:
       run:
         shell: bash
-    name: build - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
+    name: build - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:
       BUILD_MODE: debug
@@ -297,7 +294,6 @@ jobs:
       - name: Set up Rust toolchain
         run: |
           rustup toolchain add --profile minimal stable --component clippy,rustfmt
-          rustup target add aarch64-apple-darwin
 
       - name: Set up Python environment
         uses: actions/setup-python@v5
