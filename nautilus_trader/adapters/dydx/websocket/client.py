@@ -52,6 +52,7 @@ class DYDXWebsocketClient:
         The event loop for the client.
     subscription_rate_limit_per_second : int, default 2
         The maximum number of subscription message to send to the venue.
+
     """
 
     def __init__(
@@ -111,6 +112,7 @@ class DYDXWebsocketClient:
         -------
         set[tuple[str, str]]
             Set of subscriptions.
+
         """
         return self._subscriptions
 
@@ -127,6 +129,7 @@ class DYDXWebsocketClient:
         -------
         bool
             Whether the client is already subscribed to this topic.
+
         """
         return item in self._subscriptions
 
@@ -164,6 +167,7 @@ class DYDXWebsocketClient:
         ----------
         raw : bytes
             The received message in bytes.
+
         """
         self._msg_timestamp = self._clock.utc_now()
         self._handler(raw)
@@ -176,6 +180,7 @@ class DYDXWebsocketClient:
         ----------
         raw : bytes
             The received ping in bytes.
+
         """
         self._loop.create_task(self.send_pong(raw))
 
@@ -269,6 +274,7 @@ class DYDXWebsocketClient:
         ----------
         symbol : str
             Symbol of the instrument to subscribe to.
+
         """
         if self._client is None:
             self._log.warning("Cannot subscribe to trades: not connected")
@@ -299,6 +305,7 @@ class DYDXWebsocketClient:
         bypass_subscription_validation : bool, default False
             Whether to bypass the subscription validation step before sending the
             subscribe message to the venue.
+
         """
         if self._client is None:
             self._log.warning("Cannot subscribe to order book: not connected")
@@ -324,6 +331,7 @@ class DYDXWebsocketClient:
             Symbol of the instrument to subscribe to bars.
         interval : DYDXCandlesResolution
             Specify the interval between candle updates (for example 1MIN).
+
         """
         if self._client is None:
             self._log.warning("Cannot subscribe to klines: not connected")
@@ -367,6 +375,7 @@ class DYDXWebsocketClient:
         subaccount_number : int
             The subaccount number.
             The venue creates subaccount 0 by default.
+
         """
         if self._client is None:
             self._log.warning("Cannot subscribe: not connected")
@@ -395,6 +404,7 @@ class DYDXWebsocketClient:
         subaccount_number : int
             The subaccount number.
             The venue creates subaccount 0 by default.
+
         """
         if self._client is None:
             self._log.warning("Cannot unsubscribe: not connected")
@@ -420,6 +430,7 @@ class DYDXWebsocketClient:
         ----------
         symbol : str
             Symbol of the instrument to unsubscribe from.
+
         """
         if self._client is None:
             self._log.warning("Cannot unsubscribe: not connected")
@@ -444,6 +455,7 @@ class DYDXWebsocketClient:
             Symbol of the instrument to unsubscribe from.
         remove_subscription : bool, optional default True
             Whether to remove the symbol from the list of subscriptions for order book updates.
+
         """
         if self._client is None:
             self._log.warning("Cannot unsubscribe: not connected")
@@ -470,6 +482,7 @@ class DYDXWebsocketClient:
             Symbol of the instrument to unsubscribe from bars.
         interval : DYDXCandlesResolution
             Specify the interval between candle updates (for example 1MIN).
+
         """
         if self._client is None:
             self._log.warning("Cannot unsubscribe: not connected")
@@ -529,6 +542,7 @@ class DYDXWebsocketClient:
         ----------
         msg : dict[str, Any]
             Dictionary to serialize as JSON message and send
+
         """
         if self._client is None:
             self._log.error(f"Cannot send message {msg}: not connected")
