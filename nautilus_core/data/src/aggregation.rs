@@ -49,7 +49,6 @@ pub trait BarAggregator {
     /// Updates the aggregator with the given quote.
     fn handle_quote(&mut self, quote: QuoteTick) {
         let spec = self.bar_type().spec();
-
         self.update(
             quote.extract_price(spec.price_type),
             quote.extract_size(spec.price_type),
@@ -220,14 +219,20 @@ impl BarBuilder {
 }
 
 /// Provides a means of aggregating specified bar types and sending to a registered handler.
-pub struct BarAggregatorCore {
+pub struct BarAggregatorCore<H>
+where
+    H: FnMut(Bar),
+{
     bar_type: BarType,
     builder: BarBuilder,
-    handler: fn(Bar),
+    handler: H,
     await_partial: bool,
 }
 
-impl BarAggregatorCore {
+impl<H> BarAggregatorCore<H>
+where
+    H: FnMut(Bar),
+{
     /// Creates a new [`BarAggregatorCore`] instance.
     ///
     /// # Panics
@@ -238,7 +243,7 @@ impl BarAggregatorCore {
     pub fn new(
         instrument: &InstrumentAny,
         bar_type: BarType,
-        handler: fn(Bar),
+        handler: H,
         await_partial: bool,
     ) -> Self {
         Self {
@@ -277,11 +282,17 @@ impl BarAggregatorCore {
 ///
 /// When received tick count reaches the step threshold of the bar
 /// specification, then a bar is created and sent to the handler.
-pub struct TickBarAggregator {
-    core: BarAggregatorCore,
+pub struct TickBarAggregator<H>
+where
+    H: FnMut(Bar),
+{
+    core: BarAggregatorCore<H>,
 }
 
-impl TickBarAggregator {
+impl<H> TickBarAggregator<H>
+where
+    H: FnMut(Bar),
+{
     /// Creates a new [`TickBarAggregator`] instance.
     ///
     /// # Panics
@@ -292,7 +303,7 @@ impl TickBarAggregator {
     pub fn new(
         instrument: &InstrumentAny,
         bar_type: BarType,
-        handler: fn(Bar),
+        handler: H,
         await_partial: bool,
     ) -> Self {
         Self {
@@ -301,7 +312,10 @@ impl TickBarAggregator {
     }
 }
 
-impl BarAggregator for TickBarAggregator {
+impl<H> BarAggregator for TickBarAggregator<H>
+where
+    H: FnMut(Bar),
+{
     fn bar_type(&self) -> BarType {
         self.core.bar_type
     }
@@ -318,11 +332,17 @@ impl BarAggregator for TickBarAggregator {
 }
 
 /// Provides a means of building volume bars aggregated from quote and trade ticks.
-pub struct VolumeBarAggregator {
-    core: BarAggregatorCore,
+pub struct VolumeBarAggregator<H>
+where
+    H: FnMut(Bar),
+{
+    core: BarAggregatorCore<H>,
 }
 
-impl VolumeBarAggregator {
+impl<H> VolumeBarAggregator<H>
+where
+    H: FnMut(Bar),
+{
     /// Creates a new [`VolumeBarAggregator`] instance.
     ///
     /// # Panics
@@ -333,7 +353,7 @@ impl VolumeBarAggregator {
     pub fn new(
         instrument: &InstrumentAny,
         bar_type: BarType,
-        handler: fn(Bar),
+        handler: H,
         await_partial: bool,
     ) -> Self {
         Self {
@@ -342,7 +362,10 @@ impl VolumeBarAggregator {
     }
 }
 
-impl BarAggregator for VolumeBarAggregator {
+impl<H> BarAggregator for VolumeBarAggregator<H>
+where
+    H: FnMut(Bar),
+{
     fn bar_type(&self) -> BarType {
         self.core.bar_type
     }
@@ -382,12 +405,18 @@ impl BarAggregator for VolumeBarAggregator {
 ///
 /// When received value reaches the step threshold of the bar
 /// specification, then a bar is created and sent to the handler.
-pub struct ValueBarAggregator {
-    core: BarAggregatorCore,
+pub struct ValueBarAggregator<H>
+where
+    H: FnMut(Bar),
+{
+    core: BarAggregatorCore<H>,
     cum_value: f64,
 }
 
-impl ValueBarAggregator {
+impl<H> ValueBarAggregator<H>
+where
+    H: FnMut(Bar),
+{
     /// Creates a new [`ValueBarAggregator`] instance.
     ///
     /// # Panics
@@ -398,7 +427,7 @@ impl ValueBarAggregator {
     pub fn new(
         instrument: &InstrumentAny,
         bar_type: BarType,
-        handler: fn(Bar),
+        handler: H,
         await_partial: bool,
     ) -> Self {
         Self {
@@ -414,7 +443,10 @@ impl ValueBarAggregator {
     }
 }
 
-impl BarAggregator for ValueBarAggregator {
+impl<H> BarAggregator for ValueBarAggregator<H>
+where
+    H: FnMut(Bar),
+{
     fn bar_type(&self) -> BarType {
         self.core.bar_type
     }
@@ -448,11 +480,12 @@ impl BarAggregator for ValueBarAggregator {
 /// Provides a means of building time bars aggregated from quote and trade ticks.
 ///
 /// At each aggregation time interval, a bar is created and sent to the handler.
-pub struct TimeBarAggregator<C>
+pub struct TimeBarAggregator<C, H>
 where
     C: Clock,
+    H: FnMut(Bar),
 {
-    core: BarAggregatorCore,
+    core: BarAggregatorCore<H>,
     clock: C,
     build_with_no_updates: bool,
     timestamp_on_close: bool,
@@ -468,27 +501,28 @@ where
 }
 
 #[derive(Clone)]
-pub struct NewBarCallback<C: Clock> {
-    aggregator: Rc<RefCell<TimeBarAggregator<C>>>,
+pub struct NewBarCallback<C: Clock, H: FnMut(Bar)> {
+    aggregator: Rc<RefCell<TimeBarAggregator<C, H>>>,
 }
 
-impl<C: Clock> NewBarCallback<C> {
-    pub const fn new(aggregator: Rc<RefCell<TimeBarAggregator<C>>>) -> Self {
+impl<C: Clock, H: FnMut(Bar)> NewBarCallback<C, H> {
+    pub const fn new(aggregator: Rc<RefCell<TimeBarAggregator<C, H>>>) -> Self {
         Self { aggregator }
     }
 }
 
-impl<C: Clock + 'static> From<NewBarCallback<C>> for TimeEventCallback {
-    fn from(value: NewBarCallback<C>) -> Self {
+impl<C: Clock + 'static, H: FnMut(Bar) + 'static> From<NewBarCallback<C, H>> for TimeEventCallback {
+    fn from(value: NewBarCallback<C, H>) -> Self {
         Self::Rust(Rc::new(move |event: TimeEvent| {
             value.aggregator.borrow_mut().build_bar(event);
         }))
     }
 }
 
-impl<C> TimeBarAggregator<C>
+impl<C, H> TimeBarAggregator<C, H>
 where
     C: Clock + 'static,
+    H: FnMut(Bar) + 'static,
 {
     /// Creates a new [`TimeBarAggregator`] instance.
     ///
@@ -501,7 +535,7 @@ where
     pub fn new(
         instrument: &InstrumentAny,
         bar_type: BarType,
-        handler: fn(Bar),
+        handler: H,
         await_partial: bool,
         clock: C,
         build_with_no_updates: bool,
@@ -526,7 +560,7 @@ where
     }
 
     /// Starts the time bar aggregator.
-    pub fn start(&mut self, callback: NewBarCallback<C>) -> anyhow::Result<()> {
+    pub fn start(&mut self, callback: NewBarCallback<C, H>) -> anyhow::Result<()> {
         let now = self.clock.utc_now();
         let start_time = get_time_bar_start(now, &self.bar_type());
         let start_time_ns = UnixNanos::from(start_time.timestamp_nanos_opt().unwrap() as u64);
@@ -576,9 +610,10 @@ where
     }
 }
 
-impl<C> BarAggregator for TimeBarAggregator<C>
+impl<C, H> BarAggregator for TimeBarAggregator<C, H>
 where
     C: Clock,
+    H: FnMut(Bar),
 {
     fn bar_type(&self) -> BarType {
         self.core.bar_type
@@ -611,6 +646,8 @@ where
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::sync::{Arc, Mutex};
+
     use nautilus_model::{
         data::bar::{BarSpecification, BarType},
         enums::{AggregationSource, BarAggregation, PriceType},
@@ -882,110 +919,63 @@ mod tests {
         assert_eq!(bar.volume, Quantity::new(3.0, 0));
     }
 
-    // #[rstest]
-    // fn test_tick_bar_aggregator_handle_quote_tick_when_count_below_threshold_updates(
-    //     equity_aapl: Equity,
-    // ) {
-    //     let instrument = InstrumentAny::Equity(equity_aapl);
-    //     let bar_spec = BarSpecification::new(3, BarAggregation::Tick, PriceType::Mid);
-    //     let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
-    //     let handler = Arc::new(Mutex::new(Vec::new()));
-    //     let mut aggregator = TickBarAggregator::new(&instrument, bar_type, Arc::clone(&handler));
-    //
-    //     let tick = QuoteTick::new(
-    //         instrument.id(),
-    //         Price::new(1.00001, 8),
-    //         Price::new(1.00004, 8),
-    //         Quantity::new(1.0, 0),
-    //         Quantity::new(1.0, 0),
-    //         UnixNanos::from(0),
-    //         UnixNanos::from(0),
-    //     );
-    //
-    //     aggregator.handle_quote_tick(tick);
-    //
-    //     let handler_guard = handler.lock().unwrap();
-    //     assert_eq!(handler_guard.len(), 0);
-    // }
+    #[rstest]
+    fn test_tick_bar_aggregator_handle_trade_when_step_count_below_threshold(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(3, BarAggregation::Tick, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
 
-    //
-    // #[rstest]
-    // fn test_tick_bar_aggregator_handle_trade_tick_when_count_below_threshold_updates(
-    //     equity_aapl: Equity,
-    // ) {
-    //     let instrument = InstrumentAny::Equity(equity_aapl);
-    //     let bar_spec = BarSpecification::new(3, BarAggregation::Tick, PriceType::Last);
-    //     let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
-    //     let handler = Arc::new(Mutex::new(Vec::new()));
-    //     let mut aggregator = TickBarAggregator::new(&instrument, bar_type, Arc::clone(&handler));
-    //
-    //     let tick = TradeTick::new(
-    //         instrument.id(),
-    //         Price::new(1.00001, 8),
-    //         Quantity::new(1.0, 0),
-    //         AggressorSide::Buyer,
-    //         TradeId::new("123456"),
-    //         UnixNanos::from(0),
-    //         UnixNanos::from(0),
-    //     );
-    //
-    //     aggregator.handle_trade_tick(tick);
-    //
-    //     let handler_guard = handler.lock().unwrap();
-    //     assert_eq!(handler_guard.len(), 0);
-    // }
-    //
-    // #[rstest]
-    // fn test_tick_bar_aggregator_handle_quote_tick_when_count_at_threshold_sends_bar_to_handler(
-    //     equity_aapl: Equity,
-    // ) {
-    //     let instrument = InstrumentAny::Equity(equity_aapl);
-    //     let bar_spec = BarSpecification::new(3, BarAggregation::Tick, PriceType::Mid);
-    //     let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
-    //     let handler = Arc::new(Mutex::new(Vec::new()));
-    //     let mut aggregator = TickBarAggregator::new(&instrument, bar_type, Arc::clone(&handler));
-    //
-    //     let tick1 = QuoteTick::new(
-    //         instrument.id(),
-    //         Price::new(1.00001, 8),
-    //         Price::new(1.00004, 8),
-    //         Quantity::new(1.0, 0),
-    //         Quantity::new(1.0, 0),
-    //         UnixNanos::from(0),
-    //         UnixNanos::from(0),
-    //     );
-    //
-    //     let tick2 = QuoteTick::new(
-    //         instrument.id(),
-    //         Price::new(1.00002, 8),
-    //         Price::new(1.00005, 8),
-    //         Quantity::new(1.0, 0),
-    //         Quantity::new(1.0, 0),
-    //         UnixNanos::from(0),
-    //         UnixNanos::from(0),
-    //     );
-    //
-    //     let tick3 = QuoteTick::new(
-    //         instrument.id(),
-    //         Price::new(1.00000, 8),
-    //         Price::new(1.00003, 8),
-    //         Quantity::new(1.0, 0),
-    //         Quantity::new(1.0, 0),
-    //         UnixNanos::from(0),
-    //         UnixNanos::from(0),
-    //     );
-    //
-    //     aggregator.handle_quote_tick(tick1);
-    //     aggregator.handle_quote_tick(tick2);
-    //     aggregator.handle_quote_tick(tick3);
-    //
-    //     let handler_guard = handler.lock().unwrap();
-    //     assert_eq!(handler_guard.len(), 1);
-    //     let bar = &handler_guard[0];
-    //     assert_eq!(bar.open, Price::new(1.000025, 8));
-    //     assert_eq!(bar.high, Price::new(1.000035, 8));
-    //     assert_eq!(bar.low, Price::new(1.000015, 8));
-    //     assert_eq!(bar.close, Price::new(1.000015, 8));
-    //     assert_eq!(bar.volume, Quantity::new(3.0, 0));
-    // }
+        let mut aggregator = TickBarAggregator::new(
+            &instrument,
+            bar_type,
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().unwrap();
+                handler_guard.push(bar);
+            },
+            false,
+        );
+
+        let trade = TradeTick::default();
+        aggregator.handle_trade(trade);
+
+        let handler_guard = handler.lock().unwrap();
+        assert_eq!(handler_guard.len(), 0);
+    }
+
+    #[rstest]
+    fn test_tick_bar_aggregator_handle_trade_when_step_count_reached(equity_aapl: Equity) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let bar_spec = BarSpecification::new(3, BarAggregation::Tick, PriceType::Last);
+        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+        let handler = Arc::new(Mutex::new(Vec::new()));
+        let handler_clone = Arc::clone(&handler);
+
+        let mut aggregator = TickBarAggregator::new(
+            &instrument,
+            bar_type,
+            move |bar: Bar| {
+                let mut handler_guard = handler_clone.lock().unwrap();
+                handler_guard.push(bar);
+            },
+            false,
+        );
+
+        let trade = TradeTick::default();
+        aggregator.handle_trade(trade);
+        aggregator.handle_trade(trade);
+        aggregator.handle_trade(trade);
+
+        let handler_guard = handler.lock().unwrap();
+        let bar = handler_guard.first().unwrap();
+        assert_eq!(handler_guard.len(), 1);
+        assert_eq!(bar.open, trade.price);
+        assert_eq!(bar.high, trade.price);
+        assert_eq!(bar.low, trade.price);
+        assert_eq!(bar.close, trade.price);
+        assert_eq!(bar.volume, Quantity::from(300000));
+        assert_eq!(bar.ts_event, trade.ts_event);
+        assert_eq!(bar.ts_init, trade.ts_init);
+    }
 }
