@@ -7,6 +7,9 @@ WORKFLOW_NAME="build-wheels.yml"
 GITHUB_API_URL="https://api.github.com"
 TOKEN="${GITHUB_TOKEN}"  # Assumes you have a GitHub PAT set in the 'GITHUB_TOKEN' env var
 
+# Default value for OS (set to 'linux' if not provided)
+OS="${1:-linux}"  # Accept OS as a command-line argument (linux, macos, windows)
+
 # Check if TOKEN is set
 if [[ -z "$TOKEN" ]]; then
   echo "Error: The 'GITHUB_TOKEN' environment variable is not set. Set it with a GitHub personal access token."
@@ -31,11 +34,23 @@ artifacts=$(curl -s -H "Authorization: token $TOKEN" "${GITHUB_API_URL}/repos/${
 echo "Artifacts returned by API:"
 echo "$artifacts" | grep '"name":'
 
-# Try to find the artifact matching the specified Python version
-artifact_name=$(echo "$artifacts" | grep "\"name\": \"nautilus_trader-.*-${PYTHON_VERSION}-.*whl\"" | awk -F'"' '{print $4}')
+# Set regex pattern for artifacts based on the OS argument
+if [[ "$OS" == "linux" ]]; then
+  artifact_pattern="nautilus_trader-.*-${PYTHON_VERSION}-.*manylinux_.*\.whl"
+elif [[ "$OS" == "macos" ]]; then
+  artifact_pattern="nautilus_trader-.*-${PYTHON_VERSION}-.*macosx_.*\.whl"
+elif [[ "$OS" == "windows" ]]; then
+  artifact_pattern="nautilus_trader-.*-${PYTHON_VERSION}-.*win_amd64.*\.whl"
+else
+  echo "Error: Unsupported OS type. Supported values are: linux, macos, windows."
+  exit 1
+fi
+
+# Try to find the artifact matching the specified Python version and OS
+artifact_name=$(echo "$artifacts" | grep "\"name\": \"${artifact_pattern}\"" | awk -F'"' '{print $4}')
 
 # Debugging: Print the artifact name that we're trying to find
-echo "Trying to find artifact with name matching: nautilus_trader-.*-${PYTHON_VERSION}-.*whl"
+echo "Trying to find artifact with name matching: $artifact_pattern"
 echo "Found artifact: $artifact_name"
 
 # Fetch the archive_download_url directly from the artifacts response
