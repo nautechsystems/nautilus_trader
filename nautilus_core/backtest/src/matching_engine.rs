@@ -766,6 +766,16 @@ impl OrderMatchingEngine {
     pub fn iterate(&mut self, timestamp_ns: UnixNanos) {
         self.clock.set_time(timestamp_ns);
 
+        // check for updates in orderbook and set bid and ask
+        // in order matching core and iterate
+        if self.book.has_bid() {
+            self.core.set_bid_raw(self.book.best_bid_price().unwrap());
+        }
+        if self.book.has_ask() {
+            self.core.set_ask_raw(self.book.best_ask_price().unwrap());
+        }
+        self.core.iterate();
+
         self.core.bid = self.book.best_bid_price();
         self.core.ask = self.book.best_ask_price();
 
@@ -1147,7 +1157,10 @@ mod tests {
     };
     use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
     use nautilus_model::{
-        enums::{AccountType, BookType, ContingencyType, OmsType, OrderSide, OrderType},
+        data::{delta::OrderBookDelta, order::BookOrder},
+        enums::{
+            AccountType, BookAction, BookType, ContingencyType, OmsType, OrderSide, OrderType,
+        },
         events::order::{
             rejected::OrderRejectedBuilder, OrderEventAny, OrderEventType, OrderRejected,
         },
@@ -1239,6 +1252,29 @@ mod tests {
             1,
             FillModel::default(),
             BookType::L1_MBP,
+            OmsType::Netting,
+            account_type.unwrap_or(AccountType::Cash),
+            &ATOMIC_TIME,
+            msgbus,
+            cache,
+            config,
+        )
+    }
+
+    fn get_order_matching_engine_l2(
+        instrument: InstrumentAny,
+        msgbus: Rc<RefCell<MessageBus>>,
+        cache: Option<Rc<RefCell<Cache>>>,
+        account_type: Option<AccountType>,
+        config: Option<OrderMatchingEngineConfig>,
+    ) -> OrderMatchingEngine {
+        let cache = cache.unwrap_or(Rc::new(RefCell::new(Cache::default())));
+        let config = config.unwrap_or_default();
+        OrderMatchingEngine::new(
+            instrument,
+            1,
+            FillModel::default(),
+            BookType::L2_MBP,
             OmsType::Netting,
             account_type.unwrap_or(AccountType::Cash),
             &ATOMIC_TIME,
@@ -1773,5 +1809,54 @@ mod tests {
             second.message().unwrap(),
             Ustr::from("No market for ESZ1.GLBX")
         );
+    }
+
+    #[rstest]
+    fn test_matching_core_bid_ask_initialized(
+        msgbus: MessageBus,
+        order_event_handler: ShareableMessageHandler,
+        account_id: AccountId,
+        time: AtomicTime,
+        instrument_es: InstrumentAny,
+    ) {
+        let mut engine_l2 = get_order_matching_engine_l2(
+            instrument_es.clone(),
+            Rc::new(RefCell::new(msgbus)),
+            None,
+            None,
+            None,
+        );
+        // create bid and ask orderbook delta and check if
+        // bid and ask are initialized in order matching core
+        let orderbook_delta_buy = OrderBookDelta::new(
+            instrument_es.id(),
+            BookAction::Add,
+            BookOrder::new(OrderSide::Buy, Price::from("100"), Quantity::from("1"), 0),
+            0,
+            0,
+            UnixNanos::from(0),
+            UnixNanos::from(0),
+        );
+        let orderbook_delta_sell = OrderBookDelta::new(
+            instrument_es.id(),
+            BookAction::Add,
+            BookOrder::new(OrderSide::Sell, Price::from("101"), Quantity::from("1"), 1),
+            0,
+            1,
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        );
+
+        engine_l2.process_order_book_delta(&orderbook_delta_buy);
+        assert_eq!(engine_l2.core.bid, Some(Price::from("100")));
+        assert!(engine_l2.core.is_bid_initialized);
+        assert_eq!(engine_l2.core.ask, None);
+        assert!(!engine_l2.core.is_ask_initialized);
+
+        engine_l2.process_order_book_delta(&orderbook_delta_sell);
+        assert_eq!(engine_l2.core.bid, Some(Price::from("100")));
+        assert!(engine_l2.core.is_bid_initialized);
+        assert_eq!(engine_l2.core.ask, Some(Price::from("101")));
+        assert!(engine_l2.core.is_ask_initialized);
     }
 }
