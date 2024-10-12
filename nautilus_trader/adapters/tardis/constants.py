@@ -13,27 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from decimal import Decimal
 from typing import Final
 
-from nautilus_trader.adapters.binance.common.enums import BinanceErrorCode
-from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.identifiers import ClientId
 
 
-BINANCE: Final[str] = "BINANCE"
-BINANCE_VENUE: Final[Venue] = Venue(BINANCE)
-
-BINANCE_MIN_CALLBACK_RATE: Final[Decimal] = Decimal("0.1")
-BINANCE_MAX_CALLBACK_RATE: Final[Decimal] = Decimal("10.0")
-
-# Set of Binance error codes for which Nautilus will attempt retries,
-# potentially temporary conditions where a retry might make sense.
-BINANCE_RETRY_ERRORS: set[BinanceErrorCode] = {
-    BinanceErrorCode.DISCONNECTED,
-    BinanceErrorCode.TOO_MANY_REQUESTS,  # Short retry delays may result in bans
-    BinanceErrorCode.TIMEOUT,
-    BinanceErrorCode.SERVER_BUSY,
-    BinanceErrorCode.INVALID_TIMESTAMP,
-    BinanceErrorCode.CANCEL_REJECTED,
-    BinanceErrorCode.ME_RECVWINDOW_REJECT,
-}
+TARDIS: Final[str] = "TARDIS"
+TARDIS_CLIENT_ID: Final[ClientId] = ClientId(TARDIS)
