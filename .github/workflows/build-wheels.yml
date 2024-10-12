@@ -10,7 +10,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64]
         os: [ubuntu-latest, macos-latest]
         python-version: ["3.11", "3.12"]
     name: build - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
@@ -18,6 +17,7 @@ jobs:
 
     steps:
       - name: Free disk space (Ubuntu)
+        if: runner.os == 'Linux'
         uses: jlumbroso/free-disk-space@main
         with:
           tool-cache: true
@@ -28,7 +28,8 @@ jobs:
           docker-images: true
           swap-storage: true
 
-      - name: Install runner dependencies
+      - name: Install runner dependencies (Linux)
+        if: runner.os == 'Linux'
         run: sudo apt-get install -y curl clang git libssl-dev make pkg-config
 
       - name: Checkout repository
