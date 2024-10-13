@@ -36,7 +36,8 @@ pub struct Signal {
 
 impl Signal {
     /// Creates a new [`Signal`] instance.
-    pub fn new(
+    #[must_use]
+    pub const fn new(
         data_type: Ustr,
         metadata: Ustr,
         value: String,

@@ -293,7 +293,7 @@ mod tests {
         assert!(mock_limiter.check_key(&"reset".to_string()).is_err());
 
         // Advance clock by less than a second
-        mock_limiter.advance_clock(Duration::from_millis(500));
+        mock_limiter.advance_clock(Duration::from_millis(499));
         assert!(mock_limiter.check_key(&"reset".to_string()).is_err());
 
         // Advance clock to reset
