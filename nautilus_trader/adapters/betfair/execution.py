@@ -235,8 +235,8 @@ class BetfairExecutionClient(LiveExecutionClient):
             try:
                 await update_account_state()
                 await asyncio.sleep(self.request_account_state_period)
-            except Exception:
-                self._log.error(f"account_state_updates: {traceback.format_exc()}")
+            except asyncio.CancelledError:
+                self._log.debug("Canceled task 'account_state_updates'")
 
     async def request_account_state(self) -> AccountState:
         account_details = await self._client.get_account_details()
