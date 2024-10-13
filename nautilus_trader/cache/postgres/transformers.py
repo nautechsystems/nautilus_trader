@@ -342,11 +342,18 @@ def transform_bar_to_pyo3(bar: Bar):
 ################################################################################
 # Signals
 ################################################################################
-def transform_signal_to_pyo3(signal: Data, metadata: str):
+def transform_signal_to_pyo3(signal: Data) -> nautilus_pyo3.Signal:
     return nautilus_pyo3.Signal(
         signal.__class__.__name__,
-        metadata,
         signal.value,
         signal.ts_event,
         signal.ts_init,
+    )
+
+
+def transform_signal_from_pyo3(signal_cls: type, signal_pyo3: nautilus_pyo3.Signal) -> object:
+    return signal_cls(
+        signal_pyo3.value,
+        signal_pyo3.ts_event,
+        signal_pyo3.ts_init,
     )

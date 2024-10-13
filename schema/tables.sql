@@ -210,8 +210,7 @@ CREATE TABLE IF NOT EXISTS "bar" (
 
 CREATE TABLE IF NOT EXISTS "signal" (
     id BIGSERIAL PRIMARY KEY NOT NULL,
-    data_type TEXT NOT NULL,
-    metadata TEXT NOT NULL,
+    name TEXT NOT NULL,
     value TEXT NOT NULL,
     ts_event TEXT NOT NULL,
     ts_init TEXT NOT NULL,

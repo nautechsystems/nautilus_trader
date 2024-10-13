@@ -739,19 +739,18 @@ impl DatabaseQueries {
         sqlx::query(
             r#"
             INSERT INTO "signal" (
-                data_type, metadata, value, ts_event, ts_init, created_at, updated_at
+                name, value, ts_event, ts_init, created_at, updated_at
             ) VALUES (
-                $1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                $1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
             )
             ON CONFLICT (id)
             DO UPDATE
             SET
-                data_type = $1, metadata = $2, value = $3, ts_event = $4, ts_init = $5,
+                name = $1, value = $2, ts_event = $3, ts_init = $4,
                 updated_at = CURRENT_TIMESTAMP
         "#,
         )
-        .bind(signal.data_type.to_string())
-        .bind(signal.metadata.to_string())
+        .bind(signal.name.to_string())
         .bind(signal.value.to_string())
         .bind(signal.ts_event.to_string())
         .bind(signal.ts_init.to_string())
@@ -761,16 +760,11 @@ impl DatabaseQueries {
         .map_err(|e| anyhow::anyhow!("Failed to insert into signal table: {e}"))
     }
 
-    pub async fn load_signals(
-        pool: &PgPool,
-        data_type: &str,
-        metadata: &str,
-    ) -> anyhow::Result<Vec<Signal>> {
+    pub async fn load_signals(pool: &PgPool, name: &str) -> anyhow::Result<Vec<Signal>> {
         sqlx::query_as::<_, SignalModel>(
-            r#"SELECT * FROM "signal" WHERE data_type = $1 AND metadata = $2 ORDER BY ts_event ASC"#,
+            r#"SELECT * FROM "signal" WHERE name = $1 ORDER BY ts_init ASC"#,
         )
-        .bind(data_type)
-        .bind(metadata)
+        .bind(name)
         .fetch_all(pool)
         .await
         .map(|rows| rows.into_iter().map(|row| row.0).collect())

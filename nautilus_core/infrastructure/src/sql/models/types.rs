@@ -44,12 +44,11 @@ impl<'r> FromRow<'r, PgRow> for CurrencyModel {
 
 impl<'r> FromRow<'r, PgRow> for SignalModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
-        let data_type = row.try_get::<&str, _>("data_type").map(Ustr::from)?;
-        let metadata = row.try_get::<&str, _>("metadata").map(Ustr::from)?;
+        let name = row.try_get::<&str, _>("name").map(Ustr::from)?;
         let value = row.try_get::<String, _>("value")?;
         let ts_event = row.try_get::<&str, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<&str, _>("ts_init").map(UnixNanos::from)?;
-        let signal = Signal::new(data_type, metadata, value, ts_event, ts_init);
+        let signal = Signal::new(name, value, ts_event, ts_init);
         Ok(SignalModel(signal))
     }
 }
