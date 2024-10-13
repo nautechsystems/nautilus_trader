@@ -13,34 +13,51 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Debug;
+use std::{collections::HashMap, ops::Deref};
 
-use nautilus_core::nanos::UnixNanos;
-use serde::{Deserialize, Serialize};
+use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
+use pyo3::{
+    prelude::*,
+    types::{PyString, PyTuple},
+};
 use ustr::Ustr;
 
-/// Represents a generic signal.
-#[repr(C)]
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
-)]
-pub struct Signal {
-    pub name: Ustr,
-    pub value: String,
-    pub ts_event: UnixNanos,
-    pub ts_init: UnixNanos,
-}
+use super::timer::TimeEventHandler_Py;
+use crate::signal::Signal;
 
+#[pymethods]
 impl Signal {
-    /// Creates a new [`Signal`] instance.
-    pub fn new(name: Ustr, value: String, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
-        Self {
-            name,
+    #[new]
+    fn py_new(name: &str, value: String, ts_event: u64, ts_init: u64) -> Self {
+        Self::new(
+            Ustr::from(name),
             value,
-            ts_event,
-            ts_init,
-        }
+            UnixNanos::from(ts_event),
+            UnixNanos::from(ts_init),
+        )
+    }
+
+    #[getter]
+    #[pyo3(name = "name")]
+    fn py_name(&self) -> &str {
+        self.name.as_str()
+    }
+
+    #[getter]
+    #[pyo3(name = "value")]
+    fn py_value(&self) -> &str {
+        self.value.as_str()
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_event")]
+    fn py_ts_event(&self) -> u64 {
+        self.ts_event.as_u64()
+    }
+
+    #[getter]
+    #[pyo3(name = "ts_init")]
+    fn py_ts_init(&self) -> u64 {
+        self.ts_init.as_u64()
     }
 }

@@ -296,13 +296,9 @@ impl PostgresCacheDatabase {
     }
 
     #[pyo3(name = "load_signals")]
-    fn py_load_signals(
-        slf: PyRef<'_, Self>,
-        data_type: &str,
-        metadata: &str,
-    ) -> PyResult<Vec<Signal>> {
+    fn py_load_signals(slf: PyRef<'_, Self>, name: &str) -> PyResult<Vec<Signal>> {
         get_runtime().block_on(async {
-            DatabaseQueries::load_signals(&slf.pool, data_type, metadata)
+            DatabaseQueries::load_signals(&slf.pool, name)
                 .await
                 .map_err(to_pyruntime_err)
         })

@@ -26,9 +26,12 @@ from nautilus_trader.cache.postgres.transformers import transform_instrument_to_
 from nautilus_trader.cache.postgres.transformers import transform_order_from_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_order_to_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_quote_tick_to_pyo3
+from nautilus_trader.cache.postgres.transformers import transform_signal_from_pyo3
+from nautilus_trader.cache.postgres.transformers import transform_signal_to_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_trade_tick_from_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_trade_tick_to_pyo3
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.data import Data
 from nautilus_trader.core.nautilus_pyo3 import PostgresCacheDatabase
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import QuoteTick
@@ -145,3 +148,11 @@ class CachePostgresAdapter(CacheDatabaseFacade):
         instrument_id_pyo3 = nautilus_pyo3.InstrumentId.from_str(str(instrument_id))
         bars = self._backing.load_bars(instrument_id_pyo3)
         return [Bar.from_pyo3(bar_pyo3) for bar_pyo3 in bars]
+
+    def add_signal(self, signal: Data):
+        signal_pyo3 = transform_signal_to_pyo3(signal)
+        self._backing.add_signal(signal_pyo3)
+
+    def load_signals(self, data_cls: type, name: str):
+        signals_pyo3 = self._backing.load_signals(name)
+        return [transform_signal_from_pyo3(data_cls, s) for s in signals_pyo3]

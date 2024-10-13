@@ -778,25 +778,22 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         })
     }
 
-    fn load_signals(&mut self, data_type: &str, metadata: &str) -> anyhow::Result<Vec<Signal>> {
+    fn load_signals(&mut self, name: &str) -> anyhow::Result<Vec<Signal>> {
         let pool = self.pool.clone();
-        let data_type = data_type.to_owned();
-        let metadata = metadata.to_owned();
+        let name = name.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
         tokio::spawn(async move {
-            let result = DatabaseQueries::load_signals(&pool, &data_type, &metadata).await;
+            let result = DatabaseQueries::load_signals(&pool, &name).await;
             match result {
                 Ok(signals) => {
                     if let Err(e) = tx.send(signals) {
-                        log::error!("Failed to send signals for data_type {data_type} and metadata {metadata}: {e:?}");
+                        log::error!("Failed to send signals for '{name}': {e:?}");
                     }
                 }
                 Err(e) => {
-                    log::error!("Failed to load signals for data_type {data_type} and metadata {metadata}: {e:?}");
+                    log::error!("Failed to load signals for '{name}': {e:?}");
                     if let Err(e) = tx.send(Vec::new()) {
-                        log::error!(
-                            "Failed to send empty signals for data_type {data_type} and metadata {metadata}: {e:?}"
-                        );
+                        log::error!("Failed to send empty signals for '{name}': {e:?}");
                     }
                 }
             }

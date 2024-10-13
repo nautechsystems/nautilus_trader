@@ -897,7 +897,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         anyhow::bail!("Saving signals for Redis cache adapter not supported")
     }
 
-    fn load_signals(&mut self, data_type: &str, metadata: &str) -> anyhow::Result<Vec<Signal>> {
+    fn load_signals(&mut self, name: &str) -> anyhow::Result<Vec<Signal>> {
         anyhow::bail!("Loading signals from Redis cache adapter not supported")
     }
 

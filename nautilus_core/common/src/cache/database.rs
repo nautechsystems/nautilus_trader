@@ -120,7 +120,7 @@ pub trait CacheDatabaseAdapter {
 
     fn add_signal(&mut self, signal: &Signal) -> anyhow::Result<()>;
 
-    fn load_signals(&mut self, data_type: &str, metadata: &str) -> anyhow::Result<Vec<Signal>>;
+    fn load_signals(&mut self, name: &str) -> anyhow::Result<Vec<Signal>>;
 
     fn index_venue_order_id(
         &mut self,

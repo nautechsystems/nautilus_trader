@@ -503,32 +503,17 @@ mod serial_tests {
     async fn test_postgres_cache_database_add_signal() {
         let mut pg_cache = get_pg_cache_database().await.unwrap();
         // Add signal
-        let data_type = Ustr::from("SignalExample");
-        let metadata = Ustr::from("{}");
+        let name = Ustr::from("SignalExample");
         let value = "0.0".to_string();
-        let signal = Signal::new(
-            data_type,
-            metadata,
-            value,
-            UnixNanos::from(1),
-            UnixNanos::from(2),
-        );
+        let signal = Signal::new(name, value, UnixNanos::from(1), UnixNanos::from(2));
         pg_cache.add_signal(&signal).unwrap();
 
         wait_until(
-            || {
-                pg_cache
-                    .load_signals(data_type.as_str(), metadata.as_str())
-                    .unwrap()
-                    .len()
-                    == 1
-            },
+            || pg_cache.load_signals(name.as_str()).unwrap().len() == 1,
             Duration::from_secs(2),
         );
 
-        let signals = pg_cache
-            .load_signals(data_type.as_str(), metadata.as_str())
-            .unwrap();
+        let signals = pg_cache.load_signals(name.as_str()).unwrap();
         assert_eq!(signals.len(), 1);
         assert_eq!(signals[0], signal);
     }
