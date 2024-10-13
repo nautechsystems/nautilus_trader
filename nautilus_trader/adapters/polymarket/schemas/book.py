@@ -43,13 +43,15 @@ class PolymarketBookSnapshot(msgspec.Struct, tag="book", tag_field="event_type",
     hash: str
     bids: list[PolymarketBookLevel]
     asks: list[PolymarketBookLevel]
+    timestamp: str
 
     def parse_to_snapshot(
         self,
         instrument: BinaryOption,
-        ts_event: int,
         ts_init: int,
     ) -> OrderBookDeltas:
+        ts_event = millis_to_nanos(float(self.timestamp))
+
         deltas: list[OrderBookDelta] = []
 
         # Add initial clear

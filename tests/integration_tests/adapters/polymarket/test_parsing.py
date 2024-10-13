@@ -74,16 +74,14 @@ def test_parse_order_book_snapshots() -> None:
     instrument = TestInstrumentProvider.binary_option()
 
     # Act
-    snapshot = ws_message.parse_to_snapshot(
-        instrument=instrument,
-        ts_event=1,
-        ts_init=2,
-    )
+    snapshot = ws_message.parse_to_snapshot(instrument=instrument, ts_init=1728799418260000001)
 
     # Assert
     assert isinstance(snapshot, OrderBookDeltas)
     assert len(snapshot.deltas) == 13
     assert snapshot.is_snapshot
+    assert snapshot.ts_event == 1728799418260000000
+    assert snapshot.ts_init == 1728799418260000001
 
 
 def test_parse_order_book_delta() -> None:
@@ -99,10 +97,7 @@ def test_parse_order_book_delta() -> None:
     instrument = TestInstrumentProvider.binary_option()
 
     # Act
-    delta = ws_message.parse_to_delta(
-        instrument=instrument,
-        ts_init=2,
-    )
+    delta = ws_message.parse_to_delta(instrument=instrument, ts_init=2)
 
     # Assert
     assert isinstance(delta, OrderBookDelta)
@@ -159,10 +154,7 @@ def test_parse_trade_tick() -> None:
     instrument = TestInstrumentProvider.binary_option()
 
     # Act
-    trade = ws_message.parse_to_trade_tick(
-        instrument=instrument,
-        ts_init=2,
-    )
+    trade = ws_message.parse_to_trade_tick(instrument=instrument, ts_init=2)
 
     # Assert
     assert isinstance(trade, TradeTick)

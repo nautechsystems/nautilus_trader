@@ -397,11 +397,7 @@ class PolymarketDataClient(LiveMarketDataClient):
         ws_message: PolymarketBookSnapshot,
     ) -> None:
         now_ns = self._clock.timestamp_ns()
-        deltas = ws_message.parse_to_snapshot(
-            instrument=instrument,
-            ts_event=now_ns,
-            ts_init=now_ns,
-        )
+        deltas = ws_message.parse_to_snapshot(instrument=instrument, ts_init=now_ns)
 
         self._handle_deltas(instrument, deltas)
 
