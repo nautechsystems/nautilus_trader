@@ -116,18 +116,16 @@ cdef class Actor(Component):
         )
 
         self._warning_events: set[type] = set()
-        self._signal_classes: dict[str, type] = {}
         self._pending_requests: dict[UUID4, Callable[[UUID4], None] | None] = {}
+        self._pyo3_conversion_types = set()
+        self._future_greeks: dict[InstrumentId, list[GreeksData]] = {}
+        self._signal_classes: dict[str, type] = {}
 
         # Indicators
         self._indicators: list[Indicator] = []
         self._indicators_for_quotes: dict[InstrumentId, list[Indicator]] = {}
         self._indicators_for_trades: dict[InstrumentId, list[Indicator]] = {}
         self._indicators_for_bars: dict[BarType, list[Indicator]] = {}
-
-        self._pyo3_conversion_types = set()
-
-        self._future_greeks: dict[InstrumentId, list[GreeksData]] = {}
 
         # Configuration
         self.config = config
@@ -1823,7 +1821,7 @@ cdef class Actor(Component):
         ----------
         name : str
             The name of the signal being published.
-            The signal name is case-insensitive and will be capitalized
+            The signal name will be converted to title case, with each word capitalized
             (e.g., 'example' becomes 'SignalExample').
         value : object
             The signal data to publish.
@@ -2888,11 +2886,11 @@ cdef class Actor(Component):
         """
         from nautilus_trader.risk.greeks import greeks_key
 
-        # option case, to avoid querying definition
+        # Option case, to avoid querying definition
         if ' ' in instrument_id.symbol.value:
             return GreeksData.from_bytes(self.cache.get(greeks_key(instrument_id)))
 
-        # future case
+        # Future case
         if instrument_id not in self._future_greeks:
             future_definition = self.cache.instrument(instrument_id)
             self._future_greeks[instrument_id] = GreeksData.from_delta(instrument_id, int(future_definition.multiplier))

@@ -52,14 +52,14 @@ from nautilus_trader.portfolio.base cimport PortfolioFacade
 cdef class Actor(Component):
     cdef object _executor
     cdef set[type] _warning_events
-    cdef dict[str, type] _signal_classes
     cdef dict[UUID4, object] _pending_requests
+    cdef set[type] _pyo3_conversion_types
+    cdef dict[InstrumentId, list[GreeksData]] _future_greeks
+    cdef dict[str, type] _signal_classes
     cdef list[Indicator] _indicators
     cdef dict[InstrumentId, list[Indicator]] _indicators_for_quotes
     cdef dict[InstrumentId, list[Indicator]] _indicators_for_trades
     cdef dict[BarType, list[Indicator]] _indicators_for_bars
-    cdef dict[InstrumentId, list[GreeksData]] _future_greeks
-    cdef set[type] _pyo3_conversion_types
 
     cdef readonly PortfolioFacade portfolio
     """The read-only portfolio for the actor.\n\n:returns: `PortfolioFacade`"""
