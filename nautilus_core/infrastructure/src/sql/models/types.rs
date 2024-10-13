@@ -13,12 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_common::signal::Signal;
+use nautilus_core::nanos::UnixNanos;
 use nautilus_model::types::currency::Currency;
 use sqlx::{postgres::PgRow, FromRow, Row};
+use ustr::Ustr;
 
 use crate::sql::models::enums::CurrencyTypeModel;
 
 pub struct CurrencyModel(pub Currency);
+pub struct SignalModel(pub Signal);
 
 impl<'r> FromRow<'r, PgRow> for CurrencyModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
@@ -35,5 +39,17 @@ impl<'r> FromRow<'r, PgRow> for CurrencyModel {
             currency_type_model.0,
         );
         Ok(CurrencyModel(currency))
+    }
+}
+
+impl<'r> FromRow<'r, PgRow> for SignalModel {
+    fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
+        let data_type = row.try_get::<&str, _>("data_type").map(Ustr::from)?;
+        let metadata = row.try_get::<&str, _>("metadata").map(Ustr::from)?;
+        let value = row.try_get::<String, _>("value")?;
+        let ts_event = row.try_get::<&str, _>("ts_event").map(UnixNanos::from)?;
+        let ts_init = row.try_get::<&str, _>("ts_init").map(UnixNanos::from)?;
+        let signal = Signal::new(data_type, metadata, value, ts_event, ts_init);
+        Ok(SignalModel(signal))
     }
 }

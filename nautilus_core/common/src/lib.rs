@@ -39,6 +39,7 @@ pub mod logging;
 pub mod messages;
 pub mod msgbus;
 pub mod runtime;
+pub mod signal;
 pub mod testing;
 pub mod throttler;
 pub mod timer;
