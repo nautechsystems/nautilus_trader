@@ -17,6 +17,7 @@ from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.accounting.accounts.cash import CashAccount
 from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
@@ -336,3 +337,16 @@ def transform_quote_tick_to_pyo3(quote: QuoteTick):
 def transform_bar_to_pyo3(bar: Bar):
     bar_dict = Bar.to_dict(bar)
     return nautilus_pyo3.Bar.from_dict(bar_dict)
+
+
+################################################################################
+# Signals
+################################################################################
+def transform_signal_to_pyo3(signal: Data, metadata: str):
+    return nautilus_pyo3.Signal(
+        signal.__class__.__name__,
+        metadata,
+        signal.value,
+        signal.ts_event,
+        signal.ts_init,
+    )

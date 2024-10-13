@@ -20,6 +20,7 @@ import sys
 import pytest
 
 from nautilus_trader.cache.postgres.adapter import CachePostgresAdapter
+from nautilus_trader.cache.postgres.transformers import transform_signal_to_pyo3
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.core.nautilus_pyo3 import AggressorSide
@@ -41,6 +42,7 @@ from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.persistence.writer import generate_signal_class
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -604,3 +606,19 @@ class TestCachePostgresAdapter:
         assert target_bar.volume == bar.volume
         assert target_bar.ts_init == bar.ts_init
         assert target_bar.ts_event == bar.ts_event
+
+    @pytest.mark.skip(reason="test on linux")  # TODO
+    @pytest.mark.asyncio
+    async def test_add_and_load_signals(self):
+        signal_cls = generate_signal_class("example", value_type=str)
+        signal = signal_cls(value="{}", ts_event=1, ts_init=2)
+
+        data_type = signal.__name__
+        metadata = "a=1,b=2"
+        signal_pyo3 = transform_signal_to_pyo3(signal, metadata)
+        self.database.add_signal(signal_pyo3)
+
+        await eventually(lambda: len(self.database.load_signals(data_type, metadata)))
+
+        signals = self.database.load_signals(data_type, metadata)
+        assert len(signals) == 1

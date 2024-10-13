@@ -16,7 +16,9 @@
 use std::collections::HashMap;
 
 use bytes::Bytes;
-use nautilus_common::{cache::database::CacheDatabaseAdapter, runtime::get_runtime};
+use nautilus_common::{
+    cache::database::CacheDatabaseAdapter, runtime::get_runtime, signal::Signal,
+};
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
@@ -47,6 +49,13 @@ impl PostgresCacheDatabase {
             PostgresCacheDatabase::connect(host, port, username, password, database).await
         });
         result.map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "flush_db")]
+    fn py_flush_db(slf: PyRef<'_, Self>) -> PyResult<()> {
+        get_runtime()
+            .block_on(async { DatabaseQueries::truncate(&slf.pool).await })
+            .map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "load")]
@@ -281,10 +290,21 @@ impl PostgresCacheDatabase {
         })
     }
 
-    #[pyo3(name = "flush_db")]
-    fn py_flush_db(slf: PyRef<'_, Self>) -> PyResult<()> {
-        get_runtime()
-            .block_on(async { DatabaseQueries::truncate(&slf.pool).await })
-            .map_err(to_pyruntime_err)
+    #[pyo3(name = "add_signal")]
+    fn py_add_signal(mut slf: PyRefMut<'_, Self>, signal: Signal) -> PyResult<()> {
+        slf.add_signal(&signal).map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "load_signals")]
+    fn py_load_signals(
+        slf: PyRef<'_, Self>,
+        data_type: &str,
+        metadata: &str,
+    ) -> PyResult<Vec<Signal>> {
+        get_runtime().block_on(async {
+            DatabaseQueries::load_signals(&slf.pool, data_type, metadata)
+                .await
+                .map_err(to_pyruntime_err)
+        })
     }
 }
