@@ -19,7 +19,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use nautilus_common::cache::database::CacheDatabaseAdapter;
+use nautilus_common::{cache::database::CacheDatabaseAdapter, signal::Signal};
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     accounts::any::AccountAny,
@@ -70,6 +70,7 @@ pub enum DatabaseQuery {
     AddTrade(TradeTick),
     AddQuote(QuoteTick),
     AddBar(Bar),
+    AddSignal(Signal),
 }
 
 fn get_buffer_interval() -> Duration {
@@ -227,6 +228,9 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
             }
             DatabaseQuery::AddBar(bar) => {
                 DatabaseQueries::add_bar(pool, &bar).await.unwrap();
+            }
+            DatabaseQuery::AddSignal(signal) => {
+                DatabaseQueries::add_signal(pool, &signal).await.unwrap();
             }
         }
     }
@@ -759,6 +763,39 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
                     if let Err(e) = tx.send(Vec::new()) {
                         log::error!(
                             "Failed to send empty bars for instrument {instrument_id}: {e:?}"
+                        );
+                    }
+                }
+            }
+        });
+        Ok(rx.recv()?)
+    }
+
+    fn add_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
+        let query = DatabaseQuery::AddSignal(signal.to_owned());
+        self.tx.send(query).map_err(|e| {
+            anyhow::anyhow!("Failed to send query add_signal to database message handler: {e}")
+        })
+    }
+
+    fn load_signals(&mut self, data_type: &str, metadata: &str) -> anyhow::Result<Vec<Signal>> {
+        let pool = self.pool.clone();
+        let data_type = data_type.to_owned();
+        let metadata = metadata.to_owned();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_signals(&pool, &data_type, &metadata).await;
+            match result {
+                Ok(signals) => {
+                    if let Err(e) = tx.send(signals) {
+                        log::error!("Failed to send signals for data_type {data_type} and metadata {metadata}: {e:?}");
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to load signals for data_type {data_type} and metadata {metadata}: {e:?}");
+                    if let Err(e) = tx.send(Vec::new()) {
+                        log::error!(
+                            "Failed to send empty signals for data_type {data_type} and metadata {metadata}: {e:?}"
                         );
                     }
                 }

@@ -24,6 +24,7 @@ use nautilus_common::{
     cache::{database::CacheDatabaseAdapter, CacheConfig},
     enums::SerializationEncoding,
     runtime::get_runtime,
+    signal::Signal,
 };
 use nautilus_core::{correctness::check_slice_not_empty, nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
@@ -890,6 +891,14 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
 
     fn add_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
         anyhow::bail!("Saving market data for Redis cache adapter not supported")
+    }
+
+    fn add_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
+        anyhow::bail!("Saving signals for Redis cache adapter not supported")
+    }
+
+    fn load_signals(&mut self, data_type: &str, metadata: &str) -> anyhow::Result<Vec<Signal>> {
+        anyhow::bail!("Loading signals from Redis cache adapter not supported")
     }
 
     fn load_bars(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<Bar>> {

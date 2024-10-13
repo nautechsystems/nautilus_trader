@@ -15,6 +15,7 @@
 
 use std::collections::HashMap;
 
+use nautilus_common::signal::Signal;
 use nautilus_model::{
     accounts::{any::AccountAny, base::Account},
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
@@ -32,6 +33,7 @@ use nautilus_model::{
 };
 use sqlx::{PgPool, Row};
 
+use super::models::types::SignalModel;
 use crate::sql::models::{
     accounts::AccountEventModel,
     data::{BarModel, QuoteTickModel, TradeTickModel},
@@ -731,5 +733,47 @@ impl DatabaseQueries {
             map.insert(id.client_order_id, id.client_id);
         }
         Ok(map)
+    }
+
+    pub async fn add_signal(pool: &PgPool, signal: &Signal) -> anyhow::Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO "signal" (
+                data_type, metadata, value, ts_event, ts_init, created_at, updated_at
+            ) VALUES (
+                $1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            ON CONFLICT (id)
+            DO UPDATE
+            SET
+                data_type = $1, metadata = $2, value = $3, ts_event = $4, ts_init = $5,
+                updated_at = CURRENT_TIMESTAMP
+        "#,
+        )
+        .bind(signal.data_type.to_string())
+        .bind(signal.metadata.to_string())
+        .bind(signal.value.to_string())
+        .bind(signal.ts_event.to_string())
+        .bind(signal.ts_init.to_string())
+        .execute(pool)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to insert into signal table: {e}"))
+    }
+
+    pub async fn load_signals(
+        pool: &PgPool,
+        data_type: &str,
+        metadata: &str,
+    ) -> anyhow::Result<Vec<Signal>> {
+        sqlx::query_as::<_, SignalModel>(
+            r#"SELECT * FROM "signal" WHERE data_type = $1 AND metadata = $2 ORDER BY ts_event ASC"#,
+        )
+        .bind(data_type)
+        .bind(metadata)
+        .fetch_all(pool)
+        .await
+        .map(|rows| rows.into_iter().map(|row| row.0).collect())
+        .map_err(|e| anyhow::anyhow!("Failed to load signals: {e}"))
     }
 }

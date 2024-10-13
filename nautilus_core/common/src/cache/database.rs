@@ -38,6 +38,8 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
+use crate::signal::Signal;
+
 pub trait CacheDatabaseAdapter {
     fn close(&mut self) -> anyhow::Result<()>;
 
@@ -115,6 +117,10 @@ pub trait CacheDatabaseAdapter {
     fn add_bar(&mut self, bar: &Bar) -> anyhow::Result<()>;
 
     fn load_bars(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<Bar>>;
+
+    fn add_signal(&mut self, signal: &Signal) -> anyhow::Result<()>;
+
+    fn load_signals(&mut self, data_type: &str, metadata: &str) -> anyhow::Result<Vec<Signal>>;
 
     fn index_venue_order_id(
         &mut self,
