@@ -68,7 +68,7 @@ impl WebSocketClient {
     ///
     /// - Throws an Exception if it is unable to make websocket connection
     #[staticmethod]
-    #[pyo3(name = "connect", signature = (config, post_connection, post_reconnection, post_disconnection, keyed_quotas = Vec::new(),default_quota = None))]
+    #[pyo3(name = "connect", signature = (config, post_connection= None, post_reconnection= None, post_disconnection= None, keyed_quotas = Vec::new(),default_quota = None))]
     fn py_connect(
         config: WebSocketConfig,
         post_connection: Option<PyObject>,
