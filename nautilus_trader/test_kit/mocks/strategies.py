@@ -111,6 +111,12 @@ class MockStrategy(Strategy):
         self.calls.append(current_frame.f_code.co_name)
         self.store.append(data)
 
+    def on_signal(self, signal) -> None:
+        current_frame = inspect.currentframe()
+        assert current_frame  # Type checking
+        self.calls.append(current_frame.f_code.co_name)
+        self.store.append(signal)
+
     def on_strategy_data(self, data) -> None:
         current_frame = inspect.currentframe()
         assert current_frame  # Type checking
@@ -209,6 +215,9 @@ class KaboomStrategy(Strategy):
         raise RuntimeError(f"{self} BOOM!")
 
     def on_data(self, data) -> None:
+        raise RuntimeError(f"{self} BOOM!")
+
+    def on_signal(self, data) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
     def on_event(self, event) -> None:

@@ -22,12 +22,15 @@ import pytest
 from nautilus_trader.cache.postgres.adapter import CachePostgresAdapter
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
+from nautilus_trader.common.signal import generate_signal_class
 from nautilus_trader.core.nautilus_pyo3 import AggressorSide
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarAggregation
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import CustomData
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import CurrencyType
@@ -49,6 +52,8 @@ from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
+from nautilus_trader.trading.filters import NewsEvent
+from nautilus_trader.trading.filters import NewsImpact
 from nautilus_trader.trading.strategy import Strategy
 
 
@@ -604,3 +609,38 @@ class TestCachePostgresAdapter:
         assert target_bar.volume == bar.volume
         assert target_bar.ts_init == bar.ts_init
         assert target_bar.ts_event == bar.ts_event
+
+    @pytest.mark.asyncio
+    async def test_add_and_load_signals(self):
+        signal_cls = generate_signal_class("example", value_type=float)
+        signal = signal_cls(value=1.0, ts_event=1, ts_init=2)
+        signal_name = signal.__class__.__name__
+        assert signal_name == "SignalExample"
+
+        self.database.add_signal(signal)
+
+        await eventually(lambda: len(self.database.load_signals(signal_cls, signal_name)) > 0)
+
+        signals = self.database.load_signals(signal_cls, signal_name)
+        assert len(signals) == 1
+
+    @pytest.mark.asyncio
+    async def test_add_and_load_custom_data(self):
+        metadata = {"a": "1", "b": "2"}
+        data_type = DataType(NewsEvent, metadata)
+        event = NewsEvent(
+            impact=NewsImpact.LOW,
+            name="something-happened",
+            currency="USD",
+            ts_event=1,
+            ts_init=2,
+        )
+        data = CustomData(data_type, event)
+
+        self.database.add_custom_data(data)
+
+        # TODO: WIP - loading needs more work
+        # await eventually(lambda: len(self.database.load_custom_data(data_type)) > 0)
+        #
+        # signals = self.database.load_custom_data(data_type)
+        # assert len(signals) == 1

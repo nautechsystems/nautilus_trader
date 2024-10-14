@@ -37,6 +37,7 @@ pub mod types;
 pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     // Data
     m.add_function(wrap_pyfunction!(data::drop_cvec_pycapsule, m)?)?;
+    m.add_class::<crate::data::DataType>()?;
     m.add_class::<crate::data::bar::BarSpecification>()?;
     m.add_class::<crate::data::bar::BarType>()?;
     m.add_class::<crate::data::bar::Bar>()?;

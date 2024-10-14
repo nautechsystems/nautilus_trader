@@ -21,16 +21,24 @@ from nautilus_trader.cache.postgres.transformers import transform_account_to_pyo
 from nautilus_trader.cache.postgres.transformers import transform_bar_to_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_currency_from_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_currency_to_pyo3
+from nautilus_trader.cache.postgres.transformers import transform_custom_data_from_pyo3
+from nautilus_trader.cache.postgres.transformers import transform_custom_data_to_pyo3
+from nautilus_trader.cache.postgres.transformers import transform_data_type_to_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_instrument_from_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_instrument_to_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_order_from_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_order_to_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_quote_tick_to_pyo3
+from nautilus_trader.cache.postgres.transformers import transform_signal_from_pyo3
+from nautilus_trader.cache.postgres.transformers import transform_signal_to_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_trade_tick_from_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_trade_tick_to_pyo3
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.data import Data
 from nautilus_trader.core.nautilus_pyo3 import PostgresCacheDatabase
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import CustomData
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import AccountId
@@ -145,3 +153,20 @@ class CachePostgresAdapter(CacheDatabaseFacade):
         instrument_id_pyo3 = nautilus_pyo3.InstrumentId.from_str(str(instrument_id))
         bars = self._backing.load_bars(instrument_id_pyo3)
         return [Bar.from_pyo3(bar_pyo3) for bar_pyo3 in bars]
+
+    def add_signal(self, signal: Data):
+        signal_pyo3 = transform_signal_to_pyo3(signal)
+        self._backing.add_signal(signal_pyo3)
+
+    def load_signals(self, data_cls: type, name: str):
+        signals_pyo3 = self._backing.load_signals(name)
+        return [transform_signal_from_pyo3(data_cls, s) for s in signals_pyo3]
+
+    def add_custom_data(self, data: CustomData):
+        data_pyo3 = transform_custom_data_to_pyo3(data)
+        self._backing.add_custom_data(data_pyo3)
+
+    def load_custom_data(self, data_type: DataType):
+        data_type_pyo3 = transform_data_type_to_pyo3(data_type)
+        data_pyo3 = self._backing.load_custom_data(data_type_pyo3)
+        return [transform_custom_data_from_pyo3(d) for d in data_pyo3]

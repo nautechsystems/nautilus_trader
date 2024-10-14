@@ -19,6 +19,7 @@ bytes = { workspace = true }
 chrono = { workspace = true }
 derive_builder = { workspace = true }
 futures = { workspace = true }
+indexmap = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-asyncio-0-21 = { workspace = true, optional = true }
 log = { workspace = true }  # Required until Cython gone
