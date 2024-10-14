@@ -1996,7 +1996,7 @@ cdef class OrderMatchingEngine:
 
     cdef PositionId _get_position_id(self, Order order, bint generate=True):
         cdef PositionId position_id
-        if OmsType.HEDGING:
+        if self.oms_type == OmsType.HEDGING:
             position_id = self.cache.position_id(order.client_order_id)
             if position_id is not None:
                 return position_id
