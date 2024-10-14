@@ -463,8 +463,30 @@ impl SimulatedExchange {
         }
     }
 
-    pub fn process_instrument_status(&mut self, _status: InstrumentStatus) {
-        todo!("process instrument status")
+    pub fn process_instrument_status(&mut self, status: InstrumentStatus) {
+        // TODO add module preprocessing
+
+        if !self.matching_engines.contains_key(&status.instrument_id) {
+            let instrument = {
+                let cache = self.cache.as_ref().borrow();
+                cache.instrument(&status.instrument_id).cloned()
+            };
+
+            if let Some(instrument) = instrument {
+                self.add_instrument(instrument).unwrap();
+            } else {
+                panic!(
+                    "No matching engine found for instrument {}",
+                    status.instrument_id
+                );
+            }
+        }
+
+        if let Some(matching_engine) = self.matching_engines.get_mut(&status.instrument_id) {
+            matching_engine.process_status(status.action)
+        } else {
+            panic!("Matching engine should be initialized");
+        }
     }
 
     pub fn process(&mut self, _ts_now: UnixNanos) {
@@ -500,9 +522,13 @@ mod tests {
             deltas::OrderBookDeltas,
             order::BookOrder,
             quote::QuoteTick,
+            status::InstrumentStatus,
             trade::TradeTick,
         },
-        enums::{AccountType, AggressorSide, BookAction, BookType, OmsType, OrderSide},
+        enums::{
+            AccountType, AggressorSide, BookAction, BookType, MarketStatus, MarketStatusAction,
+            OmsType, OrderSide,
+        },
         identifiers::{TradeId, Venue},
         instruments::{
             any::InstrumentAny, crypto_perpetual::CryptoPerpetual, stubs::crypto_perpetual_ethusdt,
@@ -812,5 +838,33 @@ mod tests {
         let best_ask_price = exchange.best_ask_price(crypto_perpetual_ethusdt.id);
         // best ask price is the first order in orderbook deltas
         assert_eq!(best_ask_price, Some(Price::from("1000.00")));
+    }
+
+    fn test_exchange_process_instrument_status(crypto_perpetual_ethusdt: CryptoPerpetual) {
+        let mut exchange: SimulatedExchange =
+            get_exchange(Venue::new("BINANCE"), AccountType::Margin, BookType::L2_MBP);
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+
+        // register instrument
+        exchange.add_instrument(instrument).unwrap();
+
+        let instrument_status = InstrumentStatus::new(
+            crypto_perpetual_ethusdt.id,
+            MarketStatusAction::Close, // close the market
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        exchange.process_instrument_status(instrument_status);
+
+        let matching_engine = exchange
+            .get_matching_engine(crypto_perpetual_ethusdt.id)
+            .unwrap();
+        assert_eq!(matching_engine.market_status, MarketStatus::Closed);
     }
 }
