@@ -35,7 +35,7 @@ use nautilus_model::{
     },
     enums::{
         AccountType, AggregationSource, AggressorSide, BookType, ContingencyType, LiquiditySide,
-        MarketStatus, OmsType, OrderSide, OrderStatus, OrderType, PriceType,
+        MarketStatus, MarketStatusAction, OmsType, OrderSide, OrderStatus, OrderType, PriceType,
     },
     events::order::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderExpired,
@@ -483,6 +483,32 @@ impl OrderMatchingEngine {
         self.core.set_last_raw(trade.price);
 
         self.iterate(trade.ts_event);
+    }
+
+    pub fn process_status(&mut self, action: MarketStatusAction) {
+        log::debug!("Processing {action}");
+
+        // check if market is closed and market opens with
+        // trading or pre-open status
+        if self.market_status == MarketStatus::Closed
+            && (action == MarketStatusAction::Trading || action == MarketStatusAction::PreOpen)
+        {
+            self.market_status = MarketStatus::Open;
+        }
+        // check if market is open and market pauses
+        if self.market_status == MarketStatus::Open && action == MarketStatusAction::Pause {
+            self.market_status = MarketStatus::Paused;
+        }
+        // check if market is open and market suspends
+        if self.market_status == MarketStatus::Open && action == MarketStatusAction::Suspend {
+            self.market_status = MarketStatus::Suspended;
+        }
+        // check if market is open and we halt or close
+        if self.market_status == MarketStatus::Open
+            && (action == MarketStatusAction::Halt || action == MarketStatusAction::Close)
+        {
+            self.market_status = MarketStatus::Closed;
+        }
     }
 
     // -- TRADING COMMANDS ------------------------------------------------------------------------
