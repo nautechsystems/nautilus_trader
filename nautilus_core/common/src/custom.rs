@@ -15,6 +15,7 @@
 
 //! A user custom data type.
 
+use bytes::Bytes;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::data::DataType;
 use serde::{Deserialize, Serialize};
@@ -28,19 +29,14 @@ use serde::{Deserialize, Serialize};
 )]
 pub struct CustomData {
     pub data_type: DataType,
-    pub value: String, // Flexible for now
+    pub value: Bytes,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
 }
 
 impl CustomData {
     /// Creates a new [`CustomData`] instance.
-    pub fn new(
-        data_type: DataType,
-        value: String,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
+    pub fn new(data_type: DataType, value: Bytes, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
         Self {
             data_type,
             value,

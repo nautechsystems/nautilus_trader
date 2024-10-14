@@ -529,10 +529,14 @@ mod serial_tests {
         // Add custom data
         let metadata =
             indexmap! {"a".to_string() => "1".to_string(), "b".to_string() => "2".to_string()};
-        let data_type = DataType::new("Theo", Some(metadata));
+        let data_type = DataType::new("TestData", Some(metadata));
+        let json_stub_value = r#"{"a":"1","b":"2"}"#;
+        let json_value: serde_json::Value = serde_json::from_str(json_stub_value).unwrap();
+        let serialized_bytes = serde_json::to_vec(&json_value).unwrap();
+
         let data = CustomData::new(
             data_type.clone(),
-            "hello-world".to_string(),
+            Bytes::from(serialized_bytes),
             UnixNanos::default(),
             UnixNanos::default(),
         );

@@ -222,7 +222,7 @@ CREATE TABLE IF NOT EXISTS "custom" (
     id BIGSERIAL PRIMARY KEY NOT NULL,
     data_type TEXT NOT NULL,
     metadata JSONB NOT NULL,
-    value TEXT NOT NULL,
+    value BYTEA NOT NULL,
     ts_event TEXT NOT NULL,
     ts_init TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,

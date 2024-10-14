@@ -15,6 +15,7 @@
 
 use std::{collections::HashMap, ops::Deref};
 
+use bytes::Bytes;
 use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
 use nautilus_model::data::DataType;
 use pyo3::{
@@ -29,10 +30,10 @@ use crate::custom::CustomData;
 #[pymethods]
 impl CustomData {
     #[new]
-    fn py_new(data_type: DataType, value: String, ts_event: u64, ts_init: u64) -> Self {
+    fn py_new(data_type: DataType, value: Vec<u8>, ts_event: u64, ts_init: u64) -> Self {
         Self::new(
             data_type,
-            value,
+            Bytes::from(value),
             UnixNanos::from(ts_event),
             UnixNanos::from(ts_init),
         )
@@ -46,8 +47,8 @@ impl CustomData {
 
     #[getter]
     #[pyo3(name = "value")]
-    fn py_value(&self) -> &str {
-        self.value.as_str()
+    fn py_value(&self) -> Vec<u8> {
+        self.value.to_vec()
     }
 
     #[getter]
