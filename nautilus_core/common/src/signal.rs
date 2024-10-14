@@ -38,13 +38,7 @@ pub struct Signal {
 impl Signal {
     /// Creates a new [`Signal`] instance.
     #[must_use]
-    pub const fn new(
-        data_type: Ustr,
-        metadata: Ustr,
-        value: String,
-        ts_event: UnixNanos,
-        ts_init: UnixNanos,
-    ) -> Self {
+    pub fn new(name: Ustr, value: String, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
         Self {
             name,
             value,
