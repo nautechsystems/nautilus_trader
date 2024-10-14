@@ -25,7 +25,7 @@ use bytes::Bytes;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     accounts::any::AccountAny,
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
+    data::{bar::Bar, quote::QuoteTick, trade::TradeTick, DataType},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,
@@ -38,7 +38,7 @@ use nautilus_model::{
 };
 use ustr::Ustr;
 
-use crate::signal::Signal;
+use crate::{custom::CustomData, signal::Signal};
 
 pub trait CacheDatabaseAdapter {
     fn close(&mut self) -> anyhow::Result<()>;
@@ -121,6 +121,10 @@ pub trait CacheDatabaseAdapter {
     fn add_signal(&mut self, signal: &Signal) -> anyhow::Result<()>;
 
     fn load_signals(&mut self, name: &str) -> anyhow::Result<Vec<Signal>>;
+
+    fn add_custom_data(&mut self, data: &CustomData) -> anyhow::Result<()>;
+
+    fn load_custom_data(&mut self, data_type: &DataType) -> anyhow::Result<Vec<CustomData>>;
 
     fn index_venue_order_id(
         &mut self,

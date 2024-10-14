@@ -17,11 +17,11 @@ use std::collections::HashMap;
 
 use bytes::Bytes;
 use nautilus_common::{
-    cache::database::CacheDatabaseAdapter, runtime::get_runtime, signal::Signal,
+    cache::database::CacheDatabaseAdapter, custom::CustomData, runtime::get_runtime, signal::Signal,
 };
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
+    data::{bar::Bar, quote::QuoteTick, trade::TradeTick, DataType},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId},
     python::{
         account::{convert_account_any_to_pyobject, convert_pyobject_to_account_any},
@@ -299,6 +299,20 @@ impl PostgresCacheDatabase {
     fn py_load_signals(slf: PyRef<'_, Self>, name: &str) -> PyResult<Vec<Signal>> {
         get_runtime().block_on(async {
             DatabaseQueries::load_signals(&slf.pool, name)
+                .await
+                .map_err(to_pyruntime_err)
+        })
+    }
+
+    #[pyo3(name = "add_custom_data")]
+    fn py_add_custom_data(mut slf: PyRefMut<'_, Self>, data: CustomData) -> PyResult<()> {
+        slf.add_custom_data(&data).map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "load_custom_data")]
+    fn py_load_custom_data(slf: PyRef<'_, Self>, data_type: DataType) -> PyResult<Vec<CustomData>> {
+        get_runtime().block_on(async {
+            DatabaseQueries::load_custom_data(&slf.pool, &data_type)
                 .await
                 .map_err(to_pyruntime_err)
         })

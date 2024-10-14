@@ -2899,6 +2899,7 @@ dependencies = [
  "chrono",
  "derive_builder",
  "futures",
+ "indexmap",
  "log",
  "nautilus-common",
  "nautilus-core",
