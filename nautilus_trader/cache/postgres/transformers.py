@@ -345,7 +345,7 @@ def transform_bar_to_pyo3(bar: Bar):
 def transform_signal_to_pyo3(signal: Data) -> nautilus_pyo3.Signal:
     return nautilus_pyo3.Signal(
         signal.__class__.__name__,
-        signal.value,
+        str(signal.value),  # PyO3 expects a `String` for this parameter
         signal.ts_event,
         signal.ts_init,
     )

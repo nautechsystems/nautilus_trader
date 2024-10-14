@@ -18,6 +18,7 @@ from collections import Counter
 
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.backtest.results import BacktestResult
+from nautilus_trader.common.signal import generate_signal_class
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
@@ -31,7 +32,6 @@ from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
-from nautilus_trader.persistence.writer import generate_signal_class
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
