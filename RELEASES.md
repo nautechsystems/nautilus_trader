@@ -10,6 +10,7 @@ Released on TBD (UTC).
 - Added `compute_effective_deltas` config setting for `PolymarketDataClientConfig`, reducing snapshot size (`False` by default to maintain current behavior)
 - Added rate limiter for `WebSocketClient` (#1994), thanks @Pushkarm029
 - Added in the money probability field to GreeksData (#1995), thanks @faysou
+- Added `on_signal(signal)` handler for custom signal data
 - Improved usability of `OrderBookDepth10` by filling partial levels with null orders and zero counts
 - Refined `DatabentoInstrumentProvider` handling of large bulks of instrument definitions (improved parent symbol support)
 - Standardized Betfair symbology to use hyphens instead of periods (prevents Betfair symbols being treated as composite)
@@ -26,6 +27,7 @@ Released on TBD (UTC).
 ### Breaking Changes
 - Removed legacy `TardisQuoteDataLoader` (now redundant with new Rust implemented loader)
 - Removed legacy `TardisTradeDataLoader` (now redundant with new Rust implemented loader)
+- Custom signals are now passed to `on_signal(signal)` instead of `on_data(data)`
 
 ### Fixes
 - Fixed `SocketClient` TLS implementation

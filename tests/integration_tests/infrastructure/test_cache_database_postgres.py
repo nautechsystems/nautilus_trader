@@ -22,6 +22,7 @@ import pytest
 from nautilus_trader.cache.postgres.adapter import CachePostgresAdapter
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
+from nautilus_trader.common.signal import generate_signal_class
 from nautilus_trader.core.nautilus_pyo3 import AggressorSide
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.data import Bar
@@ -41,7 +42,6 @@ from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from nautilus_trader.persistence.writer import generate_signal_class
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -608,8 +608,8 @@ class TestCachePostgresAdapter:
 
     @pytest.mark.asyncio
     async def test_add_and_load_signals(self):
-        signal_cls = generate_signal_class("example", value_type=str)
-        signal = signal_cls(value="{}", ts_event=1, ts_init=2)
+        signal_cls = generate_signal_class("example", value_type=float)
+        signal = signal_cls(value=1.0, ts_event=1, ts_init=2)
         signal_name = signal.__class__.__name__
         assert signal_name == "SignalExample"
 

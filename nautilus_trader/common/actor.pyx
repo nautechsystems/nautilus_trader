@@ -33,6 +33,7 @@ from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import ImportableActorConfig
 from nautilus_trader.common.executor import ActorExecutor
 from nautilus_trader.common.executor import TaskId
+from nautilus_trader.common.signal import generate_signal_class
 from nautilus_trader.model.greeks import GreeksData
 from nautilus_trader.model.greeks import PortfolioGreeks
 
@@ -444,6 +445,26 @@ cdef class Actor(Component):
         Warnings
         --------
         System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_signal(self, signal):
+        """
+        Actions to be performed when running and receives signal data.
+
+        Parameters
+        ----------
+        signal : Data
+            The signal received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        Notes
+        -----
+        This refers to a data signal, not an operating system signal (such as SIGTERM, SIGKILL, etc.).
 
         """
         # Optionally override in subclass
@@ -1830,7 +1851,6 @@ cdef class Actor(Component):
             If ``None`` then will timestamp current time.
 
         """
-        from nautilus_trader.persistence.writer import generate_signal_class
         Condition.not_none(name, "name")
         Condition.not_none(value, "value")
         Condition.is_in(type(value), (int, float, str), "value", "int, float, str")
@@ -1868,7 +1888,7 @@ cdef class Actor(Component):
 
         self._msgbus.subscribe(
             topic=f"data.{topic}",
-            handler=self.handle_data,
+            handler=self.handle_signal,
         )
 
 # -- REQUESTS -------------------------------------------------------------------------------------
@@ -2754,6 +2774,31 @@ cdef class Actor(Component):
                 self.on_data(data)
             except Exception as e:
                 self._log.exception(f"Error on handling {repr(data)}", e)
+                raise
+
+    cpdef void handle_signal(self, Data signal):
+        """
+        Handle the given signal.
+
+        If state is ``RUNNING`` then passes to `on_signal`.
+
+        Parameters
+        ----------
+        signal : Data
+            The signal received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(signal, "signal")
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_signal(signal)
+            except Exception as e:
+                self._log.exception(f"Error on handling {repr(signal)}", e)
                 raise
 
     cpdef void handle_historical_data(self, data):
