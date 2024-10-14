@@ -383,9 +383,9 @@ dependencies = [
 
 [[package]]
 name = "async-compression"
-version = "0.4.14"
+version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "998282f8f49ccd6116b0ed8a4de0fbd3151697920e7c7533416d6e25e76434a7"
+checksum = "e26a9844c659a2a293d239c7910b752f8487fe122c6c8bd1659bf85a6507c302"
 dependencies = [
  "bzip2",
  "flate2",
@@ -1747,9 +1747,9 @@ dependencies = [
 
 [[package]]
 name = "evalexpr"
-version = "11.3.0"
+version = "11.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63b41cb9dd076076058a4523f009c900c582279536d0b2e45a29aa930e083cc5"
+checksum = "b6aff27af350e7b53e82aac3e5ab6389abd8f280640ac034508dff0608c4c7e5"
 
 [[package]]
 name = "event-listener"
