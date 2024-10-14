@@ -68,13 +68,13 @@ impl WebSocketClient {
     ///
     /// - Throws an Exception if it is unable to make websocket connection
     #[staticmethod]
-    #[pyo3(name = "connect")]
+    #[pyo3(name = "connect", signature = (config, post_connection= None, post_reconnection= None, post_disconnection= None, keyed_quotas = Vec::new(),default_quota = None))]
     fn py_connect(
         config: WebSocketConfig,
         post_connection: Option<PyObject>,
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
-        keyed_quotas: Option<Vec<(String, Quota)>>,
+        keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
         py: Python<'_>,
     ) -> PyResult<Bound<PyAny>> {
@@ -373,7 +373,7 @@ counter = Counter()",
             None,
             None,
         );
-        let client = WebSocketClient::connect(config, None, None, None, None, None)
+        let client = WebSocketClient::connect(config, None, None, None, Vec::new(), None)
             .await
             .unwrap();
 
@@ -477,7 +477,7 @@ checker = Checker()",
             Some("heartbeat message".to_string()),
             None,
         );
-        let client = WebSocketClient::connect(config, None, None, None, None, None)
+        let client = WebSocketClient::connect(config, None, None, None, Vec::new(), None)
             .await
             .unwrap();
 

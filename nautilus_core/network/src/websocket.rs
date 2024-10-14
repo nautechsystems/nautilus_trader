@@ -337,7 +337,7 @@ impl WebSocketClient {
         post_connection: Option<PyObject>,
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
-        keyed_quotas: Option<Vec<(String, Quota)>>,
+        keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
     ) -> Result<Self, Error> {
         tracing::debug!("Connecting");
@@ -351,10 +351,7 @@ impl WebSocketClient {
             post_reconnection,
             post_disconnection,
         );
-        let rate_limiter = Arc::new(RateLimiter::new_with_quota(
-            default_quota,
-            keyed_quotas.unwrap_or_default(),
-        ));
+        let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
 
         if let Some(handler) = post_connection {
             Python::with_gil(|py| match handler.call0(py) {
