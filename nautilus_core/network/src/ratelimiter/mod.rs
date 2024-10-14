@@ -226,25 +226,108 @@ mod tests {
     #[test]
     fn test_default_quota() {
         let mock_limiter = initialize_mock_rate_limiter();
-        // check base quota is exceeded
-        assert!(mock_limiter.check_key(&"lmao".to_string()).is_ok());
-        assert!(mock_limiter.check_key(&"lmao".to_string()).is_ok());
-        assert!(mock_limiter.check_key(&"lmao".to_string()).is_err());
 
-        // increment clock and check base quota is passed
+        // Check base quota is not exceeded
+        assert!(mock_limiter.check_key(&"default".to_string()).is_ok());
+        assert!(mock_limiter.check_key(&"default".to_string()).is_ok());
+
+        // Check base quota is exceeded
+        assert!(mock_limiter.check_key(&"default".to_string()).is_err());
+
+        // Increment clock and check base quota is reset
         mock_limiter.advance_clock(Duration::from_secs(1));
-        assert!(mock_limiter.check_key(&"lmao".to_string()).is_ok());
+        assert!(mock_limiter.check_key(&"default".to_string()).is_ok());
+    }
 
-        // add new key quota pair
+    #[test]
+    fn test_custom_key_quota() {
+        let mock_limiter = initialize_mock_rate_limiter();
+
+        // Add new key quota pair
         mock_limiter.add_quota_for_key(
-            "yeet".to_string(),
+            "custom".to_string(),
             Quota::per_second(NonZeroU32::new(1).unwrap()),
         );
 
-        // check base quota and key quota to exceed
-        assert!(mock_limiter.check_key(&"lmao".to_string()).is_ok());
-        assert!(mock_limiter.check_key(&"lmao".to_string()).is_err());
-        assert!(mock_limiter.check_key(&"yeet".to_string()).is_ok());
-        assert!(mock_limiter.check_key(&"yeet".to_string()).is_err());
+        // Check custom quota
+        assert!(mock_limiter.check_key(&"custom".to_string()).is_ok());
+        assert!(mock_limiter.check_key(&"custom".to_string()).is_err());
+
+        // Check that default quota still applies to other keys
+        assert!(mock_limiter.check_key(&"default".to_string()).is_ok());
+        assert!(mock_limiter.check_key(&"default".to_string()).is_ok());
+        assert!(mock_limiter.check_key(&"default".to_string()).is_err());
+    }
+
+    #[test]
+    fn test_multiple_keys() {
+        let mock_limiter = initialize_mock_rate_limiter();
+
+        mock_limiter.add_quota_for_key(
+            "key1".to_string(),
+            Quota::per_second(NonZeroU32::new(1).unwrap()),
+        );
+        mock_limiter.add_quota_for_key(
+            "key2".to_string(),
+            Quota::per_second(NonZeroU32::new(3).unwrap()),
+        );
+
+        // Test key1
+        assert!(mock_limiter.check_key(&"key1".to_string()).is_ok());
+        assert!(mock_limiter.check_key(&"key1".to_string()).is_err());
+
+        // Test key2
+        assert!(mock_limiter.check_key(&"key2".to_string()).is_ok());
+        assert!(mock_limiter.check_key(&"key2".to_string()).is_ok());
+        assert!(mock_limiter.check_key(&"key2".to_string()).is_ok());
+        assert!(mock_limiter.check_key(&"key2".to_string()).is_err());
+    }
+
+    #[test]
+    fn test_quota_reset() {
+        let mock_limiter = initialize_mock_rate_limiter();
+
+        // Exhaust quota
+        assert!(mock_limiter.check_key(&"reset".to_string()).is_ok());
+        assert!(mock_limiter.check_key(&"reset".to_string()).is_ok());
+        assert!(mock_limiter.check_key(&"reset".to_string()).is_err());
+
+        // Advance clock by less than a second
+        mock_limiter.advance_clock(Duration::from_millis(499));
+        assert!(mock_limiter.check_key(&"reset".to_string()).is_err());
+
+        // Advance clock to reset
+        mock_limiter.advance_clock(Duration::from_millis(501));
+        assert!(mock_limiter.check_key(&"reset".to_string()).is_ok());
+    }
+
+    #[test]
+    fn test_different_quotas() {
+        let mock_limiter = initialize_mock_rate_limiter();
+
+        mock_limiter.add_quota_for_key(
+            "per_second".to_string(),
+            Quota::per_second(NonZeroU32::new(2).unwrap()),
+        );
+        mock_limiter.add_quota_for_key(
+            "per_minute".to_string(),
+            Quota::per_minute(NonZeroU32::new(3).unwrap()),
+        );
+
+        // Test per_second quota
+        assert!(mock_limiter.check_key(&"per_second".to_string()).is_ok());
+        assert!(mock_limiter.check_key(&"per_second".to_string()).is_ok());
+        assert!(mock_limiter.check_key(&"per_second".to_string()).is_err());
+
+        // Test per_minute quota
+        assert!(mock_limiter.check_key(&"per_minute".to_string()).is_ok());
+        assert!(mock_limiter.check_key(&"per_minute".to_string()).is_ok());
+        assert!(mock_limiter.check_key(&"per_minute".to_string()).is_ok());
+        assert!(mock_limiter.check_key(&"per_minute".to_string()).is_err());
+
+        // Advance clock and check reset
+        mock_limiter.advance_clock(Duration::from_secs(1));
+        assert!(mock_limiter.check_key(&"per_second".to_string()).is_ok());
+        assert!(mock_limiter.check_key(&"per_minute".to_string()).is_err());
     }
 }
