@@ -19,11 +19,11 @@ use std::{
 };
 
 use bytes::Bytes;
-use nautilus_common::{cache::database::CacheDatabaseAdapter, signal::Signal};
+use nautilus_common::{cache::database::CacheDatabaseAdapter, custom::CustomData, signal::Signal};
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     accounts::any::AccountAny,
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
+    data::{bar::Bar, quote::QuoteTick, trade::TradeTick, DataType},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,
@@ -71,6 +71,7 @@ pub enum DatabaseQuery {
     AddQuote(QuoteTick),
     AddBar(Bar),
     AddSignal(Signal),
+    AddCustom(CustomData),
 }
 
 fn get_buffer_interval() -> Duration {
@@ -231,6 +232,9 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
             }
             DatabaseQuery::AddSignal(signal) => {
                 DatabaseQueries::add_signal(pool, &signal).await.unwrap();
+            }
+            DatabaseQuery::AddCustom(data) => {
+                DatabaseQueries::add_custom_data(pool, &data).await.unwrap();
             }
         }
     }
@@ -794,6 +798,36 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
                     log::error!("Failed to load signals for '{name}': {e:?}");
                     if let Err(e) = tx.send(Vec::new()) {
                         log::error!("Failed to send empty signals for '{name}': {e:?}");
+                    }
+                }
+            }
+        });
+        Ok(rx.recv()?)
+    }
+
+    fn add_custom_data(&mut self, data: &CustomData) -> anyhow::Result<()> {
+        let query = DatabaseQuery::AddCustom(data.to_owned());
+        self.tx.send(query).map_err(|e| {
+            anyhow::anyhow!("Failed to send query add_signal to database message handler: {e}")
+        })
+    }
+
+    fn load_custom_data(&mut self, data_type: &DataType) -> anyhow::Result<Vec<CustomData>> {
+        let pool = self.pool.clone();
+        let data_type = data_type.to_owned();
+        let (tx, rx) = std::sync::mpsc::channel();
+        tokio::spawn(async move {
+            let result = DatabaseQueries::load_custom_data(&pool, &data_type).await;
+            match result {
+                Ok(signals) => {
+                    if let Err(e) = tx.send(signals) {
+                        log::error!("Failed to send custom data for '{data_type}': {e:?}");
+                    }
+                }
+                Err(e) => {
+                    log::error!("Failed to load custom data for '{data_type}': {e:?}");
+                    if let Err(e) = tx.send(Vec::new()) {
+                        log::error!("Failed to send empty custom data for '{data_type}': {e:?}");
                     }
                 }
             }

@@ -28,17 +28,22 @@ use serde::{Deserialize, Serialize};
 )]
 pub struct CustomData {
     pub data_type: DataType,
-    pub data: String, // Flexible for now
+    pub value: String, // Flexible for now
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
 }
 
 impl CustomData {
     /// Creates a new [`CustomData`] instance.
-    pub fn new(data_type: DataType, data: String, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
+    pub fn new(
+        data_type: DataType,
+        value: String,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> Self {
         Self {
             data_type,
-            data,
+            value,
             ts_event,
             ts_init,
         }

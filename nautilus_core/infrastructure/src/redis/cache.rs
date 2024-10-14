@@ -22,6 +22,7 @@ use std::{
 use bytes::Bytes;
 use nautilus_common::{
     cache::{database::CacheDatabaseAdapter, CacheConfig},
+    custom::CustomData,
     enums::SerializationEncoding,
     runtime::get_runtime,
     signal::Signal,
@@ -29,7 +30,7 @@ use nautilus_common::{
 use nautilus_core::{correctness::check_slice_not_empty, nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     accounts::any::AccountAny,
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
+    data::{bar::Bar, quote::QuoteTick, trade::TradeTick, DataType},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         TraderId, VenueOrderId,
@@ -893,6 +894,10 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         anyhow::bail!("Saving market data for Redis cache adapter not supported")
     }
 
+    fn load_bars(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<Bar>> {
+        anyhow::bail!("Loading market data for Redis cache adapter not supported")
+    }
+
     fn add_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
         anyhow::bail!("Saving signals for Redis cache adapter not supported")
     }
@@ -901,8 +906,12 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         anyhow::bail!("Loading signals from Redis cache adapter not supported")
     }
 
-    fn load_bars(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<Bar>> {
-        anyhow::bail!("Loading market data for Redis cache adapter not supported")
+    fn add_custom_data(&mut self, data: &CustomData) -> anyhow::Result<()> {
+        anyhow::bail!("Saving custom data for Redis cache adapter not supported")
+    }
+
+    fn load_custom_data(&mut self, data_type: &DataType) -> anyhow::Result<Vec<CustomData>> {
+        anyhow::bail!("Loading custom data from Redis cache adapter not supported")
     }
 
     fn index_venue_order_id(

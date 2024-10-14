@@ -19,14 +19,19 @@ mod serial_tests {
     use std::{collections::HashSet, time::Duration};
 
     use bytes::Bytes;
+    use indexmap::indexmap;
     use nautilus_common::{
-        cache::database::CacheDatabaseAdapter, signal::Signal, testing::wait_until,
+        cache::database::CacheDatabaseAdapter, custom::CustomData, signal::Signal,
+        testing::wait_until,
     };
     use nautilus_core::nanos::UnixNanos;
     use nautilus_infrastructure::sql::cache::get_pg_cache_database;
     use nautilus_model::{
         accounts::{any::AccountAny, cash::CashAccount},
-        data::stubs::{quote_ethusdt_binance, stub_bar, stub_trade_ethusdt_buyer},
+        data::{
+            stubs::{quote_ethusdt_binance, stub_bar, stub_trade_ethusdt_buyer},
+            DataType,
+        },
         enums::{CurrencyType, OrderSide, OrderStatus, OrderType},
         events::account::stubs::cash_account_state_million_usd,
         identifiers::{
@@ -516,5 +521,31 @@ mod serial_tests {
         let signals = pg_cache.load_signals(name.as_str()).unwrap();
         assert_eq!(signals.len(), 1);
         assert_eq!(signals[0], signal);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_postgres_cache_database_add_custom_data() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+        // Add custom data
+        let metadata =
+            indexmap! {"a".to_string() => "1".to_string(), "b".to_string() => "2".to_string()};
+        let data_type = DataType::new("Theo", Some(metadata));
+        let data = CustomData::new(
+            data_type.clone(),
+            "hello-world".to_string(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        pg_cache.add_custom_data(&data).unwrap();
+
+        wait_until(
+            || pg_cache.load_custom_data(&data_type).unwrap().len() == 1,
+            Duration::from_secs(2),
+        );
+
+        let datas = pg_cache.load_custom_data(&data_type).unwrap();
+        assert_eq!(datas.len(), 1);
+        assert_eq!(datas[0], data);
     }
 }

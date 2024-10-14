@@ -19,6 +19,8 @@ from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import CustomData
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import CurrencyType
@@ -340,7 +342,7 @@ def transform_bar_to_pyo3(bar: Bar):
 
 
 ################################################################################
-# Signals
+# Custom
 ################################################################################
 def transform_signal_to_pyo3(signal: Data) -> nautilus_pyo3.Signal:
     return nautilus_pyo3.Signal(
@@ -357,3 +359,37 @@ def transform_signal_from_pyo3(signal_cls: type, signal_pyo3: nautilus_pyo3.Sign
         signal_pyo3.ts_event,
         signal_pyo3.ts_init,
     )
+
+
+def transform_data_type_to_pyo3(data_type: DataType) -> nautilus_pyo3.DataType:
+    data_cls = data_type.type
+    fully_qualified_name = data_cls.__module__ + ":" + data_cls.__qualname__
+    return nautilus_pyo3.DataType(
+        fully_qualified_name,
+        data_type.metadata,  # PyO3 expects a `String` for this parameter
+    )
+
+
+def transform_data_type_from_pyo3(data_type_pyo3: nautilus_pyo3.DataType) -> DataType:
+    module_name, type_name = data_type_pyo3.type_name.rsplit(":", 1)
+    data_cls = getattr(module_name, type_name)
+    return DataType(
+        data_cls,
+        data_type_pyo3.metadata,
+    )
+
+
+def transform_custom_data_to_pyo3(data: CustomData) -> nautilus_pyo3.CustomData:
+    data_type_pyo3 = transform_data_type_to_pyo3(data.data_type)
+    return nautilus_pyo3.CustomData(
+        data_type_pyo3,
+        value=str(data.data),
+        ts_event=data.ts_event,
+        ts_init=data.ts_init,
+    )
+
+
+def transform_custom_data_from_pyo3(data: nautilus_pyo3.CustomData) -> CustomData:
+    data_type = transform_data_type_from_pyo3(data.data_type)
+    data = Data(data.value, data.ts_event, data.ts_init)
+    return CustomData(data_type, data)

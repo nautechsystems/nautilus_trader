@@ -15,10 +15,10 @@
 
 use std::collections::HashMap;
 
-use nautilus_common::signal::Signal;
+use nautilus_common::{custom::CustomData, signal::Signal};
 use nautilus_model::{
     accounts::{any::AccountAny, base::Account},
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
+    data::{bar::Bar, quote::QuoteTick, trade::TradeTick, DataType},
     events::{
         account::state::AccountState,
         order::{OrderEvent, OrderEventAny},
@@ -31,9 +31,10 @@ use nautilus_model::{
         currency::Currency,
     },
 };
+use serde_json::Value;
 use sqlx::{PgPool, Row};
 
-use super::models::types::SignalModel;
+use super::models::types::{CustomDataModel, SignalModel};
 use crate::sql::models::{
     accounts::AccountEventModel,
     data::{BarModel, QuoteTickModel, TradeTickModel},
@@ -769,5 +770,59 @@ impl DatabaseQueries {
         .await
         .map(|rows| rows.into_iter().map(|row| row.0).collect())
         .map_err(|e| anyhow::anyhow!("Failed to load signals: {e}"))
+    }
+
+    pub async fn add_custom_data(pool: &PgPool, data: &CustomData) -> anyhow::Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO "custom" (
+                data_type, metadata, value, ts_event, ts_init, created_at, updated_at
+            ) VALUES (
+                $1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            ON CONFLICT (id)
+            DO UPDATE
+            SET
+                data_type = $1, metadata = $2, value = $3, ts_event = $4, ts_init = $5,
+                updated_at = CURRENT_TIMESTAMP
+        "#,
+        )
+        .bind(data.data_type.type_name().to_string())
+        .bind(
+            data.data_type
+                .metadata()
+                .as_ref()
+                .map_or(Ok(Value::Null), serde_json::to_value)?,
+        )
+        .bind(data.value.clone())
+        .bind(data.ts_event.to_string())
+        .bind(data.ts_init.to_string())
+        .execute(pool)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to insert into custom table: {e}"))
+    }
+
+    pub async fn load_custom_data(
+        pool: &PgPool,
+        data_type: &DataType,
+    ) -> anyhow::Result<Vec<CustomData>> {
+        // TODO: This metadata JSON could be more efficient at some point
+        let metadata_json = data_type
+            .metadata()
+            .as_ref()
+            .map_or(Ok(serde_json::Value::Null), |metadata| {
+                serde_json::to_value(metadata)
+            })?;
+
+        sqlx::query_as::<_, CustomDataModel>(
+            r#"SELECT * FROM "custom" WHERE data_type = $1 AND metadata = $2 ORDER BY ts_init ASC"#,
+        )
+        .bind(data_type.type_name())
+        .bind(metadata_json)
+        .fetch_all(pool)
+        .await
+        .map(|rows| rows.into_iter().map(|row| row.0).collect())
+        .map_err(|e| anyhow::anyhow!("Failed to load custom data: {e}"))
     }
 }

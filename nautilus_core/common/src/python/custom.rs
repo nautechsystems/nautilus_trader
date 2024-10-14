@@ -29,10 +29,10 @@ use crate::custom::CustomData;
 #[pymethods]
 impl CustomData {
     #[new]
-    fn py_new(data_type: DataType, data: String, ts_event: u64, ts_init: u64) -> Self {
+    fn py_new(data_type: DataType, value: String, ts_event: u64, ts_init: u64) -> Self {
         Self::new(
             data_type,
-            data,
+            value,
             UnixNanos::from(ts_event),
             UnixNanos::from(ts_init),
         )
@@ -45,9 +45,9 @@ impl CustomData {
     }
 
     #[getter]
-    #[pyo3(name = "data")]
-    fn py_data(&self) -> &str {
-        self.data.as_str()
+    #[pyo3(name = "value")]
+    fn py_value(&self) -> &str {
+        self.value.as_str()
     }
 
     #[getter]
