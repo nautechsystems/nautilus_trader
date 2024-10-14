@@ -13,34 +13,32 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A user signal type.
-
-use std::fmt::Debug;
+//! A user custom data type.
 
 use nautilus_core::nanos::UnixNanos;
+use nautilus_model::data::DataType;
 use serde::{Deserialize, Serialize};
-use ustr::Ustr;
 
-/// Represents a generic signal.
+/// Represents a custom data.
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
 )]
-pub struct Signal {
-    pub name: Ustr,
-    pub value: String,
+pub struct CustomData {
+    pub data_type: DataType,
+    pub data: String, // Flexible for now
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
 }
 
-impl Signal {
-    /// Creates a new [`Signal`] instance.
-    pub fn new(name: Ustr, value: String, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
+impl CustomData {
+    /// Creates a new [`CustomData`] instance.
+    pub fn new(data_type: DataType, data: String, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
         Self {
-            name,
-            value,
+            data_type,
+            data,
             ts_event,
             ts_init,
         }
