@@ -37,6 +37,7 @@ use std::{
 use bar::BarType;
 use indexmap::IndexMap;
 use nautilus_core::nanos::UnixNanos;
+use serde::{Deserialize, Serialize};
 
 use self::{
     bar::Bar, delta::OrderBookDelta, deltas::OrderBookDeltas_API, depth::OrderBookDepth10,
@@ -146,7 +147,11 @@ pub extern "C" fn data_clone(data: &Data) -> Data {
 }
 
 /// Represents a data type including metadata.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
+)]
 pub struct DataType {
     type_name: String,
     metadata: Option<IndexMap<String, String>>,

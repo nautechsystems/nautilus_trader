@@ -267,9 +267,35 @@ class Signal:
     @property
     def ts_init(self) -> int: ...
 
+class CustomData:
+    def __init__(
+        self,
+        data_type: DataType,
+        data: str,
+        ts_event: int,
+        ts_init: int,
+    ) -> None: ...
+    @property
+    def data_type(self) -> DataType: ...
+    @property
+    def data(self) -> str: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+
 ###################################################################################################
 # Model
 ###################################################################################################
+
+class DataType:
+    def __init__(self, type_name: str, metadata: dict[str, str] | None = None) -> None: ...
+    @property
+    def type_name(self) -> str: ...
+    @property
+    def metadata(self) -> dict[str, str] | None: ...
+    @property
+    def topic(self) -> str: ...
 
 # Accounting
 
