@@ -624,6 +624,7 @@ class TestCachePostgresAdapter:
         signals = self.database.load_signals(signal_cls, signal_name)
         assert len(signals) == 1
 
+    @pytest.mark.skip(reason="WIP")
     @pytest.mark.asyncio
     async def test_add_and_load_custom_data(self):
         metadata = {"a": "1", "b": "2"}

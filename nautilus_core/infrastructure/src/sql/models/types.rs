@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use bytes::Bytes;
 use indexmap::IndexMap;
 use nautilus_common::{custom::CustomData, signal::Signal};
 use nautilus_core::nanos::UnixNanos;
@@ -65,7 +66,7 @@ impl<'r> FromRow<'r, PgRow> for CustomDataModel {
             None => None,
         };
         let data_type = DataType::new(type_name, metadata);
-        let value = row.try_get::<String, _>("value")?;
+        let value = row.try_get::<Vec<u8>, _>("value").map(Bytes::from)?;
         let ts_event = row.try_get::<&str, _>("ts_event").map(UnixNanos::from)?;
         let ts_init = row.try_get::<&str, _>("ts_init").map(UnixNanos::from)?;
         let custom = CustomData::new(data_type, value, ts_event, ts_init);

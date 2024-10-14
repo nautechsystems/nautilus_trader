@@ -271,7 +271,7 @@ class CustomData:
     def __init__(
         self,
         data_type: DataType,
-        value: str,
+        value: bytes,
         ts_event: int,
         ts_init: int,
     ) -> None: ...

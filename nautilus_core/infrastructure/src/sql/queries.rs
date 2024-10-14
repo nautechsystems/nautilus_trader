@@ -31,7 +31,6 @@ use nautilus_model::{
         currency::Currency,
     },
 };
-use serde_json::Value;
 use sqlx::{PgPool, Row};
 
 use super::models::types::{CustomDataModel, SignalModel};
@@ -792,9 +791,9 @@ impl DatabaseQueries {
             data.data_type
                 .metadata()
                 .as_ref()
-                .map_or(Ok(Value::Null), serde_json::to_value)?,
+                .map_or_else(|| Ok(serde_json::Value::Null), serde_json::to_value)?,
         )
-        .bind(data.value.clone())
+        .bind(data.value.to_vec())
         .bind(data.ts_event.to_string())
         .bind(data.ts_init.to_string())
         .execute(pool)
