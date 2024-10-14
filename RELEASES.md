@@ -23,7 +23,7 @@ Released on TBD (UTC).
 - Use Rust rate limiter for dYdX websockets (#1996, #1999), thanks @davidsblom
 - Improved error logs for dYdX websocket subscriptions (#1993), thanks @davidsblom
 - Standardized log and error message syntax in Rust
-- Continue porting `SimulatedExchange` to Rust (#1997, #1998), thanks @filipmacek
+- Continue porting `SimulatedExchange` to Rust (#1997, #1998, #2001), thanks @filipmacek
 
 ### Breaking Changes
 - Removed legacy `TardisQuoteDataLoader` (now redundant with new Rust implemented loader)
@@ -35,6 +35,7 @@ Released on TBD (UTC).
 - Fixed `WebSocketClient` error handling on writer close, thanks for reporting @davidsblom
 - Fixed resubscribing to orderbook in batched mode for dYdX (#1985), thanks @davidsblom
 - Fixed Betfair tests related to symbology (#1988), thanks @limx0
+- Fixed check for `OmsType` in `OrderMatchingEngine` position ID processing (#2003), thanks @filipmacek
 
 ---
 
