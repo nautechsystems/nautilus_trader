@@ -65,8 +65,22 @@ def test_tardis_load_depth10_from_snapshot5():
     # Assert
     assert len(deltas) == 100_000
     assert deltas[0].instrument_id == InstrumentId.from_str("BTCUSDT.BINANCE")
+    assert len(deltas[0].bids) == 10
+    assert deltas[0].bids[0].price == Price.from_str("11657.1")
+    assert deltas[0].bids[0].size == Quantity.from_str("11")
+    assert deltas[0].bids[0].side == OrderSide.BUY
+    assert deltas[0].bids[0].order_id == 0
+    assert len(deltas[0].asks) == 10
+    assert deltas[0].asks[0].price == Price.from_str("11657.1")
+    assert deltas[0].asks[0].size == Quantity.from_str("2")
+    assert deltas[0].asks[0].side == OrderSide.SELL
+    assert deltas[0].asks[0].order_id == 0
+    assert deltas[0].bid_counts[0] == 1
+    assert deltas[0].ask_counts[0] == 1
+    assert deltas[0].flags == 128
     assert deltas[0].ts_event == 1598918403696000000
     assert deltas[0].ts_init == 1598918403810979000
+    assert deltas[0].sequence == 0
 
 
 def test_tardis_load_depth10_from_snapshot25():
@@ -81,8 +95,22 @@ def test_tardis_load_depth10_from_snapshot25():
     # Assert
     assert len(deltas) == 100_000
     assert deltas[0].instrument_id == InstrumentId.from_str("BTCUSDT-PERP.BINANCE")
+    assert len(deltas[0].bids) == 10
+    assert deltas[0].bids[0].price == Price.from_str("11657.1")
+    assert deltas[0].bids[0].size == Quantity.from_str("11")
+    assert deltas[0].bids[0].side == OrderSide.BUY
+    assert deltas[0].bids[0].order_id == 0
+    assert len(deltas[0].asks) == 10
+    assert deltas[0].asks[0].price == Price.from_str("11657.1")
+    assert deltas[0].asks[0].size == Quantity.from_str("2")
+    assert deltas[0].asks[0].side == OrderSide.SELL
+    assert deltas[0].asks[0].order_id == 0
+    assert deltas[0].bid_counts[0] == 1
+    assert deltas[0].ask_counts[0] == 1
+    assert deltas[0].flags == 128
     assert deltas[0].ts_event == 1598918403696000000
     assert deltas[0].ts_init == 1598918403810979000
+    assert deltas[0].sequence == 0
 
 
 def test_tardis_load_quotes():
