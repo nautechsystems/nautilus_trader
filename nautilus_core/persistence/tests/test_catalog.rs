@@ -24,6 +24,7 @@ use nautilus_persistence::{
     backend::session::{DataBackendSession, DataQueryResult, QueryResult},
     python::backend::session::NautilusDataType,
 };
+use nautilus_test_kit::common::get_test_data_file_path;
 #[cfg(target_os = "linux")]
 use procfs::{self, process::Process};
 use pyo3::{types::PyCapsule, IntoPy, Py, PyAny, Python};
@@ -68,7 +69,7 @@ fn catalog_query_mem_leak_test() {
     mem_leak_test(
         pyo3::prepare_freethreaded_python,
         |_args| {
-            let file_path = "../../tests/test_data/nautilus/quotes.parquet";
+            let file_path = get_test_data_file_path("nautilus/quotes.parquet");
             let expected_length = 9500;
             let catalog = DataBackendSession::new(1_000_000);
             Python::with_gil(|py| {
@@ -77,7 +78,11 @@ fn catalog_query_mem_leak_test() {
                     .call_method1(
                         py,
                         "add_file",
-                        (NautilusDataType::QuoteTick, "order_book_deltas", file_path),
+                        (
+                            NautilusDataType::QuoteTick,
+                            "order_book_deltas",
+                            file_path.as_str(),
+                        ),
                     )
                     .unwrap();
                 let result = pycatalog.call_method0(py, "to_query_result").unwrap();
@@ -106,11 +111,11 @@ fn catalog_query_mem_leak_test() {
 
 #[rstest]
 fn test_quote_tick_cvec_interface() {
-    let file_path = "../../tests/test_data/nautilus/quotes.parquet";
+    let file_path = get_test_data_file_path("nautilus/quotes.parquet");
     let expected_length = 9500;
     let mut catalog = DataBackendSession::new(1000);
     catalog
-        .add_file::<QuoteTick>("quote_005", file_path, None)
+        .add_file::<QuoteTick>("quote_005", file_path.as_str(), None)
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
     let query_result = DataQueryResult::new(query_result, catalog.chunk_size);
@@ -138,7 +143,7 @@ fn test_quote_tick_cvec_interface() {
 fn test_quote_tick_python_control_flow() {
     pyo3::prepare_freethreaded_python();
 
-    let file_path = "../../tests/test_data/nautilus/quotes.parquet";
+    let file_path = get_test_data_file_path("nautilus/quotes.parquet");
     let expected_length = 9500;
     let catalog = DataBackendSession::new(1_000_000);
     Python::with_gil(|py| {
@@ -147,7 +152,11 @@ fn test_quote_tick_python_control_flow() {
             .call_method1(
                 py,
                 "add_file",
-                (NautilusDataType::QuoteTick, "order_book_deltas", file_path),
+                (
+                    NautilusDataType::QuoteTick,
+                    "order_book_deltas",
+                    file_path.as_str(),
+                ),
             )
             .unwrap();
         let result = pycatalog.call_method0(py, "to_query_result").unwrap();
@@ -173,12 +182,12 @@ fn test_quote_tick_python_control_flow() {
 #[rstest]
 fn test_order_book_delta_query() {
     let expected_length = 1077;
-    let file_path = "../../tests/test_data/nautilus/deltas.parquet";
+    let file_path = get_test_data_file_path("nautilus/deltas.parquet");
     let mut catalog = DataBackendSession::new(1_000);
     catalog
         .add_file::<OrderBookDelta>(
             "delta_001",
-            file_path,
+            file_path.as_str(),
             Some("SELECT * FROM delta_001 ORDER BY ts_init"),
         )
         .unwrap();
@@ -193,7 +202,7 @@ fn test_order_book_delta_query() {
 fn test_order_book_delta_query_py() {
     pyo3::prepare_freethreaded_python();
 
-    let file_path = "../../tests/test_data/nautilus/deltas.parquet";
+    let file_path = get_test_data_file_path("nautilus/deltas.parquet");
     let catalog = DataBackendSession::new(2_000);
     Python::with_gil(|py| {
         let pycatalog: Py<PyAny> = catalog.into_py(py);
@@ -204,7 +213,7 @@ fn test_order_book_delta_query_py() {
                 (
                     NautilusDataType::OrderBookDelta,
                     "order_book_deltas",
-                    file_path,
+                    file_path.as_str(),
                 ),
             )
             .unwrap();
@@ -219,10 +228,10 @@ fn test_order_book_delta_query_py() {
 #[rstest]
 fn test_quote_tick_query() {
     let expected_length = 9_500;
-    let file_path = "../../tests/test_data/nautilus/quotes.parquet";
+    let file_path = get_test_data_file_path("nautilus/quotes.parquet");
     let mut catalog = DataBackendSession::new(10_000);
     catalog
-        .add_file::<QuoteTick>("quote_005", file_path, None)
+        .add_file::<QuoteTick>("quote_005", file_path.as_str(), None)
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
     let ticks: Vec<Data> = query_result.collect();
@@ -239,12 +248,12 @@ fn test_quote_tick_query() {
 
 #[rstest]
 fn test_quote_tick_query_with_filter() {
-    let file_path = "../../tests/test_data/nautilus/quotes-3-groups-filter-query.parquet";
+    let file_path = get_test_data_file_path("nautilus/quotes-3-groups-filter-query.parquet");
     let mut catalog = DataBackendSession::new(10);
     catalog
         .add_file::<QuoteTick>(
             "quote_005",
-            file_path,
+            file_path.as_str(),
             Some("SELECT * FROM quote_005 WHERE ts_init >= 1701388832486000000 ORDER BY ts_init"),
         )
         .unwrap();
@@ -257,19 +266,13 @@ fn test_quote_tick_query_with_filter() {
 fn test_quote_tick_multiple_query() {
     let expected_length = 9_600;
     let mut catalog = DataBackendSession::new(5_000);
+    let file_path_quotes = get_test_data_file_path("nautilus/quotes.parquet");
+    let file_path_trades = get_test_data_file_path("nautilus/trades.parquet");
     catalog
-        .add_file::<QuoteTick>(
-            "quote_tick",
-            "../../tests/test_data/nautilus/quotes.parquet",
-            None,
-        )
+        .add_file::<QuoteTick>("quote_tick", file_path_quotes.as_str(), None)
         .unwrap();
     catalog
-        .add_file::<TradeTick>(
-            "quote_tick_2",
-            "../../tests/test_data/nautilus/trades.parquet",
-            None,
-        )
+        .add_file::<TradeTick>("quote_tick_2", file_path_trades.as_str(), None)
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
     let ticks: Vec<Data> = query_result.collect();
@@ -281,10 +284,10 @@ fn test_quote_tick_multiple_query() {
 #[rstest]
 fn test_trade_tick_query() {
     let expected_length = 100;
-    let file_path = "../../tests/test_data/nautilus/trades.parquet";
+    let file_path = get_test_data_file_path("nautilus/trades.parquet");
     let mut catalog = DataBackendSession::new(10_000);
     catalog
-        .add_file::<TradeTick>("trade_001", file_path, None)
+        .add_file::<TradeTick>("trade_001", file_path.as_str(), None)
         .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
     let ticks: Vec<Data> = query_result.collect();
@@ -302,9 +305,11 @@ fn test_trade_tick_query() {
 #[rstest]
 fn test_bar_query() {
     let expected_length = 10;
-    let file_path = "../../tests/test_data/nautilus/bars.parquet";
+    let file_path = get_test_data_file_path("nautilus/bars.parquet");
     let mut catalog = DataBackendSession::new(10_000);
-    catalog.add_file::<Bar>("bar_001", file_path, None).unwrap();
+    catalog
+        .add_file::<Bar>("bar_001", file_path.as_str(), None)
+        .unwrap();
     let query_result: QueryResult = catalog.get_query_result();
     let ticks: Vec<Data> = query_result.collect();
 
