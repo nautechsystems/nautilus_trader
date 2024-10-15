@@ -24,6 +24,7 @@ use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     accounts::any::AccountAny,
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick, DataType},
+    events::order::OrderEventAny,
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,
@@ -72,6 +73,7 @@ pub enum DatabaseQuery {
     AddQuote(QuoteTick),
     AddTrade(TradeTick),
     AddBar(Bar),
+    UpdateOrder(OrderEventAny),
 }
 
 fn get_buffer_interval() -> Duration {
@@ -236,6 +238,11 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
             DatabaseQuery::AddBar(bar) => {
                 DatabaseQueries::add_bar(pool, &bar).await.unwrap();
             }
+            DatabaseQuery::UpdateOrder(event) => {
+                DatabaseQueries::add_order_event(pool, event.into_boxed(), None)
+                    .await
+                    .unwrap();
+            }
         }
     }
 }
@@ -272,7 +279,7 @@ impl PostgresCacheDatabase {
 
         loop {
             if last_drain.elapsed() >= buffer_interval && !buffer.is_empty() {
-                // drain buffer
+                // Drain buffer
                 drain_buffer(&pool, &mut buffer).await;
                 last_drain = Instant::now();
             } else {
@@ -284,7 +291,7 @@ impl PostgresCacheDatabase {
                 }
             }
         }
-        // rain any remaining message
+        // Drain any remaining message
         if !buffer.is_empty() {
             drain_buffer(&pool, &mut buffer).await;
         }
@@ -866,8 +873,8 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         })
     }
 
-    fn update_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
-        let query = DatabaseQuery::AddOrder(order.clone(), None, true);
+    fn update_order(&mut self, event: &OrderEventAny) -> anyhow::Result<()> {
+        let query = DatabaseQuery::UpdateOrder(event.clone());
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query add_order to database message handler: {e}")
         })
