@@ -36,6 +36,7 @@ Released on TBD (UTC).
 - Fixed resubscribing to orderbook in batched mode for dYdX (#1985), thanks @davidsblom
 - Fixed Betfair tests related to symbology (#1988), thanks @limx0
 - Fixed check for `OmsType` in `OrderMatchingEngine` position ID processing (#2003), thanks @filipmacek
+- Fixed `TardisCSVDataLoader` snapshot5 and snapshot25 parsing (#2005), thanks @Pushkarm029
 
 ---
 
