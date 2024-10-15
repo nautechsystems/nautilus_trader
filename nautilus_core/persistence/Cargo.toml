@@ -26,6 +26,7 @@ datafusion = { version = "41.0.0", default-features = false, features = ["compre
 dotenv = "0.15.0"
 
 [dev-dependencies]
+nautilus-test-kit = { path = "../test_kit" }
 criterion = { workspace = true }
 rstest = { workspace = true }
 quickcheck = "1"

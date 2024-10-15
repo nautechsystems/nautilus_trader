@@ -34,20 +34,33 @@ pub fn get_project_root_path() -> PathBuf {
 }
 
 #[must_use]
-pub fn get_test_data_large_path() -> PathBuf {
-    get_project_root_path().join("tests").join("test_data")
+pub fn get_test_data_path() -> PathBuf {
+    if let Ok(test_data_root_path) = std::env::var("TEST_DATA_ROOT_PATH") {
+        get_project_root_path()
+            .join(test_data_root_path)
+            .join("test_data")
+    } else {
+        get_project_root_path().join("tests").join("test_data")
+    }
+}
+
+#[must_use]
+pub fn get_test_data_file_path(path: &str) -> String {
+    get_test_data_path()
+        .join(path)
+        .to_str()
+        .unwrap()
+        .to_string()
 }
 
 #[must_use]
 pub fn get_test_data_large_checksums_filepath() -> PathBuf {
-    get_test_data_large_path()
-        .join("large")
-        .join("checksums.json")
+    get_test_data_path().join("large").join("checksums.json")
 }
 
 #[must_use]
 pub fn ensure_test_data_exists(filename: &str, url: &str) -> PathBuf {
-    let filepath = get_test_data_large_path().join("large").join(filename);
+    let filepath = get_test_data_path().join("large").join(filename);
     let checksums_filepath = get_test_data_large_checksums_filepath();
     ensure_file_exists_or_download_http(&filepath, url, Some(&checksums_filepath)).unwrap();
     filepath
