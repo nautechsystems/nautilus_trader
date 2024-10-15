@@ -188,7 +188,7 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
                     2 => record.bids_2_price,
                     3 => record.bids_3_price,
                     4 => record.bids_4_price,
-                    _ => None, // Unreachable, but for safety
+                    _ => panic!("Invalid level for snapshot5 -> depth10 parsing"),
                 },
                 match i {
                     0 => record.bids_0_amount,
@@ -196,7 +196,7 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
                     2 => record.bids_2_amount,
                     3 => record.bids_3_amount,
                     4 => record.bids_4_amount,
-                    _ => None, // Unreachable, but for safety
+                    _ => panic!("Invalid level for snapshot5 -> depth10 parsing"),
                 },
                 price_precision,
                 size_precision,
@@ -298,7 +298,7 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
                     7 => record.bids_7_price,
                     8 => record.bids_8_price,
                     9 => record.bids_9_price,
-                    _ => None, // Unreachable, but for safety
+                    _ => panic!("Invalid level for snapshot25 -> depth10 parsing"),
                 },
                 match i {
                     0 => record.bids_0_amount,
@@ -311,7 +311,7 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
                     7 => record.bids_7_amount,
                     8 => record.bids_8_amount,
                     9 => record.bids_9_amount,
-                    _ => None, // Unreachable, but for safety
+                    _ => panic!("Invalid level for snapshot25 -> depth10 parsing"),
                 },
                 price_precision,
                 size_precision,
@@ -333,7 +333,7 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
                     7 => record.asks_7_price,
                     8 => record.asks_8_price,
                     9 => record.asks_9_price,
-                    _ => None, // Unreachable, but for safety
+                    _ => panic!("Invalid level for snapshot25 -> depth10 parsing"),
                 },
                 match i {
                     0 => record.asks_0_amount,
@@ -346,7 +346,7 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
                     7 => record.asks_7_amount,
                     8 => record.asks_8_amount,
                     9 => record.asks_9_amount,
-                    _ => None, // Unreachable, but for safety
+                    _ => panic!("Invalid level for snapshot25 -> depth10 parsing"),
                 },
                 price_precision,
                 size_precision,
@@ -523,7 +523,18 @@ mod tests {
         let depths = load_depth10_from_snapshot25(filepath, 1, 0, None, Some(100_000)).unwrap();
 
         assert_eq!(depths.len(), 100_000);
-        // TODO: Assert every field
+        assert_eq!(
+            depths[0].instrument_id,
+            InstrumentId::from("BTCUSDT.BINANCE")
+        );
+        assert_eq!(depths[0].bids.len(), 10);
+        assert_eq!(depths[0].asks.len(), 10);
+        assert_eq!(depths[0].bid_counts.len(), 10);
+        assert_eq!(depths[0].ask_counts.len(), 10);
+        assert_eq!(depths[0].flags, 128);
+        assert_eq!(depths[0].ts_event, 1598918403696000000);
+        assert_eq!(depths[0].ts_init, 1598918403810979000);
+        assert_eq!(depths[0].bids[0].price, Price::from("0")); // TODO: This should not be zero
     }
 
     #[rstest]
