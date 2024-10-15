@@ -478,7 +478,10 @@ pub fn load_trade_ticks<P: AsRef<Path>>(
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_model::{enums::BookAction, identifiers::InstrumentId};
+    use nautilus_model::{
+        enums::{AggressorSide, BookAction},
+        identifiers::InstrumentId,
+    };
     use nautilus_test_kit::common::{
         ensure_data_exists_tardis_binance_snapshot25, ensure_data_exists_tardis_binance_snapshot5,
         ensure_data_exists_tardis_bitmex_trades, ensure_data_exists_tardis_deribit_book_l2,
@@ -514,7 +517,25 @@ mod tests {
         let depths = load_depth10_from_snapshot5(filepath, 1, 0, None, Some(100_000)).unwrap();
 
         assert_eq!(depths.len(), 100_000);
-        // TODO: Assert every field
+        assert_eq!(
+            depths[0].instrument_id,
+            InstrumentId::from("BTCUSDT.BINANCE")
+        );
+        assert_eq!(depths[0].bids.len(), 10);
+        assert_eq!(depths[0].bids[0].price, Price::from("0"));
+        assert_eq!(depths[0].bids[0].size, Quantity::from("0"));
+        assert_eq!(depths[0].bids[0].side, OrderSide::NoOrderSide);
+        assert_eq!(depths[0].bids[0].order_id, 0);
+        assert_eq!(depths[0].asks[0].price, Price::from("0"));
+        assert_eq!(depths[0].asks[0].size, Quantity::from("0"));
+        assert_eq!(depths[0].asks[0].side, OrderSide::NoOrderSide);
+        assert_eq!(depths[0].asks[0].order_id, 0);
+        assert_eq!(depths[0].bid_counts[0], 0);
+        assert_eq!(depths[0].ask_counts[0], 0);
+        assert_eq!(depths[0].flags, 128);
+        assert_eq!(depths[0].ts_event, 1598918403696000000);
+        assert_eq!(depths[0].ts_init, 1598918403810979000);
+        assert_eq!(depths[0].sequence, 0); // TODO: This should not be zero
     }
 
     #[rstest]
@@ -543,7 +564,13 @@ mod tests {
         let quotes = load_quote_ticks(filepath, 1, 0, None, Some(100_000)).unwrap();
 
         assert_eq!(quotes.len(), 100_000);
-        // TODO: Assert every field
+        assert_eq!(quotes[0].instrument_id, InstrumentId::from("BTC-USD.HUOBI"));
+        assert_eq!(quotes[0].bid_price, Price::from("8629.2"));
+        assert_eq!(quotes[0].bid_size, Quantity::from("806"));
+        assert_eq!(quotes[0].ask_price, Price::from("8629.3"));
+        assert_eq!(quotes[0].ask_size, Quantity::from("5494"));
+        assert_eq!(quotes[0].ts_event, 1588291201099000000);
+        assert_eq!(quotes[0].ts_init, 1588291201234268000);
     }
 
     #[rstest]
@@ -552,6 +579,15 @@ mod tests {
         let trades = load_trade_ticks(filepath, 1, 0, None, Some(100_000)).unwrap();
 
         assert_eq!(trades.len(), 100_000);
-        // TODO: Assert every field
+        assert_eq!(trades[0].instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
+        assert_eq!(trades[0].price, Price::from("8531.5"));
+        assert_eq!(trades[0].size, Quantity::from("2152"));
+        assert_eq!(trades[0].aggressor_side, AggressorSide::Seller);
+        assert_eq!(
+            trades[0].trade_id,
+            TradeId::new("ccc3c1fa-212c-e8b0-1706-9b9c4f3d5ecf")
+        );
+        assert_eq!(trades[0].ts_event, 1583020803145000000);
+        assert_eq!(trades[0].ts_init, 1583020803307160000);
     }
 }
