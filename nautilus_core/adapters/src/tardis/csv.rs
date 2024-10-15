@@ -15,7 +15,7 @@
 
 use std::{error::Error, fs::File, io::BufReader, path::Path};
 
-use csv::{Reader, ReaderBuilder};
+use csv::{Reader, ReaderBuilder, StringRecord};
 use flate2::read::GzDecoder;
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
@@ -160,9 +160,9 @@ pub fn load_depth10_from_snapshot5<P: AsRef<Path>>(
     let mut csv_reader = create_csv_reader(filepath)?;
     let mut depths: Vec<OrderBookDepth10> = Vec::new();
 
-    for result in csv_reader.deserialize() {
-        let record: TardisOrderBookSnapshot5Record = result?;
-
+    let mut raw_record = StringRecord::new();
+    while csv_reader.read_record(&mut raw_record)? {
+        let record: TardisOrderBookSnapshot5Record = raw_record.deserialize(None)?;
         let instrument_id = match &instrument_id {
             Some(id) => *id,
             None => parse_instrument_id(&record.exchange, &record.symbol),
@@ -264,8 +264,9 @@ pub fn load_depth10_from_snapshot25<P: AsRef<Path>>(
     let mut csv_reader = create_csv_reader(filepath)?;
     let mut depths: Vec<OrderBookDepth10> = Vec::new();
 
-    for result in csv_reader.deserialize() {
-        let record: TardisOrderBookSnapshot25Record = result?;
+    let mut raw_record = StringRecord::new();
+    while csv_reader.read_record(&mut raw_record)? {
+        let record: TardisOrderBookSnapshot25Record = raw_record.deserialize(None)?;
 
         let instrument_id = match &instrument_id {
             Some(id) => *id,
@@ -522,20 +523,21 @@ mod tests {
             InstrumentId::from("BTCUSDT.BINANCE")
         );
         assert_eq!(depths[0].bids.len(), 10);
-        assert_eq!(depths[0].bids[0].price, Price::from("0"));
-        assert_eq!(depths[0].bids[0].size, Quantity::from("0"));
-        assert_eq!(depths[0].bids[0].side, OrderSide::NoOrderSide);
+        assert_eq!(depths[0].bids[0].price, Price::from("11657.1"));
+        assert_eq!(depths[0].bids[0].size, Quantity::from("11"));
+        assert_eq!(depths[0].bids[0].side, OrderSide::Buy);
         assert_eq!(depths[0].bids[0].order_id, 0);
-        assert_eq!(depths[0].asks[0].price, Price::from("0"));
-        assert_eq!(depths[0].asks[0].size, Quantity::from("0"));
-        assert_eq!(depths[0].asks[0].side, OrderSide::NoOrderSide);
+        assert_eq!(depths[0].asks.len(), 10);
+        assert_eq!(depths[0].asks[0].price, Price::from("11657.1"));
+        assert_eq!(depths[0].asks[0].size, Quantity::from("2"));
+        assert_eq!(depths[0].asks[0].side, OrderSide::Sell);
         assert_eq!(depths[0].asks[0].order_id, 0);
-        assert_eq!(depths[0].bid_counts[0], 0);
-        assert_eq!(depths[0].ask_counts[0], 0);
+        assert_eq!(depths[0].bid_counts[0], 1);
+        assert_eq!(depths[0].ask_counts[0], 1);
         assert_eq!(depths[0].flags, 128);
         assert_eq!(depths[0].ts_event, 1598918403696000000);
         assert_eq!(depths[0].ts_init, 1598918403810979000);
-        assert_eq!(depths[0].sequence, 0); // TODO: This should not be zero
+        assert_eq!(depths[0].sequence, 0);
     }
 
     #[rstest]
@@ -549,13 +551,21 @@ mod tests {
             InstrumentId::from("BTCUSDT.BINANCE")
         );
         assert_eq!(depths[0].bids.len(), 10);
+        assert_eq!(depths[0].bids[0].price, Price::from("11657.1"));
+        assert_eq!(depths[0].bids[0].size, Quantity::from("11"));
+        assert_eq!(depths[0].bids[0].side, OrderSide::Buy);
+        assert_eq!(depths[0].bids[0].order_id, 0);
         assert_eq!(depths[0].asks.len(), 10);
-        assert_eq!(depths[0].bid_counts.len(), 10);
-        assert_eq!(depths[0].ask_counts.len(), 10);
+        assert_eq!(depths[0].asks[0].price, Price::from("11657.1"));
+        assert_eq!(depths[0].asks[0].size, Quantity::from("2"));
+        assert_eq!(depths[0].asks[0].side, OrderSide::Sell);
+        assert_eq!(depths[0].asks[0].order_id, 0);
+        assert_eq!(depths[0].bid_counts[0], 1);
+        assert_eq!(depths[0].ask_counts[0], 1);
         assert_eq!(depths[0].flags, 128);
         assert_eq!(depths[0].ts_event, 1598918403696000000);
         assert_eq!(depths[0].ts_init, 1598918403810979000);
-        assert_eq!(depths[0].bids[0].price, Price::from("0")); // TODO: This should not be zero
+        assert_eq!(depths[0].sequence, 0);
     }
 
     #[rstest]
