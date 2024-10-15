@@ -67,11 +67,11 @@ pub enum DatabaseQuery {
     AddInstrument(InstrumentAny),
     AddOrder(OrderAny, Option<ClientId>, bool),
     AddAccount(AccountAny, bool),
-    AddTrade(TradeTick),
-    AddQuote(QuoteTick),
-    AddBar(Bar),
     AddSignal(Signal),
     AddCustom(CustomData),
+    AddQuote(QuoteTick),
+    AddTrade(TradeTick),
+    AddBar(Bar),
 }
 
 fn get_buffer_interval() -> Duration {
@@ -221,20 +221,20 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
                         .unwrap()
                 }
             },
-            DatabaseQuery::AddTrade(trade) => {
-                DatabaseQueries::add_trade(pool, &trade).await.unwrap();
-            }
-            DatabaseQuery::AddQuote(quote) => {
-                DatabaseQueries::add_quote(pool, &quote).await.unwrap();
-            }
-            DatabaseQuery::AddBar(bar) => {
-                DatabaseQueries::add_bar(pool, &bar).await.unwrap();
-            }
             DatabaseQuery::AddSignal(signal) => {
                 DatabaseQueries::add_signal(pool, &signal).await.unwrap();
             }
             DatabaseQuery::AddCustom(data) => {
                 DatabaseQueries::add_custom_data(pool, &data).await.unwrap();
+            }
+            DatabaseQuery::AddQuote(quote) => {
+                DatabaseQueries::add_quote(pool, &quote).await.unwrap();
+            }
+            DatabaseQuery::AddTrade(trade) => {
+                DatabaseQueries::add_trade(pool, &trade).await.unwrap();
+            }
+            DatabaseQuery::AddBar(bar) => {
+                DatabaseQueries::add_bar(pool, &bar).await.unwrap();
             }
         }
     }
