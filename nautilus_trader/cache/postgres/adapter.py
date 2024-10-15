@@ -26,6 +26,7 @@ from nautilus_trader.cache.postgres.transformers import transform_custom_data_to
 from nautilus_trader.cache.postgres.transformers import transform_data_type_to_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_instrument_from_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_instrument_to_pyo3
+from nautilus_trader.cache.postgres.transformers import transform_order_event_to_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_order_from_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_order_to_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_quote_tick_to_pyo3
@@ -164,8 +165,8 @@ class CachePostgresAdapter(CacheDatabaseFacade):
         self._backing.add_bar(bar_pyo3)
 
     def update_order(self, order: Order):
-        order_pyo3 = transform_order_to_pyo3(order)
-        self._backing.update_order(order_pyo3)
+        order_event_pyo3 = transform_order_event_to_pyo3(order.last_event)
+        self._backing.update_order(order_event_pyo3)
 
     def update_account(self, account: Account):
         account_pyo3 = transform_account_to_pyo3(account)

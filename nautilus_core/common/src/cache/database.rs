@@ -26,6 +26,7 @@ use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     accounts::any::AccountAny,
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick, DataType},
+    events::order::OrderEventAny,
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,
@@ -144,7 +145,7 @@ pub trait CacheDatabaseAdapter {
 
     fn update_account(&mut self, account: &AccountAny) -> anyhow::Result<()>;
 
-    fn update_order(&mut self, order: &OrderAny) -> anyhow::Result<()>;
+    fn update_order(&mut self, order_event: &OrderEventAny) -> anyhow::Result<()>;
 
     fn update_position(&mut self, position: &Position) -> anyhow::Result<()>;
 

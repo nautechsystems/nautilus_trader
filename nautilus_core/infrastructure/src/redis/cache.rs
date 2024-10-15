@@ -31,6 +31,7 @@ use nautilus_core::{correctness::check_slice_not_empty, nanos::UnixNanos, uuid::
 use nautilus_model::{
     accounts::any::AccountAny,
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick, DataType},
+    events::order::OrderEventAny,
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         TraderId, VenueOrderId,
@@ -942,7 +943,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         todo!()
     }
 
-    fn update_order(&mut self, order: &OrderAny) -> anyhow::Result<()> {
+    fn update_order(&mut self, order_event: &OrderEventAny) -> anyhow::Result<()> {
         todo!()
     }
 

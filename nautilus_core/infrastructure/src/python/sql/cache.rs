@@ -25,6 +25,7 @@ use nautilus_model::{
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId},
     python::{
         account::{convert_account_any_to_pyobject, convert_pyobject_to_account_any},
+        events::order::pyobject_to_order_event,
         instruments::{instrument_any_to_pyobject, pyobject_to_instrument_any},
         orders::{convert_order_any_to_pyobject, convert_pyobject_to_order_any},
     },
@@ -301,11 +302,11 @@ impl PostgresCacheDatabase {
     #[pyo3(name = "update_order")]
     fn py_update_order(
         mut slf: PyRefMut<'_, Self>,
-        order: PyObject,
+        order_event: PyObject,
         py: Python<'_>,
     ) -> PyResult<()> {
-        let order_any = convert_pyobject_to_order_any(py, order)?;
-        slf.update_order(&order_any).map_err(to_pyruntime_err)
+        let event = pyobject_to_order_event(py, order_event)?;
+        slf.update_order(&event).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "update_account")]
