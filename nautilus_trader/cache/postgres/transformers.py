@@ -82,8 +82,6 @@ def transform_currency_to_pyo3(currency: Currency) -> nautilus_pyo3.Currency:
 ################################################################################
 # Instruments
 ################################################################################
-
-
 def transform_instrument_to_pyo3(instrument: Instrument):
     if isinstance(instrument, CryptoFuture):
         return nautilus_pyo3.CryptoFuture.from_dict(CryptoFuture.to_dict(instrument))

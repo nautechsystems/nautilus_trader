@@ -79,16 +79,6 @@ impl PostgresCacheDatabase {
         result.map_err(to_pyruntime_err)
     }
 
-    #[pyo3(name = "add")]
-    fn py_add(mut slf: PyRefMut<'_, Self>, key: String, value: Vec<u8>) -> PyResult<()> {
-        slf.add(key, Bytes::from(value)).map_err(to_pyruntime_err)
-    }
-
-    #[pyo3(name = "add_currency")]
-    fn py_add_currency(mut slf: PyRefMut<'_, Self>, currency: Currency) -> PyResult<()> {
-        slf.add_currency(&currency).map_err(to_pyruntime_err)
-    }
-
     #[pyo3(name = "load_instrument")]
     fn py_load_instrument(
         slf: PyRef<'_, Self>,
@@ -122,6 +112,131 @@ impl PostgresCacheDatabase {
         })
     }
 
+    #[pyo3(name = "load_order")]
+    fn py_load_order(
+        slf: PyRef<'_, Self>,
+        client_order_id: ClientOrderId,
+        py: Python<'_>,
+    ) -> PyResult<Option<PyObject>> {
+        get_runtime().block_on(async {
+            let result = DatabaseQueries::load_order(&slf.pool, &client_order_id)
+                .await
+                .unwrap();
+            match result {
+                Some(order) => {
+                    let py_object = convert_order_any_to_pyobject(py, order)?;
+                    Ok(Some(py_object))
+                }
+                None => Ok(None),
+            }
+        })
+    }
+
+    #[pyo3(name = "load_account")]
+    fn py_load_account(
+        slf: PyRef<'_, Self>,
+        account_id: AccountId,
+        py: Python<'_>,
+    ) -> PyResult<Option<PyObject>> {
+        get_runtime().block_on(async {
+            let result = DatabaseQueries::load_account(&slf.pool, &account_id)
+                .await
+                .unwrap();
+            match result {
+                Some(account) => {
+                    let py_object = convert_account_any_to_pyobject(py, account)?;
+                    Ok(Some(py_object))
+                }
+                None => Ok(None),
+            }
+        })
+    }
+
+    #[pyo3(name = "load_quotes")]
+    fn py_load_quotes(
+        slf: PyRef<'_, Self>,
+        instrument_id: InstrumentId,
+        py: Python<'_>,
+    ) -> PyResult<Vec<PyObject>> {
+        get_runtime().block_on(async {
+            let result = DatabaseQueries::load_quotes(&slf.pool, &instrument_id)
+                .await
+                .unwrap();
+            let mut quotes = Vec::new();
+            for quote in result {
+                let py_object = quote.into_py(py);
+                quotes.push(py_object);
+            }
+            Ok(quotes)
+        })
+    }
+
+    #[pyo3(name = "load_trades")]
+    fn py_load_trades(
+        slf: PyRef<'_, Self>,
+        instrument_id: InstrumentId,
+        py: Python<'_>,
+    ) -> PyResult<Vec<PyObject>> {
+        get_runtime().block_on(async {
+            let result = DatabaseQueries::load_trades(&slf.pool, &instrument_id)
+                .await
+                .unwrap();
+            let mut trades = Vec::new();
+            for trade in result {
+                let py_object = trade.into_py(py);
+                trades.push(py_object);
+            }
+            Ok(trades)
+        })
+    }
+
+    #[pyo3(name = "load_bars")]
+    fn py_load_bars(
+        slf: PyRef<'_, Self>,
+        instrument_id: InstrumentId,
+        py: Python<'_>,
+    ) -> PyResult<Vec<PyObject>> {
+        get_runtime().block_on(async {
+            let result = DatabaseQueries::load_bars(&slf.pool, &instrument_id)
+                .await
+                .unwrap();
+            let mut bars = Vec::new();
+            for bar in result {
+                let py_object = bar.into_py(py);
+                bars.push(py_object);
+            }
+            Ok(bars)
+        })
+    }
+
+    #[pyo3(name = "load_signals")]
+    fn py_load_signals(slf: PyRef<'_, Self>, name: &str) -> PyResult<Vec<Signal>> {
+        get_runtime().block_on(async {
+            DatabaseQueries::load_signals(&slf.pool, name)
+                .await
+                .map_err(to_pyruntime_err)
+        })
+    }
+
+    #[pyo3(name = "load_custom_data")]
+    fn py_load_custom_data(slf: PyRef<'_, Self>, data_type: DataType) -> PyResult<Vec<CustomData>> {
+        get_runtime().block_on(async {
+            DatabaseQueries::load_custom_data(&slf.pool, &data_type)
+                .await
+                .map_err(to_pyruntime_err)
+        })
+    }
+
+    #[pyo3(name = "add")]
+    fn py_add(mut slf: PyRefMut<'_, Self>, key: String, value: Vec<u8>) -> PyResult<()> {
+        slf.add(key, Bytes::from(value)).map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "add_currency")]
+    fn py_add_currency(mut slf: PyRefMut<'_, Self>, currency: Currency) -> PyResult<()> {
+        slf.add_currency(&currency).map_err(to_pyruntime_err)
+    }
+
     #[pyo3(name = "add_instrument")]
     fn py_add_instrument(
         mut slf: PyRefMut<'_, Self>,
@@ -145,36 +260,6 @@ impl PostgresCacheDatabase {
             .map_err(to_pyruntime_err)
     }
 
-    #[pyo3(name = "update_order")]
-    fn py_update_order(
-        mut slf: PyRefMut<'_, Self>,
-        order: PyObject,
-        py: Python<'_>,
-    ) -> PyResult<()> {
-        let order_any = convert_pyobject_to_order_any(py, order)?;
-        slf.update_order(&order_any).map_err(to_pyruntime_err)
-    }
-
-    #[pyo3(name = "load_order")]
-    fn py_load_order(
-        slf: PyRef<'_, Self>,
-        client_order_id: ClientOrderId,
-        py: Python<'_>,
-    ) -> PyResult<Option<PyObject>> {
-        get_runtime().block_on(async {
-            let result = DatabaseQueries::load_order(&slf.pool, &client_order_id)
-                .await
-                .unwrap();
-            match result {
-                Some(order) => {
-                    let py_object = convert_order_any_to_pyobject(py, order)?;
-                    Ok(Some(py_object))
-                }
-                None => Ok(None),
-            }
-        })
-    }
-
     #[pyo3(name = "add_account")]
     fn py_add_account(
         mut slf: PyRefMut<'_, Self>,
@@ -185,24 +270,42 @@ impl PostgresCacheDatabase {
         slf.add_account(&account_any).map_err(to_pyruntime_err)
     }
 
-    #[pyo3(name = "load_account")]
-    fn py_load_account(
-        slf: PyRef<'_, Self>,
-        account_id: AccountId,
+    #[pyo3(name = "add_quote")]
+    fn py_add_quote(mut slf: PyRefMut<'_, Self>, quote: PyObject, py: Python<'_>) -> PyResult<()> {
+        let quote = quote.extract::<QuoteTick>(py)?;
+        slf.add_quote(&quote).map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "add_trade")]
+    fn py_add_trade(mut slf: PyRefMut<'_, Self>, trade: PyObject, py: Python<'_>) -> PyResult<()> {
+        let trade = trade.extract::<TradeTick>(py)?;
+        slf.add_trade(&trade).map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "add_bar")]
+    fn py_add_bar(mut slf: PyRefMut<'_, Self>, bar: PyObject, py: Python<'_>) -> PyResult<()> {
+        let bar = bar.extract::<Bar>(py)?;
+        slf.add_bar(&bar).map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "add_signal")]
+    fn py_add_signal(mut slf: PyRefMut<'_, Self>, signal: Signal) -> PyResult<()> {
+        slf.add_signal(&signal).map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "add_custom_data")]
+    fn py_add_custom_data(mut slf: PyRefMut<'_, Self>, data: CustomData) -> PyResult<()> {
+        slf.add_custom_data(&data).map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "update_order")]
+    fn py_update_order(
+        mut slf: PyRefMut<'_, Self>,
+        order: PyObject,
         py: Python<'_>,
-    ) -> PyResult<Option<PyObject>> {
-        get_runtime().block_on(async {
-            let result = DatabaseQueries::load_account(&slf.pool, &account_id)
-                .await
-                .unwrap();
-            match result {
-                Some(account) => {
-                    let py_object = convert_account_any_to_pyobject(py, account)?;
-                    Ok(Some(py_object))
-                }
-                None => Ok(None),
-            }
-        })
+    ) -> PyResult<()> {
+        let order_any = convert_pyobject_to_order_any(py, order)?;
+        slf.update_order(&order_any).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "update_account")]
@@ -213,108 +316,5 @@ impl PostgresCacheDatabase {
     ) -> PyResult<()> {
         let order_any = convert_pyobject_to_account_any(py, order)?;
         slf.update_account(&order_any).map_err(to_pyruntime_err)
-    }
-
-    #[pyo3(name = "add_trade")]
-    fn py_add_trade(mut slf: PyRefMut<'_, Self>, trade: PyObject, py: Python<'_>) -> PyResult<()> {
-        let trade = trade.extract::<TradeTick>(py)?;
-        slf.add_trade(&trade).map_err(to_pyruntime_err)
-    }
-
-    #[pyo3(name = "load_trades")]
-    fn py_load_trades(
-        slf: PyRef<'_, Self>,
-        instrument_id: InstrumentId,
-        py: Python<'_>,
-    ) -> PyResult<Vec<PyObject>> {
-        get_runtime().block_on(async {
-            let result = DatabaseQueries::load_trades(&slf.pool, &instrument_id)
-                .await
-                .unwrap();
-            let mut trades = Vec::new();
-            for trade in result {
-                let py_object = trade.into_py(py);
-                trades.push(py_object);
-            }
-            Ok(trades)
-        })
-    }
-
-    #[pyo3(name = "add_quote")]
-    fn py_add_quote(mut slf: PyRefMut<'_, Self>, quote: PyObject, py: Python<'_>) -> PyResult<()> {
-        let quote = quote.extract::<QuoteTick>(py)?;
-        slf.add_quote(&quote).map_err(to_pyruntime_err)
-    }
-
-    #[pyo3(name = "load_quotes")]
-    fn py_load_quotes(
-        slf: PyRef<'_, Self>,
-        instrument_id: InstrumentId,
-        py: Python<'_>,
-    ) -> PyResult<Vec<PyObject>> {
-        get_runtime().block_on(async {
-            let result = DatabaseQueries::load_quotes(&slf.pool, &instrument_id)
-                .await
-                .unwrap();
-            let mut quotes = Vec::new();
-            for quote in result {
-                let py_object = quote.into_py(py);
-                quotes.push(py_object);
-            }
-            Ok(quotes)
-        })
-    }
-
-    #[pyo3(name = "add_bar")]
-    fn py_add_bar(mut slf: PyRefMut<'_, Self>, bar: PyObject, py: Python<'_>) -> PyResult<()> {
-        let bar = bar.extract::<Bar>(py)?;
-        slf.add_bar(&bar).map_err(to_pyruntime_err)
-    }
-
-    #[pyo3(name = "load_bars")]
-    fn py_load_bars(
-        slf: PyRef<'_, Self>,
-        instrument_id: InstrumentId,
-        py: Python<'_>,
-    ) -> PyResult<Vec<PyObject>> {
-        get_runtime().block_on(async {
-            let result = DatabaseQueries::load_bars(&slf.pool, &instrument_id)
-                .await
-                .unwrap();
-            let mut bars = Vec::new();
-            for bar in result {
-                let py_object = bar.into_py(py);
-                bars.push(py_object);
-            }
-            Ok(bars)
-        })
-    }
-
-    #[pyo3(name = "add_signal")]
-    fn py_add_signal(mut slf: PyRefMut<'_, Self>, signal: Signal) -> PyResult<()> {
-        slf.add_signal(&signal).map_err(to_pyruntime_err)
-    }
-
-    #[pyo3(name = "load_signals")]
-    fn py_load_signals(slf: PyRef<'_, Self>, name: &str) -> PyResult<Vec<Signal>> {
-        get_runtime().block_on(async {
-            DatabaseQueries::load_signals(&slf.pool, name)
-                .await
-                .map_err(to_pyruntime_err)
-        })
-    }
-
-    #[pyo3(name = "add_custom_data")]
-    fn py_add_custom_data(mut slf: PyRefMut<'_, Self>, data: CustomData) -> PyResult<()> {
-        slf.add_custom_data(&data).map_err(to_pyruntime_err)
-    }
-
-    #[pyo3(name = "load_custom_data")]
-    fn py_load_custom_data(slf: PyRef<'_, Self>, data_type: DataType) -> PyResult<Vec<CustomData>> {
-        get_runtime().block_on(async {
-            DatabaseQueries::load_custom_data(&slf.pool, &data_type)
-                .await
-                .map_err(to_pyruntime_err)
-        })
     }
 }

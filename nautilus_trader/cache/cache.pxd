@@ -174,8 +174,8 @@ cdef class Cache(CacheFacade):
     cpdef void update_order_pending_cancel_local(self, Order order)
     cpdef void update_position(self, Position position)
     cpdef void update_actor(self, Actor actor)
-    cpdef void delete_actor(self, Actor actor)
     cpdef void update_strategy(self, Strategy strategy)
+    cpdef void delete_actor(self, Actor actor)
     cpdef void delete_strategy(self, Strategy strategy)
 
     cpdef void heartbeat(self, datetime timestamp)

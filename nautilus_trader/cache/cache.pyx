@@ -1905,6 +1905,23 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.update_actor(actor)
 
+    cpdef void update_strategy(self, Strategy strategy):
+        """
+        Update the given strategy state in the cache.
+
+        Parameters
+        ----------
+        strategy : Strategy
+            The strategy to update.
+        """
+        Condition.not_none(strategy, "strategy")
+
+        self._index_strategies.add(strategy.id)
+
+        # Update database
+        if self._database is not None:
+            self._database.update_strategy(strategy)
+
     cpdef void delete_actor(self, Actor actor):
         """
         Delete the given actor from the cache.
@@ -1929,23 +1946,6 @@ cdef class Cache(CacheFacade):
         if self._database is not None:
             self._database.delete_actor(actor.id)
             self._log.debug(f"Deleted Actor(id={actor.id.value})")
-
-    cpdef void update_strategy(self, Strategy strategy):
-        """
-        Update the given strategy state in the cache.
-
-        Parameters
-        ----------
-        strategy : Strategy
-            The strategy to update.
-        """
-        Condition.not_none(strategy, "strategy")
-
-        self._index_strategies.add(strategy.id)
-
-        # Update database
-        if self._database is not None:
-            self._database.update_strategy(strategy)
 
     cpdef void delete_strategy(self, Strategy strategy):
         """
