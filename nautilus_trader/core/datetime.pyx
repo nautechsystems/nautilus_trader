@@ -301,3 +301,61 @@ cpdef str format_iso8601(datetime dt):
 
     cdef tuple dt_partitioned = tz_stripped.rpartition('.')
     return f"{dt_partitioned[0]}.{dt_partitioned[2][:3]}Z"
+
+
+def max_date_str(date1: str | int | None = None, date2: str | int | None = None) -> str | None:
+    """
+    Returns the maximum date as an ISO 8601 formatted string.
+
+    Parameters
+    ----------
+    date1 : str | int | None, optional
+        The first date to compare. Can be a string, integer (timestamp), or None. Default is None.
+    date2 : str | int | None, optional
+        The second date to compare. Can be a string, integer (timestamp), or None. Default is None.
+
+    Returns
+    -------
+    str | None
+        The maximum date as an ISO 8601 formatted string, or None if both input dates are None.
+
+    """
+    if date1 is None and date2 is None:
+        return None
+
+    if date1 is None:
+        return pd.Timestamp(date2).isoformat()
+
+    if date2 is None:
+        return pd.Timestamp(date1).isoformat()
+
+    return max(pd.Timestamp(date1), pd.Timestamp(date2)).isoformat()
+
+
+def min_date_str(date1: str | int | None = None, date2: str | int | None = None) -> str | None:
+    """
+    Returns the minimum date as an ISO 8601 formatted string.
+
+    Parameters
+    ----------
+    date1 : str | int | None, optional
+        The first date to compare. Can be a string, integer (timestamp), or None. Default is None.
+    date2 : str | int | None, optional
+        The second date to compare. Can be a string, integer (timestamp), or None. Default is None.
+
+    Returns
+    -------
+    str | None
+        The minimum date as an ISO 8601 formatted string, or None if both input dates are None.
+
+    """
+    if date1 is None and date2 is None:
+        return None
+
+    if date1 is None:
+        return pd.Timestamp(date2).isoformat()
+
+    if date2 is None:
+        return pd.Timestamp(date1).isoformat()
+
+    return min(pd.Timestamp(date1), pd.Timestamp(date2)).isoformat()

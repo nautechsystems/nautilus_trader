@@ -321,6 +321,12 @@ class BacktestRunConfig(NautilusConfig, frozen=True):
         If the backtest engine should be disposed on completion of the run.
         If True, then will drop data and all state.
         If False, then will *only* drop data.
+    start : datetime or str or int, optional
+        The start datetime (UTC) for the backtest run.
+        If ``None`` engine runs from the start of the data.
+    end : datetime or str or int, optional
+        The end datetime (UTC) for the backtest run.
+        If ``None`` engine runs to the end of the data.
 
     Notes
     -----
@@ -335,6 +341,8 @@ class BacktestRunConfig(NautilusConfig, frozen=True):
     engine: BacktestEngineConfig | None = None
     chunk_size: int | None = None
     dispose_on_completion: bool = True
+    start: str | int | None = None
+    end: str | int | None = None
 
 
 class SimulationModuleConfig(ActorConfig, frozen=True):
