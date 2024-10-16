@@ -17,10 +17,10 @@ use nautilus_core::nanos::UnixNanos;
 use rust_decimal::Decimal;
 
 use super::{
-    binary_option::BinaryOption, crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual,
-    currency_pair::CurrencyPair, equity::Equity, futures_contract::FuturesContract,
-    futures_spread::FuturesSpread, options_contract::OptionsContract,
-    options_spread::OptionsSpread, Instrument,
+    betting::BettingInstrument, binary_option::BinaryOption, crypto_future::CryptoFuture,
+    crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair, equity::Equity,
+    futures_contract::FuturesContract, futures_spread::FuturesSpread,
+    options_contract::OptionsContract, options_spread::OptionsSpread, Instrument,
 };
 use crate::{
     enums::InstrumentClass,
@@ -30,6 +30,7 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub enum InstrumentAny {
+    Betting(BettingInstrument),
     BinaryOption(BinaryOption),
     CryptoFuture(CryptoFuture),
     CryptoPerpetual(CryptoPerpetual),
@@ -46,6 +47,7 @@ impl InstrumentAny {
     #[must_use]
     pub fn into_instrument(self) -> Box<dyn Instrument> {
         match self {
+            Self::Betting(inst) => Box::new(inst),
             Self::BinaryOption(inst) => Box::new(inst),
             Self::CryptoFuture(inst) => Box::new(inst),
             Self::CryptoPerpetual(inst) => Box::new(inst),
@@ -61,6 +63,7 @@ impl InstrumentAny {
     #[must_use]
     pub fn id(&self) -> InstrumentId {
         match self {
+            Self::Betting(inst) => inst.id,
             Self::BinaryOption(inst) => inst.id,
             Self::CryptoFuture(inst) => inst.id,
             Self::CryptoPerpetual(inst) => inst.id,
@@ -76,6 +79,7 @@ impl InstrumentAny {
     #[must_use]
     pub fn base_currency(&self) -> Option<Currency> {
         match self {
+            Self::Betting(inst) => inst.base_currency(),
             Self::BinaryOption(inst) => inst.base_currency(),
             Self::CryptoFuture(inst) => inst.base_currency(),
             Self::CryptoPerpetual(inst) => inst.base_currency(),
@@ -91,6 +95,7 @@ impl InstrumentAny {
     #[must_use]
     pub fn quote_currency(&self) -> Currency {
         match self {
+            Self::Betting(inst) => inst.quote_currency(),
             Self::BinaryOption(inst) => inst.quote_currency(),
             Self::CryptoFuture(inst) => inst.quote_currency(),
             Self::CryptoPerpetual(inst) => inst.quote_currency(),
@@ -106,6 +111,7 @@ impl InstrumentAny {
     #[must_use]
     pub fn settlement_currency(&self) -> Currency {
         match self {
+            Self::Betting(inst) => inst.settlement_currency(),
             Self::BinaryOption(inst) => inst.settlement_currency(),
             Self::CryptoFuture(inst) => inst.settlement_currency(),
             Self::CryptoPerpetual(inst) => inst.settlement_currency(),
@@ -121,6 +127,7 @@ impl InstrumentAny {
     #[must_use]
     pub fn is_inverse(&self) -> bool {
         match self {
+            Self::Betting(inst) => inst.is_inverse(),
             Self::BinaryOption(inst) => inst.is_inverse(),
             Self::CryptoFuture(inst) => inst.is_inverse(),
             Self::CryptoPerpetual(inst) => inst.is_inverse(),
@@ -136,6 +143,7 @@ impl InstrumentAny {
     #[must_use]
     pub fn price_precision(&self) -> u8 {
         match self {
+            Self::Betting(inst) => inst.price_precision(),
             Self::BinaryOption(inst) => inst.price_precision(),
             Self::CryptoFuture(inst) => inst.price_precision(),
             Self::CryptoPerpetual(inst) => inst.price_precision(),
@@ -151,6 +159,7 @@ impl InstrumentAny {
     #[must_use]
     pub fn size_precision(&self) -> u8 {
         match self {
+            Self::Betting(inst) => inst.size_precision(),
             Self::BinaryOption(inst) => inst.size_precision(),
             Self::CryptoFuture(inst) => inst.size_precision(),
             Self::CryptoPerpetual(inst) => inst.size_precision(),
@@ -166,6 +175,7 @@ impl InstrumentAny {
     #[must_use]
     pub fn price_increment(&self) -> Price {
         match self {
+            Self::Betting(inst) => inst.price_increment(),
             Self::BinaryOption(inst) => inst.price_increment(),
             Self::CryptoFuture(inst) => inst.price_increment(),
             Self::CryptoPerpetual(inst) => inst.price_increment(),
@@ -181,6 +191,7 @@ impl InstrumentAny {
     #[must_use]
     pub fn size_increment(&self) -> Quantity {
         match self {
+            Self::Betting(inst) => inst.size_increment(),
             Self::BinaryOption(inst) => inst.size_increment(),
             Self::CryptoFuture(inst) => inst.size_increment(),
             Self::CryptoPerpetual(inst) => inst.size_increment(),
@@ -196,6 +207,7 @@ impl InstrumentAny {
     #[must_use]
     pub fn multiplier(&self) -> Quantity {
         match self {
+            Self::Betting(inst) => inst.multiplier(),
             Self::BinaryOption(inst) => inst.multiplier(),
             Self::CryptoFuture(inst) => inst.multiplier(),
             Self::CryptoPerpetual(inst) => inst.multiplier(),
@@ -211,6 +223,7 @@ impl InstrumentAny {
     #[must_use]
     pub fn instrument_class(&self) -> InstrumentClass {
         match self {
+            Self::Betting(inst) => inst.instrument_class(),
             Self::BinaryOption(inst) => inst.instrument_class(),
             Self::CryptoFuture(inst) => inst.instrument_class(),
             Self::CryptoPerpetual(inst) => inst.instrument_class(),
@@ -226,6 +239,7 @@ impl InstrumentAny {
     #[must_use]
     pub fn activation_ns(&self) -> Option<UnixNanos> {
         match self {
+            Self::Betting(inst) => inst.activation_ns(),
             Self::BinaryOption(inst) => inst.activation_ns(),
             Self::CryptoFuture(inst) => inst.activation_ns(),
             Self::CryptoPerpetual(inst) => inst.activation_ns(),
@@ -241,6 +255,7 @@ impl InstrumentAny {
     #[must_use]
     pub fn expiration_ns(&self) -> Option<UnixNanos> {
         match self {
+            Self::Betting(inst) => inst.expiration_ns(),
             Self::BinaryOption(inst) => inst.expiration_ns(),
             Self::CryptoFuture(inst) => inst.expiration_ns(),
             Self::CryptoPerpetual(inst) => inst.expiration_ns(),
@@ -255,6 +270,7 @@ impl InstrumentAny {
 
     pub fn make_price(&self, value: f64) -> Price {
         match self {
+            Self::Betting(inst) => inst.make_price(value),
             Self::BinaryOption(inst) => inst.make_price(value),
             Self::CryptoFuture(inst) => inst.make_price(value),
             Self::CryptoPerpetual(inst) => inst.make_price(value),
@@ -269,6 +285,7 @@ impl InstrumentAny {
 
     pub fn make_qty(&self, value: f64) -> Quantity {
         match self {
+            Self::Betting(inst) => inst.make_qty(value),
             Self::BinaryOption(inst) => inst.make_qty(value),
             Self::CryptoFuture(inst) => inst.make_qty(value),
             Self::CryptoPerpetual(inst) => inst.make_qty(value),
@@ -289,6 +306,9 @@ impl InstrumentAny {
         use_quote_for_inverse: Option<bool>,
     ) -> Money {
         match self {
+            Self::Betting(inst) => {
+                inst.calculate_notional_value(quantity, price, use_quote_for_inverse)
+            }
             Self::BinaryOption(inst) => {
                 inst.calculate_notional_value(quantity, price, use_quote_for_inverse)
             }
@@ -323,6 +343,7 @@ impl InstrumentAny {
     #[must_use]
     pub fn maker_fee(&self) -> Decimal {
         match self {
+            Self::Betting(inst) => inst.maker_fee(),
             Self::BinaryOption(inst) => inst.maker_fee(),
             Self::CryptoFuture(inst) => inst.maker_fee(),
             Self::CryptoPerpetual(inst) => inst.maker_fee(),
@@ -339,6 +360,7 @@ impl InstrumentAny {
     #[must_use]
     pub fn taker_fee(&self) -> Decimal {
         match self {
+            Self::Betting(inst) => inst.taker_fee(),
             Self::BinaryOption(inst) => inst.taker_fee(),
             Self::CryptoFuture(inst) => inst.taker_fee(),
             Self::CryptoPerpetual(inst) => inst.taker_fee(),

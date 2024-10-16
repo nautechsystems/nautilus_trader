@@ -95,6 +95,11 @@ async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
                 DatabaseQueries::add_currency(pool, currency).await.unwrap();
             }
             DatabaseQuery::AddInstrument(instrument_any) => match instrument_any {
+                InstrumentAny::Betting(instrument) => {
+                    DatabaseQueries::add_instrument(pool, "BETTING", Box::new(instrument))
+                        .await
+                        .unwrap()
+                }
                 InstrumentAny::BinaryOption(instrument) => {
                     DatabaseQueries::add_instrument(pool, "BINARY_OPTION", Box::new(instrument))
                         .await
