@@ -97,23 +97,22 @@ repos:
         entry: "isort"
         args: ["--settings-file", "pyproject.toml"]
 
-  # Disable until updated for pre-commit v4.x
-  # - repo: https://github.com/PyCQA/docformatter
-  #   rev: v1.7.5
-  #   hooks:
-  #     - id: docformatter
-  #       additional_dependencies: [tomli]
-  #       args: [
-  #         "--black",
-  #         "--make-summary-multi-line",
-  #         "--pre-summary-newline",
-  #         "--blank",
-  #         "--recursive",
-  #         "--in-place",
-  #       ]
+  - repo: https://github.com/PyCQA/docformatter
+    rev: 06907d0267368b49b9180eed423fae5697c1e909
+    hooks:
+      - id: docformatter
+        additional_dependencies: [tomli]
+        args: [
+          "--black",
+          "--make-summary-multi-line",
+          "--pre-summary-newline",
+          "--blank",
+          "--recursive",
+          "--in-place",
+        ]
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.11.2
+    rev: v1.12.0
     hooks:
       - id: mypy
         args: [

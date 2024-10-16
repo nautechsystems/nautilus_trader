@@ -25,7 +25,7 @@ tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 dashmap = "6.1.0"
 http = "1.1.0"
-hyper = "1.4.1"
+hyper = "1.5.0"
 nonzero_ext = "0.3.0"
 rustls = { version = "0.23.14", features = ["ring"] }
 rustls-native-certs = "0.8.0"
