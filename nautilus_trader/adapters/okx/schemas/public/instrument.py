@@ -108,12 +108,9 @@ class OKXInstrumentSpot(OKXInstrumentBase):
         # NOTE: truncate all float strings to precision 9 (max in nautilus)
         # NOTE: can use instrument.info (dict[str, Any]) to get raw API data
 
-        price_increment = (
-            Price.from_str(f"{self._clip_prc(self.tickSz):.9f}") if self.tickSz else None
-        )
-        size_increment = (
-            Quantity.from_str(f"{self._clip_qty(self.lotSz):.9f}") if self.lotSz else None
-        )
+        # TODO: Fix for correct precisions
+        price_increment = Price.from_str(f"{self._clip_prc(self.tickSz):.9f}")
+        size_increment = Quantity.from_str(f"{self._clip_qty(self.lotSz):.9f}")
 
         # Get max_quantity as the min of all possible max sizes
         max_quantity = None
@@ -199,12 +196,9 @@ class OKXInstrumentSwap(OKXInstrumentBase):
         # NOTE: truncate all float strings to precision 9 (max in nautilus)
         # NOTE: can use instrument.info (dict[str, Any]) to get raw API data
 
-        price_increment = (
-            Price.from_str(f"{self._clip_prc(self.tickSz):.9f}") if self.tickSz else None
-        )
-        size_increment = (
-            Quantity.from_str(f"{self._clip_qty(self.lotSz):.9f}") if self.lotSz else None
-        )
+        # TODO: Fix for correct precisions
+        price_increment = Price.from_str(f"{self._clip_prc(self.tickSz):.9f}")
+        size_increment = Quantity.from_str(f"{self._clip_qty(self.lotSz):.9f}")
 
         # Get max_quantity as the min of all possible max sizes
         max_quantity = None
