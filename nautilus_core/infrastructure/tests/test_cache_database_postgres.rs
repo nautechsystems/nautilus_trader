@@ -319,12 +319,12 @@ mod serial_tests {
         pg_cache.add_order(&market_order, None).unwrap();
         let submitted = TestOrderEventStubs::order_submitted(&market_order, account);
         market_order.apply(submitted).unwrap();
-        pg_cache.update_order(&market_order.last_event()).unwrap();
+        pg_cache.update_order(market_order.last_event()).unwrap();
 
         let accepted =
             TestOrderEventStubs::order_accepted(&market_order, account, VenueOrderId::new("001"));
         market_order.apply(accepted).unwrap();
-        pg_cache.update_order(&market_order.last_event()).unwrap();
+        pg_cache.update_order(market_order.last_event()).unwrap();
 
         let filled = TestOrderEventStubs::order_filled(
             &market_order,
@@ -339,7 +339,7 @@ mod serial_tests {
             Some(AccountId::new("SIM-001")),
         );
         market_order.apply(filled).unwrap();
-        pg_cache.update_order(&market_order.last_event()).unwrap();
+        pg_cache.update_order(market_order.last_event()).unwrap();
         wait_until(
             || {
                 let result = pg_cache

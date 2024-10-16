@@ -29,7 +29,7 @@ use rstest::*;
 pub fn test_order_book_databento_mbo_nasdaq() {
     let checksums = get_test_data_large_checksums_filepath();
     let filename = "databento_mbo_xnas_itch.csv";
-    let file_path = get_test_data_file_path(format!("large/{}", filename).as_str());
+    let file_path = get_test_data_file_path(format!("large/{filename}").as_str());
     let url = "https://hist.databento.com/v0/dataset/sample/download/xnas.itch/mbo";
     ensure_file_exists_or_download_http(Path::new(file_path.as_str()), url, Some(&checksums))
         .unwrap();

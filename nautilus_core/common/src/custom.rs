@@ -36,7 +36,12 @@ pub struct CustomData {
 
 impl CustomData {
     /// Creates a new [`CustomData`] instance.
-    pub fn new(data_type: DataType, value: Bytes, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
+    pub const fn new(
+        data_type: DataType,
+        value: Bytes,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> Self {
         Self {
             data_type,
             value,
