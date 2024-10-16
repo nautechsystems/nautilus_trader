@@ -37,6 +37,7 @@ Released on TBD (UTC).
 - Fixed Betfair tests related to symbology (#1988), thanks @limx0
 - Fixed check for `OmsType` in `OrderMatchingEngine` position ID processing (#2003), thanks @filipmacek
 - Fixed `TardisCSVDataLoader` snapshot5 and snapshot25 parsing (#2005), thanks @Pushkarm029
+- Fixed Binance clients venue assignment, we should use the `client_id` params (which match the custom client `name`) to communicate with the clients, and use the same `'BINANCE'` venue identifiers
 
 ---
 
