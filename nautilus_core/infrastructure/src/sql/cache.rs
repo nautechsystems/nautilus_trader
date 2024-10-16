@@ -19,7 +19,9 @@ use std::{
 };
 
 use bytes::Bytes;
-use nautilus_common::{cache::database::CacheDatabaseAdapter, custom::CustomData, signal::Signal};
+use nautilus_common::{
+    cache::database::CacheDatabaseAdapter, custom::CustomData, runtime::get_runtime, signal::Signal,
+};
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     accounts::any::AccountAny,
@@ -50,7 +52,7 @@ use crate::sql::{
     queries::DatabaseQueries,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.infrastructure")
@@ -58,11 +60,13 @@ use crate::sql::{
 pub struct PostgresCacheDatabase {
     pub pool: PgPool,
     tx: UnboundedSender<DatabaseQuery>,
+    handle: tokio::task::JoinHandle<()>,
 }
 
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum DatabaseQuery {
+    Close,
     Add(String, Vec<u8>),
     AddCurrency(Currency),
     AddInstrument(InstrumentAny),
@@ -83,6 +87,7 @@ fn get_buffer_interval() -> Duration {
 async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
     for cmd in buffer.drain(..) {
         match cmd {
+            DatabaseQuery::Close => {}
             DatabaseQuery::Add(key, value) => {
                 DatabaseQueries::add(pool, key, value).await.unwrap();
             }
@@ -259,11 +264,12 @@ impl PostgresCacheDatabase {
             get_postgres_connect_options(host, port, username, password, database).unwrap();
         let pool = connect_pg(pg_connect_options.clone().into()).await.unwrap();
         let (tx, rx) = unbounded_channel::<DatabaseQuery>();
-        // spawn a thread to handle messages
-        let _join_handle = tokio::spawn(async move {
+
+        // Spawn a task to handle messages
+        let handle = tokio::spawn(async move {
             PostgresCacheDatabase::handle_message(rx, pg_connect_options.clone().into()).await;
         });
-        Ok(PostgresCacheDatabase { pool, tx })
+        Ok(PostgresCacheDatabase { pool, tx, handle })
     }
 
     async fn handle_message(
@@ -285,12 +291,16 @@ impl PostgresCacheDatabase {
             } else {
                 // Continue to receive and handle messages until channel is hung up
                 match rx.try_recv() {
-                    Ok(msg) => buffer.push_back(msg),
+                    Ok(msg) => match msg {
+                        DatabaseQuery::Close => break,
+                        _ => buffer.push_back(msg),
+                    },
                     Err(TryRecvError::Empty) => sleep(recv_interval).await,
                     Err(TryRecvError::Disconnected) => break,
                 }
             }
         }
+
         // Drain any remaining message
         if !buffer.is_empty() {
             drain_buffer(&pool, &mut buffer).await;
@@ -337,6 +347,19 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
                 log::error!("Failed to send close result: {e:?}");
             }
         });
+
+        // Cancel message handling task
+        self.tx.send(DatabaseQuery::Close);
+
+        log::debug!("Awaiting task 'cache-write'"); // Naming tasks will soon be stablized
+        tokio::task::block_in_place(|| {
+            if let Err(e) = get_runtime().block_on(&mut self.handle) {
+                log::error!("Error awaiting task 'cache-write': {e:?}");
+            }
+        });
+
+        log::debug!("Closed");
+
         Ok(rx.recv()?)
     }
 
@@ -876,7 +899,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     fn update_order(&mut self, event: &OrderEventAny) -> anyhow::Result<()> {
         let query = DatabaseQuery::UpdateOrder(event.clone());
         self.tx.send(query).map_err(|e| {
-            anyhow::anyhow!("Failed to send query add_order to database message handler: {e}")
+            anyhow::anyhow!("Failed to send query update_order to database message handler: {e}")
         })
     }
 
