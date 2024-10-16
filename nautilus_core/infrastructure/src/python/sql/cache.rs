@@ -52,6 +52,11 @@ impl PostgresCacheDatabase {
         result.map_err(to_pyruntime_err)
     }
 
+    #[pyo3(name = "close")]
+    fn py_close(&mut self) -> PyResult<()> {
+        self.close().map_err(to_pyruntime_err)
+    }
+
     #[pyo3(name = "flush_db")]
     fn py_flush_db(slf: PyRef<'_, Self>) -> PyResult<()> {
         get_runtime()

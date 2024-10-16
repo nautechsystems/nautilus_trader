@@ -42,6 +42,7 @@ from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderTriggered
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.events.account import AccountState
+from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.model.instruments import CryptoFuture
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
@@ -100,10 +101,12 @@ def transform_instrument_to_pyo3(instrument: Instrument):
         raise ValueError(f"Unknown instrument type: {instrument}")
 
 
-def transform_instrument_from_pyo3(instrument_pyo3) -> Instrument | None:
+def transform_instrument_from_pyo3(instrument_pyo3) -> Instrument | None:  # noqa: C901
     if instrument_pyo3 is None:
         return None
-    if isinstance(instrument_pyo3, nautilus_pyo3.CryptoFuture):
+    if isinstance(instrument_pyo3, nautilus_pyo3.BinaryOption):
+        return BinaryOption.from_pyo3(instrument_pyo3)
+    elif isinstance(instrument_pyo3, nautilus_pyo3.CryptoFuture):
         return CryptoFuture.from_pyo3(instrument_pyo3)
     elif isinstance(instrument_pyo3, nautilus_pyo3.CryptoPerpetual):
         return CryptoPerpetual.from_pyo3(instrument_pyo3)
