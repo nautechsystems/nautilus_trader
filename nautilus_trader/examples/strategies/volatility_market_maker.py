@@ -34,6 +34,7 @@ from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import TriggerType
 from nautilus_trader.model.events import OrderFilled
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.orders import LimitOrder
@@ -66,6 +67,9 @@ class VolatilityMarketMakerConfig(StrategyConfig, frozen=True):
     emulation_trigger : str, default 'NO_TRIGGER'
         The emulation trigger for submitting emulated orders.
         If ``None`` then orders will not be emulated.
+    client_id : ClientId, optional
+        The custom client ID for data and execution.
+        For example if you have multiple clients for Binance you might use 'BINANCE-SPOT'.
 
     """
 
@@ -75,6 +79,7 @@ class VolatilityMarketMakerConfig(StrategyConfig, frozen=True):
     atr_multiple: PositiveFloat
     trade_size: Decimal
     emulation_trigger: str = "NO_TRIGGER"
+    client_id: ClientId | None = None
 
 
 class VolatilityMarketMaker(Strategy):
@@ -102,6 +107,7 @@ class VolatilityMarketMaker(Strategy):
         self.emulation_trigger = TriggerType[config.emulation_trigger]
 
         self.instrument: Instrument | None = None  # Initialized in on_start
+        self.client_id = config.client_id
 
         # Create the indicators for the strategy
         self.atr = AverageTrueRange(config.atr_period)
@@ -124,17 +130,18 @@ class VolatilityMarketMaker(Strategy):
         self.register_indicator_for_bars(self.bar_type, self.atr)
 
         # Get historical data
-        self.request_bars(self.bar_type)
+        self.request_bars(self.bar_type, client_id=self.client_id)
 
         # Subscribe to live data
-        self.subscribe_bars(self.bar_type)
-        self.subscribe_quote_ticks(self.instrument_id)
-        self.subscribe_trade_ticks(self.instrument_id)
-        # self.subscribe_order_book_deltas(self.instrument_id)  # For debugging
+        self.subscribe_bars(self.bar_type, client_id=self.client_id)
+        self.subscribe_quote_ticks(self.instrument_id, client_id=self.client_id)
+        self.subscribe_trade_ticks(self.instrument_id, client_id=self.client_id)
+        # self.subscribe_order_book_deltas(self.instrument_id, client_id=self.client_id)  # For debugging
         # self.subscribe_order_book_at_interval(
         #     self.instrument_id,
         #     depth=20,
         #     interval_ms=1000,
+        #     client_id=self.client_id,
         # )  # For debugging
 
         # self.subscribe_data(
@@ -142,7 +149,7 @@ class VolatilityMarketMaker(Strategy):
         #         BinanceTicker,
         #         metadata={"instrument_id": self.instrument.id},
         #     ),
-        #     client_id=ClientId("BINANCE"),
+        #     client_id=self.client_id,
         # )
 
         # self.subscribe_data(
@@ -305,7 +312,7 @@ class VolatilityMarketMaker(Strategy):
         )
 
         self.buy_order = order
-        self.submit_order(order)
+        self.submit_order(order, client_id=self.client_id)
         # order_list = self.order_factory.create_list([order])
         # self.submit_order_list(order_list)
 
@@ -331,9 +338,9 @@ class VolatilityMarketMaker(Strategy):
         )
 
         self.sell_order = order
-        self.submit_order(order)
+        self.submit_order(order, client_id=self.client_id)
         # order_list = self.order_factory.create_list([order])
-        # self.submit_order_list(order_list)
+        # self.submit_order_list(order_list, client_id=self.client_id)
 
     def on_event(self, event: Event) -> None:
         """
@@ -364,19 +371,19 @@ class VolatilityMarketMaker(Strategy):
         """
         Actions to be performed when the strategy is stopped.
         """
-        self.cancel_all_orders(self.instrument_id)
-        self.close_all_positions(self.instrument_id)
+        self.cancel_all_orders(self.instrument_id, client_id=self.client_id)
+        self.close_all_positions(self.instrument_id, client_id=self.client_id)
 
         # open_orders = self.cache.orders_open(instrument_id=self.instrument_id)
         # if open_orders:
-        #     self.cancel_orders(open_orders)
+        #     self.cancel_orders(open_orders, client_id=self.client_id)
 
         # Unsubscribe from data
-        self.unsubscribe_bars(self.bar_type)
-        self.unsubscribe_quote_ticks(self.instrument_id)
-        self.unsubscribe_trade_ticks(self.instrument_id)
-        # self.unsubscribe_order_book_deltas(self.instrument_id)  # For debugging
-        # self.unsubscribe_order_book_at_interval(self.instrument_id)  # For debugging
+        self.unsubscribe_bars(self.bar_type, client_id=self.client_id)
+        self.unsubscribe_quote_ticks(self.instrument_id, client_id=self.client_id)
+        self.unsubscribe_trade_ticks(self.instrument_id, client_id=self.client_id)
+        # self.unsubscribe_order_book_deltas(self.instrument_id, client_id=self.client_id)  # For debugging
+        # self.unsubscribe_order_book_at_interval(self.instrument_id, client_id=self.client_id)  # For debugging
 
     def on_reset(self) -> None:
         """
