@@ -909,6 +909,26 @@ impl OrderMatchingEngine {
         TradeId::from(trade_id.as_str())
     }
 
+    fn get_position_id(&mut self, order: &OrderAny, generate: Option<bool>) -> Option<PositionId> {
+        let generate = generate.unwrap_or(true);
+        if self.oms_type == OmsType::Hedging {
+            {
+                let cache = self.cache.as_ref().borrow();
+                let position_id_result = cache.position_id(&order.client_order_id());
+                if let Some(position_id) = position_id_result {
+                    return Some(position_id.to_owned());
+                }
+            }
+            if generate {
+                self.generate_venue_position_id()
+            } else {
+                panic!("Position id should be generated. Hedging Oms type order matching engine doesnt exists in cache.")
+            }
+        } else {
+            todo!("Netting OMS position getter")
+        }
+    }
+
     fn generate_venue_position_id(&mut self) -> Option<PositionId> {
         if !self.config.use_position_ids {
             return None;
@@ -1196,16 +1216,18 @@ mod tests {
             MessageBus,
         },
     };
-    use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
+    use nautilus_core::{nanos::UnixNanos, time::AtomicTime, uuid::UUID4};
     use nautilus_model::{
         data::{delta::OrderBookDelta, order::BookOrder},
         enums::{
-            AccountType, BookAction, BookType, ContingencyType, OmsType, OrderSide, OrderType,
+            AccountType, BookAction, BookType, ContingencyType, LiquiditySide, OmsType, OrderSide,
+            OrderType,
         },
         events::order::{
-            rejected::OrderRejectedBuilder, OrderEventAny, OrderEventType, OrderRejected,
+            rejected::OrderRejectedBuilder, OrderEventAny, OrderEventType, OrderFilled,
+            OrderRejected,
         },
-        identifiers::{AccountId, ClientOrderId, PositionId},
+        identifiers::{AccountId, ClientOrderId, PositionId, TradeId, VenueOrderId},
         instruments::{
             any::InstrumentAny,
             crypto_perpetual::CryptoPerpetual,
@@ -1213,6 +1235,7 @@ mod tests {
             stubs::{futures_contract_es, *},
         },
         orders::{builder::OrderTestBuilder, stubs::TestOrderStubs},
+        position::Position,
         types::{price::Price, quantity::Quantity},
     };
     use rstest::{fixture, rstest};
@@ -1944,5 +1967,107 @@ mod tests {
         let position_id_2 = engine_with_position_id.generate_venue_position_id();
         assert_eq!(position_id_1, Some(PositionId::new("BINANCE-1-1")));
         assert_eq!(position_id_2, Some(PositionId::new("BINANCE-1-2")));
+    }
+
+    #[rstest]
+    fn test_get_position_id_hedging_with_existing_position(
+        order_event_handler: ShareableMessageHandler,
+        account_id: AccountId,
+        time: AtomicTime,
+        crypto_perpetual_ethusdt: CryptoPerpetual,
+    ) {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        // create oms type hedging engine
+        let mut engine = OrderMatchingEngine::new(
+            instrument.clone(),
+            1,
+            FillModel::default(),
+            BookType::L1_MBP,
+            OmsType::Hedging,
+            AccountType::Cash,
+            &ATOMIC_TIME,
+            Rc::new(RefCell::new(MessageBus::default())),
+            cache,
+            OrderMatchingEngineConfig::default(),
+        );
+
+        // create position, order and order filled event
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id().clone())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .build();
+        let order_filled = OrderFilled::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            VenueOrderId::new("BINANCE-1"),
+            account_id,
+            TradeId::new("1"),
+            order.order_side(),
+            order.order_type(),
+            Quantity::from("1"),
+            Price::from("1000"),
+            instrument.quote_currency(),
+            LiquiditySide::Taker,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            Some(PositionId::new("P-1")),
+            None,
+        );
+        let position = Position::new(&instrument, order_filled);
+
+        // add position to cache
+        engine
+            .cache
+            .borrow_mut()
+            .add_position(position.clone(), engine.oms_type)
+            .unwrap();
+
+        let position_id = engine.get_position_id(&order, None);
+        assert_eq!(position_id, Some(position.id));
+    }
+
+    #[rstest]
+    fn test_get_position_id_hedging_with_generated_position(
+        order_event_handler: ShareableMessageHandler,
+        account_id: AccountId,
+        time: AtomicTime,
+        crypto_perpetual_ethusdt: CryptoPerpetual,
+    ) {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        // use order matching config with position ids
+        let config_with_position_id = OrderMatchingEngineConfig {
+            use_position_ids: true,
+            ..OrderMatchingEngineConfig::default()
+        };
+        // create oms type hedging engine
+        let mut engine = OrderMatchingEngine::new(
+            instrument.clone(),
+            1,
+            FillModel::default(),
+            BookType::L1_MBP,
+            OmsType::Hedging,
+            AccountType::Cash,
+            &ATOMIC_TIME,
+            Rc::new(RefCell::new(MessageBus::default())),
+            cache,
+            config_with_position_id,
+        );
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id().clone())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .build();
+
+        let position_id = engine.get_position_id(&order, None);
+        assert_eq!(position_id, Some(PositionId::new("BINANCE-1-1")));
     }
 }

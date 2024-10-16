@@ -1343,7 +1343,7 @@ impl Cache {
     }
 
     /// Indexes the given `position_id` with the other given IDs.
-    pub fn add_position_id(
+    fn add_position_id(
         &mut self,
         position_id: &PositionId,
         venue: &Venue,
