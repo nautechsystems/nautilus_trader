@@ -75,7 +75,6 @@ config_node = TradingNodeConfig(
     # streaming=StreamingConfig(catalog_path="catalog"),
     data_clients={
         "BINANCE_SPOT": BinanceDataClientConfig(
-            # venue=Venue("BINANCE-SPOT"),
             api_key=None,  # 'BINANCE_API_KEY' env var
             api_secret=None,  # 'BINANCE_API_SECRET' env var
             account_type=BinanceAccountType.SPOT,
@@ -86,7 +85,6 @@ config_node = TradingNodeConfig(
             instrument_provider=InstrumentProviderConfig(load_all=True),
         ),
         "BINANCE_FUTURES": BinanceDataClientConfig(
-            # venue=Venue("BINANCE-FUTURES"),
             api_key=None,  # 'BINANCE_API_KEY' env var
             api_secret=None,  # 'BINANCE_API_SECRET' env var
             account_type=BinanceAccountType.USDT_FUTURE,
@@ -99,7 +97,6 @@ config_node = TradingNodeConfig(
     },
     exec_clients={
         "BINANCE_SPOT": BinanceExecClientConfig(
-            # venue=Venue("BINANCE-SPOT"),
             api_key=None,  # 'BINANCE_API_KEY' env var
             api_secret=None,  # 'BINANCE_API_SECRET' env var
             account_type=BinanceAccountType.SPOT,
@@ -112,7 +109,6 @@ config_node = TradingNodeConfig(
             retry_delay=1.0,
         ),
         "BINANCE_FUTURES": BinanceExecClientConfig(
-            # venue=Venue("BINANCE-FUTURES"),
             api_key=None,  # 'BINANCE_API_KEY' env var
             api_secret=None,  # 'BINANCE_API_SECRET' env var
             account_type=BinanceAccountType.USDT_FUTURE,
@@ -158,7 +154,7 @@ strat_config_futures = VolatilityMarketMakerConfig(
     client_id=ClientId("BINANCE_FUTURES"),
 )
 
-# Instantiate your strategy
+# Instantiate your strategies
 strategy_spot = VolatilityMarketMaker(config=strat_config_spot)
 strategy_futures = VolatilityMarketMaker(config=strat_config_futures)
 
