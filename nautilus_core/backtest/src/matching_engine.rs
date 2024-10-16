@@ -909,6 +909,21 @@ impl OrderMatchingEngine {
         TradeId::from(trade_id.as_str())
     }
 
+    fn generate_venue_position_id(&mut self) -> Option<PositionId> {
+        if !self.config.use_position_ids {
+            return None;
+        }
+
+        self.position_count += 1;
+        if self.config.use_random_ids {
+            Some(PositionId::new(UUID4::new().to_string().as_str()))
+        } else {
+            Some(PositionId::new(
+                format!("{}-{}-{}", self.venue, self.raw_id, self.position_count).as_str(),
+            ))
+        }
+    }
+
     // -- EVENT HANDLING -----------------------------------------------------
 
     fn accept_order(&mut self, order: &OrderAny) {
@@ -1190,9 +1205,10 @@ mod tests {
         events::order::{
             rejected::OrderRejectedBuilder, OrderEventAny, OrderEventType, OrderRejected,
         },
-        identifiers::{AccountId, ClientOrderId},
+        identifiers::{AccountId, ClientOrderId, PositionId},
         instruments::{
             any::InstrumentAny,
+            crypto_perpetual::CryptoPerpetual,
             equity::Equity,
             stubs::{futures_contract_es, *},
         },
@@ -1884,5 +1900,49 @@ mod tests {
         assert!(engine_l2.core.is_bid_initialized);
         assert_eq!(engine_l2.core.ask, Some(Price::from("101")));
         assert!(engine_l2.core.is_ask_initialized);
+    }
+
+    #[rstest]
+    fn test_generate_venue_position_id(
+        order_event_handler: ShareableMessageHandler,
+        account_id: AccountId,
+        time: AtomicTime,
+        crypto_perpetual_ethusdt: CryptoPerpetual,
+    ) {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        // create two order matching engines with different configs
+        // one with and other without position ids
+        let config_no_position_id = OrderMatchingEngineConfig {
+            use_position_ids: false,
+            ..OrderMatchingEngineConfig::default()
+        };
+        let mut engine_no_position_id = get_order_matching_engine_l2(
+            instrument.clone(),
+            Rc::new(RefCell::new(MessageBus::default())),
+            None,
+            None,
+            Some(config_no_position_id),
+        );
+
+        let config_with_position_id = OrderMatchingEngineConfig {
+            use_position_ids: true,
+            ..OrderMatchingEngineConfig::default()
+        };
+        let mut engine_with_position_id = get_order_matching_engine_l2(
+            instrument,
+            Rc::new(RefCell::new(MessageBus::default())),
+            None,
+            None,
+            Some(config_with_position_id),
+        );
+
+        // engine which doesnt have position id should return None
+        assert_eq!(engine_no_position_id.generate_venue_position_id(), None);
+
+        // engine which has position id should return position id in incrementing order
+        let position_id_1 = engine_with_position_id.generate_venue_position_id();
+        let position_id_2 = engine_with_position_id.generate_venue_position_id();
+        assert_eq!(position_id_1, Some(PositionId::new("BINANCE-1-1")));
+        assert_eq!(position_id_2, Some(PositionId::new("BINANCE-1-2")));
     }
 }
