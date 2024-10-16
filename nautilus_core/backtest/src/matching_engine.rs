@@ -56,6 +56,7 @@ use nautilus_model::{
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 use ustr::Ustr;
+use uuid::Uuid;
 
 use crate::models::fill::FillModel;
 
@@ -245,7 +246,7 @@ impl OrderMatchingEngine {
 
     #[must_use]
     pub fn get_open_orders(&self) -> Vec<PassiveOrderAny> {
-        // get orders from both open bid orders and open ask orders
+        // Get orders from both open bid orders and open ask orders
         let mut orders = Vec::new();
         orders.extend_from_slice(self.core.get_orders_bid());
         orders.extend_from_slice(self.core.get_orders_ask());
@@ -293,14 +294,13 @@ impl OrderMatchingEngine {
     pub fn process_bar(&mut self, bar: &Bar) {
         log::debug!("Processing {bar}");
 
-        // check if configured for bar execution
-        // can only process an L1 book with bars
+        // Check if configured for bar execution can only process an L1 book with bars
         if !self.config.bar_execution || self.book_type != BookType::L1_MBP {
             return;
         }
 
         let bar_type = bar.bar_type;
-        // do not process internally aggregated bars
+        // Do not process internally aggregated bars
         if bar_type.aggregation_source() == AggregationSource::Internal {
             return;
         }
@@ -347,9 +347,8 @@ impl OrderMatchingEngine {
     }
 
     fn process_trade_ticks_from_bar(&mut self, bar: &Bar) {
-        // split the bar into 4 trade ticks with quarter volume
+        // Split the bar into 4 trade ticks with quarter volume
         let size = Quantity::new(bar.volume.as_f64() / 4.0, bar.volume.precision);
-
         let aggressor_side = if !self.core.is_last_initialized || bar.open > self.core.last.unwrap()
         {
             AggressorSide::Buyer
@@ -357,7 +356,7 @@ impl OrderMatchingEngine {
             AggressorSide::Seller
         };
 
-        // create reusable trade tick
+        // Create reusable trade tick
         let mut trade_tick = TradeTick::new(
             bar.instrument_id(),
             bar.open,
@@ -368,16 +367,16 @@ impl OrderMatchingEngine {
             bar.ts_event,
         );
 
-        // open
-        // check if not initialized, if it is, it will be updated by the close or last
+        // Open
+        // Check if not initialized, if it is, it will be updated by the close or last
         if !self.core.is_last_initialized {
             self.book.update_trade_tick(&trade_tick).unwrap();
             self.iterate(trade_tick.ts_init);
             self.core.set_last_raw(trade_tick.price);
         }
 
-        // high
-        // check if higher than last
+        // High
+        // Check if higher than last
         if self.core.last.is_some_and(|last| bar.high > last) {
             trade_tick.price = bar.high;
             trade_tick.aggressor_side = AggressorSide::Buyer;
@@ -389,9 +388,9 @@ impl OrderMatchingEngine {
             self.core.set_last_raw(trade_tick.price);
         }
 
-        // low
-        // check if lower than last
-        // assumption: market traded down, aggressor hitting the bid(setting aggressor to seller)
+        // Low
+        // Check if lower than last
+        // Assumption: market traded down, aggressor hitting the bid(setting aggressor to seller)
         if self.core.last.is_some_and(|last| bar.low < last) {
             trade_tick.price = bar.low;
             trade_tick.aggressor_side = AggressorSide::Seller;
@@ -403,10 +402,10 @@ impl OrderMatchingEngine {
             self.core.set_last_raw(trade_tick.price);
         }
 
-        // close
-        // check if not the same as last
-        // assumption: if close price is higher then last, aggressor is buyer
-        // assumption: if close price is lower then last, aggressor is seller
+        // Close
+        // Check if not the same as last
+        // Assumption: if close price is higher then last, aggressor is buyer
+        // Assumption: if close price is lower then last, aggressor is seller
         if self.core.last.is_some_and(|last| bar.close != last) {
             trade_tick.price = bar.close;
             trade_tick.aggressor_side = if bar.close > self.core.last.unwrap() {
@@ -424,7 +423,7 @@ impl OrderMatchingEngine {
     }
 
     fn process_quote_ticks_from_bar(&mut self, bar: &Bar) {
-        // wait for next bar
+        // Wait for next bar
         if self.last_bar_bid.is_none()
             || self.last_bar_ask.is_none()
             || self.last_bar_bid.unwrap().ts_event != self.last_bar_ask.unwrap().ts_event
@@ -436,7 +435,7 @@ impl OrderMatchingEngine {
         let bid_size = Quantity::new(bid_bar.volume.as_f64() / 4.0, bar.volume.precision);
         let ask_size = Quantity::new(ask_bar.volume.as_f64() / 4.0, bar.volume.precision);
 
-        // create reusable quote tick
+        // Create reusable quote tick
         let mut quote_tick = QuoteTick::new(
             self.book.instrument_id,
             bid_bar.open,
@@ -447,29 +446,29 @@ impl OrderMatchingEngine {
             bid_bar.ts_init,
         );
 
-        // open
+        // Open
         self.book.update_quote_tick(&quote_tick).unwrap();
         self.iterate(quote_tick.ts_init);
 
-        // high
+        // High
         quote_tick.bid_price = bid_bar.high;
         quote_tick.ask_price = ask_bar.high;
         self.book.update_quote_tick(&quote_tick).unwrap();
         self.iterate(quote_tick.ts_init);
 
-        // low
+        // Low
         quote_tick.bid_price = bid_bar.low;
         quote_tick.ask_price = ask_bar.low;
         self.book.update_quote_tick(&quote_tick).unwrap();
         self.iterate(quote_tick.ts_init);
 
-        // close
+        // Close
         quote_tick.bid_price = bid_bar.close;
         quote_tick.ask_price = ask_bar.close;
         self.book.update_quote_tick(&quote_tick).unwrap();
         self.iterate(quote_tick.ts_init);
 
-        // reset last bars
+        // Reset last bars
         self.last_bar_bid = None;
         self.last_bar_ask = None;
     }
@@ -488,22 +487,21 @@ impl OrderMatchingEngine {
     pub fn process_status(&mut self, action: MarketStatusAction) {
         log::debug!("Processing {action}");
 
-        // check if market is closed and market opens with
-        // trading or pre-open status
+        // Check if market is closed and market opens with trading or pre-open status
         if self.market_status == MarketStatus::Closed
             && (action == MarketStatusAction::Trading || action == MarketStatusAction::PreOpen)
         {
             self.market_status = MarketStatus::Open;
         }
-        // check if market is open and market pauses
+        // Check if market is open and market pauses
         if self.market_status == MarketStatus::Open && action == MarketStatusAction::Pause {
             self.market_status = MarketStatus::Paused;
         }
-        // check if market is open and market suspends
+        // Check if market is open and market suspends
         if self.market_status == MarketStatus::Open && action == MarketStatusAction::Suspend {
             self.market_status = MarketStatus::Suspended;
         }
-        // check if market is open and we halt or close
+        // Check if market is open and we halt or close
         if self.market_status == MarketStatus::Open
             && (action == MarketStatusAction::Halt || action == MarketStatusAction::Close)
         {
@@ -515,7 +513,7 @@ impl OrderMatchingEngine {
 
     #[allow(clippy::needless_return)]
     pub fn process_order(&mut self, order: &OrderAny, account_id: AccountId) {
-        // enter the scope where you will borrow a cache
+        // Enter the scope where you will borrow a cache
         {
             let cache_borrow = self.cache.as_ref().borrow();
 
@@ -792,8 +790,7 @@ impl OrderMatchingEngine {
     pub fn iterate(&mut self, timestamp_ns: UnixNanos) {
         self.clock.set_time(timestamp_ns);
 
-        // check for updates in orderbook and set bid and ask
-        // in order matching core and iterate
+        // Check for updates in orderbook and set bid and ask in order matching core and iterate
         if self.book.has_bid() {
             self.core.set_bid_raw(self.book.best_bid_price().unwrap());
         }
@@ -902,7 +899,7 @@ impl OrderMatchingEngine {
     fn generate_trade_id(&mut self) -> TradeId {
         self.execution_count += 1;
         let trade_id = if self.config.use_random_ids {
-            UUID4::new().to_string()
+            Uuid::new_v4().to_string()
         } else {
             format!("{}-{}-{}", self.venue, self.raw_id, self.execution_count)
         };
@@ -936,7 +933,7 @@ impl OrderMatchingEngine {
 
         self.position_count += 1;
         if self.config.use_random_ids {
-            Some(PositionId::new(UUID4::new().to_string().as_str()))
+            Some(PositionId::new(&Uuid::new_v4().to_string()))
         } else {
             Some(PositionId::new(
                 format!("{}-{}-{}", self.venue, self.raw_id, self.position_count).as_str(),
@@ -1271,7 +1268,7 @@ mod tests {
         get_message_saving_handler::<OrderEventAny>(Some(Ustr::from("ExecEngine.process")))
     }
 
-    // for valid es futures contract currently active
+    // For valid ES futures contract currently active
     #[fixture]
     fn instrument_es() -> InstrumentAny {
         let activation = UnixNanos::from(
@@ -1722,8 +1719,8 @@ mod tests {
         // Make it Accepted
         let accepted_stop_order = TestOrderStubs::make_accepted_order(&stop_order);
 
-        // 1. save entry order in the cache as it will be loaded by the matching engine
-        // 2. send the stop loss order which has parent of entry order
+        // 1. Save entry order in the cache as it will be loaded by the matching engine
+        // 2. Send the stop loss order which has parent of entry order
         cache
             .as_ref()
             .borrow_mut()
@@ -1800,8 +1797,8 @@ mod tests {
         // Make take profit order Accepted
         let accepted_take_profit = TestOrderStubs::make_accepted_order(&take_profit_order);
 
-        // 1. save stop loss order in cache which is rejected and closed is set to true
-        // 2. send the take profit order which has linked the stop loss order
+        // 1. Save stop loss order in cache which is rejected and closed is set to true
+        // 2. Send the take profit order which has linked the stop loss order
         cache
             .as_ref()
             .borrow_mut()
@@ -1891,7 +1888,7 @@ mod tests {
             None,
             None,
         );
-        // create bid and ask orderbook delta and check if
+        // Create bid and ask orderbook delta and check if
         // bid and ask are initialized in order matching core
         let orderbook_delta_buy = OrderBookDelta::new(
             instrument_es.id(),
@@ -1933,7 +1930,7 @@ mod tests {
         crypto_perpetual_ethusdt: CryptoPerpetual,
     ) {
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
-        // create two order matching engines with different configs
+        // Create two order matching engines with different configs
         // one with and other without position ids
         let config_no_position_id = OrderMatchingEngineConfig {
             use_position_ids: false,
@@ -1959,10 +1956,10 @@ mod tests {
             Some(config_with_position_id),
         );
 
-        // engine which doesnt have position id should return None
+        // Engine which doesnt have position id should return None
         assert_eq!(engine_no_position_id.generate_venue_position_id(), None);
 
-        // engine which has position id should return position id in incrementing order
+        // Engine which has position id should return position id in incrementing order
         let position_id_1 = engine_with_position_id.generate_venue_position_id();
         let position_id_2 = engine_with_position_id.generate_venue_position_id();
         assert_eq!(position_id_1, Some(PositionId::new("BINANCE-1-1")));
@@ -1979,7 +1976,7 @@ mod tests {
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        // create oms type hedging engine
+        // Create oms type hedging engine
         let mut engine = OrderMatchingEngine::new(
             instrument.clone(),
             1,
@@ -1993,7 +1990,7 @@ mod tests {
             OrderMatchingEngineConfig::default(),
         );
 
-        // create position, order and order filled event
+        // Create position, order and order filled event
         let order = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(instrument.id().clone())
             .side(OrderSide::Buy)
@@ -2022,7 +2019,7 @@ mod tests {
         );
         let position = Position::new(&instrument, order_filled);
 
-        // add position to cache
+        // Add position to cache
         engine
             .cache
             .borrow_mut()
@@ -2043,12 +2040,12 @@ mod tests {
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
         let cache = Rc::new(RefCell::new(Cache::default()));
 
-        // use order matching config with position ids
+        // Use order matching config with position ids
         let config_with_position_id = OrderMatchingEngineConfig {
             use_position_ids: true,
             ..OrderMatchingEngineConfig::default()
         };
-        // create oms type hedging engine
+        // Create oms type hedging engine
         let mut engine = OrderMatchingEngine::new(
             instrument.clone(),
             1,

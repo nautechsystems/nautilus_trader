@@ -2754,6 +2754,7 @@ dependencies = [
  "rust_decimal",
  "tempfile",
  "ustr",
+ "uuid",
 ]
 
 [[package]]
