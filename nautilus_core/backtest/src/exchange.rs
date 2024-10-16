@@ -483,7 +483,7 @@ impl SimulatedExchange {
         }
 
         if let Some(matching_engine) = self.matching_engines.get_mut(&status.instrument_id) {
-            matching_engine.process_status(status.action)
+            matching_engine.process_status(status.action);
         } else {
             panic!("Matching engine should be initialized");
         }
