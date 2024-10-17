@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import functools
+import os
 from collections.abc import Callable
 from decimal import Decimal
 from inspect import iscoroutinefunction
@@ -109,7 +110,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         """
         if not (subscription := self._subscriptions.get(name=name)):
             self._log.info(
-                f"Creating and registering a new Subscription instance for {subscription}",
+                f"Creating and registering a new Subscription instance for {name}",
             )
             req_id = self._next_req_id()
             if subscription_method == self.subscribe_historical_bars:
@@ -390,7 +391,8 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
                 return []
             self._log.debug(f"reqHistoricalData: {request.req_id=}, {contract=}")
             request.handle()
-            return await self._await_request(request, timeout, default_value=[])
+            ib_timeout = int(os.environ.get("IB_REQUEST_TIMEOUT", timeout))
+            return await self._await_request(request, ib_timeout, default_value=[])
         else:
             self._log.info(f"Request already exist for {request}")
             return []
