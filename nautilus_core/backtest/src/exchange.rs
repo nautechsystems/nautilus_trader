@@ -47,7 +47,7 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 
 use crate::{
-    matching_engine::{OrderMatchingEngine, OrderMatchingEngineConfig},
+    matching_engine::{config::OrderMatchingEngineConfig, OrderMatchingEngine},
     models::{fee::FeeModelAny, fill::FillModel, latency::LatencyModel},
     modules::SimulationModule,
 };
