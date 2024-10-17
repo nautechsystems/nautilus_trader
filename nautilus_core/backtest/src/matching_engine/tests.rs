@@ -796,7 +796,7 @@ fn test_get_position_id_hedging_with_existing_position(
 
     // Create position, order and order filled event
     let order = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument.id().clone())
+        .instrument_id(instrument.id())
         .side(OrderSide::Buy)
         .quantity(Quantity::from("1"))
         .build();
@@ -858,7 +858,7 @@ fn test_get_position_id_hedging_with_generated_position(crypto_perpetual_ethusdt
         config_with_position_id,
     );
     let order = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument.id().clone())
+        .instrument_id(instrument.id())
         .side(OrderSide::Buy)
         .quantity(Quantity::from("1"))
         .build();
