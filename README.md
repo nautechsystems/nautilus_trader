@@ -14,9 +14,9 @@
 
 | Platform           | Rust    | Python |
 | :----------------- | :------ | :----- |
-| `Linux (x86_64)`   | 1.81.0+ | 3.11+  |
-| `macOS (arm64)`    | 1.81.0+ | 3.11+  |
-| `Windows (x86_64)` | 1.81.0+ | 3.11+  |
+| `Linux (x86_64)`   | 1.82.0+ | 3.11+  |
+| `macOS (arm64)`    | 1.82.0+ | 3.11+  |
+| `Windows (x86_64)` | 1.82.0+ | 3.11+  |
 
 [![](https://dcbadge.limes.pink/api/server/AUWVs3XaCS)](https://discord.gg/AUWVs3XaCS)
 
@@ -38,7 +38,7 @@ NautilusTraders design, architecture and implementation philosophy holds softwar
 highest level, with the aim of supporting Python native, mission-critical, trading system backtesting
 and live deployment workloads.
 
-The platform is also universal and asset class agnostic - with any REST, WebSocket or FIX API able to be integrated via modular
+The platform is also univ2rsal and asset class agnostic - with any REST, WebSocket or FIX API able to be integrated via modular
 adapters. Thus, it can handle high-frequency trading operations for any asset classes
 including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across multiple venues simultaneously.
 
