@@ -47,12 +47,12 @@ impl BinaryOption {
         size_increment: Quantity,
         maker_fee: Decimal,
         taker_fee: Decimal,
-        margin_init: Decimal,
-        margin_maint: Decimal,
         ts_event: u64,
         ts_init: u64,
         outcome: Option<String>,
         description: Option<String>,
+        margin_init: Option<Decimal>,
+        margin_maint: Option<Decimal>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_notional: Option<Money>,
@@ -73,10 +73,10 @@ impl BinaryOption {
             size_increment,
             maker_fee,
             taker_fee,
-            margin_init,
-            margin_maint,
             outcome.map(|x| Ustr::from(&x)),
             description.map(|x| Ustr::from(&x)),
+            margin_init,
+            margin_maint,
             max_quantity,
             min_quantity,
             max_notional,
@@ -223,13 +223,13 @@ impl BinaryOption {
 
     #[getter]
     #[pyo3(name = "margin_init")]
-    fn py_margin_init(&self) -> Decimal {
+    fn py_margin_init(&self) -> Option<Decimal> {
         self.margin_init
     }
 
     #[getter]
     #[pyo3(name = "margin_maint")]
-    fn py_margin_maint(&self) -> Decimal {
+    fn py_margin_maint(&self) -> Option<Decimal> {
         self.margin_maint
     }
 
@@ -283,8 +283,6 @@ impl BinaryOption {
         dict.set_item("size_precision", self.size_precision)?;
         dict.set_item("price_increment", self.price_increment.to_string())?;
         dict.set_item("size_increment", self.size_increment.to_string())?;
-        dict.set_item("margin_init", self.margin_init.to_string())?;
-        dict.set_item("margin_maint", self.margin_maint.to_string())?;
         dict.set_item("info", PyDict::new(py))?;
         dict.set_item("maker_fee", self.maker_fee.to_string())?;
         dict.set_item("taker_fee", self.taker_fee.to_string())?;
@@ -297,6 +295,14 @@ impl BinaryOption {
         match &self.description {
             Some(value) => dict.set_item("description", value.to_string())?,
             None => dict.set_item("description", py.None())?,
+        }
+        match self.margin_init {
+            Some(value) => dict.set_item("margin_init", value.to_string())?,
+            None => dict.set_item("margin_init", py.None())?,
+        }
+        match self.margin_maint {
+            Some(value) => dict.set_item("margin_maint", value.to_string())?,
+            None => dict.set_item("margin_maint", py.None())?,
         }
         match self.max_quantity {
             Some(value) => dict.set_item("max_quantity", value.to_string())?,

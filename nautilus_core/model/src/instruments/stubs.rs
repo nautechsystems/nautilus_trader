@@ -487,8 +487,8 @@ pub fn binary_option() -> BinaryOption {
         size_increment,
         Decimal::from(0), // TBD
         Decimal::from(0), // TBD
-        Decimal::from(0), // TBD
-        Decimal::from(0), // TBD
+        None,
+        None,
         None,
         None,
         None,

@@ -163,6 +163,30 @@ class TestCachePostgresAdapter:
         assert list(currencies.keys()) == ["BTC"]
 
     ################################################################################
+    # Instrument - Binary Option
+    ################################################################################
+    @pytest.mark.skip(reason="WIP")
+    @pytest.mark.asyncio
+    async def test_add_instrument_binary_option(self):
+        binary_option = TestInstrumentProvider.binary_option()
+        self.database.add_currency(binary_option.quote_currency)
+
+        # Check that we have added target currencies, because of foreign key constraints
+        await eventually(lambda: self.database.load_currencies())
+
+        currencies = self.database.load_currencies()
+        assert list(currencies.keys()) == ["USDC"]
+
+        # add instrument
+        self.database.add_instrument(binary_option)
+
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_instrument(binary_option.id))
+
+        # Assert
+        assert binary_option == self.database.load_instrument(binary_option.id)
+
+    ################################################################################
     # Instrument - Crypto Future
     ################################################################################
     @pytest.mark.asyncio
