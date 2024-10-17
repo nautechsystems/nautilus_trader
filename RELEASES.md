@@ -12,6 +12,7 @@ Released on TBD (UTC).
 - Added in the money probability field to GreeksData (#1995), thanks @faysou
 - Added `on_signal(signal)` handler for custom signal data
 - Improved usability of `OrderBookDepth10` by filling partial levels with null orders and zero counts
+- Improve Postgres config (#2010), thanks @filipmacek
 - Refined `DatabentoInstrumentProvider` handling of large bulks of instrument definitions (improved parent symbol support)
 - Standardized Betfair symbology to use hyphens instead of periods (prevents Betfair symbols being treated as composite)
 - Integration guide docs fixes (#1991), thanks @FarukhS52
