@@ -43,6 +43,26 @@ impl PostgresConnectOptions {
             database,
         }
     }
+    pub fn connection_string(&self) -> String {
+        format!(
+            "postgres://{username}:{password}@{host}:{port}/{database}",
+            username = self.username,
+            password = self.password,
+            host = self.host,
+            port = self.port,
+            database = self.database
+        )
+    }
+
+    pub fn default_administrator() -> Self {
+        PostgresConnectOptions::new(
+            String::from("localhost"),
+            5432,
+            String::from("postgres"),
+            String::from("pass"),
+            String::from("nautilus"),
+        )
+    }
 }
 
 impl Default for PostgresConnectOptions {
@@ -69,46 +89,35 @@ impl From<PostgresConnectOptions> for PgConnectOptions {
     }
 }
 
+// Gets the postgres connect options from provided arguments, environment variables or defaults
 pub fn get_postgres_connect_options(
     host: Option<String>,
     port: Option<u16>,
     username: Option<String>,
     password: Option<String>,
     database: Option<String>,
-) -> anyhow::Result<PostgresConnectOptions> {
-    let host = match host.or_else(|| std::env::var("POSTGRES_HOST").ok()) {
-        Some(host) => host,
-        None => anyhow::bail!("No host provided from argument or POSTGRES_HOST env variable"),
-    };
-    let port = match port.or_else(|| {
-        std::env::var("POSTGRES_PORT")
-            .map(|port| port.parse::<u16>().unwrap())
-            .ok()
-    }) {
-        Some(port) => port,
-        None => anyhow::bail!("No port provided from argument or POSTGRES_PORT env variable"),
-    };
-    let username = match username.or_else(|| std::env::var("POSTGRES_USERNAME").ok()) {
-        Some(username) => username,
-        None => {
-            anyhow::bail!("No username provided from argument or POSTGRES_USERNAME env variable")
-        }
-    };
-    let database = match database.or_else(|| std::env::var("POSTGRES_DATABASE").ok()) {
-        Some(database) => database,
-        None => {
-            anyhow::bail!("No database provided from argument or POSTGRES_DATABASE env variable")
-        }
-    };
-    let password = match password.or_else(|| std::env::var("POSTGRES_PASSWORD").ok()) {
-        Some(password) => password,
-        None => {
-            anyhow::bail!("No password provided from argument or POSTGRES_PASSWORD env variable")
-        }
-    };
-    Ok(PostgresConnectOptions::new(
-        host, port, username, password, database,
-    ))
+) -> PostgresConnectOptions {
+    let defaults = PostgresConnectOptions::default_administrator();
+    let host = host
+        .or_else(|| std::env::var("POSTGRES_HOST").ok())
+        .unwrap_or(defaults.host);
+    let port = port
+        .or_else(|| {
+            std::env::var("POSTGRES_PORT")
+                .map(|port| port.parse::<u16>().unwrap())
+                .ok()
+        })
+        .unwrap_or(defaults.port);
+    let username = username
+        .or_else(|| std::env::var("POSTGRES_USERNAME").ok())
+        .unwrap_or(defaults.username);
+    let database = database
+        .or_else(|| std::env::var("POSTGRES_DATABASE").ok())
+        .unwrap_or(defaults.database);
+    let password = password
+        .or_else(|| std::env::var("POSTGRES_PASSWORD").ok())
+        .unwrap_or(defaults.password);
+    PostgresConnectOptions::new(host, port, username, password, database)
 }
 
 pub async fn connect_pg(options: PgConnectOptions) -> anyhow::Result<PgPool> {
