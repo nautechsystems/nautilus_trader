@@ -23,7 +23,7 @@ Released on TBD (UTC).
 - Use Rust rate limiter for dYdX websockets (#1996, #1999), thanks @davidsblom
 - Improved error logs for dYdX websocket subscriptions (#1993), thanks @davidsblom
 - Standardized log and error message syntax in Rust
-- Continue porting `SimulatedExchange` to Rust (#1997, #1998, #2001), thanks @filipmacek
+- Continue porting `SimulatedExchange` to Rust (#1997, #1998, #2001, #2003, #2004, #2006, #2007), thanks @filipmacek
 
 ### Breaking Changes
 - Removed legacy `TardisQuoteDataLoader` (now redundant with new Rust implemented loader)
