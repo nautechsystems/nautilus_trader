@@ -13,25 +13,25 @@ CREATE TYPE TRAILING_OFFSET_TYPE AS ENUM('NO_TRAILING_OFFSET', 'PRICE', 'BASIS_P
 CREATE TYPE PRICE_TYPE AS ENUM('BID','ASK','MID','LAST');
 ------------------- TABLES -------------------
 
-CREATE TABLE IF NOT EXISTS "general" (
+CREATE TABLE IF NOT EXISTS "vGeneral" (
     id TEXT PRIMARY KEY NOT NULL,
     value bytea not null
 );
 
-CREATE TABLE IF NOT EXISTS "trader" (
+CREATE TABLE IF NOT EXISTS "vTrader" (
     id TEXT PRIMARY KEY NOT NULL,
     instance_id UUID
 );
 
-CREATE TABLE IF NOT EXISTS "account" (
+CREATE TABLE IF NOT EXISTS "vAccount" (
   id TEXT PRIMARY KEY NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS "client" (
+CREATE TABLE IF NOT EXISTS "vClient" (
     id TEXT PRIMARY KEY NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS "strategy" (
+CREATE TABLE IF NOT EXISTS "vStrategy" (
   id TEXT PRIMARY KEY NOT NULL,
   order_id_tag TEXT,
   oms_type TEXT,
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS "strategy" (
   manage_gtd_expiry BOOLEAN
 );
 
-CREATE TABLE IF NOT EXISTS "currency" (
+CREATE TABLE IF NOT EXISTS "vCurrency" (
     id TEXT PRIMARY KEY NOT NULL,
     precision INTEGER,
     iso4217 INTEGER,
@@ -47,14 +47,14 @@ CREATE TABLE IF NOT EXISTS "currency" (
     currency_type CURRENCY_TYPE
 );
 
-CREATE TABLE IF NOT EXISTS "instrument" (
+CREATE TABLE IF NOT EXISTS "vInstrument" (
     id TEXT PRIMARY KEY NOT NULL,
     kind TEXT,
     raw_symbol TEXT NOT NULL,
-    base_currency TEXT REFERENCES currency(id),
+    base_currency TEXT REFERENCES "vCurrency"(id),
     underlying TEXT,
-    quote_currency TEXT REFERENCES currency(id),
-    settlement_currency TEXT REFERENCES currency(id),
+    quote_currency TEXT REFERENCES "vCurrency"(id),
+    settlement_currency TEXT REFERENCES "vCurrency"(id),
     isin TEXT,
     asset_class ASSET_CLASS,
     exchange TEXT,
@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS "instrument" (
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS "order" (
+CREATE TABLE IF NOT EXISTS "vOrder" (
     id TEXT PRIMARY KEY NOT NULL,
     kind TEXT NOT NULL,
     order_type TEXT,
@@ -101,16 +101,16 @@ CREATE TABLE IF NOT EXISTS "order" (
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS "order_event" (
+CREATE TABLE IF NOT EXISTS "vOrderEvent" (
     id TEXT PRIMARY KEY NOT NULL,
     kind TEXT NOT NULL,
-    trader_id TEXT REFERENCES trader(id) ON DELETE CASCADE,
+    trader_id TEXT REFERENCES "vTrader"(id) ON DELETE CASCADE,
     strategy_id TEXT NOT NULL,
-    instrument_id TEXT REFERENCES instrument(id) ON DELETE CASCADE,
+    instrument_id TEXT REFERENCES "vInstrument"(id) ON DELETE CASCADE,
     client_order_id TEXT DEFAULT NULL,
-    client_id TEXT REFERENCES client(id) ON DELETE CASCADE,
+    client_id TEXT REFERENCES "vClient"(id) ON DELETE CASCADE,
     trade_id TEXT,
-    currency TEXT REFERENCES currency(id),
+    currency TEXT REFERENCES "vCurrency"(id),
     order_type TEXT,
     order_side TEXT,
     quantity TEXT,
@@ -150,11 +150,11 @@ CREATE TABLE IF NOT EXISTS "order_event" (
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS "account_event"(
+CREATE TABLE IF NOT EXISTS "vAccountEvent"(
     id TEXT PRIMARY KEY NOT NULL,
     kind TEXT NOT NULL,
-    account_id TEXT REFERENCES account(id) ON DELETE CASCADE,
-    base_currency TEXT REFERENCES currency(id),
+    account_id TEXT REFERENCES "vAccount"(id) ON DELETE CASCADE,
+    base_currency TEXT REFERENCES "vCurrency"(id),
     balances JSONB,
     margins JSONB,
     is_reported BOOLEAN DEFAULT FALSE,
@@ -164,9 +164,9 @@ CREATE TABLE IF NOT EXISTS "account_event"(
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS "trade" (
+CREATE TABLE IF NOT EXISTS "vTrade" (
     id BIGSERIAL PRIMARY KEY NOT NULL,
-    instrument_id TEXT REFERENCES instrument(id) ON DELETE CASCADE,
+    instrument_id TEXT REFERENCES "vInstrument"(id) ON DELETE CASCADE,
     price TEXT NOT NULL,
     quantity TEXT NOT NULL,
     aggressor_side AGGRESSOR_SIDE,
@@ -177,9 +177,9 @@ CREATE TABLE IF NOT EXISTS "trade" (
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS "quote" (
+CREATE TABLE IF NOT EXISTS "vQuote" (
     id BIGSERIAL PRIMARY KEY NOT NULL,
-    instrument_id TEXT REFERENCES instrument(id) ON DELETE CASCADE,
+    instrument_id TEXT REFERENCES "vInstrument"(id) ON DELETE CASCADE,
     bid_price TEXT NOT NULL,
     ask_price TEXT NOT NULL,
     bid_size TEXT NOT NULL,
@@ -190,9 +190,9 @@ CREATE TABLE IF NOT EXISTS "quote" (
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS "bar" (
+CREATE TABLE IF NOT EXISTS "vBar" (
     id BIGSERIAL PRIMARY KEY NOT NULL,
-    instrument_id TEXT REFERENCES instrument(id) ON DELETE CASCADE,
+    instrument_id TEXT REFERENCES "vInstrument"(id) ON DELETE CASCADE,
     step INTEGER NOT NULL,
     bar_aggregation BAR_AGGREGATION NOT NULL,
     price_type PRICE_TYPE NOT NULL,
@@ -208,7 +208,7 @@ CREATE TABLE IF NOT EXISTS "bar" (
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS "signal" (
+CREATE TABLE IF NOT EXISTS "vSignal" (
     id BIGSERIAL PRIMARY KEY NOT NULL,
     name TEXT NOT NULL,
     value TEXT NOT NULL,
@@ -218,7 +218,7 @@ CREATE TABLE IF NOT EXISTS "signal" (
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS "custom" (
+CREATE TABLE IF NOT EXISTS "vCustom" (
     id BIGSERIAL PRIMARY KEY NOT NULL,
     data_type TEXT NOT NULL,
     metadata JSONB NOT NULL,

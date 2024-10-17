@@ -59,7 +59,7 @@ impl DatabaseQueries {
     }
 
     pub async fn add(pool: &PgPool, key: String, value: Vec<u8>) -> anyhow::Result<()> {
-        sqlx::query("INSERT INTO general (id, value) VALUES ($1, $2)")
+        sqlx::query(r#"INSERT INTO "vGeneral" (id, value) VALUES ($1, $2)"#)
             .bind(key)
             .bind(value)
             .execute(pool)
@@ -69,7 +69,7 @@ impl DatabaseQueries {
     }
 
     pub async fn load(pool: &PgPool) -> anyhow::Result<HashMap<String, Vec<u8>>> {
-        sqlx::query_as::<_, GeneralRow>("SELECT * FROM general")
+        sqlx::query_as::<_, GeneralRow>(r#"SELECT * FROM "vGeneral""#)
             .fetch_all(pool)
             .await
             .map(|rows| {
@@ -84,7 +84,7 @@ impl DatabaseQueries {
 
     pub async fn add_currency(pool: &PgPool, currency: Currency) -> anyhow::Result<()> {
         sqlx::query(
-            "INSERT INTO currency (id, precision, iso4217, name, currency_type) VALUES ($1, $2, $3, $4, $5::currency_type) ON CONFLICT (id) DO NOTHING"
+            r#"INSERT INTO "vCurrency" (id, precision, iso4217, name, currency_type) VALUES ($1, $2, $3, $4, $5::currency_type) ON CONFLICT (id) DO NOTHING"#
         )
             .bind(currency.code.as_str())
             .bind(currency.precision as i32)
@@ -98,7 +98,7 @@ impl DatabaseQueries {
     }
 
     pub async fn load_currencies(pool: &PgPool) -> anyhow::Result<Vec<Currency>> {
-        sqlx::query_as::<_, CurrencyModel>("SELECT * FROM currency ORDER BY id ASC")
+        sqlx::query_as::<_, CurrencyModel>(r#"SELECT * FROM "vCurrency" ORDER BY id ASC"#)
             .fetch_all(pool)
             .await
             .map(|rows| rows.into_iter().map(|row| row.0).collect())
@@ -106,7 +106,7 @@ impl DatabaseQueries {
     }
 
     pub async fn load_currency(pool: &PgPool, code: &str) -> anyhow::Result<Option<Currency>> {
-        sqlx::query_as::<_, CurrencyModel>("SELECT * FROM currency WHERE id = $1")
+        sqlx::query_as::<_, CurrencyModel>(r#"SELECT * FROM "vCurrency" WHERE id = $1"#)
             .bind(code)
             .fetch_optional(pool)
             .await
@@ -120,7 +120,7 @@ impl DatabaseQueries {
         instrument: Box<dyn Instrument>,
     ) -> anyhow::Result<()> {
         sqlx::query(r#"
-            INSERT INTO "instrument" (
+            INSERT INTO "vInstrument" (
                 id, kind, raw_symbol, base_currency, underlying, quote_currency, settlement_currency, isin, asset_class, exchange,
                 multiplier, option_kind, is_inverse, strike_price, activation_ns, expiration_ns, price_precision, size_precision,
                 price_increment, size_increment, maker_fee, taker_fee, margin_init, margin_maint, lot_size, max_quantity, min_quantity, max_notional,
@@ -177,7 +177,7 @@ impl DatabaseQueries {
         pool: &PgPool,
         instrument_id: &InstrumentId,
     ) -> anyhow::Result<Option<InstrumentAny>> {
-        sqlx::query_as::<_, InstrumentAnyModel>("SELECT * FROM instrument WHERE id = $1")
+        sqlx::query_as::<_, InstrumentAnyModel>(r#"SELECT * FROM "vInstrument" WHERE id = $1"#)
             .bind(instrument_id.to_string())
             .fetch_optional(pool)
             .await
@@ -188,7 +188,7 @@ impl DatabaseQueries {
     }
 
     pub async fn load_instruments(pool: &PgPool) -> anyhow::Result<Vec<InstrumentAny>> {
-        sqlx::query_as::<_, InstrumentAnyModel>("SELECT * FROM instrument")
+        sqlx::query_as::<_, InstrumentAnyModel>(r#"SELECT * FROM "vInstrument""#)
             .fetch_all(pool)
             .await
             .map(|rows| rows.into_iter().map(|row| row.0).collect())
@@ -274,7 +274,7 @@ impl DatabaseQueries {
         client_order_id: ClientOrderId,
     ) -> anyhow::Result<bool> {
         sqlx::query(r#"
-            SELECT EXISTS(SELECT 1 FROM "order_event" WHERE client_order_id = $1 AND kind = 'OrderInitialized')
+            SELECT EXISTS(SELECT 1 FROM "vOrderEvent" WHERE client_order_id = $1 AND kind = 'OrderInitialized')
         "#)
             .bind(client_order_id.to_string())
             .fetch_one(pool)
@@ -289,7 +289,7 @@ impl DatabaseQueries {
     ) -> anyhow::Result<bool> {
         sqlx::query(
             r#"
-            SELECT EXISTS(SELECT 1 FROM "account_event" WHERE account_id = $1)
+            SELECT EXISTS(SELECT 1 FROM "vAccountEvent" WHERE account_id = $1)
         "#,
         )
         .bind(account_id.to_string())
@@ -310,7 +310,7 @@ impl DatabaseQueries {
         // TODO remove this when node and trader initialization is implemented
         sqlx::query(
             r#"
-            INSERT INTO "trader" (id) VALUES ($1) ON CONFLICT (id) DO NOTHING
+            INSERT INTO "vTrader" (id) VALUES ($1) ON CONFLICT (id) DO NOTHING
         "#,
         )
         .bind(order_event.trader_id().to_string())
@@ -324,7 +324,7 @@ impl DatabaseQueries {
         if let Some(client_id) = client_id {
             sqlx::query(
                 r#"
-                INSERT INTO "client" (id) VALUES ($1) ON CONFLICT (id) DO NOTHING
+                INSERT INTO "vClient" (id) VALUES ($1) ON CONFLICT (id) DO NOTHING
             "#,
             )
             .bind(client_id.to_string())
@@ -335,7 +335,7 @@ impl DatabaseQueries {
         }
 
         sqlx::query(r#"
-            INSERT INTO "order_event" (
+            INSERT INTO "vOrderEvent" (
                 id, kind, client_order_id, order_type, order_side, trader_id, client_id, strategy_id, instrument_id, trade_id, currency, quantity, time_in_force, liquidity_side,
                 post_only, reduce_only, quote_quantity, reconciliation, price, last_px, last_qty, trigger_price, trigger_type, limit_offset, trailing_offset,
                 trailing_offset_type, expire_time, display_qty, emulation_trigger, trigger_instrument_id, contingency_type,
@@ -412,7 +412,7 @@ impl DatabaseQueries {
         pool: &PgPool,
         client_order_id: &ClientOrderId,
     ) -> anyhow::Result<Vec<OrderEventAny>> {
-        sqlx::query_as::<_, OrderEventAnyModel>(r#"SELECT * FROM "order_event" event WHERE event.client_order_id = $1 ORDER BY created_at ASC"#)
+        sqlx::query_as::<_, OrderEventAnyModel>(r#"SELECT * FROM "vOrderEvent" event WHERE event.client_order_id = $1 ORDER BY created_at ASC"#)
         .bind(client_order_id.to_string())
         .fetch_all(pool)
         .await
@@ -442,7 +442,7 @@ impl DatabaseQueries {
         let mut orders: Vec<OrderAny> = Vec::new();
         let client_order_ids: Vec<ClientOrderId> = sqlx::query(
             r#"
-            SELECT DISTINCT client_order_id FROM "order_event"
+            SELECT DISTINCT client_order_id FROM "vOrderEvent"
         "#,
         )
         .fetch_all(pool)
@@ -486,7 +486,7 @@ impl DatabaseQueries {
 
         sqlx::query(
             r#"
-            INSERT INTO "account" (id) VALUES ($1) ON CONFLICT (id) DO NOTHING
+            INSERT INTO "vAccount" (id) VALUES ($1) ON CONFLICT (id) DO NOTHING
         "#,
         )
         .bind(account.id().to_string())
@@ -497,7 +497,7 @@ impl DatabaseQueries {
 
         let account_event = account.last_event().unwrap();
         sqlx::query(r#"
-            INSERT INTO "account_event" (
+            INSERT INTO "vAccountEvent" (
                 id, kind, account_id, base_currency, balances, margins, is_reported, ts_event, ts_init, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
@@ -532,7 +532,7 @@ impl DatabaseQueries {
         account_id: &AccountId,
     ) -> anyhow::Result<Vec<AccountState>> {
         sqlx::query_as::<_, AccountEventModel>(
-            r#"SELECT * FROM "account_event" WHERE account_id = $1 ORDER BY created_at ASC"#,
+            r#"SELECT * FROM "vAccountEvent" WHERE account_id = $1 ORDER BY created_at ASC"#,
         )
         .bind(account_id.to_string())
         .fetch_all(pool)
@@ -562,7 +562,7 @@ impl DatabaseQueries {
         let mut accounts: Vec<AccountAny> = Vec::new();
         let account_ids: Vec<AccountId> = sqlx::query(
             r#"
-            SELECT DISTINCT account_id FROM "account_event"
+            SELECT DISTINCT account_id FROM "vAccountEvent"
         "#,
         )
         .fetch_all(pool)
@@ -589,7 +589,7 @@ impl DatabaseQueries {
 
     pub async fn add_trade(pool: &PgPool, trade: &TradeTick) -> anyhow::Result<()> {
         sqlx::query(r#"
-            INSERT INTO "trade" (
+            INSERT INTO "vTrade" (
                 instrument_id, price, quantity, aggressor_side, venue_trade_id,
                 ts_event, ts_init, created_at, updated_at
             ) VALUES (
@@ -619,7 +619,7 @@ impl DatabaseQueries {
         instrument_id: &InstrumentId,
     ) -> anyhow::Result<Vec<TradeTick>> {
         sqlx::query_as::<_, TradeTickModel>(
-            r#"SELECT * FROM "trade" WHERE instrument_id = $1 ORDER BY ts_event ASC"#,
+            r#"SELECT * FROM "vTrade" WHERE instrument_id = $1 ORDER BY ts_event ASC"#,
         )
         .bind(instrument_id.to_string())
         .fetch_all(pool)
@@ -630,7 +630,7 @@ impl DatabaseQueries {
 
     pub async fn add_quote(pool: &PgPool, quote: &QuoteTick) -> anyhow::Result<()> {
         sqlx::query(r#"
-            INSERT INTO "quote" (
+            INSERT INTO "vQuote" (
                 instrument_id, bid_price, ask_price, bid_size, ask_size, ts_event, ts_init, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
@@ -659,7 +659,7 @@ impl DatabaseQueries {
         instrument_id: &InstrumentId,
     ) -> anyhow::Result<Vec<QuoteTick>> {
         sqlx::query_as::<_, QuoteTickModel>(
-            r#"SELECT * FROM "quote" WHERE instrument_id = $1 ORDER BY ts_event ASC"#,
+            r#"SELECT * FROM "vQuote" WHERE instrument_id = $1 ORDER BY ts_event ASC"#,
         )
         .bind(instrument_id.to_string())
         .fetch_all(pool)
@@ -671,7 +671,7 @@ impl DatabaseQueries {
     pub async fn add_bar(pool: &PgPool, bar: &Bar) -> anyhow::Result<()> {
         println!("Adding bar: {:?}", bar);
         sqlx::query(r#"
-            INSERT INTO "bar" (
+            INSERT INTO "vBar" (
                 instrument_id, step, bar_aggregation, price_type, aggregation_source, open, high, low, close, volume, ts_event, ts_init, created_at, updated_at
             ) VALUES (
                 $1, $2, $3::bar_aggregation, $4::price_type, $5::aggregation_source, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
@@ -705,7 +705,7 @@ impl DatabaseQueries {
         instrument_id: &InstrumentId,
     ) -> anyhow::Result<Vec<Bar>> {
         sqlx::query_as::<_, BarModel>(
-            r#"SELECT * FROM "bar" WHERE instrument_id = $1 ORDER BY ts_event ASC"#,
+            r#"SELECT * FROM "vBar" WHERE instrument_id = $1 ORDER BY ts_event ASC"#,
         )
         .bind(instrument_id.to_string())
         .fetch_all(pool)
@@ -723,7 +723,7 @@ impl DatabaseQueries {
             SELECT DISTINCT
                 client_order_id AS "client_order_id",
                 client_id AS "client_id"
-            FROM "order_event"
+            FROM "vOrderEvent"
         "#,
         )
         .fetch_all(pool)
@@ -738,7 +738,7 @@ impl DatabaseQueries {
     pub async fn add_signal(pool: &PgPool, signal: &Signal) -> anyhow::Result<()> {
         sqlx::query(
             r#"
-            INSERT INTO "signal" (
+            INSERT INTO "vSignal" (
                 name, value, ts_event, ts_init, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
@@ -762,7 +762,7 @@ impl DatabaseQueries {
 
     pub async fn load_signals(pool: &PgPool, name: &str) -> anyhow::Result<Vec<Signal>> {
         sqlx::query_as::<_, SignalModel>(
-            r#"SELECT * FROM "signal" WHERE name = $1 ORDER BY ts_init ASC"#,
+            r#"SELECT * FROM "vSignal" WHERE name = $1 ORDER BY ts_init ASC"#,
         )
         .bind(name)
         .fetch_all(pool)
@@ -774,7 +774,7 @@ impl DatabaseQueries {
     pub async fn add_custom_data(pool: &PgPool, data: &CustomData) -> anyhow::Result<()> {
         sqlx::query(
             r#"
-            INSERT INTO "custom" (
+            INSERT INTO "vCustom" (
                 data_type, metadata, value, ts_event, ts_init, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
@@ -815,7 +815,7 @@ impl DatabaseQueries {
             })?;
 
         sqlx::query_as::<_, CustomDataModel>(
-            r#"SELECT * FROM "custom" WHERE data_type = $1 AND metadata = $2 ORDER BY ts_init ASC"#,
+            r#"SELECT * FROM "vCustom" WHERE data_type = $1 AND metadata = $2 ORDER BY ts_init ASC"#,
         )
         .bind(data_type.type_name())
         .bind(metadata_json)
