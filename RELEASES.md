@@ -30,6 +30,7 @@ Released on TBD (UTC).
 - Removed legacy `TardisQuoteDataLoader` (now redundant with new Rust implemented loader)
 - Removed legacy `TardisTradeDataLoader` (now redundant with new Rust implemented loader)
 - Custom signals are now passed to `on_signal(signal)` instead of `on_data(data)`
+- Changed `BettingInstrument` Arrow schema fields `event_open_date` and `market_start_time` from `string` to `uint64`
 
 ### Fixes
 - Fixed `SocketClient` TLS implementation
