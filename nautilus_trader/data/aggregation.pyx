@@ -20,6 +20,7 @@ from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport TimeEvent
@@ -288,12 +289,28 @@ cdef class BarAggregator:
 
         self.bar_type = bar_type
         self._handler = handler
+        self._backup_handler = None
         self._await_partial = await_partial
         self._log = Logger(name=type(self).__name__)
         self._builder = BarBuilder(
             instrument=instrument,
             bar_type=self.bar_type,
         )
+
+    def init_batch_update(self, handler: Callable[[Bar], None], uint64_t ts_init) -> None:
+        self._backup_handler = self._handler
+        self._handler = handler
+        self._init_batch_time(ts_init)
+
+    def _init_batch_time(self, uint64_t ts_init):
+        pass
+
+    def finish_batch_update(self) -> None:
+        self._handler = self._backup_handler
+        self._finish_batch_time()
+
+    def _finish_batch_time(self) -> None:
+        pass
 
     def set_await_partial(self, bint value):
         self._await_partial = value
@@ -659,8 +676,8 @@ cdef class TimeBarAggregator(BarAggregator):
     build_with_no_updates : bool, default True
         If build and emit bars with no new market updates.
     timestamp_on_close : bool, default True
-        If timestamp `ts_event` will be bar close.
-        If False then timestamp will be bar open.
+        If True then timestamp will be the bar close's time.
+        If False then timestamp will be the bar open's time.
     interval_type : str, default 'left-open'
         Determines the type of interval used for time aggregation.
         - 'left-open': start time is excluded and end time is included (default).
@@ -680,6 +697,7 @@ cdef class TimeBarAggregator(BarAggregator):
         bint build_with_no_updates = True,
         bint timestamp_on_close = True,
         str interval_type = "left-open",
+        int composite_bar_build_delay=20, # in microsecond
     ):
         super().__init__(
             instrument=instrument,
@@ -694,12 +712,16 @@ cdef class TimeBarAggregator(BarAggregator):
         self._set_build_timer()
         self.next_close_ns = self._clock.next_time_ns(self._timer_name)
         self._build_on_next_tick = False
-        self._stored_open_ns = dt_to_unix_nanos(self.get_start_time())
+        cdef datetime now = self._clock.utc_now()
+        self._stored_open_ns = dt_to_unix_nanos(self.get_start_time(now))
         self._stored_close_ns = 0
         self._cached_update = None
         self._build_with_no_updates = build_with_no_updates
         self._timestamp_on_close = timestamp_on_close
+        self._composite_bar_build_delay = composite_bar_build_delay
         self._add_delay = bar_type.is_composite() and bar_type.composite().is_internally_aggregated()
+        self._batch_next_close_ns = 0
+        self._batch_mode = False
 
         if interval_type == "left-open":
             self._is_left_open = True
@@ -713,7 +735,7 @@ cdef class TimeBarAggregator(BarAggregator):
     def __str__(self):
         return f"{type(self).__name__}(interval_ns={self.interval_ns}, next_close_ns={self.next_close_ns})"
 
-    cpdef datetime get_start_time(self):
+    cpdef datetime get_start_time(self, datetime now, bint enable_delay=True):
         """
         Return the start time for the aggregators next bar.
 
@@ -723,7 +745,6 @@ cdef class TimeBarAggregator(BarAggregator):
             The timestamp (UTC).
 
         """
-        cdef datetime now = self._clock.utc_now()
         cdef int step = self.bar_type.spec.step
 
         cdef datetime start_time
@@ -777,7 +798,7 @@ cdef class TimeBarAggregator(BarAggregator):
             )
 
         if self._add_delay:
-            start_time += timedelta(microseconds=10)
+            start_time += timedelta(microseconds=self._composite_bar_build_delay)
 
         return start_time
 
@@ -829,19 +850,52 @@ cdef class TimeBarAggregator(BarAggregator):
 
     cpdef void _set_build_timer(self):
         self._timer_name = str(self.bar_type)
+        cdef datetime now = self._clock.utc_now()
+
         self._clock.set_timer(
             name=self._timer_name,
             interval=self.interval,
-            start_time=self.get_start_time(),
+            start_time=self.get_start_time(now),
             stop_time=None,
             callback=self._build_bar,
         )
 
         self._log.debug(f"Started timer {self._timer_name}")
 
+    def _init_batch_time(self, uint64_t ts_init):
+        self._batch_mode = True
+
+        start_time = self.get_start_time(unix_nanos_to_dt(ts_init), enable_delay=False)
+        self._batch_next_close_ns = dt_to_unix_nanos(start_time)
+
+        if self._batch_next_close_ns - self.interval_ns == ts_init:
+            self._batch_next_close_ns -= self.interval_ns
+
+        self._stored_open_ns = self._batch_next_close_ns - self.interval_ns
+
+    def _finish_batch_time(self):
+        # _batch_next_close_ns will be reset to 0 at the next non historical update
+        # so the batch logic can be applied a last time if necessary
+        self._batch_mode = False
+
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
+        # Logic for batch update after actor.request_quote_ticks or actor.request_trade_ticks
+        # Same reason as for _apply_update_bar below but also, for quote and trade tick updates,
+        # it's the only way to generate bars when processing historical ticks after a request, as no timer is involved
+        if self._batch_next_close_ns != 0 and ts_event > self._batch_next_close_ns and self._builder.initialized:
+            ts_init = self._batch_next_close_ns
+
+            # Adjusting the timestamp logic based on interval_type
+            if self._is_left_open:
+                used_ts_event = self._batch_next_close_ns if self._timestamp_on_close else self._stored_open_ns
+            else:
+                used_ts_event = self._stored_open_ns
+
+            self._build_and_send(ts_event=used_ts_event, ts_init=ts_init)
+
         self._builder.update(price, size, ts_event)
-        if self._build_on_next_tick:
+
+        if self._batch_next_close_ns == 0 and self._build_on_next_tick:
             ts_init = ts_event
 
             # Adjusting the timestamp logic based on interval_type
@@ -851,12 +905,69 @@ cdef class TimeBarAggregator(BarAggregator):
                 ts_event = self._stored_open_ns
 
             self._build_and_send(ts_event=ts_event, ts_init=ts_init)
+
             # Reset flag and clear stored close
             self._build_on_next_tick = False
             self._stored_close_ns = 0
 
+        # Logic for batch update after actor.request_quote_ticks or actor.request_trade_ticks
+        if self._batch_next_close_ns != 0:
+            if ts_event > self._batch_next_close_ns:
+                # We ensure that _batch_next_close_ns _stored_open_ns are coherent with the last builder update
+                while self._batch_next_close_ns < ts_event:
+                    self._batch_next_close_ns += self.interval_ns
+
+                self._stored_open_ns = self._batch_next_close_ns - self.interval_ns
+
+            # Delaying resetting _batch_next_close_ns allows to use the batch logic a last time if necessary
+            # when switching to non historical quotes, and avoid merging the existing bar data with new data
+            # if it shouldn't be (imagine ticks close but smaller or equal than 12:00, then non historical data starts
+            # after 12:00 and a 1m bar is supposed to be built at 12:00 but the next timer is at 12:01)
+            if not self._batch_mode:
+                self._batch_next_close_ns = 0
+
     cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        # Logic for batch update after actor.request_bars
+        # If the builder is already initialized when aggregating historical bars then _batch_next_close_ns is also
+        # well defined as seen below. Below is useful for example for CME close between 3.15pm and 3.30pm. With 30m bars
+        # aggregated from 1m bars, the next bar's ts_init would be at 3.31pm after the reopen.
+        if self._batch_next_close_ns != 0 and ts_init > self._batch_next_close_ns and self._builder.initialized:
+            used_ts_init = self._batch_next_close_ns
+
+            # Adjusting the timestamp logic based on interval_type
+            if self._is_left_open:
+                ts_event = self._batch_next_close_ns if self._timestamp_on_close else self._stored_open_ns
+            else:
+                ts_event = self._stored_open_ns
+
+            self._build_and_send(ts_event=ts_event, ts_init=used_ts_init)
+
         self._builder.update_bar(bar, volume, ts_init)
+
+        # Logic for batch update after actor.request_bars
+        if self._batch_next_close_ns != 0:
+            if ts_init > self._batch_next_close_ns:
+                # We ensure that _batch_next_close_ns _stored_open_ns are coherent with the last builder update
+                while self._batch_next_close_ns < ts_init:
+                    self._batch_next_close_ns += self.interval_ns
+
+                self._stored_open_ns = self._batch_next_close_ns - self.interval_ns
+
+            if ts_init == self._batch_next_close_ns:
+                # Adjusting the timestamp logic based on interval_type
+                if self._is_left_open:
+                    ts_event = self._batch_next_close_ns if self._timestamp_on_close else self._stored_open_ns
+                else:
+                    ts_event = self._stored_open_ns
+
+                self._build_and_send(ts_event=ts_event, ts_init=ts_init)
+
+                self._batch_next_close_ns += self.interval_ns
+                self._stored_open_ns = self._batch_next_close_ns - self.interval_ns
+
+            # See previous function, same idea
+            if not self._batch_mode:
+                self._batch_next_close_ns = 0
 
     cpdef void _build_bar(self, TimeEvent event):
         if not self._builder.initialized:

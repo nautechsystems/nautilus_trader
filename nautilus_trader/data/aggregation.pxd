@@ -63,6 +63,7 @@ cdef class BarAggregator:
     cdef Logger _log
     cdef BarBuilder _builder
     cdef object _handler
+    cdef object _backup_handler
     cdef bint _await_partial
 
     cdef readonly BarType bar_type
@@ -102,7 +103,10 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef bint _build_with_no_updates
     cdef bint _timestamp_on_close
     cdef bint _is_left_open
+    cdef int _composite_bar_build_delay
     cdef bint _add_delay
+    cdef uint64_t _batch_next_close_ns
+    cdef bint _batch_mode
 
     cdef readonly timedelta interval
     """The aggregators time interval.\n\n:returns: `timedelta`"""
@@ -111,7 +115,7 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef readonly uint64_t next_close_ns
     """The aggregators next closing time.\n\n:returns: `uint64_t`"""
 
-    cpdef datetime get_start_time(self)
+    cpdef datetime get_start_time(self, datetime now, bint enable_delay=*)
     cpdef void stop(self)
     cdef timedelta _get_interval(self)
     cdef uint64_t _get_interval_ns(self)
