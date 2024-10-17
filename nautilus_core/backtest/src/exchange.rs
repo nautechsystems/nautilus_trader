@@ -221,20 +221,20 @@ impl SimulatedExchange {
     pub fn best_bid_price(&self, instrument_id: InstrumentId) -> Option<Price> {
         self.matching_engines
             .get(&instrument_id)
-            .and_then(super::matching_engine::OrderMatchingEngine::best_bid_price)
+            .and_then(OrderMatchingEngine::best_bid_price)
     }
 
     #[must_use]
     pub fn best_ask_price(&self, instrument_id: InstrumentId) -> Option<Price> {
         self.matching_engines
             .get(&instrument_id)
-            .and_then(super::matching_engine::OrderMatchingEngine::best_ask_price)
+            .and_then(OrderMatchingEngine::best_ask_price)
     }
 
     pub fn get_book(&self, instrument_id: InstrumentId) -> Option<&OrderBook> {
         self.matching_engines
             .get(&instrument_id)
-            .map(super::matching_engine::OrderMatchingEngine::get_book)
+            .map(OrderMatchingEngine::get_book)
     }
 
     #[must_use]
@@ -262,12 +262,12 @@ impl SimulatedExchange {
             .and_then(|id| {
                 self.matching_engines
                     .get(&id)
-                    .map(super::matching_engine::OrderMatchingEngine::get_open_orders)
+                    .map(OrderMatchingEngine::get_open_orders)
             })
             .unwrap_or_else(|| {
                 self.matching_engines
                     .values()
-                    .flat_map(super::matching_engine::OrderMatchingEngine::get_open_orders)
+                    .flat_map(OrderMatchingEngine::get_open_orders)
                     .collect()
             })
     }
