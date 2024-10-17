@@ -25,6 +25,7 @@ use crate::instruments::{
     options_contract::OptionsContract, options_spread::OptionsSpread,
 };
 
+pub mod betting;
 pub mod binary_option;
 pub mod crypto_future;
 pub mod crypto_perpetual;

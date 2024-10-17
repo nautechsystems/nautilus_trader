@@ -1731,6 +1731,64 @@ class AccountState:
 
 # Instruments
 
+class BettingInstrument:
+    def __init__(
+        self,
+        id: InstrumentId,
+        raw_symbol: Symbol,
+        event_type_id: int,
+        event_type_name: str,
+        competition_id: str,
+        competition_name: str,
+        event_id: int,
+        event_name: str,
+        event_country_code: str,
+        event_open_date: int,
+        betting_type: str,
+        market_id: str,
+        market_type: str,
+        market_start_time: int,
+        selection_id: int,
+        selection_name: str,
+        selection_handicap: float,
+        currency: Currency,
+        price_precision: int,
+        size_precision: int,
+        price_increment: Price,
+        size_increment: Quantity,
+        maker_fee: Decimal,
+        taker_fee: Decimal,
+        ts_event: int,
+        ts_init: int,
+        outcome: str | None = None,
+        description: str | None = None,
+        max_quantity: Quantity | None = None,
+        min_quantity: Quantity | None = None,
+        max_notional: Money | None = None,
+        min_notional: Money | None = None,
+        max_price: Price | None = None,
+        min_price: Price | None = None,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> BettingInstrument: ...
+    @property
+    def id(self) -> InstrumentId: ...
+    @property
+    def raw_symbol(self) -> Symbol: ...
+    @property
+    def asset_class(self) -> AssetClass: ...
+    @property
+    def currency(self) -> Currency: ...
+    @property
+    def price_precision(self) -> int: ...
+    @property
+    def size_precision(self) -> int: ...
+    @property
+    def price_increment(self) -> Price: ...
+    @property
+    def size_increment(self) -> Quantity: ...
+    def to_dict(self) -> dict[str, Any]: ...
+
 class BinaryOption:
     def __init__(
         self,

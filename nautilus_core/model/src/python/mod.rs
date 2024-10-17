@@ -119,6 +119,7 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::types::balance::AccountBalance>()?;
     m.add_class::<crate::types::balance::MarginBalance>()?;
     // Instruments
+    m.add_class::<crate::instruments::betting::BettingInstrument>()?;
     m.add_class::<crate::instruments::binary_option::BinaryOption>()?;
     m.add_class::<crate::instruments::crypto_future::CryptoFuture>()?;
     m.add_class::<crate::instruments::crypto_perpetual::CryptoPerpetual>()?;
