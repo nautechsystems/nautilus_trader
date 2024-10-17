@@ -19,6 +19,8 @@ import pandas as pd
 import pytz
 
 from nautilus_trader.core.nautilus_pyo3 import AssetClass
+from nautilus_trader.core.nautilus_pyo3 import BettingInstrument
+from nautilus_trader.core.nautilus_pyo3 import BinaryOption
 from nautilus_trader.core.nautilus_pyo3 import CryptoFuture
 from nautilus_trader.core.nautilus_pyo3 import CryptoPerpetual
 from nautilus_trader.core.nautilus_pyo3 import Currency
@@ -39,6 +41,7 @@ from nautilus_trader.test_kit.rust.types_pyo3 import TestTypesProviderPyo3
 
 
 _USD = TestTypesProviderPyo3.currency_usd()
+_USDC = TestTypesProviderPyo3.currency_usdc()
 _USDT = TestTypesProviderPyo3.currency_usdt()
 _BTC = TestTypesProviderPyo3.currency_btc()
 _ETH = TestTypesProviderPyo3.currency_eth()
@@ -86,6 +89,68 @@ class TestInstrumentProviderPyo3:
     @staticmethod
     def audusd_sim():
         return TestInstrumentProviderPyo3.default_fx_ccy("AUD/USD")
+
+    @staticmethod
+    def betting_instrument() -> BettingInstrument:
+        return BettingInstrument(
+            id=InstrumentId.from_str("1-123456789.BETFAIR"),
+            raw_symbol=Symbol.from_str("1-123456789"),
+            betting_type="ODDS",
+            competition_id=12282733,
+            competition_name="NFL",
+            event_country_code="GB",
+            event_id=29678534,
+            event_name="NFL",
+            event_open_date=pd.Timestamp("2022-02-07 23:30:00+00:00").value,
+            event_type_id=6423,
+            event_type_name="American Football",
+            market_id="1-123456789",
+            market_name="AFC Conference Winner",
+            market_type="SPECIAL",
+            market_start_time=pd.Timestamp("2022-02-07 23:30:00+00:00").value,
+            selection_handicap=0.0,
+            selection_id=50214,
+            selection_name="Kansas City Chiefs",
+            currency=Currency.from_str("GBP"),
+            price_precision=2,  # BETFAIR_PRICE_PRECISION,
+            size_precision=2,  # BETFAIR_QUANTITY_PRECISION,
+            price_increment=Price.from_str("0.01"),
+            size_increment=Quantity.from_str("0.01"),
+            maker_fee=Decimal(0),  # TBD
+            taker_fee=Decimal(0),  # TBD
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def binary_option() -> BinaryOption:
+        raw_symbol = Symbol(
+            "0x12a0cb60174abc437bf1178367c72d11f069e1a3add20b148fb0ab4279b772b2-92544998123698303655208967887569360731013655782348975589292031774495159624905",
+        )
+        price_increment = Price.from_str("0.001")
+        size_increment = Quantity.from_str("0.01")
+        return BinaryOption(
+            id=InstrumentId(symbol=raw_symbol, venue=Venue("POLYMARKET")),
+            raw_symbol=raw_symbol,
+            outcome="Yes",
+            description="Will the outcome of this market be 'Yes'?",
+            asset_class=AssetClass.ALTERNATIVE,
+            currency=_USDC,
+            price_precision=price_increment.precision,
+            price_increment=price_increment,
+            size_precision=size_increment.precision,
+            size_increment=size_increment,
+            activation_ns=0,
+            expiration_ns=pd.Timestamp("2024-01-01", tz="UTC").value,
+            margin_init=Decimal(0),  # TBD
+            margin_maint=Decimal(0),  # TBD
+            max_quantity=None,
+            min_quantity=Quantity.from_int(5),
+            maker_fee=Decimal(0),  # TBD
+            taker_fee=Decimal(0),  # TBD
+            ts_event=0,
+            ts_init=0,
+        )
 
     @staticmethod
     def ethusdt_perp_binance() -> CryptoPerpetual:
