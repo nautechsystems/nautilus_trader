@@ -266,7 +266,7 @@ impl PostgresCacheDatabase {
         database: Option<String>,
     ) -> Result<Self, sqlx::Error> {
         let pg_connect_options =
-            get_postgres_connect_options(host, port, username, password, database).unwrap();
+            get_postgres_connect_options(host, port, username, password, database);
         let pool = connect_pg(pg_connect_options.clone().into()).await.unwrap();
         let (tx, rx) = unbounded_channel::<DatabaseQuery>();
 
@@ -326,10 +326,7 @@ pub async fn reset_pg_database(pg_options: Option<PostgresConnectOptions>) -> an
 
 pub async fn get_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
     reset_pg_database(None).await?;
-    // run tests as nautilus user
-    let connect_options = PostgresConnectOptionsBuilder::default()
-        .username(String::from("nautilus"))
-        .build()?;
+    let connect_options = get_postgres_connect_options(None, None, None, None, None);
     Ok(PostgresCacheDatabase::connect(
         Some(connect_options.host),
         Some(connect_options.port),
