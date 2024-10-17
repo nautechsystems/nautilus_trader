@@ -39,7 +39,7 @@ impl BettingInstrument {
         raw_symbol: Symbol,
         event_type_id: u64,
         event_type_name: String,
-        competition_id: String,
+        competition_id: u64,
         competition_name: String,
         event_id: u64,
         event_name: String,
@@ -74,7 +74,7 @@ impl BettingInstrument {
             raw_symbol,
             event_type_id,
             Ustr::from(&event_type_name),
-            Ustr::from(&competition_id),
+            competition_id,
             Ustr::from(&competition_name),
             event_id,
             Ustr::from(&event_name),
@@ -163,8 +163,8 @@ impl BettingInstrument {
 
     #[getter]
     #[pyo3(name = "competition_id")]
-    fn py_competition_id(&self) -> &str {
-        self.competition_id.as_str()
+    fn py_competition_id(&self) -> u64 {
+        self.competition_id
     }
 
     #[getter]
@@ -355,7 +355,7 @@ impl BettingInstrument {
         dict.set_item("raw_symbol", self.raw_symbol.to_string())?;
         dict.set_item("event_type_id", self.event_type_id)?;
         dict.set_item("event_type_name", self.event_type_name.to_string())?;
-        dict.set_item("competition_id", self.competition_id.to_string())?;
+        dict.set_item("competition_id", self.competition_id)?;
         dict.set_item("competition_name", self.competition_name.to_string())?;
         dict.set_item("event_id", self.event_id)?;
         dict.set_item("event_name", self.event_name.to_string())?;
@@ -364,8 +364,8 @@ impl BettingInstrument {
         dict.set_item("betting_type", self.betting_type.to_string())?;
         dict.set_item("market_id", self.market_id.to_string())?;
         dict.set_item("market_name", self.market_name.to_string())?;
-        dict.set_item("market_start_time", self.market_start_time.to_string())?;
         dict.set_item("market_type", self.market_type.to_string())?;
+        dict.set_item("market_start_time", self.market_start_time.as_u64())?;
         dict.set_item("selection_id", self.selection_id)?;
         dict.set_item("selection_name", self.selection_name.to_string())?;
         dict.set_item("selection_handicap", self.selection_handicap)?;

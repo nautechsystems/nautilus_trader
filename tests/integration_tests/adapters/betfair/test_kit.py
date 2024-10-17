@@ -658,7 +658,7 @@ class BetfairDataProvider:
         return BettingInstrument(
             venue_name=BETFAIR_VENUE.value,
             betting_type="ODDS",
-            competition_id="12282733",
+            competition_id=12282733,
             competition_name="NFL",
             event_country_code="GB",
             event_id="29678534",

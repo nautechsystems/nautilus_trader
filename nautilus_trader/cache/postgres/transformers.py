@@ -42,6 +42,7 @@ from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderTriggered
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.events.account import AccountState
+from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.model.instruments import CryptoFuture
 from nautilus_trader.model.instruments import CryptoPerpetual
@@ -84,7 +85,11 @@ def transform_currency_to_pyo3(currency: Currency) -> nautilus_pyo3.Currency:
 # Instruments
 ################################################################################
 def transform_instrument_to_pyo3(instrument: Instrument):
-    if isinstance(instrument, CryptoFuture):
+    if isinstance(instrument, BettingInstrument):
+        return nautilus_pyo3.BettingInstrument.from_dict(BettingInstrument.to_dict(instrument))
+    elif isinstance(instrument, BinaryOption):
+        return nautilus_pyo3.BinaryOption.from_dict(BinaryOption.to_dict(instrument))
+    elif isinstance(instrument, CryptoFuture):
         return nautilus_pyo3.CryptoFuture.from_dict(CryptoFuture.to_dict(instrument))
     elif isinstance(instrument, CryptoPerpetual):
         return nautilus_pyo3.CryptoPerpetual.from_dict(CryptoPerpetual.to_dict(instrument))
@@ -104,7 +109,9 @@ def transform_instrument_to_pyo3(instrument: Instrument):
 def transform_instrument_from_pyo3(instrument_pyo3) -> Instrument | None:  # noqa: C901
     if instrument_pyo3 is None:
         return None
-    if isinstance(instrument_pyo3, nautilus_pyo3.BinaryOption):
+    if isinstance(instrument_pyo3, nautilus_pyo3.BettingInstrument):
+        return BettingInstrument.from_pyo3(instrument_pyo3)
+    elif isinstance(instrument_pyo3, nautilus_pyo3.BinaryOption):
         return BinaryOption.from_pyo3(instrument_pyo3)
     elif isinstance(instrument_pyo3, nautilus_pyo3.CryptoFuture):
         return CryptoFuture.from_pyo3(instrument_pyo3)
