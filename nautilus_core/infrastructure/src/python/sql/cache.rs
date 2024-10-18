@@ -58,10 +58,8 @@ impl PostgresCacheDatabase {
     }
 
     #[pyo3(name = "flush_db")]
-    fn py_flush_db(slf: PyRef<'_, Self>) -> PyResult<()> {
-        get_runtime()
-            .block_on(async { DatabaseQueries::truncate(&slf.pool).await })
-            .map_err(to_pyruntime_err)
+    fn py_flush_db(&mut self) -> PyResult<()> {
+        self.flush().map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "load")]

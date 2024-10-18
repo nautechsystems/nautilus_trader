@@ -61,6 +61,9 @@ class CachePostgresAdapter(CacheDatabaseFacade):
         super().__init__(config)
         self._backing: PostgresCacheDatabase = PostgresCacheDatabase.connect()
 
+    def dispose(self):
+        self._backing.close()
+
     def flush(self):
         self._backing.flush_db()
 

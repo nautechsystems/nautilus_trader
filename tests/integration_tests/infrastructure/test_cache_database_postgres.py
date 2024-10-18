@@ -108,6 +108,7 @@ class TestCachePostgresAdapter:
 
     def teardown(self):
         self.database.flush()
+        self.database.dispose()
 
     ################################################################################
     # General
