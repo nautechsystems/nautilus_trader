@@ -32,8 +32,9 @@ use nautilus_model::{
         trade::TradeTick,
     },
     enums::{
-        AccountType, AggregationSource, AggressorSide, BookType, ContingencyType, LiquiditySide,
-        MarketStatus, MarketStatusAction, OmsType, OrderSide, OrderStatus, OrderType, PriceType,
+        AccountType, AggregationSource, AggressorSide, BarAggregation, BookType, ContingencyType,
+        LiquiditySide, MarketStatus, MarketStatusAction, OmsType, OrderSide, OrderStatus,
+        OrderType, PriceType,
     },
     events::order::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderExpired,
@@ -254,6 +255,11 @@ impl OrderMatchingEngine {
         let bar_type = bar.bar_type;
         // Do not process internally aggregated bars
         if bar_type.aggregation_source() == AggregationSource::Internal {
+            return;
+        }
+
+        // Do not process monthly bars (no `timedelta` available)
+        if bar_type.spec().aggregation == BarAggregation::Month {
             return;
         }
 
