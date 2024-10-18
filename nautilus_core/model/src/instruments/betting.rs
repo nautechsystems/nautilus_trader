@@ -384,12 +384,13 @@ impl Instrument for BettingInstrument {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    // TODO: WIP
-    // use crate::instruments::{betting::BettingInstrument, stubs::*};
-    //
-    // #[rstest]
-    // fn test_betting_instrument(betting: BettingInstrument) {
-    //     let betting = betting.clone();
-    //     assert_eq!(betting, cloned);
-    // }
+    use rstest::rstest;
+
+    use crate::instruments::{betting::BettingInstrument, stubs::*};
+
+    #[rstest]
+    fn test_equality(betting: BettingInstrument) {
+        let cloned = betting.clone();
+        assert_eq!(betting, cloned);
+    }
 }

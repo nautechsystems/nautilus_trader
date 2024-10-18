@@ -406,3 +406,25 @@ impl BettingInstrument {
         Ok(dict.into())
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use pyo3::{prelude::*, prepare_freethreaded_python, types::PyDict};
+    use rstest::rstest;
+
+    use crate::instruments::{betting::BettingInstrument, stubs::*};
+
+    #[rstest]
+    fn test_betting_instrument_dict_round_trip(betting: BettingInstrument) {
+        prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            let values = betting.py_to_dict(py).unwrap();
+            let values: Py<PyDict> = values.extract(py).unwrap();
+            let new_betting = BettingInstrument::py_from_dict(py, values).unwrap();
+            assert_eq!(betting, new_betting);
+        })
+    }
+}
