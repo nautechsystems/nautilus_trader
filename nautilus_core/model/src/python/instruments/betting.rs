@@ -418,7 +418,7 @@ mod tests {
     use crate::instruments::{betting::BettingInstrument, stubs::*};
 
     #[rstest]
-    fn test_betting_instrument_dict_round_trip(betting: BettingInstrument) {
+    fn test_dict_round_trip(betting: BettingInstrument) {
         prepare_freethreaded_python();
         Python::with_gil(|py| {
             let values = betting.py_to_dict(py).unwrap();
