@@ -344,7 +344,7 @@ mod tests {
     use crate::instruments::{binary_option::BinaryOption, stubs::*};
 
     #[rstest]
-    fn test_binary_option(binary_option: BinaryOption) {
+    fn test_equality(binary_option: BinaryOption) {
         let cloned = binary_option.clone();
         assert_eq!(binary_option, cloned);
     }

@@ -19,9 +19,9 @@ use nautilus_core::python::to_pyvalue_err;
 use pyo3::{IntoPy, PyObject, PyResult, Python};
 
 use crate::instruments::{
-    any::InstrumentAny, binary_option::BinaryOption, crypto_future::CryptoFuture,
-    crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair, equity::Equity,
-    futures_contract::FuturesContract, futures_spread::FuturesSpread,
+    any::InstrumentAny, betting::BettingInstrument, binary_option::BinaryOption,
+    crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual, currency_pair::CurrencyPair,
+    equity::Equity, futures_contract::FuturesContract, futures_spread::FuturesSpread,
     options_contract::OptionsContract, options_spread::OptionsSpread,
 };
 
@@ -38,6 +38,7 @@ pub mod options_spread;
 
 pub fn instrument_any_to_pyobject(py: Python, instrument: InstrumentAny) -> PyResult<PyObject> {
     match instrument {
+        InstrumentAny::Betting(inst) => Ok(inst.into_py(py)),
         InstrumentAny::BinaryOption(inst) => Ok(inst.into_py(py)),
         InstrumentAny::CryptoFuture(inst) => Ok(inst.into_py(py)),
         InstrumentAny::CryptoPerpetual(inst) => Ok(inst.into_py(py)),
@@ -47,12 +48,14 @@ pub fn instrument_any_to_pyobject(py: Python, instrument: InstrumentAny) -> PyRe
         InstrumentAny::FuturesSpread(inst) => Ok(inst.into_py(py)),
         InstrumentAny::OptionsContract(inst) => Ok(inst.into_py(py)),
         InstrumentAny::OptionsSpread(inst) => Ok(inst.into_py(py)),
-        _ => Err(to_pyvalue_err("Unsupported instrument type")),
     }
 }
 
 pub fn pyobject_to_instrument_any(py: Python, instrument: PyObject) -> PyResult<InstrumentAny> {
     match instrument.getattr(py, "type_str")?.extract::<&str>(py)? {
+        stringify!(BettingInstrument) => Ok(InstrumentAny::Betting(
+            instrument.extract::<BettingInstrument>(py)?,
+        )),
         stringify!(BinaryOption) => Ok(InstrumentAny::BinaryOption(
             instrument.extract::<BinaryOption>(py)?,
         )),
