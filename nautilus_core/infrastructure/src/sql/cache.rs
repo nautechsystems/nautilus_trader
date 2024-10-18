@@ -38,10 +38,6 @@ use nautilus_model::{
     types::currency::Currency,
 };
 use sqlx::{postgres::PgConnectOptions, PgPool};
-use tokio::{
-    sync::mpsc::{error::TryRecvError, unbounded_channel, UnboundedReceiver, UnboundedSender},
-    time::sleep,
-};
 use ustr::Ustr;
 
 use crate::sql::{
@@ -59,7 +55,7 @@ use crate::sql::{
 )]
 pub struct PostgresCacheDatabase {
     pub pool: PgPool,
-    tx: UnboundedSender<DatabaseQuery>,
+    tx: tokio::sync::mpsc::UnboundedSender<DatabaseQuery>,
     handle: tokio::task::JoinHandle<()>,
 }
 
@@ -91,40 +87,42 @@ impl PostgresCacheDatabase {
         let pg_connect_options =
             get_postgres_connect_options(host, port, username, password, database);
         let pool = connect_pg(pg_connect_options.clone().into()).await.unwrap();
-        let (tx, rx) = unbounded_channel::<DatabaseQuery>();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<DatabaseQuery>();
 
         // Spawn a task to handle messages
         let handle = tokio::spawn(async move {
-            PostgresCacheDatabase::handle_message(rx, pg_connect_options.clone().into()).await;
+            PostgresCacheDatabase::process_commands(rx, pg_connect_options.clone().into()).await;
         });
         Ok(PostgresCacheDatabase { pool, tx, handle })
     }
 
-    async fn handle_message(
-        mut rx: UnboundedReceiver<DatabaseQuery>,
+    async fn process_commands(
+        mut rx: tokio::sync::mpsc::UnboundedReceiver<DatabaseQuery>,
         pg_connect_options: PgConnectOptions,
     ) {
+        tracing::debug!("Starting cache processing");
+
         let pool = connect_pg(pg_connect_options).await.unwrap();
+
         // Buffering
         let mut buffer: VecDeque<DatabaseQuery> = VecDeque::new();
         let mut last_drain = Instant::now();
-        let buffer_interval = Duration::from_millis(100); // TODO: Add to config
-        let recv_interval = Duration::from_millis(1);
 
+        // TODO: Add `buffer_interval_ms` to config, setting this above 0 currently fails tests
+        let buffer_interval = Duration::from_millis(0);
+
+        // Continue to receive and handle messages until channel is hung up
         loop {
             if last_drain.elapsed() >= buffer_interval && !buffer.is_empty() {
-                // Drain buffer
                 drain_buffer(&pool, &mut buffer).await;
                 last_drain = Instant::now();
             } else {
-                // Continue to receive and handle messages until channel is hung up
-                match rx.try_recv() {
-                    Ok(msg) => match msg {
+                match rx.recv().await {
+                    Some(msg) => match msg {
                         DatabaseQuery::Close => break,
                         _ => buffer.push_back(msg),
                     },
-                    Err(TryRecvError::Empty) => sleep(recv_interval).await,
-                    Err(TryRecvError::Disconnected) => break,
+                    None => break, // Channel hung up
                 }
             }
         }
@@ -133,6 +131,8 @@ impl PostgresCacheDatabase {
         if !buffer.is_empty() {
             drain_buffer(&pool, &mut buffer).await;
         }
+
+        tracing::debug!("Stopped cache processing");
     }
 }
 
