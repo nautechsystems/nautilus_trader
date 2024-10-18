@@ -62,6 +62,9 @@ cdef class DataEngine(Component):
     cdef readonly list[InstrumentId] _subscribed_synthetic_trades
     cdef readonly dict[InstrumentId, list[OrderBookDelta]] _buffered_deltas_map
     cdef readonly dict[str, SnapshotInfo] _snapshot_info
+    cdef readonly dict[BarType, list[BarType]] _composite_bar_types
+    cdef readonly dict[InstrumentId, list[BarType]] _trade_ticks_bar_types
+    cdef readonly dict[InstrumentId, list[BarType]] _quote_ticks_bar_types
     cdef readonly bint _time_bars_build_with_no_updates
     cdef readonly bint _time_bars_timestamp_on_close
     cdef readonly str _time_bars_interval_type
@@ -162,9 +165,11 @@ cdef class DataEngine(Component):
 
     cpdef void _handle_response(self, DataResponse response)
     cpdef void _handle_instruments(self, list instruments)
-    cpdef void _handle_quote_ticks(self, list ticks)
-    cpdef void _handle_trade_ticks(self, list ticks)
-    cpdef void _handle_bars(self, list bars, Bar partial)
+    cpdef dict _handle_quote_ticks(self, list ticks)
+    cdef dict _aggregate_ticks(self, list ticks, list bar_types, bint is_quote_tick)
+    cpdef dict _handle_trade_ticks(self, list ticks)
+    cpdef dict _handle_bars(self, list bars, Bar partial)
+    cdef dict _handle_composite_bars(self, list bars)
 
 # -- INTERNAL -------------------------------------------------------------------------------------
 
