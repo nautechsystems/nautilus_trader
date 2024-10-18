@@ -35,6 +35,7 @@ from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport ContingencyType
+from nautilus_trader.core.rust.model cimport InstrumentCloseType
 from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport MarketStatus
 from nautilus_trader.core.rust.model cimport MarketStatusAction
@@ -60,12 +61,12 @@ from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.trailing cimport TrailingStopCalculator
 from nautilus_trader.model.book cimport OrderBook
+from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport BookOrder
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
-from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderCancelRejected
@@ -484,6 +485,9 @@ cdef class OrderMatchingEngine:
         cdef BarType bar_type = bar.bar_type
         if bar_type.aggregation_source == AggregationSource.INTERNAL:
             return  # Do not process internally aggregated bars
+
+        if bar_type.spec.aggregation == BarAggregation.MONTH:
+            return  # Do not process monthly bars (there is no available `timedelta`)
 
         cdef InstrumentId instrument_id = bar_type.instrument_id
         cdef BarType execution_bar_type = self._execution_bar_types.get(instrument_id)
