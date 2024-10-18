@@ -389,7 +389,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    fn load(&mut self) -> anyhow::Result<HashMap<String, Bytes>> {
+    fn load(&self) -> anyhow::Result<HashMap<String, Bytes>> {
         let pool = self.pool.clone();
         let (tx, rx) = std::sync::mpsc::channel();
         tokio::spawn(async move {
@@ -527,11 +527,11 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         todo!()
     }
 
-    fn load_index_order_position(&mut self) -> anyhow::Result<HashMap<ClientOrderId, Position>> {
+    fn load_index_order_position(&self) -> anyhow::Result<HashMap<ClientOrderId, Position>> {
         todo!()
     }
 
-    fn load_index_order_client(&mut self) -> anyhow::Result<HashMap<ClientOrderId, ClientId>> {
+    fn load_index_order_client(&self) -> anyhow::Result<HashMap<ClientOrderId, ClientId>> {
         let pool = self.pool.clone();
         let (tx, rx) = std::sync::mpsc::channel();
         tokio::spawn(async move {
@@ -553,7 +553,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    fn load_currency(&mut self, code: &Ustr) -> anyhow::Result<Option<Currency>> {
+    fn load_currency(&self, code: &Ustr) -> anyhow::Result<Option<Currency>> {
         let pool = self.pool.clone();
         let code = code.to_owned(); // Clone the code
         let (tx, rx) = std::sync::mpsc::channel();
@@ -577,7 +577,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn load_instrument(
-        &mut self,
+        &self,
         instrument_id: &InstrumentId,
     ) -> anyhow::Result<Option<InstrumentAny>> {
         let pool = self.pool.clone();
@@ -602,14 +602,11 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    fn load_synthetic(
-        &mut self,
-        instrument_id: &InstrumentId,
-    ) -> anyhow::Result<SyntheticInstrument> {
+    fn load_synthetic(&self, instrument_id: &InstrumentId) -> anyhow::Result<SyntheticInstrument> {
         todo!()
     }
 
-    fn load_account(&mut self, account_id: &AccountId) -> anyhow::Result<Option<AccountAny>> {
+    fn load_account(&self, account_id: &AccountId) -> anyhow::Result<Option<AccountAny>> {
         let pool = self.pool.clone();
         let account_id = account_id.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
@@ -632,7 +629,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    fn load_order(&mut self, client_order_id: &ClientOrderId) -> anyhow::Result<Option<OrderAny>> {
+    fn load_order(&self, client_order_id: &ClientOrderId) -> anyhow::Result<Option<OrderAny>> {
         let pool = self.pool.clone();
         let client_order_id = client_order_id.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
@@ -653,84 +650,81 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    fn load_position(&mut self, position_id: &PositionId) -> anyhow::Result<Position> {
+    fn load_position(&self, position_id: &PositionId) -> anyhow::Result<Position> {
         todo!()
     }
 
-    fn load_actor(&mut self, component_id: &ComponentId) -> anyhow::Result<HashMap<String, Bytes>> {
+    fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<HashMap<String, Bytes>> {
         todo!()
     }
 
-    fn delete_actor(&mut self, component_id: &ComponentId) -> anyhow::Result<()> {
+    fn delete_actor(&self, component_id: &ComponentId) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn load_strategy(
-        &mut self,
-        strategy_id: &StrategyId,
-    ) -> anyhow::Result<HashMap<String, Bytes>> {
+    fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<HashMap<String, Bytes>> {
         todo!()
     }
 
-    fn delete_strategy(&mut self, component_id: &StrategyId) -> anyhow::Result<()> {
+    fn delete_strategy(&self, component_id: &StrategyId) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn add(&mut self, key: String, value: Bytes) -> anyhow::Result<()> {
+    fn add(&self, key: String, value: Bytes) -> anyhow::Result<()> {
         let query = DatabaseQuery::Add(key, value.into());
         self.tx
             .send(query)
             .map_err(|e| anyhow::anyhow!("Failed to send query to database message handler: {e}"))
     }
 
-    fn add_currency(&mut self, currency: &Currency) -> anyhow::Result<()> {
+    fn add_currency(&self, currency: &Currency) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddCurrency(*currency);
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to query add_currency to database message handler: {e}")
         })
     }
 
-    fn add_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
+    fn add_instrument(&self, instrument: &InstrumentAny) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddInstrument(instrument.clone());
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query add_instrument to database message handler: {e}")
         })
     }
 
-    fn add_synthetic(&mut self, synthetic: &SyntheticInstrument) -> anyhow::Result<()> {
+    fn add_synthetic(&self, synthetic: &SyntheticInstrument) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn add_account(&mut self, account: &AccountAny) -> anyhow::Result<()> {
+    fn add_account(&self, account: &AccountAny) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddAccount(account.clone(), false);
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query add_account to database message handler: {e}")
         })
     }
 
-    fn add_order(&mut self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()> {
+    fn add_order(&self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddOrder(order.clone(), client_id, false);
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query add_order to database message handler: {e}")
         })
     }
 
-    fn add_position(&mut self, position: &Position) -> anyhow::Result<()> {
+    fn add_position(&self, position: &Position) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn add_order_book(&mut self, order_book: &OrderBook) -> anyhow::Result<()> {
+    fn add_order_book(&self, order_book: &OrderBook) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn add_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
+    fn add_quote(&self, quote: &QuoteTick) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddQuote(quote.to_owned());
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query add_quote to database message handler: {e}")
         })
     }
 
-    fn load_quotes(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<QuoteTick>> {
+    fn load_quotes(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<QuoteTick>> {
         let pool = self.pool.clone();
         let instrument_id = instrument_id.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
@@ -755,14 +749,14 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    fn add_trade(&mut self, trade: &TradeTick) -> anyhow::Result<()> {
+    fn add_trade(&self, trade: &TradeTick) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddTrade(trade.to_owned());
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query add_trade to database message handler: {e}")
         })
     }
 
-    fn load_trades(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<TradeTick>> {
+    fn load_trades(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<TradeTick>> {
         let pool = self.pool.clone();
         let instrument_id = instrument_id.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
@@ -787,14 +781,14 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    fn add_bar(&mut self, bar: &Bar) -> anyhow::Result<()> {
+    fn add_bar(&self, bar: &Bar) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddBar(bar.to_owned());
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query add_bar to database message handler: {e}")
         })
     }
 
-    fn load_bars(&mut self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<Bar>> {
+    fn load_bars(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<Bar>> {
         let pool = self.pool.clone();
         let instrument_id = instrument_id.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
@@ -819,14 +813,14 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    fn add_signal(&mut self, signal: &Signal) -> anyhow::Result<()> {
+    fn add_signal(&self, signal: &Signal) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddSignal(signal.to_owned());
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query add_signal to database message handler: {e}")
         })
     }
 
-    fn load_signals(&mut self, name: &str) -> anyhow::Result<Vec<Signal>> {
+    fn load_signals(&self, name: &str) -> anyhow::Result<Vec<Signal>> {
         let pool = self.pool.clone();
         let name = name.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
@@ -849,14 +843,14 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
-    fn add_custom_data(&mut self, data: &CustomData) -> anyhow::Result<()> {
+    fn add_custom_data(&self, data: &CustomData) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddCustom(data.to_owned());
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query add_signal to database message handler: {e}")
         })
     }
 
-    fn load_custom_data(&mut self, data_type: &DataType) -> anyhow::Result<Vec<CustomData>> {
+    fn load_custom_data(&self, data_type: &DataType) -> anyhow::Result<Vec<CustomData>> {
         let pool = self.pool.clone();
         let data_type = data_type.to_owned();
         let (tx, rx) = std::sync::mpsc::channel();
@@ -880,7 +874,7 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn index_venue_order_id(
-        &mut self,
+        &self,
         client_order_id: ClientOrderId,
         venue_order_id: VenueOrderId,
     ) -> anyhow::Result<()> {
@@ -888,48 +882,48 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn index_order_position(
-        &mut self,
+        &self,
         client_order_id: ClientOrderId,
         position_id: PositionId,
     ) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn update_actor(&mut self) -> anyhow::Result<()> {
+    fn update_actor(&self) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn update_strategy(&mut self) -> anyhow::Result<()> {
+    fn update_strategy(&self) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn update_account(&mut self, account: &AccountAny) -> anyhow::Result<()> {
+    fn update_account(&self, account: &AccountAny) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddAccount(account.clone(), true);
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query add_account to database message handler: {e}")
         })
     }
 
-    fn update_order(&mut self, event: &OrderEventAny) -> anyhow::Result<()> {
+    fn update_order(&self, event: &OrderEventAny) -> anyhow::Result<()> {
         let query = DatabaseQuery::UpdateOrder(event.clone());
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to send query update_order to database message handler: {e}")
         })
     }
 
-    fn update_position(&mut self, position: &Position) -> anyhow::Result<()> {
+    fn update_position(&self, position: &Position) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn snapshot_order_state(&mut self, order: &OrderAny) -> anyhow::Result<()> {
+    fn snapshot_order_state(&self, order: &OrderAny) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn snapshot_position_state(&mut self, position: &Position) -> anyhow::Result<()> {
+    fn snapshot_position_state(&self, position: &Position) -> anyhow::Result<()> {
         todo!()
     }
 
-    fn heartbeat(&mut self, timestamp: UnixNanos) -> anyhow::Result<()> {
+    fn heartbeat(&self, timestamp: UnixNanos) -> anyhow::Result<()> {
         todo!()
     }
 }
