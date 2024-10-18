@@ -27,7 +27,7 @@ description = "A high-performance algorithmic trading platform and event-driven 
 documentation = "https://nautilustrader.io/docs"
 
 [workspace.dependencies]
-anyhow = "1.0.89"
+anyhow = "1.0.90"
 async-stream = "0.3.6"
 base64 = "0.22.1"
 bytes = { version = "1.7.2", features = ["serde"] }
@@ -51,7 +51,7 @@ rust_decimal = "1.36.0"
 rust_decimal_macros = "1.36.0"
 semver = "1.0.23"
 serde = { version = "1.0.210", features = ["derive"] }
-serde_json = "1.0.129"
+serde_json = "1.0.130"
 strum = { version = "0.26.3", features = ["derive"] }
 thiserror = "1.0.64"
 thousands = "0.2.0"

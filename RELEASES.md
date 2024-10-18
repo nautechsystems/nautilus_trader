@@ -22,6 +22,7 @@ Released on TBD (UTC).
 - Ported `BettingInstrument` to Rust
 - Refined `RateLimiter` for `WebSocketClient` and add tests (#2000), thanks @Pushkarm029
 - Refined `WebSocketClient` to close existing tasks on reconnect (#1986), thanks @davidsblom
+- Remove mutable references in `CacheDatabaseAdapter` trait in Rust (#2015), thanks @filipmacek
 - Use Rust rate limiter for dYdX websockets (#1996, #1999), thanks @davidsblom
 - Improved error logs for dYdX websocket subscriptions (#1993), thanks @davidsblom
 - Standardized log and error message syntax in Rust
