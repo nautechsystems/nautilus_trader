@@ -41,7 +41,7 @@ use nautilus_model::{
         equity::Equity,
         stubs::{crypto_perpetual_ethusdt, equity_aapl, futures_contract_es},
     },
-    orders::{builder::OrderTestBuilder, stubs::TestOrderStubs},
+    orders::{any::OrderAny, builder::OrderTestBuilder, stubs::TestOrderStubs},
     position::Position,
     types::{price::Price, quantity::Quantity},
 };
@@ -74,6 +74,60 @@ fn time() -> AtomicTime {
 #[fixture]
 fn order_event_handler() -> ShareableMessageHandler {
     get_message_saving_handler::<OrderEventAny>(Some(Ustr::from("ExecEngine.process")))
+}
+
+#[fixture]
+fn instrument_eth_usdt(crypto_perpetual_ethusdt: CryptoPerpetual) -> InstrumentAny {
+    InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt)
+}
+
+// Market buy order with corresponding fill
+#[fixture]
+fn market_order_buy(instrument_eth_usdt: InstrumentAny) -> OrderAny {
+    OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1"))
+        .build()
+}
+
+#[fixture]
+fn market_order_fill(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    market_order_buy: OrderAny,
+) -> OrderFilled {
+    OrderFilled::new(
+        market_order_buy.trader_id(),
+        market_order_buy.strategy_id(),
+        market_order_buy.instrument_id(),
+        market_order_buy.client_order_id(),
+        VenueOrderId::new("BINANCE-1"),
+        account_id,
+        TradeId::new("1"),
+        market_order_buy.order_side(),
+        market_order_buy.order_type(),
+        Quantity::from("1"),
+        Price::from("1000.000"),
+        instrument_eth_usdt.quote_currency(),
+        LiquiditySide::Taker,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(PositionId::new("P-1")),
+        None,
+    )
+}
+
+// Market sell order
+#[fixture]
+fn market_order_sell(instrument_eth_usdt: InstrumentAny) -> OrderAny {
+    OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("1"))
+        .build()
 }
 
 // For valid ES futures contract currently active
@@ -166,6 +220,7 @@ fn test_process_order_when_instrument_already_expired(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
     time: AtomicTime,
+    market_order_buy: OrderAny,
 ) {
     let instrument = InstrumentAny::FuturesContract(futures_contract_es(None, None));
 
@@ -183,13 +238,8 @@ fn test_process_order_when_instrument_already_expired(
         None,
         None,
     );
-    let order = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument.id())
-        .side(OrderSide::Buy)
-        .quantity(Quantity::from("1"))
-        .build();
 
-    engine.process_order(&order, account_id);
+    engine.process_order(&market_order_buy, account_id);
 
     // Get messages and test
     let saved_messages = get_order_event_handler_messages(order_event_handler);
@@ -208,6 +258,7 @@ fn test_process_order_when_instrument_not_active(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
     time: AtomicTime,
+    market_order_buy: OrderAny,
 ) {
     let activation = UnixNanos::from(
         Utc.with_ymd_and_hms(2222, 4, 8, 0, 0, 0)
@@ -238,13 +289,8 @@ fn test_process_order_when_instrument_not_active(
         None,
         None,
     );
-    let order = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument.id())
-        .side(OrderSide::Buy)
-        .quantity(Quantity::from("1"))
-        .build();
 
-    engine.process_order(&order, account_id);
+    engine.process_order(&market_order_buy, account_id);
 
     // Get messages and test
     let saved_messages = get_order_event_handler_messages(order_event_handler);
@@ -263,7 +309,8 @@ fn test_process_order_when_invalid_quantity_precision(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
     time: AtomicTime,
-    instrument_es: InstrumentAny,
+    instrument_eth_usdt: InstrumentAny,
+    market_order_buy: OrderAny,
 ) {
     // Register saving message handler to exec engine endpoint
     msgbus.register(
@@ -273,19 +320,14 @@ fn test_process_order_when_invalid_quantity_precision(
 
     // Create engine and process order
     let mut engine = get_order_matching_engine(
-        instrument_es.clone(),
+        instrument_eth_usdt,
         Rc::new(RefCell::new(msgbus)),
         None,
         None,
         None,
     );
-    let order = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument_es.id())
-        .side(OrderSide::Buy)
-        .quantity(Quantity::from("1.122"))
-        .build();
 
-    engine.process_order(&order, account_id);
+    engine.process_order(&market_order_buy, account_id);
 
     // Get messages and test
     let saved_messages = get_order_event_handler_messages(order_event_handler);
@@ -294,7 +336,7 @@ fn test_process_order_when_invalid_quantity_precision(
     assert_eq!(first_message.event_type(), OrderEventType::Rejected);
     assert_eq!(
         first_message.message().unwrap(),
-        Ustr::from("Invalid order quantity precision for order O-19700101-000000-001-001-1, was 3 when ESZ1.GLBX size precision is 0")
+        Ustr::from("Invalid order quantity precision for order O-19700101-000000-001-001-1, was 0 when ETHUSDT-PERP.BINANCE size precision is 3")
     );
 }
 
@@ -390,6 +432,7 @@ fn test_process_order_when_shorting_equity_without_margin_account(
     account_id: AccountId,
     time: AtomicTime,
     equity_aapl: Equity,
+    market_order_sell: OrderAny,
 ) {
     let instrument = InstrumentAny::Equity(equity_aapl);
     // Register saving message handler to exec engine endpoint
@@ -406,13 +449,8 @@ fn test_process_order_when_shorting_equity_without_margin_account(
         None,
         None,
     );
-    let order = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument.id())
-        .side(OrderSide::Sell)
-        .quantity(Quantity::from("1"))
-        .build();
 
-    engine.process_order(&order, account_id);
+    engine.process_order(&market_order_sell, account_id);
 
     // Get messages and test
     let saved_messages = get_order_event_handler_messages(order_event_handler);
@@ -422,10 +460,11 @@ fn test_process_order_when_shorting_equity_without_margin_account(
     assert_eq!(
         first_message.message().unwrap(),
         Ustr::from(
-            "Short selling not permitted on a CASH account with position None and order \
-                MarketOrder(SELL 1 AAPL.XNAS @ MARKET GTC, status=INITIALIZED, client_order_id=O-19700101-000000-001-001-1, \
-                 venue_order_id=None, position_id=None, exec_algorithm_id=None, \
-                 exec_spawn_id=None, tags=None)")
+            "Short selling not permitted on a CASH account with position None and \
+            order MarketOrder(SELL 1 ETHUSDT-PERP.BINANCE @ MARKET GTC, status=INITIALIZED, \
+            client_order_id=O-19700101-000000-001-001-1, venue_order_id=None, position_id=None, \
+            exec_algorithm_id=None, exec_spawn_id=None, tags=None)"
+        )
     );
 }
 
@@ -435,7 +474,7 @@ fn test_process_order_when_invalid_reduce_only(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
     time: AtomicTime,
-    instrument_es: InstrumentAny,
+    instrument_eth_usdt: InstrumentAny,
     engine_config: OrderMatchingEngineConfig,
 ) {
     // Register saving message handler to exec engine endpoint
@@ -445,20 +484,20 @@ fn test_process_order_when_invalid_reduce_only(
     );
 
     let mut engine = get_order_matching_engine(
-        instrument_es.clone(),
+        instrument_eth_usdt.clone(),
         Rc::new(RefCell::new(msgbus)),
         None,
         None,
         Some(engine_config),
     );
-    let market_order = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument_es.id())
+    let market_order_reduce = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument_eth_usdt.id())
         .side(OrderSide::Buy)
-        .quantity(Quantity::from("1"))
+        .quantity(Quantity::from("1.000"))
         .reduce_only(true)
         .build();
 
-    engine.process_order(&market_order, account_id);
+    engine.process_order(&market_order_reduce, account_id);
 
     // Get messages and test
     let saved_messages = get_order_event_handler_messages(order_event_handler);
@@ -631,6 +670,8 @@ fn test_process_market_order_no_market_rejected(
     account_id: AccountId,
     time: AtomicTime,
     instrument_es: InstrumentAny,
+    market_order_buy: OrderAny,
+    market_order_sell: OrderAny,
 ) {
     // Register saving message handler to exec engine endpoint
     msgbus.register(
@@ -646,16 +687,6 @@ fn test_process_market_order_no_market_rejected(
         None,
         None,
     );
-    let market_order_buy = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument_es.id())
-        .side(OrderSide::Buy)
-        .quantity(Quantity::from("1"))
-        .build();
-    let market_order_sell = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument_es.id())
-        .side(OrderSide::Sell)
-        .quantity(Quantity::from("1"))
-        .build();
 
     engine.process_order(&market_order_buy, account_id);
     engine.process_order(&market_order_sell, account_id);
@@ -669,11 +700,11 @@ fn test_process_market_order_no_market_rejected(
     assert_eq!(second.event_type(), OrderEventType::Rejected);
     assert_eq!(
         first.message().unwrap(),
-        Ustr::from("No market for ESZ1.GLBX")
+        Ustr::from("No market for ETHUSDT-PERP.BINANCE")
     );
     assert_eq!(
         second.message().unwrap(),
-        Ustr::from("No market for ESZ1.GLBX")
+        Ustr::from("No market for ETHUSDT-PERP.BINANCE")
     );
 }
 
@@ -731,9 +762,8 @@ fn test_generate_venue_position_id(
     order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
     time: AtomicTime,
-    crypto_perpetual_ethusdt: CryptoPerpetual,
+    instrument_eth_usdt: InstrumentAny,
 ) {
-    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
     // Create two order matching engines with different configs
     // one with and other without position ids
     let config_no_position_id = OrderMatchingEngineConfig {
@@ -741,7 +771,7 @@ fn test_generate_venue_position_id(
         ..OrderMatchingEngineConfig::default()
     };
     let mut engine_no_position_id = get_order_matching_engine_l2(
-        instrument.clone(),
+        instrument_eth_usdt.clone(),
         Rc::new(RefCell::new(MessageBus::default())),
         None,
         None,
@@ -753,7 +783,7 @@ fn test_generate_venue_position_id(
         ..OrderMatchingEngineConfig::default()
     };
     let mut engine_with_position_id = get_order_matching_engine_l2(
-        instrument,
+        instrument_eth_usdt,
         Rc::new(RefCell::new(MessageBus::default())),
         None,
         None,
@@ -772,17 +802,17 @@ fn test_generate_venue_position_id(
 
 #[rstest]
 fn test_get_position_id_hedging_with_existing_position(
-    order_event_handler: ShareableMessageHandler,
     account_id: AccountId,
     time: AtomicTime,
-    crypto_perpetual_ethusdt: CryptoPerpetual,
+    instrument_eth_usdt: InstrumentAny,
+    market_order_buy: OrderAny,
+    market_order_fill: OrderFilled,
 ) {
-    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     // Create oms type hedging engine
     let mut engine = OrderMatchingEngine::new(
-        instrument.clone(),
+        instrument_eth_usdt.clone(),
         1,
         FillModel::default(),
         BookType::L1_MBP,
@@ -794,34 +824,7 @@ fn test_get_position_id_hedging_with_existing_position(
         OrderMatchingEngineConfig::default(),
     );
 
-    // Create position, order and order filled event
-    let order = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument.id())
-        .side(OrderSide::Buy)
-        .quantity(Quantity::from("1"))
-        .build();
-    let order_filled = OrderFilled::new(
-        order.trader_id(),
-        order.strategy_id(),
-        order.instrument_id(),
-        order.client_order_id(),
-        VenueOrderId::new("BINANCE-1"),
-        account_id,
-        TradeId::new("1"),
-        order.order_side(),
-        order.order_type(),
-        Quantity::from("1"),
-        Price::from("1000"),
-        instrument.quote_currency(),
-        LiquiditySide::Taker,
-        UUID4::new(),
-        UnixNanos::default(),
-        UnixNanos::default(),
-        false,
-        Some(PositionId::new("P-1")),
-        None,
-    );
-    let position = Position::new(&instrument, order_filled);
+    let position = Position::new(&instrument_eth_usdt, market_order_fill);
 
     // Add position to cache
     engine
@@ -830,13 +833,16 @@ fn test_get_position_id_hedging_with_existing_position(
         .add_position(position.clone(), engine.oms_type)
         .unwrap();
 
-    let position_id = engine.get_position_id(&order, None);
+    let position_id = engine.get_position_id(&market_order_buy, None);
     assert_eq!(position_id, Some(position.id));
 }
 
 #[rstest]
-fn test_get_position_id_hedging_with_generated_position(crypto_perpetual_ethusdt: CryptoPerpetual) {
-    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+fn test_get_position_id_hedging_with_generated_position(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    market_order_buy: OrderAny,
+) {
     let cache = Rc::new(RefCell::new(Cache::default()));
 
     // Use order matching config with position ids
@@ -846,7 +852,7 @@ fn test_get_position_id_hedging_with_generated_position(crypto_perpetual_ethusdt
     };
     // Create oms type hedging engine
     let mut engine = OrderMatchingEngine::new(
-        instrument.clone(),
+        instrument_eth_usdt.clone(),
         1,
         FillModel::default(),
         BookType::L1_MBP,
@@ -857,12 +863,48 @@ fn test_get_position_id_hedging_with_generated_position(crypto_perpetual_ethusdt
         cache,
         config_with_position_id,
     );
-    let order = OrderTestBuilder::new(OrderType::Market)
-        .instrument_id(instrument.id())
-        .side(OrderSide::Buy)
-        .quantity(Quantity::from("1"))
-        .build();
 
-    let position_id = engine.get_position_id(&order, None);
+    let position_id = engine.get_position_id(&market_order_buy, None);
     assert_eq!(position_id, Some(PositionId::new("BINANCE-1-1")));
+}
+
+#[rstest]
+fn test_get_position_id_netting(
+    instrument_eth_usdt: InstrumentAny,
+    account_id: AccountId,
+    market_order_buy: OrderAny,
+    market_order_fill: OrderFilled,
+) {
+    let cache = Rc::new(RefCell::new(Cache::default()));
+
+    // create engine with Netting OMS type
+    let mut engine = OrderMatchingEngine::new(
+        instrument_eth_usdt.clone(),
+        1,
+        FillModel::default(),
+        BookType::L1_MBP,
+        OmsType::Netting,
+        AccountType::Cash,
+        &ATOMIC_TIME,
+        Rc::new(RefCell::new(MessageBus::default())),
+        cache,
+        OrderMatchingEngineConfig::default(),
+    );
+
+    // position id should be none in non-initialized position id for this instrument
+    let position_id = engine.get_position_id(&market_order_buy, None);
+    assert_eq!(position_id, None);
+
+    // create and add position in cache
+    let position = Position::new(&instrument_eth_usdt, market_order_fill);
+    engine
+        .cache
+        .as_ref()
+        .borrow_mut()
+        .add_position(position.clone(), engine.oms_type)
+        .unwrap();
+
+    // position id should be returned for the existing position
+    let position_id = engine.get_position_id(&market_order_buy, None);
+    assert_eq!(position_id, Some(position.id));
 }
