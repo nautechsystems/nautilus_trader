@@ -80,183 +80,6 @@ pub enum DatabaseQuery {
     UpdateOrder(OrderEventAny),
 }
 
-fn get_buffer_interval() -> Duration {
-    Duration::from_millis(0)
-}
-
-async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
-    for cmd in buffer.drain(..) {
-        match cmd {
-            DatabaseQuery::Close => {}
-            DatabaseQuery::Add(key, value) => {
-                DatabaseQueries::add(pool, key, value).await.unwrap();
-            }
-            DatabaseQuery::AddCurrency(currency) => {
-                DatabaseQueries::add_currency(pool, currency).await.unwrap();
-            }
-            DatabaseQuery::AddInstrument(instrument_any) => match instrument_any {
-                InstrumentAny::Betting(instrument) => {
-                    DatabaseQueries::add_instrument(pool, "BETTING", Box::new(instrument))
-                        .await
-                        .unwrap()
-                }
-                InstrumentAny::BinaryOption(instrument) => {
-                    DatabaseQueries::add_instrument(pool, "BINARY_OPTION", Box::new(instrument))
-                        .await
-                        .unwrap()
-                }
-                InstrumentAny::CryptoFuture(instrument) => {
-                    DatabaseQueries::add_instrument(pool, "CRYPTO_FUTURE", Box::new(instrument))
-                        .await
-                        .unwrap()
-                }
-                InstrumentAny::CryptoPerpetual(instrument) => {
-                    DatabaseQueries::add_instrument(pool, "CRYPTO_PERPETUAL", Box::new(instrument))
-                        .await
-                        .unwrap()
-                }
-                InstrumentAny::CurrencyPair(instrument) => {
-                    DatabaseQueries::add_instrument(pool, "CURRENCY_PAIR", Box::new(instrument))
-                        .await
-                        .unwrap()
-                }
-                InstrumentAny::Equity(equity) => {
-                    DatabaseQueries::add_instrument(pool, "EQUITY", Box::new(equity))
-                        .await
-                        .unwrap()
-                }
-                InstrumentAny::FuturesContract(instrument) => {
-                    DatabaseQueries::add_instrument(pool, "FUTURES_CONTRACT", Box::new(instrument))
-                        .await
-                        .unwrap()
-                }
-                InstrumentAny::FuturesSpread(instrument) => {
-                    DatabaseQueries::add_instrument(pool, "FUTURES_SPREAD", Box::new(instrument))
-                        .await
-                        .unwrap()
-                }
-                InstrumentAny::OptionsContract(instrument) => {
-                    DatabaseQueries::add_instrument(pool, "OPTIONS_CONTRACT", Box::new(instrument))
-                        .await
-                        .unwrap()
-                }
-                InstrumentAny::OptionsSpread(instrument) => {
-                    DatabaseQueries::add_instrument(pool, "OPTIONS_SPREAD", Box::new(instrument))
-                        .await
-                        .unwrap()
-                }
-            },
-            DatabaseQuery::AddOrder(order_any, client_id, updated) => match order_any {
-                OrderAny::Limit(order) => {
-                    DatabaseQueries::add_order(pool, "LIMIT", updated, Box::new(order), client_id)
-                        .await
-                        .unwrap()
-                }
-                OrderAny::LimitIfTouched(order) => DatabaseQueries::add_order(
-                    pool,
-                    "LIMIT_IF_TOUCHED",
-                    updated,
-                    Box::new(order),
-                    client_id,
-                )
-                .await
-                .unwrap(),
-                OrderAny::Market(order) => {
-                    DatabaseQueries::add_order(pool, "MARKET", updated, Box::new(order), client_id)
-                        .await
-                        .unwrap()
-                }
-                OrderAny::MarketIfTouched(order) => DatabaseQueries::add_order(
-                    pool,
-                    "MARKET_IF_TOUCHED",
-                    updated,
-                    Box::new(order),
-                    client_id,
-                )
-                .await
-                .unwrap(),
-                OrderAny::MarketToLimit(order) => DatabaseQueries::add_order(
-                    pool,
-                    "MARKET_TO_LIMIT",
-                    updated,
-                    Box::new(order),
-                    client_id,
-                )
-                .await
-                .unwrap(),
-                OrderAny::StopLimit(order) => DatabaseQueries::add_order(
-                    pool,
-                    "STOP_LIMIT",
-                    updated,
-                    Box::new(order),
-                    client_id,
-                )
-                .await
-                .unwrap(),
-                OrderAny::StopMarket(order) => DatabaseQueries::add_order(
-                    pool,
-                    "STOP_MARKET",
-                    updated,
-                    Box::new(order),
-                    client_id,
-                )
-                .await
-                .unwrap(),
-                OrderAny::TrailingStopLimit(order) => DatabaseQueries::add_order(
-                    pool,
-                    "TRAILING_STOP_LIMIT",
-                    updated,
-                    Box::new(order),
-                    client_id,
-                )
-                .await
-                .unwrap(),
-                OrderAny::TrailingStopMarket(order) => DatabaseQueries::add_order(
-                    pool,
-                    "TRAILING_STOP_MARKET",
-                    updated,
-                    Box::new(order),
-                    client_id,
-                )
-                .await
-                .unwrap(),
-            },
-            DatabaseQuery::AddAccount(account_any, updated) => match account_any {
-                AccountAny::Cash(account) => {
-                    DatabaseQueries::add_account(pool, "CASH", updated, Box::new(account))
-                        .await
-                        .unwrap()
-                }
-                AccountAny::Margin(account) => {
-                    DatabaseQueries::add_account(pool, "MARGIN", updated, Box::new(account))
-                        .await
-                        .unwrap()
-                }
-            },
-            DatabaseQuery::AddSignal(signal) => {
-                DatabaseQueries::add_signal(pool, &signal).await.unwrap();
-            }
-            DatabaseQuery::AddCustom(data) => {
-                DatabaseQueries::add_custom_data(pool, &data).await.unwrap();
-            }
-            DatabaseQuery::AddQuote(quote) => {
-                DatabaseQueries::add_quote(pool, &quote).await.unwrap();
-            }
-            DatabaseQuery::AddTrade(trade) => {
-                DatabaseQueries::add_trade(pool, &trade).await.unwrap();
-            }
-            DatabaseQuery::AddBar(bar) => {
-                DatabaseQueries::add_bar(pool, &bar).await.unwrap();
-            }
-            DatabaseQuery::UpdateOrder(event) => {
-                DatabaseQueries::add_order_event(pool, event.into_boxed(), None)
-                    .await
-                    .unwrap();
-            }
-        }
-    }
-}
-
 impl PostgresCacheDatabase {
     pub async fn connect(
         host: Option<String>,
@@ -285,7 +108,7 @@ impl PostgresCacheDatabase {
         // Buffering
         let mut buffer: VecDeque<DatabaseQuery> = VecDeque::new();
         let mut last_drain = Instant::now();
-        let buffer_interval = get_buffer_interval();
+        let buffer_interval = Duration::from_millis(100); // TODO: Add to config
         let recv_interval = Duration::from_millis(1);
 
         loop {
@@ -925,5 +748,159 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
 
     fn heartbeat(&self, timestamp: UnixNanos) -> anyhow::Result<()> {
         todo!()
+    }
+}
+
+async fn drain_buffer(pool: &PgPool, buffer: &mut VecDeque<DatabaseQuery>) {
+    for cmd in buffer.drain(..) {
+        let result: anyhow::Result<()> = match cmd {
+            DatabaseQuery::Close => Ok(()),
+            DatabaseQuery::Add(key, value) => DatabaseQueries::add(pool, key, value)
+                .await
+                .map_err(anyhow::Error::from),
+            DatabaseQuery::AddCurrency(currency) => DatabaseQueries::add_currency(pool, currency)
+                .await
+                .map_err(anyhow::Error::from),
+            DatabaseQuery::AddInstrument(instrument_any) => match instrument_any {
+                InstrumentAny::Betting(instrument) => {
+                    DatabaseQueries::add_instrument(pool, "BETTING", Box::new(instrument)).await
+                }
+                InstrumentAny::BinaryOption(instrument) => {
+                    DatabaseQueries::add_instrument(pool, "BINARY_OPTION", Box::new(instrument))
+                        .await
+                }
+                InstrumentAny::CryptoFuture(instrument) => {
+                    DatabaseQueries::add_instrument(pool, "CRYPTO_FUTURE", Box::new(instrument))
+                        .await
+                }
+                InstrumentAny::CryptoPerpetual(instrument) => {
+                    DatabaseQueries::add_instrument(pool, "CRYPTO_PERPETUAL", Box::new(instrument))
+                        .await
+                }
+                InstrumentAny::CurrencyPair(instrument) => {
+                    DatabaseQueries::add_instrument(pool, "CURRENCY_PAIR", Box::new(instrument))
+                        .await
+                }
+                InstrumentAny::Equity(equity) => {
+                    DatabaseQueries::add_instrument(pool, "EQUITY", Box::new(equity)).await
+                }
+                InstrumentAny::FuturesContract(instrument) => {
+                    DatabaseQueries::add_instrument(pool, "FUTURES_CONTRACT", Box::new(instrument))
+                        .await
+                }
+                InstrumentAny::FuturesSpread(instrument) => {
+                    DatabaseQueries::add_instrument(pool, "FUTURES_SPREAD", Box::new(instrument))
+                        .await
+                }
+                InstrumentAny::OptionsContract(instrument) => {
+                    DatabaseQueries::add_instrument(pool, "OPTIONS_CONTRACT", Box::new(instrument))
+                        .await
+                }
+                InstrumentAny::OptionsSpread(instrument) => {
+                    DatabaseQueries::add_instrument(pool, "OPTIONS_SPREAD", Box::new(instrument))
+                        .await
+                }
+            },
+            DatabaseQuery::AddOrder(order_any, client_id, updated) => match order_any {
+                OrderAny::Limit(order) => {
+                    DatabaseQueries::add_order(pool, "LIMIT", updated, Box::new(order), client_id)
+                        .await
+                }
+                OrderAny::LimitIfTouched(order) => {
+                    DatabaseQueries::add_order(
+                        pool,
+                        "LIMIT_IF_TOUCHED",
+                        updated,
+                        Box::new(order),
+                        client_id,
+                    )
+                    .await
+                }
+                OrderAny::Market(order) => {
+                    DatabaseQueries::add_order(pool, "MARKET", updated, Box::new(order), client_id)
+                        .await
+                }
+                OrderAny::MarketIfTouched(order) => {
+                    DatabaseQueries::add_order(
+                        pool,
+                        "MARKET_IF_TOUCHED",
+                        updated,
+                        Box::new(order),
+                        client_id,
+                    )
+                    .await
+                }
+                OrderAny::MarketToLimit(order) => {
+                    DatabaseQueries::add_order(
+                        pool,
+                        "MARKET_TO_LIMIT",
+                        updated,
+                        Box::new(order),
+                        client_id,
+                    )
+                    .await
+                }
+                OrderAny::StopLimit(order) => {
+                    DatabaseQueries::add_order(
+                        pool,
+                        "STOP_LIMIT",
+                        updated,
+                        Box::new(order),
+                        client_id,
+                    )
+                    .await
+                }
+                OrderAny::StopMarket(order) => {
+                    DatabaseQueries::add_order(
+                        pool,
+                        "STOP_MARKET",
+                        updated,
+                        Box::new(order),
+                        client_id,
+                    )
+                    .await
+                }
+                OrderAny::TrailingStopLimit(order) => {
+                    DatabaseQueries::add_order(
+                        pool,
+                        "TRAILING_STOP_LIMIT",
+                        updated,
+                        Box::new(order),
+                        client_id,
+                    )
+                    .await
+                }
+                OrderAny::TrailingStopMarket(order) => {
+                    DatabaseQueries::add_order(
+                        pool,
+                        "TRAILING_STOP_MARKET",
+                        updated,
+                        Box::new(order),
+                        client_id,
+                    )
+                    .await
+                }
+            },
+            DatabaseQuery::AddAccount(account_any, updated) => match account_any {
+                AccountAny::Cash(account) => {
+                    DatabaseQueries::add_account(pool, "CASH", updated, Box::new(account)).await
+                }
+                AccountAny::Margin(account) => {
+                    DatabaseQueries::add_account(pool, "MARGIN", updated, Box::new(account)).await
+                }
+            },
+            DatabaseQuery::AddSignal(signal) => DatabaseQueries::add_signal(pool, &signal).await,
+            DatabaseQuery::AddCustom(data) => DatabaseQueries::add_custom_data(pool, &data).await,
+            DatabaseQuery::AddQuote(quote) => DatabaseQueries::add_quote(pool, &quote).await,
+            DatabaseQuery::AddTrade(trade) => DatabaseQueries::add_trade(pool, &trade).await,
+            DatabaseQuery::AddBar(bar) => DatabaseQueries::add_bar(pool, &bar).await,
+            DatabaseQuery::UpdateOrder(event) => {
+                DatabaseQueries::add_order_event(pool, event.into_boxed(), None).await
+            }
+        };
+
+        if let Err(e) = result {
+            log::error!("Error processing database query: {e:?}");
+        }
     }
 }
