@@ -262,12 +262,12 @@ async fn process_commands(
     let mut last_drain = Instant::now();
     let buffer_interval = Duration::from_millis(config.buffer_interval_ms.unwrap_or(0) as u64);
 
+    // Continue to receive and handle messages until channel is hung up
     loop {
         if last_drain.elapsed() >= buffer_interval && !buffer.is_empty() {
             drain_buffer(&mut con, &trader_key, &mut buffer);
             last_drain = Instant::now();
         } else {
-            // Continue to receive and handle messages until channel is hung up
             match rx.recv().await {
                 Some(msg) => {
                     if let DatabaseOperation::Close = msg.op_type {
