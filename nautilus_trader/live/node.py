@@ -465,5 +465,5 @@ class TradingNode:
             self.kernel.logger.info("DISPOSED")
 
     def _loop_sig_handler(self, sig: signal.Signals) -> None:
-        self.kernel.logger.warning(f"Received {sig!r}, shutting down")
+        self.kernel.logger.warning(f"Received {sig.name}, shutting down")
         self.stop()
