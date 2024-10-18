@@ -332,3 +332,26 @@ impl CryptoFuture {
         Ok(dict.into())
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use pyo3::{prelude::*, prepare_freethreaded_python, types::PyDict};
+    use rstest::rstest;
+
+    use crate::instruments::{crypto_future::CryptoFuture, stubs::*};
+
+    #[rstest]
+    fn test_dict_round_trip(crypto_future_btcusdt: CryptoFuture) {
+        prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            let crypto_future = crypto_future_btcusdt;
+            let values = crypto_future.py_to_dict(py).unwrap();
+            let values: Py<PyDict> = values.extract(py).unwrap();
+            let new_crypto_future = CryptoFuture::py_from_dict(py, values).unwrap();
+            assert_eq!(crypto_future, new_crypto_future);
+        })
+    }
+}

@@ -331,3 +331,25 @@ impl BinaryOption {
         Ok(dict.into())
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use pyo3::{prelude::*, prepare_freethreaded_python, types::PyDict};
+    use rstest::rstest;
+
+    use crate::instruments::{binary_option::BinaryOption, stubs::*};
+
+    #[rstest]
+    fn test_dict_round_trip(binary_option: BinaryOption) {
+        prepare_freethreaded_python();
+        Python::with_gil(|py| {
+            let values = binary_option.py_to_dict(py).unwrap();
+            let values: Py<PyDict> = values.extract(py).unwrap();
+            let new_binary_option = BinaryOption::py_from_dict(py, values).unwrap();
+            assert_eq!(binary_option, new_binary_option);
+        })
+    }
+}
