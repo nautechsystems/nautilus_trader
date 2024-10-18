@@ -343,15 +343,21 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     fn close(&mut self) -> anyhow::Result<()> {
         let pool = self.pool.clone();
         let (tx, rx) = std::sync::mpsc::channel();
-        tokio::spawn(async move {
-            let result = pool.close().await;
-            if let Err(e) = tx.send(()) {
-                log::error!("Failed to send close result: {e:?}");
-            }
+
+        log::debug!("Closing connection pool");
+        tokio::task::block_in_place(|| {
+            get_runtime().block_on(async {
+                pool.close().await;
+                if let Err(e) = tx.send(()) {
+                    log::error!("Error closing pool: {e:?}");
+                }
+            });
         });
 
         // Cancel message handling task
-        self.tx.send(DatabaseQuery::Close);
+        if let Err(e) = self.tx.send(DatabaseQuery::Close) {
+            log::error!("Error sending close: {e:?}");
+        }
 
         log::debug!("Awaiting task 'cache-write'"); // Naming tasks will soon be stablized
         tokio::task::block_in_place(|| {
@@ -368,12 +374,18 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     fn flush(&mut self) -> anyhow::Result<()> {
         let pool = self.pool.clone();
         let (tx, rx) = std::sync::mpsc::channel();
-        tokio::spawn(async move {
-            let result = DatabaseQueries::truncate(&pool).await;
-            if let Err(e) = tx.send(()) {
-                log::error!("Failed to send flush result: {e:?}");
-            }
+
+        tokio::task::block_in_place(|| {
+            get_runtime().block_on(async {
+                if let Err(e) = DatabaseQueries::truncate(&pool).await {
+                    log::error!("Error flushing pool: {e:?}");
+                }
+                if let Err(e) = tx.send(()) {
+                    log::error!("Error sending flush result: {e:?}");
+                }
+            });
         });
+
         Ok(rx.recv()?)
     }
 
