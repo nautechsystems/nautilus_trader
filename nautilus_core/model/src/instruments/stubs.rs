@@ -21,8 +21,8 @@ use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 use super::{
-    binary_option::BinaryOption, futures_spread::FuturesSpread, options_spread::OptionsSpread,
-    synthetic::SyntheticInstrument,
+    betting::BettingInstrument, binary_option::BinaryOption, futures_spread::FuturesSpread,
+    options_spread::OptionsSpread, synthetic::SyntheticInstrument,
 };
 use crate::{
     enums::{AssetClass, OptionKind},
@@ -458,6 +458,91 @@ pub fn options_spread() -> OptionsSpread {
         None,
         0.into(),
         0.into(),
+    )
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// BettingInstrument
+////////////////////////////////////////////////////////////////////////////////
+
+#[fixture]
+pub fn betting() -> BettingInstrument {
+    let raw_symbol = Symbol::new("1-123456789");
+    let id = InstrumentId::from(format!("{raw_symbol}.BETFAIR").as_str());
+    let event_type_id = 6423;
+    let event_type_name = Ustr::from("American Football");
+    let competition_id = 12282733;
+    let competition_name = Ustr::from("NFL");
+    let event_id = 29678534;
+    let event_name = Ustr::from("NFL");
+    let event_country_code = Ustr::from("GB");
+    let event_open_date = UnixNanos::from(
+        Utc.with_ymd_and_hms(2022, 2, 7, 23, 30, 0)
+            .unwrap()
+            .timestamp_nanos_opt()
+            .unwrap() as u64,
+    );
+    let betting_type = Ustr::from("ODDS");
+    let market_id = Ustr::from("1-123456789");
+    let market_name = Ustr::from("AFC Conference Winner");
+    let market_type = Ustr::from("SPECIAL");
+    let market_start_time = UnixNanos::from(
+        Utc.with_ymd_and_hms(2022, 2, 7, 23, 30, 0)
+            .unwrap()
+            .timestamp_nanos_opt()
+            .unwrap() as u64,
+    );
+    let selection_id = 50214;
+    let selection_name = Ustr::from("Kansas City Chiefs");
+    let selection_handicap = 0.0; // As per betting convention, no handicap
+    let currency = Currency::GBP();
+    let price_increment = Price::from("0.01");
+    let size_increment = Quantity::from("0.01");
+    let maker_fee = Decimal::from(0);
+    let taker_fee = Decimal::from(0);
+    let max_quantity = Some(Quantity::from("1000"));
+    let min_quantity = Some(Quantity::from("1"));
+    let max_notional = Some(Money::from("10000 GBP"));
+    let min_notional = Some(Money::from("10 GBP"));
+    let max_price = Some(Price::from("100.00"));
+    let min_price = Some(Price::from("1.00"));
+    let ts_event = UnixNanos::default(); // For testing purposes
+    let ts_init = UnixNanos::default(); // For testing purposes
+
+    BettingInstrument::new(
+        id,
+        raw_symbol,
+        event_type_id,
+        event_type_name,
+        competition_id,
+        competition_name,
+        event_id,
+        event_name,
+        event_country_code,
+        event_open_date,
+        betting_type,
+        market_id,
+        market_name,
+        market_type,
+        market_start_time,
+        selection_id,
+        selection_name,
+        selection_handicap,
+        currency,
+        price_increment.precision,
+        size_increment.precision,
+        price_increment,
+        size_increment,
+        maker_fee,
+        taker_fee,
+        max_quantity,
+        min_quantity,
+        max_notional,
+        min_notional,
+        max_price,
+        min_price,
+        ts_event,
+        ts_init,
     )
 }
 

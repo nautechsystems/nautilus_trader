@@ -182,6 +182,21 @@ pub enum AssetClass {
     Alternative = 7,
 }
 
+impl FromU8 for AssetClass {
+    fn from_u8(value: u8) -> Option<Self> {
+        match value {
+            1 => Some(Self::FX),
+            2 => Some(Self::Equity),
+            3 => Some(Self::Commodity),
+            4 => Some(Self::Debt),
+            5 => Some(Self::Index),
+            6 => Some(Self::Cryptocurrency),
+            7 => Some(Self::Alternative),
+            _ => None,
+        }
+    }
+}
+
 /// The instrument class.
 #[repr(C)]
 #[derive(

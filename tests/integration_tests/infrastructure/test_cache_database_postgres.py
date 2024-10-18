@@ -112,7 +112,6 @@ class TestCachePostgresAdapter:
     ################################################################################
     # General
     ################################################################################
-
     @pytest.mark.asyncio
     async def test_load_general_objects_when_nothing_in_cache_returns_empty_dict(self):
         # Arrange, Act
@@ -242,7 +241,6 @@ class TestCachePostgresAdapter:
     ################################################################################
     # Instrument - Currency Pair
     ################################################################################
-
     @pytest.mark.asyncio
     async def test_add_instrument_currency_pair(self):
         self.database.add_currency(_AUDUSD_SIM.base_currency)
@@ -306,7 +304,6 @@ class TestCachePostgresAdapter:
     ################################################################################
     # Instrument - Equity
     ################################################################################
-
     @pytest.mark.asyncio
     async def test_add_instrument_equity(self):
         appl_equity = TestInstrumentProvider.equity()
