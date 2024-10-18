@@ -232,18 +232,18 @@ impl PostgresCacheDatabase {
     }
 
     #[pyo3(name = "add")]
-    fn py_add(mut slf: PyRefMut<'_, Self>, key: String, value: Vec<u8>) -> PyResult<()> {
+    fn py_add(slf: PyRefMut<'_, Self>, key: String, value: Vec<u8>) -> PyResult<()> {
         slf.add(key, Bytes::from(value)).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "add_currency")]
-    fn py_add_currency(mut slf: PyRefMut<'_, Self>, currency: Currency) -> PyResult<()> {
+    fn py_add_currency(slf: PyRefMut<'_, Self>, currency: Currency) -> PyResult<()> {
         slf.add_currency(&currency).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "add_instrument")]
     fn py_add_instrument(
-        mut slf: PyRefMut<'_, Self>,
+        slf: PyRefMut<'_, Self>,
         instrument: PyObject,
         py: Python<'_>,
     ) -> PyResult<()> {
@@ -254,7 +254,7 @@ impl PostgresCacheDatabase {
 
     #[pyo3(name = "add_order")]
     fn py_add_order(
-        mut slf: PyRefMut<'_, Self>,
+        slf: PyRefMut<'_, Self>,
         order: PyObject,
         client_id: Option<ClientId>,
         py: Python<'_>,
@@ -265,46 +265,42 @@ impl PostgresCacheDatabase {
     }
 
     #[pyo3(name = "add_account")]
-    fn py_add_account(
-        mut slf: PyRefMut<'_, Self>,
-        account: PyObject,
-        py: Python<'_>,
-    ) -> PyResult<()> {
+    fn py_add_account(slf: PyRefMut<'_, Self>, account: PyObject, py: Python<'_>) -> PyResult<()> {
         let account_any = convert_pyobject_to_account_any(py, account)?;
         slf.add_account(&account_any).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "add_quote")]
-    fn py_add_quote(mut slf: PyRefMut<'_, Self>, quote: PyObject, py: Python<'_>) -> PyResult<()> {
+    fn py_add_quote(slf: PyRefMut<'_, Self>, quote: PyObject, py: Python<'_>) -> PyResult<()> {
         let quote = quote.extract::<QuoteTick>(py)?;
         slf.add_quote(&quote).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "add_trade")]
-    fn py_add_trade(mut slf: PyRefMut<'_, Self>, trade: PyObject, py: Python<'_>) -> PyResult<()> {
+    fn py_add_trade(slf: PyRefMut<'_, Self>, trade: PyObject, py: Python<'_>) -> PyResult<()> {
         let trade = trade.extract::<TradeTick>(py)?;
         slf.add_trade(&trade).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "add_bar")]
-    fn py_add_bar(mut slf: PyRefMut<'_, Self>, bar: PyObject, py: Python<'_>) -> PyResult<()> {
+    fn py_add_bar(slf: PyRefMut<'_, Self>, bar: PyObject, py: Python<'_>) -> PyResult<()> {
         let bar = bar.extract::<Bar>(py)?;
         slf.add_bar(&bar).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "add_signal")]
-    fn py_add_signal(mut slf: PyRefMut<'_, Self>, signal: Signal) -> PyResult<()> {
+    fn py_add_signal(slf: PyRefMut<'_, Self>, signal: Signal) -> PyResult<()> {
         slf.add_signal(&signal).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "add_custom_data")]
-    fn py_add_custom_data(mut slf: PyRefMut<'_, Self>, data: CustomData) -> PyResult<()> {
+    fn py_add_custom_data(slf: PyRefMut<'_, Self>, data: CustomData) -> PyResult<()> {
         slf.add_custom_data(&data).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "update_order")]
     fn py_update_order(
-        mut slf: PyRefMut<'_, Self>,
+        slf: PyRefMut<'_, Self>,
         order_event: PyObject,
         py: Python<'_>,
     ) -> PyResult<()> {
@@ -313,11 +309,7 @@ impl PostgresCacheDatabase {
     }
 
     #[pyo3(name = "update_account")]
-    fn py_update_account(
-        mut slf: PyRefMut<'_, Self>,
-        order: PyObject,
-        py: Python<'_>,
-    ) -> PyResult<()> {
+    fn py_update_account(slf: PyRefMut<'_, Self>, order: PyObject, py: Python<'_>) -> PyResult<()> {
         let order_any = convert_pyobject_to_account_any(py, order)?;
         slf.update_account(&order_any).map_err(to_pyruntime_err)
     }
