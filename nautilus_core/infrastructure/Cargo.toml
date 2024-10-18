@@ -15,6 +15,7 @@ nautilus-common = { path = "../common", features = ["python"] }
 nautilus-core = { path = "../core" , features = ["python"] }
 nautilus-model = { path = "../model" , features = ["python", "stubs"] }
 anyhow = { workspace = true }
+async-stream = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
 derive_builder = { workspace = true }
@@ -46,7 +47,6 @@ sqlx = { version = "0.8.2", features = [
     "runtime-tokio",
     "json"
 ], optional = true }
-async-stream = "0.3.5"
 
 [dev-dependencies]
 rstest = { workspace = true }
