@@ -43,6 +43,8 @@ from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.rust.model cimport TriggerType
 from nautilus_trader.execution.messages cimport SubmitOrder
 from nautilus_trader.model.data cimport Bar
+from nautilus_trader.model.data cimport BarAggregation
+from nautilus_trader.model.data cimport BarSpecification
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
@@ -2503,8 +2505,11 @@ cdef class Cache(CacheFacade):
         ]
 
     cdef timedelta _get_timedelta(self, BarType bar_type):
-        """ Helper method to get the timedelta from a BarType. """
-        return bar_type.spec.timedelta
+        # Helper method to get the timedelta from a BarType
+        cdef BarSpecification bar_spec = bar_type.spec
+        if bar_spec.aggregation == BarAggregation.MONTH:
+            return timedelta(days=bar_spec.step * 30)  # Reasonable value to fix sorting
+        return bar_spec.timedelta
 
     cpdef list bar_types(
         self,
