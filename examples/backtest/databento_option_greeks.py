@@ -55,6 +55,10 @@ from nautilus_trader.trading.strategy import Strategy
 # ## parameters
 
 # %%
+# import nautilus_trader.adapters.databento.data_utils as db_data_utils
+# from option_trader import DATA_PATH, DATABENTO_API_KEY # personal library, use your own values especially for DATABENTO_API_KEY
+# db_data_utils.DATA_PATH = DATA_PATH
+
 catalog_folder = "option_catalog_example"
 catalog = load_catalog(catalog_folder)
 
@@ -68,6 +72,7 @@ end_time = "2024-05-09T10:05"
 # db_data_utils.DATABENTO_API_KEY = "db-XXXXX"
 # init_databento_client()
 
+# https://databento.com/docs/schemas-and-data-formats/whats-a-schema
 futures_data = databento_data(
     future_symbols,
     start_time,
