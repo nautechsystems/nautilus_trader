@@ -80,17 +80,17 @@ class TradingNode:
             logger=self.kernel.logger,
         )
 
-        # Operation flags
-        self._is_built = False
-        self._is_running = False
-        self._has_cache_backing = config.cache and config.cache.database
-        self._has_msgbus_backing = config.message_bus and config.message_bus.database
-
-        self.kernel.logger.info(f"{self._has_cache_backing=}", LogColor.BLUE)
-        self.kernel.logger.info(f"{self._has_msgbus_backing=}", LogColor.BLUE)
+        has_cache_backing = bool(config.cache and config.cache.database)
+        has_msgbus_backing = bool(config.message_bus and config.message_bus.database)
+        self.kernel.logger.info(f"{has_cache_backing=}", LogColor.BLUE)
+        self.kernel.logger.info(f"{has_msgbus_backing=}", LogColor.BLUE)
 
         # Async tasks
         self._task_streaming: asyncio.Future | None = None
+
+        # Operation flags
+        self._is_built = False
+        self._is_running = False
 
     @property
     def trader_id(self) -> TraderId:
