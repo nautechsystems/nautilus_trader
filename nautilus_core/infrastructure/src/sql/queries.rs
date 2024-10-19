@@ -22,6 +22,7 @@ use nautilus_model::{
     events::{
         account::state::AccountState,
         order::{OrderEvent, OrderEventAny},
+        position::snapshot::PositionSnapshot,
     },
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId},
     instruments::{any::InstrumentAny, Instrument},
@@ -267,6 +268,84 @@ impl DatabaseQueries {
                 DatabaseQueries::add_order_event(pool, Box::new(event), client_id).await
             }
         }
+    }
+
+    pub async fn add_position_snapshot(
+        pool: &PgPool,
+        snapshot: PositionSnapshot,
+    ) -> anyhow::Result<()> {
+        let mut transaction = pool.begin().await?;
+
+        // Insert trader if it does not exist
+        // TODO remove this when node and trader initialization is implemented
+        sqlx::query(
+            r#"
+            INSERT INTO "trader" (id) VALUES ($1) ON CONFLICT (id) DO NOTHING
+        "#,
+        )
+        .bind(snapshot.trader_id.to_string())
+        .execute(&mut *transaction)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to insert into trader table: {e}"))?;
+
+        sqlx::query(r#"
+            INSERT INTO "position" (
+                id, trader_id, strategy_id, instrument_id, account_id, opening_order_id, closing_order_id, entry, side, signed_qty, quantity, peak_qty,
+                quote_currency, base_currency, settlement_currency, avg_px_open, avg_px_close, realized_return, realized_pnl, unrealized_pnl, commissions,
+                duration_ns, ts_opened, ts_closed, ts_last, ts_init
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+                $21, $22, $23, $24, $25, $26, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            ON CONFLICT (id)
+            DO UPDATE
+            SET
+                trader_id = $2, strategy_id = $3, instrument_id = $4, account_id = $5, opening_order_id = $6, closing_order_id = $7, entry = $8, side = $9, signed_qty = $10, quantity = $11,
+                peak_qty = $12, quote_currency = $13, base_currency = $14, settlement_currency = $15, avg_px_open = $16, avg_px_close = $17, realized_return = $18, realized_pnl = $19, unrealized_pnl = $20,
+                commissions = $21, duration_ns = $22, ts_opened = $23, ts_closed = $24, ts_last = $25, ts_init = $26, updated_at = CURRENT_TIMESTAMP
+        "#)
+            .bind(snapshot.position_id.to_string())
+            .bind(snapshot.trader_id.to_string())
+            .bind(snapshot.strategy_id.to_string())
+            .bind(snapshot.instrument_id.to_string())
+            .bind(snapshot.account_id.to_string())
+            .bind(snapshot.opening_order_id.to_string())
+            .bind(snapshot.closing_order_id.map(|x| x.to_string()))
+            .bind(snapshot.entry.to_string())
+            .bind(snapshot.side.to_string())
+            .bind(snapshot.signed_qty.to_string())
+            .bind(snapshot.quantity.to_string())
+            .bind(snapshot.peak_qty.to_string())
+            .bind(snapshot.quote_currency.to_string())
+            .bind(snapshot.base_currency.to_string())
+            .bind(snapshot.settlement_currency.to_string())
+            .bind(snapshot.avg_px_open.to_string())
+            .bind(snapshot.avg_px_close.map(|x| x.to_string()))
+            .bind(snapshot.realized_return.map(|x| x.to_string()))
+            .bind(snapshot.realized_pnl.to_string())
+            .bind(snapshot.unrealized_pnl.map(|x| x.to_string()))
+            .bind(
+                serde_json::to_string(
+                    &snapshot.commissions
+                        .iter()
+                        .map(|x| x.to_string())
+                        .collect::<Vec<String>>()
+                ).unwrap()
+            )
+            .bind(snapshot.duration_ns.map(|x| x.to_string()))
+            .bind(snapshot.ts_opened.to_string())
+            .bind(snapshot.ts_closed.map(|x| x.to_string()))
+            .bind(snapshot.ts_last.to_string())
+            .bind(snapshot.ts_init.to_string())
+            .execute(&mut *transaction)
+            .await
+            .map(|_| ())
+            .map_err(|e| anyhow::anyhow!("Failed to insert into position table: {e}"))?;
+        transaction
+            .commit()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to commit transaction: {e}"))
     }
 
     pub async fn check_if_order_initialized_exists(

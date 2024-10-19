@@ -18,11 +18,14 @@ use std::{collections::HashMap, str::FromStr};
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     enums::{ContingencyType, LiquiditySide, OrderSide, OrderType, TimeInForce, TriggerType},
-    events::order::{
-        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
-        OrderEventAny, OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected,
-        OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted,
-        OrderTriggered, OrderUpdated,
+    events::{
+        order::{
+            OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
+            OrderEventAny, OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected,
+            OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted,
+            OrderTriggered, OrderUpdated,
+        },
+        position::snapshot::PositionSnapshot,
     },
     identifiers::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
@@ -52,6 +55,7 @@ pub struct OrderReleasedModel(pub OrderReleased);
 pub struct OrderSubmittedModel(pub OrderSubmitted);
 pub struct OrderTriggeredModel(pub OrderTriggered);
 pub struct OrderUpdatedModel(pub OrderUpdated);
+pub struct PositionSnapshotModel(pub PositionSnapshot);
 
 impl<'r> FromRow<'r, PgRow> for OrderEventAnyModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {

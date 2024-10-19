@@ -155,7 +155,6 @@ CREATE TABLE IF NOT EXISTS "position"(
     trader_id TEXT REFERENCES trader(id) ON DELETE CASCADE,
     strategy_id TEXT NOT NULL,
     instrument_id TEXT REFERENCES instrument(id) ON DELETE CASCADE,
-    position_id TEXT NOT NULL,  -- REFERENCES TBD
     account_id TEXT NOT NULL,
     opening_order_id TEXT NOT NULL,
     closing_order_id TEXT,  -- REFERENCES TBD
@@ -175,11 +174,11 @@ CREATE TABLE IF NOT EXISTS "position"(
     realized_pnl TEXT NOT NULL,
     unrealized_pnl TEXT,
     commissions TEXT NOT NULL,
-    duration_ns BIGINT,
-    ts_opened BIGINT NOT NULL,
-    ts_closed BIGINT,
-    ts_last BIGINT NOT NULL,
-    ts_init BIGINT NOT NULL
+    duration_ns TEXT,
+    ts_opened TEXT NOT NULL,
+    ts_closed TEXT,
+    ts_last TEXT NOT NULL,
+    ts_init TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS "account_event"(
