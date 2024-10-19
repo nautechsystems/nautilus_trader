@@ -417,8 +417,8 @@ class PolymarketDataClient(LiveMarketDataClient):
             self._local_books[instrument.id] = book_new
             deltas = compute_effective_deltas(book_old, book_new, instrument)
 
-            interval = (self._clock.timestamp_ns() - t0) / 1_000_000
-            self._log.info(f"Computed effective deltas in {interval:.3f}ms", LogColor.BLUE)
+            interval_ms = (self._clock.timestamp_ns() - t0) / 1_000_000
+            self._log.debug(f"Computed effective deltas in {interval_ms:.3f}ms")
             # self._log.warning(book_new.pprint())  # Uncomment for development
 
         # Check if any effective deltas remain
