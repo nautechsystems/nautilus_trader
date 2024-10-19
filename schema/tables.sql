@@ -150,6 +150,38 @@ CREATE TABLE IF NOT EXISTS "order_event" (
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS "position"(
+    id TEXT PRIMARY KEY NOT NULL,
+    trader_id TEXT REFERENCES trader(id) ON DELETE CASCADE,
+    strategy_id TEXT NOT NULL,
+    instrument_id TEXT REFERENCES instrument(id) ON DELETE CASCADE,
+    position_id TEXT NOT NULL,  -- REFERENCES TBD
+    account_id TEXT NOT NULL,
+    opening_order_id TEXT NOT NULL,
+    closing_order_id TEXT,  -- REFERENCES TBD
+    entry TEXT NOT NULL,
+    side TEXT NOT NULL,
+    signed_qty TEXT NOT NULL,
+    quantity TEXT NOT NULL,
+    peak_qty TEXT NOT NULL,
+    -- last_qty TEXT,
+    -- last_px TEXT,
+    quote_currency TEXT NOT NULL,
+    base_currency TEXT NOT NULL,
+    settlement_currency TEXT NOT NULL,
+    avg_px_open DOUBLE PRECISION,  -- Consider NUMERIC
+    avg_px_close DOUBLE PRECISION,  -- Consider NUMERIC
+    realized_return DOUBLE PRECISION, -- Consider NUMERIC
+    realized_pnl TEXT NOT NULL,
+    unrealized_pnl TEXT,
+    commissions TEXT NOT NULL,
+    duration_ns BIGINT,
+    ts_opened BIGINT NOT NULL,
+    ts_closed BIGINT,
+    ts_last BIGINT NOT NULL,
+    ts_init BIGINT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS "account_event"(
     id TEXT PRIMARY KEY NOT NULL,
     kind TEXT NOT NULL,
