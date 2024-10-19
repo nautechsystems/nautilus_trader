@@ -335,34 +335,6 @@ class TradingNode:
         except asyncio.CancelledError as e:
             self.kernel.logger.error(str(e))
 
-    async def maintain_heartbeat(self, interval: float) -> None:
-        """
-        Maintain heartbeats at the given `interval` while the node is running.
-
-        Parameters
-        ----------
-        interval : float
-            The interval (seconds) between heartbeats.
-
-        """
-        self.kernel.logger.info(
-            f"Starting task: heartbeats at {interval}s intervals",
-            LogColor.BLUE,
-        )
-        try:
-            while True:
-                await asyncio.sleep(interval)
-                msg = self.kernel.clock.utc_now()
-                if self._has_cache_backing:
-                    self.cache.heartbeat(msg)
-                if self._has_msgbus_backing:
-                    self.kernel.msgbus.publish(topic="health:heartbeat", msg=str(msg))
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            # Catch-all exceptions for development purposes (unexpected errors)
-            self.kernel.logger.error(str(e))
-
     def stop(self) -> None:
         """
         Stop the trading node gracefully.
