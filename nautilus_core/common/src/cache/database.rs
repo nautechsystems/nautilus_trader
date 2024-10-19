@@ -81,11 +81,17 @@ pub trait CacheDatabaseAdapter {
 
     fn load_actor(&self, component_id: &ComponentId) -> anyhow::Result<HashMap<String, Bytes>>;
 
-    fn delete_actor(&self, component_id: &ComponentId) -> anyhow::Result<()>;
-
     fn load_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<HashMap<String, Bytes>>;
 
-    fn delete_strategy(&self, component_id: &StrategyId) -> anyhow::Result<()>;
+    fn load_signals(&self, name: &str) -> anyhow::Result<Vec<Signal>>;
+
+    fn load_custom_data(&self, data_type: &DataType) -> anyhow::Result<Vec<CustomData>>;
+
+    fn load_quotes(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<QuoteTick>>;
+
+    fn load_trades(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<TradeTick>>;
+
+    fn load_bars(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<Bar>>;
 
     fn add(&self, key: String, value: Bytes) -> anyhow::Result<()>;
 
@@ -105,25 +111,19 @@ pub trait CacheDatabaseAdapter {
 
     fn add_order_book(&self, order_book: &OrderBook) -> anyhow::Result<()>;
 
-    fn add_quote(&self, quote: &QuoteTick) -> anyhow::Result<()>;
-
-    fn load_quotes(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<QuoteTick>>;
-
-    fn add_trade(&self, trade: &TradeTick) -> anyhow::Result<()>;
-
-    fn load_trades(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<TradeTick>>;
-
-    fn add_bar(&self, bar: &Bar) -> anyhow::Result<()>;
-
-    fn load_bars(&self, instrument_id: &InstrumentId) -> anyhow::Result<Vec<Bar>>;
-
     fn add_signal(&self, signal: &Signal) -> anyhow::Result<()>;
-
-    fn load_signals(&self, name: &str) -> anyhow::Result<Vec<Signal>>;
 
     fn add_custom_data(&self, data: &CustomData) -> anyhow::Result<()>;
 
-    fn load_custom_data(&self, data_type: &DataType) -> anyhow::Result<Vec<CustomData>>;
+    fn add_quote(&self, quote: &QuoteTick) -> anyhow::Result<()>;
+
+    fn add_trade(&self, trade: &TradeTick) -> anyhow::Result<()>;
+
+    fn add_bar(&self, bar: &Bar) -> anyhow::Result<()>;
+
+    fn delete_actor(&self, component_id: &ComponentId) -> anyhow::Result<()>;
+
+    fn delete_strategy(&self, component_id: &StrategyId) -> anyhow::Result<()>;
 
     fn index_venue_order_id(
         &self,
