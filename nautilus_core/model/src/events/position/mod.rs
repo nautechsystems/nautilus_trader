@@ -20,8 +20,7 @@ use crate::events::position::{
 pub mod changed;
 pub mod closed;
 pub mod opened;
-
-pub mod state;
+pub mod snapshot;
 
 pub enum PositionEvent {
     PositionOpened(PositionOpened),
