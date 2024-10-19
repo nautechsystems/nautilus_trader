@@ -26,7 +26,7 @@ use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
     accounts::any::AccountAny,
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick, DataType},
-    events::order::OrderEventAny,
+    events::{order::OrderEventAny, position::snapshot::PositionSnapshot},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,
@@ -100,6 +100,8 @@ pub trait CacheDatabaseAdapter {
     fn add_order(&self, order: &OrderAny, client_id: Option<ClientId>) -> anyhow::Result<()>;
 
     fn add_position(&self, position: &Position) -> anyhow::Result<()>;
+
+    fn add_position_snapshot(&self, snapshot: &PositionSnapshot) -> anyhow::Result<()>;
 
     fn add_order_book(&self, order_book: &OrderBook) -> anyhow::Result<()>;
 

@@ -31,7 +31,7 @@ use nautilus_core::{correctness::check_slice_not_empty, nanos::UnixNanos, uuid::
 use nautilus_model::{
     accounts::any::AccountAny,
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick, DataType},
-    events::order::OrderEventAny,
+    events::{order::OrderEventAny, position::snapshot::PositionSnapshot},
     identifiers::{
         AccountId, ClientId, ClientOrderId, ComponentId, InstrumentId, PositionId, StrategyId,
         TraderId, VenueOrderId,
@@ -862,6 +862,10 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     fn add_position(&self, position: &Position) -> anyhow::Result<()> {
+        todo!()
+    }
+
+    fn add_position_snapshot(&self, snapshot: &PositionSnapshot) -> anyhow::Result<()> {
         todo!()
     }
 
