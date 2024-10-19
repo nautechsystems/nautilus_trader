@@ -2037,6 +2037,10 @@ class TestActor:
 
         tick = TestDataStubs.quote_tick()
 
+        # data here only to demonstrate types involved
+        bar_type = TestDataStubs.bartype_audusd_1min_bid()
+        bar = TestDataStubs.bar_5decimal()
+
         # Act
         request_id = actor.request_quote_ticks(AUDUSD_SIM.id, callback=handler.append)
 
@@ -2044,7 +2048,7 @@ class TestActor:
             client_id=ClientId("SIM"),
             venue=Venue("SIM"),
             data_type=DataType(QuoteTick),
-            data=[tick],
+            data={"quote_ticks": [tick], "bars": {bar_type: [bar]}},
             correlation_id=request_id,
             response_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -2091,6 +2095,10 @@ class TestActor:
 
         tick = TestDataStubs.trade_tick()
 
+        # data here only to demonstrate types involved
+        bar_type = TestDataStubs.bartype_audusd_1min_bid()
+        bar = TestDataStubs.bar_5decimal()
+
         # Act
         request_id = actor.request_trade_ticks(AUDUSD_SIM.id, callback=handler.append)
 
@@ -2098,7 +2106,7 @@ class TestActor:
             client_id=ClientId("SIM"),
             venue=Venue("SIM"),
             data_type=DataType(TradeTick),
-            data=[tick],
+            data={"trade_ticks": [tick], "bars": {bar_type: [bar]}},
             correlation_id=request_id,
             response_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),
@@ -2154,7 +2162,7 @@ class TestActor:
             client_id=ClientId("SIM"),
             venue=Venue("SIM"),
             data_type=DataType(Bar),
-            data=[bar],
+            data={bar_type: [bar]},
             correlation_id=request_id,
             response_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),

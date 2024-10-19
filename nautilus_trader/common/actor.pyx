@@ -2865,15 +2865,30 @@ cdef class Actor(Component):
         self._finish_response(response.correlation_id)
 
     cpdef void _handle_quote_ticks_response(self, DataResponse response):
-        self.handle_quote_ticks(response.data)
+        data = response.data
+        self.handle_quote_ticks(data["quote_ticks"])
+
+        # aggregated bars of different bar types
+        for bars in data["bars"].values():
+            self.handle_bars(bars)
+
         self._finish_response(response.correlation_id)
 
     cpdef void _handle_trade_ticks_response(self, DataResponse response):
-        self.handle_trade_ticks(response.data)
+        data = response.data
+        self.handle_trade_ticks(data["trade_ticks"])
+
+        # aggregated bars of different bar types
+        for bars in data["bars"].values():
+            self.handle_bars(bars)
+
         self._finish_response(response.correlation_id)
 
     cpdef void _handle_bars_response(self, DataResponse response):
-        self.handle_bars(response.data)
+        # requested and aggregated bars of different bar types
+        for bars in response.data.values():
+            self.handle_bars(bars)
+
         self._finish_response(response.correlation_id)
 
     cpdef void _finish_response(self, UUID4 request_id):

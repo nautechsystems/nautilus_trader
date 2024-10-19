@@ -141,6 +141,9 @@ cdef class DataEngine(Component):
         self._subscribed_synthetic_trades: list[InstrumentId] = []
         self._buffered_deltas_map: dict[InstrumentId, list[OrderBookDelta]] = {}
         self._snapshot_info: dict[str, SnapshotInfo] = {}
+        self._composite_bar_types: dict[BarType, list[BarType]] = {}
+        self._trade_ticks_bar_types: dict[InstrumentId, list[BarType]] = {}
+        self._quote_ticks_bar_types: dict[InstrumentId, list[BarType]] = {}
 
         # Settings
         self.debug = config.debug
@@ -1631,11 +1634,11 @@ cdef class DataEngine(Component):
             else:
                 self._handle_instrument(response.data)
         elif response.data_type.type == QuoteTick:
-            self._handle_quote_ticks(response.data)
+            response.data = self._handle_quote_ticks(response.data)
         elif response.data_type.type == TradeTick:
-            self._handle_trade_ticks(response.data)
+            response.data = self._handle_trade_ticks(response.data)
         elif response.data_type.type == Bar:
-            self._handle_bars(response.data, response.data_type.metadata.get("Partial"))
+            response.data = self._handle_bars(response.data, response.data_type.metadata.get("Partial"))
 
         self._msgbus.response(response)
 
@@ -1644,13 +1647,74 @@ cdef class DataEngine(Component):
         for instrument in instruments:
             self._handle_instrument(instrument)
 
-    cpdef void _handle_quote_ticks(self, list ticks):
+    cpdef dict _handle_quote_ticks(self, list ticks):
         self._cache.add_quote_ticks(ticks)
+        result = {"quote_ticks": ticks, "bars": {}}
 
-    cpdef void _handle_trade_ticks(self, list ticks):
+        if len(ticks) == 0:
+            return result
+
+        instrument_id = ticks[0].instrument_id
+
+        if instrument_id not in self._quote_ticks_bar_types:
+            return result
+
+        result["bars"] = self._aggregate_ticks(ticks, self._quote_ticks_bar_types[instrument_id], is_quote_tick=True)
+
+        return result
+
+    cpdef dict _handle_trade_ticks(self, list ticks):
         self._cache.add_trade_ticks(ticks)
+        result = {"trade_ticks": ticks, "bars": {}}
 
-    cpdef void _handle_bars(self, list bars, Bar partial):
+        if len(ticks) == 0:
+            return result
+
+        instrument_id = ticks[0].instrument_id
+
+        if instrument_id not in self._trade_ticks_bar_types:
+            return result
+
+        result["bars"] = self._aggregate_ticks(ticks, self._trade_ticks_bar_types[instrument_id], is_quote_tick=False)
+
+        return result
+
+    cdef dict _aggregate_ticks(self, list ticks, list bar_types, bint is_quote_tick):
+        all_bars = {}
+
+        for bar_type in bar_types:
+            aggregated_bars = []
+            aggregator = self._bar_aggregators.get(bar_type)
+
+            if aggregator is None:
+                self._log.error(
+                    f"Cannot aggregate internal bars: "
+                    f"aggregator not found for bar_type {bar_type}",
+                )
+                return
+
+            handler = lambda bar: aggregated_bars.append(bar)
+            aggregator.start_batch_update(handler, ticks[0].ts_event)
+
+            if is_quote_tick:
+                for tick in ticks:
+                    aggregator.handle_quote_tick(tick)
+            else:
+                for tick in ticks:
+                    aggregator.handle_trade_tick(tick)
+
+            aggregator.stop_batch_update()
+
+            if len(aggregated_bars) > 0:
+                self._cache.add_bars(aggregated_bars)
+
+                # recursive call to _handle_composite_bars for handling bars derived from composite bars
+                derived_bars = self._handle_composite_bars(aggregated_bars)
+                all_bars |= derived_bars
+
+        return all_bars
+
+    cpdef dict _handle_bars(self, list bars, Bar partial):
         self._cache.add_bars(bars)
 
         cdef BarAggregator aggregator
@@ -1668,6 +1732,48 @@ cdef class DataEngine(Component):
                     # there may have been an immediate stop called after start
                     # - with the partial bar being for a now removed aggregator.
                     self._log.error("No aggregator for partial bar update")
+
+        return self._handle_composite_bars(bars)
+
+    cdef dict _handle_composite_bars(self, list bars):
+        all_bars = {}
+
+        if len(bars) == 0:
+            return all_bars
+
+        bar_type = bars[0].bar_type
+        all_bars[bar_type] = bars
+
+        if bar_type not in self._composite_bar_types:
+            return all_bars
+
+        for composite_bar_type in self._composite_bar_types[bar_type]:
+            aggregated_bars = []
+            aggregator = self._bar_aggregators.get(composite_bar_type)
+
+            if aggregator is None:
+                self._log.error(
+                    f"Cannot aggregate internal bars: "
+                    f"aggregator not found for bar_type {composite_bar_type}",
+                )
+                return
+
+            handler = lambda bar: aggregated_bars.append(bar)
+            aggregator.start_batch_update(handler, bars[0].ts_init)
+
+            for bar in bars:
+                aggregator.handle_bar(bar)
+
+            aggregator.stop_batch_update()
+
+            if len(aggregated_bars) > 0:
+                self._cache.add_bars(aggregated_bars)
+
+                # recursive call to _handle_composite_bars for handling bars derived from composite bars
+                derived_bars = self._handle_composite_bars(aggregated_bars)
+                all_bars |= derived_bars
+
+        return all_bars
 
 # -- INTERNAL -------------------------------------------------------------------------------------
 
@@ -1787,6 +1893,12 @@ cdef class DataEngine(Component):
                 handler=aggregator.handle_bar,
             )
             self._handle_subscribe_bars(client, composite_bar_type, False)
+
+            if composite_bar_type not in self._composite_bar_types:
+                self._composite_bar_types[composite_bar_type] = []
+
+            # standard bar types using composite bar type as data source
+            self._composite_bar_types[composite_bar_type].append(bar_type.standard())
         elif bar_type.spec.price_type == PriceType.LAST:
             self._msgbus.subscribe(
                 topic=f"data.trades"
@@ -1795,7 +1907,15 @@ cdef class DataEngine(Component):
                 handler=aggregator.handle_trade_tick,
                 priority=5,
             )
-            self._handle_subscribe_trade_ticks(client, bar_type.instrument_id)
+
+            instrument_id = bar_type.instrument_id
+            self._handle_subscribe_trade_ticks(client, instrument_id)
+
+            if instrument_id not in self._trade_ticks_bar_types:
+                self._trade_ticks_bar_types[instrument_id] = []
+
+            # bar types using instrument_id trade ticks as data source
+            self._trade_ticks_bar_types[instrument_id].append(bar_type)
         else:
             self._msgbus.subscribe(
                 topic=f"data.quotes"
@@ -1804,7 +1924,15 @@ cdef class DataEngine(Component):
                 handler=aggregator.handle_quote_tick,
                 priority=5,
             )
+
+            instrument_id = bar_type.instrument_id
             self._handle_subscribe_quote_ticks(client, bar_type.instrument_id)
+
+            if instrument_id not in self._quote_ticks_bar_types:
+                self._quote_ticks_bar_types[instrument_id] = []
+
+            # bar types using instrument_id quote ticks as data source
+            self._quote_ticks_bar_types[instrument_id].append(bar_type)
 
     cpdef void _stop_bar_aggregator(self, MarketDataClient client, BarType bar_type):
         cdef aggregator = self._bar_aggregators.get(bar_type.standard())
@@ -1827,6 +1955,12 @@ cdef class DataEngine(Component):
                 handler=aggregator.handle_bar,
             )
             self._handle_unsubscribe_bars(client, composite_bar_type)
+
+            if composite_bar_type in self._composite_bar_types:
+                self._composite_bar_types[composite_bar_type].remove(bar_type.standard())
+
+                if len(self._composite_bar_types[composite_bar_type]) == 0:
+                    del self._composite_bar_types[composite_bar_type]
         elif bar_type.spec.price_type == PriceType.LAST:
             self._msgbus.unsubscribe(
                 topic=f"data.trades"
@@ -1834,7 +1968,15 @@ cdef class DataEngine(Component):
                       f".{bar_type.instrument_id.symbol}",
                 handler=aggregator.handle_trade_tick,
             )
-            self._handle_unsubscribe_trade_ticks(client, bar_type.instrument_id)
+
+            instrument_id = bar_type.instrument_id
+            self._handle_unsubscribe_trade_ticks(client, instrument_id)
+
+            if instrument_id in self._trade_ticks_bar_types:
+                self._trade_ticks_bar_types[instrument_id].remove(bar_type)
+
+                if len(self._trade_ticks_bar_types[instrument_id]) == 0:
+                    del self._trade_ticks_bar_types[instrument_id]
         else:
             self._msgbus.unsubscribe(
                 topic=f"data.quotes"
@@ -1842,7 +1984,15 @@ cdef class DataEngine(Component):
                       f".{bar_type.instrument_id.symbol}",
                 handler=aggregator.handle_quote_tick,
             )
-            self._handle_unsubscribe_quote_ticks(client, bar_type.instrument_id)
+
+            instrument_id = bar_type.instrument_id
+            self._handle_unsubscribe_quote_ticks(client, instrument_id)
+
+            if instrument_id in self._quote_ticks_bar_types:
+                self._quote_ticks_bar_types[instrument_id].remove(bar_type)
+
+                if len(self._quote_ticks_bar_types[instrument_id]) == 0:
+                    del self._quote_ticks_bar_types[instrument_id]
 
         # Remove from aggregators
         del self._bar_aggregators[bar_type.standard()]
