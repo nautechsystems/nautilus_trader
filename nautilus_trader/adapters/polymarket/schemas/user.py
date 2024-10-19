@@ -13,6 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from typing import Any
+
 import msgspec
 
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketEventType
@@ -154,6 +156,9 @@ class PolymarketUserTrade(msgspec.Struct, tag="trade", tag_field="event_type", f
     trade_owner: str  # api key of trade owner
     trader_side: PolymarketLiquiditySide
     type: PolymarketEventType  # TRADE
+
+    def to_dict(self) -> dict[str, Any]:
+        return msgspec.json.decode(msgspec.json.encode(self))
 
     def liqudity_side(self) -> LiquiditySide:
         if self.trader_side == PolymarketLiquiditySide.MAKER:
