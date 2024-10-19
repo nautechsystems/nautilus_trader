@@ -35,6 +35,13 @@ pub mod types;
 /// Loaded as nautilus_pyo3.model
 #[pymodule]
 pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+    // Types
+    m.add_class::<crate::types::currency::Currency>()?;
+    m.add_class::<crate::types::money::Money>()?;
+    m.add_class::<crate::types::price::Price>()?;
+    m.add_class::<crate::types::quantity::Quantity>()?;
+    m.add_class::<crate::types::balance::AccountBalance>()?;
+    m.add_class::<crate::types::balance::MarginBalance>()?;
     // Data
     m.add_function(wrap_pyfunction!(data::drop_cvec_pycapsule, m)?)?;
     m.add_class::<crate::data::DataType>()?;
@@ -112,12 +119,8 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::orders::stop_market::StopMarketOrder>()?;
     m.add_class::<crate::orders::trailing_stop_limit::TrailingStopLimitOrder>()?;
     m.add_class::<crate::orders::trailing_stop_market::TrailingStopMarketOrder>()?;
-    m.add_class::<crate::types::currency::Currency>()?;
-    m.add_class::<crate::types::money::Money>()?;
-    m.add_class::<crate::types::price::Price>()?;
-    m.add_class::<crate::types::quantity::Quantity>()?;
-    m.add_class::<crate::types::balance::AccountBalance>()?;
-    m.add_class::<crate::types::balance::MarginBalance>()?;
+    // Position
+    m.add_class::<crate::position::Position>()?;
     // Instruments
     m.add_class::<crate::instruments::betting::BettingInstrument>()?;
     m.add_class::<crate::instruments::binary_option::BinaryOption>()?;
@@ -141,7 +144,8 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
         crate::python::orderbook::book::py_update_book_with_trade_tick,
         m
     )?)?;
-    // Events - order
+    // Events
+    m.add_class::<crate::events::account::state::AccountState>()?;
     m.add_class::<crate::events::order::OrderDenied>()?;
     m.add_class::<crate::events::order::OrderFilled>()?;
     m.add_class::<crate::events::order::OrderInitialized>()?;
@@ -158,10 +162,9 @@ pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_class::<crate::events::order::OrderCancelRejected>()?;
     m.add_class::<crate::events::order::OrderCanceled>()?;
     m.add_class::<crate::events::order::OrderExpired>()?;
-    // Events - account
-    m.add_class::<crate::events::account::state::AccountState>()?;
-    m.add_class::<crate::position::Position>()?;
-    // Account
+    m.add_class::<crate::events::order::OrderSnapshot>()?;
+    m.add_class::<crate::events::position::snapshot::PositionSnapshot>()?;
+    // Accounts
     m.add_class::<crate::accounts::cash::CashAccount>()?;
     m.add_class::<crate::accounts::margin::MarginAccount>()?;
     m.add_function(wrap_pyfunction!(
