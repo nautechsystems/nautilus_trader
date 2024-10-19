@@ -940,5 +940,5 @@ class PolymarketExecutionClient(LiveExecutionClient):
             commission=Money(commission, USDC_POS),
             liquidity_side=msg.liqudity_side(),
             ts_event=millis_to_nanos(int(msg.match_time)),
-            info=msgspec.structs.asdict(msg),
+            info=msg.to_dict(),
         )
