@@ -12,7 +12,7 @@ Released on TBD (UTC).
 - Added in the money probability field to GreeksData (#1995), thanks @faysou
 - Added `on_signal(signal)` handler for custom signal data
 - Improved usability of `OrderBookDepth10` by filling partial levels with null orders and zero counts
-- Improve Postgres config (#2010), thanks @filipmacek
+- Improved Postgres config (#2010), thanks @filipmacek
 - Refined `DatabentoInstrumentProvider` handling of large bulks of instrument definitions (improved parent symbol support)
 - Standardized Betfair symbology to use hyphens instead of periods (prevents Betfair symbols being treated as composite)
 - Integration guide docs fixes (#1991), thanks @FarukhS52
@@ -42,8 +42,8 @@ Released on TBD (UTC).
 - Fixed check for `OmsType` in `OrderMatchingEngine` position ID processing (#2003), thanks @filipmacek
 - Fixed `TardisCSVDataLoader` snapshot5 and snapshot25 parsing (#2005), thanks @Pushkarm029
 - Fixed Binance clients venue assignment, we should use the `client_id` params (which match the custom client `name`) to communicate with the clients, and use the same `'BINANCE'` venue identifiers
-- Fixed `OrderMatchingEngine` incorrectly attempting to process monthly bars for execution (which will fail, as no reasonable `timedelta` is available)
-- Fixed handling `MONTH` aggregation for `cache.bar_types()` (sorting required an internal call for the bar intervals `timedelta`)
+- Fixed `OrderMatchingEngine` incorrectly attempting to process monthly bars for execution (which will fail, as no reasonable `timedelta` is available), thanks for reporting @frostRed
+- Fixed handling `MONTH` aggregation for `cache.bar_types()` (sorting required an internal call for the bar intervals `timedelta`), thanks for reporting @frostRed
 
 ---
 
@@ -343,7 +343,7 @@ Released on 5th July 2024 (UTC).
 - Fixed `DatabentoDataLoader` multiplier and round lot size decoding, thanks for reporting @faysou
 - Fixed Binance order report generation `active_symbols` type miss matching (#1729), thanks @DevRoss
 - Fixed Binance trade data websocket schemas (Binance no longer publish `b` buyer and `a` seller order IDs)
-- Fixed `BinanceFuturesInstrumentProvider` parsing of min notional, thanks for the report @AnthonyVince
+- Fixed `BinanceFuturesInstrumentProvider` parsing of min notional, thanks for reporting @AnthonyVince
 - Fixed `BinanceSpotInstrumentProvider` parsing of min and max notional
 - Fixed Bybit order book deltas subscriptions for `INVERSE` product type
 - Fixed `Cache` documentation for `get` (was the same as `add`), thanks for reporting @faysou
@@ -496,7 +496,7 @@ Released on 20th April 2024 (UTC).
 
 ### Fixes
 - Fixed `MessageBus` pattern resolving (fixes a performance regression where topics published with no subscribers would always re-resolve)
-- Fixed `BacktestNode` streaming data management (was not clearing between chunks), thanks for the report @dpmabo
+- Fixed `BacktestNode` streaming data management (was not clearing between chunks), thanks for reporting @dpmabo
 - Fixed `RiskEngine` cumulative notional calculations for margin accounts (was incorrectly using base currency when selling)
 - Fixed selling `Equity` instruments with `CASH` account and `NETTING` OMS incorrectly rejecting (should be able to reduce position)
 - Fixed Databento bars decoding (was incorrectly applying display factor)
@@ -588,7 +588,7 @@ Released on 25th February 2024 (UTC).
 ### Fixes
 - Fixed `TradeId` memory leak due assigning unique values to the `Ustr` global string cache (which are never freed for the lifetime of the program)
 - Fixed `TradeTick` size precision for pyo3 conversion (size precision was incorrectly price precision)
-- Fixed `RiskEngine` cash value check when selling (would previously divide quantity by price which is too much), thanks for reporting@AnthonyVince
+- Fixed `RiskEngine` cash value check when selling (would previously divide quantity by price which is too much), thanks for reporting @AnthonyVince
 - Fixed FOK time in force behavior (allows fills beyond the top level, will cancel if cannot fill full size)
 - Fixed IOC time in force behavior (allows fills beyond the top level, will cancel any remaining after all fills are applied)
 - Fixed `LiveClock` timer behavior for small intervals causing next time to be less than now (timer then would not run)
