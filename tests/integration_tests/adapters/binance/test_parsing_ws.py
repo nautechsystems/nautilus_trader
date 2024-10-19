@@ -32,7 +32,7 @@ class TestBinanceWebSocketParsing:
             package="tests.integration_tests.adapters.binance.resources.ws_messages",
             resource="ws_spot_ticker_24hr.json",
         )
-        assert raw  # Check not None
+        assert raw
 
         # Act
         decoder = msgspec.json.Decoder(BinanceTickerData)
@@ -51,7 +51,7 @@ class TestBinanceWebSocketParsing:
             package="tests.integration_tests.adapters.binance.resources.ws_messages",
             resource="ws_futures_trade_lite.json",
         )
-        assert raw  # Check not None
+        assert raw
 
         # Act
         decoder = msgspec.json.Decoder(BinanceFuturesTradeLiteMsg)
