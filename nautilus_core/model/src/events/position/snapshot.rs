@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     enums::{OrderSide, PositionSide},
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{currency::Currency, money::Money, quantity::Quantity},
 };
 
 /// Represents a position state snapshot as a certain instant.
@@ -55,9 +55,9 @@ pub struct PositionSnapshot {
     /// The peak directional quantity reached by the position.
     pub peak_qty: Quantity,
     /// The last fill quantity for the position.
-    pub last_qty: Quantity,
-    /// The last fill price for the position.
-    pub last_px: Price,
+    // pub last_qty: Quantity,  TODO: Implement
+    // /// The last fill price for the position.
+    // pub last_px: Price,  TODO: Implement
     /// The position quote currency.
     pub quote_currency: Currency,
     /// The position base currency.
@@ -67,13 +67,13 @@ pub struct PositionSnapshot {
     /// The average open price.
     pub avg_px_open: f64,
     /// The average closing price.
-    pub avg_px_closed: Option<f64>,
+    pub avg_px_close: Option<f64>,
     /// The realized return for the position.
     pub realized_return: Option<f64>,
     /// The realized PnL for the position (including commissions).
     pub realized_pnl: Money,
     /// The unrealized PnL for the position (including commissions).
-    pub unrealized_pnl: Money,
+    pub unrealized_pnl: Option<Money>,
     /// The commissions for the position.
     pub commissions: Vec<Money>,
     /// The open duration for the position (nanoseconds).

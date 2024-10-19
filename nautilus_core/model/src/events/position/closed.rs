@@ -39,7 +39,7 @@ pub struct PositionClosed {
     pub last_px: Price,
     pub currency: Currency,
     pub avg_px_open: f64,
-    pub avg_px_closed: f64,
+    pub avg_px_close: f64,
     pub realized_return: f64,
     pub realized_pnl: Money,
     pub unrealized_pnl: Money,
