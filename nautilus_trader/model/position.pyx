@@ -149,13 +149,13 @@ cdef class Position:
             "ts_last": self.ts_last,
             "ts_closed": self.ts_closed if self.ts_closed > 0 else None,
             "duration_ns": self.duration_ns if self.duration_ns > 0 else None,
-            "avg_px_open": str(self.avg_px_open),
-            "avg_px_close": str(self.avg_px_close) if self.avg_px_close > 0 else None,
+            "avg_px_open": self.avg_px_open,
+            "avg_px_close": self.avg_px_close if self.avg_px_close > 0 else None,
             "quote_currency": self.quote_currency.code,
             "base_currency": self.base_currency.code if self.base_currency is not None else None,
             "settlement_currency": self.settlement_currency.code,
-            "commissions": sorted([str(c) for c in self.commissions()]) if self._commissions else None,
-            "realized_return": str(round(self.realized_return, 5)),
+            "commissions": sorted([str(c) for c in self.commissions()]),
+            "realized_return": round(self.realized_return, 5),
             "realized_pnl": str(self.realized_pnl),
         }
 

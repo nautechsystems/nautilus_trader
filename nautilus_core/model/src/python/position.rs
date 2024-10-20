@@ -380,12 +380,12 @@ impl Position {
             None => dict.set_item("ts_closed", py.None())?,
         }
         dict.set_item("duration_ns", self.duration_ns.to_u64())?;
-        dict.set_item("avg_px_open", self.avg_px_open.to_string())?;
+        dict.set_item("avg_px_open", self.avg_px_open)?;
         match self.avg_px_close {
-            Some(avg_px_close) => dict.set_item("avg_px_close", avg_px_close.to_string())?,
+            Some(avg_px_close) => dict.set_item("avg_px_close", avg_px_close)?,
             None => dict.set_item("avg_px_close", py.None())?,
         }
-        dict.set_item("realized_return", self.realized_return.to_string())?;
+        dict.set_item("realized_return", self.realized_return)?;
         match self.realized_pnl {
             Some(realized_pnl) => dict.set_item("realized_pnl", realized_pnl.to_string())?,
             None => dict.set_item("realized_pnl", py.None())?,
