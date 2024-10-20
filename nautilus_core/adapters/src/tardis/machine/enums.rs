@@ -15,7 +15,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::message::{
+use crate::tardis::machine::message::{
     BarMsg, BookChangeMsg, BookSnapshotMsg, DerivativeTickerMsg, DisconnectMsg, TradeMsg,
 };
 
