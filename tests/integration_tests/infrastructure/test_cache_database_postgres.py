@@ -37,6 +37,8 @@ from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.objects import AccountBalance
@@ -44,6 +46,7 @@ from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.position import Position
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -471,6 +474,7 @@ class TestCachePostgresAdapter:
             Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
+
         # Add foreign key dependencies: instrument and currencies
         self.database.add_currency(_AUDUSD_SIM.base_currency)
         self.database.add_currency(_AUDUSD_SIM.quote_currency)
@@ -493,6 +497,32 @@ class TestCachePostgresAdapter:
         result = self.database.load_order(order.client_order_id)
         assert result == order
         assert order.to_dict() == result.to_dict()
+
+    @pytest.mark.asyncio
+    async def test_add_position_snapshot(self):
+        self.database.add_currency(_AUDUSD_SIM.quote_currency)
+        order = self.strategy.order_factory.stop_market(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00000"),
+        )
+        # Add foreign key dependencies: instrument and currencies
+        self.database.add_currency(_AUDUSD_SIM.base_currency)
+        self.database.add_currency(_AUDUSD_SIM.quote_currency)
+        self.database.add_instrument(_AUDUSD_SIM)
+
+        fill = TestEventStubs.order_filled(
+            order=order,
+            instrument=_AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00001"),
+        )
+
+        position = Position(instrument=_AUDUSD_SIM, fill=fill)
+
+        self.database.add_position_snapshot(position)
 
     ################################################################################
     # Accounts

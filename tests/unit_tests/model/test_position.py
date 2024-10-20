@@ -147,6 +147,7 @@ class TestPosition:
             "signed_qty": 100000.0,
             "quantity": "100000",
             "peak_qty": "100000",
+            "ts_init": 0,
             "ts_opened": 0,
             "ts_last": 0,
             "ts_closed": None,
@@ -158,7 +159,7 @@ class TestPosition:
             "settlement_currency": "USD",
             "realized_return": "0.0",
             "realized_pnl": "-2.00 USD",
-            "commissions": "['2.00 USD']",
+            "commissions": ["2.00 USD"],
         }
 
     def test_long_position_to_dict_equity(self) -> None:
@@ -196,6 +197,7 @@ class TestPosition:
             "signed_qty": 100000.0,
             "quantity": "100000",
             "peak_qty": "100000",
+            "ts_init": 0,
             "ts_opened": 0,
             "ts_last": 0,
             "ts_closed": None,
@@ -207,7 +209,7 @@ class TestPosition:
             "settlement_currency": "USD",
             "realized_return": "0.0",
             "realized_pnl": "0.00 USD",
-            "commissions": "['0.00 USD']",
+            "commissions": ["0.00 USD"],
         }
 
     def test_short_position_to_dict_equity(self) -> None:
@@ -245,6 +247,7 @@ class TestPosition:
             "signed_qty": -100000.0,
             "quantity": "100000",
             "peak_qty": "100000",
+            "ts_init": 0,
             "ts_opened": 0,
             "ts_last": 0,
             "ts_closed": None,
@@ -256,7 +259,7 @@ class TestPosition:
             "settlement_currency": "USD",
             "realized_return": "0.0",
             "realized_pnl": "0.00 USD",
-            "commissions": "['0.00 USD']",
+            "commissions": ["0.00 USD"],
         }
 
     @pytest.mark.parametrize(

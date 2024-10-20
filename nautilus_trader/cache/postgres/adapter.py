@@ -29,6 +29,7 @@ from nautilus_trader.cache.postgres.transformers import transform_instrument_to_
 from nautilus_trader.cache.postgres.transformers import transform_order_event_to_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_order_from_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_order_to_pyo3
+from nautilus_trader.cache.postgres.transformers import transform_position_to_snapshot_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_quote_tick_to_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_signal_from_pyo3
 from nautilus_trader.cache.postgres.transformers import transform_signal_to_pyo3
@@ -48,6 +49,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.orders import Order
+from nautilus_trader.model.position import Position
 
 
 class CachePostgresAdapter(CacheDatabaseFacade):
@@ -142,6 +144,10 @@ class CachePostgresAdapter(CacheDatabaseFacade):
     def add_order(self, order: Order):
         order_pyo3 = transform_order_to_pyo3(order)
         self._backing.add_order(order_pyo3)
+
+    def add_position_snapshot(self, position: Position) -> None:
+        snapshot_pyo3 = transform_position_to_snapshot_pyo3(position)
+        self._backing.add_position_snapshot(snapshot_pyo3)
 
     def add_account(self, account: Account):
         account_pyo3 = transform_account_to_pyo3(account)

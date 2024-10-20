@@ -25,6 +25,7 @@ from nautilus_trader.core.nautilus_pyo3 import OrderType
 from nautilus_trader.core.nautilus_pyo3 import Position
 from nautilus_trader.core.nautilus_pyo3 import PositionId
 from nautilus_trader.core.nautilus_pyo3 import PositionSide
+from nautilus_trader.core.nautilus_pyo3 import PositionSnapshot
 from nautilus_trader.core.nautilus_pyo3 import Price
 from nautilus_trader.core.nautilus_pyo3 import Quantity
 from nautilus_trader.core.nautilus_pyo3 import StrategyId
@@ -67,6 +68,33 @@ def test_position_hash_str_repr():
     assert repr(position) == "Position(LONG 100_000 AUD/USD.SIM, id=P-123456)"
 
 
+def test_position_snapshot():
+    # Arrange
+    order = TestOrderProviderPyo3.market_order(
+        instrument_id=AUDUSD_SIM.id,
+        order_side=OrderSide.BUY,
+        quantity=Quantity.from_int(100_000),
+    )
+
+    fill = TestEventsProviderPyo3.order_filled(
+        order=order,
+        instrument=AUDUSD_SIM,
+        position_id=PositionId("P-123456"),
+        strategy_id=StrategyId("S-001"),
+        last_px=Price.from_str("1.00001"),
+    )
+
+    position = Position(instrument=AUDUSD_SIM, fill=fill)
+
+    # Act
+    values = position.to_dict()
+    snapshot = PositionSnapshot.from_dict(values)
+
+    # Assert
+    # TODO: Assert all attributes
+    assert snapshot
+
+
 def test_position_to_from_dict():
     long_position = TestAccountingProviderPyo3.long_position()
     result_dict = long_position.to_dict()
@@ -76,7 +104,7 @@ def test_position_to_from_dict():
         "type": "Position",
         "account_id": "SIM-000",
         "avg_px_close": None,
-        "avg_px_open": 1.00001,
+        "avg_px_open": "1.00001",
         "base_currency": "AUD",
         "buy_qty": "100000",
         "closing_order_id": None,
@@ -108,7 +136,7 @@ def test_position_to_from_dict():
                 "venue_order_id": "1",
             },
         ],
-        "id": "P-123456",
+        "position_id": "P-123456",
         "instrument_id": "AUD/USD.SIM",
         "is_inverse": False,
         "multiplier": "1",
@@ -118,7 +146,7 @@ def test_position_to_from_dict():
         "quantity": "100000",
         "quote_currency": "USD",
         "realized_pnl": "-2.00 USD",
-        "realized_return": 0.0,
+        "realized_return": "0",
         "sell_qty": "0",
         "settlement_currency": "USD",
         "side": "LONG",
