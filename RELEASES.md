@@ -32,7 +32,10 @@ Released on TBD (UTC).
 - Removed legacy `TardisQuoteDataLoader` (now redundant with new Rust implemented loader)
 - Removed legacy `TardisTradeDataLoader` (now redundant with new Rust implemented loader)
 - Custom signals are now passed to `on_signal(signal)` instead of `on_data(data)`
-- Changed `Position.to_dict()` `commissions` value to a list of strings (rather than the string of a list of strings)
+- Changed `Position.to_dict()` `commissions` value type to `list[str]` (rather than an optional `str` of a list of strings)
+- Changed `Position.to_dict()` `avg_px_open` value type to `float`
+- Changed `Position.to_dict()` `avg_px_close` value type to `float | None`
+- Changed `Position.to_dict()` `realized_return` value type to `float | None`
 - Changed `BettingInstrument` Arrow schema fields `event_open_date` and `market_start_time` from `string` to `uint64`
 
 ### Fixes
