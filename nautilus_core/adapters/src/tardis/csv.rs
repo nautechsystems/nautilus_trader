@@ -72,8 +72,9 @@ pub fn load_deltas<P: AsRef<Path>>(
     let mut deltas: Vec<OrderBookDelta> = Vec::new();
     let mut last_ts_event = UnixNanos::default();
 
-    for result in csv_reader.deserialize() {
-        let record: TardisBookUpdateRecord = result?;
+    let mut raw_record = StringRecord::new();
+    while csv_reader.read_record(&mut raw_record)? {
+        let record: TardisBookUpdateRecord = raw_record.deserialize(None)?;
 
         let instrument_id = match &instrument_id {
             Some(id) => *id,
@@ -391,8 +392,9 @@ pub fn load_quote_ticks<P: AsRef<Path>>(
     let mut csv_reader = create_csv_reader(filepath)?;
     let mut quotes = Vec::new();
 
-    for result in csv_reader.deserialize() {
-        let record: TardisQuoteRecord = result?;
+    let mut raw_record = StringRecord::new();
+    while csv_reader.read_record(&mut raw_record)? {
+        let record: TardisQuoteRecord = raw_record.deserialize(None)?;
 
         let instrument_id = match &instrument_id {
             Some(id) => *id,
@@ -438,8 +440,9 @@ pub fn load_trade_ticks<P: AsRef<Path>>(
     let mut csv_reader = create_csv_reader(filepath)?;
     let mut trades = Vec::new();
 
-    for result in csv_reader.deserialize() {
-        let record: TardisTradeRecord = result?;
+    let mut raw_record = StringRecord::new();
+    while csv_reader.read_record(&mut raw_record)? {
+        let record: TardisTradeRecord = raw_record.deserialize(None)?;
 
         let instrument_id = match &instrument_id {
             Some(id) => *id,
