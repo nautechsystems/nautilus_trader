@@ -11,6 +11,7 @@ Released on TBD (UTC).
 - Added rate limiter for `WebSocketClient` (#1994), thanks @Pushkarm029
 - Added in the money probability field to GreeksData (#1995), thanks @faysou
 - Added `on_signal(signal)` handler for custom signal data
+- Added `nautilus_trader.common.events` module with re-exports for `TimeEvent` and other system events
 - Improved usability of `OrderBookDepth10` by filling partial levels with null orders and zero counts
 - Improved Postgres config (#2010), thanks @filipmacek
 - Refined `DatabentoInstrumentProvider` handling of large bulks of instrument definitions (improved parent symbol support)
