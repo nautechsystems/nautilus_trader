@@ -20,9 +20,8 @@ use std::sync::{
 
 use chrono::NaiveDate;
 use futures_util::{pin_mut, StreamExt};
-use nautilus_adapters::tardis::{
-    enums::Exchange,
-    machine::{replay_normalized, ReplayNormalizedRequestOptions},
+use nautilus_adapters::tardis::machine::{
+    enums::Exchange, replay_normalized, ReplayNormalizedRequestOptions,
 };
 
 #[tokio::main]

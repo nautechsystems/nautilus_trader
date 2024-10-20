@@ -31,14 +31,16 @@ use nautilus_model::{
     types::{price::Price, quantity::Quantity},
 };
 
+mod record;
+
 use super::{
+    csv::record::{
+        TardisBookUpdateRecord, TardisOrderBookSnapshot25Record, TardisOrderBookSnapshot5Record,
+        TardisQuoteRecord, TardisTradeRecord,
+    },
     parse::{
         parse_aggressor_side, parse_book_action, parse_instrument_id, parse_order_side,
         parse_timestamp,
-    },
-    record::{
-        TardisBookUpdateRecord, TardisOrderBookSnapshot25Record, TardisOrderBookSnapshot5Record,
-        TardisQuoteRecord, TardisTradeRecord,
     },
 };
 

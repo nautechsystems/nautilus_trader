@@ -32,9 +32,11 @@ use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream,
 };
 
-use super::enums::{Exchange, WsMessage};
+use super::machine::enums::{Exchange, WsMessage};
 
 pub mod client;
+pub mod enums;
+pub mod message;
 
 pub use crate::tardis::machine::client::TardisClient;
 

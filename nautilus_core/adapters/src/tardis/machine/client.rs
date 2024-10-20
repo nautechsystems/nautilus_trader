@@ -24,7 +24,7 @@ use std::{
 use futures_util::Stream;
 
 use super::{replay_normalized, Error, ReplayNormalizedRequestOptions};
-use crate::tardis::enums::{Exchange, WsMessage};
+use crate::tardis::machine::enums::{Exchange, WsMessage};
 
 pub type Result<T> = std::result::Result<T, Error>;
 
