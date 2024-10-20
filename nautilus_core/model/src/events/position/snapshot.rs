@@ -65,11 +65,11 @@ pub struct PositionSnapshot {
     /// The position settlement currency.
     pub settlement_currency: Currency,
     /// The average open price.
-    pub avg_px_open: f64,
+    pub avg_px_open: String,
     /// The average closing price.
-    pub avg_px_close: Option<f64>,
+    pub avg_px_close: Option<String>,
     /// The realized return for the position.
-    pub realized_return: Option<f64>,
+    pub realized_return: Option<String>,
     /// The realized PnL for the position (including commissions).
     pub realized_pnl: Money,
     /// The unrealized PnL for the position (including commissions).

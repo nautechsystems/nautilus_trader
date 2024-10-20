@@ -343,7 +343,7 @@ impl Position {
         dict.set_item("trader_id", self.trader_id.to_string())?;
         dict.set_item("strategy_id", self.strategy_id.to_string())?;
         dict.set_item("instrument_id", self.instrument_id.to_string())?;
-        dict.set_item("id", self.id.to_string())?;
+        dict.set_item("position_id", self.id.to_string())?;
         dict.set_item("account_id", self.account_id.to_string())?;
         dict.set_item("opening_order_id", self.opening_order_id.to_string())?;
         match self.closing_order_id {
@@ -380,12 +380,12 @@ impl Position {
             None => dict.set_item("ts_closed", py.None())?,
         }
         dict.set_item("duration_ns", self.duration_ns.to_u64())?;
-        dict.set_item("avg_px_open", self.avg_px_open.to_f64())?;
+        dict.set_item("avg_px_open", self.avg_px_open.to_string())?;
         match self.avg_px_close {
-            Some(avg_px_close) => dict.set_item("avg_px_close", avg_px_close.to_u64())?,
+            Some(avg_px_close) => dict.set_item("avg_px_close", avg_px_close.to_string())?,
             None => dict.set_item("avg_px_close", py.None())?,
         }
-        dict.set_item("realized_return", self.realized_return.to_f64())?;
+        dict.set_item("realized_return", self.realized_return.to_string())?;
         match self.realized_pnl {
             Some(realized_pnl) => dict.set_item("realized_pnl", realized_pnl.to_string())?,
             None => dict.set_item("realized_pnl", py.None())?,

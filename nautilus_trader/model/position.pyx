@@ -144,6 +144,7 @@ cdef class Position:
             "signed_qty": self.signed_qty,
             "quantity": str(self.quantity),
             "peak_qty": str(self.peak_qty),
+            "ts_init": self.ts_init,
             "ts_opened": self.ts_opened,
             "ts_last": self.ts_last,
             "ts_closed": self.ts_closed if self.ts_closed > 0 else None,
@@ -153,7 +154,7 @@ cdef class Position:
             "quote_currency": self.quote_currency.code,
             "base_currency": self.base_currency.code if self.base_currency is not None else None,
             "settlement_currency": self.settlement_currency.code,
-            "commissions": str(sorted([str(c) for c in self.commissions()])) if self._commissions else None,
+            "commissions": sorted([str(c) for c in self.commissions()]) if self._commissions else None,
             "realized_return": str(round(self.realized_return, 5)),
             "realized_pnl": str(self.realized_pnl),
         }

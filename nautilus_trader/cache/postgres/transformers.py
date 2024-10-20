@@ -56,6 +56,7 @@ from nautilus_trader.model.instruments import OptionsSpread
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.orders import Order
 from nautilus_trader.model.orders.unpacker import OrderUnpacker
+from nautilus_trader.model.position import Position
 
 
 ################################################################################
@@ -258,6 +259,11 @@ def transform_order_from_pyo3(order_pyo3):
         event_cython = transform_order_event_from_pyo3(event_pyo3)
         order_cython.apply(event_cython)
     return order_cython
+
+
+def transform_position_to_snapshot_pyo3(position: Position):
+    values = position.to_dict()
+    return nautilus_pyo3.PositionSnapshot.from_dict(values)
 
 
 ################################################################################

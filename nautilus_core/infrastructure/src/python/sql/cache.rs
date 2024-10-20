@@ -22,6 +22,7 @@ use nautilus_common::{
 use nautilus_core::python::to_pyruntime_err;
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick, DataType},
+    events::position::snapshot::PositionSnapshot,
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId},
     python::{
         account::{convert_account_any_to_pyobject, convert_pyobject_to_account_any},
@@ -241,6 +242,12 @@ impl PostgresCacheDatabase {
     ) -> PyResult<()> {
         let order_any = convert_pyobject_to_order_any(py, order)?;
         self.add_order(&order_any, client_id)
+            .map_err(to_pyruntime_err)
+    }
+
+    #[pyo3(name = "add_position_snapshot")]
+    fn py_add_position_snapshot(&self, snapshot: PositionSnapshot) -> PyResult<()> {
+        self.add_position_snapshot(&snapshot)
             .map_err(to_pyruntime_err)
     }
 
