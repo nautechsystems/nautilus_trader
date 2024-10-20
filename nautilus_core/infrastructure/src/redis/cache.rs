@@ -271,8 +271,6 @@ async fn process_commands(
             match rx.recv().await {
                 Some(msg) => {
                     if let DatabaseOperation::Close = msg.op_type {
-                        // Close receiver end of the channel
-                        drop(rx);
                         break;
                     }
                     buffer.push_back(msg)
