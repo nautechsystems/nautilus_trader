@@ -19,19 +19,6 @@ use super::message::{
     BarMsg, BookChangeMsg, BookSnapshotMsg, DerivativeTickerMsg, DisconnectMsg, TradeMsg,
 };
 
-/// A Tardis Machine Server message type.
-#[allow(missing_docs)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case", tag = "type")]
-pub enum WsMessage {
-    Trade(TradeMsg),
-    BookChange(BookChangeMsg),
-    BookSnapshot(BookSnapshotMsg),
-    DerivativeTicker(DerivativeTickerMsg),
-    Bar(BarMsg),
-    Disconnect(DisconnectMsg),
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 /// The type of the symbol eg. Spot, Perpetual, Future, Option.
@@ -125,4 +112,17 @@ pub enum Exchange {
     StarAtlas,
     Upbit,
     WooX,
+}
+
+/// A Tardis Machine Server message type.
+#[allow(missing_docs)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "type")]
+pub enum WsMessage {
+    Trade(TradeMsg),
+    BookChange(BookChangeMsg),
+    BookSnapshot(BookSnapshotMsg),
+    DerivativeTicker(DerivativeTickerMsg),
+    Bar(BarMsg),
+    Disconnect(DisconnectMsg),
 }
