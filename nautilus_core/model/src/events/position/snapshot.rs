@@ -61,7 +61,7 @@ pub struct PositionSnapshot {
     /// The position quote currency.
     pub quote_currency: Currency,
     /// The position base currency.
-    pub base_currency: Currency,
+    pub base_currency: Option<Currency>,
     /// The position settlement currency.
     pub settlement_currency: Currency,
     /// The average open price.

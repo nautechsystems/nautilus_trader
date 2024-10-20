@@ -318,7 +318,7 @@ impl DatabaseQueries {
             .bind(snapshot.quantity.to_string())
             .bind(snapshot.peak_qty.to_string())
             .bind(snapshot.quote_currency.to_string())
-            .bind(snapshot.base_currency.to_string())
+            .bind(snapshot.base_currency.map(|x| x.to_string()))
             .bind(snapshot.settlement_currency.to_string())
             .bind(snapshot.avg_px_open.to_string())
             .bind(snapshot.avg_px_close.map(|x| x.to_string()))

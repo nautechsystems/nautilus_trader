@@ -166,9 +166,9 @@ CREATE TABLE IF NOT EXISTS "position"(
     -- last_qty TEXT,
     -- last_px TEXT,
     quote_currency TEXT NOT NULL,
-    base_currency TEXT NOT NULL,
+    base_currency TEXT,
     settlement_currency TEXT NOT NULL,
-    avg_px_open DOUBLE PRECISION,  -- Consider NUMERIC
+    avg_px_open DOUBLE PRECISION NOT NULL,  -- Consider NUMERIC
     avg_px_close DOUBLE PRECISION,  -- Consider NUMERIC
     realized_return DOUBLE PRECISION, -- Consider NUMERIC
     realized_pnl TEXT NOT NULL,
