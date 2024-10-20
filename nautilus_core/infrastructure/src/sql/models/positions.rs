@@ -60,8 +60,9 @@ impl<'r> FromRow<'r, PgRow> for PositionSnapshotModel {
             .try_get::<&str, _>("quote_currency")
             .map(Currency::from)?;
         let base_currency = row
-            .try_get::<&str, _>("base_currency")
-            .map(Currency::from)?;
+            .try_get::<Option<&str>, _>("base_currency")
+            .ok()
+            .and_then(|x| x.map(Currency::from));
         let settlement_currency = row
             .try_get::<&str, _>("settlement_currency")
             .map(Currency::from)?;
