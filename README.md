@@ -230,7 +230,7 @@ We strive to document these changes in the release notes on a best-effort basis.
 
 We strive to maintain a stable, passing build across all branches.
 
-- `master`: Reflects the source code for the latest released version .
+- `master`: Reflects the source code for the latest released version.
 - `nightly`: Contains experimental features, merged from the `develop` branch daily or as needed.
 - `develop`: Very active with frequent commits and may include experimental features.
 
