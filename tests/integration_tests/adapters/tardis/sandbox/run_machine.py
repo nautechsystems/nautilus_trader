@@ -34,4 +34,5 @@ async def run():
                 print(msg.data)
 
 
-asyncio.run(run())
+if __name__ == "__main__":
+    asyncio.run(run())
