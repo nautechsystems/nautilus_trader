@@ -2712,6 +2712,7 @@ dependencies = [
  "tracing-test",
  "urlencoding",
  "ustr",
+ "uuid",
 ]
 
 [[package]]

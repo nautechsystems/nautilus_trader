@@ -1,0 +1,15 @@
+{
+  "type": "book_change",
+  "symbol": "XBTUSD",
+  "exchange": "bitmex",
+  "isSnapshot": false,
+  "bids": [],
+  "asks": [
+    {
+      "price": 7985,
+      "amount": 283318
+    }
+  ],
+  "timestamp": "2019-10-23T11:29:53.469Z",
+  "localTimestamp": "2019-10-23T11:29:53.469Z"
+}

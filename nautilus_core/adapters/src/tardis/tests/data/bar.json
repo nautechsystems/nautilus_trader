@@ -1,0 +1,21 @@
+{
+  "type": "trade_bar",
+  "symbol": "XBTUSD",
+  "exchange": "bitmex",
+  "name": "trade_bar_10000ms",
+  "interval": 10000,
+  "kind": "time",
+  "open": 7623.5,
+  "high": 7623.5,
+  "low": 7623,
+  "close": 7623.5,
+  "volume": 37034,
+  "buyVolume": 24244,
+  "sellVolume": 12790,
+  "trades": 9,
+  "vwap": 7623.327320840309,
+  "openTimestamp": "2019-10-25T13:11:31.574Z",
+  "closeTimestamp": "2019-10-25T13:11:39.212Z",
+  "localTimestamp": "2019-10-25T13:11:40.369Z",
+  "timestamp": "2019-10-25T13:11:40.000Z"
+}

@@ -119,10 +119,10 @@ pub enum Exchange {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "type")]
 pub enum WsMessage {
-    Trade(TradeMsg),
     BookChange(BookChangeMsg),
     BookSnapshot(BookSnapshotMsg),
-    DerivativeTicker(DerivativeTickerMsg),
+    Trade(TradeMsg),
     Bar(BarMsg),
+    DerivativeTicker(DerivativeTickerMsg),
     Disconnect(DisconnectMsg),
 }

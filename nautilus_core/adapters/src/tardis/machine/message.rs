@@ -179,28 +179,12 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::tardis::tests::load_test_json;
 
     #[rstest]
     fn test_parse_book_change_message() {
-        let json_data = r#"
-        {
-          "type": "book_change",
-          "symbol": "XBTUSD",
-          "exchange": "bitmex",
-          "isSnapshot": false,
-          "bids": [],
-          "asks": [
-            {
-              "price": 7985,
-              "amount": 283318
-            }
-          ],
-          "timestamp": "2019-10-23T11:29:53.469Z",
-          "localTimestamp": "2019-10-23T11:29:53.469Z"
-        }
-        "#;
-
-        let message: BookChangeMsg = serde_json::from_str(json_data).expect("Failed to parse JSON");
+        let json_data = load_test_json("book_change.json");
+        let message: BookChangeMsg = serde_json::from_str(&json_data).unwrap();
 
         assert_eq!(message.symbol, "XBTUSD");
         assert_eq!(message.exchange, Exchange::Bitmex);
@@ -221,41 +205,8 @@ mod tests {
 
     #[rstest]
     fn test_parse_book_snapshot_message() {
-        let json_data = r#"
-        {
-          "type": "book_snapshot",
-          "symbol": "XBTUSD",
-          "exchange": "bitmex",
-          "name": "book_snapshot_2_50ms",
-          "depth": 2,
-          "interval": 50,
-          "bids": [
-            {
-              "price": 7633.5,
-              "amount": 1906067
-            },
-            {
-              "price": 7633,
-              "amount": 65319
-            }
-          ],
-          "asks": [
-            {
-              "price": 7634,
-              "amount": 1467849
-            },
-            {
-              "price": 7634.5,
-              "amount": 67939
-            }
-          ],
-          "timestamp": "2019-10-25T13:39:46.950Z",
-          "localTimestamp": "2019-10-25T13:39:46.961Z"
-        }
-        "#;
-
-        let message: BookSnapshotMsg =
-            serde_json::from_str(json_data).expect("Failed to parse JSON");
+        let json_data = load_test_json("book_snapshot.json");
+        let message: BookSnapshotMsg = serde_json::from_str(&json_data).unwrap();
 
         assert_eq!(message.symbol, "XBTUSD");
         assert_eq!(message.exchange, Exchange::Bitmex);
@@ -280,21 +231,8 @@ mod tests {
 
     #[rstest]
     fn test_parse_trade_message() {
-        let json_data = r#"
-        {
-          "type": "trade",
-          "symbol": "XBTUSD",
-          "exchange": "bitmex",
-          "id": "282a0445-0e3a-abeb-f403-11003204ea1b",
-          "price": 7996,
-          "amount": 50,
-          "side": "sell",
-          "timestamp": "2019-10-23T10:32:49.669Z",
-          "localTimestamp": "2019-10-23T10:32:49.740Z"
-        }
-        "#;
-
-        let message: TradeMsg = serde_json::from_str(json_data).expect("Failed to parse JSON");
+        let json_data = load_test_json("trade.json");
+        let message: TradeMsg = serde_json::from_str(&json_data).unwrap();
 
         assert_eq!(message.symbol, "XBTUSD");
         assert_eq!(message.exchange, Exchange::Bitmex);
@@ -317,23 +255,8 @@ mod tests {
 
     #[rstest]
     fn test_parse_derivative_ticker_message() {
-        let json_data = r#"
-    {
-      "type": "derivative_ticker",
-      "symbol": "BTC-PERPETUAL",
-      "exchange": "deribit",
-      "lastPrice": 7987.5,
-      "openInterest": 84129491,
-      "fundingRate": -0.00001568,
-      "indexPrice": 7989.28,
-      "markPrice": 7987.56,
-      "timestamp": "2019-10-23T11:34:29.302Z",
-      "localTimestamp": "2019-10-23T11:34:29.416Z"
-    }
-    "#;
-
-        let message: DerivativeTickerMsg =
-            serde_json::from_str(json_data).expect("Failed to parse JSON");
+        let json_data = load_test_json("derivative_ticker.json");
+        let message: DerivativeTickerMsg = serde_json::from_str(&json_data).unwrap();
 
         assert_eq!(message.symbol, "BTC-PERPETUAL");
         assert_eq!(message.exchange, Exchange::Deribit);
@@ -354,30 +277,8 @@ mod tests {
 
     #[rstest]
     fn test_parse_bar_message() {
-        let json_data = r#"
-    {
-      "type": "trade_bar",
-      "symbol": "XBTUSD",
-      "exchange": "bitmex",
-      "name": "trade_bar_10000ms",
-      "interval": 10000,
-      "open": 7623.5,
-      "high": 7623.5,
-      "low": 7623,
-      "close": 7623.5,
-      "volume": 37034,
-      "buyVolume": 24244,
-      "sellVolume": 12790,
-      "trades": 9,
-      "vwap": 7623.327320840309,
-      "openTimestamp": "2019-10-25T13:11:31.574Z",
-      "closeTimestamp": "2019-10-25T13:11:39.212Z",
-      "localTimestamp": "2019-10-25T13:11:40.369Z",
-      "timestamp": "2019-10-25T13:11:40.000Z"
-    }
-    "#;
-
-        let message: BarMsg = serde_json::from_str(json_data).expect("Failed to parse JSON");
+        let json_data = load_test_json("bar.json");
+        let message: BarMsg = serde_json::from_str(&json_data).unwrap();
 
         assert_eq!(message.symbol, "XBTUSD");
         assert_eq!(message.exchange, Exchange::Bitmex);
@@ -412,15 +313,8 @@ mod tests {
 
     #[rstest]
     fn test_parse_disconnect_message() {
-        let json_data = r#"
-    {
-      "type": "disconnect",
-      "exchange": "deribit",
-      "localTimestamp": "2019-10-23T11:34:29.416Z"
-    }
-    "#;
-
-        let message: DisconnectMsg = serde_json::from_str(json_data).expect("Failed to parse JSON");
+        let json_data = load_test_json("disconnect.json");
+        let message: DisconnectMsg = serde_json::from_str(&json_data).unwrap();
 
         assert_eq!(message.exchange, Exchange::Deribit);
         assert_eq!(
