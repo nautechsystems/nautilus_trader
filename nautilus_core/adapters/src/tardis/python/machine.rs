@@ -50,6 +50,8 @@ impl TardisClient {
                 .await
                 .expect("Failed to connect to WebSocket");
 
+            // We use Box::pin to heap-allocate the stream and ensure it implements
+            // Unpin for safe async handling across lifetimes.
             handle_python_stream(Box::pin(stream), callback).await;
             Ok(())
         })
@@ -70,6 +72,8 @@ impl TardisClient {
                 .await
                 .expect("Failed to connect to WebSocket");
 
+            // We use Box::pin to heap-allocate the stream and ensure it implements
+            // Unpin for safe async handling across lifetimes.
             handle_python_stream(Box::pin(stream), callback).await;
             Ok(())
         })
