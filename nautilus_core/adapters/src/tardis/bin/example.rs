@@ -22,7 +22,7 @@ use nautilus_adapters::tardis::machine::{
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::TRACE)
+        .with_max_level(tracing::Level::DEBUG)
         .init();
 
     let base_url = std::env::var("TARDIS_MACHINE_WS_URL").unwrap();
@@ -46,7 +46,7 @@ async fn main() {
     pin_mut!(stream);
 
     while let Some(msg) = stream.next().await {
-        println!("Received message: {:?}", msg);
+        println!("Received message: {msg:?}");
 
         counter += 1;
         if counter >= stop_count {

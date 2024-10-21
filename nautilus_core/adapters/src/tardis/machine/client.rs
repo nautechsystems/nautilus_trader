@@ -30,8 +30,6 @@ use super::{
 };
 use crate::tardis::machine::{enums::Exchange, parse::parse_tardis_ws_message};
 
-// pub type Result<T> = std::result::Result<T, Error>;
-
 pub struct TardisInstrument {
     pub symbol: String,
     pub exchange: Exchange,
