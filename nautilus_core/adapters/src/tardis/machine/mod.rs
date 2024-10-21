@@ -130,7 +130,7 @@ pub async fn replay_normalized(
         return Err(Error::EmptyOptions);
     }
 
-    let path = format!("{}/ws-replay-normalized?options=", base_url);
+    let path = format!("{base_url}/ws-replay-normalized?options=");
     let options = serde_json::to_string(&options)?;
 
     let plain_url = format!("{path}{options}");
@@ -149,7 +149,7 @@ pub async fn stream_normalized(
         return Err(Error::EmptyOptions);
     }
 
-    let path = format!("{}/ws-stream-normalized?options=", base_url);
+    let path = format!("{base_url}/ws-stream-normalized?options=");
     let options = serde_json::to_string(&options)?;
 
     let plain_url = format!("{path}{options}");

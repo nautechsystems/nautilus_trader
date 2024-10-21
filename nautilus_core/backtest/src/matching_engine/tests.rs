@@ -231,13 +231,8 @@ fn test_process_order_when_instrument_already_expired(
     );
 
     // Create engine and process order
-    let mut engine = get_order_matching_engine(
-        instrument.clone(),
-        Rc::new(RefCell::new(msgbus)),
-        None,
-        None,
-        None,
-    );
+    let mut engine =
+        get_order_matching_engine(instrument, Rc::new(RefCell::new(msgbus)), None, None, None);
 
     engine.process_order(&market_order_buy, account_id);
 
@@ -282,13 +277,8 @@ fn test_process_order_when_instrument_not_active(
     );
 
     // Create engine and process order
-    let mut engine = get_order_matching_engine(
-        instrument.clone(),
-        Rc::new(RefCell::new(msgbus)),
-        None,
-        None,
-        None,
-    );
+    let mut engine =
+        get_order_matching_engine(instrument, Rc::new(RefCell::new(msgbus)), None, None, None);
 
     engine.process_order(&market_order_buy, account_id);
 
@@ -442,13 +432,8 @@ fn test_process_order_when_shorting_equity_without_margin_account(
     );
 
     // Create engine and process order
-    let mut engine = get_order_matching_engine(
-        instrument.clone(),
-        Rc::new(RefCell::new(msgbus)),
-        None,
-        None,
-        None,
-    );
+    let mut engine =
+        get_order_matching_engine(instrument, Rc::new(RefCell::new(msgbus)), None, None, None);
 
     engine.process_order(&market_order_sell, account_id);
 
@@ -681,7 +666,7 @@ fn test_process_market_order_no_market_rejected(
 
     // Create engine and process order
     let mut engine = get_order_matching_engine(
-        instrument_es.clone(),
+        instrument_es,
         Rc::new(RefCell::new(msgbus)),
         None,
         None,
@@ -852,7 +837,7 @@ fn test_get_position_id_hedging_with_generated_position(
     };
     // Create oms type hedging engine
     let mut engine = OrderMatchingEngine::new(
-        instrument_eth_usdt.clone(),
+        instrument_eth_usdt,
         1,
         FillModel::default(),
         BookType::L1_MBP,

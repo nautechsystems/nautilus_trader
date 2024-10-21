@@ -38,6 +38,7 @@ use crate::tardis::parse::{
     parse_aggressor_side, parse_bar_spec, parse_book_action, parse_instrument_id,
 };
 
+#[must_use]
 pub fn parse_tardis_ws_message(
     msg: WsMessage,
     price_precision: u8,
@@ -73,6 +74,7 @@ pub fn parse_tardis_ws_message(
     }
 }
 
+#[must_use]
 pub fn parse_book_change_msg(
     msg: BookChangeMsg,
     price_precision: u8,
@@ -101,6 +103,7 @@ pub fn parse_book_change_msg(
     )
 }
 
+#[must_use]
 pub fn parse_book_snapshot_msg(
     msg: BookSnapshotMsg,
     price_precision: u8,
@@ -130,6 +133,7 @@ pub fn parse_book_snapshot_msg(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[must_use]
 pub fn parse_book_msg(
     bids: Vec<BookLevel>,
     asks: Vec<BookLevel>,
@@ -180,6 +184,7 @@ pub fn parse_book_msg(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[must_use]
 pub fn parse_book_level(
     instrument_id: InstrumentId,
     price_precision: u8,
@@ -213,6 +218,7 @@ pub fn parse_book_level(
     )
 }
 
+#[must_use]
 pub fn parse_trade_msg(
     msg: TradeMsg,
     price_precision: u8,
@@ -247,6 +253,7 @@ pub fn parse_trade_msg(
     )
 }
 
+#[must_use]
 pub fn parse_bar_msg(
     msg: BarMsg,
     price_precision: u8,

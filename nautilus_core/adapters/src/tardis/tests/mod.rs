@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 #[cfg(test)]
+#[must_use]
 pub fn load_test_json(file_name: &str) -> String {
     use std::{fs, path::PathBuf};
 
