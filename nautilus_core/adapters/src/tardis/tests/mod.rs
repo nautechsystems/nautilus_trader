@@ -13,14 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! The [Tardis](https://tardis.dev) integration adapter.
-
-pub mod csv;
-pub mod machine;
-pub mod parse;
-
-#[cfg(feature = "python")]
-pub mod python;
-
 #[cfg(test)]
-pub mod tests;
+pub fn load_test_json(file_name: &str) -> String {
+    use std::{fs, path::PathBuf};
+
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join("tardis")
+        .join("tests")
+        .join("data")
+        .join(file_name);
+
+    fs::read_to_string(path).expect("Failed to read test JSON file")
+}

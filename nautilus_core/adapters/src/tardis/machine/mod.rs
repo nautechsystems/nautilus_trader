@@ -37,6 +37,7 @@ use super::machine::enums::{Exchange, WsMessage};
 pub mod client;
 pub mod enums;
 pub mod message;
+pub mod parse;
 
 pub use crate::tardis::machine::client::TardisClient;
 

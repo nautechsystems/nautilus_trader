@@ -17,7 +17,8 @@ use std::str::FromStr;
 
 use nautilus_core::{datetime::NANOSECONDS_IN_MICROSECOND, nanos::UnixNanos};
 use nautilus_model::{
-    enums::{AggressorSide, BookAction, OrderSide},
+    data::bar::BarSpecification,
+    enums::{AggressorSide, BarAggregation, BookAction, OrderSide, PriceType},
     identifiers::InstrumentId,
 };
 
@@ -64,6 +65,32 @@ pub fn parse_book_action(is_snapshot: bool, amount: f64) -> BookAction {
         BookAction::Delete
     } else {
         BookAction::Update
+    }
+}
+
+#[must_use]
+pub fn parse_bar_spec(value: &str) -> BarSpecification {
+    // The last part contains both the step and the suffix (e.g., "10000ms")
+    let parts: Vec<&str> = value.split('_').collect();
+    let last_part = parts.last().expect("Invalid bar spec");
+
+    // Extract the number and suffix
+    let (step_str, suffix) = last_part.split_at(last_part.len() - 2);
+    let step: usize = step_str.parse().expect("Invalid step");
+
+    let aggregation = match suffix {
+        "ms" => BarAggregation::Millisecond,
+        "s" => BarAggregation::Second,
+        "m" => BarAggregation::Minute,
+        "ticks" => BarAggregation::Tick,
+        "vol" => BarAggregation::Volume,
+        _ => panic!("Unsupported bar aggregation type"),
+    };
+
+    BarSpecification {
+        step,
+        aggregation,
+        price_type: PriceType::Last, // Always last trade price for Tardis bars
     }
 }
 
