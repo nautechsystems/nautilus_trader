@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::sync::Arc;
+
 use chrono::{DateTime, Utc};
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
@@ -31,14 +33,13 @@ use nautilus_model::{
 use uuid::Uuid;
 
 use super::{
-    enums::WsMessage,
-    message::{BarMsg, BookChangeMsg, BookLevel, BookSnapshotMsg, TradeMsg},
+    message::{BarMsg, BookChangeMsg, BookLevel, BookSnapshotMsg, TradeMsg, WsMessage},
     TardisInstrumentInfo,
 };
 use crate::tardis::parse::{parse_aggressor_side, parse_bar_spec, parse_book_action};
 
 #[must_use]
-pub fn parse_tardis_ws_message(msg: WsMessage, info: TardisInstrumentInfo) -> Option<Data> {
+pub fn parse_tardis_ws_message(msg: WsMessage, info: Arc<TardisInstrumentInfo>) -> Option<Data> {
     match msg {
         WsMessage::BookChange(msg) => Some(Data::Deltas(parse_book_change_msg(
             msg,

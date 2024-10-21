@@ -171,6 +171,19 @@ pub struct DisconnectMsg {
     pub local_timestamp: DateTime<Utc>,
 }
 
+/// A Tardis Machine Server message type.
+#[allow(missing_docs)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "type")]
+pub enum WsMessage {
+    BookChange(BookChangeMsg),
+    BookSnapshot(BookSnapshotMsg),
+    Trade(TradeMsg),
+    Bar(BarMsg),
+    DerivativeTicker(DerivativeTickerMsg),
+    Disconnect(DisconnectMsg),
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////

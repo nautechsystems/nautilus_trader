@@ -24,6 +24,7 @@ use std::{
 use async_stream::stream;
 use chrono::NaiveDate;
 use futures_util::{stream::SplitSink, SinkExt, Stream, StreamExt};
+use message::WsMessage;
 use nautilus_model::identifiers::InstrumentId;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
@@ -33,7 +34,7 @@ use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream,
 };
 
-use super::machine::enums::{Exchange, WsMessage};
+use super::machine::enums::Exchange;
 
 pub mod client;
 pub mod enums;

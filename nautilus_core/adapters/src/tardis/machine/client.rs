@@ -15,7 +15,6 @@
 
 use std::{
     collections::HashMap,
-    str::FromStr,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -23,12 +22,14 @@ use std::{
 };
 
 use futures_util::{pin_mut, Stream, StreamExt};
-use nautilus_model::{data::Data, identifiers::InstrumentId};
+use nautilus_model::{
+    data::Data,
+    identifiers::{InstrumentId, Symbol, Venue},
+};
 
 use super::{
-    enums::{Exchange, WsMessage},
-    replay_normalized, stream_normalized, Error, ReplayNormalizedRequestOptions,
-    StreamNormalizedRequestOptions, TardisInstrumentInfo,
+    enums::Exchange, message::WsMessage, replay_normalized, stream_normalized, Error,
+    ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions, TardisInstrumentInfo,
 };
 use crate::tardis::machine::parse::parse_tardis_ws_message;
 
@@ -41,7 +42,7 @@ pub struct TardisClient {
     pub base_url: String,
     pub replay_signal: Arc<AtomicBool>,
     pub stream_signals: HashMap<TardisInstrumentInfo, Arc<AtomicBool>>,
-    pub instruments: HashMap<InstrumentId, TardisInstrumentInfo>,
+    pub instruments: HashMap<InstrumentId, Arc<TardisInstrumentInfo>>,
 }
 
 impl TardisClient {
@@ -56,7 +57,7 @@ impl TardisClient {
     }
 
     pub fn add_instrument_info(&mut self, info: TardisInstrumentInfo) {
-        self.instruments.insert(info.instrument_id, info);
+        self.instruments.insert(info.instrument_id, Arc::new(info));
     }
 
     #[must_use]
@@ -100,14 +101,14 @@ impl TardisClient {
 
         // We use Box::pin to heap-allocate the stream and ensure it implements
         // Unpin for safe async handling across lifetimes.
-        handle_ws_stream(Box::pin(stream), Some(instrument), None)
+        handle_ws_stream(Box::pin(stream), Some(Arc::new(instrument)), None)
     }
 }
 
 fn handle_ws_stream<S>(
     stream: S,
-    instrument: Option<TardisInstrumentInfo>,
-    instrument_map: Option<HashMap<InstrumentId, TardisInstrumentInfo>>,
+    instrument: Option<Arc<TardisInstrumentInfo>>,
+    instrument_map: Option<HashMap<InstrumentId, Arc<TardisInstrumentInfo>>>,
 ) -> impl Stream<Item = Data>
 where
     S: Stream<Item = Result<WsMessage, Error>> + Unpin,
@@ -150,13 +151,13 @@ where
 
 pub fn determine_instrument_info(
     msg: &WsMessage,
-    instrument_map: &HashMap<InstrumentId, TardisInstrumentInfo>,
-) -> Option<TardisInstrumentInfo> {
+    instrument_map: &HashMap<InstrumentId, Arc<TardisInstrumentInfo>>,
+) -> Option<Arc<TardisInstrumentInfo>> {
     let instrument_id = match msg {
-        WsMessage::BookChange(msg) => parse_instrument_id_with_enum(&msg.exchange, &msg.symbol),
-        WsMessage::BookSnapshot(msg) => parse_instrument_id_with_enum(&msg.exchange, &msg.symbol),
-        WsMessage::Trade(msg) => parse_instrument_id_with_enum(&msg.exchange, &msg.symbol),
-        WsMessage::Bar(msg) => parse_instrument_id_with_enum(&msg.exchange, &msg.symbol),
+        WsMessage::BookChange(msg) => parse_instrument_id_with_enum(&msg.symbol, &msg.exchange),
+        WsMessage::BookSnapshot(msg) => parse_instrument_id_with_enum(&msg.symbol, &msg.exchange),
+        WsMessage::Trade(msg) => parse_instrument_id_with_enum(&msg.symbol, &msg.exchange),
+        WsMessage::Bar(msg) => parse_instrument_id_with_enum(&msg.symbol, &msg.exchange),
         WsMessage::DerivativeTicker(_) => return None,
         WsMessage::Disconnect(_) => return None,
     };
@@ -170,12 +171,6 @@ pub fn determine_instrument_info(
 }
 
 #[must_use]
-fn parse_instrument_id_with_enum(exchange: &Exchange, symbol: &str) -> InstrumentId {
-    // TODO: Optimize this
-    let exchange_str = serde_json::to_string(&exchange)
-        .unwrap()
-        .trim_matches('"')
-        .to_string();
-    let venue = exchange_str.split('-').next().unwrap_or(&exchange_str);
-    InstrumentId::from_str(&format!("{symbol}.{venue}").to_uppercase()).expect("Failed to parse")
+fn parse_instrument_id_with_enum(symbol: &str, exchange: &Exchange) -> InstrumentId {
+    InstrumentId::new(Symbol::from(symbol), Venue::from(exchange.as_venue_str()))
 }
