@@ -13,15 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
-
 use chrono::NaiveDate;
 use futures_util::{pin_mut, StreamExt};
 use nautilus_adapters::tardis::machine::{
-    enums::Exchange, replay_normalized, ReplayNormalizedRequestOptions,
+    enums::Exchange, ReplayNormalizedRequestOptions, TardisClient,
 };
 
 #[tokio::main]
@@ -40,20 +35,24 @@ async fn main() {
         with_disconnect_messages: Some(true),
     }];
 
-    let signal = Arc::new(AtomicBool::new(false));
-    let stream = replay_normalized(&base_url, options, signal.clone())
-        .await
-        .unwrap();
+    let mut client = TardisClient::new(base_url.clone());
 
+    // Signal to stop after a number of messages
+    let stop_count = 100;
+    let mut counter = 0;
+
+    // Start the replay and receive the stream of messages
+    let stream = client.replay(options).await;
     pin_mut!(stream);
 
-    let stop_count = 100;
-    let mut counter = 1;
     while let Some(msg) = stream.next().await {
-        println!("Received message: {msg:?}");
+        println!("Received message: {:?}", msg);
+
         counter += 1;
         if counter >= stop_count {
-            signal.store(true, Ordering::Relaxed);
+            client.close();
         }
     }
+
+    tracing::info!("Stopped after receiving {stop_count} messages.");
 }
