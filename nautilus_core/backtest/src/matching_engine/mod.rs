@@ -885,7 +885,7 @@ impl OrderMatchingEngine {
             let positions_open =
                 cache.positions_open(None, Some(&order.instrument_id()), None, None);
             if !positions_open.is_empty() {
-                Some(positions_open[0].id.to_owned())
+                Some(positions_open[0].id)
             } else {
                 None
             }
