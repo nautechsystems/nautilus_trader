@@ -21,6 +21,7 @@ import pandas as pd
 import pyarrow.dataset as ds
 import pytest
 
+from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.rust.model import AggressorSide
@@ -45,7 +46,6 @@ from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.rust.data_pyo3 import TestDataProviderPyo3
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
-from tests import TEST_DATA_DIR
 
 
 def test_list_data_types(catalog_betfair: ParquetDataCatalog) -> None:

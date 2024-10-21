@@ -19,6 +19,7 @@ from decimal import Decimal
 import pandas as pd
 import pytz
 
+from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
@@ -37,7 +38,6 @@ from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.trading.strategy import Strategy
-from tests import TEST_DATA_DIR
 
 
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")

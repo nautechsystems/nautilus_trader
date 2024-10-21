@@ -15,6 +15,7 @@
 import pandas as pd
 import pytest
 
+from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import RecordFlag
@@ -24,7 +25,6 @@ from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
 from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
 from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
-from tests import TEST_DATA_DIR
 
 
 def test_load_binance_deltas() -> None:

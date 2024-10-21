@@ -17,6 +17,7 @@ from decimal import Decimal
 
 import pandas as pd
 
+from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.engine import ExecEngineConfig
@@ -58,7 +59,6 @@ from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
 from nautilus_trader.test_kit.mocks.data import setup_catalog
 from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
-from tests import TEST_DATA_DIR
 from tests.integration_tests.adapters.betfair.test_kit import BetfairDataProvider
 
 
