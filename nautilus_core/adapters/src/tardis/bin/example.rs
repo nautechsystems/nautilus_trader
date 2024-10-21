@@ -16,8 +16,9 @@
 use chrono::NaiveDate;
 use futures_util::{pin_mut, StreamExt};
 use nautilus_adapters::tardis::machine::{
-    enums::Exchange, ReplayNormalizedRequestOptions, TardisClient,
+    enums::Exchange, ReplayNormalizedRequestOptions, TardisClient, TardisInstrumentInfo,
 };
+use nautilus_model::identifiers::InstrumentId;
 
 #[tokio::main]
 async fn main() {
@@ -26,16 +27,32 @@ async fn main() {
         .init();
 
     let base_url = std::env::var("TARDIS_MACHINE_WS_URL").unwrap();
+    let mut client = TardisClient::new(base_url.clone());
+    // TODO: Add instrument info constructor
+    let instrument_info1 = TardisInstrumentInfo {
+        instrument_id: InstrumentId::from("XBTUSD.BITMEX"),
+        price_precision: 1,
+        size_precision: 0,
+    };
+    let instrument_info2 = TardisInstrumentInfo {
+        instrument_id: InstrumentId::from("ETHUSD.BITMEX"),
+        price_precision: 1,
+        size_precision: 0,
+    };
+    client.add_instrument_info(instrument_info1.clone());
+    client.add_instrument_info(instrument_info2.clone());
+
     let options = vec![ReplayNormalizedRequestOptions {
         exchange: Exchange::Bitmex,
-        symbols: Some(vec!["XBTUSD".to_string(), "ETHUSD".to_string()]),
+        symbols: Some(vec![
+            instrument_info1.instrument_id.symbol.to_string(),
+            instrument_info2.instrument_id.symbol.to_string(),
+        ]),
         from: NaiveDate::from_ymd_opt(2019, 10, 1).unwrap(),
         to: NaiveDate::from_ymd_opt(2019, 10, 2).unwrap(),
         data_types: vec!["trade".to_string(), "book_change".to_string()],
         with_disconnect_messages: Some(true),
     }];
-
-    let mut client = TardisClient::new(base_url.clone());
 
     // Signal to stop after a number of messages
     let stop_count = 100;
