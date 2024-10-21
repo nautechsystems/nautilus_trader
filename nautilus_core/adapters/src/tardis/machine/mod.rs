@@ -44,6 +44,10 @@ pub use crate::tardis::machine::client::TardisClient;
 /// The options that can be specified for calling Tardis Machine Server's replay-normalized.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+)]
 pub struct ReplayNormalizedRequestOptions {
     /// Requested [`Exchange`].
     pub exchange: Exchange,
@@ -69,6 +73,10 @@ pub struct ReplayNormalizedRequestOptions {
 /// The options that can be specified for calling Tardis Machine Server's stream-normalized.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+)]
 pub struct StreamNormalizedRequestOptions {
     /// Requested [`Exchange`].
     pub exchange: Exchange,
