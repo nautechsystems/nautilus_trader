@@ -213,7 +213,7 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result == 1030  # UNIX
+        assert result == 1062  # UNIX
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_run_config_parse_obj(self) -> None:
@@ -234,7 +234,7 @@ class TestBacktestConfigParsing:
         assert isinstance(config, BacktestRunConfig)
         node = BacktestNode(configs=[config])
         assert isinstance(node, BacktestNode)
-        assert len(raw) == 769  # UNIX
+        assert len(raw) == 793  # UNIX
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_backtest_data_config_to_dict(self) -> None:
@@ -255,7 +255,7 @@ class TestBacktestConfigParsing:
         )
         json = msgspec.json.encode(run_config)
         result = len(msgspec.json.encode(json))
-        assert result == 1778
+        assert result == 1810
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     def test_backtest_run_config_id(self) -> None:
@@ -263,7 +263,7 @@ class TestBacktestConfigParsing:
         print("token:", token)
         value: bytes = self.backtest_config.json()
         print("token_value:", value.decode())
-        assert token == "3c7139dc67cc3047c33a17d51ce47971671f18246c1e2e411654a35cfe04e903"
+        assert token == "a267a97629cff1a356b02955eae2766aaf55bd59a86fcda98720911bb0182d56"
 
     @pytest.mark.skipif(sys.platform == "win32", reason="redundant to also test Windows")
     @pytest.mark.parametrize(
@@ -285,7 +285,7 @@ class TestBacktestConfigParsing:
                 TestConfigStubs.backtest_engine_config,
                 ("catalog",),
                 {"persist": True},
-                ("789b190f1bbf143aebf018f49307f0107cf052b2def65179d5fb133b457b3da0",),
+                ("5834f08fbf4ba48cd3afa8c1b4fa44dd303beb852756dffd59090b872a577066",),
             ),
             (
                 TestConfigStubs.risk_engine_config,
