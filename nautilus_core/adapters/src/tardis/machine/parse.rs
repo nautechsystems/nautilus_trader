@@ -33,41 +33,36 @@ use uuid::Uuid;
 use super::{
     enums::WsMessage,
     message::{BarMsg, BookChangeMsg, BookLevel, BookSnapshotMsg, TradeMsg},
+    TardisInstrumentInfo,
 };
-use crate::tardis::parse::{
-    parse_aggressor_side, parse_bar_spec, parse_book_action, parse_instrument_id,
-};
+use crate::tardis::parse::{parse_aggressor_side, parse_bar_spec, parse_book_action};
 
 #[must_use]
-pub fn parse_tardis_ws_message(
-    msg: WsMessage,
-    price_precision: u8,
-    size_precision: u8,
-) -> Option<Data> {
+pub fn parse_tardis_ws_message(msg: WsMessage, info: TardisInstrumentInfo) -> Option<Data> {
     match msg {
         WsMessage::BookChange(msg) => Some(Data::Deltas(parse_book_change_msg(
             msg,
-            price_precision,
-            size_precision,
-            None, // Instrument ID handling TBD
+            info.price_precision,
+            info.size_precision,
+            info.instrument_id,
         ))),
         WsMessage::BookSnapshot(msg) => Some(Data::Deltas(parse_book_snapshot_msg(
             msg,
-            price_precision,
-            size_precision,
-            None, // Instrument ID handling TBD
+            info.price_precision,
+            info.size_precision,
+            info.instrument_id,
         ))),
         WsMessage::Trade(msg) => Some(Data::Trade(parse_trade_msg(
             msg,
-            price_precision,
-            size_precision,
-            None, // Instrument ID handling TBD
+            info.price_precision,
+            info.size_precision,
+            info.instrument_id,
         ))),
         WsMessage::Bar(msg) => Some(Data::Bar(parse_bar_msg(
             msg,
-            price_precision,
-            size_precision,
-            None, // Instrument ID handling TBD
+            info.price_precision,
+            info.size_precision,
+            info.instrument_id,
         ))),
         WsMessage::DerivativeTicker(_) => None,
         WsMessage::Disconnect(_) => None,
@@ -79,18 +74,8 @@ pub fn parse_book_change_msg(
     msg: BookChangeMsg,
     price_precision: u8,
     size_precision: u8,
-    instrument_id: Option<InstrumentId>,
+    instrument_id: InstrumentId,
 ) -> OrderBookDeltas_API {
-    let temp_exchange_str = serde_json::to_string(&msg.exchange)
-        .unwrap()
-        .trim_matches('"')
-        .to_string();
-
-    let instrument_id = match &instrument_id {
-        Some(id) => *id,
-        None => parse_instrument_id(&temp_exchange_str, &msg.symbol),
-    };
-
     parse_book_msg(
         msg.bids,
         msg.asks,
@@ -108,18 +93,8 @@ pub fn parse_book_snapshot_msg(
     msg: BookSnapshotMsg,
     price_precision: u8,
     size_precision: u8,
-    instrument_id: Option<InstrumentId>,
+    instrument_id: InstrumentId,
 ) -> OrderBookDeltas_API {
-    let temp_exchange_str = serde_json::to_string(&msg.exchange)
-        .unwrap()
-        .trim_matches('"')
-        .to_string();
-
-    let instrument_id = match &instrument_id {
-        Some(id) => *id,
-        None => parse_instrument_id(&temp_exchange_str, &msg.symbol),
-    };
-
     parse_book_msg(
         msg.bids,
         msg.asks,
@@ -223,18 +198,8 @@ pub fn parse_trade_msg(
     msg: TradeMsg,
     price_precision: u8,
     size_precision: u8,
-    instrument_id: Option<InstrumentId>,
+    instrument_id: InstrumentId,
 ) -> TradeTick {
-    let temp_exchange_str = serde_json::to_string(&msg.exchange)
-        .unwrap()
-        .trim_matches('"')
-        .to_string();
-
-    let instrument_id = match &instrument_id {
-        Some(id) => *id,
-        None => parse_instrument_id(&temp_exchange_str, &msg.symbol),
-    };
-
     let price = Price::new(msg.price, price_precision);
     let size = Quantity::new(msg.amount, size_precision);
     let aggressor_side = parse_aggressor_side(&msg.side);
@@ -258,17 +223,8 @@ pub fn parse_bar_msg(
     msg: BarMsg,
     price_precision: u8,
     size_precision: u8,
-    instrument_id: Option<InstrumentId>,
+    instrument_id: InstrumentId,
 ) -> Bar {
-    let temp_exchange_str = serde_json::to_string(&msg.exchange)
-        .unwrap()
-        .trim_matches('"')
-        .to_string();
-
-    let instrument_id = match &instrument_id {
-        Some(id) => *id,
-        None => parse_instrument_id(&temp_exchange_str, &msg.symbol),
-    };
     let spec = parse_bar_spec(&msg.name);
     let bar_type = BarType::new(instrument_id, spec, AggregationSource::External);
 
@@ -301,11 +257,11 @@ mod tests {
 
         let price_precision = 0;
         let size_precision = 0;
-        let instrument_id = None;
+        let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
         let deltas = parse_book_change_msg(msg, price_precision, size_precision, instrument_id);
 
         assert_eq!(deltas.deltas.len(), 1);
-        assert_eq!(deltas.instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
+        assert_eq!(deltas.instrument_id, instrument_id);
         assert_eq!(deltas.flags, RecordFlag::F_LAST.value());
         assert_eq!(deltas.sequence, 0);
         assert_eq!(deltas.ts_event, UnixNanos::from(1571830193469000000));
@@ -337,13 +293,13 @@ mod tests {
 
         let price_precision = 1;
         let size_precision = 0;
-        let instrument_id = None;
+        let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
         let deltas = parse_book_snapshot_msg(msg, price_precision, size_precision, instrument_id);
         let delta_0 = deltas.deltas[0];
         let _delta_2 = deltas.deltas[2];
 
         assert_eq!(deltas.deltas.len(), 4);
-        assert_eq!(deltas.instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
+        assert_eq!(deltas.instrument_id, instrument_id);
         assert_eq!(
             deltas.flags,
             RecordFlag::F_LAST.value() + RecordFlag::F_SNAPSHOT.value()
@@ -351,7 +307,7 @@ mod tests {
         assert_eq!(deltas.sequence, 0);
         assert_eq!(deltas.ts_event, UnixNanos::from(1572010786950000000));
         assert_eq!(deltas.ts_init, UnixNanos::from(1572010786961000000));
-        assert_eq!(delta_0.instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
+        assert_eq!(delta_0.instrument_id, instrument_id);
         assert_eq!(delta_0.action, BookAction::Add);
         assert_eq!(delta_0.order.price, Price::from("7633.5"));
         assert_eq!(delta_0.order.size, Quantity::from(1906067));
@@ -370,10 +326,10 @@ mod tests {
 
         let price_precision = 0;
         let size_precision = 0;
-        let instrument_id = None;
+        let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
         let trade = parse_trade_msg(msg, price_precision, size_precision, instrument_id);
 
-        assert_eq!(trade.instrument_id, InstrumentId::from("XBTUSD.BITMEX"));
+        assert_eq!(trade.instrument_id, instrument_id);
         assert_eq!(trade.price, Price::from("7996"));
         assert_eq!(trade.size, Quantity::from(50));
         assert_eq!(trade.aggressor_side, AggressorSide::Seller);
@@ -388,7 +344,7 @@ mod tests {
 
         let price_precision = 1;
         let size_precision = 0;
-        let instrument_id = None;
+        let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
         let bar = parse_bar_msg(msg, price_precision, size_precision, instrument_id);
 
         assert_eq!(

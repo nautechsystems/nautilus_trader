@@ -24,6 +24,7 @@ use std::{
 use async_stream::stream;
 use chrono::NaiveDate;
 use futures_util::{stream::SplitSink, SinkExt, Stream, StreamExt};
+use nautilus_model::identifiers::InstrumentId;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
@@ -40,6 +41,18 @@ pub mod message;
 pub mod parse;
 
 pub use crate::tardis::machine::client::TardisClient;
+
+/// Instrument definition information necessary for stream parsing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
+)]
+pub struct TardisInstrumentInfo {
+    pub instrument_id: InstrumentId,
+    pub price_precision: u8,
+    pub size_precision: u8,
+}
 
 /// The options that can be specified for calling Tardis Machine Server's replay-normalized.
 #[derive(Debug, Clone, Serialize, Deserialize)]

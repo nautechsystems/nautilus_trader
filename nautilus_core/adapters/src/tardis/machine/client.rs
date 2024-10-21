@@ -15,6 +15,7 @@
 
 use std::{
     collections::HashMap,
+    str::FromStr,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -22,18 +23,14 @@ use std::{
 };
 
 use futures_util::{pin_mut, Stream, StreamExt};
-use nautilus_model::data::Data;
+use nautilus_model::{data::Data, identifiers::InstrumentId};
 
 use super::{
-    enums::WsMessage, replay_normalized, stream_normalized, Error, ReplayNormalizedRequestOptions,
-    StreamNormalizedRequestOptions,
+    enums::{Exchange, WsMessage},
+    replay_normalized, stream_normalized, Error, ReplayNormalizedRequestOptions,
+    StreamNormalizedRequestOptions, TardisInstrumentInfo,
 };
-use crate::tardis::machine::{enums::Exchange, parse::parse_tardis_ws_message};
-
-pub struct TardisInstrument {
-    pub symbol: String,
-    pub exchange: Exchange,
-}
+use crate::tardis::machine::parse::parse_tardis_ws_message;
 
 /// Provides a client for connecting to a [Tardis Machine Server](https://docs.tardis.dev/api/tardis-machine).
 #[cfg_attr(
@@ -43,7 +40,8 @@ pub struct TardisInstrument {
 pub struct TardisClient {
     pub base_url: String,
     pub replay_signal: Arc<AtomicBool>,
-    pub stream_signals: HashMap<TardisInstrument, Arc<AtomicBool>>,
+    pub stream_signals: HashMap<TardisInstrumentInfo, Arc<AtomicBool>>,
+    pub instruments: HashMap<InstrumentId, TardisInstrumentInfo>,
 }
 
 impl TardisClient {
@@ -53,16 +51,29 @@ impl TardisClient {
             base_url: base_url.to_string(),
             replay_signal: Arc::new(AtomicBool::new(false)),
             stream_signals: HashMap::new(),
+            instruments: HashMap::new(),
         }
     }
 
+    pub fn add_instrument_info(&mut self, info: TardisInstrumentInfo) {
+        self.instruments.insert(info.instrument_id, info);
+    }
+
+    #[must_use]
+    pub fn is_closed(&self) -> bool {
+        self.replay_signal.load(Ordering::Relaxed)
+    }
+
     pub fn close(&mut self) {
+        tracing::debug!("Closing");
+
         self.replay_signal.store(true, Ordering::Relaxed);
 
         for signal in self.stream_signals.values() {
             signal.store(true, Ordering::Relaxed);
         }
-        tracing::info!("All signals set to true, shutting down");
+
+        tracing::debug!("Closed");
     }
 
     pub async fn replay(
@@ -75,11 +86,12 @@ impl TardisClient {
 
         // We use Box::pin to heap-allocate the stream and ensure it implements
         // Unpin for safe async handling across lifetimes.
-        handle_ws_stream(Box::pin(stream))
+        handle_ws_stream(Box::pin(stream), None, Some(self.instruments.clone()))
     }
 
     pub async fn stream(
         &self,
+        instrument: TardisInstrumentInfo,
         options: Vec<StreamNormalizedRequestOptions>,
     ) -> impl Stream<Item = Data> {
         let stream = stream_normalized(&self.base_url, options, self.replay_signal.clone())
@@ -88,23 +100,43 @@ impl TardisClient {
 
         // We use Box::pin to heap-allocate the stream and ensure it implements
         // Unpin for safe async handling across lifetimes.
-        handle_ws_stream(Box::pin(stream))
+        handle_ws_stream(Box::pin(stream), Some(instrument), None)
     }
 }
 
-fn handle_ws_stream<S>(stream: S) -> impl Stream<Item = Data>
+fn handle_ws_stream<S>(
+    stream: S,
+    instrument: Option<TardisInstrumentInfo>,
+    instrument_map: Option<HashMap<InstrumentId, TardisInstrumentInfo>>,
+) -> impl Stream<Item = Data>
 where
     S: Stream<Item = Result<WsMessage, Error>> + Unpin,
 {
+    assert!(
+        instrument.is_some() || instrument_map.is_some(),
+        "Either `instrument` or `instrument_map` must be provided"
+    );
+
     async_stream::stream! {
         pin_mut!(stream);
         while let Some(result) = stream.next().await {
             match result {
                 Ok(msg) => {
-                    if let Some(data) = parse_tardis_ws_message(msg, 0, 0) {
-                        yield data;
+                    // TODO: This sequence needs optimizing
+                    let info = if let Some(ref instrument) = instrument {
+                        Some(instrument.clone())
                     } else {
-                        continue;
+                        instrument_map.as_ref().and_then(|map| determine_instrument_info(&msg, map))
+                    };
+
+                    if let Some(info) = info {
+                        if let Some(data) = parse_tardis_ws_message(msg, info) {
+                            yield data;
+                        } else {
+                            continue;  // Non-data message
+                        }
+                    } else {
+                        continue;  // No instrument info
                     }
                 }
                 Err(e) => {
@@ -114,4 +146,36 @@ where
             }
         }
     }
+}
+
+pub fn determine_instrument_info(
+    msg: &WsMessage,
+    instrument_map: &HashMap<InstrumentId, TardisInstrumentInfo>,
+) -> Option<TardisInstrumentInfo> {
+    let instrument_id = match msg {
+        WsMessage::BookChange(msg) => parse_instrument_id_with_enum(&msg.exchange, &msg.symbol),
+        WsMessage::BookSnapshot(msg) => parse_instrument_id_with_enum(&msg.exchange, &msg.symbol),
+        WsMessage::Trade(msg) => parse_instrument_id_with_enum(&msg.exchange, &msg.symbol),
+        WsMessage::Bar(msg) => parse_instrument_id_with_enum(&msg.exchange, &msg.symbol),
+        WsMessage::DerivativeTicker(_) => return None,
+        WsMessage::Disconnect(_) => return None,
+    };
+    match instrument_map.get(&instrument_id) {
+        Some(instr) => Some(instr.clone().clone()),
+        None => {
+            tracing::error!("Instrument definition info not available for {instrument_id}");
+            None
+        }
+    }
+}
+
+#[must_use]
+fn parse_instrument_id_with_enum(exchange: &Exchange, symbol: &str) -> InstrumentId {
+    // TODO: Optimize this
+    let exchange_str = serde_json::to_string(&exchange)
+        .unwrap()
+        .trim_matches('"')
+        .to_string();
+    let venue = exchange_str.split('-').next().unwrap_or(&exchange_str);
+    InstrumentId::from_str(&format!("{symbol}.{venue}").to_uppercase()).expect("Failed to parse")
 }
