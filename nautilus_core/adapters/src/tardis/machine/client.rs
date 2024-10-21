@@ -21,12 +21,16 @@ use std::{
     },
 };
 
-use futures_util::Stream;
+use futures_util::{pin_mut, Stream, StreamExt};
+use nautilus_model::data::Data;
 
-use super::{replay_normalized, Error, ReplayNormalizedRequestOptions};
-use crate::tardis::machine::enums::{Exchange, WsMessage};
+use super::{
+    enums::WsMessage, replay_normalized, stream_normalized, Error, ReplayNormalizedRequestOptions,
+    StreamNormalizedRequestOptions,
+};
+use crate::tardis::machine::{enums::Exchange, parse::parse_tardis_ws_message};
 
-pub type Result<T> = std::result::Result<T, Error>;
+// pub type Result<T> = std::result::Result<T, Error>;
 
 pub struct TardisInstrument {
     pub symbol: String,
@@ -39,9 +43,9 @@ pub struct TardisInstrument {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
 )]
 pub struct TardisClient {
-    base_url: String,
-    replay_signal: Arc<AtomicBool>,
-    stream_signals: HashMap<TardisInstrument, Arc<AtomicBool>>,
+    pub base_url: String,
+    pub replay_signal: Arc<AtomicBool>,
+    pub stream_signals: HashMap<TardisInstrument, Arc<AtomicBool>>,
 }
 
 impl TardisClient {
@@ -60,13 +64,56 @@ impl TardisClient {
         for signal in self.stream_signals.values() {
             signal.store(true, Ordering::Relaxed);
         }
-        tracing::info!("All signals set to true, shutting down.");
+        tracing::info!("All signals set to true, shutting down");
     }
 
-    pub async fn start_replay(
+    pub async fn replay(
         &self,
         options: Vec<ReplayNormalizedRequestOptions>,
-    ) -> Result<impl Stream<Item = Result<WsMessage>>> {
-        replay_normalized(&self.base_url, options, self.replay_signal.clone()).await
+    ) -> impl Stream<Item = Data> {
+        let stream = replay_normalized(&self.base_url, options, self.replay_signal.clone())
+            .await
+            .expect("Failed to connect to WebSocket");
+
+        // We use Box::pin to heap-allocate the stream and ensure it implements
+        // Unpin for safe async handling across lifetimes.
+        handle_ws_stream(Box::pin(stream))
+    }
+
+    pub async fn stream(
+        &self,
+        options: Vec<StreamNormalizedRequestOptions>,
+    ) -> impl Stream<Item = Data> {
+        let stream = stream_normalized(&self.base_url, options, self.replay_signal.clone())
+            .await
+            .expect("Failed to connect to WebSocket");
+
+        // We use Box::pin to heap-allocate the stream and ensure it implements
+        // Unpin for safe async handling across lifetimes.
+        handle_ws_stream(Box::pin(stream))
+    }
+}
+
+fn handle_ws_stream<S>(stream: S) -> impl Stream<Item = Data>
+where
+    S: Stream<Item = Result<WsMessage, Error>> + Unpin,
+{
+    async_stream::stream! {
+        pin_mut!(stream);
+        while let Some(result) = stream.next().await {
+            match result {
+                Ok(msg) => {
+                    if let Some(data) = parse_tardis_ws_message(msg, 0, 0) {
+                        yield data;
+                    } else {
+                        continue;
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Error in WebSocket stream: {e:?}");
+                    break;
+                }
+            }
+        }
     }
 }
