@@ -15,10 +15,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::tardis::machine::message::{
-    BarMsg, BookChangeMsg, BookSnapshotMsg, DerivativeTickerMsg, DisconnectMsg, TradeMsg,
-};
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 /// The type of the symbol eg. Spot, Perpetual, Future, Option.
@@ -114,15 +110,60 @@ pub enum Exchange {
     WooX,
 }
 
-/// A Tardis Machine Server message type.
-#[allow(missing_docs)]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case", tag = "type")]
-pub enum WsMessage {
-    BookChange(BookChangeMsg),
-    BookSnapshot(BookSnapshotMsg),
-    Trade(TradeMsg),
-    Bar(BarMsg),
-    DerivativeTicker(DerivativeTickerMsg),
-    Disconnect(DisconnectMsg),
+impl Exchange {
+    pub fn as_venue_str(&self) -> &str {
+        match self {
+            Self::Ascendex => "ASCENDEX",
+            Self::Binance => "BINANCE",
+            Self::BinanceDelivery => "BINANCE",
+            Self::BinanceDex => "BINANCE",
+            Self::BinanceFutures => "BINANCE",
+            Self::BinanceJersey => "BINANCE",
+            Self::BinanceOptions => "BINANCE",
+            Self::BinanceUs => "BINANCE",
+            Self::Bitfinex => "BITFINEX",
+            Self::BitfinexDerivatives => "BITFINEX",
+            Self::Bitflyer => "BITFLYER",
+            Self::Bitmex => "BITMEX",
+            Self::Bitnomial => "BITNOMIAL",
+            Self::Bitstamp => "BITSTAMP",
+            Self::BlockchainCom => "BLOCKCHAIN_COM",
+            Self::Bybit => "BYBIT",
+            Self::BybitOptions => "BYBIT",
+            Self::BybitSpot => "BYBIT",
+            Self::Coinbase => "COINBASE",
+            Self::Coinflex => "COINFLEX",
+            Self::CryptoCom => "CRYPTO_COM",
+            Self::CryptoComDerivatives => "CRYPTO_COM",
+            Self::Cryptofacilities => "CRYPTOFACILITIES",
+            Self::Delta => "DELTA",
+            Self::Deribit => "DERIBIT",
+            Self::Dydx => "DYDX",
+            Self::Ftx => "FTX",
+            Self::FtxUs => "FTX",
+            Self::GateIo => "GATEIO",
+            Self::GateIoFutures => "GATEIO",
+            Self::Gemini => "GEMINI",
+            Self::Hitbtc => "HITBTC",
+            Self::Huobi => "HUOBI",
+            Self::HuobiDm => "HUOBI",
+            Self::HuobiDmLinearSwap => "HUOBI",
+            Self::HuobiDmOptions => "HUOBI",
+            Self::HuobiDmSwap => "HUOBI",
+            Self::Kraken => "KRAKEN",
+            Self::Kucoin => "KUCOIN",
+            Self::Mango => "MANGO",
+            Self::Okcoin => "OKCOIN",
+            Self::Okex => "OKEX",
+            Self::OkexFutures => "OKEX",
+            Self::OkexOptions => "OKEX",
+            Self::OkexSwap => "OKEX",
+            Self::Phemex => "PHEMEX",
+            Self::Poloniex => "POLONIEX",
+            Self::Serum => "SERUM",
+            Self::StarAtlas => "STARATLAS",
+            Self::Upbit => "UPBIT",
+            Self::WooX => "WOOX",
+        }
+    }
 }

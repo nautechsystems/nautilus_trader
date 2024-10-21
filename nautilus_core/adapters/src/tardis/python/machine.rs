@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use futures_util::{pin_mut, Stream, StreamExt};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
@@ -22,7 +22,7 @@ use pyo3::prelude::*;
 
 use crate::tardis::machine::{
     client::{determine_instrument_info, TardisClient},
-    enums::WsMessage,
+    message::WsMessage,
     parse::parse_tardis_ws_message,
     replay_normalized, stream_normalized, Error, ReplayNormalizedRequestOptions,
     StreamNormalizedRequestOptions, TardisInstrumentInfo,
@@ -86,7 +86,8 @@ impl TardisClient {
 
             // We use Box::pin to heap-allocate the stream and ensure it implements
             // Unpin for safe async handling across lifetimes.
-            handle_python_stream(Box::pin(stream), callback, Some(instrument), None).await;
+            handle_python_stream(Box::pin(stream), callback, Some(Arc::new(instrument)), None)
+                .await;
             Ok(())
         })
     }
@@ -95,8 +96,8 @@ impl TardisClient {
 async fn handle_python_stream<S>(
     mut stream: S,
     callback: PyObject,
-    instrument: Option<TardisInstrumentInfo>,
-    instrument_map: Option<HashMap<InstrumentId, TardisInstrumentInfo>>,
+    instrument: Option<Arc<TardisInstrumentInfo>>,
+    instrument_map: Option<HashMap<InstrumentId, Arc<TardisInstrumentInfo>>>,
 ) where
     S: Stream<Item = Result<WsMessage, Error>> + Unpin,
 {
