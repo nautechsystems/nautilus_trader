@@ -152,7 +152,7 @@ impl OrderEvent for OrderCanceled {
     }
 
     fn currency(&self) -> Option<Currency> {
-        todo!()
+        None
     }
 
     fn client_order_id(&self) -> ClientOrderId {

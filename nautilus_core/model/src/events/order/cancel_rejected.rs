@@ -282,7 +282,7 @@ impl OrderEvent for OrderCancelRejected {
     }
 
     fn commission(&self) -> Option<Money> {
-        todo!()
+        None
     }
 
     fn ts_event(&self) -> UnixNanos {

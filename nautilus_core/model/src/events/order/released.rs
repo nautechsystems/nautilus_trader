@@ -161,7 +161,7 @@ impl OrderEvent for OrderReleased {
     }
 
     fn liquidity_side(&self) -> Option<LiquiditySide> {
-        todo!()
+        None
     }
 
     fn post_only(&self) -> Option<bool> {
