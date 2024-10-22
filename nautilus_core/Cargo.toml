@@ -30,7 +30,7 @@ documentation = "https://nautilustrader.io/docs"
 anyhow = "1.0.90"
 async-stream = "0.3.6"
 base64 = "0.22.1"
-bytes = { version = "1.7.2", features = ["serde"] }
+bytes = { version = "1.8.0", features = ["serde"] }
 chrono = { version = "0.4.38", features = ["serde"] }
 derive_builder = "0.20.2"
 futures = "0.3.31"
