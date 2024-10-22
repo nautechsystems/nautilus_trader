@@ -1,9 +1,9 @@
 # NautilusTrader 1.204.0 Beta
 
-Released on TBD (UTC).
+Released on 22nd October 2024 (UTC).
 
 ### Enhancements
-- Added `TardisCSVDataLoader` for loading data from Tardis format CSV files as either legacy Cython or pyo3 objects
+- Added `TardisCSVDataLoader` for loading data from Tardis format CSV files as either legacy Cython or PyO3 objects
 - Added `Clock.timestamp_us()` method for UNIX timestamps in microseconds (μs)
 - Added support for `bbo-1s` and `bbo-1m` quote schemas for Databento adapter (#1990), thanks @faysou
 - Added validation for venue `book_type` configuration vs data (prevents an issue where top-of-book data is used when order book data is expected)
@@ -547,7 +547,7 @@ Released on 15th March 2024 (UTC).
 ### Enhancements
 - Implemented Binance order book snapshot rebuilds on websocket reconnect (see integration guide)
 - Added additional validations for `OrderMatchingEngine` (will now raise a `RuntimeError` when a price or size precision for `OrderFilled` does not match the instruments precisions)
-- Added `LoggingConfig.use_pyo3` config option for pyo3 based logging initialization (worse performance but allows visibility into logs originating from Rust)
+- Added `LoggingConfig.use_pyo3` config option for PyO3 based logging initialization (worse performance but allows visibility into logs originating from Rust)
 - Added `exchange` field to `FuturesContract`, `FuturesSpread`, `OptionsContract` and `OptionsSpread` (optional)
 
 ### Breaking Changes
@@ -592,7 +592,7 @@ Released on 25th February 2024 (UTC).
 
 ### Fixes
 - Fixed `TradeId` memory leak due assigning unique values to the `Ustr` global string cache (which are never freed for the lifetime of the program)
-- Fixed `TradeTick` size precision for pyo3 conversion (size precision was incorrectly price precision)
+- Fixed `TradeTick` size precision for PyO3 conversion (size precision was incorrectly price precision)
 - Fixed `RiskEngine` cash value check when selling (would previously divide quantity by price which is too much), thanks for reporting @AnthonyVince
 - Fixed FOK time in force behavior (allows fills beyond the top level, will cancel if cannot fill full size)
 - Fixed IOC time in force behavior (allows fills beyond the top level, will cancel any remaining after all fills are applied)
@@ -1286,7 +1286,7 @@ Released on 28th January 2023 (UTC).
 - Renamed `BookOrder.id` to `order_id`
 
 ### Enhancements
-- Introduced Rust pyo3 based `ParquetReader` and `ParquetWriter`, thanks @twitu
+- Introduced Rust PyO3 based `ParquetReader` and `ParquetWriter`, thanks @twitu
 - Added `msgbus.is_subscribed` (to check if topic and handler already subscribed)
 - Simplified message type model and introduce CQRS-ish live messaging architecture
 
