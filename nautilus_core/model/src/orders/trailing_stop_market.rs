@@ -380,9 +380,8 @@ impl From<OrderAny> for TrailingStopMarketOrder {
             OrderAny::TrailingStopMarket(order) => order,
             _ => {
                 panic!(
-                    "Invalid `OrderAny` not `{}`, was {:?}",
+                    "Invalid `OrderAny` not `{}`, was {order:?}",
                     stringify!(TrailingStopMarketOrder),
-                    order
                 )
             }
         }

@@ -104,7 +104,7 @@ pub extern "C" fn test_clock_timestamp_ms(clock: &TestClock_API) -> u64 {
 
 #[no_mangle]
 pub extern "C" fn test_clock_timestamp_us(clock: &TestClock_API) -> u64 {
-    clock.get_time_ms()
+    clock.get_time_us()
 }
 
 #[no_mangle]
@@ -310,7 +310,7 @@ pub extern "C" fn live_clock_timestamp_ms(clock: &mut LiveClock_API) -> u64 {
 
 #[no_mangle]
 pub extern "C" fn live_clock_timestamp_us(clock: &mut LiveClock_API) -> u64 {
-    clock.get_time_ms()
+    clock.get_time_us()
 }
 
 #[no_mangle]

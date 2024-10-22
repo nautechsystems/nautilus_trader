@@ -35,9 +35,9 @@ from nautilus_trader.model.instruments import OptionsSpread
 SCHEMAS = {
     BettingInstrument: pa.schema(
         {
+            "id": pa.string(),
             "venue_name": pa.string(),
             "currency": pa.string(),
-            "id": pa.string(),
             "event_type_id": pa.int64(),
             "event_type_name": pa.string(),
             "competition_id": pa.int64(),
@@ -45,12 +45,12 @@ SCHEMAS = {
             "event_id": pa.int64(),
             "event_name": pa.string(),
             "event_country_code": pa.string(),
-            "event_open_date": pa.string(),
+            "event_open_date": pa.uint64(),
             "betting_type": pa.string(),
             "market_id": pa.string(),
             "market_name": pa.string(),
-            "market_start_time": pa.string(),
             "market_type": pa.string(),
+            "market_start_time": pa.uint64(),
             "selection_id": pa.int64(),
             "selection_name": pa.string(),
             "selection_handicap": pa.float64(),

@@ -111,15 +111,15 @@ impl DataTransformer {
         let mut cursor = Cursor::new(Vec::new());
         {
             let mut writer = StreamWriter::try_new(&mut cursor, &schema)
-                .map_err(|err| PyRuntimeError::new_err(format!("{err}")))?;
+                .map_err(|e| PyRuntimeError::new_err(format!("{e}")))?;
 
             writer
                 .write(&batch)
-                .map_err(|err| PyRuntimeError::new_err(format!("{err}")))?;
+                .map_err(|e| PyRuntimeError::new_err(format!("{e}")))?;
 
             writer
                 .finish()
-                .map_err(|err| PyRuntimeError::new_err(format!("{err}")))?;
+                .map_err(|e| PyRuntimeError::new_err(format!("{e}")))?;
         }
 
         let buffer = cursor.into_inner();

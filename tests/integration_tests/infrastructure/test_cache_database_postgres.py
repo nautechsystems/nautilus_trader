@@ -22,18 +22,23 @@ import pytest
 from nautilus_trader.cache.postgres.adapter import CachePostgresAdapter
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
+from nautilus_trader.common.signal import generate_signal_class
 from nautilus_trader.core.nautilus_pyo3 import AggressorSide
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarAggregation
 from nautilus_trader.model.data import BarSpecification
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import CustomData
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.events import AccountState
+from nautilus_trader.model.identifiers import PositionId
+from nautilus_trader.model.identifiers import StrategyId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.objects import AccountBalance
@@ -41,6 +46,7 @@ from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+from nautilus_trader.model.position import Position
 from nautilus_trader.portfolio.portfolio import Portfolio
 from nautilus_trader.test_kit.functions import eventually
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
@@ -49,6 +55,8 @@ from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.events import TestEventStubs
 from nautilus_trader.test_kit.stubs.execution import TestExecStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
+from nautilus_trader.trading.filters import NewsEvent
+from nautilus_trader.trading.filters import NewsImpact
 from nautilus_trader.trading.strategy import Strategy
 
 
@@ -103,11 +111,11 @@ class TestCachePostgresAdapter:
 
     def teardown(self):
         self.database.flush()
+        self.database.dispose()
 
     ################################################################################
     # General
     ################################################################################
-
     @pytest.mark.asyncio
     async def test_load_general_objects_when_nothing_in_cache_returns_empty_dict(self):
         # Arrange, Act
@@ -156,6 +164,54 @@ class TestCachePostgresAdapter:
 
         currencies = self.database.load_currencies()
         assert list(currencies.keys()) == ["BTC"]
+
+    ################################################################################
+    # Instrument - Betting
+    ################################################################################
+    @pytest.mark.skip(reason="from_pyo3 must be implemented")
+    @pytest.mark.asyncio
+    async def test_add_instrument_betting(self):
+        betting = TestInstrumentProvider.betting_instrument()
+        self.database.add_currency(betting.quote_currency)
+
+        # Check that we have added target currencies, because of foreign key constraints
+        await eventually(lambda: self.database.load_currencies())
+
+        currencies = self.database.load_currencies()
+        assert list(currencies.keys()) == ["GBP"]
+
+        # add instrument
+        self.database.add_instrument(betting)
+
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_instrument(betting.id))
+
+        # Assert
+        assert betting == self.database.load_instrument(betting.id)
+
+    ################################################################################
+    # Instrument - Binary Option
+    ################################################################################
+    @pytest.mark.skip(reason="from_pyo3 must be implemented")
+    @pytest.mark.asyncio
+    async def test_add_instrument_binary_option(self):
+        binary_option = TestInstrumentProvider.binary_option()
+        self.database.add_currency(binary_option.quote_currency)
+
+        # Check that we have added target currencies, because of foreign key constraints
+        await eventually(lambda: self.database.load_currencies())
+
+        currencies = self.database.load_currencies()
+        assert list(currencies.keys()) == ["USDC"]
+
+        # add instrument
+        self.database.add_instrument(binary_option)
+
+        # Allow MPSC thread to insert
+        await eventually(lambda: self.database.load_instrument(binary_option.id))
+
+        # Assert
+        assert binary_option == self.database.load_instrument(binary_option.id)
 
     ################################################################################
     # Instrument - Crypto Future
@@ -213,7 +269,6 @@ class TestCachePostgresAdapter:
     ################################################################################
     # Instrument - Currency Pair
     ################################################################################
-
     @pytest.mark.asyncio
     async def test_add_instrument_currency_pair(self):
         self.database.add_currency(_AUDUSD_SIM.base_currency)
@@ -277,7 +332,6 @@ class TestCachePostgresAdapter:
     ################################################################################
     # Instrument - Equity
     ################################################################################
-
     @pytest.mark.asyncio
     async def test_add_instrument_equity(self):
         appl_equity = TestInstrumentProvider.equity()
@@ -420,6 +474,7 @@ class TestCachePostgresAdapter:
             Quantity.from_int(100_000),
             Price.from_str("1.00000"),
         )
+
         # Add foreign key dependencies: instrument and currencies
         self.database.add_currency(_AUDUSD_SIM.base_currency)
         self.database.add_currency(_AUDUSD_SIM.quote_currency)
@@ -442,6 +497,32 @@ class TestCachePostgresAdapter:
         result = self.database.load_order(order.client_order_id)
         assert result == order
         assert order.to_dict() == result.to_dict()
+
+    @pytest.mark.asyncio
+    async def test_add_position_snapshot(self):
+        self.database.add_currency(_AUDUSD_SIM.quote_currency)
+        order = self.strategy.order_factory.stop_market(
+            _AUDUSD_SIM.id,
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("1.00000"),
+        )
+        # Add foreign key dependencies: instrument and currencies
+        self.database.add_currency(_AUDUSD_SIM.base_currency)
+        self.database.add_currency(_AUDUSD_SIM.quote_currency)
+        self.database.add_instrument(_AUDUSD_SIM)
+
+        fill = TestEventStubs.order_filled(
+            order=order,
+            instrument=_AUDUSD_SIM,
+            position_id=PositionId("P-123456"),
+            strategy_id=StrategyId("S-001"),
+            last_px=Price.from_str("1.00001"),
+        )
+
+        position = Position(instrument=_AUDUSD_SIM, fill=fill)
+
+        self.database.add_position_snapshot(position)
 
     ################################################################################
     # Accounts
@@ -604,3 +685,39 @@ class TestCachePostgresAdapter:
         assert target_bar.volume == bar.volume
         assert target_bar.ts_init == bar.ts_init
         assert target_bar.ts_event == bar.ts_event
+
+    @pytest.mark.asyncio
+    async def test_add_and_load_signals(self):
+        signal_cls = generate_signal_class("example", value_type=float)
+        signal = signal_cls(value=1.0, ts_event=1, ts_init=2)
+        signal_name = signal.__class__.__name__
+        assert signal_name == "SignalExample"
+
+        self.database.add_signal(signal)
+
+        await eventually(lambda: len(self.database.load_signals(signal_cls, signal_name)) > 0)
+
+        signals = self.database.load_signals(signal_cls, signal_name)
+        assert len(signals) == 1
+
+    @pytest.mark.skip(reason="WIP")
+    @pytest.mark.asyncio
+    async def test_add_and_load_custom_data(self):
+        metadata = {"a": "1", "b": "2"}
+        data_type = DataType(NewsEvent, metadata)
+        event = NewsEvent(
+            impact=NewsImpact.LOW,
+            name="something-happened",
+            currency="USD",
+            ts_event=1,
+            ts_init=2,
+        )
+        data = CustomData(data_type, event)
+
+        self.database.add_custom_data(data)
+
+        # TODO: WIP - loading needs more work
+        # await eventually(lambda: len(self.database.load_custom_data(data_type)) > 0)
+        #
+        # signals = self.database.load_custom_data(data_type)
+        # assert len(signals) == 1

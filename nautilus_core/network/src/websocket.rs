@@ -37,6 +37,7 @@ use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream,
 };
 
+use crate::ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter};
 type MessageWriter = SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>;
 type SharedMessageWriter =
     Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>;
@@ -82,9 +83,12 @@ impl WebSocketClientInner {
     /// Create an inner websocket client.
     pub async fn connect_url(config: WebSocketConfig) -> Result<Self, Error> {
         if CryptoProvider::get_default().is_none() {
-            aws_lc_rs::default_provider()
-                .install_default()
-                .expect("Error installing crypto provider");
+            tracing::debug!("Installing aws_lc_rs cryptographic provider");
+            // An error can occur on install if there is a race condition with another component
+            match aws_lc_rs::default_provider().install_default() {
+                Ok(_) => tracing::debug!("Cryptographic provider installed successfully"),
+                Err(e) => tracing::debug!("Error installing cryptographic provider: {e:?}"),
+            }
         }
 
         let WebSocketConfig {
@@ -122,9 +126,9 @@ impl WebSocketClientInner {
 
         // Hacky solution to overcome the new `http` trait bounds
         for (key, val) in headers {
-            let header_value = HeaderValue::from_str(&val).unwrap();
+            let header_value = HeaderValue::from_str(&val)?;
             use http::header::HeaderName;
-            let header_name: HeaderName = key.parse().unwrap();
+            let header_name: HeaderName = key.parse()?;
             let header_name_string = header_name.to_string();
             let header_name_str: &'static str = Box::leak(header_name_string.into_boxed_str());
             req_headers.insert(header_name_str, header_value);
@@ -249,8 +253,11 @@ impl WebSocketClientInner {
 
         tracing::debug!("Closing writer");
         let mut write_half = self.writer.lock().await;
-        write_half.close().await.unwrap();
-        tracing::debug!("Closed connection");
+        if let Err(e) = write_half.close().await {
+            tracing::error!("Error closing writer: {e:?}");
+        } else {
+            tracing::debug!("Closed connection");
+        }
     }
 
     /// Reconnect with server.
@@ -258,6 +265,8 @@ impl WebSocketClientInner {
     /// Make a new connection with server. Use the new read and write halves
     /// to update self writer and read and heartbeat tasks.
     pub async fn reconnect(&mut self) -> Result<(), Error> {
+        self.shutdown().await;
+
         let (new_writer, reader) =
             Self::connect_with_server(&self.config.url, self.config.headers.clone()).await?;
         let mut guard = self.writer.lock().await;
@@ -312,6 +321,7 @@ impl Drop for WebSocketClientInner {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
 )]
 pub struct WebSocketClient {
+    pub(crate) rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
     pub(crate) writer: SharedMessageWriter,
     pub(crate) controller_task: task::JoinHandle<()>,
     pub(crate) disconnect_mode: Arc<AtomicBool>,
@@ -327,6 +337,8 @@ impl WebSocketClient {
         post_connection: Option<PyObject>,
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
+        keyed_quotas: Vec<(String, Quota)>,
+        default_quota: Option<Quota>,
     ) -> Result<Self, Error> {
         tracing::debug!("Connecting");
         let inner = WebSocketClientInner::connect_url(config).await?;
@@ -339,6 +351,7 @@ impl WebSocketClient {
             post_reconnection,
             post_disconnection,
         );
+        let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
 
         if let Some(handler) = post_connection {
             Python::with_gil(|py| match handler.call0(py) {
@@ -348,6 +361,7 @@ impl WebSocketClient {
         };
 
         Ok(Self {
+            rate_limiter,
             writer,
             controller_task,
             disconnect_mode,
@@ -384,7 +398,7 @@ impl WebSocketClient {
     }
 
     pub async fn send_bytes(&self, data: Vec<u8>) -> Result<(), Error> {
-        tracing::trace!("Sending bytes: {:?}", data);
+        tracing::trace!("Sending bytes: {data:?}");
         let mut guard = self.writer.lock().await;
         guard.send(Message::Binary(data)).await
     }

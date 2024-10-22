@@ -34,6 +34,7 @@ from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFutu
 from nautilus_trader.adapters.binance.futures.schemas.account import BinanceFuturesPositionRisk
 from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesAccountUpdateWrapper
 from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesOrderUpdateWrapper
+from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesTradeLiteWrapper
 from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesUserMsgWrapper
 from nautilus_trader.adapters.binance.http.client import BinanceHttpClient
 from nautilus_trader.adapters.binance.http.error import BinanceError
@@ -133,6 +134,7 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
             BinanceFuturesEventType.MARGIN_CALL: self._handle_margin_call,
             BinanceFuturesEventType.ACCOUNT_CONFIG_UPDATE: self._handle_account_config_update,
             BinanceFuturesEventType.LISTEN_KEY_EXPIRED: self._handle_listen_key_expired,
+            BinanceFuturesEventType.TRADE_LITE: self._handle_trade_lite,
         }
 
         # WebSocket futures schema decoders
@@ -142,6 +144,9 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
         )
         self._decoder_futures_account_update_wrapper = msgspec.json.Decoder(
             BinanceFuturesAccountUpdateWrapper,
+        )
+        self._decoder_futures_trade_lite_wrapper = msgspec.json.Decoder(
+            BinanceFuturesTradeLiteWrapper,
         )
 
     async def _update_account_state(self) -> None:
@@ -294,3 +299,9 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
 
     def _handle_listen_key_expired(self, raw: bytes) -> None:
         self._log.warning("Listen key expired")  # Implement
+
+    def _handle_trade_lite(self, raw: bytes) -> None:
+        trade_lite = self._decoder_futures_trade_lite_wrapper.decode(raw)
+        self._log.warning(
+            f"Received {trade_lite} which is not entirely implemented (needs to be parsed into a fill report)",
+        )

@@ -21,7 +21,9 @@ from typing import Final
 from nautilus_trader.model.identifiers import Venue
 
 
-DYDX_VENUE: Final[Venue] = Venue("DYDX")
+DYDX: Final[str] = "DYDX"
+DYDX_VENUE: Final[Venue] = Venue(DYDX)
+
 FEE_SCALING: Final[int] = 1_000_000
 DEFAULT_CURRENCY: Final[str] = "USDC"
 

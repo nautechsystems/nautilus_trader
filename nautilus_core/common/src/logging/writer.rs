@@ -186,7 +186,7 @@ impl FileWriter {
                 level: fileout_level,
             }),
             Err(e) => {
-                tracing::error!("Error creating log file: {}", e);
+                tracing::error!("Error creating log file: {e}");
                 None
             }
         }
@@ -258,7 +258,7 @@ impl LogWriter for FileWriter {
                     self.buf = BufWriter::new(file);
                     self.path = file_path;
                 }
-                Err(e) => tracing::error!("Error creating log file: {}", e),
+                Err(e) => tracing::error!("Error creating log file: {e}"),
             }
         }
 

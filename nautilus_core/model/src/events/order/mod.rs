@@ -42,6 +42,7 @@ pub mod pending_cancel;
 pub mod pending_update;
 pub mod rejected;
 pub mod released;
+pub mod snapshot;
 pub mod submitted;
 pub mod triggered;
 pub mod updated;
@@ -55,8 +56,8 @@ pub use crate::events::order::{
     canceled::OrderCanceled, denied::OrderDenied, emulated::OrderEmulated, expired::OrderExpired,
     filled::OrderFilled, initialized::OrderInitialized, modify_rejected::OrderModifyRejected,
     pending_cancel::OrderPendingCancel, pending_update::OrderPendingUpdate,
-    rejected::OrderRejected, released::OrderReleased, submitted::OrderSubmitted,
-    triggered::OrderTriggered, updated::OrderUpdated,
+    rejected::OrderRejected, released::OrderReleased, snapshot::OrderSnapshot,
+    submitted::OrderSubmitted, triggered::OrderTriggered, updated::OrderUpdated,
 };
 
 /// Represents a type of [`OrderEvent`].

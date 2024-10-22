@@ -29,6 +29,8 @@ def is_nautilus_class(cls: type) -> bool:
     if cls.__module__.startswith("nautilus_trader.model"):
         return True
     if cls.__module__.startswith("nautilus_trader.common"):
+        if cls.__name__.startswith("Signal"):
+            return False  # Custom user signal
         return True
     if cls.__module__.startswith("nautilus_trader.test_kit"):
         return False

@@ -1,0 +1,30 @@
+{
+  "type": "book_snapshot",
+  "symbol": "XBTUSD",
+  "exchange": "bitmex",
+  "name": "book_snapshot_2_50ms",
+  "depth": 2,
+  "interval": 50,
+  "bids": [
+    {
+      "price": 7633.5,
+      "amount": 1906067
+    },
+    {
+      "price": 7633,
+      "amount": 65319
+    }
+  ],
+  "asks": [
+    {
+      "price": 7634,
+      "amount": 1467849
+    },
+    {
+      "price": 7634.5,
+      "amount": 67939
+    }
+  ],
+  "timestamp": "2019-10-25T13:39:46.950Z",
+  "localTimestamp": "2019-10-25T13:39:46.961Z"
+}

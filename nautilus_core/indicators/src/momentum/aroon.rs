@@ -64,13 +64,13 @@ impl Indicator for AroonOscillator {
         self.initialized
     }
 
-    fn handle_quote_tick(&mut self, tick: &QuoteTick) {
-        let price = tick.extract_price(PriceType::Mid).into();
+    fn handle_quote(&mut self, quote: &QuoteTick) {
+        let price = quote.extract_price(PriceType::Mid).into();
         self.update_raw(price, price);
     }
 
-    fn handle_trade_tick(&mut self, tick: &TradeTick) {
-        let price = tick.price.into();
+    fn handle_trade(&mut self, trade: &TradeTick) {
+        let price = trade.price.into();
         self.update_raw(price, price);
     }
 

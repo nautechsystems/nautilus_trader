@@ -1064,7 +1064,7 @@ cdef extern from "../includes/model.h":
     uint64_t quote_tick_hash(const QuoteTick_t *delta);
 
     # Returns a [`QuoteTick`] as a C string pointer.
-    const char *quote_tick_to_cstr(const QuoteTick_t *tick);
+    const char *quote_tick_to_cstr(const QuoteTick_t *quote);
 
     TradeTick_t trade_tick_new(InstrumentId_t instrument_id,
                                int64_t price_raw,
@@ -1081,7 +1081,7 @@ cdef extern from "../includes/model.h":
     uint64_t trade_tick_hash(const TradeTick_t *delta);
 
     # Returns a [`TradeTick`] as a C string pointer.
-    const char *trade_tick_to_cstr(const TradeTick_t *tick);
+    const char *trade_tick_to_cstr(const TradeTick_t *trade);
 
     const char *account_type_to_cstr(AccountType value);
 
@@ -1671,7 +1671,7 @@ cdef extern from "../includes/model.h":
     #
     # This function panics:
     # - If book type is not `L1_MBP`.
-    void orderbook_update_trade_tick(OrderBook_API *book, const TradeTick_t *tick);
+    void orderbook_update_trade_tick(OrderBook_API *book, const TradeTick_t *trade);
 
     CVec orderbook_simulate_fills(const OrderBook_API *book, BookOrder_t order);
 

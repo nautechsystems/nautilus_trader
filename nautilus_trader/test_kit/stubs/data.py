@@ -144,12 +144,20 @@ class TestDataStubs:
         return BarSpecification(100, BarAggregation.TICK, PriceType.LAST)
 
     @staticmethod
+    def bar_spec_month_mid() -> BarSpecification:
+        return BarSpecification(1, BarAggregation.MONTH, PriceType.MID)
+
+    @staticmethod
     def bartype_audusd_1min_bid() -> BarType:
         return BarType(TestIdStubs.audusd_id(), TestDataStubs.bar_spec_1min_bid())
 
     @staticmethod
     def bartype_audusd_5min_bid() -> BarType:
         return BarType(TestIdStubs.audusd_id(), TestDataStubs.bar_spec_5min_bid())
+
+    @staticmethod
+    def bartype_audusd_month_mid() -> BarType:
+        return BarType(TestIdStubs.audusd_id(), TestDataStubs.bar_spec_month_mid())
 
     @staticmethod
     def bartype_audusd_1min_ask() -> BarType:
@@ -205,6 +213,19 @@ class TestDataStubs:
             low=Price.from_str("1.00100"),
             close=Price.from_str("1.00205"),
             volume=Quantity.from_int(1_000_000),
+            ts_event=0,
+            ts_init=0,
+        )
+
+    @staticmethod
+    def bar_month_mid() -> Bar:
+        return Bar(
+            bar_type=TestDataStubs.bartype_audusd_month_mid(),
+            open=Price.from_str("1.00000"),
+            high=Price.from_str("1.10000"),
+            low=Price.from_str("1.00000"),
+            close=Price.from_str("1.05000"),
+            volume=Quantity.from_int(1_000_000_000),
             ts_event=0,
             ts_init=0,
         )
@@ -358,6 +379,7 @@ class TestDataStubs:
         sequence: int = 0,
         ts_event: int = 0,
         ts_init: int = 0,
+        levels: int = 10,
     ) -> OrderBookDepth10:
         bids: list[BookOrder] = []
         asks: list[BookOrder] = []
@@ -367,7 +389,7 @@ class TestDataStubs:
         quantity = 100.0
         order_id = 1
 
-        for _ in range(10):
+        for _ in range(levels):
             order = BookOrder(
                 OrderSide.BUY,
                 Price(price, 2),
@@ -386,7 +408,7 @@ class TestDataStubs:
         quantity = 100.0
         order_id = 11
 
-        for _ in range(10):
+        for _ in range(levels):
             order = BookOrder(
                 OrderSide.SELL,
                 Price(price, 2),
@@ -400,8 +422,8 @@ class TestDataStubs:
             quantity += 100.0
             order_id += 1
 
-        bid_counts = [1] * 10
-        ask_counts = [1] * 10
+        bid_counts = [1] * levels
+        ask_counts = [1] * levels
 
         return OrderBookDepth10(
             instrument_id=instrument_id or TestIdStubs.aapl_xnas_id(),

@@ -421,3 +421,33 @@ class BinanceFuturesOrderUpdateWrapper(msgspec.Struct, frozen=True):
 
     stream: str
     data: BinanceFuturesOrderUpdateMsg
+
+
+class BinanceFuturesTradeLiteMsg(msgspec.Struct, frozen=True):
+    """
+    WebSocket message for Binance Futures Trade Lite events.
+    """
+
+    e: str  # Event Type
+    E: int  # Event Time
+    T: int  # Transaction Time
+
+    s: str  # Symbol
+    c: str  # Client Order ID
+    S: BinanceOrderSide
+    q: str  # Original Quantity
+    p: str  # Original Price
+    i: int  # Order ID
+    l: str  # Order Last Filled Quantity
+    L: str  # Last Filled Price
+    t: int  # Trade ID
+    m: bool  # Is trade the maker side
+
+
+class BinanceFuturesTradeLiteWrapper(msgspec.Struct, frozen=True):
+    """
+    WebSocket message wrapper for Binance Futures Trade Lite events.
+    """
+
+    stream: str
+    data: BinanceFuturesTradeLiteMsg

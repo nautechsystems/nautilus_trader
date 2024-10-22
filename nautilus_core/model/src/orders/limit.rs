@@ -434,9 +434,8 @@ impl From<OrderAny> for LimitOrder {
         match order {
             OrderAny::Limit(order) => order,
             _ => panic!(
-                "Invalid `OrderAny` not `{}`, was {:?}",
+                "Invalid `OrderAny` not `{}`, was {order:?}",
                 stringify!(LimitOrder),
-                order
             ),
         }
     }

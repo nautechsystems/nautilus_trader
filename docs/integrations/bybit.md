@@ -27,7 +27,7 @@ poetry install --extras bybit
 
 The following documentation assumes a trader is setting up for both live market
 data feeds, and trade execution. The full Bybit integration consists of an assortment of components,
-which can be used together or separately depending on the users needs.
+which can be used together or separately depending on the user's needs.
 
 - `BybitHttpClient`: Low-level HTTP API connectivity
 - `BybitWebSocketClient`: Low-level WebSocket API connectivity
@@ -67,7 +67,7 @@ Options contracts are not currently supported (will be implemented in a future v
 
 ## Symbology
 
-To distinguish between different product types on Bybit, the following instrument ID suffix’s are used:
+To distinguish between different product types on Bybit, the following instrument ID suffixes are used:
 
 - `-SPOT`: Spot cryptocurrencies
 - `-LINEAR`: Perpetual and futures contracts

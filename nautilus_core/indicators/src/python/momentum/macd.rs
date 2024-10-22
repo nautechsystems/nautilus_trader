@@ -93,8 +93,8 @@ impl MovingAverageConvergenceDivergence {
     }
 
     #[pyo3(name = "handle_trade_tick")]
-    fn py_handle_trade_tick(&mut self, tick: &TradeTick) {
-        self.update_raw((&tick.price).into());
+    fn py_handle_trade_tick(&mut self, trade: &TradeTick) {
+        self.update_raw((&trade.price).into());
     }
 
     #[pyo3(name = "handle_bar")]

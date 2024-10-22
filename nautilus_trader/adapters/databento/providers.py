@@ -65,7 +65,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         live_gateway: str | None = None,
         loader: DatabentoDataLoader | None = None,
         config: InstrumentProviderConfig | None = None,
-    ):
+    ) -> None:
         super().__init__(config=config)
 
         self._clock = clock
@@ -83,7 +83,7 @@ class DatabentoInstrumentProvider(InstrumentProvider):
             "(potentially millions)",
         )
 
-    async def load_ids_async(
+    async def load_ids_async(  # noqa: C901 (too complex)
         self,
         instrument_ids: list[InstrumentId],
         filters: dict | None = None,
@@ -127,17 +127,26 @@ class DatabentoInstrumentProvider(InstrumentProvider):
         parent_symbols = list(filters.get("parent_symbols", [])) if filters is not None else None
 
         pyo3_instruments = []
+
         success_msg = "All instruments received and decoded"
-        timeout_secs = 10.0
+        timeout_secs = 2.0  # Inactivity timeout when receiving instruments
+        check_interval_secs = 0.1  # Check for inactivity interval
+        started_receiving = False
+        last_received_time = self._clock.timestamp()
 
         self._log.info(
-            f"Awaiting instrument definitions ({timeout_secs}s timeout)...",
+            "Awaiting instrument definitions...",
             LogColor.BLUE,
         )
 
         def receive_instruments(pyo3_instrument: Any) -> None:
+            nonlocal last_received_time, started_receiving
+            started_receiving = True
             pyo3_instruments.append(pyo3_instrument)
             instrument_ids_to_decode.discard(pyo3_instrument.id.value)
+            last_received_time = self._clock.timestamp()
+
+            # Cancel task once all expected instruments received
             if not parent_symbols and not instrument_ids_to_decode:
                 raise asyncio.CancelledError(success_msg)
 
@@ -155,19 +164,27 @@ class DatabentoInstrumentProvider(InstrumentProvider):
                 start=0,  # From start of current week (latest definitions)
             )
 
+        async def monitor_inactivity():
+            nonlocal last_received_time
+            while True:
+                await asyncio.sleep(check_interval_secs)
+                if started_receiving and (
+                    self._clock.timestamp() - last_received_time > timeout_secs
+                ):
+                    raise asyncio.CancelledError(success_msg)
+
         try:
-            await asyncio.wait_for(
+            await asyncio.gather(
                 asyncio.ensure_future(
                     live_client.start(callback=receive_instruments, callback_pyo3=print),
                 ),
-                timeout=10.0,
+                monitor_inactivity(),
             )
-        except TimeoutError:
-            pass  # Expected for parent and continuous for now
         except asyncio.CancelledError as e:
             if success_msg in str(e):
-                # Expected on decode completion, continue
                 self._log.info(success_msg)
+            else:
+                self._log.warning(str(e))
         except Exception as e:
             self._log.error(repr(e))
 
@@ -177,7 +194,6 @@ class DatabentoInstrumentProvider(InstrumentProvider):
             self.add(instrument=instrument)
             self._log.debug(f"Added instrument {instrument.id}")
 
-        await asyncio.sleep(1.0)
         live_client.close()
 
     async def load_async(

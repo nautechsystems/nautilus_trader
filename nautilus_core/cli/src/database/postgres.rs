@@ -30,9 +30,12 @@ pub async fn run_database_command(opt: DatabaseOpt) -> anyhow::Result<()> {
                 config.username,
                 config.password,
                 config.database,
-            )
-            .unwrap();
+            );
             let pg = connect_pg(pg_connect_options.clone().into()).await?;
+            log::info!(
+                "Connected with Postgres on url: {}",
+                pg_connect_options.connection_string()
+            );
             init_postgres(
                 &pg,
                 pg_connect_options.database,
@@ -48,9 +51,12 @@ pub async fn run_database_command(opt: DatabaseOpt) -> anyhow::Result<()> {
                 config.username,
                 config.password,
                 config.database,
-            )
-            .unwrap();
+            );
             let pg = connect_pg(pg_connect_options.clone().into()).await?;
+            log::info!(
+                "Connected with Postgres on url: {}",
+                pg_connect_options.connection_string()
+            );
             drop_postgres(&pg, pg_connect_options.database).await?;
         }
     }

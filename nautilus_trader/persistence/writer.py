@@ -29,7 +29,6 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import Clock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.core.correctness import PyCondition
-from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import CustomData
 from nautilus_trader.model.data import OrderBookDelta
@@ -40,7 +39,6 @@ from nautilus_trader.persistence.funcs import class_to_filename
 from nautilus_trader.persistence.funcs import urisafe_instrument_id
 from nautilus_trader.serialization.arrow.serializer import ArrowSerializer
 from nautilus_trader.serialization.arrow.serializer import list_schemas
-from nautilus_trader.serialization.arrow.serializer import register_arrow
 
 
 class RotationMode(Enum):
@@ -494,95 +492,3 @@ class StreamingFeatherWriter:
 
         """
         return all(self._files[table_name].closed for table_name in self._files)
-
-
-def generate_signal_class(name: str, value_type: type) -> type:
-    """
-    Dynamically create a Data subclass for this signal.
-
-    Parameters
-    ----------
-    name : str
-        The name of the signal data.
-    value_type : type
-        The type for the signal data value.
-
-    Returns
-    -------
-    SignalData
-
-    """
-
-    class SignalData(Data):
-        """
-        Represents generic signal data.
-        """
-
-        def __init__(self, value: Any, ts_event: int, ts_init: int) -> None:
-            self.value = value
-            self._ts_event = ts_event
-            self._ts_init = ts_init
-
-        @property
-        def ts_event(self) -> int:
-            """
-            UNIX timestamp (nanoseconds) when the data event occurred.
-
-            Returns
-            -------
-            int
-
-            """
-            return self._ts_event
-
-        @property
-        def ts_init(self) -> int:
-            """
-            UNIX timestamp (nanoseconds) when the object was initialized.
-
-            Returns
-            -------
-            int
-
-            """
-            return self._ts_init
-
-    SignalData.__name__ = f"Signal{name.title()}"
-
-    # Parquet serialization
-    def serialize_signal(data: SignalData) -> pa.RecordBatch:
-        return pa.RecordBatch.from_pylist(
-            [
-                {
-                    "ts_init": data.ts_init,
-                    "ts_event": data.ts_event,
-                    "value": data.value,
-                },
-            ],
-            schema=schema,
-        )
-
-    def deserialize_signal(table: pa.Table) -> list[SignalData]:
-        return [SignalData(**d) for d in table.to_pylist()]
-
-    schema = pa.schema(
-        {
-            "ts_event": pa.uint64(),
-            "ts_init": pa.uint64(),
-            "value": {
-                int: pa.int64(),
-                float: pa.float64(),
-                str: pa.string(),
-                bool: pa.bool_(),
-                bytes: pa.binary(),
-            }[value_type],
-        },
-    )
-    register_arrow(
-        data_cls=SignalData,
-        encoder=serialize_signal,
-        decoder=deserialize_signal,
-        schema=schema,
-    )
-
-    return SignalData

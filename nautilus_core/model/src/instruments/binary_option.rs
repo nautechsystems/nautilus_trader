@@ -30,6 +30,7 @@ use crate::{
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
+/// Represents a generic binary option instrument.
 #[repr(C)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(
@@ -50,10 +51,10 @@ pub struct BinaryOption {
     pub size_increment: Quantity,
     pub maker_fee: Decimal,
     pub taker_fee: Decimal,
-    pub margin_init: Decimal,
-    pub margin_maint: Decimal,
     pub outcome: Option<Ustr>,
     pub description: Option<Ustr>,
+    pub margin_init: Option<Decimal>,
+    pub margin_maint: Option<Decimal>,
     pub max_quantity: Option<Quantity>,
     pub min_quantity: Option<Quantity>,
     pub max_notional: Option<Money>,
@@ -84,10 +85,10 @@ impl BinaryOption {
         size_increment: Quantity,
         maker_fee: Decimal,
         taker_fee: Decimal,
-        margin_init: Decimal,
-        margin_maint: Decimal,
         outcome: Option<Ustr>,
         description: Option<Ustr>,
+        margin_init: Option<Decimal>,
+        margin_maint: Option<Decimal>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_notional: Option<Money>,
@@ -125,10 +126,10 @@ impl BinaryOption {
             size_increment,
             maker_fee,
             taker_fee,
-            margin_init,
-            margin_maint,
             outcome,
             description,
+            margin_init,
+            margin_maint,
             max_quantity,
             min_quantity,
             max_notional,
@@ -154,10 +155,10 @@ impl BinaryOption {
         size_increment: Quantity,
         maker_fee: Decimal,
         taker_fee: Decimal,
-        margin_init: Decimal,
-        margin_maint: Decimal,
         outcome: Option<Ustr>,
         description: Option<Ustr>,
+        margin_init: Option<Decimal>,
+        margin_maint: Option<Decimal>,
         max_quantity: Option<Quantity>,
         min_quantity: Option<Quantity>,
         max_notional: Option<Money>,
@@ -180,10 +181,10 @@ impl BinaryOption {
             size_increment,
             maker_fee,
             taker_fee,
-            margin_init,
-            margin_maint,
             outcome,
             description,
+            margin_init,
+            margin_maint,
             max_quantity,
             min_quantity,
             max_notional,
@@ -343,7 +344,7 @@ mod tests {
     use crate::instruments::{binary_option::BinaryOption, stubs::*};
 
     #[rstest]
-    fn test_binary_option(binary_option: BinaryOption) {
+    fn test_equality(binary_option: BinaryOption) {
         let cloned = binary_option.clone();
         assert_eq!(binary_option, cloned);
     }

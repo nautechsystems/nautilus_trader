@@ -31,6 +31,7 @@ use crate::{
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
+/// Represents a crypto perpetual futures contract instrument (a.k.a. perpetual swap).
 #[repr(C)]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(

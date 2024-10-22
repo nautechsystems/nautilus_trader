@@ -33,6 +33,7 @@ use crate::timer::{LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEvent
 /// Represents a type of clock.
 ///
 /// # Notes
+///
 /// An active timer is one which has not expired (`timer.is_expired == False`).
 pub trait Clock {
     /// Returns the current date and time as a timezone-aware `DateTime<UTC>`.
@@ -83,6 +84,9 @@ pub trait Clock {
         callback: Option<TimeEventCallback>,
     );
 
+    /// Returns the time interval in which the timer `name` is triggered.
+    ///
+    /// If the timer doesn't exist 0 is returned.
     fn next_time_ns(&self, name: &str) -> UnixNanos;
     fn cancel_timer(&mut self, name: &str);
     fn cancel_timers(&mut self);
@@ -446,7 +450,7 @@ impl Clock for LiveClock {
             None => {}
             Some(mut timer) => {
                 if let Err(e) = timer.cancel() {
-                    log::error!("Error on timer cancel: {:?}", e);
+                    log::error!("Error on timer cancel: {e:?}");
                 }
             }
         }
@@ -455,7 +459,7 @@ impl Clock for LiveClock {
     fn cancel_timers(&mut self) {
         for timer in &mut self.timers.values_mut() {
             if let Err(e) = timer.cancel() {
-                log::error!("Error on timer cancel: {:?}", e);
+                log::error!("Error on timer cancel: {e:?}");
             }
         }
         self.timers.clear();
@@ -472,22 +476,23 @@ mod tests {
     use rstest::{fixture, rstest};
 
     use super::*;
-    use crate::timer::RustTimeEventCallback;
 
     #[derive(Default)]
     struct TestCallback {
         called: Rc<RefCell<bool>>,
     }
 
-    impl RustTimeEventCallback for TestCallback {
-        fn call(&self, _event: TimeEvent) {
-            *self.called.borrow_mut() = true;
+    impl TestCallback {
+        const fn new(called: Rc<RefCell<bool>>) -> Self {
+            Self { called }
         }
     }
 
     impl From<TestCallback> for TimeEventCallback {
-        fn from(val: TestCallback) -> Self {
-            Self::Rust(Rc::new(val))
+        fn from(callback: TestCallback) -> Self {
+            Self::Rust(Rc::new(move |_event: TimeEvent| {
+                *callback.called.borrow_mut() = true;
+            }))
         }
     }
 
@@ -553,13 +558,8 @@ mod tests {
         let default_called = Rc::new(RefCell::new(false));
         let custom_called = Rc::new(RefCell::new(false));
 
-        let default_callback: Rc<dyn RustTimeEventCallback> = Rc::new(TestCallback {
-            called: Rc::clone(&default_called),
-        });
-
-        let custom_callback: Rc<dyn RustTimeEventCallback> = Rc::new(TestCallback {
-            called: Rc::clone(&custom_called),
-        });
+        let default_callback = TestCallback::new(Rc::clone(&default_called));
+        let custom_callback = TestCallback::new(Rc::clone(&custom_called));
 
         clock.register_default_handler(TimeEventCallback::from(default_callback));
         clock.set_time_alert_ns("default_timer", (*clock.timestamp_ns() + 1000).into(), None);

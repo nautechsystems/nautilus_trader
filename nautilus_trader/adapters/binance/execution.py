@@ -74,7 +74,6 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import PositionId
 from nautilus_trader.model.identifiers import Symbol
-from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
@@ -148,7 +147,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         super().__init__(
             loop=loop,
             client_id=ClientId(name or BINANCE_VENUE.value),
-            venue=Venue(name or BINANCE_VENUE.value),
+            venue=BINANCE_VENUE,
             oms_type=OmsType.HEDGING if account_type.is_futures else OmsType.NETTING,
             instrument_provider=instrument_provider,
             account_type=AccountType.CASH if account_type.is_spot else AccountType.MARGIN,

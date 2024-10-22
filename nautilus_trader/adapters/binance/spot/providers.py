@@ -73,7 +73,7 @@ class BinanceSpotInstrumentProvider(InstrumentProvider):
         is_testnet: bool = False,
         config: InstrumentProviderConfig | None = None,
         venue: Venue = BINANCE_VENUE,
-    ):
+    ) -> None:
         super().__init__(config=config)
 
         self._clock = clock

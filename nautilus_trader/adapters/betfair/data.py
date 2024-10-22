@@ -76,7 +76,7 @@ class BetfairDataClient(LiveMarketDataClient):
         clock: LiveClock,
         instrument_provider: BetfairInstrumentProvider,
         account_currency: Currency,
-    ):
+    ) -> None:
         super().__init__(
             loop=loop,
             client_id=ClientId(BETFAIR_VENUE.value),
@@ -104,7 +104,7 @@ class BetfairDataClient(LiveMarketDataClient):
     def instrument_provider(self) -> BetfairInstrumentProvider:
         return self._instrument_provider
 
-    async def _connect(self):
+    async def _connect(self) -> None:
         self._log.info("Connecting to BetfairHttpClient...")
         await self._client.connect()
         self._log.info("BetfairClient login successful", LogColor.GREEN)
@@ -137,12 +137,12 @@ class BetfairDataClient(LiveMarketDataClient):
             )
             self.subscription_status = SubscriptionStatus.SUBSCRIBED
 
-    async def _post_connect_heartbeat(self):
+    async def _post_connect_heartbeat(self) -> None:
         for _ in range(3):
             await self._stream.send(msgspec.json.encode({"op": "heartbeat"}))
             await asyncio.sleep(5)
 
-    async def _disconnect(self):
+    async def _disconnect(self) -> None:
         # Close socket
         self._log.info("Closing streaming socket")
         await self._stream.disconnect()
@@ -151,14 +151,14 @@ class BetfairDataClient(LiveMarketDataClient):
         self._log.info("Closing BetfairClient")
         await self._client.disconnect()
 
-    def _reset(self):
+    def _reset(self) -> None:
         if self.is_connected:
             self._log.error("Cannot reset a connected data client")
             return
 
         self._subscribed_instrument_ids = set()
 
-    def _dispose(self):
+    def _dispose(self) -> None:
         if self.is_connected:
             self._log.error("Cannot dispose a connected data client")
             return
@@ -204,21 +204,21 @@ class BetfairDataClient(LiveMarketDataClient):
             f"Added market_id {instrument.market_id} for {instrument_id.symbol} <OrderBook> data",
         )
 
-    async def delayed_subscribe(self, delay=0):
+    async def delayed_subscribe(self, delay=0) -> None:
         self._log.debug(f"Scheduling subscribe for delay={delay}")
         await asyncio.sleep(delay)
         self._log.info(f"Sending subscribe for market_ids {self._subscribed_market_ids}")
         await self._stream.send_subscription_message(market_ids=list(self._subscribed_market_ids))
         self._log.info(f"Added market_ids {self._subscribed_market_ids} for <OrderBook> data")
 
-    async def _subscribe_ticker(self, instrument_id: InstrumentId) -> None:
-        pass  # Subscribed as part of orderbook
+    async def _subscribe_instrument(self, instrument_id: InstrumentId) -> None:
+        self._log.info("Skipping subscribe_instrument, Betfair subscribes as part of orderbook")
+
+    async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+        self._log.info("Skipping subscribe_quote_ticks, Betfair subscribes as part of orderbook")
 
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
-        pass  # Subscribed as part of orderbook
-
-    async def _subscribe_instrument(self, instrument_id: InstrumentId) -> None:
-        self._log.debug("Skipping subscribe_instrument, betfair subscribes as part of orderbook")
+        self._log.info("Skipping subscribe_trade_ticks, Betfair subscribes as part of orderbook")
 
     async def _subscribe_instruments(self) -> None:
         for instrument in self._instrument_provider.list_all():
@@ -241,7 +241,17 @@ class BetfairDataClient(LiveMarketDataClient):
         #  subscription message - when we have a use case
         self._log.warning("Betfair does not support unsubscribing from instruments")
 
+    async def _unsubscribe_instrument(self, instrument_id: InstrumentId) -> None:
+        self._log.info("Skipping unsubscribe_instrument, not applicable for Betfair")
+
+    async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+        self._log.info("Skipping unsubscribe_quote_ticks, not applicable for Betfair")
+
+    async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+        self._log.info("Skipping unsubscribe_trade_ticks, not applicable for Betfair")
+
     # -- STREAMS ----------------------------------------------------------------------------------
+
     def on_market_update(self, raw: bytes) -> None:
         """
         Handle an update from the data stream socket.
@@ -285,6 +295,6 @@ class BetfairDataClient(LiveMarketDataClient):
             else:
                 self._log.info("Attempting reconnect")
                 if self._stream.is_connected:
-                    self._log.info("stream connected, disconnecting.")
+                    self._log.info("Stream connected, disconnecting")
                     self.create_task(self._stream.disconnect())
                 self.create_task(self._connect())

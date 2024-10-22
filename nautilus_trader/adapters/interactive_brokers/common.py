@@ -20,10 +20,13 @@ from ibapi.common import UNSET_DECIMAL
 from ibapi.tag_value import TagValue
 
 from nautilus_trader.config import NautilusConfig
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 
 
-IB_VENUE: Final[Venue] = Venue("INTERACTIVE_BROKERS")
+IB: Final[str] = "INTERACTIVE_BROKERS"
+IB_VENUE: Final[Venue] = Venue(IB)
+IB_CLIENT_ID: Final[ClientId] = ClientId(IB)
 
 
 class ContractId(int):

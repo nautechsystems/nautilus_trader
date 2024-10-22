@@ -18,6 +18,7 @@ import pkgutil
 import msgspec
 
 from nautilus_trader.adapters.binance.common.schemas.market import BinanceTickerData
+from nautilus_trader.adapters.binance.futures.schemas.user import BinanceFuturesTradeLiteMsg
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 
 
@@ -31,6 +32,7 @@ class TestBinanceWebSocketParsing:
             package="tests.integration_tests.adapters.binance.resources.ws_messages",
             resource="ws_spot_ticker_24hr.json",
         )
+        assert raw
 
         # Act
         decoder = msgspec.json.Decoder(BinanceTickerData)
@@ -42,3 +44,18 @@ class TestBinanceWebSocketParsing:
 
         # Assert
         assert result.instrument_id == ETHUSDT.id
+
+    def test_parse_trade_lite(self):
+        # Arrange
+        raw = pkgutil.get_data(
+            package="tests.integration_tests.adapters.binance.resources.ws_messages",
+            resource="ws_futures_trade_lite.json",
+        )
+        assert raw
+
+        # Act
+        decoder = msgspec.json.Decoder(BinanceFuturesTradeLiteMsg)
+        data = decoder.decode(raw)
+
+        # Assert
+        assert data.s == "ETHUSDT"

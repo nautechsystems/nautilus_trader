@@ -10,14 +10,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64]
-        os: [ubuntu-latest]
+        os: [ubuntu-latest, macos-latest]
         python-version: ["3.11", "3.12"]
-    name: build - Python ${{ matrix.python-version }} (${{ matrix.arch }} ${{ matrix.os }})
+    name: build - Python ${{ matrix.python-version }} (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
 
     steps:
       - name: Free disk space (Ubuntu)
+        if: runner.os == 'Linux'
         uses: jlumbroso/free-disk-space@main
         with:
           tool-cache: true
@@ -28,40 +28,26 @@ jobs:
           docker-images: true
           swap-storage: true
 
-      - name: Install runner dependencies
+      - name: Install runner dependencies (Linux)
+        if: runner.os == 'Linux'
         run: sudo apt-get install -y curl clang git libssl-dev make pkg-config
 
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Get Rust version from rust-toolchain.toml
-        id: rust-version
+      - name: Set up Rust toolchain
         run: |
-          version=$(awk -F\" '/version/ {print $2}' nautilus_core/rust-toolchain.toml)
-          echo "Rust toolchain version $version"
-          echo "RUST_VERSION=$version" >> $GITHUB_ENV
-        working-directory: ${{ github.workspace }}
-
-      - name: Set up Rust tool-chain (Linux, Windows) stable
-        if: (runner.os == 'Linux') || (runner.os == 'Windows')
-        uses: actions-rust-lang/setup-rust-toolchain@v1.8
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
-          components: rustfmt, clippy
-
-      # Work around as actions-rust-lang does not seem to work on macOS yet
-      - name: Set up Rust tool-chain (macOS) stable
-        if: runner.os == 'macOS'
-        uses: actions-rs/toolchain@v1
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
-          override: true
-          components: rustfmt, clippy
+          rustup toolchain add --profile minimal stable --component clippy,rustfmt
 
       - name: Set up Python environment
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+
+      - name: Get Python version
+        run: |
+          version=$(bash scripts/python-version.sh)
+          echo "PYTHON_VERSION=$version" >> $GITHUB_ENV
 
       - name: Get Poetry version from poetry-version
         run: |
@@ -84,7 +70,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.POETRY_CACHE_DIR }}
-          key: ${{ runner.os }}-${{ matrix.python-version }}-poetry-${{ hashFiles('**/poetry.lock') }}
+          key: ${{ runner.os }}-${{ env.PYTHON_VERSION }}-poetry-${{ hashFiles('**/poetry.lock') }}
 
       - name: Install / Build
         run: |
@@ -99,7 +85,7 @@ jobs:
           echo "ASSET_NAME=$(printf '%s\0' * | awk 'BEGIN{RS="\0"} {print;  exit}')" >> $GITHUB_ENV
 
       - name: Upload wheel artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: ${{ env.ASSET_NAME }}
           path: ${{ env.ASSET_PATH }}

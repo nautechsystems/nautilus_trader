@@ -443,6 +443,7 @@ class TestCache:
         self.cache.add_bar(TestDataStubs.bar_5decimal())
         self.cache.add_bar(TestDataStubs.bar_5decimal_5min_bid())
         self.cache.add_bar(TestDataStubs.bar_3decimal())
+        self.cache.add_bar(TestDataStubs.bar_month_mid())
 
         # Act
         result = self.cache.bar_types(

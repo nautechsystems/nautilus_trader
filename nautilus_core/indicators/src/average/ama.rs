@@ -83,12 +83,12 @@ impl Indicator for AdaptiveMovingAverage {
         self.initialized
     }
 
-    fn handle_quote_tick(&mut self, tick: &QuoteTick) {
-        self.update_raw(tick.extract_price(self.price_type).into());
+    fn handle_quote(&mut self, quote: &QuoteTick) {
+        self.update_raw(quote.extract_price(self.price_type).into());
     }
 
-    fn handle_trade_tick(&mut self, tick: &TradeTick) {
-        self.update_raw((&tick.price).into());
+    fn handle_trade(&mut self, trade: &TradeTick) {
+        self.update_raw((&trade.price).into());
     }
 
     fn handle_bar(&mut self, bar: &Bar) {
@@ -247,8 +247,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_quote_tick(mut indicator_ama_10: AdaptiveMovingAverage, quote_tick: QuoteTick) {
-        indicator_ama_10.handle_quote_tick(&quote_tick);
+    fn test_handle_quote_tick(mut indicator_ama_10: AdaptiveMovingAverage, stub_quote: QuoteTick) {
+        indicator_ama_10.handle_quote(&stub_quote);
         assert!(indicator_ama_10.has_inputs);
         assert!(!indicator_ama_10.initialized);
         assert_eq!(indicator_ama_10.value, 1501.0);
@@ -257,9 +257,9 @@ mod tests {
     #[rstest]
     fn test_handle_trade_tick_update(
         mut indicator_ama_10: AdaptiveMovingAverage,
-        trade_tick: TradeTick,
+        stub_trade: TradeTick,
     ) {
-        indicator_ama_10.handle_trade_tick(&trade_tick);
+        indicator_ama_10.handle_trade(&stub_trade);
         assert!(indicator_ama_10.has_inputs);
         assert!(!indicator_ama_10.initialized);
         assert_eq!(indicator_ama_10.value, 1500.0);

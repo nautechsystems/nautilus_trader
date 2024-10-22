@@ -13,11 +13,16 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import msgspec
+
 from nautilus_trader.accounting.accounts.base import Account
 from nautilus_trader.accounting.accounts.cash import CashAccount
 from nautilus_trader.accounting.accounts.margin import MarginAccount
 from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import CustomData
+from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import CurrencyType
@@ -37,6 +42,8 @@ from nautilus_trader.model.events import OrderSubmitted
 from nautilus_trader.model.events import OrderTriggered
 from nautilus_trader.model.events import OrderUpdated
 from nautilus_trader.model.events.account import AccountState
+from nautilus_trader.model.instruments import BettingInstrument
+from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.model.instruments import CryptoFuture
 from nautilus_trader.model.instruments import CryptoPerpetual
 from nautilus_trader.model.instruments import CurrencyPair
@@ -49,6 +56,7 @@ from nautilus_trader.model.instruments import OptionsSpread
 from nautilus_trader.model.objects import Currency
 from nautilus_trader.model.orders import Order
 from nautilus_trader.model.orders.unpacker import OrderUnpacker
+from nautilus_trader.model.position import Position
 
 
 ################################################################################
@@ -77,10 +85,12 @@ def transform_currency_to_pyo3(currency: Currency) -> nautilus_pyo3.Currency:
 ################################################################################
 # Instruments
 ################################################################################
-
-
 def transform_instrument_to_pyo3(instrument: Instrument):
-    if isinstance(instrument, CryptoFuture):
+    if isinstance(instrument, BettingInstrument):
+        return nautilus_pyo3.BettingInstrument.from_dict(BettingInstrument.to_dict(instrument))
+    elif isinstance(instrument, BinaryOption):
+        return nautilus_pyo3.BinaryOption.from_dict(BinaryOption.to_dict(instrument))
+    elif isinstance(instrument, CryptoFuture):
         return nautilus_pyo3.CryptoFuture.from_dict(CryptoFuture.to_dict(instrument))
     elif isinstance(instrument, CryptoPerpetual):
         return nautilus_pyo3.CryptoPerpetual.from_dict(CryptoPerpetual.to_dict(instrument))
@@ -97,10 +107,14 @@ def transform_instrument_to_pyo3(instrument: Instrument):
         raise ValueError(f"Unknown instrument type: {instrument}")
 
 
-def transform_instrument_from_pyo3(instrument_pyo3) -> Instrument | None:
+def transform_instrument_from_pyo3(instrument_pyo3) -> Instrument | None:  # noqa: C901
     if instrument_pyo3 is None:
         return None
-    if isinstance(instrument_pyo3, nautilus_pyo3.CryptoFuture):
+    if isinstance(instrument_pyo3, nautilus_pyo3.BettingInstrument):
+        return BettingInstrument.from_pyo3(instrument_pyo3)
+    elif isinstance(instrument_pyo3, nautilus_pyo3.BinaryOption):
+        return BinaryOption.from_pyo3(instrument_pyo3)
+    elif isinstance(instrument_pyo3, nautilus_pyo3.CryptoFuture):
         return CryptoFuture.from_pyo3(instrument_pyo3)
     elif isinstance(instrument_pyo3, nautilus_pyo3.CryptoPerpetual):
         return CryptoPerpetual.from_pyo3(instrument_pyo3)
@@ -247,6 +261,11 @@ def transform_order_from_pyo3(order_pyo3):
     return order_cython
 
 
+def transform_position_to_snapshot_pyo3(position: Position):
+    values = position.to_dict()
+    return nautilus_pyo3.PositionSnapshot.from_dict(values)
+
+
 ################################################################################
 # Account
 ################################################################################
@@ -336,3 +355,57 @@ def transform_quote_tick_to_pyo3(quote: QuoteTick):
 def transform_bar_to_pyo3(bar: Bar):
     bar_dict = Bar.to_dict(bar)
     return nautilus_pyo3.Bar.from_dict(bar_dict)
+
+
+################################################################################
+# Custom
+################################################################################
+def transform_signal_to_pyo3(signal: Data) -> nautilus_pyo3.Signal:
+    return nautilus_pyo3.Signal(
+        signal.__class__.__name__,
+        str(signal.value),  # PyO3 expects a `String` for this parameter
+        signal.ts_event,
+        signal.ts_init,
+    )
+
+
+def transform_signal_from_pyo3(signal_cls: type, signal_pyo3: nautilus_pyo3.Signal) -> object:
+    return signal_cls(
+        signal_pyo3.value,
+        signal_pyo3.ts_event,
+        signal_pyo3.ts_init,
+    )
+
+
+def transform_data_type_to_pyo3(data_type: DataType) -> nautilus_pyo3.DataType:
+    data_cls = data_type.type
+    fully_qualified_name = data_cls.__module__ + ":" + data_cls.__qualname__
+    return nautilus_pyo3.DataType(
+        fully_qualified_name,
+        data_type.metadata,  # PyO3 expects a `String` for this parameter
+    )
+
+
+def transform_data_type_from_pyo3(data_type_pyo3: nautilus_pyo3.DataType) -> DataType:
+    module_name, type_name = data_type_pyo3.type_name.rsplit(":", 1)
+    data_cls = getattr(module_name, type_name)
+    return DataType(
+        data_cls,
+        data_type_pyo3.metadata,
+    )
+
+
+def transform_custom_data_to_pyo3(data: CustomData) -> nautilus_pyo3.CustomData:
+    data_type_pyo3 = transform_data_type_to_pyo3(data.data_type)
+    return nautilus_pyo3.CustomData(
+        data_type_pyo3,
+        value=msgspec.json.encode(data.data.to_dict()),
+        ts_event=data.ts_event,
+        ts_init=data.ts_init,
+    )
+
+
+def transform_custom_data_from_pyo3(data: nautilus_pyo3.CustomData) -> CustomData:
+    data_type = transform_data_type_from_pyo3(data.data_type)
+    data = Data(data.value, data.ts_event, data.ts_init)
+    return CustomData(data_type, data)

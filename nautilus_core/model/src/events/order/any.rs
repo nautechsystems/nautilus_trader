@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use strum::Display;
 use ustr::Ustr;
 
-use super::OrderEventType;
+use super::{OrderEvent, OrderEventType};
 use crate::{
     events::order::{
         OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
@@ -26,7 +26,7 @@ use crate::{
         OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
         OrderUpdated,
     },
-    identifiers::{ClientOrderId, StrategyId},
+    identifiers::{ClientOrderId, StrategyId, TraderId},
 };
 
 /// Wraps an `OrderEvent` allowing polymorphism.
@@ -53,6 +53,29 @@ pub enum OrderEventAny {
 
 impl OrderEventAny {
     #[must_use]
+    pub fn into_boxed(self) -> Box<dyn OrderEvent> {
+        match self {
+            OrderEventAny::Initialized(event) => Box::new(event),
+            OrderEventAny::Denied(event) => Box::new(event),
+            OrderEventAny::Emulated(event) => Box::new(event),
+            OrderEventAny::Released(event) => Box::new(event),
+            OrderEventAny::Submitted(event) => Box::new(event),
+            OrderEventAny::Accepted(event) => Box::new(event),
+            OrderEventAny::Rejected(event) => Box::new(event),
+            OrderEventAny::Canceled(event) => Box::new(event),
+            OrderEventAny::Expired(event) => Box::new(event),
+            OrderEventAny::Triggered(event) => Box::new(event),
+            OrderEventAny::PendingUpdate(event) => Box::new(event),
+            OrderEventAny::PendingCancel(event) => Box::new(event),
+            OrderEventAny::ModifyRejected(event) => Box::new(event),
+            OrderEventAny::CancelRejected(event) => Box::new(event),
+            OrderEventAny::Updated(event) => Box::new(event),
+            OrderEventAny::PartiallyFilled(event) => Box::new(event),
+            OrderEventAny::Filled(event) => Box::new(event),
+        }
+    }
+
+    #[must_use]
     pub fn event_type(&self) -> OrderEventType {
         match self {
             Self::Initialized(_) => OrderEventType::Initialized,
@@ -72,6 +95,29 @@ impl OrderEventAny {
             Self::Updated(_) => OrderEventType::Updated,
             Self::PartiallyFilled(_) => OrderEventType::PartiallyFilled,
             Self::Filled(_) => OrderEventType::Filled,
+        }
+    }
+
+    #[must_use]
+    pub fn trader_id(&self) -> TraderId {
+        match self {
+            Self::Initialized(event) => event.trader_id,
+            Self::Denied(event) => event.trader_id,
+            Self::Emulated(event) => event.trader_id,
+            Self::Released(event) => event.trader_id,
+            Self::Submitted(event) => event.trader_id,
+            Self::Accepted(event) => event.trader_id,
+            Self::Rejected(event) => event.trader_id,
+            Self::Canceled(event) => event.trader_id,
+            Self::Expired(event) => event.trader_id,
+            Self::Triggered(event) => event.trader_id,
+            Self::PendingUpdate(event) => event.trader_id,
+            Self::PendingCancel(event) => event.trader_id,
+            Self::ModifyRejected(event) => event.trader_id,
+            Self::CancelRejected(event) => event.trader_id,
+            Self::Updated(event) => event.trader_id,
+            Self::PartiallyFilled(event) => event.trader_id,
+            Self::Filled(event) => event.trader_id,
         }
     }
 

@@ -1,0 +1,12 @@
+{
+  "type": "derivative_ticker",
+  "symbol": "BTC-PERPETUAL",
+  "exchange": "deribit",
+  "lastPrice": 7987.5,
+  "openInterest": 84129491,
+  "fundingRate": -0.00001568,
+  "indexPrice": 7989.28,
+  "markPrice": 7987.56,
+  "timestamp": "2019-10-23T11:34:29.302Z",
+  "localTimestamp": "2019-10-23T11:34:29.416Z"
+}

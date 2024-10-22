@@ -36,31 +36,31 @@ pub trait Indicator {
     fn initialized(&self) -> bool;
 
     fn handle_delta(&mut self, delta: &OrderBookDelta) {
-        panic!("`handle_delta` {} `{}`", IMPL_ERR, self.name());
+        panic!("`handle_delta` {IMPL_ERR} `{}`", self.name());
     }
 
     fn handle_deltas(&mut self, deltas: &OrderBookDeltas) {
-        panic!("`handle_deltas` {} `{}`", IMPL_ERR, self.name());
+        panic!("`handle_deltas` {IMPL_ERR} `{}`", self.name());
     }
 
     fn handle_depth(&mut self, depth: &OrderBookDepth10) {
-        panic!("`handle_depth` {} `{}`", IMPL_ERR, self.name());
+        panic!("`handle_depth` {IMPL_ERR} `{}`", self.name());
     }
 
     fn handle_book(&mut self, book: &OrderBook) {
-        panic!("`handle_book_mbo` {} `{}`", IMPL_ERR, self.name());
+        panic!("`handle_book_mbo` {IMPL_ERR} `{}`", self.name());
     }
 
-    fn handle_quote_tick(&mut self, quote: &QuoteTick) {
-        panic!("`handle_quote_tick` {} `{}`", IMPL_ERR, self.name());
+    fn handle_quote(&mut self, quote: &QuoteTick) {
+        panic!("`handle_quote_tick` {IMPL_ERR} `{}`", self.name());
     }
 
-    fn handle_trade_tick(&mut self, trade: &TradeTick) {
-        panic!("`handle_trade_tick` {} `{}`", IMPL_ERR, self.name());
+    fn handle_trade(&mut self, trade: &TradeTick) {
+        panic!("`handle_trade_tick` {IMPL_ERR} `{}`", self.name());
     }
 
     fn handle_bar(&mut self, bar: &Bar) {
-        panic!("`handle_bar` {} `{}`", IMPL_ERR, self.name());
+        panic!("`handle_bar` {IMPL_ERR} `{}`", self.name());
     }
 
     fn reset(&mut self);

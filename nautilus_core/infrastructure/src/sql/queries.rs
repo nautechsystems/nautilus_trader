@@ -15,12 +15,14 @@
 
 use std::collections::HashMap;
 
+use nautilus_common::{custom::CustomData, signal::Signal};
 use nautilus_model::{
     accounts::{any::AccountAny, base::Account},
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
+    data::{bar::Bar, quote::QuoteTick, trade::TradeTick, DataType},
     events::{
         account::state::AccountState,
         order::{OrderEvent, OrderEventAny},
+        position::snapshot::PositionSnapshot,
     },
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId},
     instruments::{any::InstrumentAny, Instrument},
@@ -32,6 +34,7 @@ use nautilus_model::{
 };
 use sqlx::{PgPool, Row};
 
+use super::models::types::{CustomDataModel, SignalModel};
 use crate::sql::models::{
     accounts::AccountEventModel,
     data::{BarModel, QuoteTickModel, TradeTickModel},
@@ -53,7 +56,7 @@ impl DatabaseQueries {
             .execute(pool)
             .await
             .map(|_| ())
-            .map_err(|err| anyhow::anyhow!("Failed to truncate tables: {err}"))
+            .map_err(|e| anyhow::anyhow!("Failed to truncate tables: {e}"))
     }
 
     pub async fn add(pool: &PgPool, key: String, value: Vec<u8>) -> anyhow::Result<()> {
@@ -63,7 +66,7 @@ impl DatabaseQueries {
             .execute(pool)
             .await
             .map(|_| ())
-            .map_err(|err| anyhow::anyhow!("Failed to insert into general table: {err}"))
+            .map_err(|e| anyhow::anyhow!("Failed to insert into general table: {e}"))
     }
 
     pub async fn load(pool: &PgPool) -> anyhow::Result<HashMap<String, Vec<u8>>> {
@@ -77,7 +80,7 @@ impl DatabaseQueries {
                 }
                 cache
             })
-            .map_err(|err| anyhow::anyhow!("Failed to load general table: {err}"))
+            .map_err(|e| anyhow::anyhow!("Failed to load general table: {e}"))
     }
 
     pub async fn add_currency(pool: &PgPool, currency: Currency) -> anyhow::Result<()> {
@@ -92,7 +95,7 @@ impl DatabaseQueries {
             .execute(pool)
             .await
             .map(|_| ())
-            .map_err(|err| anyhow::anyhow!("Failed to insert into currency table: {err}"))
+            .map_err(|e| anyhow::anyhow!("Failed to insert into currency table: {e}"))
     }
 
     pub async fn load_currencies(pool: &PgPool) -> anyhow::Result<Vec<Currency>> {
@@ -100,7 +103,7 @@ impl DatabaseQueries {
             .fetch_all(pool)
             .await
             .map(|rows| rows.into_iter().map(|row| row.0).collect())
-            .map_err(|err| anyhow::anyhow!("Failed to load currencies: {err}"))
+            .map_err(|e| anyhow::anyhow!("Failed to load currencies: {e}"))
     }
 
     pub async fn load_currency(pool: &PgPool, code: &str) -> anyhow::Result<Option<Currency>> {
@@ -109,7 +112,7 @@ impl DatabaseQueries {
             .fetch_optional(pool)
             .await
             .map(|currency| currency.map(|row| row.0))
-            .map_err(|err| anyhow::anyhow!("Failed to load currency: {err}"))
+            .map_err(|e| anyhow::anyhow!("Failed to load currency: {e}"))
     }
 
     pub async fn add_instrument(
@@ -168,7 +171,7 @@ impl DatabaseQueries {
             .execute(pool)
             .await
             .map(|_| ())
-            .map_err(|err| anyhow::anyhow!(format!("Failed to insert item {} into instrument table: {:?}", instrument.id().to_string(), err)))
+            .map_err(|e| anyhow::anyhow!(format!("Failed to insert item {} into instrument table: {:?}", instrument.id().to_string(), e)))
     }
 
     pub async fn load_instrument(
@@ -180,8 +183,8 @@ impl DatabaseQueries {
             .fetch_optional(pool)
             .await
             .map(|instrument| instrument.map(|row| row.0))
-            .map_err(|err| {
-                anyhow::anyhow!("Failed to load instrument with id {instrument_id},error is: {err}")
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to load instrument with id {instrument_id},error is: {e}")
             })
     }
 
@@ -190,7 +193,7 @@ impl DatabaseQueries {
             .fetch_all(pool)
             .await
             .map(|rows| rows.into_iter().map(|row| row.0).collect())
-            .map_err(|err| anyhow::anyhow!("Failed to load instruments: {err}"))
+            .map_err(|e| anyhow::anyhow!("Failed to load instruments: {e}"))
     }
 
     pub async fn add_order(
@@ -267,18 +270,96 @@ impl DatabaseQueries {
         }
     }
 
+    pub async fn add_position_snapshot(
+        pool: &PgPool,
+        snapshot: PositionSnapshot,
+    ) -> anyhow::Result<()> {
+        let mut transaction = pool.begin().await?;
+
+        // Insert trader if it does not exist
+        // TODO remove this when node and trader initialization is implemented
+        sqlx::query(
+            r#"
+            INSERT INTO "trader" (id) VALUES ($1) ON CONFLICT (id) DO NOTHING
+        "#,
+        )
+        .bind(snapshot.trader_id.to_string())
+        .execute(&mut *transaction)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to insert into trader table: {e}"))?;
+
+        sqlx::query(r#"
+            INSERT INTO "position" (
+                id, trader_id, strategy_id, instrument_id, account_id, opening_order_id, closing_order_id, entry, side, signed_qty, quantity, peak_qty,
+                quote_currency, base_currency, settlement_currency, avg_px_open, avg_px_close, realized_return, realized_pnl, unrealized_pnl, commissions,
+                duration_ns, ts_opened, ts_closed, ts_last, ts_init
+            ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+                $21, $22, $23, $24, $25, $26, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            ON CONFLICT (id)
+            DO UPDATE
+            SET
+                trader_id = $2, strategy_id = $3, instrument_id = $4, account_id = $5, opening_order_id = $6, closing_order_id = $7, entry = $8, side = $9, signed_qty = $10, quantity = $11,
+                peak_qty = $12, quote_currency = $13, base_currency = $14, settlement_currency = $15, avg_px_open = $16, avg_px_close = $17, realized_return = $18, realized_pnl = $19, unrealized_pnl = $20,
+                commissions = $21, duration_ns = $22, ts_opened = $23, ts_closed = $24, ts_last = $25, ts_init = $26, updated_at = CURRENT_TIMESTAMP
+        "#)
+            .bind(snapshot.position_id.to_string())
+            .bind(snapshot.trader_id.to_string())
+            .bind(snapshot.strategy_id.to_string())
+            .bind(snapshot.instrument_id.to_string())
+            .bind(snapshot.account_id.to_string())
+            .bind(snapshot.opening_order_id.to_string())
+            .bind(snapshot.closing_order_id.map(|x| x.to_string()))
+            .bind(snapshot.entry.to_string())
+            .bind(snapshot.side.to_string())
+            .bind(snapshot.signed_qty.to_string())
+            .bind(snapshot.quantity.to_string())
+            .bind(snapshot.peak_qty.to_string())
+            .bind(snapshot.quote_currency.to_string())
+            .bind(snapshot.base_currency.map(|x| x.to_string()))
+            .bind(snapshot.settlement_currency.to_string())
+            .bind(snapshot.avg_px_open.to_string())
+            .bind(snapshot.avg_px_close.map(|x| x.to_string()))
+            .bind(snapshot.realized_return.map(|x| x.to_string()))
+            .bind(snapshot.realized_pnl.to_string())
+            .bind(snapshot.unrealized_pnl.map(|x| x.to_string()))
+            .bind(
+                serde_json::to_string(
+                    &snapshot.commissions
+                        .iter()
+                        .map(|x| x.to_string())
+                        .collect::<Vec<String>>()
+                ).unwrap()
+            )
+            .bind(snapshot.duration_ns.map(|x| x.to_string()))
+            .bind(snapshot.ts_opened.to_string())
+            .bind(snapshot.ts_closed.map(|x| x.to_string()))
+            .bind(snapshot.ts_last.to_string())
+            .bind(snapshot.ts_init.to_string())
+            .execute(&mut *transaction)
+            .await
+            .map(|_| ())
+            .map_err(|e| anyhow::anyhow!("Failed to insert into position table: {e}"))?;
+        transaction
+            .commit()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to commit transaction: {e}"))
+    }
+
     pub async fn check_if_order_initialized_exists(
         pool: &PgPool,
-        order_id: ClientOrderId,
+        client_order_id: ClientOrderId,
     ) -> anyhow::Result<bool> {
         sqlx::query(r#"
-            SELECT EXISTS(SELECT 1 FROM "order_event" WHERE order_id = $1 AND kind = 'OrderInitialized')
+            SELECT EXISTS(SELECT 1 FROM "order_event" WHERE client_order_id = $1 AND kind = 'OrderInitialized')
         "#)
-            .bind(order_id.to_string())
+            .bind(client_order_id.to_string())
             .fetch_one(pool)
             .await
             .map(|row| row.get(0))
-            .map_err(|err| anyhow::anyhow!("Failed to check if order initialized exists: {err}"))
+            .map_err(|e| anyhow::anyhow!("Failed to check if order initialized exists: {e}"))
     }
 
     pub async fn check_if_account_event_exists(
@@ -294,7 +375,7 @@ impl DatabaseQueries {
         .fetch_one(pool)
         .await
         .map(|row| row.get(0))
-        .map_err(|err| anyhow::anyhow!("Failed to check if account event exists: {err}"))
+        .map_err(|e| anyhow::anyhow!("Failed to check if account event exists: {e}"))
     }
 
     pub async fn add_order_event(
@@ -315,7 +396,7 @@ impl DatabaseQueries {
         .execute(&mut *transaction)
         .await
         .map(|_| ())
-        .map_err(|err| anyhow::anyhow!("Failed to insert into trader table: {err}"))?;
+        .map_err(|e| anyhow::anyhow!("Failed to insert into trader table: {e}"))?;
 
         // Insert client if it does not exist
         // TODO remove this when client initialization is implemented
@@ -329,12 +410,12 @@ impl DatabaseQueries {
             .execute(&mut *transaction)
             .await
             .map(|_| ())
-            .map_err(|err| anyhow::anyhow!("Failed to insert into client table: {err}"))?;
+            .map_err(|e| anyhow::anyhow!("Failed to insert into client table: {e}"))?;
         }
 
         sqlx::query(r#"
             INSERT INTO "order_event" (
-                id, kind, order_id, order_type, order_side, trader_id, client_id, strategy_id, instrument_id, trade_id, currency, quantity, time_in_force, liquidity_side,
+                id, kind, client_order_id, order_type, order_side, trader_id, client_id, strategy_id, instrument_id, trade_id, currency, quantity, time_in_force, liquidity_side,
                 post_only, reduce_only, quote_quantity, reconciliation, price, last_px, last_qty, trigger_price, trigger_type, limit_offset, trailing_offset,
                 trailing_offset_type, expire_time, display_qty, emulation_trigger, trigger_instrument_id, contingency_type,
                 order_list_id, linked_order_ids, parent_order_id,
@@ -347,7 +428,7 @@ impl DatabaseQueries {
             ON CONFLICT (id)
             DO UPDATE
             SET
-                kind = $2, order_id = $3, order_type = $4, order_side=$5, trader_id = $6, client_id = $7, strategy_id = $8, instrument_id = $9, trade_id = $10, currency = $11,
+                kind = $2, client_order_id = $3, order_type = $4, order_side=$5, trader_id = $6, client_id = $7, strategy_id = $8, instrument_id = $9, trade_id = $10, currency = $11,
                 quantity = $12, time_in_force = $13, liquidity_side = $14, post_only = $15, reduce_only = $16, quote_quantity = $17, reconciliation = $18, price = $19, last_px = $20,
                 last_qty = $21, trigger_price = $22, trigger_type = $23, limit_offset = $24, trailing_offset = $25, trailing_offset_type = $26, expire_time = $27, display_qty = $28,
                 emulation_trigger = $29, trigger_instrument_id = $30, contingency_type = $31, order_list_id = $32, linked_order_ids = $33, parent_order_id = $34, exec_algorithm_id = $35,
@@ -399,30 +480,30 @@ impl DatabaseQueries {
             .execute(&mut *transaction)
             .await
             .map(|_| ())
-            .map_err(|err| anyhow::anyhow!("Failed to insert into order_event table: {err}"))?;
+            .map_err(|e| anyhow::anyhow!("Failed to insert into order_event table: {e}"))?;
         transaction
             .commit()
             .await
-            .map_err(|err| anyhow::anyhow!("Failed to commit transaction: {err}"))
+            .map_err(|e| anyhow::anyhow!("Failed to commit transaction: {e}"))
     }
 
     pub async fn load_order_events(
         pool: &PgPool,
-        order_id: &ClientOrderId,
+        client_order_id: &ClientOrderId,
     ) -> anyhow::Result<Vec<OrderEventAny>> {
-        sqlx::query_as::<_, OrderEventAnyModel>(r#"SELECT * FROM "order_event" event WHERE event.order_id = $1 ORDER BY created_at ASC"#)
-        .bind(order_id.to_string())
+        sqlx::query_as::<_, OrderEventAnyModel>(r#"SELECT * FROM "order_event" event WHERE event.client_order_id = $1 ORDER BY created_at ASC"#)
+        .bind(client_order_id.to_string())
         .fetch_all(pool)
         .await
         .map(|rows| rows.into_iter().map(|row| row.0).collect())
-        .map_err(|err| anyhow::anyhow!("Failed to load order events: {err}"))
+        .map_err(|e| anyhow::anyhow!("Failed to load order events: {e}"))
     }
 
     pub async fn load_order(
         pool: &PgPool,
-        order_id: &ClientOrderId,
+        client_order_id: &ClientOrderId,
     ) -> anyhow::Result<Option<OrderAny>> {
-        let order_events = DatabaseQueries::load_order_events(pool, order_id).await;
+        let order_events = DatabaseQueries::load_order_events(pool, client_order_id).await;
 
         match order_events {
             Ok(order_events) => {
@@ -440,7 +521,7 @@ impl DatabaseQueries {
         let mut orders: Vec<OrderAny> = Vec::new();
         let client_order_ids: Vec<ClientOrderId> = sqlx::query(
             r#"
-            SELECT DISTINCT order_id FROM "order_event"
+            SELECT DISTINCT client_order_id FROM "order_event"
         "#,
         )
         .fetch_all(pool)
@@ -450,7 +531,7 @@ impl DatabaseQueries {
                 .map(|row| ClientOrderId::from(row.get::<&str, _>(0)))
                 .collect()
         })
-        .map_err(|err| anyhow::anyhow!("Failed to load order ids: {err}"))?;
+        .map_err(|e| anyhow::anyhow!("Failed to load order ids: {e}"))?;
         for id in client_order_ids {
             let order = DatabaseQueries::load_order(pool, &id).await.unwrap();
             match order {
@@ -491,7 +572,7 @@ impl DatabaseQueries {
         .execute(&mut *transaction)
         .await
         .map(|_| ())
-        .map_err(|err| anyhow::anyhow!("Failed to insert into account table: {err}"))?;
+        .map_err(|e| anyhow::anyhow!("Failed to insert into account table: {e}"))?;
 
         let account_event = account.last_event().unwrap();
         sqlx::query(r#"
@@ -518,11 +599,11 @@ impl DatabaseQueries {
             .execute(&mut *transaction)
             .await
             .map(|_| ())
-            .map_err(|err| anyhow::anyhow!("Failed to insert into account_event table: {err}"))?;
+            .map_err(|e| anyhow::anyhow!("Failed to insert into account_event table: {e}"))?;
         transaction
             .commit()
             .await
-            .map_err(|err| anyhow::anyhow!("Failed to commit add_account transaction: {err}"))
+            .map_err(|e| anyhow::anyhow!("Failed to commit add_account transaction: {e}"))
     }
 
     pub async fn load_account_events(
@@ -536,7 +617,7 @@ impl DatabaseQueries {
         .fetch_all(pool)
         .await
         .map(|rows| rows.into_iter().map(|row| row.0).collect())
-        .map_err(|err| anyhow::anyhow!("Failed to load account events: {err}"))
+        .map_err(|e| anyhow::anyhow!("Failed to load account events: {e}"))
     }
 
     pub async fn load_account(
@@ -570,7 +651,7 @@ impl DatabaseQueries {
                 .map(|row| AccountId::from(row.get::<&str, _>(0)))
                 .collect()
         })
-        .map_err(|err| anyhow::anyhow!("Failed to load account ids: {err}"))?;
+        .map_err(|e| anyhow::anyhow!("Failed to load account ids: {e}"))?;
         for id in account_ids {
             let account = DatabaseQueries::load_account(pool, &id).await.unwrap();
             match account {
@@ -609,7 +690,7 @@ impl DatabaseQueries {
             .execute(pool)
             .await
             .map(|_| ())
-            .map_err(|err| anyhow::anyhow!("Failed to insert into trade table: {err}"))
+            .map_err(|e| anyhow::anyhow!("Failed to insert into trade table: {e}"))
     }
 
     pub async fn load_trades(
@@ -623,7 +704,7 @@ impl DatabaseQueries {
         .fetch_all(pool)
         .await
         .map(|rows| rows.into_iter().map(|row| row.0).collect())
-        .map_err(|err| anyhow::anyhow!("Failed to load trades: {err}"))
+        .map_err(|e| anyhow::anyhow!("Failed to load trades: {e}"))
     }
 
     pub async fn add_quote(pool: &PgPool, quote: &QuoteTick) -> anyhow::Result<()> {
@@ -649,7 +730,7 @@ impl DatabaseQueries {
             .execute(pool)
             .await
             .map(|_| ())
-            .map_err(|err| anyhow::anyhow!("Failed to insert into quote table: {err}"))
+            .map_err(|e| anyhow::anyhow!("Failed to insert into quote table: {e}"))
     }
 
     pub async fn load_quotes(
@@ -663,7 +744,7 @@ impl DatabaseQueries {
         .fetch_all(pool)
         .await
         .map(|rows| rows.into_iter().map(|row| row.0).collect())
-        .map_err(|err| anyhow::anyhow!("Failed to load quotes: {err}"))
+        .map_err(|e| anyhow::anyhow!("Failed to load quotes: {e}"))
     }
 
     pub async fn add_bar(pool: &PgPool, bar: &Bar) -> anyhow::Result<()> {
@@ -695,7 +776,7 @@ impl DatabaseQueries {
             .execute(pool)
             .await
             .map(|_| ())
-            .map_err(|err| anyhow::anyhow!("Failed to insert into bar table: {err}"))
+            .map_err(|e| anyhow::anyhow!("Failed to insert into bar table: {e}"))
     }
 
     pub async fn load_bars(
@@ -709,7 +790,7 @@ impl DatabaseQueries {
         .fetch_all(pool)
         .await
         .map(|rows| rows.into_iter().map(|row| row.0).collect())
-        .map_err(|err| anyhow::anyhow!("Failed to load bars: {err}"))
+        .map_err(|e| anyhow::anyhow!("Failed to load bars: {e}"))
     }
 
     pub async fn load_distinct_order_event_client_ids(
@@ -719,17 +800,107 @@ impl DatabaseQueries {
         let result = sqlx::query_as::<_, OrderEventOrderClientIdCombination>(
             r#"
             SELECT DISTINCT
-                order_id AS "order_id",
+                client_order_id AS "client_order_id",
                 client_id AS "client_id"
             FROM "order_event"
         "#,
         )
         .fetch_all(pool)
         .await
-        .map_err(|err| anyhow::anyhow!("Failed to load account ids: {err}"))?;
+        .map_err(|e| anyhow::anyhow!("Failed to load account ids: {e}"))?;
         for id in result {
-            map.insert(id.order_id, id.client_id);
+            map.insert(id.client_order_id, id.client_id);
         }
         Ok(map)
+    }
+
+    pub async fn add_signal(pool: &PgPool, signal: &Signal) -> anyhow::Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO "signal" (
+                name, value, ts_event, ts_init, created_at, updated_at
+            ) VALUES (
+                $1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            ON CONFLICT (id)
+            DO UPDATE
+            SET
+                name = $1, value = $2, ts_event = $3, ts_init = $4,
+                updated_at = CURRENT_TIMESTAMP
+        "#,
+        )
+        .bind(signal.name.to_string())
+        .bind(signal.value.to_string())
+        .bind(signal.ts_event.to_string())
+        .bind(signal.ts_init.to_string())
+        .execute(pool)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to insert into signal table: {e}"))
+    }
+
+    pub async fn load_signals(pool: &PgPool, name: &str) -> anyhow::Result<Vec<Signal>> {
+        sqlx::query_as::<_, SignalModel>(
+            r#"SELECT * FROM "signal" WHERE name = $1 ORDER BY ts_init ASC"#,
+        )
+        .bind(name)
+        .fetch_all(pool)
+        .await
+        .map(|rows| rows.into_iter().map(|row| row.0).collect())
+        .map_err(|e| anyhow::anyhow!("Failed to load signals: {e}"))
+    }
+
+    pub async fn add_custom_data(pool: &PgPool, data: &CustomData) -> anyhow::Result<()> {
+        sqlx::query(
+            r#"
+            INSERT INTO "custom" (
+                data_type, metadata, value, ts_event, ts_init, created_at, updated_at
+            ) VALUES (
+                $1, $2, $3, $4, $5, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+            ON CONFLICT (id)
+            DO UPDATE
+            SET
+                data_type = $1, metadata = $2, value = $3, ts_event = $4, ts_init = $5,
+                updated_at = CURRENT_TIMESTAMP
+        "#,
+        )
+        .bind(data.data_type.type_name().to_string())
+        .bind(
+            data.data_type
+                .metadata()
+                .as_ref()
+                .map_or_else(|| Ok(serde_json::Value::Null), serde_json::to_value)?,
+        )
+        .bind(data.value.to_vec())
+        .bind(data.ts_event.to_string())
+        .bind(data.ts_init.to_string())
+        .execute(pool)
+        .await
+        .map(|_| ())
+        .map_err(|e| anyhow::anyhow!("Failed to insert into custom table: {e}"))
+    }
+
+    pub async fn load_custom_data(
+        pool: &PgPool,
+        data_type: &DataType,
+    ) -> anyhow::Result<Vec<CustomData>> {
+        // TODO: This metadata JSON could be more efficient at some point
+        let metadata_json = data_type
+            .metadata()
+            .as_ref()
+            .map_or(Ok(serde_json::Value::Null), |metadata| {
+                serde_json::to_value(metadata)
+            })?;
+
+        sqlx::query_as::<_, CustomDataModel>(
+            r#"SELECT * FROM "custom" WHERE data_type = $1 AND metadata = $2 ORDER BY ts_init ASC"#,
+        )
+        .bind(data_type.type_name())
+        .bind(metadata_json)
+        .fetch_all(pool)
+        .await
+        .map(|rows| rows.into_iter().map(|row| row.0).collect())
+        .map_err(|e| anyhow::anyhow!("Failed to load custom data: {e}"))
     }
 }

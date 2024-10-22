@@ -70,7 +70,7 @@ impl SpreadAnalyzer {
 
     #[pyo3(name = "handle_quote_tick")]
     fn py_handle_quote_tick(&mut self, quote: &QuoteTick) {
-        self.handle_quote_tick(quote);
+        self.handle_quote(quote);
     }
 
     #[pyo3(name = "reset")]

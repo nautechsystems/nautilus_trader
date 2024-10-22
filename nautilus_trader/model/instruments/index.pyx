@@ -29,9 +29,9 @@ from nautilus_trader.model.objects cimport Quantity
 
 cdef class IndexInstrument(Instrument):
     """
-    Represents a generic Index instrument.
+    Represents a generic index instrument.
 
-    This instrument is not tradable.
+    This instrument is *typically* not tradable.
 
     Parameters
     ----------

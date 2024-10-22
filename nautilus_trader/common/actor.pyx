@@ -33,6 +33,7 @@ from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import ImportableActorConfig
 from nautilus_trader.common.executor import ActorExecutor
 from nautilus_trader.common.executor import TaskId
+from nautilus_trader.common.signal import generate_signal_class
 from nautilus_trader.model.greeks import GreeksData
 from nautilus_trader.model.greeks import PortfolioGreeks
 
@@ -116,18 +117,16 @@ cdef class Actor(Component):
         )
 
         self._warning_events: set[type] = set()
-        self._signal_classes: dict[str, type] = {}
         self._pending_requests: dict[UUID4, Callable[[UUID4], None] | None] = {}
+        self._pyo3_conversion_types = set()
+        self._future_greeks: dict[InstrumentId, list[GreeksData]] = {}
+        self._signal_classes: dict[str, type] = {}
 
         # Indicators
         self._indicators: list[Indicator] = []
         self._indicators_for_quotes: dict[InstrumentId, list[Indicator]] = {}
         self._indicators_for_trades: dict[InstrumentId, list[Indicator]] = {}
         self._indicators_for_bars: dict[BarType, list[Indicator]] = {}
-
-        self._pyo3_conversion_types = set()
-
-        self._future_greeks: dict[InstrumentId, list[GreeksData]] = {}
 
         # Configuration
         self.config = config
@@ -446,6 +445,26 @@ cdef class Actor(Component):
         Warnings
         --------
         System method (not intended to be called by user code).
+
+        """
+        # Optionally override in subclass
+
+    cpdef void on_signal(self, signal):
+        """
+        Actions to be performed when running and receives signal data.
+
+        Parameters
+        ----------
+        signal : Data
+            The signal received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        Notes
+        -----
+        This refers to a data signal, not an operating system signal (such as SIGTERM, SIGKILL, etc.).
 
         """
         # Optionally override in subclass
@@ -1823,7 +1842,7 @@ cdef class Actor(Component):
         ----------
         name : str
             The name of the signal being published.
-            The signal name is case-insensitive and will be capitalized
+            The signal name will be converted to title case, with each word capitalized
             (e.g., 'example' becomes 'SignalExample').
         value : object
             The signal data to publish.
@@ -1832,7 +1851,6 @@ cdef class Actor(Component):
             If ``None`` then will timestamp current time.
 
         """
-        from nautilus_trader.persistence.writer import generate_signal_class
         Condition.not_none(name, "name")
         Condition.not_none(value, "value")
         Condition.is_in(type(value), (int, float, str), "value", "int, float, str")
@@ -1870,7 +1888,7 @@ cdef class Actor(Component):
 
         self._msgbus.subscribe(
             topic=f"data.{topic}",
-            handler=self.handle_data,
+            handler=self.handle_signal,
         )
 
 # -- REQUESTS -------------------------------------------------------------------------------------
@@ -2758,6 +2776,31 @@ cdef class Actor(Component):
                 self._log.exception(f"Error on handling {repr(data)}", e)
                 raise
 
+    cpdef void handle_signal(self, Data signal):
+        """
+        Handle the given signal.
+
+        If state is ``RUNNING`` then passes to `on_signal`.
+
+        Parameters
+        ----------
+        signal : Data
+            The signal received.
+
+        Warnings
+        --------
+        System method (not intended to be called by user code).
+
+        """
+        Condition.not_none(signal, "signal")
+
+        if self._fsm.state == ComponentState.RUNNING:
+            try:
+                self.on_signal(signal)
+            except Exception as e:
+                self._log.exception(f"Error on handling {repr(signal)}", e)
+                raise
+
     cpdef void handle_historical_data(self, data):
         """
         Handle the given historical data.
@@ -2888,11 +2931,11 @@ cdef class Actor(Component):
         """
         from nautilus_trader.risk.greeks import greeks_key
 
-        # option case, to avoid querying definition
+        # Option case, to avoid querying definition
         if ' ' in instrument_id.symbol.value:
             return GreeksData.from_bytes(self.cache.get(greeks_key(instrument_id)))
 
-        # future case
+        # Future case
         if instrument_id not in self._future_greeks:
             future_definition = self.cache.instrument(instrument_id)
             self._future_greeks[instrument_id] = GreeksData.from_delta(instrument_id, int(future_definition.multiplier))

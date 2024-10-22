@@ -111,9 +111,8 @@ A signal is an automatically generated custom data identified by a name containi
 self.publish_signal("signal_name", value, ts_event)
 self.subscribe_signal("signal_name")
 
-def on_data(self, data):
-    if data.is_signal("signal_name"):
-        print("Signal", data)
+def on_signal(self, signal):
+    print("Signal", data)
 ```
 
 ## Option Greeks example

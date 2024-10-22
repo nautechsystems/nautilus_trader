@@ -44,7 +44,7 @@ def betfair_instrument_id(
     Create an instrument ID from betfair fields.
 
     >>> betfair_instrument_id(market_id="1.201070830", selection_id=123456, selection_handicap=None)
-    InstrumentId('1.201070830-123456-None.BETFAIR')
+    InstrumentId('1-201070830-123456-None.BETFAIR')
 
     """
     PyCondition.not_empty(market_id, "market_id")
@@ -55,7 +55,7 @@ def betfair_instrument_id(
 def instrument_id_betfair_ids(
     instrument_id: InstrumentId,
 ) -> tuple[MarketId, SelectionId, Handicap | None]:
-    parts = instrument_id.symbol.value.split("-", maxsplit=2)
+    parts = instrument_id.symbol.value.rsplit("-", maxsplit=2)
     return (
         MarketId(parts[0]),
         SelectionId(parts[1]),

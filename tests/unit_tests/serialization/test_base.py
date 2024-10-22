@@ -23,6 +23,8 @@ class TestObject:
     Represents some generic user object which implements serialization value dicts.
     """
 
+    __test__ = False  # Prevents pytest from collecting this as a test class
+
     def __init__(self, value):
         self.value = value
 

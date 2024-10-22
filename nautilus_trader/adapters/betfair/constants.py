@@ -19,11 +19,15 @@ from betfair_parser.spec.betting import MarketStatus as BetfairMarketStatus
 
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import MarketStatusAction
+from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Price
 
 
-BETFAIR_VENUE: Final[Venue] = Venue("BETFAIR")
+BETFAIR: Final[str] = "BETFAIR"
+BETFAIR_VENUE: Final[Venue] = Venue(BETFAIR)
+BETFAIR_CLIENT_ID: Final[ClientId] = ClientId(BETFAIR)
+
 BETFAIR_PRICE_PRECISION: Final[int] = 2
 BETFAIR_QUANTITY_PRECISION: Final[int] = 2
 BETFAIR_BOOK_TYPE: Final[BookType] = BookType.L2_MBP

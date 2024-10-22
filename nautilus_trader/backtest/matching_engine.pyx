@@ -15,9 +15,6 @@
 
 import uuid
 
-
-# from nautilus_trader.backtest.auction import default_auction_match
-
 from cpython.datetime cimport timedelta
 from libc.stdint cimport uint64_t
 
@@ -38,6 +35,7 @@ from nautilus_trader.core.rust.model cimport AggregationSource
 from nautilus_trader.core.rust.model cimport AggressorSide
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport ContingencyType
+from nautilus_trader.core.rust.model cimport InstrumentCloseType
 from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.core.rust.model cimport MarketStatus
 from nautilus_trader.core.rust.model cimport MarketStatusAction
@@ -63,12 +61,12 @@ from nautilus_trader.execution.messages cimport CancelOrder
 from nautilus_trader.execution.messages cimport ModifyOrder
 from nautilus_trader.execution.trailing cimport TrailingStopCalculator
 from nautilus_trader.model.book cimport OrderBook
+from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport BookOrder
 from nautilus_trader.model.data cimport InstrumentClose
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
-from nautilus_trader.model.enums import InstrumentCloseType
 from nautilus_trader.model.events.order cimport OrderAccepted
 from nautilus_trader.model.events.order cimport OrderCanceled
 from nautilus_trader.model.events.order cimport OrderCancelRejected
@@ -375,8 +373,7 @@ cdef class OrderMatchingEngine:
         if is_logging_initialized():
             self._log.debug(f"Processing {repr(delta)}")
 
-        if self.book_type in (BookType.L2_MBP, BookType.L3_MBO):
-            self._book.apply_delta(delta)
+        self._book.apply_delta(delta)
 
         # TODO: WIP to introduce flags
         # if data.flags == TimeInForce.GTC:
@@ -405,8 +402,7 @@ cdef class OrderMatchingEngine:
         if is_logging_initialized():
             self._log.debug(f"Processing {repr(deltas)}")
 
-        if self.book_type in (BookType.L2_MBP, BookType.L3_MBO):
-            self._book.apply_deltas(deltas)
+        self._book.apply_deltas(deltas)
 
         # TODO: WIP to introduce flags
         # if data.flags == TimeInForce.GTC:
@@ -424,7 +420,7 @@ cdef class OrderMatchingEngine:
         """
         Process the exchanges market for the given quote tick.
 
-        Market dynamics are simulated by auctioning open orders.
+        The internal order book will only be updated if the venue `book_type` is 'L1_MBP'.
 
         Parameters
         ----------
@@ -446,7 +442,7 @@ cdef class OrderMatchingEngine:
         """
         Process the exchanges market for the given trade tick.
 
-        Market dynamics are simulated by auctioning open orders.
+        The internal order book will only be updated if the venue `book_type` is 'L1_MBP'.
 
         Parameters
         ----------
@@ -489,6 +485,9 @@ cdef class OrderMatchingEngine:
         cdef BarType bar_type = bar.bar_type
         if bar_type.aggregation_source == AggregationSource.INTERNAL:
             return  # Do not process internally aggregated bars
+
+        if bar_type.spec.aggregation == BarAggregation.MONTH:
+            return  # Do not process monthly bars (there is no available `timedelta`)
 
         cdef InstrumentId instrument_id = bar_type.instrument_id
         cdef BarType execution_bar_type = self._execution_bar_types.get(instrument_id)
@@ -2001,7 +2000,7 @@ cdef class OrderMatchingEngine:
 
     cdef PositionId _get_position_id(self, Order order, bint generate=True):
         cdef PositionId position_id
-        if OmsType.HEDGING:
+        if self.oms_type == OmsType.HEDGING:
             position_id = self.cache.position_id(order.client_order_id)
             if position_id is not None:
                 return position_id

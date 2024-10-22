@@ -1,0 +1,11 @@
+{
+  "type": "trade",
+  "symbol": "XBTUSD",
+  "exchange": "bitmex",
+  "id": "282a0445-0e3a-abeb-f403-11003204ea1b",
+  "price": 7996,
+  "amount": 50,
+  "side": "sell",
+  "timestamp": "2019-10-23T10:32:49.669Z",
+  "localTimestamp": "2019-10-23T10:32:49.740Z"
+}

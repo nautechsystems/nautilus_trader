@@ -85,7 +85,7 @@ def instrument_list(mock_load_markets_metadata):
 
     # Fill INSTRUMENTS global cache
     INSTRUMENTS.extend(instrument_provider.list_all())
-    assert INSTRUMENTS
+    assert INSTRUMENTS  # TODO: Fix Betfair symbology
 
 
 @pytest.mark.asyncio()
@@ -388,13 +388,13 @@ def test_betfair_ticker(data_client, mock_data_engine_process) -> None:
     assert ticker.traded_volume == 364.45
     assert (
         str(ticker)
-        == "BetfairTicker(instrument_id=1.176621195-42153-None.BETFAIR, ltp=3.15, tv=364.45, spn=None, spf=None, ts_init=1471370160471000064)"
+        == "BetfairTicker(instrument_id=1-176621195-42153-None.BETFAIR, ltp=3.15, tv=364.45, spn=None, spf=None, ts_init=1471370160471000064)"
     )
 
 
 def test_betfair_ticker_sp(data_client, mock_data_engine_process):
     # Arrange
-    lines = BetfairDataProvider.read_lines("1.206064380.bz2")
+    lines = BetfairDataProvider.read_lines("1-206064380.bz2")
 
     # Act
     for line in lines:
@@ -416,7 +416,7 @@ def test_betfair_ticker_sp(data_client, mock_data_engine_process):
 
 def test_betfair_starting_price(data_client, mock_data_engine_process):
     # Arrange
-    lines = BetfairDataProvider.read_lines("1.206064380.bz2")
+    lines = BetfairDataProvider.read_lines("1-206064380.bz2")
 
     # Act
     for line in lines[-100:]:

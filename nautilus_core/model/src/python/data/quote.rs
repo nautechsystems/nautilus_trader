@@ -389,12 +389,12 @@ mod tests {
     use pyo3::{IntoPy, Python};
     use rstest::rstest;
 
-    use crate::data::{quote::QuoteTick, stubs::quote_tick_ethusdt_binance};
+    use crate::data::{quote::QuoteTick, stubs::quote_ethusdt_binance};
 
     #[rstest]
-    fn test_as_dict(quote_tick_ethusdt_binance: QuoteTick) {
+    fn test_as_dict(quote_ethusdt_binance: QuoteTick) {
         pyo3::prepare_freethreaded_python();
-        let quote = quote_tick_ethusdt_binance;
+        let quote = quote_ethusdt_binance;
 
         Python::with_gil(|py| {
             let dict_string = quote.py_as_dict(py).unwrap().to_string();
@@ -404,9 +404,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_dict(quote_tick_ethusdt_binance: QuoteTick) {
+    fn test_from_dict(quote_ethusdt_binance: QuoteTick) {
         pyo3::prepare_freethreaded_python();
-        let quote = quote_tick_ethusdt_binance;
+        let quote = quote_ethusdt_binance;
 
         Python::with_gil(|py| {
             let dict = quote.py_as_dict(py).unwrap();
@@ -416,9 +416,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_pyobject(quote_tick_ethusdt_binance: QuoteTick) {
+    fn test_from_pyobject(quote_ethusdt_binance: QuoteTick) {
         pyo3::prepare_freethreaded_python();
-        let quote = quote_tick_ethusdt_binance;
+        let quote = quote_ethusdt_binance;
 
         Python::with_gil(|py| {
             let tick_pyobject = quote.into_py(py);

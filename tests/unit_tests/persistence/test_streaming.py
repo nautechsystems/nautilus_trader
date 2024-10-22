@@ -16,10 +16,9 @@
 import copy
 from collections import Counter
 
-import pytest
-
 from nautilus_trader.backtest.node import BacktestNode
 from nautilus_trader.backtest.results import BacktestResult
+from nautilus_trader.common.signal import generate_signal_class
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
@@ -33,7 +32,6 @@ from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
-from nautilus_trader.persistence.writer import generate_signal_class
 from nautilus_trader.test_kit.mocks.data import NewsEventData
 from nautilus_trader.test_kit.stubs.persistence import TestPersistenceStubs
 from tests.integration_tests.adapters.betfair.test_kit import BetfairTestStubs
@@ -43,25 +41,29 @@ class TestPersistenceStreaming:
     def setup(self) -> None:
         self.catalog: ParquetDataCatalog | None = None
 
-    def _run_default_backtest(self, catalog_betfair: ParquetDataCatalog) -> list[BacktestResult]:
+    def _run_default_backtest(
+        self,
+        catalog_betfair: ParquetDataCatalog,
+        book_type: str = "L1_MBP",
+    ) -> list[BacktestResult]:
         self.catalog = catalog_betfair
         instrument = self.catalog.instruments()[0]
-        run_config = BetfairTestStubs.betfair_backtest_run_config(
+        run_config = BetfairTestStubs.backtest_run_config(
             catalog_path=catalog_betfair.path,
             catalog_fs_protocol="file",
             instrument_id=instrument.id,
             flush_interval_ms=5_000,
             bypass_logging=True,
+            book_type=book_type,
         )
 
         node = BacktestNode(configs=[run_config])
 
         # Act
-        backtest_result = node.run()
+        backtest_result = node.run(raise_exception=True)
 
         return backtest_result
 
-    @pytest.mark.skip(reason="Unskip once Betfair symbol conventions changed")
     def test_feather_writer(self, catalog_betfair: ParquetDataCatalog) -> None:
         # Arrange
         backtest_result = self._run_default_backtest(catalog_betfair)
@@ -74,19 +76,21 @@ class TestPersistenceStreaming:
         )
         result = dict(Counter([r.__class__.__name__ for r in result]))  # type: ignore [assignment]
 
+        # TODO: Backtest needs to be reconfigured to use either deltas or trades
         expected = {
-            "AccountState": 400,
+            "AccountState": 380,
             "BettingInstrument": 1,
             "ComponentStateChanged": 27,
             "OrderAccepted": 189,
             "OrderBookDelta": 1307,
+            "OrderCanceled": 100,
             "OrderDenied": 3,
-            "OrderFilled": 211,
+            "OrderFilled": 91,
             "OrderInitialized": 193,
             "OrderSubmitted": 190,
-            "PositionChanged": 206,
-            "PositionClosed": 4,
-            "PositionOpened": 5,
+            "PositionChanged": 87,
+            "PositionClosed": 3,
+            "PositionOpened": 3,
             "TradeTick": 179,
         }
 
@@ -297,7 +301,7 @@ class TestPersistenceStreaming:
         )
 
         result = Counter([r.__class__.__name__ for r in result])  # type: ignore
-        assert result["SignalCounter"] == 283  # type: ignore
+        assert result["SignalCounter"] == 179  # type: ignore
 
     def test_generate_signal_class(self) -> None:
         # Arrange
@@ -400,7 +404,6 @@ class TestPersistenceStreaming:
             book.apply_delta(update)
             copy.deepcopy(book)
 
-    @pytest.mark.skip(reason="Unskip once Betfair symbol conventions changed")
     def test_read_backtest(
         self,
         catalog_betfair: ParquetDataCatalog,
@@ -414,18 +417,19 @@ class TestPersistenceStreaming:
 
         # Assert
         expected = {
-            "AccountState": 400,
+            "AccountState": 380,
             "BettingInstrument": 1,
             "ComponentStateChanged": 27,
             "OrderAccepted": 189,
             "OrderBookDelta": 1307,
+            "OrderCanceled": 100,
             "OrderDenied": 3,
-            "OrderFilled": 211,
+            "OrderFilled": 91,
             "OrderInitialized": 193,
             "OrderSubmitted": 190,
-            "PositionChanged": 206,
-            "PositionClosed": 4,
-            "PositionOpened": 5,
+            "PositionChanged": 87,
+            "PositionClosed": 3,
+            "PositionOpened": 3,
             "TradeTick": 179,
         }
         assert counts == expected

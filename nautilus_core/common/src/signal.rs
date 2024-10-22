@@ -13,37 +13,37 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! A user signal type.
+
+use std::fmt::Debug;
+
 use nautilus_core::nanos::UnixNanos;
+use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
-use crate::{
-    enums::{OrderSide, PositionSide},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
-};
-
+/// Represents a generic signal.
 #[repr(C)]
-#[derive(Clone, PartialEq, Debug)]
-pub struct PositionState {
-    pub trader_id: TraderId,
-    pub strategy_id: StrategyId,
-    pub instrument_id: InstrumentId,
-    pub position_id: PositionId,
-    pub account_id: AccountId,
-    pub opening_order_id: ClientOrderId,
-    pub entry: OrderSide,
-    pub side: PositionSide,
-    pub signed_qty: f64,
-    pub quantity: Quantity,
-    pub peak_quantity: Quantity,
-    pub last_qty: Quantity,
-    pub last_px: Price,
-    pub currency: Currency,
-    pub avg_px_open: f64,
-    pub avg_px_closed: f64,
-    pub realized_return: f64,
-    pub realized_pnl: Money,
-    pub unrealized_pnl: Money,
-    pub ts_opened: UnixNanos,
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
+)]
+pub struct Signal {
+    pub name: Ustr,
+    pub value: String,
     pub ts_event: UnixNanos,
     pub ts_init: UnixNanos,
+}
+
+impl Signal {
+    /// Creates a new [`Signal`] instance.
+    #[must_use]
+    pub const fn new(name: Ustr, value: String, ts_event: UnixNanos, ts_init: UnixNanos) -> Self {
+        Self {
+            name,
+            value,
+            ts_event,
+            ts_init,
+        }
+    }
 }

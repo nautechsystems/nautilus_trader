@@ -43,6 +43,8 @@ cdef class BacktestEngine:
     cdef datetime _backtest_end
 
     cdef dict[Venue, SimulatedExchange] _venues
+    cdef set[InstrumentId] _has_data
+    cdef set[InstrumentId] _has_book_data
     cdef list[Data] _data
     cdef uint64_t _data_len
     cdef uint64_t _index

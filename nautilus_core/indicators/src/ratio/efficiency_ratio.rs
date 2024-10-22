@@ -60,11 +60,11 @@ impl Indicator for EfficiencyRatio {
         self.initialized
     }
 
-    fn handle_quote_tick(&mut self, quote: &QuoteTick) {
+    fn handle_quote(&mut self, quote: &QuoteTick) {
         self.update_raw(quote.extract_price(self.price_type).into());
     }
 
-    fn handle_trade_tick(&mut self, trade: &TradeTick) {
+    fn handle_trade(&mut self, trade: &TradeTick) {
         self.update_raw((&trade.price).into());
     }
 
@@ -215,11 +215,11 @@ mod tests {
 
     #[rstest]
     fn test_handle_quote_tick(mut efficiency_ratio_10: EfficiencyRatio) {
-        let quote_tick1 = quote_tick("1500.0", "1502.0");
-        let quote_tick2 = quote_tick("1502.0", "1504.0");
+        let quote_tick1 = stub_quote("1500.0", "1502.0");
+        let quote_tick2 = stub_quote("1502.0", "1504.0");
 
-        efficiency_ratio_10.handle_quote_tick(&quote_tick1);
-        efficiency_ratio_10.handle_quote_tick(&quote_tick2);
+        efficiency_ratio_10.handle_quote(&quote_tick1);
+        efficiency_ratio_10.handle_quote(&quote_tick2);
         assert_eq!(efficiency_ratio_10.value, 1.0);
     }
 

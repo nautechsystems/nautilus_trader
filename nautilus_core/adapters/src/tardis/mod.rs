@@ -15,5 +15,12 @@
 
 //! The [Tardis](https://tardis.dev) integration adapter.
 
+pub mod csv;
+pub mod machine;
+pub mod parse;
+
 #[cfg(feature = "python")]
 pub mod python;
+
+#[cfg(test)]
+pub mod tests;

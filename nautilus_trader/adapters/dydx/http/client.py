@@ -140,14 +140,14 @@ class DYDXHttpClient:
         if BAD_REQUEST_ERROR_CODE <= response.status < INTERNAL_SERVER_ERROR_CODE:
             raise DYDXError(
                 status=response.status,
-                message=msgspec.json.decode(response.body) if response.body else None,
+                message=msgspec.json.decode(response.body) if response.body else str(None),
                 headers=response.headers,
             )
 
         if response.status >= INTERNAL_SERVER_ERROR_CODE:
             raise DYDXError(
                 status=response.status,
-                message=msgspec.json.decode(response.body) if response.body else None,
+                message=msgspec.json.decode(response.body) if response.body else str(None),
                 headers=response.headers,
             )
 

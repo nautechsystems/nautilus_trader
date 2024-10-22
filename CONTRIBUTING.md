@@ -1,32 +1,35 @@
 # Contributing to NautilusTrader
 
-Involvement from the trading community is a goal for this project, and all help is welcome!
+We highly value involvement from the trading community, and all contributions are greatly appreciated as they help us continually improve NautilusTrader!
+
+## Steps
+
 To contribute, follow these steps:
 
 1. Open an issue on GitHub to discuss your proposed changes or enhancements.
 
-2. Once everyone is on the same page, take a fork of the develop branch (or ensure all upstream changes are merged).
+2. Once everyone is aligned, fork the `develop` branch and ensure your fork is up-to-date by regularly merging any upstream changes.
 
-3. Install and set up [pre-commit](https://pre-commit.com/) to ensure that the pre-commit hook is picked up on your local machine. This will automatically run various checks, auto-formatters, and linting tools.
+3. Install and configure [pre-commit](https://pre-commit.com/) on your local machine to automatically run code checks, formatters, and linters before each commit. You can install pre-commit via:
+    ```bash
+    pip install pre-commit
+    pre-commit install
+    ```
 
-4. It is recommended to install Redis using the default configuration so that integration tests will pass on your machine.
+4. Open a pull request (PR) on the `develop` branch with a summary comment and reference to any relevant GitHub issue(s).
 
-5. Open a pull request (PR) on the `develop` branch with a summary comment.
+5. The CI system will run the full test suite over your code including all unit and integration tests, so include appropriate tests with the PR.
 
-6. The CI system will run the full test-suite over your code including all unit and integration tests, so include appropriate tests
-  with the PR.
+6. [Deepsource](https://deepsource.io) will perform an automated code review. Fix any issues which cause a failed check, and add the commit to your PR.
 
-7. [Deepsource](https://deepsource.io) will perform an automated code review.
-  Fix any issues which cause a failed check, and add the commit to your PR.
+7. Read and understand the Contributor License Agreement (CLA), available at https://github.com/nautechsystems/nautilus_trader/blob/develop/CLA.md.
 
-8. You will also be required to sign a standard Contributor License Agreement (CLA), which is administered automatically through [CLA Assistant](https://cla-assistant.io/).
+8. You will also be required to sign the CLA, which is administered automatically through [CLA Assistant](https://cla-assistant.io/).
 
-9. We will review your code as quickly as possible and may provide feedback on needed changes before merging.
+9. We will review your code as quickly as possible and provide feedback if any changes are needed before merging.
 
 ## Tips
 
-- Follow the established coding practices outlined in the [Developer Guide](https://nautilustrader.io/docs/developer_guide/index.html).
-- Keep PR's small and focused.
-- Reference the related GitHub issue(s) in the PR comment.
-
-Thank you for your interest in NautilusTrader!
+- Follow the established coding practices in the [Developer Guide](https://nautilustrader.io/docs/developer_guide/index.html).
+- Keep PRs small and focused for easier review.
+- Reference the relevant GitHub issue(s) in your PR comment.

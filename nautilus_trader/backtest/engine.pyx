@@ -28,6 +28,7 @@ from nautilus_trader.config import CacheConfig
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.data.config import DataEngineConfig
 from nautilus_trader.execution.config import ExecEngineConfig
+from nautilus_trader.model import BOOK_DATA_TYPES
 from nautilus_trader.model import NAUTILUS_PYO3_DATA_TYPES
 from nautilus_trader.risk.config import RiskEngineConfig
 from nautilus_trader.system.kernel import NautilusKernel
@@ -86,6 +87,7 @@ from nautilus_trader.model.data cimport OrderBookDelta
 from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.functions cimport book_type_to_str
 from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport TraderId
@@ -130,6 +132,8 @@ cdef class BacktestEngine:
 
         # Venues and data
         self._venues: dict[Venue, SimulatedExchange] = {}
+        self._has_data: set[InstrumentId] = set()
+        self._has_book_data: set[InstrumentId] = set()
         self._data: list[Data] = []
         self._data_len: uint64_t = 0
         self._index: uint64_t = 0
@@ -578,14 +582,14 @@ cdef class BacktestEngine:
         bint sort = True,
     ) -> None:
         """
-        Add the given custom data to the backtest engine.
+        Add the given `data` to the backtest engine.
 
         Parameters
         ----------
         data : list[Data]
             The data to add.
         client_id : ClientId, optional
-            The data client ID to associate with custom data.
+            The client ID to associate with the data.
         validate : bool, default True
             If `data` should be validated
             (recommended when adding data directly to the engine).
@@ -604,7 +608,7 @@ cdef class BacktestEngine:
         ValueError
             If `data` elements do not have an `instrument_id` and `client_id` is ``None``.
         TypeError
-            If `data` is a type provided by Rust pyo3 (cannot add directly to engine yet).
+            If `data` is a Rust PyO3 data type (cannot add directly to engine yet).
 
         Warnings
         --------
@@ -621,14 +625,13 @@ cdef class BacktestEngine:
         if isinstance(data[0], NAUTILUS_PYO3_DATA_TYPES):
             raise TypeError(
                 f"Cannot add data of type `{type(data[0]).__name__}` from pyo3 directly to engine. "
-                "This will supported in a future release.",
+                "This will be supported in a future release.",
             )
 
         cdef str data_added_str = "data"
 
         if validate:
             first = data[0]
-
             if hasattr(first, "instrument_id"):
                 Condition.is_true(
                     first.instrument_id in self.kernel.cache.instrument_ids(),
@@ -637,6 +640,7 @@ cdef class BacktestEngine:
                 )
                 # Check client has been registered
                 self._add_market_data_client_if_not_exists(first.instrument_id.venue)
+                self._has_data.add(first.instrument_id)
                 data_added_str = f"{first.instrument_id} {type(first).__name__}"
             elif isinstance(first, Bar):
                 Condition.is_true(
@@ -650,6 +654,7 @@ cdef class BacktestEngine:
                     "bar_type.aggregation_source",
                     "required source",
                 )
+                self._has_data.add(first.bar_type.instrument_id)
                 data_added_str = f"{first.bar_type} {type(first).__name__}"
             else:
                 Condition.not_none(client_id, "client_id")
@@ -658,11 +663,15 @@ cdef class BacktestEngine:
                 if isinstance(first, CustomData):
                     data_added_str = f"{type(first.data).__name__} "
 
+            if type(first) in BOOK_DATA_TYPES:
+                self._has_book_data.add(first.instrument_id)
+
         # Add data
         self._data.extend(data)
 
         if sort:
             self._data = sorted(self._data, key=lambda x: x.ts_init)
+
 
         self._log.info(
             f"Added {len(data):_} {data_added_str} element{'' if len(data) == 1 else 's'}",
@@ -844,6 +853,8 @@ cdef class BacktestEngine:
         Does not clear added instruments.
 
         """
+        self._has_data.clear()
+        self._has_book_data.clear()
         self._data.clear()
         self._data_len = 0
         self._index = 0
@@ -1002,6 +1013,24 @@ cdef class BacktestEngine:
         end: datetime | str | int | None = None,
         run_config_id: str | None = None,
     ):
+        # Validate data
+        cdef:
+            SimulatedExchange exchange
+            InstrumentId instrument_id
+            bint has_data
+            bint missing_book_data
+            bint book_type_has_depth
+        for exchange in self._venues.values():
+            for instrument_id in exchange.instruments:
+                has_data = instrument_id in self._has_data
+                missing_book_data = instrument_id not in self._has_book_data
+                book_type_has_depth = exchange.book_type > BookType.L1_MBP
+                if book_type_has_depth and has_data and missing_book_data:
+                    raise InvalidConfiguration(
+                        f"No order book data found for instrument '{instrument_id }' when `book_type` is '{book_type_to_str(exchange.book_type)}'. "
+                        "Set the venue `book_type` to 'L1_MBP' (for top-of-book data like quotes, trades, and bars) or provide order book data for this instrument."
+                    )
+
         cdef uint64_t start_ns
         cdef uint64_t end_ns
         # Time range check and set
@@ -1027,7 +1056,6 @@ cdef class BacktestEngine:
         for clock in get_component_clocks(self._instance_id):
             clock.set_time(start_ns)
 
-        cdef SimulatedExchange exchange
         if self._iteration == 0:
             # Initialize run
             self._run_config_id = run_config_id  # Can be None
@@ -1078,7 +1106,6 @@ cdef class BacktestEngine:
         cdef uint64_t raw_handlers_count = 0
         cdef Data data = self._next()
         cdef CVec raw_handlers
-        cdef SimulatedExchange venue
         try:
             while data is not None:
                 if data.ts_init > end_ns:
@@ -1089,28 +1116,28 @@ cdef class BacktestEngine:
                     raw_handlers = self._advance_time(data.ts_init)
                     raw_handlers_count = raw_handlers.len
 
-                # Process data through venue
+                # Process data through exchange
                 if isinstance(data, OrderBookDelta):
-                    venue = self._venues[data.instrument_id.venue]
-                    venue.process_order_book_delta(data)
+                    exchange = self._venues[data.instrument_id.venue]
+                    exchange.process_order_book_delta(data)
                 elif isinstance(data, OrderBookDeltas):
-                    venue = self._venues[data.instrument_id.venue]
-                    venue.process_order_book_deltas(data)
+                    exchange = self._venues[data.instrument_id.venue]
+                    exchange.process_order_book_deltas(data)
                 elif isinstance(data, QuoteTick):
-                    venue = self._venues[data.instrument_id.venue]
-                    venue.process_quote_tick(data)
+                    exchange = self._venues[data.instrument_id.venue]
+                    exchange.process_quote_tick(data)
                 elif isinstance(data, TradeTick):
-                    venue = self._venues[data.instrument_id.venue]
-                    venue.process_trade_tick(data)
+                    exchange = self._venues[data.instrument_id.venue]
+                    exchange.process_trade_tick(data)
                 elif isinstance(data, Bar):
-                    venue = self._venues[data.bar_type.instrument_id.venue]
-                    venue.process_bar(data)
+                    exchange = self._venues[data.bar_type.instrument_id.venue]
+                    exchange.process_bar(data)
                 elif isinstance(data, InstrumentClose):
-                    venue = self._venues[data.instrument_id.venue]
-                    venue.process_instrument_close(data)
+                    exchange = self._venues[data.instrument_id.venue]
+                    exchange.process_instrument_close(data)
                 elif isinstance(data, InstrumentStatus):
-                    venue = self._venues[data.instrument_id.venue]
-                    venue.process_instrument_status(data)
+                    exchange = self._venues[data.instrument_id.venue]
+                    exchange.process_instrument_status(data)
 
                 self._data_engine.process(data)
 

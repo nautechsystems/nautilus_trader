@@ -455,9 +455,8 @@ impl From<OrderAny> for MarketOrder {
             OrderAny::Market(order) => order,
             _ => {
                 panic!(
-                    "Invalid `OrderAny` not `{}`, was {:?}",
+                    "Invalid `OrderAny` not `{}`, was {order:?}",
                     stringify!(MarketOrder),
-                    order
                 )
             }
         }

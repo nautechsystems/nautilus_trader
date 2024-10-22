@@ -1,35 +1,62 @@
 # Data
 
-The NautilusTrader platform defines a range of built-in data types crafted specifically to represent 
-a trading domain:
+The NautilusTrader platform provides a set of built-in data types specifically designed to represent a trading domain.
+These data types include:
 
-- `OrderBookDelta` (L1/L2/L3): Most granular order book updates
-- `OrderBookDeltas` (L1/L2/L3): Batches multiple order book deltas
-- `OrderBookDepth10`: Aggregated order book snapshot (10 levels per side)
-- `QuoteTick`: Top-of-book best bid and ask prices and sizes
-- `TradeTick`: A single trade/match event between counterparties
-- `Bar`: OHLCV bar data, aggregated using a specific *aggregation method*
-- `Instrument`: General base class for a tradable instrument
-- `InstrumentStatus`: An instrument level status event
-- `InstrumentClose`: An instrument closing price
+- `OrderBookDelta` (L1/L2/L3): Represents the most granular order book updates.
+- `OrderBookDeltas` (L1/L2/L3): Batches multiple order book deltas for more efficient processing.
+- `OrderBookDepth10`: Aggregated order book snapshot (up to 10 levels per bid and ask side).
+- `QuoteTick`: Represents the best bid and ask prices along with their sizes at the top-of-book.
+- `TradeTick`: A single trade/match event between counterparties.
+- `Bar`: OHLCV (Open, High, Low, Close, Volume) bar/candle, aggregated using a specified *aggregation method*.
+- `InstrumentStatus`: An instrument level status event.
+- `InstrumentClose`: An instrument closing price.
 
-Each of these data types inherits from `Data`, which defines two fields:
-- `ts_event`: UNIX timestamp (nanoseconds) when the data event occurred
-- `ts_init`: UNIX timestamp (nanoseconds) when the object was initialized
+## Timestamps
 
-This inheritance ensures chronological data ordering (vital for backtesting), while also enhancing analytics.
+Each of these data types defines two timestamp fields:
 
-Consistency is key; data flows through the platform in exactly the same way for all system [environment contexts](/concepts/architecture.md#environment-contexts) (`backtest`, `sandbox`, `live`)
-primarily through the `MessageBus` to the `DataEngine` and onto subscribed or registered handlers.
+- `ts_event`: UNIX timestamp (nanoseconds) representing when the data event occurred.
+- `ts_init`: UNIX timestamp (nanoseconds) marking when the object was initialized.
 
-For those seeking customization, the platform supports user-defined data types. Refer to the advanced [Custom data guide](advanced/custom_data.md) for further details.
+For backtesting, data is ordered by `ts_init` using a stable sort. For persisted data, the `ts_init` field indicates when the message was originally received.
+
+The `ts_event` timestamp enhances analytics by enabling some latency analysis. Relative latency can be measured as the difference between `ts_init` and `ts_event`,
+though it's important to remember that the clocks producing these timestamps are likely not synchronized.
+
+## Instruments
+
+The following instrument definitions are available:
+
+- `Betting`: Represents an instrument in a betting market.
+- `BinaryOption`: Represents a generic binary option instrument.
+- `Cfd`: Represents a Contract for Difference (CFD) instrument.
+- `Commodity`:  Represents a commodity instrument in a spot/cash market.
+- `CryptoFuture`: Represents a deliverable futures contract instrument, with crypto assets as underlying and for settlement.
+- `CryptoPerpetual`: Represents a crypto perpetual futures contract instrument (a.k.a. perpetual swap).
+- `CurrencyPair`: Represents a generic currency pair instrument in a spot/cash market.
+- `Equity`: Represents a generic equity instrument.
+- `FuturesContract`: Represents a generic deliverable futures contract instrument.
+- `FuturesSpread`: Represents a generic deliverable futures spread instrument.
+- `Index`: Represents a generic index instrument.
+- `OptionsContract`: Represents a generic options contract instrument.
+- `OptionsSpread`: Represents a generic options spread instrument.
+- `Synthetic`: Represents a synthetic instrument with prices derived from component instruments using a formula.
+
+## Data flow
+
+The platform ensures consistency by flowing data through the same pathways across all system [environment contexts](/concepts/architecture.md#environment-contexts)
+(e.g., `backtest`, `sandbox`, `live`). Data is primarily transported via the `MessageBus` to the `DataEngine` and then distributed to subscribed or registered handlers.
+
+For users who need more flexibility, the platform also supports the creation of custom data types. For details on how to implement user-defined data types, refer to the advanced [Custom data guide](advanced/custom_data.md).
 
 ## Loading data
 
 NautilusTrader facilitates data loading and conversion for three main use cases:
-- Populating the `BacktestEngine` directly to run backtests
-- Persisting the Nautilus-specific Parquet format for the data catalog via `ParquetDataCatalog.write_data(...)` to be later used with a `BacktestNode`
-- For research purposes (to ensure data is consistent between research and backtesting)
+
+- Providing data for a `BacktestEngine` to run backtests.
+- Persisting the Nautilus-specific Parquet format for the data catalog via `ParquetDataCatalog.write_data(...)` to be later used with a `BacktestNode`.
+- For research purposes (to ensure data is consistent between research and backtesting).
 
 Regardless of the destination, the process remains the same: converting diverse external data formats into Nautilus data structures.
 
@@ -46,6 +73,7 @@ an entirely different format to [Databento Binary Encoding (DBN)](https://databe
 
 Data wranglers are implemented per specific Nautilus data type, and can be found in the `nautilus_trader.persistence.wranglers` module.
 Currently there exists:
+
 - `OrderBookDeltaDataWrangler`
 - `QuoteTickDataWrangler`
 - `TradeTickDataWrangler`
@@ -62,12 +90,13 @@ of the Nautilus core, currently in development.
 ### Transformation pipeline
 
 **Process flow**:
-1. Raw data (e.g., CSV) is input into the pipeline
-2. DataLoader processes the raw data and converts it into a `pd.DataFrame`
-3. DataWrangler further processes the `pd.DataFrame` to generate a list of Nautilus objects
-4. The Nautilus `list[Data]` is the output of the data loading process
 
-This diagram illustrates how raw data is transformed into Nautilus data structures.
+1. Raw data (e.g., CSV) is input into the pipeline.
+2. DataLoader processes the raw data and converts it into a `pd.DataFrame`.
+3. DataWrangler further processes the `pd.DataFrame` to generate a list of Nautilus objects.
+4. The Nautilus `list[Data]` is the output of the data loading process.
+
+The following diagram illustrates how raw data is transformed into Nautilus data structures:
 ```
   ┌──────────┐    ┌──────────────────────┐                  ┌──────────────────────┐
   │          │    │                      │                  │                      │
@@ -82,8 +111,9 @@ This diagram illustrates how raw data is transformed into Nautilus data structur
 ```
 
 Conceretely, this would involve:
-- `BinanceOrderBookDeltaDataLoader.load(...)` which reads CSV files provided by Binance from disk, and returns a `pd.DataFrame`
-- `OrderBookDeltaDataWrangler.process(...)` which takes the `pd.DataFrame` and returns `list[OrderBookDelta]`
+
+- `BinanceOrderBookDeltaDataLoader.load(...)` which reads CSV files provided by Binance from disk, and returns a `pd.DataFrame`.
+- `OrderBookDeltaDataWrangler.process(...)` which takes the `pd.DataFrame` and returns `list[OrderBookDelta]`.
 
 The following example shows how to accomplish the above in Python:
 ```python
@@ -110,9 +140,10 @@ deltas = wrangler.process(df)
 The data catalog is a central store for Nautilus data, persisted in the [Parquet](https://parquet.apache.org) file format.
 
 We have chosen Parquet as the storage format for the following reasons:
-- It performs much better than CSV/JSON/HDF5/etc in terms of compression ratio (storage size) and read performance
-- It does not require any separate running components (for example a database)
-- It is quick and simple to get up and running with
+
+- It performs much better than CSV/JSON/HDF5/etc in terms of compression ratio (storage size) and read performance.
+- It does not require any separate running components (for example a database).
+- It is quick and simple to get up and running with.
 
 The Arrow schemas used for the Parquet format are either single sourced in the core `persistence` Rust crate, or available
 from the `/serialization/arrow/schema.py` module.
@@ -143,7 +174,8 @@ catalog = ParquetDataCatalog(CATALOG_PATH)
 New data can be stored in the catalog, which is effectively writing the given data to disk in the Nautilus-specific Parquet format.
 All Nautilus built-in `Data` objects are supported, and any data which inherits from `Data` can be written.
 
-The following example shows the above list of Binance `OrderBookDelta` objects being written.
+The following example shows the above list of Binance `OrderBookDelta` objects being written:
+
 ```python
 catalog.write_data(deltas)
 ```
@@ -171,6 +203,7 @@ generates unique filenames for different data sets.
 :::
 
 Rust Arrow schema implementations are available for the follow data types (enhanced performance):
+
 - `OrderBookDelta`
 - `QuoteTick`
 - `TradeTick`
@@ -194,6 +227,7 @@ deltas = catalog.order_book_deltas(instrument_ids=[instrument.id.value], start=s
 When running backtests in streaming mode with a `BacktestNode`, the data catalog can be used to stream the data in batches.
 
 The following example shows how to achieve this by initializing a `BacktestDataConfig` configuration object:
+
 ```python
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.model.data import OrderBookDelta

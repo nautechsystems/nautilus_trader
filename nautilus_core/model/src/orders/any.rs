@@ -142,6 +142,21 @@ impl OrderAny {
     }
 
     #[must_use]
+    pub fn last_event(&self) -> &OrderEventAny {
+        match self {
+            Self::Limit(order) => order.last_event(),
+            Self::LimitIfTouched(order) => order.last_event(),
+            Self::Market(order) => order.last_event(),
+            Self::MarketIfTouched(order) => order.last_event(),
+            Self::MarketToLimit(order) => order.last_event(),
+            Self::StopLimit(order) => order.last_event(),
+            Self::StopMarket(order) => order.last_event(),
+            Self::TrailingStopLimit(order) => order.last_event(),
+            Self::TrailingStopMarket(order) => order.last_event(),
+        }
+    }
+
+    #[must_use]
     pub fn trader_id(&self) -> TraderId {
         match self {
             Self::Limit(order) => order.trader_id,
@@ -686,9 +701,8 @@ impl AsRef<StopMarketOrder> for OrderAny {
         match self {
             OrderAny::StopMarket(ref order) => order,
             _ => panic!(
-                "Invalid `OrderAny` not `{}`, was {:?}",
+                "Invalid `OrderAny` not `{}`, was {self:?}",
                 stringify!(StopMarketOrder),
-                self
             ),
         }
     }

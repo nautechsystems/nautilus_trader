@@ -84,13 +84,13 @@ impl BollingerBands {
     }
 
     #[pyo3(name = "handle_quote_tick")]
-    fn py_handle_quote_tick(&mut self, tick: &QuoteTick) {
-        self.handle_quote_tick(tick);
+    fn py_handle_quote_tick(&mut self, quote: &QuoteTick) {
+        self.handle_quote(quote);
     }
 
     #[pyo3(name = "handle_trade_tick")]
-    fn py_handle_trade_tick(&mut self, tick: &TradeTick) {
-        self.handle_trade_tick(tick);
+    fn py_handle_trade_tick(&mut self, trade: &TradeTick) {
+        self.handle_trade(trade);
     }
 
     #[pyo3(name = "handle_bar")]

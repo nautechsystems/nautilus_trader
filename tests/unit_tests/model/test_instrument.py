@@ -24,6 +24,7 @@ from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.currencies import USDT
 from nautilus_trader.model.enums import option_kind_from_str
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments import BettingInstrument
 from nautilus_trader.model.instruments import BinaryOption
 from nautilus_trader.model.instruments import CryptoFuture
 from nautilus_trader.model.instruments import CryptoPerpetual
@@ -50,6 +51,7 @@ ETHUSD_BITMEX = TestInstrumentProvider.ethusd_bitmex()
 AAPL_EQUITY = TestInstrumentProvider.equity(symbol="AAPL", venue="XNAS")
 ES_FUTURE = TestInstrumentProvider.es_future(expiry_year=2023, expiry_month=12)
 AAPL_OPTION = TestInstrumentProvider.aapl_option()
+BETTING_INSTRUMENT = TestInstrumentProvider.betting_instrument()
 
 
 class TestInstrument:
@@ -154,6 +156,51 @@ class TestInstrument:
 
         # Assert
         assert result == BTCUSDT_BINANCE
+
+    def test_betting_instrument_to_dict(self):
+        # Arrange, Act
+        result = BettingInstrument.to_dict(BETTING_INSTRUMENT)
+
+        # Assert
+        assert BettingInstrument.from_dict(result) == BETTING_INSTRUMENT
+        assert result == {
+            "type": "BettingInstrument",
+            "id": "1-123456789-50214-None.BETFAIR",
+            "raw_symbol": "1-123456789-50214-None",
+            "venue_name": "BETFAIR",
+            "event_type_id": 6423,
+            "event_type_name": "American Football",
+            "competition_id": 12282733,
+            "competition_name": "NFL",
+            "event_id": 29678534,
+            "event_name": "NFL",
+            "event_country_code": "GB",
+            "event_open_date": 1644276600000000000,
+            "betting_type": "ODDS",
+            "market_id": "1-123456789",
+            "market_name": "AFC Conference Winner",
+            "market_type": "SPECIAL",
+            "market_start_time": 1644276600000000000,
+            "selection_id": 50214,
+            "selection_name": "Kansas City Chiefs",
+            "selection_handicap": -9999999.0,
+            "price_precision": 2,
+            "size_precision": 2,
+            "price_increment": "0.01",
+            "size_increment": "0.01",
+            "currency": "GBP",
+            "maker_fee": "0",
+            "taker_fee": "0",
+            "max_quantity": None,
+            "min_quantity": None,
+            "max_notional": None,
+            "min_notional": "1.00 GBP",
+            "max_price": None,
+            "min_price": None,
+            "ts_event": 0,
+            "ts_init": 0,
+            "info": {},
+        }
 
     def test_crypto_perpetual_instrument_to_dict(self):
         # Arrange, Act
@@ -569,6 +616,17 @@ def test_binary_option_dict_round_trip() -> None:
 
     # Act
     from_dict = BinaryOption.from_dict(BinaryOption.to_dict(instrument))
+
+    # Assert
+    assert instrument == from_dict
+
+
+def test_betting_instrument_dict_round_trip() -> None:
+    # Arrange
+    instrument = TestInstrumentProvider.betting_instrument()
+
+    # Act
+    from_dict = BettingInstrument.from_dict(BettingInstrument.to_dict(instrument))
 
     # Assert
     assert instrument == from_dict

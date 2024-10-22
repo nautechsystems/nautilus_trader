@@ -615,6 +615,26 @@ pub fn decode_mbp1_msg(
     Ok((quote, maybe_trade))
 }
 
+pub fn decode_bbo_msg(
+    msg: &dbn::BboMsg,
+    instrument_id: InstrumentId,
+    price_precision: u8,
+    ts_init: UnixNanos,
+) -> anyhow::Result<QuoteTick> {
+    let top_level = &msg.levels[0];
+    let quote = QuoteTick::new(
+        instrument_id,
+        Price::from_raw(top_level.bid_px, price_precision),
+        Price::from_raw(top_level.ask_px, price_precision),
+        Quantity::from_raw(u64::from(top_level.bid_sz) * FIXED_SCALAR as u64, 0),
+        Quantity::from_raw(u64::from(top_level.ask_sz) * FIXED_SCALAR as u64, 0),
+        msg.ts_recv.into(),
+        ts_init,
+    );
+
+    Ok(quote)
+}
+
 pub fn decode_mbp10_msg(
     msg: &dbn::Mbp10Msg,
     instrument_id: InstrumentId,
@@ -801,6 +821,14 @@ pub fn decode_record(
             (quote, None) => (Some(Data::Quote(quote)), None),
             (quote, Some(trade)) => (Some(Data::Quote(quote)), Some(Data::Trade(trade))),
         }
+    } else if let Some(msg) = record.get::<dbn::Bbo1SMsg>() {
+        let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
+        let quote = decode_bbo_msg(msg, instrument_id, price_precision, ts_init)?;
+        (Some(Data::Quote(quote)), None)
+    } else if let Some(msg) = record.get::<dbn::Bbo1MMsg>() {
+        let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
+        let quote = decode_bbo_msg(msg, instrument_id, price_precision, ts_init)?;
+        (Some(Data::Quote(quote)), None)
     } else if let Some(msg) = record.get::<dbn::Mbp10Msg>() {
         let ts_init = determine_timestamp(ts_init, msg.ts_recv.into());
         let depth = decode_mbp10_msg(msg, instrument_id, price_precision, ts_init)?;
@@ -1185,7 +1213,7 @@ pub fn decode_statistics_msg(
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     use databento::dbn::decode::{dbn::Decoder, DecodeStream};
     use fallible_streaming_iterator::FallibleStreamingIterator;
@@ -1193,8 +1221,9 @@ mod tests {
 
     use super::*;
 
-    pub const TEST_DATA_PATH: &str =
-        concat!(env!("CARGO_MANIFEST_DIR"), "/src/databento/test_data");
+    fn test_data_path() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("src/databento/test_data")
+    }
 
     #[rstest]
     fn test_decode_price() {
@@ -1204,7 +1233,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_mbo_msg() {
-        let path = PathBuf::from(format!("{TEST_DATA_PATH}/test_data.mbo.dbn.zst"));
+        let path = test_data_path().join("test_data.mbo.dbn.zst");
         let mut dbn_stream = Decoder::from_zstd_file(path)
             .unwrap()
             .decode_stream::<dbn::MboMsg>();
@@ -1229,7 +1258,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_mbp1_msg() {
-        let path = PathBuf::from(format!("{TEST_DATA_PATH}/test_data.mbp-1.dbn.zst"));
+        let path = test_data_path().join("test_data.mbp-1.dbn.zst");
         let mut dbn_stream = Decoder::from_zstd_file(path)
             .unwrap()
             .decode_stream::<dbn::Mbp1Msg>();
@@ -1249,8 +1278,50 @@ mod tests {
     }
 
     #[rstest]
+    fn test_decode_bbo_1s_msg() {
+        let path = test_data_path().join("test_data.bbo-1s.dbn.zst");
+        let mut dbn_stream = Decoder::from_zstd_file(path)
+            .unwrap()
+            .decode_stream::<dbn::BboMsg>();
+        let msg = dbn_stream.next().unwrap().unwrap();
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let quote = decode_bbo_msg(msg, instrument_id, 2, 0.into()).unwrap();
+
+        assert_eq!(quote.instrument_id, instrument_id);
+        assert_eq!(quote.bid_price, Price::from("5199.50"));
+        assert_eq!(quote.ask_price, Price::from("5199.75"));
+        assert_eq!(quote.bid_size, Quantity::from("26"));
+        assert_eq!(quote.ask_size, Quantity::from("23"));
+        assert_eq!(quote.ts_event, msg.ts_recv);
+        assert_eq!(quote.ts_event, 1715248801000000000);
+        assert_eq!(quote.ts_init, 0);
+    }
+
+    #[rstest]
+    fn test_decode_bbo_1m_msg() {
+        let path = test_data_path().join("test_data.bbo-1m.dbn.zst");
+        let mut dbn_stream = Decoder::from_zstd_file(path)
+            .unwrap()
+            .decode_stream::<dbn::BboMsg>();
+        let msg = dbn_stream.next().unwrap().unwrap();
+
+        let instrument_id = InstrumentId::from("ESM4.GLBX");
+        let quote = decode_bbo_msg(msg, instrument_id, 2, 0.into()).unwrap();
+
+        assert_eq!(quote.instrument_id, instrument_id);
+        assert_eq!(quote.bid_price, Price::from("5199.50"));
+        assert_eq!(quote.ask_price, Price::from("5199.75"));
+        assert_eq!(quote.bid_size, Quantity::from("33"));
+        assert_eq!(quote.ask_size, Quantity::from("17"));
+        assert_eq!(quote.ts_event, msg.ts_recv);
+        assert_eq!(quote.ts_event, 1715248800000000000);
+        assert_eq!(quote.ts_init, 0);
+    }
+
+    #[rstest]
     fn test_decode_mbp10_msg() {
-        let path = PathBuf::from(format!("{TEST_DATA_PATH}/test_data.mbp-10.dbn.zst"));
+        let path = test_data_path().join("test_data.mbp-10.dbn.zst");
         let mut dbn_stream = Decoder::from_zstd_file(path)
             .unwrap()
             .decode_stream::<dbn::Mbp10Msg>();
@@ -1273,7 +1344,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_trade_msg() {
-        let path = PathBuf::from(format!("{TEST_DATA_PATH}/test_data.trades.dbn.zst"));
+        let path = test_data_path().join("test_data.trades.dbn.zst");
         let mut dbn_stream = Decoder::from_zstd_file(path)
             .unwrap()
             .decode_stream::<dbn::TradeMsg>();
@@ -1294,7 +1365,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_tbbo_msg() {
-        let path = PathBuf::from(format!("{TEST_DATA_PATH}/test_data.tbbo.dbn.zst"));
+        let path = test_data_path().join("test_data.tbbo.dbn.zst");
         let mut dbn_stream = Decoder::from_zstd_file(path)
             .unwrap()
             .decode_stream::<dbn::Mbp1Msg>();
@@ -1325,7 +1396,7 @@ mod tests {
     #[ignore] // TODO: Requires updated test data
     #[rstest]
     fn test_decode_ohlcv_msg() {
-        let path = PathBuf::from(format!("{TEST_DATA_PATH}/test_data.ohlcv-1s.dbn.zst"));
+        let path = test_data_path().join("test_data.ohlcv-1s.dbn.zst");
         let mut dbn_stream = Decoder::from_zstd_file(path)
             .unwrap()
             .decode_stream::<dbn::OhlcvMsg>();
@@ -1348,7 +1419,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_definition_msg() {
-        let path = PathBuf::from(format!("{TEST_DATA_PATH}/test_data.definition.dbn.zst"));
+        let path = test_data_path().join("test_data.definition.dbn.zst");
         let mut dbn_stream = Decoder::from_zstd_file(path)
             .unwrap()
             .decode_stream::<dbn::InstrumentDefMsg>();
@@ -1362,7 +1433,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_definition_v1_msg() {
-        let path = PathBuf::from(format!("{TEST_DATA_PATH}/test_data.definition.v1.dbn.zst"));
+        let path = test_data_path().join("test_data.definition.v1.dbn.zst");
         let mut dbn_stream = Decoder::from_zstd_file(path)
             .unwrap()
             .decode_stream::<dbn::compat::InstrumentDefMsgV1>();
@@ -1376,7 +1447,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_status_msg() {
-        let path = PathBuf::from(format!("{TEST_DATA_PATH}/test_data.status.dbn.zst"));
+        let path = test_data_path().join("test_data.status.dbn.zst");
         let mut dbn_stream = Decoder::from_zstd_file(path)
             .unwrap()
             .decode_stream::<dbn::StatusMsg>();
@@ -1398,7 +1469,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_imbalance_msg() {
-        let path = PathBuf::from(format!("{TEST_DATA_PATH}/test_data.imbalance.dbn.zst"));
+        let path = test_data_path().join("test_data.imbalance.dbn.zst");
         let mut dbn_stream = Decoder::from_zstd_file(path)
             .unwrap()
             .decode_stream::<dbn::ImbalanceMsg>();
@@ -1422,7 +1493,7 @@ mod tests {
 
     #[rstest]
     fn test_decode_statistics_msg() {
-        let path = PathBuf::from(format!("{TEST_DATA_PATH}/test_data.statistics.dbn.zst"));
+        let path = test_data_path().join("test_data.statistics.dbn.zst");
         let mut dbn_stream = Decoder::from_zstd_file(path)
             .unwrap()
             .decode_stream::<dbn::StatMsg>();

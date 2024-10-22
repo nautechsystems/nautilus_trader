@@ -37,7 +37,6 @@ CREATE TABLE IF NOT EXISTS "strategy" (
   oms_type TEXT,
   manage_contingent_orders BOOLEAN,
   manage_gtd_expiry BOOLEAN
-
 );
 
 CREATE TABLE IF NOT EXISTS "currency" (
@@ -108,7 +107,7 @@ CREATE TABLE IF NOT EXISTS "order_event" (
     trader_id TEXT REFERENCES trader(id) ON DELETE CASCADE,
     strategy_id TEXT NOT NULL,
     instrument_id TEXT REFERENCES instrument(id) ON DELETE CASCADE,
-    order_id TEXT DEFAULT NULL,
+    client_order_id TEXT DEFAULT NULL,
     client_id TEXT REFERENCES client(id) ON DELETE CASCADE,
     trade_id TEXT,
     currency TEXT REFERENCES currency(id),
@@ -149,6 +148,37 @@ CREATE TABLE IF NOT EXISTS "order_event" (
     ts_init TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "position"(
+    id TEXT PRIMARY KEY NOT NULL,
+    trader_id TEXT REFERENCES trader(id) ON DELETE CASCADE,
+    strategy_id TEXT NOT NULL,
+    instrument_id TEXT REFERENCES instrument(id) ON DELETE CASCADE,
+    account_id TEXT NOT NULL,
+    opening_order_id TEXT NOT NULL,
+    closing_order_id TEXT,  -- REFERENCES TBD
+    entry TEXT NOT NULL,
+    side TEXT NOT NULL,
+    signed_qty TEXT NOT NULL,
+    quantity TEXT NOT NULL,
+    peak_qty TEXT NOT NULL,
+    -- last_qty TEXT,
+    -- last_px TEXT,
+    quote_currency TEXT NOT NULL,
+    base_currency TEXT,
+    settlement_currency TEXT NOT NULL,
+    avg_px_open DOUBLE PRECISION NOT NULL,  -- Consider NUMERIC
+    avg_px_close DOUBLE PRECISION,  -- Consider NUMERIC
+    realized_return DOUBLE PRECISION, -- Consider NUMERIC
+    realized_pnl TEXT NOT NULL,
+    unrealized_pnl TEXT,
+    commissions TEXT NOT NULL,
+    duration_ns TEXT,
+    ts_opened TEXT NOT NULL,
+    ts_closed TEXT,
+    ts_last TEXT NOT NULL,
+    ts_init TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS "account_event"(
@@ -203,6 +233,27 @@ CREATE TABLE IF NOT EXISTS "bar" (
     low TEXT NOT NULL,
     close TEXT NOT NULL,
     volume TEXT NOT NULL,
+    ts_event TEXT NOT NULL,
+    ts_init TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "signal" (
+    id BIGSERIAL PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    value TEXT NOT NULL,
+    ts_event TEXT NOT NULL,
+    ts_init TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS "custom" (
+    id BIGSERIAL PRIMARY KEY NOT NULL,
+    data_type TEXT NOT NULL,
+    metadata JSONB NOT NULL,
+    value BYTEA NOT NULL,
     ts_event TEXT NOT NULL,
     ts_init TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,

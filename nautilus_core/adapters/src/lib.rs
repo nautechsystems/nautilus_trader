@@ -28,10 +28,10 @@
 //! depending on the intended use case, i.e. whether to provide Python bindings
 //! for the main `nautilus_trader` Python package, or as part of a Rust only build.
 //!
-//! - `databento`: Includes the Databento integration adapter
-//! - `ffi`: Enables the C foreign function interface (FFI) from `cbindgen`
-//! - `python`: Enables Python bindings from `pyo3`
-//! - `tardis`: Includes the Tardis data loader
+//! - `databento`: Includes the Databento integration adapter.
+//! - `ffi`: Enables the C foreign function interface (FFI) from `cbindgen`.
+//! - `python`: Enables Python bindings from `pyo3`.
+//! - `tardis`: Includes the Tardis data loader.
 
 pub mod crypto;
 

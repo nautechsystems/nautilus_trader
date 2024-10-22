@@ -136,9 +136,20 @@ cdef class BettingInstrument(Instrument):
     cdef BettingInstrument from_dict_c(dict values):
         Condition.not_none(values, "values")
         data = values.copy()
-        data['event_open_date'] = pd.Timestamp(data['event_open_date'])
-        data['market_start_time'] = pd.Timestamp(data['market_start_time'])
-        return BettingInstrument(**{k: v for k, v in data.items() if k not in ('id', "type")})
+        data["event_open_date"] = pd.Timestamp(data["event_open_date"], tz="UTC")
+        data["market_start_time"] = pd.Timestamp(data["market_start_time"], tz="UTC")
+        data.pop("raw_symbol", None)
+        data.pop("price_increment", None)
+        data.pop("size_increment", None)
+        data.pop("maker_fee", None)
+        data.pop("taker_fee", None)
+        data.pop("max_quantity", None)
+        data.pop("min_quantity", None)
+        data.pop("max_notional", None)
+        data.pop("min_notional", None)
+        data.pop("max_price", None)
+        data.pop("min_price", None)
+        return BettingInstrument(**{k: v for k, v in data.items() if k not in ("id", "type")})
 
     @staticmethod
     cdef dict to_dict_c(BettingInstrument obj):
@@ -146,6 +157,7 @@ cdef class BettingInstrument(Instrument):
         return {
             "type": "BettingInstrument",
             "id": obj.id.to_str(),
+            "raw_symbol": obj.id.symbol.value,
             "venue_name": obj.id.venue.value,
             "event_type_id": obj.event_type_id,
             "event_type_name": obj.event_type_name,
@@ -154,20 +166,31 @@ cdef class BettingInstrument(Instrument):
             "event_id": obj.event_id,
             "event_name": obj.event_name,
             "event_country_code": obj.event_country_code,
-            "event_open_date": obj.event_open_date.isoformat(),
+            "event_open_date": obj.event_open_date.value,
             "betting_type": obj.betting_type,
             "market_id": obj.market_id,
             "market_name": obj.market_name,
-            "market_start_time": obj.market_start_time.isoformat(),
             "market_type": obj.market_type,
+            "market_start_time": obj.market_start_time.value,
             "selection_id": obj.selection_id,
             "selection_name": obj.selection_name,
             "selection_handicap": obj.selection_handicap,
             "price_precision": obj.price_precision,
             "size_precision": obj.size_precision,
+            "price_increment": str(obj.price_increment),
+            "size_increment": str(obj.size_increment),
             "currency": obj.quote_currency.code,
+            "maker_fee": str(obj.maker_fee),
+            "taker_fee": str(obj.taker_fee),
+            "max_quantity": str(obj.max_quantity) if obj.max_quantity is not None else None,
+            "min_quantity": str(obj.min_quantity) if obj.min_quantity is not None else None,
+            "max_notional": str(obj.max_notional) if obj.max_notional is not None else None,
+            "min_notional": str(obj.min_notional) if obj.min_notional is not None else None,
+            "max_price": str(obj.max_price) if obj.max_price is not None else None,
+            "min_price": str(obj.min_price) if obj.min_price is not None else None,
             "ts_event": obj.ts_event,
             "ts_init": obj.ts_init,
+            "info": obj.info,
         }
 
     @staticmethod
@@ -204,27 +227,22 @@ cdef class BettingInstrument(Instrument):
         return Money(quantity.as_f64_c() * float(self.multiplier), self.quote_currency)
 
 
-def make_symbol(
-    market_id: str,
-    selection_id: int,
-    selection_handicap: float,
-) -> Symbol:
+cpdef Symbol make_symbol(
+    str market_id,
+    int selection_id,
+    float selection_handicap,
+):
     """
     Make symbol.
 
     >>> make_symbol(market_id="1.201070830", selection_id=123456, selection_handicap=null_handicap())
-    Symbol('1.201070830-123456-None')
+    Symbol('1-201070830-123456-None')
 
     """
-
-    def _clean(s):
-        return str(s).replace(" ", "").replace(":", "")
-
+    market_id = market_id.replace(".", "-")
     handicap = selection_handicap if selection_handicap != null_handicap() else None
 
-    value: str = "-".join(
-        [_clean(k) for k in (market_id, selection_id, handicap)],
-    )
+    cdef str value = f"{market_id}-{selection_id}-{handicap}".replace(" ", "").replace(":", "")
     assert len(value) <= 32, f"Symbol too long ({len(value)}): '{value}'"
     return Symbol(value)
 

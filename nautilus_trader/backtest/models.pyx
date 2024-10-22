@@ -18,6 +18,7 @@ import random
 from libc.stdint cimport uint64_t
 
 from nautilus_trader.core.correctness cimport Condition
+from nautilus_trader.core.rust.core cimport NANOSECONDS_IN_MILLISECOND
 from nautilus_trader.core.rust.model cimport LiquiditySide
 from nautilus_trader.model.functions cimport liquidity_side_to_str
 from nautilus_trader.model.instruments.base cimport Instrument
@@ -25,9 +26,6 @@ from nautilus_trader.model.objects cimport Money
 from nautilus_trader.model.objects cimport Price
 from nautilus_trader.model.objects cimport Quantity
 from nautilus_trader.model.orders.base cimport Order
-
-
-cdef uint64_t NANOSECONDS_IN_MILLISECOND = 1_000_000
 
 
 cdef class FillModel:

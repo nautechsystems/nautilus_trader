@@ -1,7 +1,7 @@
 # Live trading
 
 :::info
-We are currently working on this article.
+We are currently working on this guide.
 :::
 
 Live trading in NautilusTrader enables traders to deploy their backtested strategies in a real-time 

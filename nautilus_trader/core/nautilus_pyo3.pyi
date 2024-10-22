@@ -250,9 +250,52 @@ class MessageBus:
     def is_registered(self, endpoint: str) -> bool: ...
     def deregister(self, endpoint: str) -> None: ...
 
+class Signal:
+    def __init__(
+        self,
+        name: str,
+        value: str,
+        ts_event: int,
+        ts_init: int,
+    ) -> None: ...
+    @property
+    def name(self) -> str: ...
+    @property
+    def value(self) -> str: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+
+class CustomData:
+    def __init__(
+        self,
+        data_type: DataType,
+        value: bytes,
+        ts_event: int,
+        ts_init: int,
+    ) -> None: ...
+    @property
+    def data_type(self) -> DataType: ...
+    @property
+    def value(self) -> str: ...
+    @property
+    def ts_event(self) -> int: ...
+    @property
+    def ts_init(self) -> int: ...
+
 ###################################################################################################
 # Model
 ###################################################################################################
+
+class DataType:
+    def __init__(self, type_name: str, metadata: dict[str, str] | None = None) -> None: ...
+    @property
+    def type_name(self) -> str: ...
+    @property
+    def metadata(self) -> dict[str, str] | None: ...
+    @property
+    def topic(self) -> str: ...
 
 # Accounting
 
@@ -635,6 +678,10 @@ class OrderBookDepth10:
     def bid_counts(self) -> list[int]: ...
     @property
     def ask_counts(self) -> list[int]: ...
+    @property
+    def flags(self) -> int: ...
+    @property
+    def sequence(self) -> int: ...
     @property
     def ts_event(self) -> int: ...
     @property
@@ -1684,6 +1731,65 @@ class AccountState:
 
 # Instruments
 
+class BettingInstrument:
+    def __init__(
+        self,
+        id: InstrumentId,
+        raw_symbol: Symbol,
+        event_type_id: int,
+        event_type_name: str,
+        competition_id: int,
+        competition_name: str,
+        event_id: int,
+        event_name: str,
+        event_country_code: str,
+        event_open_date: int,
+        betting_type: str,
+        market_id: str,
+        market_name: str,
+        market_type: str,
+        market_start_time: int,
+        selection_id: int,
+        selection_name: str,
+        selection_handicap: float,
+        currency: Currency,
+        price_precision: int,
+        size_precision: int,
+        price_increment: Price,
+        size_increment: Quantity,
+        maker_fee: Decimal,
+        taker_fee: Decimal,
+        ts_event: int,
+        ts_init: int,
+        outcome: str | None = None,
+        description: str | None = None,
+        max_quantity: Quantity | None = None,
+        min_quantity: Quantity | None = None,
+        max_notional: Money | None = None,
+        min_notional: Money | None = None,
+        max_price: Price | None = None,
+        min_price: Price | None = None,
+    ) -> None: ...
+    @classmethod
+    def from_dict(cls, values: dict[str, str]) -> BettingInstrument: ...
+    @property
+    def id(self) -> InstrumentId: ...
+    @property
+    def raw_symbol(self) -> Symbol: ...
+    @property
+    def asset_class(self) -> AssetClass: ...
+    @property
+    def currency(self) -> Currency: ...
+    @property
+    def price_precision(self) -> int: ...
+    @property
+    def size_precision(self) -> int: ...
+    @property
+    def price_increment(self) -> Price: ...
+    @property
+    def size_increment(self) -> Quantity: ...
+    def to_dict(self) -> dict[str, Any]: ...
+
 class BinaryOption:
     def __init__(
         self,
@@ -2456,6 +2562,12 @@ class OrderExpired:
     def from_dict(cls, values: dict[str, str]) -> OrderExpired: ...
     def to_dict(self) -> dict[str, str]: ...
 
+class PositionSnapshot:
+    @classmethod
+    def from_dict(cls, values: dict[str, Any]) -> PositionSnapshot: ...
+
+# OrderBook
+
 class Level:
     @property
     def price(self) -> Price: ...
@@ -2547,32 +2659,38 @@ class PostgresCacheDatabase:
     def connect(
         cls,
         host: str | None = None,
-        port: str | None = None,
+        port: int | None = None,
         username: str | None = None,
         password: str | None = None,
         database: str | None = None,
     ) -> PostgresCacheDatabase: ...
+    def close(self) -> None: ...
+    def flush_db(self) -> None: ...
     def load(self) -> dict[str, str]: ...
-    def add(self, key: str, value: bytes) -> None: ...
-    def add_currency(self, currency: Currency) -> None: ...
-    def add_instrument(self, instrument: object) -> None: ...
-    def add_order(self, instrument: object) -> None: ...
-    def add_account(self, account: object) -> None: ...
-    def update_order(self, order: object) -> None: ...
     def load_currency(self, code: str) -> Currency | None: ...
     def load_currencies(self) -> list[Currency]: ...
     def load_instrument(self, instrument_id: InstrumentId) -> Instrument | None: ...
     def load_instruments(self) -> list[Instrument]: ...
-    def load_order(self, order_id: ClientOrderId) -> Order | None: ...
+    def load_order(self, client_order_id: ClientOrderId) -> Order | None: ...
     def load_account(self, account_id: AccountId) -> Account | None: ...
-    def update_account(self, account: Account) -> None: ...
-    def add_trade(self, trade: TradeTick) -> None: ...
     def load_trades(self, instrument_id: InstrumentId) -> list[TradeTick]: ...
-    def add_quote(self, quote: QuoteTick) -> None: ...
     def load_quotes(self, instrument_id: InstrumentId) -> list[QuoteTick]: ...
-    def add_bar(self, bar: Bar) -> None: ...
     def load_bars(self, instrument_id: InstrumentId) -> list[Bar]: ...
-    def flush_db(self) -> None: ...
+    def load_signals(self, name: str) -> list[Signal]: ...
+    def load_custom_data(self, data_type: DataType) -> list[CustomData]: ...
+    def add(self, key: str, value: bytes) -> None: ...
+    def add_currency(self, currency: Currency) -> None: ...
+    def add_instrument(self, instrument: object) -> None: ...
+    def add_order(self, order: object) -> None: ...
+    def add_position_snapshot(self, snapshot: PositionSnapshot) -> None: ...
+    def add_account(self, account: object) -> None: ...
+    def add_trade(self, trade: TradeTick) -> None: ...
+    def add_quote(self, quote: QuoteTick) -> None: ...
+    def add_bar(self, bar: Bar) -> None: ...
+    def add_signal(self, signal: Signal) -> None: ...
+    def add_custom_data(self, data: CustomData) -> None: ...
+    def update_order(self, order: object) -> None: ...
+    def update_account(self, account: Account) -> None: ...
 
 ###################################################################################################
 # Network
@@ -2646,11 +2764,13 @@ class WebSocketClient:
         post_connection: Callable[..., None] | None = None,
         post_reconnection: Callable[..., None] | None = None,
         post_disconnection: Callable[..., None] | None = None,
+        keyed_quotas: list[tuple[str, Quota]] = [],
+        default_quota: Quota | None = None,
     ) -> Awaitable[WebSocketClient]: ...
     def disconnect(self) -> Awaitable[None]: ...
     def is_alive(self) -> bool: ...
-    def send(self, data: bytes) -> Awaitable[None]: ...
-    def send_text(self, data: bytes) -> Awaitable[None]: ...
+    def send(self, data: bytes, keys: list[str] | None = None) -> Awaitable[None]: ...
+    def send_text(self, data: bytes, keys: list[str] | None = None) -> Awaitable[None]: ...
     def send_pong(self, data: bytes) -> Awaitable[None]: ...
 
 class SocketClient:
@@ -3852,6 +3972,8 @@ class DatabentoDataLoader:
     def load_order_book_depth10_as_pycapsule(self, filepath: str, instrument_id: InstrumentId | None) -> object: ...
     def load_quotes(self, filepath: str, instrument_id: InstrumentId | None) -> list[QuoteTick]: ...
     def load_quotes_as_pycapsule(self, filepath: str, instrument_id: InstrumentId | None, include_trades: bool | None) -> object: ...
+    def load_bbo_quotes(self, filepath: str, instrument_id: InstrumentId | None) -> list[QuoteTick]: ...
+    def load_bbo_quotes_as_pycapsule(self, filepath: str, instrument_id: InstrumentId | None) -> object: ...
     def load_trades(self, filepath: str, instrument_id: InstrumentId | None) -> list[TradeTick]: ...
     def load_trades_as_pycapsule(self, filepath: str, instrument_id: InstrumentId | None) -> object: ...
     def load_bars(self, filepath: str, instrument_id: InstrumentId | None) -> list[Bar]: ...
@@ -3956,10 +4078,23 @@ class DatabentoLiveClient:
     def close(self) -> None: ...
 
 # Crypto
+
 def hmac_sign(secret: str, data: str) -> str: ...
 def rsa_signature(private_key_pem: str, data: str) -> str: ...
 def ed25519_signature(private_key: bytes, data: str) -> str: ...
 
+# Tardis
+
+def load_tardis_deltas(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> list[OrderBookDelta]: ...  # noqa
+def load_tardis_depth10_from_snapshot5(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> list[OrderBookDepth10]: ...  # noqa
+def load_tardis_depth10_from_snapshot25(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> list[OrderBookDepth10]: ...  # noqa
+def load_tardis_quotes(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> list[QuoteTick]: ...  # noqa
+def load_tardis_trades(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> list[TradeTick]: ...  # noqa
+def load_tardis_deltas_as_pycapsule(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> object: ...  # noqa
+def load_tardis_depth10_from_snapshot5_as_pycapsule(filepath: str, price_precision: int, size_precision: int,  instrument_id: InstrumentId | None, limit: int | None = None) -> object: ...  # noqa
+def load_tardis_depth10_from_snapshot25_as_pycapsule(filepath: str, price_precision: int, size_precision: int,  instrument_id: InstrumentId | None, limit: int | None = None) -> object: ...  # noqa
+def load_tardis_quotes_as_pycapsule(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> object: ...  # noqa
+def load_tardis_trades_as_pycapsule(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> object: ...  # noqa
 
 # Greeks
 
@@ -3979,62 +4114,119 @@ class ImplyVolAndGreeksResult:
     theta: float
 
 
-def black_scholes_greeks(s: float, r: float, b: float, sigma: float, is_call: bool, k: float, t: float,
-                         multiplier: float) -> BlackScholesGreeksResult:
+def black_scholes_greeks(
+    s: float,
+    r: float,
+    b: float,
+    sigma: float,
+    is_call: bool,
+    k: float,
+    t: float,
+    multiplier: float,
+) -> BlackScholesGreeksResult:
     """
     Calculate the Black-Scholes Greeks for a given option contract.
 
-    Args:
-        s (float): The current price of the underlying asset.
-        r (float): The risk-free interest rate.
-        b (float): The cost of carry of the underlying asset.
-        sigma (float): The volatility of the underlying asset.
-        is_call (bool): Whether the option is a call (True) or a put (False).
-        k (float): The strike price of the option.
-        t (float): The time to expiration of the option in years.
-        multiplier (float): The multiplier for the option contract.
+    Parameters
+    ----------
+    s : float
+        The current price of the underlying asset.
+    r : float
+        The risk-free interest rate.
+    b : float
+        The cost of carry of the underlying asset.
+    sigma : float
+        The volatility of the underlying asset.
+    is_call : bool
+        Whether the option is a call (True) or a put (False).
+    k : float
+        The strike price of the option.
+    t : float
+        The time to expiration of the option in years.
+    multiplier : float
+        The multiplier for the option contract.
 
-    Returns:
-        BlackScholesGreeksResult: A named tuple containing the calculated option price, delta, gamma, vega, and theta.
+    Returns
+    -------
+    BlackScholesGreeksResult
+        A named tuple containing the calculated option price, delta, gamma, vega, and theta.
     """
 
 
-def imply_vol(s: float, r: float, b: float, is_call: bool, k: float, t: float, price: float) -> float:
+def imply_vol(
+    s: float,
+    r: float,
+    b: float,
+    is_call: bool,
+    k: float,
+    t: float,
+    price: float,
+) -> float:
     """
     Calculate the implied volatility and Greeks for an option contract.
 
-    Args:
-        s (float): The current price of the underlying asset.
-        r (float): The risk-free interest rate.
-        b (float): The cost of carry of the underlying asset.
-        is_call (bool): Whether the option is a call (True) or a put (False).
-        k (float): The strike price of the option.
-        t (float): The time to expiration of the option in years.
-        price (float): The current market price of the option.
-        multiplier (float): The multiplier for the option contract.
+    Parameters
+    ----------
+    s : float
+        The current price of the underlying asset.
+    r : float
+        The risk-free interest rate.
+    b : float
+        The cost of carry of the underlying asset.
+    is_call : bool
+        Whether the option is a call (True) or a put (False).
+    k : float
+        The strike price of the option.
+    t : float
+        The time to expiration of the option in years.
+    price : float
+        The current market price of the option.
+    multiplier : float
+        The multiplier for the option contract.
 
-    Returns:
-        float: An implied volatility value.
+    Returns
+    -------
+    float
+        An implied volatility value.
     """
 
 
-def imply_vol_and_greeks(s: float, r: float, b: float, is_call: bool, k: float, t: float,
-                         price: float, multiplier: float) -> ImplyVolAndGreeksResult :
+def imply_vol_and_greeks(
+    s: float,
+    r: float,
+    b: float,
+    is_call: bool,
+    k: float,
+    t: float,
+    price: float,
+    multiplier: float,
+) -> ImplyVolAndGreeksResult :
     """
     Calculate the implied volatility and Greeks for an option contract.
 
-    Args:
-        s (float): The current price of the underlying asset.
-        r (float): The risk-free interest rate.
-        b (float): The cost of carry of the underlying asset.
-        is_call (bool): Whether the option is a call (True) or a put (False).
-        k (float): The strike price of the option.
-        t (float): The time to expiration of the option in years.
-        price (float): The current market price of the option.
-        multiplier (float): The multiplier for the option contract.
+    Parameters
+    ----------
+    s : float
+        The current price of the underlying asset.
+    r : float
+        The risk-free interest rate.
+    b : float
+        The cost of carry of the underlying asset.
+    is_call : bool
+        Whether the option is a call (True) or a put (False).
+    k : float
+        The strike price of the option.
+    t : float
+        The time to expiration of the option in years.
+    price : float
+        The current market price of the option.
+    multiplier : float
+        The multiplier for the option contract.
 
-    Returns:
-        ImplyVolAndGreeksResult: A named tuple containing the calculated implied volatility, option price, delta, gamma, vega, and theta.
+    Returns
+    -------
+    ImplyVolAndGreeksResult
+        A named tuple containing the calculated implied volatility, option price, delta, gamma, vega, and theta
     """
 
 
@@ -4052,7 +4244,8 @@ class GreeksData(Data):
     gamma: float
     vega: float
     theta: float
-    quantity: int
+    quantity: float
+    itm_prob: float
 
     def __init__(
         self,
@@ -4071,7 +4264,8 @@ class GreeksData(Data):
         gamma: float = 0.0,
         vega: float = 0.0,
         theta: float = 0.0,
-        quantity: int = 1,
+        quantity: float = 0.0,
+        itm_prob: float = 0.0,
     ): ...
 
     @classmethod
@@ -4100,11 +4294,11 @@ class InterestRateData(Data):
     interest_rate: float
 
     def __init__(
-            self,
-            ts_event: int = 0,
-            ts_init: int = 0,
-            curve_name: str = "USD",
-            interest_rate: float = 0.05,
+        self,
+        ts_event: int = 0,
+        ts_init: int = 0,
+        curve_name: str = "USD",
+        interest_rate: float = 0.05,
     ): ...
 
 
@@ -4114,12 +4308,12 @@ class InterestRateCurveData(Data):
     interest_rates: np.ndarray
 
     def __init__(
-            self,
-            ts_event: int,
-            ts_init: int,
-            curve_name: str,
-            tenors: np.ndarray,
-            interest_rates: np.ndarray,
+        self,
+        ts_event: int,
+        ts_init: int,
+        curve_name: str,
+        tenors: np.ndarray,
+        interest_rates: np.ndarray,
     ): ...
 
 ###################################################################################################

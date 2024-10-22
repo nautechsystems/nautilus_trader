@@ -80,17 +80,17 @@ class TradingNode:
             logger=self.kernel.logger,
         )
 
-        # Operation flags
-        self._is_built = False
-        self._is_running = False
-        self._has_cache_backing = config.cache and config.cache.database
-        self._has_msgbus_backing = config.message_bus and config.message_bus.database
-
-        self.kernel.logger.info(f"{self._has_cache_backing=}", LogColor.BLUE)
-        self.kernel.logger.info(f"{self._has_msgbus_backing=}", LogColor.BLUE)
+        has_cache_backing = bool(config.cache and config.cache.database)
+        has_msgbus_backing = bool(config.message_bus and config.message_bus.database)
+        self.kernel.logger.info(f"{has_cache_backing=}", LogColor.BLUE)
+        self.kernel.logger.info(f"{has_msgbus_backing=}", LogColor.BLUE)
 
         # Async tasks
         self._task_streaming: asyncio.Future | None = None
+
+        # Operation flags
+        self._is_built = False
+        self._is_running = False
 
     @property
     def trader_id(self) -> TraderId:
@@ -335,34 +335,6 @@ class TradingNode:
         except asyncio.CancelledError as e:
             self.kernel.logger.error(str(e))
 
-    async def maintain_heartbeat(self, interval: float) -> None:
-        """
-        Maintain heartbeats at the given `interval` while the node is running.
-
-        Parameters
-        ----------
-        interval : float
-            The interval (seconds) between heartbeats.
-
-        """
-        self.kernel.logger.info(
-            f"Starting task: heartbeats at {interval}s intervals",
-            LogColor.BLUE,
-        )
-        try:
-            while True:
-                await asyncio.sleep(interval)
-                msg = self.kernel.clock.utc_now()
-                if self._has_cache_backing:
-                    self.cache.heartbeat(msg)
-                if self._has_msgbus_backing:
-                    self.kernel.msgbus.publish(topic="health:heartbeat", msg=str(msg))
-        except asyncio.CancelledError:
-            pass
-        except Exception as e:
-            # Catch-all exceptions for development purposes (unexpected errors)
-            self.kernel.logger.error(str(e))
-
     def stop(self) -> None:
         """
         Stop the trading node gracefully.
@@ -465,5 +437,5 @@ class TradingNode:
             self.kernel.logger.info("DISPOSED")
 
     def _loop_sig_handler(self, sig: signal.Signals) -> None:
-        self.kernel.logger.warning(f"Received {sig!s}, shutting down")
+        self.kernel.logger.warning(f"Received {sig.name}, shutting down")
         self.stop()

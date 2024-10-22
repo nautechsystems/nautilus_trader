@@ -25,11 +25,38 @@ pub mod quote;
 pub mod status;
 pub mod trade;
 
+use indexmap::IndexMap;
 #[cfg(feature = "ffi")]
 use nautilus_core::ffi::cvec::CVec;
 use pyo3::{prelude::*, types::PyCapsule};
 
-use crate::data::Data;
+use crate::data::{Data, DataType};
+
+#[pymethods]
+impl DataType {
+    #[new]
+    fn py_new(type_name: &str, metadata: Option<IndexMap<String, String>>) -> Self {
+        Self::new(type_name, metadata)
+    }
+
+    #[getter]
+    #[pyo3(name = "type_name")]
+    fn py_type_name(&self) -> &str {
+        self.type_name()
+    }
+
+    #[getter]
+    #[pyo3(name = "metadata")]
+    fn py_metadata(&self) -> Option<IndexMap<String, String>> {
+        self.metadata().cloned()
+    }
+
+    #[getter]
+    #[pyo3(name = "topic")]
+    fn py_topic(&self) -> &str {
+        self.topic()
+    }
+}
 
 /// Creates a Python `PyCapsule` object containing a Rust `Data` instance.
 ///

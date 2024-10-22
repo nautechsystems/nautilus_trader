@@ -29,8 +29,13 @@ use nautilus_execution::{client::ExecutionClient, messages::TradingCommand};
 use nautilus_model::{
     accounts::any::AccountAny,
     data::{
-        bar::Bar, delta::OrderBookDelta, deltas::OrderBookDeltas, quote::QuoteTick,
-        status::InstrumentStatus, trade::TradeTick, Data,
+        bar::Bar,
+        delta::OrderBookDelta,
+        deltas::{OrderBookDeltas, OrderBookDeltas_API},
+        quote::QuoteTick,
+        status::InstrumentStatus,
+        trade::TradeTick,
+        Data,
     },
     enums::{AccountType, BookType, OmsType},
     identifiers::{InstrumentId, Venue},
@@ -42,7 +47,7 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 
 use crate::{
-    matching_engine::{OrderMatchingEngine, OrderMatchingEngineConfig},
+    matching_engine::{config::OrderMatchingEngineConfig, OrderMatchingEngine},
     models::{fee::FeeModelAny, fill::FillModel, latency::LatencyModel},
     modules::SimulationModule,
 };
@@ -208,10 +213,7 @@ impl SimulatedExchange {
         );
         self.matching_engines.insert(instrument_id, matching_engine);
 
-        log::info!(
-            "Added instrument {} and created matching engine",
-            instrument_id
-        );
+        log::info!("Added instrument {instrument_id} and created matching engine");
         Ok(())
     }
 
@@ -219,20 +221,20 @@ impl SimulatedExchange {
     pub fn best_bid_price(&self, instrument_id: InstrumentId) -> Option<Price> {
         self.matching_engines
             .get(&instrument_id)
-            .and_then(super::matching_engine::OrderMatchingEngine::best_bid_price)
+            .and_then(OrderMatchingEngine::best_bid_price)
     }
 
     #[must_use]
     pub fn best_ask_price(&self, instrument_id: InstrumentId) -> Option<Price> {
         self.matching_engines
             .get(&instrument_id)
-            .and_then(super::matching_engine::OrderMatchingEngine::best_ask_price)
+            .and_then(OrderMatchingEngine::best_ask_price)
     }
 
     pub fn get_book(&self, instrument_id: InstrumentId) -> Option<&OrderBook> {
         self.matching_engines
             .get(&instrument_id)
-            .map(super::matching_engine::OrderMatchingEngine::get_book)
+            .map(OrderMatchingEngine::get_book)
     }
 
     #[must_use]
@@ -260,12 +262,12 @@ impl SimulatedExchange {
             .and_then(|id| {
                 self.matching_engines
                     .get(&id)
-                    .map(super::matching_engine::OrderMatchingEngine::get_open_orders)
+                    .map(OrderMatchingEngine::get_open_orders)
             })
             .unwrap_or_else(|| {
                 self.matching_engines
                     .values()
-                    .flat_map(super::matching_engine::OrderMatchingEngine::get_open_orders)
+                    .flat_map(OrderMatchingEngine::get_open_orders)
                     .collect()
             })
     }
@@ -349,19 +351,15 @@ impl SimulatedExchange {
         }
     }
 
-    pub fn process_order_book_deltas(&mut self, _deltas: OrderBookDeltas) {
-        todo!("process order book deltas")
-    }
-
-    pub fn process_quote_tick(&mut self, tick: &QuoteTick) {
+    pub fn process_order_book_deltas(&mut self, deltas: OrderBookDeltas) {
         for module in &self.modules {
-            module.pre_process(Data::Quote(tick.to_owned()));
+            module.pre_process(Data::Deltas(OrderBookDeltas_API::new(deltas.clone())));
         }
 
-        if !self.matching_engines.contains_key(&tick.instrument_id) {
+        if !self.matching_engines.contains_key(&deltas.instrument_id) {
             let instrument = {
                 let cache = self.cache.as_ref().borrow();
-                cache.instrument(&tick.instrument_id).cloned()
+                cache.instrument(&deltas.instrument_id).cloned()
             };
 
             if let Some(instrument) = instrument {
@@ -369,27 +367,27 @@ impl SimulatedExchange {
             } else {
                 panic!(
                     "No matching engine found for instrument {}",
-                    tick.instrument_id
+                    deltas.instrument_id
                 );
             }
         }
 
-        if let Some(matching_engine) = self.matching_engines.get_mut(&tick.instrument_id) {
-            matching_engine.process_quote_tick(tick);
+        if let Some(matching_engine) = self.matching_engines.get_mut(&deltas.instrument_id) {
+            matching_engine.process_order_book_deltas(&deltas);
         } else {
             panic!("Matching engine should be initialized");
         }
     }
 
-    pub fn process_trade_tick(&mut self, tick: &TradeTick) {
+    pub fn process_quote_tick(&mut self, quote: &QuoteTick) {
         for module in &self.modules {
-            module.pre_process(Data::Trade(tick.to_owned()));
+            module.pre_process(Data::Quote(quote.to_owned()));
         }
 
-        if !self.matching_engines.contains_key(&tick.instrument_id) {
+        if !self.matching_engines.contains_key(&quote.instrument_id) {
             let instrument = {
                 let cache = self.cache.as_ref().borrow();
-                cache.instrument(&tick.instrument_id).cloned()
+                cache.instrument(&quote.instrument_id).cloned()
             };
 
             if let Some(instrument) = instrument {
@@ -397,13 +395,41 @@ impl SimulatedExchange {
             } else {
                 panic!(
                     "No matching engine found for instrument {}",
-                    tick.instrument_id
+                    quote.instrument_id
                 );
             }
         }
 
-        if let Some(matching_engine) = self.matching_engines.get_mut(&tick.instrument_id) {
-            matching_engine.process_trade_tick(tick);
+        if let Some(matching_engine) = self.matching_engines.get_mut(&quote.instrument_id) {
+            matching_engine.process_quote_tick(quote);
+        } else {
+            panic!("Matching engine should be initialized");
+        }
+    }
+
+    pub fn process_trade_tick(&mut self, trade: &TradeTick) {
+        for module in &self.modules {
+            module.pre_process(Data::Trade(trade.to_owned()));
+        }
+
+        if !self.matching_engines.contains_key(&trade.instrument_id) {
+            let instrument = {
+                let cache = self.cache.as_ref().borrow();
+                cache.instrument(&trade.instrument_id).cloned()
+            };
+
+            if let Some(instrument) = instrument {
+                self.add_instrument(instrument).unwrap();
+            } else {
+                panic!(
+                    "No matching engine found for instrument {}",
+                    trade.instrument_id
+                );
+            }
+        }
+
+        if let Some(matching_engine) = self.matching_engines.get_mut(&trade.instrument_id) {
+            matching_engine.process_trade_tick(trade);
         } else {
             panic!("Matching engine should be initialized");
         }
@@ -437,8 +463,30 @@ impl SimulatedExchange {
         }
     }
 
-    pub fn process_instrument_status(&mut self, _status: InstrumentStatus) {
-        todo!("process instrument status")
+    pub fn process_instrument_status(&mut self, status: InstrumentStatus) {
+        // TODO add module preprocessing
+
+        if !self.matching_engines.contains_key(&status.instrument_id) {
+            let instrument = {
+                let cache = self.cache.as_ref().borrow();
+                cache.instrument(&status.instrument_id).cloned()
+            };
+
+            if let Some(instrument) = instrument {
+                self.add_instrument(instrument).unwrap();
+            } else {
+                panic!(
+                    "No matching engine found for instrument {}",
+                    status.instrument_id
+                );
+            }
+        }
+
+        if let Some(matching_engine) = self.matching_engines.get_mut(&status.instrument_id) {
+            matching_engine.process_status(status.action);
+        } else {
+            panic!("Matching engine should be initialized");
+        }
     }
 
     pub fn process(&mut self, _ts_now: UnixNanos) {
@@ -471,11 +519,16 @@ mod tests {
         data::{
             bar::{Bar, BarType},
             delta::OrderBookDelta,
+            deltas::OrderBookDeltas,
             order::BookOrder,
             quote::QuoteTick,
+            status::InstrumentStatus,
             trade::TradeTick,
         },
-        enums::{AccountType, AggressorSide, BookAction, BookType, OmsType, OrderSide},
+        enums::{
+            AccountType, AggressorSide, BookAction, BookType, MarketStatus, MarketStatusAction,
+            OmsType, OrderSide,
+        },
         identifiers::{TradeId, Venue},
         instruments::{
             any::InstrumentAny, crypto_perpetual::CryptoPerpetual, stubs::crypto_perpetual_ethusdt,
@@ -727,5 +780,91 @@ mod tests {
         assert_eq!(best_bid_price, Some(Price::from("1000.00")));
         let best_ask_price = exchange.best_ask_price(crypto_perpetual_ethusdt.id);
         assert_eq!(best_ask_price, Some(Price::from("1001.00")));
+    }
+
+    #[rstest]
+    fn test_exchange_process_orderbook_deltas(crypto_perpetual_ethusdt: CryptoPerpetual) {
+        let mut exchange: SimulatedExchange =
+            get_exchange(Venue::new("BINANCE"), AccountType::Margin, BookType::L2_MBP);
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+
+        // register instrument
+        exchange.add_instrument(instrument).unwrap();
+
+        // create two sell order book deltas with same timestamps and higher sequence
+        let delta_sell_1 = OrderBookDelta::new(
+            crypto_perpetual_ethusdt.id,
+            BookAction::Add,
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from("1000.00"),
+                Quantity::from(3),
+                1,
+            ),
+            0,
+            0,
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        );
+        let delta_sell_2 = OrderBookDelta::new(
+            crypto_perpetual_ethusdt.id,
+            BookAction::Add,
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from("1001.00"),
+                Quantity::from(1),
+                1,
+            ),
+            0,
+            1,
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        );
+        let orderbook_deltas = OrderBookDeltas::new(
+            crypto_perpetual_ethusdt.id,
+            vec![delta_sell_1, delta_sell_2],
+        );
+
+        // process both deltas
+        exchange.process_order_book_deltas(orderbook_deltas);
+
+        let book = exchange.get_book(crypto_perpetual_ethusdt.id).unwrap();
+        assert_eq!(book.count, 2);
+        assert_eq!(book.sequence, 1);
+        assert_eq!(book.ts_last, UnixNanos::from(1));
+        let best_bid_price = exchange.best_bid_price(crypto_perpetual_ethusdt.id);
+        // no bid orders in orderbook deltas
+        assert_eq!(best_bid_price, None);
+        let best_ask_price = exchange.best_ask_price(crypto_perpetual_ethusdt.id);
+        // best ask price is the first order in orderbook deltas
+        assert_eq!(best_ask_price, Some(Price::from("1000.00")));
+    }
+
+    fn test_exchange_process_instrument_status(crypto_perpetual_ethusdt: CryptoPerpetual) {
+        let mut exchange: SimulatedExchange =
+            get_exchange(Venue::new("BINANCE"), AccountType::Margin, BookType::L2_MBP);
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+
+        // register instrument
+        exchange.add_instrument(instrument).unwrap();
+
+        let instrument_status = InstrumentStatus::new(
+            crypto_perpetual_ethusdt.id,
+            MarketStatusAction::Close, // close the market
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        exchange.process_instrument_status(instrument_status);
+
+        let matching_engine = exchange
+            .get_matching_engine(crypto_perpetual_ethusdt.id)
+            .unwrap();
+        assert_eq!(matching_engine.market_status, MarketStatus::Closed);
     }
 }

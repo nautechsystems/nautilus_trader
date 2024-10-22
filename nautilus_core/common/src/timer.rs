@@ -17,7 +17,7 @@
 
 use std::{
     cmp::Ordering,
-    fmt::Display,
+    fmt::{Debug, Display},
     num::NonZeroU64,
     rc::Rc,
     sync::{
@@ -97,15 +97,23 @@ impl PartialEq for TimeEvent {
     }
 }
 
-pub trait RustTimeEventCallback {
-    fn call(&self, event: TimeEvent);
-}
+pub type RustTimeEventCallback = dyn Fn(TimeEvent);
 
 #[derive(Clone)]
 pub enum TimeEventCallback {
     #[cfg(feature = "python")]
     Python(PyObject),
-    Rust(Rc<dyn RustTimeEventCallback>),
+    Rust(Rc<RustTimeEventCallback>),
+}
+
+impl Debug for TimeEventCallback {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            #[cfg(feature = "python")]
+            Self::Python(_) => f.write_str("Python callback"),
+            Self::Rust(_) => f.write_str("Rust callback"),
+        }
+    }
 }
 
 impl TimeEventCallback {
@@ -117,13 +125,13 @@ impl TimeEventCallback {
                     callback.call1(py, (event,)).unwrap();
                 });
             }
-            Self::Rust(callback) => callback.call(event),
+            Self::Rust(callback) => callback(event),
         }
     }
 }
 
-impl From<Rc<dyn RustTimeEventCallback>> for TimeEventCallback {
-    fn from(value: Rc<dyn RustTimeEventCallback>) -> Self {
+impl From<Rc<RustTimeEventCallback>> for TimeEventCallback {
+    fn from(value: Rc<RustTimeEventCallback>) -> Self {
         Self::Rust(value)
     }
 }
@@ -140,7 +148,7 @@ unsafe impl Send for TimeEventCallback {}
 unsafe impl Sync for TimeEventCallback {}
 
 #[repr(C)]
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 /// Represents a time event and its associated handler.
 ///
 /// `TimeEventHandler` associates a `TimeEvent` with a callback function that is triggered
@@ -338,7 +346,7 @@ impl LiveTimer {
         // SAFETY: Guaranteed to be non-zero
         let interval_ns = NonZeroU64::new(std::cmp::max(interval_ns, 1)).unwrap();
 
-        log::debug!("Creating timer '{}'", name);
+        log::debug!("Creating timer '{name}'");
         Self {
             name: Ustr::from(name),
             interval_ns,
@@ -451,7 +459,7 @@ impl LiveTimer {
         if !self.is_expired.load(atomic::Ordering::SeqCst) {
             if let Some(sender) = self.canceler.take() {
                 // Send cancellation signal
-                sender.send(()).map_err(|e| anyhow::anyhow!("{:?}", e))?;
+                sender.send(()).map_err(|e| anyhow::anyhow!("{e:?}"))?;
             }
         }
         Ok(())
@@ -476,7 +484,7 @@ fn call_python_with_time_event(
 
         match callback.call1(py, (capsule,)) {
             Ok(_) => {}
-            Err(e) => tracing::error!("Error on callback: {:?}", e),
+            Err(e) => tracing::error!("Error on callback: {e:?}"),
         };
     });
 }

@@ -122,6 +122,12 @@ class MockActor(Actor):
             self.calls.append(current_frame.f_code.co_name)
         self.store.append(data)
 
+    def on_signal(self, signal: Data) -> None:
+        current_frame = inspect.currentframe()
+        if current_frame:
+            self.calls.append(current_frame.f_code.co_name)
+        self.store.append(signal)
+
     def on_strategy_data(self, data: Data) -> None:
         current_frame = inspect.currentframe()
         if current_frame:
@@ -188,6 +194,9 @@ class KaboomActor(Actor):
         raise RuntimeError(f"{self} BOOM!")
 
     def on_data(self, data: Data) -> None:
+        raise RuntimeError(f"{self} BOOM!")
+
+    def on_signal(self, signal: Data) -> None:
         raise RuntimeError(f"{self} BOOM!")
 
     def on_event(self, event: Event) -> None:

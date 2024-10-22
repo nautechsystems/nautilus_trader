@@ -23,6 +23,7 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.common.enums import ComponentState
 from nautilus_trader.common.executor import TaskId
+from nautilus_trader.common.signal import generate_signal_class
 from nautilus_trader.config import ActorConfig
 from nautilus_trader.config import ImportableActorConfig
 from nautilus_trader.core.data import Data
@@ -181,11 +182,8 @@ class TestActor:
             clock=self.clock,
         )
 
-        # Act
+        # Act, Assert (exception not raised)
         actor.register_warning_event(OrderDenied)
-
-        # Assert
-        assert True  # Exception not raised
 
     def test_deregister_warning_event(self) -> None:
         # Arrange
@@ -199,11 +197,8 @@ class TestActor:
 
         actor.register_warning_event(OrderDenied)
 
-        # Act
+        # Act, Assert (exception not raised)
         actor.deregister_warning_event(OrderDenied)
-
-        # Assert
-        assert True  # Exception not raised
 
     def test_handle_event(self) -> None:
         # Arrange
@@ -217,11 +212,8 @@ class TestActor:
 
         event = TestEventStubs.cash_account_state()
 
-        # Act
+        # Act, Assert (exception not raised)
         actor.handle_event(event)
-
-        # Assert
-        assert True  # Exception not raised
 
     def test_on_start_when_not_overridden_does_nothing(self) -> None:
         # Arrange
@@ -233,11 +225,8 @@ class TestActor:
             clock=self.clock,
         )
 
-        # Act
+        # Act, Assert (exception not raised)
         actor.on_start()
-
-        # Assert
-        assert True  # Exception not raised
 
     def test_on_stop_when_not_overridden_does_nothing(self) -> None:
         # Arrange
@@ -249,11 +238,8 @@ class TestActor:
             clock=self.clock,
         )
 
-        # Act
+        # Act, Assert (exception not raised)
         actor.on_stop()
-
-        # Assert
-        assert True  # Exception not raised
 
     def test_on_resume_when_not_overridden_does_nothing(self) -> None:
         # Arrange
@@ -265,11 +251,8 @@ class TestActor:
             clock=self.clock,
         )
 
-        # Act
+        # Act, Assert (exception not raised)
         actor.on_resume()
-
-        # Assert
-        assert True  # Exception not raised
 
     def test_on_reset_when_not_overridden_does_nothing(self) -> None:
         # Arrange
@@ -281,11 +264,8 @@ class TestActor:
             clock=self.clock,
         )
 
-        # Act
+        # Act, Assert (exception not raised)
         actor.on_reset()
-
-        # Assert
-        assert True  # Exception not raised
 
     def test_on_dispose_when_not_overridden_does_nothing(self) -> None:
         # Arrange
@@ -297,11 +277,8 @@ class TestActor:
             clock=self.clock,
         )
 
-        # Act
+        # Act, Assert (exception not raised)
         actor.on_dispose()
-
-        # Assert
-        assert True  # Exception not raised
 
     def test_on_degrade_when_not_overridden_does_nothing(self) -> None:
         # Arrange
@@ -313,11 +290,8 @@ class TestActor:
             clock=self.clock,
         )
 
-        # Act
+        # Act, Assert (exception not raised)
         actor.on_degrade()
-
-        # Assert
-        assert True  # Exception not raised
 
     def test_on_fault_when_not_overridden_does_nothing(self) -> None:
         # Arrange
@@ -329,11 +303,8 @@ class TestActor:
             clock=self.clock,
         )
 
-        # Act
+        # Act, Assert (exception not raised)
         actor.on_fault()
-
-        # Assert
-        assert True  # Exception not raised
 
     def test_on_instrument_when_not_overridden_does_nothing(self) -> None:
         # Arrange
@@ -345,11 +316,8 @@ class TestActor:
             clock=self.clock,
         )
 
-        # Act
+        # Act, Assert (exception not raised)
         actor.on_instrument(TestInstrumentProvider.btcusdt_binance())
-
-        # Assert
-        assert True  # Exception not raised
 
     def test_on_order_book_when_not_overridden_does_nothing(self) -> None:
         # Arrange
@@ -361,11 +329,8 @@ class TestActor:
             clock=self.clock,
         )
 
-        # Act
+        # Act, Assert (exception not raised)
         actor.on_order_book(TestDataStubs.order_book())
-
-        # Assert
-        assert True  # Exception not raised
 
     def test_on_order_book_delta_when_not_overridden_does_nothing(self) -> None:
         # Arrange
@@ -377,11 +342,8 @@ class TestActor:
             clock=self.clock,
         )
 
-        # Act
+        # Act, Assert (exception not raised)
         actor.on_order_book_deltas(TestDataStubs.order_book_snapshot())
-
-        # Assert
-        assert True  # Exception not raised
 
     def test_on_instrument_status_when_not_overridden_does_nothing(self) -> None:
         # Arrange
@@ -393,11 +355,8 @@ class TestActor:
             clock=self.clock,
         )
 
-        # Act
+        # Act, Assert (exception not raised)
         actor.on_instrument_status(TestDataStubs.instrument_status())
-
-        # Assert
-        assert True  # Exception not raised
 
     def test_on_event_when_not_overridden_does_nothing(self) -> None:
         # Arrange
@@ -409,11 +368,8 @@ class TestActor:
             clock=self.clock,
         )
 
-        # Act
+        # Act, Assert (exception not raised)
         actor.on_event(TestEventStubs.cash_account_state())
-
-        # Assert
-        assert True  # Exception not raised
 
     def test_on_quote_tick_when_not_overridden_does_nothing(self) -> None:
         # Arrange
@@ -427,11 +383,8 @@ class TestActor:
 
         tick = TestDataStubs.quote_tick()
 
-        # Act
+        # Act, Assert (exception not raised)
         actor.on_quote_tick(tick)
-
-        # Assert
-        assert True  # Exception not raised
 
     def test_on_trade_tick_when_not_overridden_does_nothing(self) -> None:
         # Arrange
@@ -445,11 +398,8 @@ class TestActor:
 
         tick = TestDataStubs.trade_tick()
 
-        # Act
+        # Act, Assert (exception not raised)
         actor.on_trade_tick(tick)
-
-        # Assert
-        assert True  # Exception not raised
 
     def test_on_bar_when_not_overridden_does_nothing(self) -> None:
         # Arrange
@@ -463,11 +413,8 @@ class TestActor:
 
         bar = TestDataStubs.bar_5decimal()
 
-        # Act
+        # Act, Assert (exception not raised)
         actor.on_bar(bar)
-
-        # Assert
-        assert True  # Exception not raised
 
     def test_on_historical_data_when_not_overridden_does_nothing(self) -> None:
         # Arrange
@@ -481,11 +428,8 @@ class TestActor:
 
         bar = TestDataStubs.bar_5decimal()
 
-        # Act
+        # Act, Assert (exception not raised)
         actor.on_historical_data(bar)
-
-        # Assert
-        assert True  # Exception not raised
 
     def test_on_data_when_not_overridden_does_nothing(self) -> None:
         # Arrange
@@ -505,11 +449,24 @@ class TestActor:
             ts_init=0,
         )
 
-        # Act
+        # Act, Assert (exception not raised)
         actor.on_data(news_event)
 
-        # Assert
-        assert True  # Exception not raised
+    def test_on_signal_when_not_overridden_does_nothing(self) -> None:
+        # Arrange
+        actor = Actor(config=ActorConfig(component_id=self.component_id))
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        signal_cls = generate_signal_class("example", value_type=float)
+        signal = signal_cls(1.0, 0, 0)
+
+        # Act, Assert (exception not raised)
+        actor.on_signal(signal)
 
     def test_start_when_invalid_state_does_not_start(self) -> None:
         # Arrange
@@ -1273,6 +1230,48 @@ class TestActor:
         # Assert
         assert actor.calls == ["on_start", "on_data"]
         assert actor.store[0] == data
+
+    def test_handle_signal_when_not_running_does_not_send_to_on_signal(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        signal_cls = generate_signal_class("example", value_type=float)
+        signal = signal_cls(1.0, 0, 0)
+
+        # Act
+        actor.handle_signal(signal)
+
+        # Assert
+        assert actor.calls == []
+        assert actor.store == []
+
+    def test_handle_signal_when_running_sends_to_on_signal(self) -> None:
+        # Arrange
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        actor.start()
+
+        signal_cls = generate_signal_class("example", value_type=float)
+        signal = signal_cls(1.0, 0, 0)
+
+        # Act
+        actor.handle_signal(signal)
+
+        # Assert
+        assert actor.calls == ["on_start", "on_signal"]
+        assert actor.store[0] == signal
 
     def test_add_synthetic_instrument_when_already_exists(self) -> None:
         # Arrange
