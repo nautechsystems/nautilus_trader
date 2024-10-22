@@ -38,7 +38,7 @@ include = [
 [build-system]
 requires = [
     "setuptools",
-    "poetry-core>=1.9.0",
+    "poetry-core>=1.9.1",
     "numpy>=1.26.4",
     "Cython==3.0.11",
 ]
@@ -60,7 +60,7 @@ pandas = "^2.2.3"
 pyarrow = ">=17.0.0"
 pytz = ">=2024.2.0"
 tqdm = "^4.66.5"
-uvloop = {version = "^0.20.0", markers = "sys_platform != 'win32'"}
+uvloop = {version = "^0.21.0", markers = "sys_platform != 'win32'"}
 
 async-timeout = {version = "^4.0.3", optional = true}
 betfair_parser = {version = "==0.13.0", optional = true}  # Pinned for stability
