@@ -41,10 +41,7 @@ use sqlx::{postgres::PgConnectOptions, PgPool};
 use ustr::Ustr;
 
 use crate::sql::{
-    pg::{
-        connect_pg, get_postgres_connect_options, PostgresConnectOptions,
-        PostgresConnectOptionsBuilder,
-    },
+    pg::{connect_pg, get_postgres_connect_options},
     queries::DatabaseQueries,
 };
 
@@ -137,19 +134,7 @@ impl PostgresCacheDatabase {
     }
 }
 
-pub async fn reset_pg_database(pg_options: Option<PostgresConnectOptions>) -> anyhow::Result<()> {
-    let pg_connect_options = pg_options.unwrap_or(
-        PostgresConnectOptionsBuilder::default()
-            .username(String::from("postgres"))
-            .build()?,
-    );
-    let pg_pool = connect_pg(pg_connect_options.into()).await?;
-    DatabaseQueries::truncate(&pg_pool).await?;
-    Ok(())
-}
-
 pub async fn get_pg_cache_database() -> anyhow::Result<PostgresCacheDatabase> {
-    reset_pg_database(None).await?;
     let connect_options = get_postgres_connect_options(None, None, None, None, None);
     Ok(PostgresCacheDatabase::connect(
         Some(connect_options.host),
