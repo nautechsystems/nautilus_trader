@@ -1,3 +1,21 @@
+# NautilusTrader 1.205.0 Beta
+
+Released on TBD (UTC).
+
+### Enhancements
+None
+
+### Internal Improvements
+- Upgraded `tokio` crate to v1.41.0
+
+### Breaking Changes
+None
+
+### Fixes
+None
+
+---
+
 # NautilusTrader 1.204.0 Beta
 
 Released on 22nd October 2024 (UTC).
