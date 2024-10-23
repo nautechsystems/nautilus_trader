@@ -32,6 +32,8 @@ from nautilus_trader.common.config import InvalidConfiguration
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.core.datetime import max_date_str
+from nautilus_trader.core.datetime import min_date_str
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
 from nautilus_trader.model import BOOK_DATA_TYPES
@@ -161,6 +163,8 @@ class BacktestNode:
                     data_configs=config.data,
                     chunk_size=config.chunk_size,
                     dispose_on_completion=config.dispose_on_completion,
+                    start=config.start,
+                    end=config.end,
                 )
                 results.append(result)
             except Exception as e:
@@ -303,6 +307,8 @@ class BacktestNode:
         data_configs: list[BacktestDataConfig],
         chunk_size: int | None,
         dispose_on_completion: bool,
+        start: str | int | None = None,
+        end: str | int | None = None,
     ) -> BacktestResult:
         engine: BacktestEngine = self._create_engine(
             run_config_id=run_config_id,
@@ -318,12 +324,16 @@ class BacktestNode:
                 engine=engine,
                 data_configs=data_configs,
                 chunk_size=chunk_size,
+                start=start,
+                end=end,
             )
         else:
             self._run_oneshot(
                 run_config_id=run_config_id,
                 engine=engine,
                 data_configs=data_configs,
+                start=start,
+                end=end,
             )
 
         if dispose_on_completion:
@@ -341,6 +351,8 @@ class BacktestNode:
         engine: BacktestEngine,
         data_configs: list[BacktestDataConfig],
         chunk_size: int,
+        start: str | int | None = None,
+        end: str | int | None = None,
     ) -> None:
         # Create session for entire stream
         session = DataBackendSession(chunk_size=chunk_size)
@@ -356,14 +368,22 @@ class BacktestNode:
             else:
                 bar_type = None
 
+            used_start = config.start_time
+            if used_start is not None or start is not None:
+                used_start = max_date_str(used_start, start)
+
+            used_end = config.end_time
+            if used_end is not None or end is not None:
+                used_end = min_date_str(used_end, end)
+
             session = catalog.backend_session(
                 data_cls=config.data_type,
                 instrument_ids=(
                     [config.instrument_id] if config.instrument_id and not bar_type else []
                 ),
                 bar_types=[bar_type] if bar_type else [],
-                start=config.start_time,
-                end=config.end_time,
+                start=used_start,
+                end=used_end,
                 session=session,
             )
 
@@ -375,6 +395,8 @@ class BacktestNode:
                 sort=True,  # Already sorted from backend
             )
             engine.run(
+                start=start,
+                end=end,
                 run_config_id=run_config_id,
                 streaming=True,
             )
@@ -387,6 +409,8 @@ class BacktestNode:
         run_config_id: str,
         engine: BacktestEngine,
         data_configs: list[BacktestDataConfig],
+        start: str | int | None = None,
+        end: str | int | None = None,
     ) -> None:
         # Load data
         for config in data_configs:
@@ -394,7 +418,7 @@ class BacktestNode:
             engine.logger.info(
                 f"Reading {config.data_type} data for instrument={config.instrument_id}.",
             )
-            result: CatalogDataResult = self.load_data_config(config)
+            result: CatalogDataResult = self.load_data_config(config, start, end)
             if config.instrument_id and result.instrument is None:
                 engine.logger.warning(
                     f"Requested instrument_id={result.instrument} from data_config not found in catalog",
@@ -412,7 +436,7 @@ class BacktestNode:
             t2 = pd.Timestamp.now()
             engine.logger.info(f"Engine load took {pd.Timedelta(t2 - t1)}s")
 
-        engine.run(run_config_id=run_config_id)
+        engine.run(start=start, end=end, run_config_id=run_config_id)
 
     @classmethod
     def load_catalog(cls, config: BacktestDataConfig) -> ParquetDataCatalog:
@@ -423,7 +447,12 @@ class BacktestNode:
         )
 
     @classmethod
-    def load_data_config(cls, config: BacktestDataConfig) -> CatalogDataResult:
+    def load_data_config(
+        cls,
+        config: BacktestDataConfig,
+        start: str | int | None = None,
+        end: str | int | None = None,
+    ) -> CatalogDataResult:
         catalog: ParquetDataCatalog = cls.load_catalog(config)
 
         instruments = (
@@ -434,9 +463,17 @@ class BacktestNode:
         if config.instrument_id and not instruments:
             return CatalogDataResult(data_cls=config.data_type, data=[])
 
+        config_query = config.query
+
+        if config_query["start"] is not None or start is not None:
+            config_query["start"] = max_date_str(config_query["start"], start)
+
+        if config_query["end"] is not None or end is not None:
+            config_query["end"] = min_date_str(config_query["end"], end)
+
         return CatalogDataResult(
             data_cls=config.data_type,
-            data=catalog.query(**config.query),
+            data=catalog.query(**config_query),
             instrument=instruments[0] if instruments else None,
             client_id=ClientId(config.client_id) if config.client_id else None,
         )
