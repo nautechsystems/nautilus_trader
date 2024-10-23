@@ -144,9 +144,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.90"
+version = "1.0.91"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "37bf3594c4c988a53154954629820791dde498571819ae4ca50ca811e060cc95"
+checksum = "c042108f3ed77fd83760a5fd79b53be043192bb3b9dba91d8c574c0ada7850c8"
 
 [[package]]
 name = "arc-swap"
@@ -1236,9 +1236,9 @@ checksum = "e8566979429cf69b49a5c740c60791108e86440e8be149bbea4fe54d2c32d6e2"
 
 [[package]]
 name = "databento"
-version = "0.14.1"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0a8e10687f1087612c9b9041e58084cb293cb3b17aa76df9e7aa7a70adff57e"
+checksum = "b8cd91261000de864038a4ca59bfb467719f0f17378966acbe7dea618727ccc7"
 dependencies = [
  "dbn",
  "futures",
@@ -1566,9 +1566,9 @@ dependencies = [
 
 [[package]]
 name = "dbn"
-version = "0.22.1"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8aa7989e82a5f401c984beec175ef64e451fd815c13762f4a94a8d58ddb2400a"
+checksum = "1072c2f8d3d8e9952124d76adb2c35c4cdeb01f32aedaac88bf96c48d36061af"
 dependencies = [
  "async-compression",
  "csv",
@@ -1586,9 +1586,9 @@ dependencies = [
 
 [[package]]
 name = "dbn-macros"
-version = "0.22.1"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "32f915c673fd5d1fa8a9ca66512cbcd789667bb7655eaebf9699ca1b6c8334de"
+checksum = "aa41c08f05611e17a679ed088e7d528e4e18796dba35427e4c564196aedb42c3"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -2673,7 +2673,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-adapters"
-version = "0.34.0"
+version = "0.35.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -2717,7 +2717,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-analysis"
-version = "0.34.0"
+version = "0.35.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2737,7 +2737,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-backtest"
-version = "0.34.0"
+version = "0.35.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2760,7 +2760,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-cli"
-version = "0.34.0"
+version = "0.35.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2777,7 +2777,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-common"
-version = "0.34.0"
+version = "0.35.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2808,7 +2808,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-core"
-version = "0.34.0"
+version = "0.35.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -2830,7 +2830,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-data"
-version = "0.34.0"
+version = "0.35.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2856,7 +2856,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-execution"
-version = "0.34.0"
+version = "0.35.0"
 dependencies = [
  "anyhow",
  "criterion",
@@ -2880,7 +2880,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-indicators"
-version = "0.34.0"
+version = "0.35.0"
 dependencies = [
  "anyhow",
  "log",
@@ -2893,7 +2893,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-infrastructure"
-version = "0.34.0"
+version = "0.35.0"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -2923,7 +2923,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-model"
-version = "0.34.0"
+version = "0.35.0"
 dependencies = [
  "anyhow",
  "cbindgen",
@@ -2954,7 +2954,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-network"
-version = "0.34.0"
+version = "0.35.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -2984,7 +2984,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-persistence"
-version = "0.34.0"
+version = "0.35.0"
 dependencies = [
  "anyhow",
  "binary-heap-plus",
@@ -3009,7 +3009,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-pyo3"
-version = "0.34.0"
+version = "0.35.0"
 dependencies = [
  "nautilus-adapters",
  "nautilus-common",
@@ -3025,7 +3025,7 @@ dependencies = [
 
 [[package]]
 name = "nautilus-test-kit"
-version = "0.34.0"
+version = "0.35.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -3642,9 +3642,9 @@ dependencies = [
 
 [[package]]
 name = "proc-macro2"
-version = "1.0.88"
+version = "1.0.89"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c3a7fc5db1e57d5a779a352c8cdb57b29aa4c40cc69c3a68a7fedc815fbf2f9"
+checksum = "f139b0662de085916d1fb67d2b4169d1addddda1919e696f3252b740b629986e"
 dependencies = [
  "unicode-ident",
 ]
@@ -4389,18 +4389,18 @@ checksum = "a3f0bf26fd526d2a95683cd0f87bf103b8539e2ca1ef48ce002d67aad59aa0b4"
 
 [[package]]
 name = "serde"
-version = "1.0.210"
+version = "1.0.213"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8e3592472072e6e22e0a54d5904d9febf8508f65fb8552499a1abc7d1078c3a"
+checksum = "3ea7893ff5e2466df8d720bb615088341b295f849602c6956047f8f80f0e9bc1"
 dependencies = [
  "serde_derive",
 ]
 
 [[package]]
 name = "serde_derive"
-version = "1.0.210"
+version = "1.0.213"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "243902eda00fad750862fc144cea25caca5e20d615af0a81bee94ca738f1df1f"
+checksum = "7e85ad2009c50b58e87caa8cd6dac16bdf511bbfb7af6c33df902396aa480fa5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5021,18 +5021,18 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.64"
+version = "1.0.65"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d50af8abc119fb8bb6dbabcfa89656f46f84aa0ac7688088608076ad2b459a84"
+checksum = "5d11abd9594d9b38965ef50805c5e469ca9cc6f197f883f717e0269a3057b3d5"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "1.0.64"
+version = "1.0.65"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08904e7672f5eb876eaaf87e0ce17857500934f4981c4a0ab2b4aa98baac7fc3"
+checksum = "ae71770322cbd277e69d762a16c444af02aa0575ac0d174f0b9562d3b37f8602"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5135,9 +5135,9 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tokio"
-version = "1.40.0"
+version = "1.41.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2b070231665d27ad9ec9b8df639893f46727666c6767db40317fbe920a5d998"
+checksum = "145f3413504347a2be84393cc8a7d2fb4d863b375909ea59f2158261aa258bbb"
 dependencies = [
  "backtrace",
  "bytes",
