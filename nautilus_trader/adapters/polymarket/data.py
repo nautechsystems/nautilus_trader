@@ -460,15 +460,6 @@ class PolymarketDataClient(LiveMarketDataClient):
                 ts_init=self._clock.timestamp_ns(),
             )
             for quote in quotes:
-
-                # quote_price = instrument.make_price(float(ws_message.price))
-                # if ws_message.side == PolymarketOrderSide.BUY:
-                #     if quote_price < last_quote.bid_price:
-                #         return  # No top-of-book change
-                # else:  # SELL
-                #     if quote_price > last_quote.ask_price:
-                #         return  # No top-of-book change
-
                 if (
                     quote.bid_price == last_quote.bid_price
                     and quote.ask_price == last_quote.ask_price
