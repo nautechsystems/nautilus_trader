@@ -38,7 +38,7 @@ NautilusTraders design, architecture and implementation philosophy holds softwar
 highest level, with the aim of supporting Python native, mission-critical, trading system backtesting
 and live deployment workloads.
 
-The platform is also univ2rsal and asset class agnostic - with any REST, WebSocket or FIX API able to be integrated via modular
+The platform is also universal and asset class agnostic - with any REST, WebSocket or FIX API able to be integrated via modular
 adapters. Thus, it can handle high-frequency trading operations for any asset classes
 including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across multiple venues simultaneously.
 
