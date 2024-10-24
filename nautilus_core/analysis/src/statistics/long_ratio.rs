@@ -15,15 +15,23 @@
 
 use nautilus_model::{enums::OrderSide, position::Position};
 
-use crate::portfolio_statistic::PortfolioStatistic;
+use crate::statistic::PortfolioStatistic;
+
+#[repr(C)]
+#[derive(Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
+)]
 
 pub struct LongRatio {
     precision: usize,
 }
 
 impl LongRatio {
+    #[must_use]
     pub fn new(precision: Option<usize>) -> Self {
-        LongRatio {
+        Self {
             precision: precision.unwrap_or(2),
         }
     }

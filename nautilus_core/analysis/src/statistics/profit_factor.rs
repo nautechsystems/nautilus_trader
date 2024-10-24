@@ -13,8 +13,14 @@
 // #  limitations under the License.
 // # -------------------------------------------------------------------------------------------------
 
-use crate::portfolio_statistic::PortfolioStatistic;
+use crate::statistic::PortfolioStatistic;
 
+#[repr(C)]
+#[derive(Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
+)]
 pub struct ProfitFactor {}
 
 impl PortfolioStatistic for ProfitFactor {
@@ -24,27 +30,23 @@ impl PortfolioStatistic for ProfitFactor {
         stringify!(ProfitFactor).to_string()
     }
 
-    fn calculate_from_returns(&mut self, _returns: &[f64]) -> Option<Self::Item> {
-        todo!("After fixing PortfolioStatistic trait")
+    fn calculate_from_returns(&mut self, returns: &[f64]) -> Option<Self::Item> {
+        if !self.check_valid_returns(returns) {
+            return Some(f64::NAN);
+        }
+
+        let (positive_returns_sum, negative_returns_sum): (f64, f64) =
+            returns.iter().fold((0.0, 0.0), |(pos_sum, neg_sum), &pnl| {
+                if pnl >= 0.0 {
+                    (pos_sum + pnl, neg_sum)
+                } else {
+                    (pos_sum, neg_sum + pnl)
+                }
+            });
+
+        if negative_returns_sum == 0.0 {
+            return Some(f64::NAN);
+        }
+        Some((positive_returns_sum / negative_returns_sum).abs())
     }
-    // fn calculate_from_realized_pnls(&mut self, realized_pnls: &[f64]) -> Option<Self::Item> {
-    //     if realized_pnls.is_empty() {
-    //         return Some(0.0);
-    //     }
-
-    //     let losers: Vec<f64> = realized_pnls
-    //         .iter()
-    //         .filter(|&&pnl| pnl < 0.0)
-    //         .cloned()
-    //         .collect();
-
-    //     if losers.is_empty() {
-    //         return Some(0.0);
-    //     }
-
-    //     losers
-    //         .iter()
-    //         .cloned()
-    //         .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-    // }
 }

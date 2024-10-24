@@ -13,29 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! A common `Indicator` trait.
-
-// use std::fmt::Debug;
-
-// use nautilus_model::{
-//     data::{
-//         bar::Bar, delta::OrderBookDelta, deltas::OrderBookDeltas, depth::OrderBookDepth10,
-//         quote::QuoteTick, trade::TradeTick,
-//     },
-//     orderbook::book::OrderBook,
-// };
-
-use nautilus_model::position::Position;
+use nautilus_model::{orders::base::Order, position::Position};
 
 const IMPL_ERR: &str = "is not implemented for";
 
 #[allow(unused_variables)]
 pub trait PortfolioStatistic {
     type Item;
-    // // Remove check
-    // fn fully_qualified_name(&self) -> String;
 
     fn name(&self) -> String;
+
     #[allow(dead_code)]
     fn calculate_from_returns(&mut self, returns: &[f64]) -> Option<Self::Item> {
         panic!("`calculate_from_returns` {IMPL_ERR} `{}`", self.name());
@@ -47,41 +34,25 @@ pub trait PortfolioStatistic {
             self.name()
         );
     }
+
     #[allow(dead_code)]
-    fn calculate_from_orders(&mut self, orders: &[f64]) -> Option<Self::Item> {
+    fn calculate_from_orders(&mut self, orders: Vec<impl Order>) -> Option<Self::Item> {
         panic!("`calculate_from_orders` {IMPL_ERR} `{}`", self.name());
     }
+
     #[allow(dead_code)]
     fn calculate_from_positions(&mut self, positions: &[Position]) -> Option<Self::Item> {
         panic!("`calculate_from_positions` {IMPL_ERR} `{}`", self.name());
     }
+
     #[allow(dead_code)]
     fn check_valid_returns(&self, returns: &[f64]) -> bool {
         !returns.is_empty()
     }
+
     #[allow(dead_code)]
-    fn downsample_to_daily_bins(&self, returns: &[f64]) -> Vec<f64> {
+    fn downsample_to_daily_bins(&self, returns: &[f64]) -> &Vec<f64> {
         // return returns.dropna().resample("1D").sum()
         panic!("`downsample_to_daily_bins` {IMPL_ERR} `{}`", self.name());
     }
 }
-
-// pub trait MovingAverage: Indicator {
-//     fn value(&self) -> f64;
-//     fn count(&self) -> usize;
-//     fn update_raw(&mut self, value: f64);
-// }
-
-// impl Debug for dyn Indicator + Send {
-//     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-//         // Implement custom formatting for the Indicator trait object
-//         write!(f, "Indicator {{ ... }}")
-//     }
-// }
-
-// impl Debug for dyn MovingAverage + Send {
-//     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-//         // Implement custom formatting for the Indicator trait object
-//         write!(f, "MovingAverage()")
-//     }
-// }

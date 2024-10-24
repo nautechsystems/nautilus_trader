@@ -31,7 +31,8 @@
 //! - `ffi`: Enables the C foreign function interface (FFI) from `cbindgen`.
 //! - `python`: Enables Python bindings from `pyo3`.
 
-mod portfolio_statistic;
+pub mod statistic;
 // mod analyzer;
-// mod reporter;
+#[cfg(feature = "python")]
+pub mod python;
 pub mod statistics;

@@ -21,31 +21,29 @@ use crate::statistic::PortfolioStatistic;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
 )]
-pub struct AvgWinner {}
+pub struct ReturnsAverageLoss {}
 
-impl PortfolioStatistic for AvgWinner {
+impl PortfolioStatistic for ReturnsAverageLoss {
     type Item = f64;
 
     fn name(&self) -> String {
-        stringify!(AvgWinner).to_string()
+        stringify!(ReturnsAverageLoss).to_string()
     }
 
-    fn calculate_from_realized_pnls(&mut self, realized_pnls: &[f64]) -> Option<Self::Item> {
-        if realized_pnls.is_empty() {
-            return Some(0.0);
+    fn calculate_from_returns(&mut self, returns: &[f64]) -> Option<Self::Item> {
+        if !self.check_valid_returns(returns) {
+            return Some(f64::NAN);
         }
 
-        let winners: Vec<f64> = realized_pnls
-            .iter()
-            .filter(|&&pnl| pnl > 0.0)
-            .copied()
-            .collect();
+        let negative_returns: Vec<f64> = returns.iter().copied().filter(|&x| x < 0.0).collect();
 
-        if winners.is_empty() {
-            return Some(0.0);
+        if negative_returns.is_empty() {
+            return Some(f64::NAN);
         }
 
-        let sum: f64 = winners.iter().sum();
-        Some(sum / winners.len() as f64)
+        let sum: f64 = negative_returns.iter().sum();
+        let count = negative_returns.len() as f64;
+
+        Some(sum / count)
     }
 }

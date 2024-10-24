@@ -13,8 +13,14 @@
 // #  limitations under the License.
 // # -------------------------------------------------------------------------------------------------
 
-use crate::portfolio_statistic::PortfolioStatistic;
+use crate::statistic::PortfolioStatistic;
 
+#[repr(C)]
+#[derive(Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
+)]
 pub struct AvgLoser {}
 
 impl PortfolioStatistic for AvgLoser {
@@ -32,7 +38,7 @@ impl PortfolioStatistic for AvgLoser {
         let losers: Vec<f64> = realized_pnls
             .iter()
             .filter(|&&pnl| pnl <= 0.0)
-            .cloned()
+            .copied()
             .collect();
 
         if losers.is_empty() {

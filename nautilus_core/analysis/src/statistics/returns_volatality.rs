@@ -13,26 +13,39 @@
 // #  limitations under the License.
 // # -------------------------------------------------------------------------------------------------
 
-use crate::portfolio_statistic::PortfolioStatistic;
+use crate::statistic::PortfolioStatistic;
 
-pub struct WinRate {}
+#[repr(C)]
+#[derive(Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
+)]
+pub struct ReturnsVolatility {}
 
-impl PortfolioStatistic for WinRate {
+impl PortfolioStatistic for ReturnsVolatility {
     type Item = f64;
 
     fn name(&self) -> String {
-        stringify!(WinRate).to_string()
+        stringify!(ReturnsVolatility).to_string()
     }
 
-    fn calculate_from_realized_pnls(&mut self, realized_pnls: &[f64]) -> Option<Self::Item> {
-        if realized_pnls.is_empty() {
-            return Some(0.0);
+    fn calculate_from_returns(&mut self, returns: &[f64]) -> Option<Self::Item> {
+        if !self.check_valid_returns(returns) {
+            return Some(f64::NAN);
         }
 
-        let (winners, losers): (Vec<f64>, Vec<f64>) =
-            realized_pnls.iter().partition(|&&pnl| pnl > 0.0);
+        // let negative_returns: &[f64] = returns.iter().copied().filter(|&x| x != 0.0).collect();
 
-        let total_trades = winners.len() + losers.len();
-        Some(winners.len() as f64 / total_trades.max(1) as f64)
+        // if negative_returns.is_empty() {
+        //     return Some(f64::NAN);
+        // }
+
+        // let sum: f64 = negative_returns.iter().sum();
+        // let downsampled_returns = self.downsample_to_daily_bins(returns);
+        // let count = negative_returns.len() as f64;
+
+        // Some(sum / count)
+        todo!()
     }
 }

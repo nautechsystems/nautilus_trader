@@ -14,8 +14,19 @@
 // # -------------------------------------------------------------------------------------------------
 
 use super::{loser_avg::AvgLoser, winner_avg::AvgWinner};
-use crate::portfolio_statistic::PortfolioStatistic;
+use crate::statistic::PortfolioStatistic;
 
+/// An indicator which calculates an adaptive moving average (AMA) across a
+/// rolling window. Developed by Perry Kaufman, the AMA is a moving average
+/// designed to account for market noise and volatility. The AMA will closely
+/// follow prices when the price swings are relatively small and the noise is
+/// low. The AMA will increase lag when the price swings increase.
+#[repr(C)]
+#[derive(Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
+)]
 pub struct Expectancy {}
 
 impl PortfolioStatistic for Expectancy {
@@ -44,6 +55,6 @@ impl PortfolioStatistic for Expectancy {
         let win_rate = winners.len() as f64 / total_trades.max(1) as f64;
         let loss_rate = 1.0 - win_rate;
 
-        Some((avg_winner * win_rate) + (avg_loser * loss_rate))
+        Some(avg_winner.mul_add(win_rate, avg_loser * loss_rate))
     }
 }

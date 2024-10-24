@@ -13,8 +13,14 @@
 // #  limitations under the License.
 // # -------------------------------------------------------------------------------------------------
 
-use crate::portfolio_statistic::PortfolioStatistic;
+use crate::statistic::PortfolioStatistic;
 
+#[repr(C)]
+#[derive(Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
+)]
 pub struct MaxLoser {}
 
 impl PortfolioStatistic for MaxLoser {
@@ -31,7 +37,7 @@ impl PortfolioStatistic for MaxLoser {
 
         realized_pnls
             .iter()
-            .cloned()
+            .copied()
             .min_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
     }
 }
