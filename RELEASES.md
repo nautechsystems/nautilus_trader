@@ -6,6 +6,7 @@ Released on TBD (UTC).
 None
 
 ### Internal Improvements
+- Improved Postgres testing (#2018), thanks @filipmacek
 - Upgraded `tokio` crate to v1.41.0
 
 ### Breaking Changes
