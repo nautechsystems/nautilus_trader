@@ -22,6 +22,7 @@ from typing import Final
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
+TEST_DATA_DIR = PACKAGE_ROOT / "tests" / "test_data"
 
 try:
     with open(PACKAGE_ROOT / "pyproject.toml", "rb") as f:

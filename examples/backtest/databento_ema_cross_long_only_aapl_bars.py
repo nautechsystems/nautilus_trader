@@ -19,6 +19,7 @@ from decimal import Decimal
 
 import pandas as pd
 
+from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
@@ -34,7 +35,6 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.objects import Money
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
-from tests import TEST_DATA_DIR
 
 
 if __name__ == "__main__":

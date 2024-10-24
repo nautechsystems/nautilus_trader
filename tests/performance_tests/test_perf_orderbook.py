@@ -17,13 +17,13 @@ from typing import Any
 
 import pytest
 
+from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.objects import Price
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
-from tests import TEST_DATA_DIR
 
 
 @pytest.mark.skip(reason="development_only")

@@ -15,10 +15,10 @@
 
 import pandas as pd
 
+from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
 from nautilus_trader.core.nautilus_pyo3 import NautilusDataType
 from nautilus_trader.model.data import capsule_to_list
-from tests import TEST_DATA_DIR
 
 
 def test_backend_session_order_book_deltas() -> None:

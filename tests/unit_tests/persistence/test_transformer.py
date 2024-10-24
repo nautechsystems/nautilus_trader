@@ -19,6 +19,7 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
+from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.core.nautilus_pyo3 import DataTransformer
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import OrderBookDelta
@@ -28,7 +29,6 @@ from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
 from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWranglerV2
 from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
-from tests import TEST_DATA_DIR
 
 
 def test_pyo3_quote_ticks_to_record_batch_reader() -> None:

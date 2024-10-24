@@ -15,11 +15,11 @@
 
 import pytest
 
+from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.adapters.betfair.parsing.core import betting_instruments_from_file
 from nautilus_trader.adapters.betfair.parsing.core import parse_betfair_file
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.test_kit.mocks.data import setup_catalog
-from tests import TEST_DATA_DIR
 
 
 @pytest.fixture(name="catalog_memory")
