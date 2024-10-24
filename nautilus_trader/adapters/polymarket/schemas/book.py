@@ -40,7 +40,6 @@ class PolymarketBookLevel(msgspec.Struct, frozen=True):
 class PolymarketBookSnapshot(msgspec.Struct, tag="book", tag_field="event_type", frozen=True):
     market: str
     asset_id: str
-    hash: str
     bids: list[PolymarketBookLevel]
     asks: list[PolymarketBookLevel]
     timestamp: str
@@ -135,62 +134,75 @@ class PolymarketBookSnapshot(msgspec.Struct, tag="book", tag_field="event_type",
         )
 
 
-class PolymarketQuote(msgspec.Struct, tag="price_change", tag_field="event_type", frozen=True):
-    market: str
-    asset_id: str
-    hash: str
+class PolymarketQuote(msgspec.Struct, frozen=True):
     price: str
     side: PolymarketOrderSide
     size: str
+
+
+class PolymarketQuotes(msgspec.Struct, tag="price_change", tag_field="event_type", frozen=True):
+    market: str
+    asset_id: str
+    changes: list[PolymarketQuote]
     timestamp: str
 
-    def parse_to_delta(
+    def parse_to_deltas(
         self,
         instrument: BinaryOption,
         ts_init: int,
-    ) -> OrderBookDelta:
-        order = BookOrder(
-            side=OrderSide.BUY if self.side == PolymarketOrderSide.BUY else OrderSide.SELL,
-            price=instrument.make_price(float(self.price)),
-            size=instrument.make_qty(float(self.size)),
-            order_id=0,  # N/A for L2 books
-        )
-        return OrderBookDelta(
-            instrument_id=instrument.id,
-            action=BookAction.UPDATE if order.size > 0 else BookAction.DELETE,
-            order=order,
-            flags=RecordFlag.F_LAST,
-            sequence=0,  # N/A
-            ts_event=millis_to_nanos(float(self.timestamp)),
-            ts_init=ts_init,
-        )
+    ) -> OrderBookDeltas:
+        deltas: list[OrderBookDelta] = []
+        for change in self.changes:
+            order = BookOrder(
+                side=OrderSide.BUY if change.side == PolymarketOrderSide.BUY else OrderSide.SELL,
+                price=instrument.make_price(float(change.price)),
+                size=instrument.make_qty(float(change.size)),
+                order_id=0,  # N/A for L2 books
+            )
+            delta = OrderBookDelta(
+                instrument_id=instrument.id,
+                action=BookAction.UPDATE if order.size > 0 else BookAction.DELETE,
+                order=order,
+                flags=RecordFlag.F_LAST,
+                sequence=0,  # N/A
+                ts_event=millis_to_nanos(float(self.timestamp)),
+                ts_init=ts_init,
+            )
+            deltas.append(delta)
 
-    def parse_to_quote_tick(
+        return OrderBookDeltas(instrument.id, deltas)
+
+    def parse_to_quote_ticks(
         self,
         instrument: BinaryOption,
         last_quote: QuoteTick,
         ts_init: int,
-    ) -> QuoteTick:
-        if self.side == PolymarketOrderSide.BUY:
-            ask_price = last_quote.ask_price
-            ask_size = last_quote.ask_size
-            bid_price = instrument.make_price(float(self.price))
-            bid_size = instrument.make_qty(float(self.size))
-        else:  # SELL
-            ask_price = instrument.make_price(float(self.price))
-            ask_size = instrument.make_qty(float(self.size))
-            bid_price = last_quote.bid_price
-            bid_size = last_quote.bid_size
+    ) -> list[QuoteTick]:
+        quotes: list[QuoteTick] = []
+        for change in self.changes:
+            if change.side == PolymarketOrderSide.BUY:
+                ask_price = last_quote.ask_price
+                ask_size = last_quote.ask_size
+                bid_price = instrument.make_price(float(change.price))
+                bid_size = instrument.make_qty(float(change.size))
+            else:  # SELL
+                ask_price = instrument.make_price(float(change.price))
+                ask_size = instrument.make_qty(float(change.size))
+                bid_price = last_quote.bid_price
+                bid_size = last_quote.bid_size
+            quote = QuoteTick(
+                instrument_id=instrument.id,
+                bid_price=bid_price,
+                ask_price=ask_price,
+                bid_size=bid_size,
+                ask_size=ask_size,
+                ts_event=millis_to_nanos(float(self.timestamp)),
+                ts_init=ts_init,
+            )
+            quotes.append(quote)
+            last_quote = quote
 
-        return QuoteTick(
-            instrument_id=instrument.id,
-            bid_price=bid_price,
-            ask_price=ask_price,
-            bid_size=bid_size,
-            ask_size=ask_size,
-            ts_event=millis_to_nanos(float(self.timestamp)),
-            ts_init=ts_init,
-        )
+        return quotes
 
 
 class PolymarketTrade(msgspec.Struct, tag="last_trade_price", tag_field="event_type", frozen=True):
