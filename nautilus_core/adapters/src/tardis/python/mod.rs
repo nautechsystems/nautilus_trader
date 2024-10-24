@@ -25,7 +25,8 @@ use pyo3::prelude::*;
 /// Loaded as nautilus_pyo3.tardis
 #[pymodule]
 pub fn tardis(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<super::machine::TardisClient>()?;
+    m.add_class::<super::http::client::TardisHttpClient>()?;
+    m.add_class::<super::machine::TardisMachineClient>()?;
     m.add_function(wrap_pyfunction!(csv::py_load_tardis_deltas, m)?)?;
     m.add_function(wrap_pyfunction!(
         csv::py_load_tardis_deltas_as_pycapsule,

@@ -13,16 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! The [Tardis](https://tardis.dev) integration adapter.
+pub mod client;
+pub mod types;
 
-pub mod csv;
-pub mod enums;
-pub mod http;
-pub mod machine;
-pub mod parse;
+pub use crate::tardis::http::client::TardisHttpClient;
 
-#[cfg(feature = "python")]
-pub mod python;
-
-#[cfg(test)]
-pub mod tests;
+pub const TARDIS_BASE_URL: &str = "https://api.tardis.dev/v1";

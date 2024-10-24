@@ -13,12 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Display;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-/// The type of the symbol eg. Spot, Perpetual, Future, Option.
-pub enum SymbolType {
+/// The instrument type for the symbol.
+pub enum InstrumentType {
     Spot,
     Perpetual,
     Future,
@@ -27,7 +29,7 @@ pub enum SymbolType {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
-/// The type of an option symbol.
+/// The type of option.
 pub enum OptionType {
     Call,
     Put,
@@ -42,7 +44,7 @@ pub enum TradeSide {
     Unknown,
 }
 
-/// The kind of bar.
+/// The bar kind.
 #[allow(missing_docs)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -166,5 +168,13 @@ impl Exchange {
             Self::Upbit => "UPBIT",
             Self::WooX => "WOOX",
         }
+    }
+}
+
+impl Display for Exchange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let binding = serde_json::to_value(self).unwrap();
+        let value = binding.as_str().unwrap();
+        write!(f, "{}", value)
     }
 }

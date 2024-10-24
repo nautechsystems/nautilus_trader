@@ -28,25 +28,25 @@ use nautilus_model::{
 };
 
 use super::{
-    enums::Exchange, message::WsMessage, replay_normalized, stream_normalized, Error,
-    ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions, TardisInstrumentInfo,
+    message::WsMessage, replay_normalized, stream_normalized, Error, InstrumentMiniInfo,
+    ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions,
 };
-use crate::tardis::machine::parse::parse_tardis_ws_message;
+use crate::tardis::{enums::Exchange, machine::parse::parse_tardis_ws_message};
 
 /// Provides a client for connecting to a [Tardis Machine Server](https://docs.tardis.dev/api/tardis-machine).
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
 )]
-pub struct TardisClient {
+pub struct TardisMachineClient {
     pub base_url: String,
     pub replay_signal: Arc<AtomicBool>,
-    pub stream_signals: HashMap<TardisInstrumentInfo, Arc<AtomicBool>>,
-    pub instruments: HashMap<InstrumentId, Arc<TardisInstrumentInfo>>,
+    pub stream_signals: HashMap<InstrumentMiniInfo, Arc<AtomicBool>>,
+    pub instruments: HashMap<InstrumentId, Arc<InstrumentMiniInfo>>,
 }
 
-impl TardisClient {
-    /// Creates a new [`TardisClient`] instance.
+impl TardisMachineClient {
+    /// Creates a new [`TardisMachineClient`] instance.
     pub fn new(base_url: impl ToString) -> Self {
         Self {
             base_url: base_url.to_string(),
@@ -56,7 +56,7 @@ impl TardisClient {
         }
     }
 
-    pub fn add_instrument_info(&mut self, info: TardisInstrumentInfo) {
+    pub fn add_instrument_info(&mut self, info: InstrumentMiniInfo) {
         self.instruments.insert(info.instrument_id, Arc::new(info));
     }
 
@@ -92,7 +92,7 @@ impl TardisClient {
 
     pub async fn stream(
         &self,
-        instrument: TardisInstrumentInfo,
+        instrument: InstrumentMiniInfo,
         options: Vec<StreamNormalizedRequestOptions>,
     ) -> impl Stream<Item = Data> {
         let stream = stream_normalized(&self.base_url, options, self.replay_signal.clone())
@@ -107,8 +107,8 @@ impl TardisClient {
 
 fn handle_ws_stream<S>(
     stream: S,
-    instrument: Option<Arc<TardisInstrumentInfo>>,
-    instrument_map: Option<HashMap<InstrumentId, Arc<TardisInstrumentInfo>>>,
+    instrument: Option<Arc<InstrumentMiniInfo>>,
+    instrument_map: Option<HashMap<InstrumentId, Arc<InstrumentMiniInfo>>>,
 ) -> impl Stream<Item = Data>
 where
     S: Stream<Item = Result<WsMessage, Error>> + Unpin,
@@ -151,8 +151,8 @@ where
 
 pub fn determine_instrument_info(
     msg: &WsMessage,
-    instrument_map: &HashMap<InstrumentId, Arc<TardisInstrumentInfo>>,
-) -> Option<Arc<TardisInstrumentInfo>> {
+    instrument_map: &HashMap<InstrumentId, Arc<InstrumentMiniInfo>>,
+) -> Option<Arc<InstrumentMiniInfo>> {
     let instrument_id = match msg {
         WsMessage::BookChange(msg) => parse_instrument_id_with_enum(&msg.symbol, &msg.exchange),
         WsMessage::BookSnapshot(msg) => parse_instrument_id_with_enum(&msg.symbol, &msg.exchange),
