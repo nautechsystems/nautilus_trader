@@ -111,7 +111,8 @@ pub enum Exchange {
 }
 
 impl Exchange {
-    pub fn as_venue_str(&self) -> &str {
+    #[must_use]
+    pub const fn as_venue_str(&self) -> &str {
         match self {
             Self::Ascendex => "ASCENDEX",
             Self::Binance => "BINANCE",
