@@ -23,13 +23,12 @@ from py_clob_client.client import ClobClient
 
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
 from nautilus_trader.adapters.polymarket.common.deltas import compute_effective_deltas
-from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderSide
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_instrument_id
 from nautilus_trader.adapters.polymarket.common.symbol import get_polymarket_token_id
 from nautilus_trader.adapters.polymarket.config import PolymarketDataClientConfig
 from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProvider
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookSnapshot
-from nautilus_trader.adapters.polymarket.schemas.book import PolymarketQuote
+from nautilus_trader.adapters.polymarket.schemas.book import PolymarketQuotes
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTrade
 from nautilus_trader.adapters.polymarket.websocket.client import PolymarketWebSocketChannel
 from nautilus_trader.adapters.polymarket.websocket.client import PolymarketWebSocketClient
@@ -373,21 +372,30 @@ class PolymarketDataClient(LiveMarketDataClient):
         # self._log.info(str(raw), LogColor.MAGENTA)
         try:
             ws_message = self._decoder_market_msg.decode(raw)
+            for msg in ws_message:
+                if isinstance(msg, list):
+                    if isinstance(msg, PolymarketBookSnapshot):
+                        instrument_id = get_polymarket_instrument_id(msg.market, msg.asset_id)
+                        instrument = self._cache.instrument(instrument_id)
+                        if instrument is None:
+                            self._log.error(f"Cannot find instrument for {instrument_id}")
+                            return
+                        self._handle_book_snapshot(instrument=instrument, ws_message=msg)
+                else:
+                    instrument_id = get_polymarket_instrument_id(msg.market, msg.asset_id)
+                    instrument = self._cache.instrument(instrument_id)
+                    if instrument is None:
+                        self._log.error(f"Cannot find instrument for {instrument_id}")
+                        return
 
-            instrument_id = get_polymarket_instrument_id(ws_message.market, ws_message.asset_id)
-            instrument = self._cache.instrument(instrument_id)
-            if instrument is None:
-                self._log.error(f"Cannot find instrument for {instrument_id}")
-                return
-
-            if isinstance(ws_message, PolymarketBookSnapshot):
-                self._handle_book_snapshot(instrument=instrument, ws_message=ws_message)
-            elif isinstance(ws_message, PolymarketQuote):
-                self._handle_quote(instrument=instrument, ws_message=ws_message)
-            elif isinstance(ws_message, PolymarketTrade):
-                self._handle_trade(instrument=instrument, ws_message=ws_message)
-            else:
-                self._log.error(f"Unknown websocket message topic: {ws_message}")
+                    if isinstance(msg, PolymarketBookSnapshot):
+                        self._handle_book_snapshot(instrument=instrument, ws_message=msg)
+                    elif isinstance(msg, PolymarketQuotes):
+                        self._handle_quote(instrument=instrument, ws_message=msg)
+                    elif isinstance(msg, PolymarketTrade):
+                        self._handle_trade(instrument=instrument, ws_message=msg)
+                    else:
+                        self._log.error(f"Unknown websocket message topic: {ws_message}")
         except Exception as e:
             self._log.error(f"Failed to parse websocket message: {raw.decode()} with error {e}")
 
@@ -428,17 +436,17 @@ class PolymarketDataClient(LiveMarketDataClient):
     def _handle_quote(
         self,
         instrument: BinaryOption,
-        ws_message: PolymarketQuote,
+        ws_message: PolymarketQuotes,
     ) -> None:
         now_ns = self._clock.timestamp_ns()
-        delta = ws_message.parse_to_delta(instrument=instrument, ts_init=now_ns)
+        deltas = ws_message.parse_to_deltas(instrument=instrument, ts_init=now_ns)
 
         if self._config.compute_effective_deltas:
             local_book = self._local_books.get(instrument.id)
             if local_book:
-                local_book.apply_delta(delta)
+                local_book.apply_deltas(deltas)
 
-        self._handle_data(delta)
+        self._handle_data(deltas)
 
         if instrument.id in self.subscribed_quote_ticks():
             last_quote = self._last_quotes.get(instrument.id)
@@ -446,29 +454,31 @@ class PolymarketDataClient(LiveMarketDataClient):
                 return
 
             # Check if top-of-book change
-            quote_price = instrument.make_price(float(ws_message.price))
-            if ws_message.side == PolymarketOrderSide.BUY:
-                if quote_price < last_quote.bid_price:
-                    return  # No top-of-book change
-            else:  # SELL
-                if quote_price > last_quote.ask_price:
-                    return  # No top-of-book change
-
-            quote = ws_message.parse_to_quote_tick(
+            quotes = ws_message.parse_to_quote_ticks(
                 instrument=instrument,
                 last_quote=last_quote,
                 ts_init=self._clock.timestamp_ns(),
             )
-            if (
-                quote.bid_price == last_quote.bid_price
-                and quote.ask_price == last_quote.ask_price
-                and quote.bid_size == last_quote.bid_size
-                and quote.ask_size == last_quote.ask_size
-            ):
-                return  # No top-of-book change
+            for quote in quotes:
 
-            self._last_quotes[instrument.id] = quote
-            self._handle_data(quote)
+                # quote_price = instrument.make_price(float(ws_message.price))
+                # if ws_message.side == PolymarketOrderSide.BUY:
+                #     if quote_price < last_quote.bid_price:
+                #         return  # No top-of-book change
+                # else:  # SELL
+                #     if quote_price > last_quote.ask_price:
+                #         return  # No top-of-book change
+
+                if (
+                    quote.bid_price == last_quote.bid_price
+                    and quote.ask_price == last_quote.ask_price
+                    and quote.bid_size == last_quote.bid_size
+                    and quote.ask_size == last_quote.ask_size
+                ):
+                    continue  # No top-of-book change
+
+                self._last_quotes[instrument.id] = quote
+                self._handle_data(quote)
 
     def _handle_trade(
         self,

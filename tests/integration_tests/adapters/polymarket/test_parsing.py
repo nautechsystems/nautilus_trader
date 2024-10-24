@@ -20,13 +20,11 @@ import pytest
 
 from nautilus_trader.adapters.polymarket.common.parsing import parse_instrument
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketBookSnapshot
-from nautilus_trader.adapters.polymarket.schemas.book import PolymarketQuote
+from nautilus_trader.adapters.polymarket.schemas.book import PolymarketQuotes
 from nautilus_trader.adapters.polymarket.schemas.book import PolymarketTrade
 from nautilus_trader.adapters.polymarket.schemas.user import PolymarketUserOrder
 from nautilus_trader.adapters.polymarket.schemas.user import PolymarketUserTrade
-from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
-from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BookAction
@@ -84,61 +82,61 @@ def test_parse_order_book_snapshots() -> None:
     assert snapshot.ts_init == 1728799418260000001
 
 
-def test_parse_order_book_delta() -> None:
+def test_parse_order_book_deltas() -> None:
     # Arrange
     data = pkgutil.get_data(
         "tests.integration_tests.adapters.polymarket.resources.ws_messages",
-        "price_change.json",
+        "price_change_v2.json",
     )
     assert data
 
-    decoder = msgspec.json.Decoder(PolymarketQuote)
+    decoder = msgspec.json.Decoder(PolymarketQuotes)
     ws_message = decoder.decode(data)
     instrument = TestInstrumentProvider.binary_option()
 
     # Act
-    delta = ws_message.parse_to_delta(instrument=instrument, ts_init=2)
+    deltas = ws_message.parse_to_deltas(instrument=instrument, ts_init=2)
 
     # Assert
-    assert isinstance(delta, OrderBookDelta)
-    assert delta.action == BookAction.UPDATE
-    assert delta.order.side == OrderSide.SELL
-    assert delta.order.price == instrument.make_price(0.514)
-    assert delta.order.size == instrument.make_qty(21_574.08)
-    assert delta.flags == RecordFlag.F_LAST
-    assert delta.ts_event == 1723967931411000064
-    assert delta.ts_init == 2
+    assert isinstance(deltas, OrderBookDeltas)
+    assert deltas.deltas[0].action == BookAction.UPDATE
+    assert deltas.deltas[0].order.side == OrderSide.BUY
+    assert deltas.deltas[0].order.price == instrument.make_price(0.600)
+    assert deltas.deltas[0].order.size == instrument.make_qty(3_300.00)
+    assert deltas.deltas[0].flags == RecordFlag.F_LAST
+    assert deltas.deltas[0].ts_event == 1729084877448000000
+    assert deltas.deltas[0].ts_init == 2
 
 
-def test_parse_quote_tick() -> None:
+def test_parse_quote_ticks() -> None:
     # Arrange
     data = pkgutil.get_data(
         "tests.integration_tests.adapters.polymarket.resources.ws_messages",
-        "price_change.json",
+        "price_change_v2.json",
     )
     assert data
 
-    decoder = msgspec.json.Decoder(PolymarketQuote)
+    decoder = msgspec.json.Decoder(PolymarketQuotes)
     ws_message = decoder.decode(data)
     instrument = TestInstrumentProvider.binary_option()
 
     last_quote = TestDataStubs.quote_tick(instrument=instrument, bid_price=0.513)
 
     # Act
-    quote = ws_message.parse_to_quote_tick(
+    quotes = ws_message.parse_to_quote_ticks(
         instrument=instrument,
         last_quote=last_quote,
         ts_init=2,
     )
 
     # Assert
-    assert isinstance(quote, QuoteTick)
-    assert quote.bid_price == instrument.make_price(0.513)
-    assert quote.ask_price == instrument.make_price(0.514)
-    assert quote.bid_size == instrument.make_qty(100_000.0)
-    assert quote.ask_size == instrument.make_qty(21_574.08)
-    assert quote.ts_event == 1723967931411000064
-    assert quote.ts_init == 2
+    assert isinstance(quotes, list)
+    assert quotes[0].bid_price == instrument.make_price(0.600)
+    assert quotes[0].ask_price == instrument.make_price(1.000)
+    assert quotes[0].bid_size == instrument.make_qty(3_300.0)
+    assert quotes[0].ask_size == instrument.make_qty(100_000.00)
+    assert quotes[0].ts_event == 1729084877448000000
+    assert quotes[0].ts_init == 2
 
 
 def test_parse_trade_tick() -> None:
