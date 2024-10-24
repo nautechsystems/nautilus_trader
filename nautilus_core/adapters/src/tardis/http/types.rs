@@ -61,9 +61,9 @@ pub struct InstrumentInfo {
     pub id: String,
     /// The instrument exchange.
     pub exchange: Exchange,
-    /// The instrument base currency (normalized, e.g., BTC for BitMEX, not XBT).
+    /// The instrument base currency (normalized, e.g., BTC for `BitMEX`, not XBT).
     pub base_currency: String,
-    /// The instrument quote currency (normalized, e.g., BTC for BitMEX, not XBT).
+    /// The instrument quote currency (normalized, e.g., BTC for `BitMEX`, not XBT).
     pub quote_currency: String,
     /// The instrument type e.g., spot, perpetual, future, option.
     #[serde(rename = "type")]

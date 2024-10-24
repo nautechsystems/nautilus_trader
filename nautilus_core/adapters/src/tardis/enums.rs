@@ -175,6 +175,6 @@ impl Display for Exchange {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let binding = serde_json::to_value(self).unwrap();
         let value = binding.as_str().unwrap();
-        write!(f, "{}", value)
+        write!(f, "{value}")
     }
 }
