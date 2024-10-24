@@ -161,12 +161,11 @@ pub fn determine_instrument_info(
         WsMessage::DerivativeTicker(_) => return None,
         WsMessage::Disconnect(_) => return None,
     };
-    match instrument_map.get(&instrument_id) {
-        Some(instr) => Some(instr.clone().clone()),
-        None => {
-            tracing::error!("Instrument definition info not available for {instrument_id}");
-            None
-        }
+    if let Some(instr) = instrument_map.get(&instrument_id) {
+        Some(instr.clone())
+    } else {
+        tracing::error!("Instrument definition info not available for {instrument_id}");
+        None
     }
 }
 
