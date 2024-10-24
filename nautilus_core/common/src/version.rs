@@ -34,6 +34,6 @@ fn read_nautilus_version() -> String {
         .to_string()
 }
 
-/// Common User-Agent value for NautilusTrader.
+/// Common User-Agent value for `NautilusTrader`.
 pub static USER_AGENT: LazyLock<String> =
     LazyLock::new(|| format!("NautilusTrader/{}", read_nautilus_version()));
