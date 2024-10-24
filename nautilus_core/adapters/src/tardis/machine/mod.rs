@@ -34,14 +34,13 @@ use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream,
 };
 
-use super::machine::enums::Exchange;
+use super::enums::Exchange;
 
 pub mod client;
-pub mod enums;
 pub mod message;
 pub mod parse;
 
-pub use crate::tardis::machine::client::TardisClient;
+pub use crate::tardis::machine::client::TardisMachineClient;
 
 /// Instrument definition information necessary for stream parsing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,7 +48,7 @@ pub use crate::tardis::machine::client::TardisClient;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
 )]
-pub struct TardisInstrumentInfo {
+pub struct InstrumentMiniInfo {
     pub instrument_id: InstrumentId,
     pub price_precision: u8,
     pub size_precision: u8,

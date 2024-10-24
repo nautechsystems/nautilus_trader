@@ -15,8 +15,9 @@
 
 use chrono::NaiveDate;
 use futures_util::{pin_mut, StreamExt};
-use nautilus_adapters::tardis::machine::{
-    enums::Exchange, ReplayNormalizedRequestOptions, TardisClient, TardisInstrumentInfo,
+use nautilus_adapters::tardis::{
+    enums::Exchange,
+    machine::{InstrumentMiniInfo, ReplayNormalizedRequestOptions, TardisMachineClient},
 };
 use nautilus_model::identifiers::InstrumentId;
 
@@ -27,14 +28,14 @@ async fn main() {
         .init();
 
     let base_url = std::env::var("TARDIS_MACHINE_WS_URL").unwrap();
-    let mut client = TardisClient::new(base_url.clone());
+    let mut client = TardisMachineClient::new(base_url.clone());
     // TODO: Add instrument info constructor
-    let instrument_info1 = TardisInstrumentInfo {
+    let instrument_info1 = InstrumentMiniInfo {
         instrument_id: InstrumentId::from("XBTUSD.BITMEX"),
         price_precision: 1,
         size_precision: 0,
     };
-    let instrument_info2 = TardisInstrumentInfo {
+    let instrument_info2 = InstrumentMiniInfo {
         instrument_id: InstrumentId::from("ETHUSD.BITMEX"),
         price_precision: 1,
         size_precision: 0,

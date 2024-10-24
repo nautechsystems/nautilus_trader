@@ -34,12 +34,12 @@ use uuid::Uuid;
 
 use super::{
     message::{BarMsg, BookChangeMsg, BookLevel, BookSnapshotMsg, TradeMsg, WsMessage},
-    TardisInstrumentInfo,
+    InstrumentMiniInfo,
 };
 use crate::tardis::parse::{parse_aggressor_side, parse_bar_spec, parse_book_action};
 
 #[must_use]
-pub fn parse_tardis_ws_message(msg: WsMessage, info: Arc<TardisInstrumentInfo>) -> Option<Data> {
+pub fn parse_tardis_ws_message(msg: WsMessage, info: Arc<InstrumentMiniInfo>) -> Option<Data> {
     match msg {
         WsMessage::BookChange(msg) => Some(Data::Deltas(parse_book_change_msg(
             msg,

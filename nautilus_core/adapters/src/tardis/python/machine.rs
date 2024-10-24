@@ -21,15 +21,15 @@ use nautilus_model::{identifiers::InstrumentId, python::data::data_to_pycapsule}
 use pyo3::prelude::*;
 
 use crate::tardis::machine::{
-    client::{determine_instrument_info, TardisClient},
+    client::{determine_instrument_info, TardisMachineClient},
     message::WsMessage,
     parse::parse_tardis_ws_message,
-    replay_normalized, stream_normalized, Error, ReplayNormalizedRequestOptions,
-    StreamNormalizedRequestOptions, TardisInstrumentInfo,
+    replay_normalized, stream_normalized, Error, InstrumentMiniInfo,
+    ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions,
 };
 
 #[pymethods]
-impl TardisClient {
+impl TardisMachineClient {
     #[new]
     fn py_new(base_url: &str) -> PyResult<Self> {
         Ok(Self::new(base_url))
@@ -71,7 +71,7 @@ impl TardisClient {
     #[pyo3(name = "stream")]
     fn py_stream<'py>(
         &self,
-        instrument: TardisInstrumentInfo,
+        instrument: InstrumentMiniInfo,
         options: Vec<StreamNormalizedRequestOptions>,
         callback: PyObject,
         py: Python<'py>,
@@ -96,8 +96,8 @@ impl TardisClient {
 async fn handle_python_stream<S>(
     mut stream: S,
     callback: PyObject,
-    instrument: Option<Arc<TardisInstrumentInfo>>,
-    instrument_map: Option<HashMap<InstrumentId, Arc<TardisInstrumentInfo>>>,
+    instrument: Option<Arc<InstrumentMiniInfo>>,
+    instrument_map: Option<HashMap<InstrumentId, Arc<InstrumentMiniInfo>>>,
 ) where
     S: Stream<Item = Result<WsMessage, Error>> + Unpin,
 {

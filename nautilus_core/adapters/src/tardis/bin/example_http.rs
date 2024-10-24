@@ -13,16 +13,21 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! The [Tardis](https://tardis.dev) integration adapter.
+use nautilus_adapters::tardis::{enums::Exchange, http::client::TardisHttpClient};
 
-pub mod csv;
-pub mod enums;
-pub mod http;
-pub mod machine;
-pub mod parse;
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .init();
 
-#[cfg(feature = "python")]
-pub mod python;
+    let client = TardisHttpClient::new(None, None);
 
-#[cfg(test)]
-pub mod tests;
+    let resp = client.instruments(Exchange::Bitmex).await;
+    println!("Received: {resp:?}");
+
+    let resp = client
+        .instrument(Exchange::Bitmex, "ETHUSDT".to_string())
+        .await;
+    println!("Received: {resp:?}");
+}

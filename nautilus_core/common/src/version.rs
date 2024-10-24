@@ -13,16 +13,27 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! The [Tardis](https://tardis.dev) integration adapter.
+use std::{fs, path::PathBuf, sync::LazyLock};
 
-pub mod csv;
-pub mod enums;
-pub mod http;
-pub mod machine;
-pub mod parse;
+use toml::Value;
 
-#[cfg(feature = "python")]
-pub mod python;
+fn read_nautilus_version() -> String {
+    let filepath = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("Failed to get workspace root")
+        .parent()
+        .expect("Failed to get project root")
+        .join("pyproject.toml");
 
-#[cfg(test)]
-pub mod tests;
+    let data = fs::read_to_string(filepath).expect("Unable to read pyproject.toml");
+    let parsed_toml: Value = toml::from_str(&data).expect("Unable to parse pyproject.toml");
+
+    parsed_toml["tool"]["poetry"]["version"]
+        .as_str()
+        .expect("Unable to find version in pyproject.toml")
+        .to_string()
+}
+
+/// Common User-Agent value for NautilusTrader.
+pub static USER_AGENT: LazyLock<String> =
+    LazyLock::new(|| format!("NautilusTrader/{}", read_nautilus_version()));

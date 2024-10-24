@@ -16,7 +16,11 @@ path = "src/databento/bin/sandbox.rs"
 
 [[bin]]
 name = "tardis-machine"
-path = "src/tardis/bin/example.rs"
+path = "src/tardis/bin/example_machine.rs"
+
+[[bin]]
+name = "tardis-http"
+path = "src/tardis/bin/example_http.rs"
 
 [dependencies]
 nautilus-common = { path = "../common" }
@@ -33,6 +37,7 @@ itoa = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-asyncio-0-21 = { workspace = true, optional = true }
 rand = { workspace = true }
+reqwest = { workspace = true }
 ring = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
