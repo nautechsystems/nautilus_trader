@@ -35,17 +35,13 @@ impl PortfolioStatistic for RiskReturnRatio {
             return Some(f64::NAN);
         }
 
-        // let negative_returns: &[f64] = returns.iter().copied().filter(|&x| x != 0.0).collect();
+        let mean = returns.iter().sum::<f64>() / returns.len() as f64;
+        let std = Self::calculate_std(returns);
 
-        // if negative_returns.is_empty() {
-        //     return Some(f64::NAN);
-        // }
-
-        // let sum: f64 = negative_returns.iter().sum();
-        // let downsampled_returns = self.downsample_to_daily_bins(returns);
-        // let count = negative_returns.len() as f64;
-
-        // Some(sum / count)
-        todo!()
+        if std < f64::EPSILON {
+            Some(f64::NAN)
+        } else {
+            Some(mean / std)
+        }
     }
 }

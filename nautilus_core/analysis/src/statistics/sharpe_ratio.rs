@@ -21,7 +21,18 @@ use crate::statistic::PortfolioStatistic;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
 )]
-pub struct SharpeRatio {}
+pub struct SharpeRatio {
+    period: usize,
+}
+
+impl SharpeRatio {
+    #[must_use]
+    pub fn new(period: Option<usize>) -> Self {
+        Self {
+            period: period.unwrap_or(252),
+        }
+    }
+}
 
 impl PortfolioStatistic for SharpeRatio {
     type Item = f64;
@@ -35,17 +46,15 @@ impl PortfolioStatistic for SharpeRatio {
             return Some(f64::NAN);
         }
 
-        // let negative_returns: &[f64] = returns.iter().copied().filter(|&x| x != 0.0).collect();
+        let mean = returns.iter().sum::<f64>() / returns.len() as f64;
+        let std = Self::calculate_std(returns);
 
-        // if negative_returns.is_empty() {
-        //     return Some(f64::NAN);
-        // }
+        if std < f64::EPSILON {
+            return Some(f64::NAN);
+        }
 
-        // let sum: f64 = negative_returns.iter().sum();
-        // let downsampled_returns = self.downsample_to_daily_bins(returns);
-        // let count = negative_returns.len() as f64;
+        let annualized_ratio = (mean / std) * (self.period as f64).sqrt();
 
-        // Some(sum / count)
-        todo!()
+        Some(annualized_ratio)
     }
 }

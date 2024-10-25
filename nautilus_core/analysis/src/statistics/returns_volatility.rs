@@ -21,7 +21,18 @@ use crate::statistic::PortfolioStatistic;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
 )]
-pub struct ReturnsVolatility {}
+pub struct ReturnsVolatility {
+    period: usize,
+}
+
+impl ReturnsVolatility {
+    #[must_use]
+    pub fn new(period: Option<usize>) -> Self {
+        Self {
+            period: period.unwrap_or(252),
+        }
+    }
+}
 
 impl PortfolioStatistic for ReturnsVolatility {
     type Item = f64;
@@ -35,17 +46,8 @@ impl PortfolioStatistic for ReturnsVolatility {
             return Some(f64::NAN);
         }
 
-        // let negative_returns: &[f64] = returns.iter().copied().filter(|&x| x != 0.0).collect();
-
-        // if negative_returns.is_empty() {
-        //     return Some(f64::NAN);
-        // }
-
-        // let sum: f64 = negative_returns.iter().sum();
-        // let downsampled_returns = self.downsample_to_daily_bins(returns);
-        // let count = negative_returns.len() as f64;
-
-        // Some(sum / count)
-        todo!()
+        let daily_std = Self::calculate_std(returns);
+        let annualized_std = daily_std * (self.period as f64).sqrt();
+        Some(annualized_std)
     }
 }

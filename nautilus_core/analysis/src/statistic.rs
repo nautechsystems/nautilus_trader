@@ -23,7 +23,6 @@ pub trait PortfolioStatistic {
 
     fn name(&self) -> String;
 
-    #[allow(dead_code)]
     fn calculate_from_returns(&mut self, returns: &[f64]) -> Option<Self::Item> {
         panic!("`calculate_from_returns` {IMPL_ERR} `{}`", self.name());
     }
@@ -45,14 +44,33 @@ pub trait PortfolioStatistic {
         panic!("`calculate_from_positions` {IMPL_ERR} `{}`", self.name());
     }
 
-    #[allow(dead_code)]
     fn check_valid_returns(&self, returns: &[f64]) -> bool {
         !returns.is_empty()
     }
 
-    #[allow(dead_code)]
-    fn downsample_to_daily_bins(&self, returns: &[f64]) -> &Vec<f64> {
-        // return returns.dropna().resample("1D").sum()
-        panic!("`downsample_to_daily_bins` {IMPL_ERR} `{}`", self.name());
+    #[must_use]
+    fn calculate_std(returns: &[f64]) -> f64 {
+        let n = returns.len() as f64;
+        if n < 2.0 {
+            return f64::NAN;
+        }
+
+        let mean = returns.iter().sum::<f64>() / n;
+
+        let variance = returns.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
+
+        variance.sqrt()
+    }
+
+    // TODO: Future enhancement - implement proper downsampling using the Polars library.
+    // Currently, we have only a 1D array of returns, so we can’t perform time-based resampling as we could with a DataFrame in Python (e.g., Pandas).
+    // In Python, the data structure supports easy time-based resampling, but here, we’ll need to use Polars' Series with a DateTime index
+    // to enable similar resampling capabilities in Rust.
+    // Example future function signature:
+    // fn downsample_to_daily_bins(&self, returns: &polars::Series) -> polars::Series
+    fn downsample_to_daily_bins(&self, returns: &[f64]) -> Vec<f64> {
+        // For now, we return the input array directly, assuming daily data
+        // Future implementation will include time-based resampling, e.g., returns.dropna().resample("1D").sum()
+        returns.to_vec()
     }
 }

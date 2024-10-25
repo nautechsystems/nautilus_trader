@@ -15,10 +15,15 @@
 
 use pyo3::prelude::*;
 
-use crate::{statistic::PortfolioStatistic, statistics::returns_volatality::ReturnsVolatility};
+use crate::{statistic::PortfolioStatistic, statistics::returns_volatility::ReturnsVolatility};
 
 #[pymethods]
 impl ReturnsVolatility {
+    #[new]
+    fn py_new(period: Option<usize>) -> Self {
+        Self::new(period)
+    }
+
     fn __repr__(&self) -> String {
         format!("ReturnsVolatility({})", self.name(),)
     }

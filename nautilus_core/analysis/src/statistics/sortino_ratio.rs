@@ -21,7 +21,18 @@ use crate::statistic::PortfolioStatistic;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
 )]
-pub struct SortinoRatio {}
+pub struct SortinoRatio {
+    period: usize,
+}
+
+impl SortinoRatio {
+    #[must_use]
+    pub fn new(period: Option<usize>) -> Self {
+        Self {
+            period: period.unwrap_or(252),
+        }
+    }
+}
 
 impl PortfolioStatistic for SortinoRatio {
     type Item = f64;
@@ -35,17 +46,23 @@ impl PortfolioStatistic for SortinoRatio {
             return Some(f64::NAN);
         }
 
-        // let negative_returns: &[f64] = returns.iter().copied().filter(|&x| x != 0.0).collect();
+        let total_n = returns.len() as f64;
+        let mean = returns.iter().sum::<f64>() / total_n;
 
-        // if negative_returns.is_empty() {
-        //     return Some(f64::NAN);
-        // }
+        let downside = (returns
+            .iter()
+            .filter(|&&x| x < 0.0)
+            .map(|x| x.powi(2))
+            .sum::<f64>()
+            / total_n)
+            .sqrt();
 
-        // let sum: f64 = negative_returns.iter().sum();
-        // let downsampled_returns = self.downsample_to_daily_bins(returns);
-        // let count = negative_returns.len() as f64;
+        if downside < f64::EPSILON {
+            return Some(f64::NAN);
+        }
 
-        // Some(sum / count)
-        todo!()
+        let annualized_ratio = (mean / downside) * (self.period as f64).sqrt();
+
+        Some(annualized_ratio)
     }
 }

@@ -7,7 +7,7 @@ pub mod profit_factor;
 pub mod returns_avg;
 pub mod returns_avg_loss;
 pub mod returns_avg_win;
-pub mod returns_volatality;
+pub mod returns_volatility;
 pub mod risk_return_ratio;
 pub mod sharpe_ratio;
 pub mod sortino_ratio;

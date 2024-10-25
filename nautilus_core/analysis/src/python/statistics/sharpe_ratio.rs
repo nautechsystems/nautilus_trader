@@ -19,6 +19,11 @@ use crate::{statistic::PortfolioStatistic, statistics::sharpe_ratio::SharpeRatio
 
 #[pymethods]
 impl SharpeRatio {
+    #[new]
+    fn py_new(period: Option<usize>) -> Self {
+        Self::new(period)
+    }
+
     fn __repr__(&self) -> String {
         format!("SharpeRatio({})", self.name(),)
     }

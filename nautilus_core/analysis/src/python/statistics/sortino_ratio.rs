@@ -19,6 +19,11 @@ use crate::{statistic::PortfolioStatistic, statistics::sortino_ratio::SortinoRat
 
 #[pymethods]
 impl SortinoRatio {
+    #[new]
+    fn py_new(period: Option<usize>) -> Self {
+        Self::new(period)
+    }
+
     fn __repr__(&self) -> String {
         format!("SortinoRatio({})", self.name(),)
     }
