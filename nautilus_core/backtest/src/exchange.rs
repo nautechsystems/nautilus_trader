@@ -678,8 +678,7 @@ mod tests {
             Quantity::from(100),
             UnixNanos::default(),
             UnixNanos::default(),
-        )
-        .unwrap();
+        );
         exchange.process_bar(bar);
 
         // this will be processed as ticks so both bid and ask will be the same as close of the bar
@@ -709,8 +708,7 @@ mod tests {
             Quantity::from(100),
             UnixNanos::from(1),
             UnixNanos::from(1),
-        )
-        .unwrap();
+        );
         let bar_ask = Bar::new(
             BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-ASK-EXTERNAL"),
             Price::from("1501.00"),
@@ -720,8 +718,7 @@ mod tests {
             Quantity::from(100),
             UnixNanos::from(1),
             UnixNanos::from(1),
-        )
-        .unwrap();
+        );
 
         // process them
         exchange.process_bar(bar_bid);

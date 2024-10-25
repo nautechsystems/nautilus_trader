@@ -148,7 +148,7 @@ impl<'r> FromRow<'r, PgRow> for BarModel {
         let ts_init = row
             .try_get::<String, _>("ts_init")
             .map(|res| UnixNanos::from(res.as_str()))?;
-        let bar = Bar::new(bar_type, open, high, low, close, volume, ts_event, ts_init).unwrap();
+        let bar = Bar::new(bar_type, open, high, low, close, volume, ts_event, ts_init);
         Ok(BarModel(bar))
     }
 }

@@ -237,7 +237,7 @@ pub fn parse_bar_msg(
     let ts_event = UnixNanos::from(msg.timestamp.timestamp_nanos_opt().unwrap() as u64);
     let ts_init = UnixNanos::from(msg.local_timestamp.timestamp_nanos_opt().unwrap() as u64);
 
-    Bar::new(bar_type, open, high, low, close, volume, ts_event, ts_init).unwrap()
+    Bar::new(bar_type, open, high, low, close, volume, ts_event, ts_init)
 }
 
 ////////////////////////////////////////////////////////////////////////////////

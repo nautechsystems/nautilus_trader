@@ -519,8 +519,8 @@ impl Bar {
         volume: Quantity,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
-    ) -> anyhow::Result<Self> {
-        Ok(Self {
+    ) -> Self {
+        Self {
             bar_type,
             open,
             high,
@@ -529,7 +529,7 @@ impl Bar {
             volume,
             ts_event,
             ts_init,
-        })
+        }
     }
 
     pub fn instrument_id(&self) -> InstrumentId {

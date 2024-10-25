@@ -207,8 +207,7 @@ impl Bar {
             volume,
             ts_event.into(),
             ts_init.into(),
-        )
-        .unwrap())
+        ))
     }
 }
 
@@ -235,8 +234,7 @@ impl Bar {
             volume,
             ts_event.into(),
             ts_init.into(),
-        )
-        .unwrap())
+        ))
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
