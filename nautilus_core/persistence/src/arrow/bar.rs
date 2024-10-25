@@ -230,8 +230,7 @@ mod tests {
             Quantity::from(1100),
             1.into(),
             3.into(),
-        )
-        .unwrap();
+        );
         let bar2 = Bar::new(
             bar_type,
             Price::from("100.00"),
@@ -241,8 +240,7 @@ mod tests {
             Quantity::from(1110),
             2.into(),
             4.into(),
-        )
-        .unwrap();
+        );
 
         let data = vec![bar1, bar2];
         let record_batch = Bar::encode_batch(&metadata, &data).unwrap();
