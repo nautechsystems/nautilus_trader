@@ -18,7 +18,7 @@ from typing import Any
 
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import TestClock
-from nautilus_trader.common.component import TimeEvent
+from nautilus_trader.common.events import TimeEvent
 
 
 _LIVE_CLOCK = LiveClock()
