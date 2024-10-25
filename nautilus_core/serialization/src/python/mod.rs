@@ -19,18 +19,11 @@
 
 use pyo3::prelude::*;
 
-pub mod backend;
-pub mod wranglers;
+pub mod arrow;
 
-/// Loaded as nautilus_pyo3.persistence
+/// Loaded as nautilus_pyo3.serialization
 #[pymodule]
-pub fn persistence(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<crate::backend::session::DataBackendSession>()?;
-    m.add_class::<crate::backend::session::DataQueryResult>()?;
-    m.add_class::<backend::session::NautilusDataType>()?;
-    m.add_class::<wranglers::bar::BarDataWrangler>()?;
-    m.add_class::<wranglers::delta::OrderBookDeltaDataWrangler>()?;
-    m.add_class::<wranglers::quote::QuoteTickDataWrangler>()?;
-    m.add_class::<wranglers::trade::TradeTickDataWrangler>()?;
+pub fn serialization(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add_class::<crate::python::arrow::ArrowDataTransformer>()?;
     Ok(())
 }

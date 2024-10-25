@@ -29,7 +29,7 @@
 
 #![allow(deprecated)] // TODO: Temporary for pyo3 upgrade
 
-pub mod backend;
+pub mod arrow;
 
 #[cfg(feature = "python")]
 pub mod python;

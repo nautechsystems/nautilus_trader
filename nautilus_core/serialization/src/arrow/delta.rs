@@ -15,7 +15,7 @@
 
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
-use datafusion::arrow::{
+use arrow::{
     array::{Int64Array, UInt64Array, UInt8Array},
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
@@ -213,7 +213,7 @@ impl DecodeDataFromRecordBatch for OrderBookDelta {
 mod tests {
     use std::sync::Arc;
 
-    use datafusion::arrow::record_batch::RecordBatch;
+    use arrow::record_batch::RecordBatch;
     use rstest::rstest;
 
     use super::*;
