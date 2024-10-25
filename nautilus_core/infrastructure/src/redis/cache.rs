@@ -28,6 +28,7 @@ use nautilus_common::{
     signal::Signal,
 };
 use nautilus_core::{correctness::check_slice_not_empty, nanos::UnixNanos, uuid::UUID4};
+use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::{
     accounts::any::AccountAny,
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick, DataType},
@@ -143,6 +144,8 @@ impl RedisCacheDatabase {
         instance_id: UUID4,
         config: CacheConfig,
     ) -> anyhow::Result<RedisCacheDatabase> {
+        install_cryptographic_provider();
+
         let db_config = config
             .database
             .as_ref()

@@ -2826,6 +2826,10 @@ dependencies = [
  "rand",
  "ring",
  "rstest",
+ "rustls",
+ "rustls-native-certs 0.8.0",
+ "tokio-rustls",
+ "tracing",
 ]
 
 [[package]]
@@ -2905,6 +2909,7 @@ dependencies = [
  "log",
  "nautilus-common",
  "nautilus-core",
+ "nautilus-cryptography",
  "nautilus-model",
  "pyo3",
  "pyo3-asyncio-0-21",
@@ -2966,6 +2971,7 @@ dependencies = [
  "http",
  "hyper",
  "nautilus-core",
+ "nautilus-cryptography",
  "nonzero_ext",
  "pyo3",
  "pyo3-asyncio-0-21",

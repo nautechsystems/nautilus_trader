@@ -28,8 +28,8 @@ use futures_util::{
 };
 use hyper::header::HeaderName;
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
+use nautilus_cryptography::providers::install_cryptographic_provider;
 use pyo3::{prelude::*, types::PyBytes};
-use rustls::crypto::{aws_lc_rs, CryptoProvider};
 use tokio::{net::TcpStream, sync::Mutex, task, time::sleep};
 use tokio_tungstenite::{
     connect_async,
@@ -82,14 +82,7 @@ struct WebSocketClientInner {
 impl WebSocketClientInner {
     /// Create an inner websocket client.
     pub async fn connect_url(config: WebSocketConfig) -> Result<Self, Error> {
-        if CryptoProvider::get_default().is_none() {
-            tracing::debug!("Installing aws_lc_rs cryptographic provider");
-            // An error can occur on install if there is a race condition with another component
-            match aws_lc_rs::default_provider().install_default() {
-                Ok(_) => tracing::debug!("Cryptographic provider installed successfully"),
-                Err(e) => tracing::debug!("Error installing cryptographic provider: {e:?}"),
-            }
-        }
+        install_cryptographic_provider();
 
         let WebSocketConfig {
             url,

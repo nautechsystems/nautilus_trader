@@ -13,6 +13,7 @@ crate-type = ["rlib", "cdylib"]
 [dependencies]
 nautilus-common = { path = "../common", features = ["python"] }
 nautilus-core = { path = "../core" , features = ["python"] }
+nautilus-cryptography = { path = "../cryptography" }
 nautilus-model = { path = "../model" , features = ["python", "stubs"] }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
@@ -30,7 +31,7 @@ semver = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tracing = {workspace = true }
+tracing = { workspace = true }
 ustr = { workspace = true }
 redis = { version = "0.27.5", features = [
     "connection-manager",

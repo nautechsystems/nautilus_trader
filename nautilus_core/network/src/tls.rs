@@ -48,6 +48,7 @@ mod encryption {
     pub mod rustls {
         use std::{convert::TryFrom, sync::Arc};
 
+        use nautilus_cryptography::tls::create_tls_config;
         pub use rustls::ClientConfig;
         use rustls::{pki_types::ServerName, RootCertStore};
         use rustls_native_certs::load_native_certs;
@@ -72,21 +73,7 @@ mod encryption {
                 Mode::Tls => {
                     let config = match tls_connector {
                         Some(config) => config,
-                        None => {
-                            tracing::info!("Loading native certificates");
-                            let mut root_store = RootCertStore::empty();
-                            let cert_result = load_native_certs();
-                            for e in cert_result.errors {
-                                tracing::error!("Error loading certificates: {e}");
-                            }
-                            root_store.add_parsable_certificates(cert_result.certs);
-
-                            Arc::new(
-                                ClientConfig::builder()
-                                    .with_root_certificates(root_store)
-                                    .with_no_client_auth(),
-                            )
-                        }
+                        None => create_tls_config(),
                     };
                     let domain = ServerName::try_from(domain.as_str())
                         .map_err(|_| TlsError::InvalidDnsName)?
