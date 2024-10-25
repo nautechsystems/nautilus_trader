@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added `raise_exception` optional parameter to `TradingNode.run` (#2021), thanks @faysou
 
 ### Internal Improvements
 - Improved Postgres testing (#2018), thanks @filipmacek
