@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::env;
+use std::{env, time::Duration};
 
 use nautilus_common::version::USER_AGENT;
 
@@ -51,20 +51,27 @@ pub struct TardisHttpClient {
 
 impl TardisHttpClient {
     /// Creates a new [`TardisHttpClient`] instance.
-    pub fn new(api_key: Option<&str>, base_url: Option<&str>) -> Self {
+    pub fn new(api_key: Option<&str>, base_url: Option<&str>, timeout_secs: Option<u64>) -> Self {
         let api_key = api_key.map(ToString::to_string).unwrap_or_else(|| {
             env::var("TARDIS_API_KEY").expect(
                 "API key must be provided or set in the 'TARDIS_API_KEY' environment variable",
             )
         });
 
+        let timeout = timeout_secs
+            .map(Duration::from_secs)
+            .unwrap_or_else(|| Duration::from_secs(60));
+
+        let client = reqwest::Client::builder()
+            .user_agent(USER_AGENT.clone())
+            .timeout(timeout)
+            .build()
+            .expect("Failed to create client");
+
         Self {
             base_url: base_url.unwrap_or(TARDIS_BASE_URL).to_string(),
             api_key,
-            client: reqwest::Client::builder()
-                .user_agent(USER_AGENT.clone())
-                .build()
-                .unwrap(),
+            client,
         }
     }
 

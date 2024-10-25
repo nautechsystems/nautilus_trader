@@ -21,7 +21,7 @@ async fn main() {
         .with_max_level(tracing::Level::DEBUG)
         .init();
 
-    let client = TardisHttpClient::new(None, None);
+    let client = TardisHttpClient::new(None, None, None);
 
     let resp = client.instruments(Exchange::Bitmex).await;
     println!("Received: {resp:?}");
