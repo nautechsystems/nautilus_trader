@@ -34,6 +34,7 @@ from nautilus_trader.execution.engine import ExecutionEngine
 from nautilus_trader.model.currencies import EUR
 from nautilus_trader.model.currencies import USD
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
@@ -2155,6 +2156,42 @@ class TestActor:
             venue=Venue("SIM"),
             data_type=DataType(Bar),
             data=[bar],
+            correlation_id=request_id,
+            response_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.msgbus.response(response)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert not actor.has_pending_requests()
+        assert not actor.is_pending_request(request_id)
+        assert request_id not in actor.pending_requests()
+        assert request_id in handler
+
+    def test_request_aggregated_bars_with_registered_callback(self) -> None:
+        # Arrange
+        handler: list[Bar] = []
+        actor = MockActor()
+        actor.register_base(
+            portfolio=self.portfolio,
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        bar_type = BarType.from_str("AUDUSD.SIM-1-MINUTE-BID-INTERNAL")
+        bar = TestDataStubs.bar_5decimal()
+
+        # Act
+        request_id = actor.request_aggregated_bars([bar_type], callback=handler.append)
+
+        response = DataResponse(
+            client_id=ClientId("SIM"),
+            venue=Venue("SIM"),
+            data_type=DataType(Bar),
+            data={"bars": {bar_type: [bar]}, "quote_ticks": [], "trade_ticks": []},
             correlation_id=request_id,
             response_id=UUID4(),
             ts_init=self.clock.timestamp_ns(),

@@ -165,6 +165,8 @@ cdef class DataEngine(Component):
     cpdef void _handle_quote_ticks(self, list ticks)
     cpdef void _handle_trade_ticks(self, list ticks)
     cpdef void _handle_bars(self, list bars, Bar partial)
+    cpdef dict _handle_aggregated_bars(self, list ticks, dict metadata)
+    cdef dict _handle_aggregated_bars_aux(self, list ticks, dict metadata)
 
 # -- INTERNAL -------------------------------------------------------------------------------------
 
