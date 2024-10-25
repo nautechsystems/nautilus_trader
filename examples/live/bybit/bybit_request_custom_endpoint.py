@@ -24,7 +24,7 @@ from nautilus_trader.adapters.bybit.factories import BybitLiveDataClientFactory
 from nautilus_trader.adapters.bybit.factories import BybitLiveExecClientFactory
 from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerData
 from nautilus_trader.common import Environment
-from nautilus_trader.common.component import TimeEvent
+from nautilus_trader.common.events import TimeEvent
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
 from nautilus_trader.config import LoggingConfig
