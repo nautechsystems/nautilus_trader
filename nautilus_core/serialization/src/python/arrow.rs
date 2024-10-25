@@ -15,7 +15,7 @@
 
 use std::io::Cursor;
 
-use datafusion::arrow::{
+use arrow::{
     datatypes::Schema, error::ArrowError, ipc::writer::StreamWriter, record_batch::RecordBatch,
 };
 use nautilus_core::python::to_pyvalue_err;
@@ -34,10 +34,11 @@ use crate::arrow::{ArrowSchemaProvider, EncodeToRecordBatch};
 const ERROR_EMPTY_DATA: &str = "`data` was empty";
 const ERROR_MONOTONICITY: &str = "`data` was not monotonically increasing by the `ts_init` field";
 
+// TODO: We can extract the non-arrow operations from here
 #[pyclass]
-pub struct DataTransformer {}
+pub struct ArrowDataTransformer {}
 
-impl DataTransformer {
+impl ArrowDataTransformer {
     /// Transforms the given `data` Python objects into a vector of [`OrderBookDelta`] objects.
     fn pyobjects_to_order_book_deltas(
         py: Python<'_>,
@@ -130,7 +131,7 @@ impl DataTransformer {
 }
 
 #[pymethods]
-impl DataTransformer {
+impl ArrowDataTransformer {
     #[staticmethod]
     pub fn get_schema_map(py: Python<'_>, cls: &PyType) -> PyResult<Py<PyDict>> {
         let cls_str: &str = cls.getattr("__name__")?.extract()?;

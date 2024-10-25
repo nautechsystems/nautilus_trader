@@ -26,7 +26,7 @@ use std::{
     io::{self, Write},
 };
 
-use datafusion::arrow::{
+use arrow::{
     array::{Array, ArrayRef},
     datatypes::{DataType, Schema},
     error::ArrowError,
@@ -45,7 +45,7 @@ const KEY_SIZE_PRECISION: &str = "size_precision";
 #[derive(thiserror::Error, Debug)]
 pub enum DataStreamingError {
     #[error("Arrow error: {0}")]
-    ArrowError(#[from] datafusion::arrow::error::ArrowError),
+    ArrowError(#[from] arrow::error::ArrowError),
     #[error("I/O error: {0}")]
     IoError(#[from] io::Error),
     #[error("Python error: {0}")]
@@ -63,7 +63,7 @@ pub enum EncodingError {
     #[error("Invalid column type `{0}` at index {1}: expected {2}, found {3}")]
     InvalidColumnType(&'static str, usize, DataType, DataType),
     #[error("Arrow error: {0}")]
-    ArrowError(#[from] datafusion::arrow::error::ArrowError),
+    ArrowError(#[from] arrow::error::ArrowError),
 }
 
 pub trait ArrowSchemaProvider {

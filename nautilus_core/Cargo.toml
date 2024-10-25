@@ -16,6 +16,7 @@ members = [
     "network",
     "persistence",
     "pyo3",
+    "serialization",
     "test_kit",
 ]
 

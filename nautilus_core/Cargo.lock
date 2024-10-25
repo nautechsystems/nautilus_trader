@@ -2995,6 +2995,7 @@ dependencies = [
  "log",
  "nautilus-core",
  "nautilus-model",
+ "nautilus-serialization",
  "nautilus-test-kit",
  "procfs",
  "pyo3",
@@ -3019,8 +3020,24 @@ dependencies = [
  "nautilus-model",
  "nautilus-network",
  "nautilus-persistence",
+ "nautilus-serialization",
  "nautilus-test-kit",
  "pyo3",
+]
+
+[[package]]
+name = "nautilus-serialization"
+version = "0.35.0"
+dependencies = [
+ "anyhow",
+ "arrow",
+ "criterion",
+ "nautilus-core",
+ "nautilus-model",
+ "nautilus-test-kit",
+ "pyo3",
+ "rstest",
+ "thiserror",
 ]
 
 [[package]]

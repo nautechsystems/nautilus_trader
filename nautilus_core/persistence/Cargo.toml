@@ -13,6 +13,7 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 [dependencies]
 nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model", features = ["stubs"] }
+nautilus-serialization = { path = "../serialization" }
 anyhow = { workspace = true }
 futures = { workspace = true }
 log = { workspace = true }
@@ -39,9 +40,10 @@ extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
+  "nautilus-serialization/extension-module",
 ]
 ffi = ["nautilus-core/ffi", "nautilus-model/ffi"]
-python = ["pyo3", "nautilus-core/python", "nautilus-model/python"]
+python = ["pyo3", "nautilus-core/python", "nautilus-model/python", "nautilus-serialization/python"]
 
 [[bench]]
 name = "bench_persistence"

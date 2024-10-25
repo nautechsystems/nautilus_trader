@@ -22,11 +22,11 @@ use datafusion::{
 use futures::StreamExt;
 use nautilus_core::ffi::cvec::CVec;
 use nautilus_model::data::{Data, GetTsInit};
-
-use super::kmerge_batch::{EagerStream, ElementBatchIter, KMerge};
-use crate::arrow::{
+use nautilus_serialization::arrow::{
     DataStreamingError, DecodeDataFromRecordBatch, EncodeToRecordBatch, WriteStream,
 };
+
+use super::kmerge_batch::{EagerStream, ElementBatchIter, KMerge};
 
 #[derive(Debug, Default)]
 pub struct TsInitComparator;

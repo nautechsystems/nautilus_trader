@@ -15,7 +15,7 @@
 
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
-use datafusion::arrow::{
+use arrow::{
     array::{Array, Int64Array, UInt32Array, UInt64Array, UInt8Array},
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
@@ -425,7 +425,7 @@ impl DecodeDataFromRecordBatch for OrderBookDepth10 {
 #[cfg(test)]
 mod tests {
 
-    use datafusion::arrow::datatypes::{DataType, Field, Schema};
+    use arrow::datatypes::{DataType, Field, Schema};
     use nautilus_model::data::stubs::stub_depth10;
     use rstest::rstest;
 
