@@ -13,18 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! The [Tardis](https://tardis.dev) integration adapter.
+use std::{fs, path::Path};
 
-pub mod config;
-pub mod csv;
-pub mod enums;
-pub mod http;
-pub mod machine;
-pub mod parse;
-pub mod replay;
+use crate::tardis::config::TardisReplayConfig;
 
-#[cfg(feature = "python")]
-pub mod python;
+pub async fn run_tardis_machine_replay(config_filepath: &Path) {
+    let config_data = fs::read_to_string(config_filepath).expect("Failed to read config file");
+    let config: TardisReplayConfig =
+        serde_json::from_str(&config_data).expect("Failed to parse config JSON");
 
-#[cfg(test)]
-pub mod tests;
+    println!("{config:?}"); // TODO: WIP
+}
