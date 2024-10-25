@@ -30,7 +30,9 @@
 //!
 //! - `python`: Enables Python bindings from `pyo3`.
 
+pub mod providers;
 pub mod signing;
+pub mod tls;
 
 #[cfg(feature = "python")]
 pub mod python;

@@ -24,11 +24,8 @@ use std::{
 };
 
 use nautilus_core::python::to_pyruntime_err;
+use nautilus_cryptography::providers::install_cryptographic_provider;
 use pyo3::prelude::*;
-use rustls::{
-    crypto::{aws_lc_rs, ring, CryptoProvider},
-    ClientConfig, RootCertStore,
-};
 use tokio::{
     io::{split, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf},
     net::TcpStream,
@@ -94,14 +91,7 @@ struct SocketClientInner {
 
 impl SocketClientInner {
     pub async fn connect_url(config: SocketConfig) -> Result<Self, Error> {
-        if CryptoProvider::get_default().is_none() {
-            tracing::debug!("Installing `ring` cryptographic provider");
-            // An error can occur on install if there is a race condition with another component
-            match ring::default_provider().install_default() {
-                Ok(_) => tracing::debug!("Cryptographic provider installed successfully"),
-                Err(e) => tracing::debug!("Error installing cryptographic provider: {e:?}"),
-            }
-        }
+        install_cryptographic_provider();
 
         let SocketConfig {
             url,

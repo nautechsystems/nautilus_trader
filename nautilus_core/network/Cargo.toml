@@ -12,6 +12,7 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]
 nautilus-core = { path = "../core" }
+nautilus-cryptography = { path = "../cryptography" }
 anyhow = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }

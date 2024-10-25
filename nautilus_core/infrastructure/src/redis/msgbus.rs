@@ -35,6 +35,7 @@ use nautilus_core::{
     time::{duration_since_unix_epoch, get_atomic_clock_realtime},
     uuid::UUID4,
 };
+use nautilus_cryptography::providers::install_cryptographic_provider;
 use nautilus_model::identifiers::TraderId;
 use redis::*;
 use streams::StreamReadOptions;
@@ -77,6 +78,8 @@ impl MessageBusDatabaseAdapter for RedisMessageBusDatabase {
         instance_id: UUID4,
         config: MessageBusConfig,
     ) -> anyhow::Result<Self> {
+        install_cryptographic_provider();
+
         let config_clone = config.clone();
         let db_config = config
             .database
