@@ -75,11 +75,13 @@ pub struct ReplayNormalizedRequestOptions {
     pub to: NaiveDate,
     /// Array of normalized [data types](https://docs.tardis.dev/api/tardis-machine#normalized-data-types)
     /// for which real-time data will be provided.
+    #[serde(alias = "data_types")]
     pub data_types: Vec<String>,
     /// When set to true, sends also disconnect messages that mark events when real-time WebSocket
     /// connection that was used to collect the historical data got disconnected.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
+    #[serde(alias = "with_disconnect_messages")]
     pub with_disconnect_messages: Option<bool>,
 }
 
@@ -99,6 +101,7 @@ pub struct StreamNormalizedRequestOptions {
     pub symbols: Option<Vec<String>>,
     /// Array of normalized [data types](https://docs.tardis.dev/api/tardis-machine#normalized-data-types)
     /// for which real-time data will be provided.
+    #[serde(alias = "data_types")]
     pub data_types: Vec<String>,
     /// When set to true, sends disconnect messages anytime underlying exchange real-time WebSocket
     /// connection(s) gets disconnected.

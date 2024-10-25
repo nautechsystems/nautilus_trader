@@ -13,18 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! The [Tardis](https://tardis.dev) integration adapter.
+use std::path::PathBuf;
 
-pub mod config;
-pub mod csv;
-pub mod enums;
-pub mod http;
-pub mod machine;
-pub mod parse;
-pub mod replay;
+use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "python")]
-pub mod python;
+use super::machine::ReplayNormalizedRequestOptions;
 
-#[cfg(test)]
-pub mod tests;
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TardisReplayConfig {
+    pub catalog_path: Option<PathBuf>,
+    pub options: Vec<ReplayNormalizedRequestOptions>,
+}

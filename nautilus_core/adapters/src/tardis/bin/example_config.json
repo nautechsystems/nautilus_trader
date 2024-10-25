@@ -1,0 +1,18 @@
+{
+  "catalog_path": null,
+  "options": [
+    {
+      "exchange": "bitmex",
+      "symbols": [
+        "xbtusd",
+        "ethusd"
+      ],
+      "data_types": [
+        "book_change",
+        "trade"
+      ],
+      "from": "2019-10-01",
+      "to": "2019-10-02"
+    }
+  ]
+}

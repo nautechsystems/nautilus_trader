@@ -13,18 +13,25 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! The [Tardis](https://tardis.dev) integration adapter.
+use std::path::PathBuf;
 
-pub mod config;
-pub mod csv;
-pub mod enums;
-pub mod http;
-pub mod machine;
-pub mod parse;
-pub mod replay;
+use nautilus_adapters::tardis::replay::run_tardis_machine_replay;
 
-#[cfg(feature = "python")]
-pub mod python;
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .init();
 
-#[cfg(test)]
-pub mod tests;
+    tracing::info!("Starting replay");
+
+    let config_filepath = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("src")
+        .join("tardis")
+        .join("bin")
+        .join("example_config.json");
+
+    run_tardis_machine_replay(&config_filepath).await;
+
+    tracing::info!("Replay completed");
+}

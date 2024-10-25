@@ -22,6 +22,10 @@ path = "src/tardis/bin/example_machine.rs"
 name = "tardis-http"
 path = "src/tardis/bin/example_http.rs"
 
+[[bin]]
+name = "tardis-replay"
+path = "src/tardis/bin/example_replay.rs"
+
 [dependencies]
 nautilus-common = { path = "../common" }
 nautilus-core = { path = "../core" }

@@ -52,7 +52,7 @@ async fn main() {
         from: NaiveDate::from_ymd_opt(2019, 10, 1).unwrap(),
         to: NaiveDate::from_ymd_opt(2019, 10, 2).unwrap(),
         data_types: vec!["trade".to_string(), "book_change".to_string()],
-        with_disconnect_messages: Some(true),
+        with_disconnect_messages: Some(false),
     }];
 
     // Signal to stop after a number of messages
