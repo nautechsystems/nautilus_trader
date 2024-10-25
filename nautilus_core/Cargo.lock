@@ -1649,12 +1649,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "diff"
-version = "0.1.13"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "56254986775e3233ffa9c4d7d3faaf6d36a2c09d30b20687e9f88bc8bafc16c8"
-
-[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1671,12 +1665,6 @@ name = "doc-comment"
 version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fea41bba32d969b513997752735605054bc0dfa92b4c56bf1189f2e174be7a10"
-
-[[package]]
-name = "dotenv"
-version = "0.15.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77c90badedccf4105eca100756a0b1289e191f6fcbdadd3cee1d2f614f97da8f"
 
 [[package]]
 name = "dotenvy"
@@ -2677,7 +2665,6 @@ version = "0.35.0"
 dependencies = [
  "anyhow",
  "async-stream",
- "base64",
  "chrono",
  "criterion",
  "csv",
@@ -2685,19 +2672,15 @@ dependencies = [
  "fallible-streaming-iterator",
  "flate2",
  "futures-util",
- "hex",
  "indexmap",
  "itoa",
  "nautilus-common",
  "nautilus-core",
  "nautilus-model",
  "nautilus-test-kit",
- "pem",
  "pyo3",
  "pyo3-asyncio-0-21",
- "rand",
  "reqwest",
- "ring",
  "rstest",
  "rust_decimal",
  "rust_decimal_macros",
@@ -2820,7 +2803,6 @@ dependencies = [
  "heck 0.5.0",
  "iai",
  "indexmap",
- "pretty_assertions",
  "pyo3",
  "rmp-serde",
  "rstest",
@@ -2828,6 +2810,22 @@ dependencies = [
  "serde_json",
  "ustr",
  "uuid",
+]
+
+[[package]]
+name = "nautilus-cryptography"
+version = "0.35.0"
+dependencies = [
+ "anyhow",
+ "base64",
+ "criterion",
+ "hex",
+ "nautilus-core",
+ "pem",
+ "pyo3",
+ "rand",
+ "ring",
+ "rstest",
 ]
 
 [[package]]
@@ -2993,7 +2991,6 @@ dependencies = [
  "compare",
  "criterion",
  "datafusion",
- "dotenv",
  "futures",
  "log",
  "nautilus-core",
@@ -3016,6 +3013,7 @@ dependencies = [
  "nautilus-adapters",
  "nautilus-common",
  "nautilus-core",
+ "nautilus-cryptography",
  "nautilus-indicators",
  "nautilus-infrastructure",
  "nautilus-model",
@@ -3587,16 +3585,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77957b295656769bb8ad2b6a6b09d897d94f05c41b069aede1fcdaa675eaea04"
 dependencies = [
  "zerocopy",
-]
-
-[[package]]
-name = "pretty_assertions"
-version = "1.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ae130e2f271fbc2ac3a40fb1d07180839cdbbe443c7a27e1e3c13c5cac0116d"
-dependencies = [
- "diff",
- "yansi",
 ]
 
 [[package]]
@@ -6039,12 +6027,6 @@ checksum = "388c44dc09d76f1536602ead6d325eb532f5c122f17782bd57fb47baeeb767e2"
 dependencies = [
  "lzma-sys",
 ]
-
-[[package]]
-name = "yansi"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfe53a6657fd280eaa890a3bc59152892ffa3e30101319d168b781ed6529b049"
 
 [[package]]
 name = "zerocopy"

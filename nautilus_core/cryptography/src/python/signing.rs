@@ -13,7 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod signing;
+use nautilus_core::python::to_pyvalue_err;
+use pyo3::prelude::*;
 
-#[cfg(feature = "python")]
-pub mod python;
+use crate::signing::{ed25519_signature, hmac_signature, rsa_signature};
+
+#[pyfunction(name = "hmac_signature")]
+pub fn py_hmac_signature(secret: &str, data: &str) -> PyResult<String> {
+    Ok(hmac_signature(secret, data))
+}
+
+#[pyfunction(name = "rsa_signature")]
+pub fn py_rsa_signature(private_key_pem: &str, data: &str) -> PyResult<String> {
+    rsa_signature(private_key_pem, data).map_err(to_pyvalue_err)
+}
+
+#[pyfunction(name = "ed25519_signature")]
+pub fn py_ed25519_signature(private_key: &[u8], data: &str) -> PyResult<String> {
+    ed25519_signature(private_key, data).map_err(to_pyvalue_err)
+}

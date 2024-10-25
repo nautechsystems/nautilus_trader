@@ -13,22 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
+//! Python bindings from `pyo3`.
+
+#![allow(warnings)] // non-local `impl` definition, temporary allow until pyo3 upgrade
 use pyo3::prelude::*;
 
-use crate::crypto::signing::{ed25519_signature, hmac_sign, rsa_signature};
+use crate::python;
 
-#[pyfunction(name = "hmac_sign")]
-pub fn py_hmac_sign(secret: &str, data: &str) -> PyResult<String> {
-    Ok(hmac_sign(secret, data))
-}
+pub mod signing;
 
-#[pyfunction(name = "rsa_signature")]
-pub fn py_rsa_signature(private_key_pem: &str, data: &str) -> PyResult<String> {
-    rsa_signature(private_key_pem, data).map_err(to_pyvalue_err)
-}
-
-#[pyfunction(name = "ed25519_signature")]
-pub fn py_ed25519_signature(private_key: &[u8], data: &str) -> PyResult<String> {
-    ed25519_signature(private_key, data).map_err(to_pyvalue_err)
+/// Loaded as nautilus_pyo3.cryptography
+#[pymodule]
+pub fn cryptography(py: Python, m: &PyModule) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(python::signing::py_hmac_signature, m)?)?;
+    m.add_function(wrap_pyfunction!(python::signing::py_rsa_signature, m)?)?;
+    m.add_function(wrap_pyfunction!(python::signing::py_ed25519_signature, m)?)?;
+    Ok(())
 }

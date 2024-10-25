@@ -22,7 +22,7 @@ use ring::{
 };
 
 #[must_use]
-pub fn hmac_sign(secret: &str, data: &str) -> String {
+pub fn hmac_signature(secret: &str, data: &str) -> String {
     let key = hmac::Key::new(hmac::HMAC_SHA256, secret.as_bytes());
     let signature = hmac::sign(&key, data.as_bytes());
     hex::encode(signature.as_ref())
@@ -89,8 +89,12 @@ mod tests {
         "",
         "b613679a0814d9ec772f95d778c35fc5ff1697c493715653c6c712144292c5ad"
     )]
-    fn test_hmac_sign(#[case] secret: &str, #[case] data: &str, #[case] expected_signature: &str) {
-        let result = hmac_sign(secret, data);
+    fn test_hmac_signature(
+        #[case] secret: &str,
+        #[case] data: &str,
+        #[case] expected_signature: &str,
+    ) {
+        let result = hmac_signature(secret, data);
         assert_eq!(
             result, expected_signature,
             "Expected signature did not match"
