@@ -360,11 +360,6 @@ class LiveExecutionEngine(ExecutionEngine):
         # This will stop queue processing as soon as they 'see' the sentinel message
         self._enqueue_sentinel()
 
-    async def _wait_for_inflight_check_task(self) -> None:
-        if self._inflight_check_task is None:
-            return
-        await self._inflight_check_task
-
     async def _run_cmd_queue(self) -> None:
         self._log.debug(
             f"Command message queue processing starting (qsize={self.cmd_qsize()})",
