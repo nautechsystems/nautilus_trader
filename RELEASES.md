@@ -7,13 +7,14 @@ None
 
 ### Internal Improvements
 - Improved Postgres testing (#2018), thanks @filipmacek
+- Refined core `Bar` API to remove unnecessary unwraps
 - Upgraded `tokio` crate to v1.41.0
 
 ### Breaking Changes
-None
+- Moved `TEST_DATA_DIR` constant to `nautilus_trader` module (from `tests`)
 
 ### Fixes
-None
+- Upgraded Polymarket WebSocket data API to new version
 
 ---
 
