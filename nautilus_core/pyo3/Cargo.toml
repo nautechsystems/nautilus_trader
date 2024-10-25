@@ -14,6 +14,7 @@ crate-type = ["cdylib"]
 nautilus-adapters = { path = "../adapters", features = ["python", "databento"] }
 nautilus-common = { path = "../common" , features = ["python"] }
 nautilus-core = { path = "../core" , features = ["python"] }
+nautilus-cryptography = { path = "../cryptography" , features = ["python"] }
 nautilus-indicators = { path = "../indicators" , features = ["python"] }
 nautilus-infrastructure = { path = "../infrastructure", features = ["python"] }
 nautilus-model = { path = "../model" , features = ["python"] }
@@ -29,6 +30,7 @@ extension-module = [
     "nautilus-adapters/extension-module",
     "nautilus-common/extension-module",
     "nautilus-core/extension-module",
+    "nautilus-cryptography/extension-module",
     "nautilus-indicators/extension-module",
     "nautilus-infrastructure/extension-module",
     "nautilus-model/extension-module",

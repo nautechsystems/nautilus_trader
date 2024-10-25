@@ -15,7 +15,6 @@ anyhow = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
 indexmap = { workspace = true }
-pretty_assertions = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rmp-serde = { workspace = true }
 serde = { workspace = true }

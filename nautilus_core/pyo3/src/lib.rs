@@ -65,8 +65,8 @@ fn nautilus_pyo3(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     re_export_module_attributes(m, n)?;
 
-    let n = "crypto";
-    let submodule = pyo3::wrap_pymodule!(nautilus_adapters::crypto::python::crypto);
+    let n = "cryptography";
+    let submodule = pyo3::wrap_pymodule!(nautilus_cryptography::python::cryptography);
     m.add_wrapped(submodule)?;
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     re_export_module_attributes(m, n)?;
