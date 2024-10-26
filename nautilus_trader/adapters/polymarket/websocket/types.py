@@ -25,4 +25,4 @@ from nautilus_trader.adapters.polymarket.schemas.user import PolymarketUserTrade
 MARKET_WS_MESSAGE: Final = list[
     list[PolymarketBookSnapshot] | PolymarketBookSnapshot | PolymarketQuotes | PolymarketTrade
 ]
-USER_WS_MESSAGE: Final = PolymarketUserOrder | PolymarketUserTrade
+USER_WS_MESSAGE: Final = list[PolymarketUserOrder | PolymarketUserTrade]

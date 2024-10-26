@@ -735,14 +735,14 @@ class PolymarketExecutionClient(LiveExecutionClient):
         # self._log.info(str(json.dumps(msgspec.json.decode(raw), indent=4)), color=LogColor.MAGENTA)
         try:
             ws_message = self._decoder_user_msg.decode(raw)
-
-            if isinstance(ws_message, PolymarketUserOrder):
-                self._handle_ws_order_msg(ws_message, wait_for_ack=True)
-            elif isinstance(ws_message, PolymarketUserTrade):
-                self._add_trade_to_cache(ws_message, raw)
-                self._handle_ws_trade_msg(ws_message, wait_for_ack=True)
-            else:
-                self._log.error(f"Unrecognized websocket message {ws_message}")
+            for msg in ws_message:
+                if isinstance(msg, PolymarketUserOrder):
+                    self._handle_ws_order_msg(msg, wait_for_ack=True)
+                elif isinstance(msg, PolymarketUserTrade):
+                    self._add_trade_to_cache(msg, raw)
+                    self._handle_ws_trade_msg(msg, wait_for_ack=True)
+                else:
+                    self._log.error(f"Unrecognized websocket message {msg}")
         except Exception as e:
             self._log.error(f"Error handling websocket message: {e} {raw.decode()}")
 

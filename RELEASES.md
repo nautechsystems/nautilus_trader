@@ -20,7 +20,7 @@ Released on TBD (UTC).
 
 ### Fixes
 - Fixed use of Redis `KEYS` command which, is unsupported in cluster environments (replaced with `SCAN` for compatibility)
-- Upgraded Polymarket WebSocket data API to new version
+- Upgraded Polymarket WebSocket API to new version
 
 ---
 
