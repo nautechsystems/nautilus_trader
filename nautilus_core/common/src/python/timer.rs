@@ -179,7 +179,16 @@ mod tests {
         let clock = get_atomic_clock_realtime();
         let start_time = clock.get_time_ns();
         let interval_ns = 100 * NANOSECONDS_IN_MILLISECOND;
+        #[cfg(not(feature = "clock_v2"))]
         let mut timer = LiveTimer::new("TEST_TIMER", interval_ns, start_time, None, callback);
+        #[cfg(feature = "clock_v2")]
+        let (rx, mut timer) = {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            (
+                rx,
+                LiveTimer::new("TEST_TIMER", interval_ns, start_time, None, callback, tx),
+            )
+        };
         let next_time_ns = timer.next_time_ns();
         timer.start();
 
@@ -205,6 +214,8 @@ mod tests {
         let start_time = clock.get_time_ns();
         let interval_ns = 100 * NANOSECONDS_IN_MILLISECOND;
         let stop_time = start_time + 500 * NANOSECONDS_IN_MILLISECOND;
+
+        #[cfg(not(feature = "clock_v2"))]
         let mut timer = LiveTimer::new(
             "TEST_TIMER",
             interval_ns,
@@ -212,6 +223,23 @@ mod tests {
             Some(stop_time),
             callback,
         );
+
+        #[cfg(feature = "clock_v2")]
+        let (rx, mut timer) = {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            (
+                rx,
+                LiveTimer::new(
+                    "TEST_TIMER",
+                    interval_ns,
+                    start_time,
+                    Some(stop_time),
+                    callback,
+                    tx,
+                ),
+            )
+        };
+
         let next_time_ns = timer.next_time_ns();
         timer.start();
 
@@ -236,6 +264,8 @@ mod tests {
         let start_time = UnixNanos::default();
         let interval_ns = 0;
         let stop_time = clock.get_time_ns();
+
+        #[cfg(not(feature = "clock_v2"))]
         let mut timer = LiveTimer::new(
             "TEST_TIMER",
             interval_ns,
@@ -243,6 +273,23 @@ mod tests {
             Some(stop_time),
             callback,
         );
+
+        #[cfg(feature = "clock_v2")]
+        let (rx, mut timer) = {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            (
+                rx,
+                LiveTimer::new(
+                    "TEST_TIMER",
+                    interval_ns,
+                    start_time,
+                    Some(stop_time),
+                    callback,
+                    tx,
+                ),
+            )
+        };
+
         timer.start();
 
         wait_until(|| timer.is_expired(), Duration::from_secs(2));

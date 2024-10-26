@@ -324,6 +324,8 @@ pub struct LiveTimer {
     is_expired: Arc<AtomicBool>,
     callback: TimeEventCallback,
     canceler: Option<oneshot::Sender<()>>,
+    #[cfg(feature = "clock_v2")]
+    tx: tokio::sync::mpsc::UnboundedSender<TimeEvent>,
 }
 
 impl LiveTimer {
@@ -335,6 +337,7 @@ impl LiveTimer {
     /// - If `name` is not a valid string.
     /// - If `interval_ns` is zero.
     #[must_use]
+    #[cfg(not(feature = "clock_v2"))]
     pub fn new(
         name: &str,
         interval_ns: u64,
@@ -356,6 +359,41 @@ impl LiveTimer {
             is_expired: Arc::new(AtomicBool::new(false)),
             callback,
             canceler: None,
+        }
+    }
+
+    /// Creates a new [`LiveTimer`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If `name` is not a valid string.
+    /// - If `interval_ns` is zero.
+    #[must_use]
+    #[cfg(feature = "clock_v2")]
+    pub fn new(
+        name: &str,
+        interval_ns: u64,
+        start_time_ns: UnixNanos,
+        stop_time_ns: Option<UnixNanos>,
+        callback: TimeEventCallback,
+        tx: tokio::sync::mpsc::UnboundedSender<TimeEvent>,
+    ) -> Self {
+        check_valid_string(name, stringify!(name)).expect(FAILED);
+        // SAFETY: Guaranteed to be non-zero
+        let interval_ns = NonZeroU64::new(std::cmp::max(interval_ns, 1)).unwrap();
+
+        log::debug!("Creating timer '{name}'");
+        Self {
+            name: Ustr::from(name),
+            interval_ns,
+            start_time_ns,
+            stop_time_ns,
+            next_time_ns: Arc::new(AtomicU64::new(start_time_ns.as_u64() + interval_ns.get())),
+            is_expired: Arc::new(AtomicBool::new(false)),
+            callback,
+            canceler: None,
+            tx
         }
     }
 
@@ -404,6 +442,9 @@ impl LiveTimer {
         let (cancel_tx, mut cancel_rx) = oneshot::channel();
         self.canceler = Some(cancel_tx);
 
+        #[cfg(feature = "clock_v2")]
+        let tx = self.tx.clone();
+
         let rt = get_runtime();
         rt.spawn(async move {
             let clock = get_atomic_clock_realtime();
@@ -428,6 +469,14 @@ impl LiveTimer {
                         let now_ns = clock.get_time_ns();
                         #[cfg(feature = "python")]
                         call_python_with_time_event(event_name, next_time_ns, now_ns, &callback);
+
+                        #[cfg(feature = "clock_v2")]
+                        {
+                            let event = TimeEvent::new(event_name, UUID4::new(), next_time_ns, now_ns);
+                            if let Err(e) = tx.send(event) {
+                                log::error!("Unable to send time event: {}", e);
+                            }
+                        }
 
                         // Prepare next time interval
                         next_time_ns += interval_ns;

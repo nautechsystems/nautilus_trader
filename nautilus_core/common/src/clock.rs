@@ -26,6 +26,7 @@ use nautilus_core::{
     nanos::UnixNanos,
     time::{get_atomic_clock_realtime, AtomicTime},
 };
+use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use ustr::Ustr;
 
 use crate::timer::{LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandlerV2};
@@ -314,16 +315,37 @@ pub struct LiveClock {
     time: &'static AtomicTime,
     timers: HashMap<Ustr, LiveTimer>,
     default_callback: Option<TimeEventCallback>,
+    #[cfg(feature = "clock_v2")]
+    tx: UnboundedSender<TimeEvent>,
+    #[cfg(feature = "clock_v2")]
+    rx: UnboundedReceiver<TimeEvent>,
+    #[cfg(feature = "clock_v2")]
+    callbacks: HashMap<Ustr, TimeEventCallback>,
 }
 
 impl LiveClock {
     /// Creates a new [`LiveClock`] instance.
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            time: get_atomic_clock_realtime(),
-            timers: HashMap::new(),
-            default_callback: None,
+        #[cfg(not(feature = "clock_v2"))]
+        {
+            Self {
+                time: get_atomic_clock_realtime(),
+                timers: HashMap::new(),
+                default_callback: None,
+            }
+        }
+        #[cfg(feature = "clock_v2")]
+        {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<TimeEvent>();
+            Self {
+                time: get_atomic_clock_realtime(),
+                timers: HashMap::new(),
+                default_callback: None,
+                tx,
+                rx,
+                callbacks: HashMap::new(),
+            }
         }
     }
 
@@ -401,10 +423,27 @@ impl Clock for LiveClock {
             None => self.default_callback.clone().unwrap(),
         };
 
+        #[cfg(feature = "clock_v2")]
+        {
+            let name = Ustr::from(name);
+            self.callbacks.insert(name, callback.clone());
+        }
+
         let ts_now = self.get_time_ns();
         alert_time_ns = std::cmp::max(alert_time_ns, ts_now);
         let interval_ns = (alert_time_ns - ts_now).into();
+
+        #[cfg(not(feature = "clock_v2"))]
         let mut timer = LiveTimer::new(name, interval_ns, ts_now, Some(alert_time_ns), callback);
+        #[cfg(feature = "clock_v2")]
+        let mut timer = LiveTimer::new(
+            name,
+            interval_ns,
+            ts_now,
+            Some(alert_time_ns),
+            callback,
+            self.tx.clone(),
+        );
 
         timer.start();
         self.timers.insert(Ustr::from(name), timer);
@@ -431,7 +470,23 @@ impl Clock for LiveClock {
             None => self.default_callback.clone().unwrap(),
         };
 
+        #[cfg(feature = "clock_v2")]
+        {
+            let name = Ustr::from(name);
+            self.callbacks.insert(name, callback.clone());
+        }
+
+        #[cfg(not(feature = "clock_v2"))]
         let mut timer = LiveTimer::new(name, interval_ns, start_time_ns, stop_time_ns, callback);
+        #[cfg(feature = "clock_v2")]
+        let mut timer = LiveTimer::new(
+            name,
+            interval_ns,
+            start_time_ns,
+            stop_time_ns,
+            callback,
+            self.tx.clone(),
+        );
         timer.start();
         self.timers.insert(Ustr::from(name), timer);
     }
@@ -463,6 +518,42 @@ impl Clock for LiveClock {
             }
         }
         self.timers.clear();
+    }
+}
+
+#[cfg(feature = "clock_v2")]
+impl LiveClock {
+    /// Matches `TimeEvent` objects with their corresponding event handlers.
+    ///
+    /// This function takes an `events` vector of `TimeEvent` objects, assumes they are already sorted
+    /// by their `ts_event`, and matches them with the appropriate callback handler from the internal
+    /// registry of callbacks. If no specific callback is found for an event, the default callback is used.
+    #[must_use]
+    fn match_handlers(&self, events: Vec<TimeEvent>) -> Vec<TimeEventHandlerV2> {
+        events
+            .into_iter()
+            .map(|event| {
+                let callback = self.callbacks.get(&event.name).cloned().unwrap_or_else(|| {
+                    // If callback_py is None, use the default_callback_py
+                    // TODO: clone for now
+                    self.default_callback
+                        .clone()
+                        .expect("Default callback should exist")
+                });
+                TimeEventHandlerV2::new(event, callback)
+            })
+            .collect()
+    }
+    
+    /// Collect time events sent by [`LiveTimer`]s
+    /// 
+    /// It is capped to collect a maximum of 1000 events at once. These events
+    /// will be processed as a batch.
+    fn advance_time(&mut self) -> Vec<TimeEvent> {
+        let mut events: Vec<TimeEvent> = Vec::new();
+        self.rx.blocking_recv_many(&mut events, 1000);
+        events.sort_by(|a, b| a.ts_event.cmp(&b.ts_event));
+        events
     }
 }
 
