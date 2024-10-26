@@ -58,9 +58,7 @@ impl TardisHttpClient {
             )
         });
 
-        let timeout = timeout_secs
-            .map(Duration::from_secs)
-            .unwrap_or_else(|| Duration::from_secs(60));
+        let timeout = timeout_secs.map_or_else(|| Duration::from_secs(60), Duration::from_secs);
 
         let client = reqwest::Client::builder()
             .user_agent(USER_AGENT.clone())
