@@ -26,7 +26,7 @@ pub fn install_cryptographic_provider() {
             tracing::debug!("Installing aws_lc_rs cryptographic provider");
 
             match aws_lc_rs::default_provider().install_default() {
-                Ok(_) => tracing::debug!("Cryptographic provider installed successfully"),
+                Ok(()) => tracing::debug!("Cryptographic provider installed successfully"),
                 Err(e) => tracing::debug!("Error installing cryptographic provider: {e:?}"),
             }
         }

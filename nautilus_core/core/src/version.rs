@@ -31,9 +31,9 @@ fn read_nautilus_version() -> String {
         .to_string()
 }
 
-/// The NautilusTrader version string read from the top-level `pyproject.toml`.
+/// The `NautilusTrader` version string read from the top-level `pyproject.toml`.
 pub static NAUTILUS_VERSION: LazyLock<String> = LazyLock::new(read_nautilus_version);
 
-/// The NautilusTrader common User-Agent string including the current version.
+/// The `NautilusTrader` common User-Agent string including the current version.
 pub static USER_AGENT: LazyLock<String> =
     LazyLock::new(|| format!("NautilusTrader/{}", NAUTILUS_VERSION.clone()));

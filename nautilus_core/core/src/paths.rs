@@ -36,7 +36,7 @@ pub fn get_project_root_path() -> PathBuf {
 #[must_use]
 /// Returns the tests root directory path.
 pub fn get_tests_root_path() -> PathBuf {
-    get_project_root_path().join("tests").to_path_buf()
+    get_project_root_path().join("tests")
 }
 
 #[must_use]
