@@ -13,27 +13,40 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{fs, path::PathBuf, sync::LazyLock};
+use std::path::PathBuf;
 
-use toml::Value;
-
-fn read_nautilus_version() -> String {
-    let filepath = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("Failed to get workspace root")
+#[must_use]
+/// Returns the workspace root directory path.
+pub fn get_workspace_root_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .expect("Failed to get project root")
-        .join("pyproject.toml");
-
-    let data = fs::read_to_string(filepath).expect("Unable to read pyproject.toml");
-    let parsed_toml: Value = toml::from_str(&data).expect("Unable to parse pyproject.toml");
-
-    parsed_toml["tool"]["poetry"]["version"]
-        .as_str()
-        .expect("Unable to find version in pyproject.toml")
-        .to_string()
+        .to_path_buf()
 }
 
-/// Common User-Agent value for `NautilusTrader`.
-pub static USER_AGENT: LazyLock<String> =
-    LazyLock::new(|| format!("NautilusTrader/{}", read_nautilus_version()));
+#[must_use]
+/// Returns the project root directory path.
+pub fn get_project_root_path() -> PathBuf {
+    get_workspace_root_path()
+        .parent()
+        .expect("Failed to get workspace root")
+        .to_path_buf()
+}
+
+#[must_use]
+/// Returns the tests root directory path.
+pub fn get_tests_root_path() -> PathBuf {
+    get_project_root_path().join("tests").to_path_buf()
+}
+
+#[must_use]
+/// Returns the test data directory path.
+pub fn get_test_data_path() -> PathBuf {
+    if let Ok(test_data_root_path) = std::env::var("TEST_DATA_ROOT_PATH") {
+        get_project_root_path()
+            .join(test_data_root_path)
+            .join("test_data")
+    } else {
+        get_project_root_path().join("tests").join("test_data")
+    }
+}

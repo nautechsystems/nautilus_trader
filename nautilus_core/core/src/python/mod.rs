@@ -28,8 +28,10 @@ use pyo3::{
 use crate::uuid::UUID4;
 pub mod casing;
 pub mod datetime;
+pub mod paths;
 pub mod serialization;
 pub mod uuid;
+pub mod version;
 
 /// Gets the type name for the given Python `obj`.
 pub fn get_pytype_name<'p>(obj: &'p PyObject, py: Python<'p>) -> PyResult<&'p str> {
@@ -69,5 +71,10 @@ pub fn core(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(datetime::py_unix_nanos_to_iso8601, m)?)?;
     m.add_function(wrap_pyfunction!(datetime::py_last_weekday_nanos, m)?)?;
     m.add_function(wrap_pyfunction!(datetime::py_is_within_last_24_hours, m)?)?;
+    m.add_function(wrap_pyfunction!(paths::py_get_project_root_path, m)?)?;
+    m.add_function(wrap_pyfunction!(paths::py_get_tests_root_path, m)?)?;
+    m.add_function(wrap_pyfunction!(paths::py_get_test_data_path, m)?)?;
+    m.add_function(wrap_pyfunction!(version::get_nautilus_version, m)?)?;
+    m.add_function(wrap_pyfunction!(version::get_user_agent, m)?)?;
     Ok(())
 }

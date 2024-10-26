@@ -15,7 +15,7 @@
 
 use std::{env, time::Duration};
 
-use nautilus_common::version::USER_AGENT;
+use nautilus_core::version::USER_AGENT;
 
 use super::{
     types::{InstrumentInfo, Response},

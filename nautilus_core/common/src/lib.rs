@@ -44,7 +44,6 @@ pub mod signal;
 pub mod testing;
 pub mod throttler;
 pub mod timer;
-pub mod version;
 pub mod xrate;
 
 #[cfg(feature = "ffi")]
