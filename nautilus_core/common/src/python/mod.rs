@@ -25,7 +25,6 @@ pub mod logging;
 pub mod msgbus;
 pub mod signal;
 pub mod timer;
-pub mod versioning;
 
 use pyo3::prelude::*;
 

@@ -13,22 +13,20 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-The top-level package contains all sub-packages needed for NautilusTrader.
+NautilusTrader (http://nautilustrader.io) is an open-source, high-performance, production-grade
+algorithmic trading platform, providing quantitative traders with the ability to backtest
+portfolios of automated trading strategies on historical data with an event-driven engine,
+and also deploy those same strategies live, with no code changes.
 """
 
-import tomllib
 from pathlib import Path
 from typing import Final
 
+from nautilus_trader.core import nautilus_pyo3
 
-PACKAGE_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
-TEST_DATA_DIR: Final[Path] = PACKAGE_ROOT / "tests" / "test_data"
 
-try:
-    with open(PACKAGE_ROOT / "pyproject.toml", "rb") as f:
-        pyproject_data = tomllib.load(f)
-    __version__ = pyproject_data["tool"]["poetry"]["version"]
-except FileNotFoundError:  # pragma: no cover
-    __version__ = "latest"
+__version__ = nautilus_pyo3.get_nautilus_version()
 
-USER_AGENT: Final[str] = f"NautilusTrader/{__version__}"
+PACKAGE_ROOT: Final[Path] = Path(nautilus_pyo3.get_project_root_path())
+TEST_DATA_DIR: Final[Path] = Path(nautilus_pyo3.get_test_data_path())
+USER_AGENT: Final[str] = nautilus_pyo3.get_user_agent()

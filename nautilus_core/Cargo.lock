@@ -2784,7 +2784,6 @@ dependencies = [
  "sysinfo",
  "tempfile",
  "tokio",
- "toml",
  "tracing",
  "tracing-subscriber",
  "ustr",
@@ -2808,6 +2807,7 @@ dependencies = [
  "rstest",
  "serde",
  "serde_json",
+ "toml",
  "ustr",
  "uuid",
 ]
