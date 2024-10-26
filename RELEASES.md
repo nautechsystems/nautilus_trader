@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added aggregation of bars from historical data (#2002), thanks @faysou
 - Added `raise_exception` optional parameter to `TradingNode.run` (#2021), thanks @faysou
 
 ### Internal Improvements
