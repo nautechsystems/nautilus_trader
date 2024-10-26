@@ -1285,7 +1285,7 @@ cdef class DataEngine(Component):
                     f"no client registered for '{request.client_id}', {request}")
                 return  # No client to handle request
 
-        # field defined when using actor.request_aggregated_bars
+        # Field defined when using actor.request_aggregated_bars
         market_data_type = request.data_type.metadata.get("market_data_type")
 
         if request.data_type.type == Instrument:
@@ -1363,7 +1363,7 @@ cdef class DataEngine(Component):
             )
             ts_end = ts_now
 
-        # field defined when using actor.request_aggregated_bars
+        # Field defined when using actor.request_aggregated_bars
         market_data_type = request.data_type.metadata.get("market_data_type")
 
         if request.data_type.type == Instrument:
