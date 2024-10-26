@@ -152,7 +152,7 @@ impl SocketClientInner {
                     }
                     // Received bytes of data
                     Ok(bytes) => {
-                        tracing::debug!("Received {bytes} bytes of data");
+                        tracing::trace!("Received <binary> {bytes} bytes");
 
                         // While received data has a line break
                         // drain it and pass it to the handler

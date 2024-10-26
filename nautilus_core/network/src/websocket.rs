@@ -167,7 +167,7 @@ impl WebSocketClientInner {
             loop {
                 match reader.next().await {
                     Some(Ok(Message::Binary(data))) => {
-                        tracing::trace!("Received message <binary>");
+                        tracing::trace!("Received message <binary> {} bytes", data.len());
                         if let Err(e) =
                             Python::with_gil(|py| handler.call1(py, (PyBytes::new(py, &data),)))
                         {
