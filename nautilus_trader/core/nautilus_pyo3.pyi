@@ -7,7 +7,7 @@ from collections.abc import Callable
 from decimal import Decimal
 from enum import Enum
 from os import PathLike
-from typing import Any, TypeAlias, Union
+from typing import Any, Final, TypeAlias, Union
 
 import numpy as np
 
@@ -20,6 +20,9 @@ from nautilus_trader.core.data import Data
 ###################################################################################################
 # Core
 ###################################################################################################
+
+NAUTILUS_VERSION: Final[str]
+USER_AGENT: Final[str]
 
 class UUID4:
     def __init__(self, value: str) -> None: ...

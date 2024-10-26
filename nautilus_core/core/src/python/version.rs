@@ -15,8 +15,6 @@
 
 use pyo3::{prelude::*, types::PyTuple};
 
-use crate::version::{NAUTILUS_VERSION, USER_AGENT};
-
 pub fn get_python_version() -> String {
     Python::with_gil(|py| {
         let sys = match py.import_bound("sys") {
