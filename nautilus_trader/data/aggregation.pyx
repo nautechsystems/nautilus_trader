@@ -20,6 +20,7 @@ from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.core.datetime import unix_nanos_to_dt
 from nautilus_trader.common.component cimport Clock
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport TimeEvent
@@ -288,12 +289,27 @@ cdef class BarAggregator:
 
         self.bar_type = bar_type
         self._handler = handler
+        self._handler_backup = None
         self._await_partial = await_partial
         self._log = Logger(name=type(self).__name__)
         self._builder = BarBuilder(
             instrument=instrument,
             bar_type=self.bar_type,
         )
+        self._batch_mode = False
+
+    def start_batch_update(self, handler: Callable[[Bar], None], uint64_t time_ns) -> None:
+        self._batch_mode = True
+        self._handler_backup = self._handler
+        self._handler = handler
+        self._start_batch_time(time_ns)
+
+    def _start_batch_time(self, uint64_t time_ns):
+        pass
+
+    def stop_batch_update(self) -> None:
+        self._batch_mode = False
+        self._handler = self._handler_backup
 
     def set_await_partial(self, bint value):
         self._await_partial = value
@@ -659,8 +675,8 @@ cdef class TimeBarAggregator(BarAggregator):
     build_with_no_updates : bool, default True
         If build and emit bars with no new market updates.
     timestamp_on_close : bool, default True
-        If timestamp `ts_event` will be bar close.
-        If False then timestamp will be bar open.
+        If True then timestamp will be the bar close's time.
+        If False then timestamp will be the bar open's time.
     interval_type : str, default 'left-open'
         Determines the type of interval used for time aggregation.
         - 'left-open': start time is excluded and end time is included (default).
@@ -680,6 +696,7 @@ cdef class TimeBarAggregator(BarAggregator):
         bint build_with_no_updates = True,
         bint timestamp_on_close = True,
         str interval_type = "left-open",
+        int composite_bar_build_delay=15, # in microsecond
     ):
         super().__init__(
             instrument=instrument,
@@ -694,12 +711,16 @@ cdef class TimeBarAggregator(BarAggregator):
         self._set_build_timer()
         self.next_close_ns = self._clock.next_time_ns(self._timer_name)
         self._build_on_next_tick = False
-        self._stored_open_ns = dt_to_unix_nanos(self.get_start_time())
+        cdef datetime now = self._clock.utc_now()
+        self._stored_open_ns = dt_to_unix_nanos(self.get_start_time(now))
         self._stored_close_ns = 0
         self._cached_update = None
         self._build_with_no_updates = build_with_no_updates
         self._timestamp_on_close = timestamp_on_close
+        self._composite_bar_build_delay = composite_bar_build_delay
         self._add_delay = bar_type.is_composite() and bar_type.composite().is_internally_aggregated()
+        self._batch_open_ns = 0
+        self._batch_next_close_ns = 0
 
         if interval_type == "left-open":
             self._is_left_open = True
@@ -713,7 +734,7 @@ cdef class TimeBarAggregator(BarAggregator):
     def __str__(self):
         return f"{type(self).__name__}(interval_ns={self.interval_ns}, next_close_ns={self.next_close_ns})"
 
-    cpdef datetime get_start_time(self):
+    cpdef datetime get_start_time(self, datetime now, bint enable_delay=True):
         """
         Return the start time for the aggregators next bar.
 
@@ -723,61 +744,52 @@ cdef class TimeBarAggregator(BarAggregator):
             The timestamp (UTC).
 
         """
-        cdef datetime now = self._clock.utc_now()
         cdef int step = self.bar_type.spec.step
-
         cdef datetime start_time
+
         if self.bar_type.spec.aggregation == BarAggregation.MILLISECOND:
-            diff_microseconds = now.microsecond % step // 1000
+            diff_microseconds = ((now.microsecond // 1000) % step) * 1000
             diff_seconds = 0 if diff_microseconds == 0 else max(0, (step // 1000) - 1)
             diff = timedelta(
                 seconds=diff_seconds,
-                microseconds=now.microsecond,
+                microseconds=diff_microseconds,
             )
-            start_time = now - diff
+            start_time = (now - diff).floor(freq="ms")
         elif self.bar_type.spec.aggregation == BarAggregation.SECOND:
             diff_seconds = now.second % step
             diff_minutes = 0 if diff_seconds == 0 else max(0, (step // 60) - 1)
-            start_time = now - timedelta(
+            diff = timedelta(
                 minutes=diff_minutes,
                 seconds=diff_seconds,
-                microseconds=now.microsecond,
             )
+            start_time = (now - diff).floor(freq="s")
         elif self.bar_type.spec.aggregation == BarAggregation.MINUTE:
             diff_minutes = now.minute % step
             diff_hours = 0 if diff_minutes == 0 else max(0, (step // 60) - 1)
-            start_time = now - timedelta(
+            diff = timedelta(
                 hours=diff_hours,
                 minutes=diff_minutes,
-                seconds=now.second,
-                microseconds=now.microsecond,
             )
+            start_time = (now - diff).floor(freq="min")
         elif self.bar_type.spec.aggregation == BarAggregation.HOUR:
             diff_hours = now.hour % step
             diff_days = 0 if diff_hours == 0 else max(0, (step // 24) - 1)
-            start_time = now - timedelta(
+            diff = timedelta(
                 days=diff_days,
                 hours=diff_hours,
-                minutes=now.minute,
-                seconds=now.second,
-                microseconds=now.microsecond,
             )
+            start_time = (now - diff).floor(freq="h")
         elif self.bar_type.spec.aggregation == BarAggregation.DAY:
-            start_time = now - timedelta(
-                days=now.day % step,
-                hours=now.hour,
-                minutes=now.minute,
-                seconds=now.second,
-                microseconds=now.microsecond,
-            )
+            diff = timedelta(days=now.day % step)
+            start_time = (now - diff).floor(freq="d")
         else:  # pragma: no cover (design-time error)
             raise ValueError(
                 f"Aggregation type not supported for time bars, "
                 f"was {bar_aggregation_to_str(self.bar_type.spec.aggregation)}",
             )
 
-        if self._add_delay:
-            start_time += timedelta(microseconds=10)
+        if self._add_delay and enable_delay:
+            start_time += timedelta(microseconds=self._composite_bar_build_delay)
 
         return start_time
 
@@ -829,19 +841,78 @@ cdef class TimeBarAggregator(BarAggregator):
 
     cpdef void _set_build_timer(self):
         self._timer_name = str(self.bar_type)
+        cdef datetime now = self._clock.utc_now()
+
         self._clock.set_timer(
             name=self._timer_name,
             interval=self.interval,
-            start_time=self.get_start_time(),
+            start_time=self.get_start_time(now),
             stop_time=None,
             callback=self._build_bar,
         )
 
         self._log.debug(f"Started timer {self._timer_name}")
 
+    def _start_batch_time(self, uint64_t time_ns):
+        self._batch_mode = True
+
+        start_time = self.get_start_time(unix_nanos_to_dt(time_ns), enable_delay=False)
+        self._batch_open_ns = dt_to_unix_nanos(start_time)
+
+        if self._batch_open_ns == time_ns:
+            self._batch_open_ns -= self.interval_ns
+
+        self._batch_next_close_ns = self._batch_open_ns + self.interval_ns
+
+    cdef void _batch_pre_update(self, uint64_t time_ns):
+        if time_ns > self._batch_next_close_ns and self._builder.initialized:
+            ts_init = self._batch_next_close_ns
+
+            # Adjusting the timestamp logic based on interval_type
+            if self._is_left_open:
+                ts_event = self._batch_next_close_ns if self._timestamp_on_close else self._batch_open_ns
+            else:
+                ts_event = self._batch_open_ns
+
+            self._build_and_send(ts_event=ts_event, ts_init=ts_init)
+
+    cdef void _batch_post_update(self, uint64_t time_ns):
+        # update has already been done, resetting _batch_next_close_ns
+        if not self._batch_mode and time_ns == self._batch_next_close_ns and time_ns > self._stored_open_ns:
+            self._batch_next_close_ns = 0
+            return
+
+        if time_ns > self._batch_next_close_ns:
+            # We ensure that _batch_next_close_ns and _batch_open_ns are coherent with the last builder update
+            while self._batch_next_close_ns < time_ns:
+                self._batch_next_close_ns += self.interval_ns
+
+            self._batch_open_ns = self._batch_next_close_ns - self.interval_ns
+
+        if time_ns == self._batch_next_close_ns:
+            # Adjusting the timestamp logic based on interval_type
+            if self._is_left_open:
+                ts_event = self._batch_next_close_ns if self._timestamp_on_close else self._batch_open_ns
+            else:
+                ts_event = self._batch_open_ns
+
+            self._build_and_send(ts_event=ts_event, ts_init=time_ns)
+
+            self._batch_next_close_ns += self.interval_ns
+            self._batch_open_ns = self._batch_next_close_ns - self.interval_ns
+
+        # Delay to reset of _batch_next_close_ns to allow the creation of a last histo bar
+        # when transitioning to regular bars
+        if not self._batch_mode:
+            self._batch_next_close_ns = 0
+
     cdef void _apply_update(self, Price price, Quantity size, uint64_t ts_event):
+        if self._batch_next_close_ns != 0:
+            self._batch_pre_update(ts_event)
+
         self._builder.update(price, size, ts_event)
-        if self._build_on_next_tick:
+
+        if self._batch_next_close_ns == 0 and self._build_on_next_tick:
             ts_init = ts_event
 
             # Adjusting the timestamp logic based on interval_type
@@ -851,12 +922,22 @@ cdef class TimeBarAggregator(BarAggregator):
                 ts_event = self._stored_open_ns
 
             self._build_and_send(ts_event=ts_event, ts_init=ts_init)
+
             # Reset flag and clear stored close
             self._build_on_next_tick = False
             self._stored_close_ns = 0
 
+        if self._batch_next_close_ns != 0:
+            self._batch_post_update(ts_event)
+
     cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
+        if self._batch_next_close_ns != 0:
+            self._batch_pre_update(ts_init)
+
         self._builder.update_bar(bar, volume, ts_init)
+
+        if self._batch_next_close_ns != 0:
+            self._batch_post_update(ts_init)
 
     cpdef void _build_bar(self, TimeEvent event):
         if not self._builder.initialized:

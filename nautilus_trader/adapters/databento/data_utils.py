@@ -209,9 +209,9 @@ def databento_data(
 
     if to_catalog and schema != "definition":
         catalog_data = save_data_to_catalog(
-            definition_file,
-            data_file,
             *folders,
+            definition_file=definition_file,
+            data_file=data_file,
             base_path=base_path,
             write_data_mode=write_data_mode,
         )
@@ -221,20 +221,61 @@ def databento_data(
 
 
 def save_data_to_catalog(
-    definition_file,
-    data_file,
     *folders,
+    definition_file=None,
+    data_file=None,
     base_path=None,
     write_data_mode="overwrite",
 ):
+    """
+    Save Databento data to a catalog.
+
+    This function loads a catalog, processes Databento definition and data files,
+    and writes the processed data to the catalog.
+
+    Parameters
+    ----------
+    *folders : str
+        Variable length argument list of folder names to be used in the catalog path.
+    definition_file : str or Path, optional
+        Path to the Databento definition file.
+    data_file : str or Path, optional
+        Path to the Databento data file.
+    base_path : str or Path, optional
+        Base path for the catalog.
+    write_data_mode : str, optional
+        Mode for writing data to the catalog. Default is "overwrite".
+
+    Returns
+    -------
+    dict
+        A dictionary containing:
+        - 'catalog': The loaded catalog object.
+        - 'nautilus_definition': Processed Databento definition data.
+        - 'nautilus_data': Processed Databento market data.
+
+    Notes
+    -----
+    - If definition_file is provided, it will be processed and written to the catalog.
+    - If data_file is provided, it will be processed and written to the catalog.
+    - The function uses DatabentoDataLoader to process the files.
+
+    """
     catalog = load_catalog(*folders, base_path=base_path)
 
     loader = DatabentoDataLoader()
-    nautilus_definition = loader.from_dbn_file(definition_file, as_legacy_cython=True)
-    nautilus_data = loader.from_dbn_file(data_file, as_legacy_cython=False)
 
-    catalog.write_data(nautilus_definition)
-    catalog.write_data(nautilus_data, mode=write_data_mode)
+    if definition_file is not None:
+        nautilus_definition = loader.from_dbn_file(definition_file, as_legacy_cython=True)
+        catalog.write_data(nautilus_definition)
+    else:
+        nautilus_definition = None
+
+    if data_file is not None:
+        nautilus_data = loader.from_dbn_file(data_file, as_legacy_cython=False)
+        catalog.write_data(nautilus_data, mode=write_data_mode)
+    else:
+        nautilus_data = None
 
     return {
         "catalog": catalog,
@@ -284,6 +325,6 @@ def save_databento_data(data, file):
 def next_day(date_str):
     date_format = "%Y-%m-%d"
     date = datetime.strptime(date_str, date_format)
-    next_day = date + timedelta(days=1)
+    result = date + timedelta(days=1)
 
-    return next_day.strftime(date_format)
+    return result.strftime(date_format)
