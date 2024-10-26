@@ -55,6 +55,7 @@ from nautilus_trader.core.rust.common cimport ComponentState
 from nautilus_trader.core.rust.common cimport LogColor
 from nautilus_trader.core.rust.model cimport BookType
 from nautilus_trader.core.rust.model cimport PositionSide
+from nautilus_trader.core.rust.model cimport PriceType
 from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.messages cimport DataRequest
 from nautilus_trader.data.messages cimport DataResponse
@@ -2335,6 +2336,106 @@ cdef class Actor(Component):
 
         return request_id
 
+    cpdef UUID4 request_aggregated_bars(
+            self,
+            list bar_types,
+            datetime start = None,
+            datetime end = None,
+            bint update_existing_subscriptions = False,
+            bint include_external_data = False,
+            ClientId client_id = None,
+            callback: Callable[[UUID4], None] | None = None,
+    ):
+        """
+        Request historical aggregated `Bar` data for multiple bar types.
+        The first bar is used to determine which market data type will be queried.
+        This can either be quote ticks, trade ticks or bars. If bars are queried,
+        the first bar type needs to have a composite bar that is external (i.e. not internal/aggregated).
+        This external bar type will be queried.
+
+        If `end` is ``None`` then will request up to the most recent data.
+
+        Parameters
+        ----------
+        bar_types : list[BarType]
+            The list of bar types for the request. Composite bars can also be used and need to
+            figure in the list after a BarType on which it depends.
+        start : datetime, optional
+            The start datetime (UTC) of request time range (inclusive).
+        end : datetime, optional
+            The end datetime (UTC) of request time range.
+            The inclusiveness depends on individual data client implementation.
+        update_existing_subscriptions : bool, default False
+            If True, updates the aggregators of any existing subscription with the queried external data.
+        include_external_data : bool, default False
+            If True, includes the queried external data in the response.
+        client_id : ClientId, optional
+            The specific client ID for the command.
+            If ``None`` then will be inferred from the venue in the instrument ID.
+        callback : Callable[[UUID4], None], optional
+            The registered callback, to be called with the request ID when the response has
+            completed processing.
+
+        Returns
+        -------
+        UUID4
+            The `request_id` for the request.
+
+        Raises
+        ------
+        ValueError
+            If `start` and `end` are not `None` and `start` is >= `end`.
+            If `bar_types` is empty.
+        TypeError
+            If `callback` is not `None` and not of type `Callable`.
+            If `bar_types` is empty or contains elements not of type `BarType`.
+
+        """
+        Condition.is_true(self.trader_id is not None, "The actor has not been registered")
+        Condition.not_empty(bar_types, "bar_types")
+        Condition.list_type(bar_types, BarType, "bar_types")
+        if start is not None and end is not None:
+            Condition.is_true(start < end, "start was >= end")
+        Condition.callable_or_none(callback, "callback")
+
+        for bar_type in bar_types:
+            if not bar_type.is_internally_aggregated():
+                self._log.error(f"request_aggregated_bars: {bar_type} must be internally aggregated")
+                return
+
+        first = bar_types[0]
+        market_data_type = ""
+
+        if first.is_composite():
+            market_data_type = "bars"
+        elif first.spec.price_type == PriceType.LAST:
+            market_data_type = "trade_ticks"
+        else:
+            market_data_type = "quote_ticks"
+
+        cdef UUID4 request_id = UUID4()
+        cdef DataRequest request = DataRequest(
+            client_id=client_id,
+            venue=first.instrument_id.venue,
+            data_type=DataType(Bar, metadata={
+                "bar_types": tuple(bar_types),
+                "market_data_type": market_data_type,
+                "instrument_id": first.instrument_id,
+                "bar_type": first.composite(),
+                "start": start,
+                "end": end,
+                "update_existing_subscriptions": update_existing_subscriptions,
+                "include_external_data": include_external_data,
+            }),
+            callback=self._handle_aggregated_bars_response,
+            request_id=request_id,
+            ts_init=self._clock.timestamp_ns(),
+        )
+
+        self._pending_requests[request_id] = callback
+        self._send_data_req(request)
+
+        return request_id
     cpdef bint is_pending_request(self, UUID4 request_id):
         """
         Return whether the request for the given identifier is pending processing.
@@ -2874,6 +2975,19 @@ cdef class Actor(Component):
 
     cpdef void _handle_bars_response(self, DataResponse response):
         self.handle_bars(response.data)
+        self._finish_response(response.correlation_id)
+
+    cpdef void _handle_aggregated_bars_response(self, DataResponse response):
+        if "bars" in response.data:
+            for bars in response.data["bars"].values():
+                self.handle_bars(bars)
+
+        if "quote_ticks" in response.data:
+            self.handle_quote_ticks(response.data["quote_ticks"])
+
+        if "trade_ticks" in response.data:
+            self.handle_trade_ticks(response.data["trade_ticks"])
+
         self._finish_response(response.correlation_id)
 
     cpdef void _finish_response(self, UUID4 request_id):
