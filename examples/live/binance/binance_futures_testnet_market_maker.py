@@ -60,7 +60,7 @@ config_node = TradingNodeConfig(
         # snapshot_positions_interval_secs=5.0,
     ),
     cache=CacheConfig(
-        # database=DatabaseConfig(timeout=2),
+        # database=DatabaseConfig(),
         timestamps_as_iso8601=True,
         flush_on_start=False,
     ),

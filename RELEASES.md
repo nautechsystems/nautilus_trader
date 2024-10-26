@@ -7,6 +7,7 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 - Improved Postgres testing (#2018), thanks @filipmacek
+- Improved Redis version parsing to support truncated versions (improves compatibility with Redis-compliant databases)
 - Refined Arrow serialization (record batch functions now also available in Rust)
 - Refined core `Bar` API to remove unnecessary unwraps
 - Upgraded `tokio` crate to v1.41.0
