@@ -108,15 +108,14 @@ pub fn create_redis_connection(
 
     let version = get_redis_version(&mut con)?;
     let min_version = Version::parse(REDIS_MIN_VERSION)?;
+    let con_msg = format!("Connected to redis v{version}");
 
     if version >= min_version {
-        tracing::info!("Connected to Redis v{version}");
+        tracing::info!(con_msg);
     } else {
         // TODO: Using `log` error here so that the message is displayed regardless of whether
         // the logging config has pyo3 enabled. Later we can standardize this to `tracing`.
-        log::error!(
-            "Connected to Redis v{version}, but minimum supported version is {REDIS_MIN_VERSION}"
-        );
+        log::error!("{con_msg}, but minimum supported version is {REDIS_MIN_VERSION}");
     }
 
     Ok(con)
