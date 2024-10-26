@@ -236,7 +236,7 @@ logging = LoggingConfig(
     log_directory=".",
     log_file_format=None,  # 'json' or None
     log_file_name="databento_option_greeks",
-    clear_log_file_name=True,
+    clear_log_file=True,
 )
 
 catalog = DataCatalogConfig(

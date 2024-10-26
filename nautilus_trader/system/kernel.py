@@ -171,14 +171,16 @@ class NautilusKernel:
 
         if not is_logging_initialized():
             if not logging.bypass_logging:
-                if logging.clear_log_file_name and logging.log_directory and logging.log_file_name:
+                if logging.clear_log_file and logging.log_directory and logging.log_file_name:
                     file_path = Path(
                         logging.log_directory,
                         f"{logging.log_file_name}.{'log' if logging.log_file_format is None else 'json'}",
                     )
 
                     if file_path.exists():
-                        file_path.write_text("")
+                        # Truncate log file to zero length and reset metadata
+                        file_path.touch()
+                        file_path.open("w").close()
 
                 if logging.use_pyo3:
                     set_logging_pyo3(True)
