@@ -259,6 +259,22 @@ def test_fills(fills_response: DYDXFillsResponse) -> None:
     assert len(fills_response.fills) == expected_num_fills
 
 
+def test_fills_with_affiliate_rev_share() -> None:
+    """
+    Test parsing the fills message with the new affiliateRevShare field.
+    """
+    # Arrange
+    expected_num_fills = 1
+    decoder = msgspec.json.Decoder(DYDXFillsResponse)
+
+    # Act
+    with Path("tests/test_data/dydx/http/v4_fills.json").open() as file_reader:
+        fills_response = decoder.decode(file_reader.read())
+
+    # Assert
+    assert len(fills_response.fills) == expected_num_fills
+
+
 def test_parse_to_position_status_report(
     perpetual_positions_response: DYDXPerpetualPositionsResponse,
 ) -> None:
