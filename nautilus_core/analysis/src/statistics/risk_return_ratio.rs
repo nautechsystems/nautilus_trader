@@ -13,7 +13,7 @@
 // #  limitations under the License.
 // # -------------------------------------------------------------------------------------------------
 
-use crate::statistic::PortfolioStatistic;
+use crate::{statistic::PortfolioStatistic, Returns};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -30,13 +30,13 @@ impl PortfolioStatistic for RiskReturnRatio {
         stringify!(RiskReturnRatio).to_string()
     }
 
-    fn calculate_from_returns(&mut self, returns: &[f64]) -> Option<Self::Item> {
+    fn calculate_from_returns(&self, returns: &Returns) -> Option<Self::Item> {
         if !self.check_valid_returns(returns) {
             return Some(f64::NAN);
         }
 
-        let mean = returns.iter().sum::<f64>() / returns.len() as f64;
-        let std = Self::calculate_std(returns);
+        let mean = returns.values().sum::<f64>() / returns.len() as f64;
+        let std = self.calculate_std(returns);
 
         if std < f64::EPSILON {
             Some(f64::NAN)

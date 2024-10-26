@@ -13,7 +13,7 @@
 // #  limitations under the License.
 // # -------------------------------------------------------------------------------------------------
 
-use crate::statistic::PortfolioStatistic;
+use crate::{statistic::PortfolioStatistic, Returns};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -41,16 +41,16 @@ impl PortfolioStatistic for SortinoRatio {
         stringify!(SortinoRatio).to_string()
     }
 
-    fn calculate_from_returns(&mut self, returns: &[f64]) -> Option<Self::Item> {
+    fn calculate_from_returns(&self, returns: &Returns) -> Option<Self::Item> {
         if !self.check_valid_returns(returns) {
             return Some(f64::NAN);
         }
 
         let total_n = returns.len() as f64;
-        let mean = returns.iter().sum::<f64>() / total_n;
+        let mean = returns.values().sum::<f64>() / total_n;
 
         let downside = (returns
-            .iter()
+            .values()
             .filter(|&&x| x < 0.0)
             .map(|x| x.powi(2))
             .sum::<f64>()

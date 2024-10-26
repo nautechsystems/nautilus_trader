@@ -23,7 +23,6 @@ use crate::statistic::PortfolioStatistic;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
 )]
-
 pub struct LongRatio {
     precision: usize,
 }
@@ -44,7 +43,7 @@ impl PortfolioStatistic for LongRatio {
         stringify!(LongRatio).to_string()
     }
 
-    fn calculate_from_positions(&mut self, positions: &[Position]) -> Option<Self::Item> {
+    fn calculate_from_positions(&self, positions: &[Position]) -> Option<Self::Item> {
         if positions.is_empty() {
             return None;
         }

@@ -13,7 +13,7 @@
 // #  limitations under the License.
 // # -------------------------------------------------------------------------------------------------
 
-use crate::statistic::PortfolioStatistic;
+use crate::{statistic::PortfolioStatistic, Returns};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -41,12 +41,12 @@ impl PortfolioStatistic for ReturnsVolatility {
         stringify!(ReturnsVolatility).to_string()
     }
 
-    fn calculate_from_returns(&mut self, returns: &[f64]) -> Option<Self::Item> {
+    fn calculate_from_returns(&self, returns: &Returns) -> Option<Self::Item> {
         if !self.check_valid_returns(returns) {
             return Some(f64::NAN);
         }
 
-        let daily_std = Self::calculate_std(returns);
+        let daily_std = self.calculate_std(returns);
         let annualized_std = daily_std * (self.period as f64).sqrt();
         Some(annualized_std)
     }

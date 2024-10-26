@@ -13,29 +13,47 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::{BTreeMap, HashMap}, ops::Add};
+use std::{
+    collections::{BTreeMap, HashMap},
+    fmt::Debug,
+    sync::Arc,
+};
 
 use nautilus_core::nanos::UnixNanos;
 use nautilus_model::{
+    accounts::base::Account,
+    identifiers::PositionId,
     position::Position,
     types::{currency::Currency, money::Money},
 };
 use rust_decimal::Decimal;
 
-use crate::portfolio_statistic::PortfolioStatistic;
-use nautilus_model::identifiers::PositionId;
+use crate::{statistic::PortfolioStatistic, Returns};
+
+#[repr(C)]
+#[derive(Debug)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.analysis")
+)]
 pub struct PortfolioAnalyzer {
-    statistics: HashMap<String, Box<dyn PortfolioStatistic>>,
+    statistics: HashMap<String, Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync>>,
     account_balances_starting: HashMap<Currency, Money>,
     account_balances: HashMap<Currency, Money>,
     positions: Vec<Position>,
     realized_pnls: HashMap<Currency, Vec<(PositionId, f64)>>,
-    returns: BTreeMap<UnixNanos, f64>,
+    returns: Returns,
+}
+
+impl Default for PortfolioAnalyzer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl PortfolioAnalyzer {
     pub fn new() -> Self {
-        PortfolioAnalyzer {
+        Self {
             statistics: HashMap::new(),
             account_balances_starting: HashMap::new(),
             account_balances: HashMap::new(),
@@ -45,12 +63,14 @@ impl PortfolioAnalyzer {
         }
     }
 
-    pub fn register_statistic(&mut self, statistic: Box<dyn PortfolioStatistic>) {
-        self.statistics
-            .insert(statistic.name().to_string(), statistic);
+    pub fn register_statistic(
+        &mut self,
+        statistic: Arc<(dyn PortfolioStatistic<Item = f64> + Send + Sync)>,
+    ) {
+        self.statistics.insert(statistic.name(), statistic);
     }
 
-    pub fn deregister_statistic(&mut self, statistic: Box<dyn PortfolioStatistic>) {
+    pub fn deregister_statistic(&mut self, statistic: Box<dyn PortfolioStatistic<Item = f64>>) {
         self.statistics.remove(&statistic.name());
     }
 
@@ -68,7 +88,7 @@ impl PortfolioAnalyzer {
     fn get_max_length_name(&self) -> usize {
         self.statistics
             .keys()
-            .map(|name| name.len())
+            .map(std::string::String::len)
             .max()
             .unwrap_or(0)
     }
@@ -77,48 +97,51 @@ impl PortfolioAnalyzer {
         self.account_balances.keys().collect()
     }
 
-    pub fn statistic(&self, name: &str) -> Option<&Box<dyn PortfolioStatistic>> {
+    pub fn statistic(
+        &self,
+        name: &str,
+    ) -> Option<&Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync>> {
         self.statistics.get(name)
     }
 
-    pub fn returns(&self) -> &BTreeMap<String, String> {
+    pub const fn returns(&self) -> &Returns {
         &self.returns
     }
 
-    pub fn calculate_statistics(&mut self, account: &Account, positions: &[Position]) {
+    pub fn calculate_statistics(&mut self, account: &dyn Account, positions: &[Position]) {
         self.account_balances_starting = account.starting_balances();
         self.account_balances = account.balances_total();
         self.realized_pnls.clear();
         self.returns.clear();
 
         self.add_positions(positions);
-        // BTreeMap sorts internally by key
-        // self._returns.sort_index()
-        // self.returns.sort_by_key(|(timestamp, _)| *timestamp);
     }
 
     pub fn add_positions(&mut self, positions: &[Position]) {
         self.positions.extend_from_slice(positions);
         for position in positions {
-            // self.add_trade(&position.id, &position.realized_pnl);
+            self.add_trade(&position.id, &position.realized_pnl.unwrap());
             if let Some(ref pnl) = position.realized_pnl {
                 self.add_trade(&position.id, pnl);
             }
-            self.add_return(position.ts_closed, position.realized_return);
+            self.add_return(
+                position.ts_closed.unwrap_or(UnixNanos::default()),
+                position.realized_return,
+            );
         }
     }
 
     pub fn add_trade(&mut self, position_id: &PositionId, pnl: &Money) {
         let currency = pnl.currency;
-        let entry = self
-            .realized_pnls
-            .entry(currency.clone())
-            .or_insert_with(Vec::new);
-        entry.push((position_id.clone(), pnl.as_f64()));
+        let entry = self.realized_pnls.entry(currency).or_default();
+        entry.push((*position_id, pnl.as_f64()));
     }
 
     pub fn add_return(&mut self, timestamp: UnixNanos, value: f64) {
-        *self.returns.entry(timestamp).or_insert(0.0) += value;
+        self.returns
+            .entry(timestamp)
+            .and_modify(|existing_value| *existing_value += value)
+            .or_insert(value);
     }
 
     pub fn realized_pnls(&self, currency: Option<&Currency>) -> Option<Vec<(PositionId, f64)>> {
@@ -159,7 +182,8 @@ impl PortfolioAnalyzer {
             .get(currency)
             .unwrap_or(default_money);
 
-        let unrealized_pnl_f64 = unrealized_pnl.map_or(0.0, |pnl| pnl.as_f64());
+        let unrealized_pnl_f64 =
+            unrealized_pnl.map_or(0.0, nautilus_model::types::money::Money::as_f64);
         Ok((account_balance.as_f64() - account_balance_starting.as_f64()) + unrealized_pnl_f64)
     }
 
@@ -196,7 +220,8 @@ impl PortfolioAnalyzer {
             return Ok(0.0);
         }
 
-        let unrealized_pnl_f64 = unrealized_pnl.map_or(0.0, |pnl| pnl.as_f64());
+        let unrealized_pnl_f64 =
+            unrealized_pnl.map_or(0.0, nautilus_model::types::money::Money::as_f64);
         let current = account_balance.as_f64() + unrealized_pnl_f64;
         let starting = account_balance_starting.as_f64();
         let difference = current - starting;
@@ -220,12 +245,18 @@ impl PortfolioAnalyzer {
             self.total_pnl_percentage(currency, unrealized_pnl)?,
         );
 
-        let realized_pnls = self.realized_pnls(currency).unwrap_or_default();
-        // for (name, stat) in &self.statistics {
-        //     if let Some(value) = stat.calculate_from_realized_pnls(&realized_pnls) {
-        //         output.insert(name.clone(), value);
-        //     }
-        // }
+        if let Some(realized_pnls) = self.realized_pnls(currency) {
+            for (name, stat) in &self.statistics {
+                if let Some(value) = stat.calculate_from_realized_pnls(
+                    &realized_pnls
+                        .iter()
+                        .map(|(_, pnl)| *pnl)
+                        .collect::<Vec<f64>>(),
+                ) {
+                    output.insert(name.clone(), value);
+                }
+            }
+        }
 
         Ok(output)
     }
@@ -234,21 +265,21 @@ impl PortfolioAnalyzer {
         let mut output = HashMap::new();
 
         for (name, stat) in &self.statistics {
-            // if let Some(value) = stat.calculate_from_returns(&self.returns) {
-            //     output.insert(name.clone(), value);
-            // }
+            if let Some(value) = stat.calculate_from_returns(&self.returns) {
+                output.insert(name.clone(), value);
+            }
         }
 
         output
     }
 
-    pub fn get_performance_stats_general(&self) -> HashMap<String, String> {
+    pub fn get_performance_stats_general(&self) -> HashMap<String, f64> {
         let mut output = HashMap::new();
 
         for (name, stat) in &self.statistics {
-            // if let Some(value) = stat.calculate_from_positions(&self.positions) {
-            //     output.insert(name.clone(), value);
-            // }
+            if let Some(value) = stat.calculate_from_positions(&self.positions) {
+                output.insert(name.clone(), value);
+            }
         }
 
         output
@@ -297,28 +328,3 @@ impl PortfolioAnalyzer {
         output
     }
 }
-
-// // Helper function to format numbers with underscores as thousand separators
-// fn format_with_underscores(value: f64) -> String {
-//     let whole_part = value.trunc() as i64;
-//     let decimal_part = (value.fract() * 100.0).round() as i64;
-
-//     let mut result = String::new();
-//     let whole_str = whole_part.to_string();
-//     let mut remaining = whole_str.len();
-
-//     for (i, c) in whole_str.chars().enumerate() {
-//         if i > 0 && (remaining % 3 == 0) {
-//             result.push('_');
-//         }
-//         result.push(c);
-//         remaining -= 1;
-//     }
-
-//     if decimal_part > 0 {
-//         result.push('.');
-//         result.push_str(&format!("{:02}", decimal_part));
-//     }
-
-//     result
-// }

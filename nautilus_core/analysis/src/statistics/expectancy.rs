@@ -36,7 +36,7 @@ impl PortfolioStatistic for Expectancy {
         stringify!(Expectancy).to_string()
     }
 
-    fn calculate_from_realized_pnls(&mut self, realized_pnls: &[f64]) -> Option<Self::Item> {
+    fn calculate_from_realized_pnls(&self, realized_pnls: &[f64]) -> Option<Self::Item> {
         if realized_pnls.is_empty() {
             return Some(0.0);
         }

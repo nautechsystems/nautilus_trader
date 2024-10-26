@@ -13,8 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::collections::BTreeMap;
+
 use pyo3::prelude::*;
 
+use super::transform_returns;
 use crate::{statistic::PortfolioStatistic, statistics::profit_factor::ProfitFactor};
 
 #[pymethods]
@@ -30,7 +33,7 @@ impl ProfitFactor {
     }
 
     #[pyo3(name = "calculate_from_returns")]
-    fn py_calculate_from_returns(&mut self, returns: Vec<f64>) -> Option<f64> {
-        self.calculate_from_returns(&returns)
+    fn py_calculate_from_returns(&mut self, raw_returns: BTreeMap<u64, f64>) -> Option<f64> {
+        self.calculate_from_returns(&transform_returns(raw_returns))
     }
 }

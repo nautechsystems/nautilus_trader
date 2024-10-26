@@ -13,21 +13,25 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::fmt::Debug;
+
 use nautilus_model::{orders::base::Order, position::Position};
+
+use crate::Returns;
 
 const IMPL_ERR: &str = "is not implemented for";
 
 #[allow(unused_variables)]
-pub trait PortfolioStatistic {
+pub trait PortfolioStatistic: Debug {
     type Item;
 
     fn name(&self) -> String;
 
-    fn calculate_from_returns(&mut self, returns: &[f64]) -> Option<Self::Item> {
+    fn calculate_from_returns(&self, returns: &Returns) -> Option<Self::Item> {
         panic!("`calculate_from_returns` {IMPL_ERR} `{}`", self.name());
     }
 
-    fn calculate_from_realized_pnls(&mut self, realized_pnls: &[f64]) -> Option<Self::Item> {
+    fn calculate_from_realized_pnls(&self, realized_pnls: &[f64]) -> Option<Self::Item> {
         panic!(
             "`calculate_from_realized_pnls` {IMPL_ERR} `{}`",
             self.name()
@@ -35,31 +39,17 @@ pub trait PortfolioStatistic {
     }
 
     #[allow(dead_code)]
-    fn calculate_from_orders(&mut self, orders: Vec<impl Order>) -> Option<Self::Item> {
+    fn calculate_from_orders(&self, orders: Vec<Box<dyn Order>>) -> Option<Self::Item> {
         panic!("`calculate_from_orders` {IMPL_ERR} `{}`", self.name());
     }
 
     #[allow(dead_code)]
-    fn calculate_from_positions(&mut self, positions: &[Position]) -> Option<Self::Item> {
+    fn calculate_from_positions(&self, positions: &[Position]) -> Option<Self::Item> {
         panic!("`calculate_from_positions` {IMPL_ERR} `{}`", self.name());
     }
 
-    fn check_valid_returns(&self, returns: &[f64]) -> bool {
+    fn check_valid_returns(&self, returns: &Returns) -> bool {
         !returns.is_empty()
-    }
-
-    #[must_use]
-    fn calculate_std(returns: &[f64]) -> f64 {
-        let n = returns.len() as f64;
-        if n < 2.0 {
-            return f64::NAN;
-        }
-
-        let mean = returns.iter().sum::<f64>() / n;
-
-        let variance = returns.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
-
-        variance.sqrt()
     }
 
     // TODO: Future enhancement - implement proper downsampling using the Polars library.
@@ -72,5 +62,18 @@ pub trait PortfolioStatistic {
         // For now, we return the input array directly, assuming daily data
         // Future implementation will include time-based resampling, e.g., returns.dropna().resample("1D").sum()
         returns.to_vec()
+    }
+
+    fn calculate_std(&self, returns: &Returns) -> f64 {
+        let n = returns.len() as f64;
+        if n < 2.0 {
+            return f64::NAN;
+        }
+
+        let mean = returns.values().sum::<f64>() / n;
+
+        let variance = returns.values().map(|x| (x - mean).powi(2)).sum::<f64>() / (n - 1.0);
+
+        variance.sqrt()
     }
 }

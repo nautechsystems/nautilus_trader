@@ -13,7 +13,7 @@
 // #  limitations under the License.
 // # -------------------------------------------------------------------------------------------------
 
-use crate::statistic::PortfolioStatistic;
+use crate::{statistic::PortfolioStatistic, Returns};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -30,19 +30,21 @@ impl PortfolioStatistic for ProfitFactor {
         stringify!(ProfitFactor).to_string()
     }
 
-    fn calculate_from_returns(&mut self, returns: &[f64]) -> Option<Self::Item> {
+    fn calculate_from_returns(&self, returns: &Returns) -> Option<Self::Item> {
         if !self.check_valid_returns(returns) {
             return Some(f64::NAN);
         }
 
-        let (positive_returns_sum, negative_returns_sum): (f64, f64) =
-            returns.iter().fold((0.0, 0.0), |(pos_sum, neg_sum), &pnl| {
-                if pnl >= 0.0 {
-                    (pos_sum + pnl, neg_sum)
-                } else {
-                    (pos_sum, neg_sum + pnl)
-                }
-            });
+        let (positive_returns_sum, negative_returns_sum) =
+            returns
+                .values()
+                .fold((0.0, 0.0), |(pos_sum, neg_sum), &pnl| {
+                    if pnl >= 0.0 {
+                        (pos_sum + pnl, neg_sum)
+                    } else {
+                        (pos_sum, neg_sum + pnl)
+                    }
+                });
 
         if negative_returns_sum == 0.0 {
             return Some(f64::NAN);

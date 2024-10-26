@@ -1,3 +1,7 @@
+use std::collections::BTreeMap;
+
+use nautilus_core::nanos::UnixNanos;
+
 pub mod expectancy;
 pub mod long_ratio;
 pub mod loser_avg;
@@ -15,3 +19,10 @@ pub mod win_rate;
 pub mod winner_avg;
 pub mod winner_max;
 pub mod winner_min;
+
+fn transform_returns(raw_returns: BTreeMap<u64, f64>) -> BTreeMap<UnixNanos, f64> {
+    raw_returns
+        .keys()
+        .map(|&k| (UnixNanos::from(k), raw_returns[&k]))
+        .collect()
+}
