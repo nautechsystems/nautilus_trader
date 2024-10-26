@@ -27,6 +27,6 @@ from nautilus_trader.core import nautilus_pyo3
 
 __version__ = nautilus_pyo3.get_nautilus_version()
 
-PACKAGE_ROOT: Final[Path] = Path(nautilus_pyo3.get_project_root_path())
-TEST_DATA_DIR: Final[Path] = Path(nautilus_pyo3.get_test_data_path())
+PACKAGE_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
+TEST_DATA_DIR: Final[Path] = PACKAGE_ROOT / "tests" / "test_data"
 USER_AGENT: Final[str] = nautilus_pyo3.get_user_agent()
