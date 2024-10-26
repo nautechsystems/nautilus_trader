@@ -24,6 +24,33 @@ pub mod arrow;
 /// Loaded as nautilus_pyo3.serialization
 #[pymodule]
 pub fn serialization(_: Python<'_>, m: &PyModule) -> PyResult<()> {
-    m.add_class::<crate::python::arrow::ArrowDataTransformer>()?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::arrow::get_arrow_schema_map,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::arrow::pyobjects_to_arrow_record_batch_bytes,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::arrow::py_order_book_deltas_to_arrow_record_batch_bytes,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::arrow::py_order_book_depth10_to_arrow_record_batch_bytes,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::arrow::py_quote_ticks_to_arrow_record_batch_bytes,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::arrow::py_trade_ticks_to_arrow_record_batch_bytes,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        crate::python::arrow::py_bars_to_arrow_record_batch_bytes,
+        m
+    )?)?;
     Ok(())
 }

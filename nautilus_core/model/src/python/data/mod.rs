@@ -28,9 +28,14 @@ pub mod trade;
 use indexmap::IndexMap;
 #[cfg(feature = "ffi")]
 use nautilus_core::ffi::cvec::CVec;
-use pyo3::{prelude::*, types::PyCapsule};
+use pyo3::{exceptions::PyValueError, prelude::*, types::PyCapsule};
 
-use crate::data::{Data, DataType};
+use crate::data::{
+    bar::Bar, delta::OrderBookDelta, is_monotonically_increasing_by_init, quote::QuoteTick,
+    trade::TradeTick, Data, DataType,
+};
+
+const ERROR_MONOTONICITY: &str = "`data` was not monotonically increasing by the `ts_init` field";
 
 #[pymethods]
 impl DataType {
@@ -115,4 +120,67 @@ pub fn drop_cvec_pycapsule(capsule: &PyAny) {
 #[cfg(not(feature = "ffi"))]
 pub fn drop_cvec_pycapsule(_capsule: &PyAny) {
     panic!("`ffi` feature is not enabled");
+}
+
+/// Transforms the given `data` Python objects into a vector of [`OrderBookDelta`] objects.
+pub fn pyobjects_to_order_book_deltas(
+    py: Python<'_>,
+    data: Vec<PyObject>,
+) -> PyResult<Vec<OrderBookDelta>> {
+    let deltas: Vec<OrderBookDelta> = data
+        .into_iter()
+        .map(|obj| OrderBookDelta::from_pyobject(obj.as_ref(py)))
+        .collect::<PyResult<Vec<OrderBookDelta>>>()?;
+
+    // Validate monotonically increasing
+    if !is_monotonically_increasing_by_init(&deltas) {
+        return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+    }
+
+    Ok(deltas)
+}
+
+/// Transforms the given `data` Python objects into a vector of [`QuoteTick`] objects.
+pub fn pyobjects_to_quote_ticks(py: Python<'_>, data: Vec<PyObject>) -> PyResult<Vec<QuoteTick>> {
+    let ticks: Vec<QuoteTick> = data
+        .into_iter()
+        .map(|obj| QuoteTick::from_pyobject(obj.bind(py)))
+        .collect::<PyResult<Vec<QuoteTick>>>()?;
+
+    // Validate monotonically increasing
+    if !is_monotonically_increasing_by_init(&ticks) {
+        return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+    }
+
+    Ok(ticks)
+}
+
+/// Transforms the given `data` Python objects into a vector of [`TradeTick`] objects.
+pub fn pyobjects_to_trade_ticks(py: Python<'_>, data: Vec<PyObject>) -> PyResult<Vec<TradeTick>> {
+    let ticks: Vec<TradeTick> = data
+        .into_iter()
+        .map(|obj| TradeTick::from_pyobject(obj.bind(py)))
+        .collect::<PyResult<Vec<TradeTick>>>()?;
+
+    // Validate monotonically increasing
+    if !is_monotonically_increasing_by_init(&ticks) {
+        return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+    }
+
+    Ok(ticks)
+}
+
+/// Transforms the given `data` Python objects into a vector of [`Bar`] objects.
+pub fn pyobjects_to_bars(py: Python<'_>, data: Vec<PyObject>) -> PyResult<Vec<Bar>> {
+    let bars: Vec<Bar> = data
+        .into_iter()
+        .map(|obj| Bar::from_pyobject(obj.as_ref(py)))
+        .collect::<PyResult<Vec<Bar>>>()?;
+
+    // Validate monotonically increasing
+    if !is_monotonically_increasing_by_init(&bars) {
+        return Err(PyValueError::new_err(ERROR_MONOTONICITY));
+    }
+
+    Ok(bars)
 }

@@ -7,10 +7,12 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 - Improved Postgres testing (#2018), thanks @filipmacek
+- Refined Arrow serialization (record batch functions now also available in Rust)
 - Refined core `Bar` API to remove unnecessary unwraps
 - Upgraded `tokio` crate to v1.41.0
 
 ### Breaking Changes
+- Removed pyo3 `DataTransformer` (was being used for namespacing for refactored to separate functions)
 - Moved `TEST_DATA_DIR` constant to `nautilus_trader` module (from `tests`)
 
 ### Fixes
