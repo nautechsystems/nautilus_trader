@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 - Added aggregation of bars from historical data (#2002), thanks @faysou
 - Added `raise_exception` optional parameter to `TradingNode.run` (#2021), thanks @faysou
+- Upgraded Polymarket WebSocket API to new version
 
 ### Internal Improvements
 - Improved Postgres testing (#2018), thanks @filipmacek
@@ -20,7 +21,7 @@ Released on TBD (UTC).
 
 ### Fixes
 - Fixed use of Redis `KEYS` command which, is unsupported in cluster environments (replaced with `SCAN` for compatibility)
-- Upgraded Polymarket WebSocket API to new version
+- Fixed decoding fill HTTP messages for dYdX (#2022), thanks @davidsblom
 
 ---
 

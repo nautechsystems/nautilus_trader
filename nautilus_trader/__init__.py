@@ -19,14 +19,19 @@ portfolios of automated trading strategies on historical data with an event-driv
 and also deploy those same strategies live, with no code changes.
 """
 
+import tomllib
 from pathlib import Path
 from typing import Final
 
-from nautilus_trader.core import nautilus_pyo3
-
-
-__version__ = nautilus_pyo3.get_nautilus_version()
 
 PACKAGE_ROOT: Final[Path] = Path(__file__).resolve().parent.parent
 TEST_DATA_DIR: Final[Path] = PACKAGE_ROOT / "tests" / "test_data"
-USER_AGENT: Final[str] = nautilus_pyo3.get_user_agent()
+
+try:
+    with open(PACKAGE_ROOT / "pyproject.toml", "rb") as f:
+        pyproject_data = tomllib.load(f)
+    __version__ = pyproject_data["tool"]["poetry"]["version"]
+except FileNotFoundError:  # pragma: no cover
+    __version__ = "latest"
+
+USER_AGENT: Final[str] = f"NautilusTrader/{__version__}"

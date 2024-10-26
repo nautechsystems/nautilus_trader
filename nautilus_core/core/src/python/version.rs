@@ -17,18 +17,6 @@ use pyo3::{prelude::*, types::PyTuple};
 
 use crate::version::{NAUTILUS_VERSION, USER_AGENT};
 
-#[must_use]
-#[pyfunction]
-pub fn get_nautilus_version() -> String {
-    NAUTILUS_VERSION.clone()
-}
-
-#[must_use]
-#[pyfunction]
-pub fn get_user_agent() -> String {
-    USER_AGENT.clone()
-}
-
 pub fn get_python_version() -> String {
     Python::with_gil(|py| {
         let sys = match py.import_bound("sys") {
