@@ -219,6 +219,31 @@ def test_account_parse_to_account_balances() -> None:
     assert result == expected_result
 
 
+def test_account_parse_to_account_balances_order_best_effort_canceled() -> None:
+    """
+    Test computing the account balances with BEST_EFFORT_CANCELED orders.
+    """
+    # Prepare
+    decoder = msgspec.json.Decoder(DYDXWsSubaccountsSubscribed)
+    expected_result = [
+        AccountBalance(
+            total=Money(Decimal("11.62332500"), Currency.from_str("USDC")),
+            locked=Money(Decimal("10.00590000"), Currency.from_str("USDC")),
+            free=Money(Decimal("1.61742500"), Currency.from_str("USDC")),
+        ),
+    ]
+
+    with Path(
+        "tests/test_data/dydx/websocket/v4_accounts_subscribed_best_effort_canceled.json",
+    ).open() as file_reader:
+        msg = decoder.decode(file_reader.read())
+
+    result = msg.contents.parse_to_account_balances()
+
+    # Assert
+    assert result == expected_result
+
+
 def test_account_parse_to_margin_balances() -> None:
     """
     Test computing the margin balances.
