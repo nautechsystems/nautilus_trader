@@ -33,7 +33,10 @@ use arrow::{
     ipc::writer::StreamWriter,
     record_batch::RecordBatch,
 };
-use nautilus_model::data::Data;
+use nautilus_model::data::{
+    bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick, trade::TradeTick,
+    Data,
+};
 use pyo3::prelude::*;
 
 // Define metadata key constants constants
@@ -54,6 +57,8 @@ pub enum DataStreamingError {
 
 #[derive(thiserror::Error, Debug)]
 pub enum EncodingError {
+    #[error("Empty data")]
+    EmptyData,
     #[error("Missing metadata key: `{0}`")]
     MissingMetadata(&'static str),
     #[error("Missing data column: `{0}` at index {1}")]
@@ -145,4 +150,110 @@ pub fn extract_column<'a, T: Array + 'static>(
                 column_values.data_type().clone(),
             ))?;
     Ok(downcasted_values)
+}
+
+pub fn order_book_deltas_to_arrow_record_batch_bytes(
+    data: Vec<OrderBookDelta>,
+) -> Result<RecordBatch, EncodingError> {
+    if data.is_empty() {
+        return Err(EncodingError::EmptyData);
+    }
+
+    // Take first element and extract metadata
+    // SAFETY: Unwrap safe as already checked that `data` not empty
+    let first = data.first().unwrap();
+    let mut price_precision = first.order.price.precision;
+    let mut size_precision = first.order.size.precision;
+
+    // Check if price and size precision are both zero
+    if price_precision == 0 && size_precision == 0 {
+        // If both are zero, try the second delta if available
+        if data.len() > 1 {
+            let second = &data[1];
+            price_precision = second.order.price.precision;
+            size_precision = second.order.size.precision;
+        } else {
+            // If there is no second delta, use zero precision
+            price_precision = 0;
+            size_precision = 0;
+        }
+    }
+
+    let metadata =
+        OrderBookDelta::get_metadata(&first.instrument_id, price_precision, size_precision);
+    OrderBookDelta::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
+}
+
+pub fn order_book_depth10_to_arrow_record_batch_bytes(
+    data: Vec<OrderBookDepth10>,
+) -> Result<RecordBatch, EncodingError> {
+    if data.is_empty() {
+        return Err(EncodingError::EmptyData);
+    }
+
+    // Take first element and extract metadata
+    // SAFETY: Unwrap safe as already checked that `data` not empty
+    let first = data.first().unwrap();
+    let metadata = OrderBookDepth10::get_metadata(
+        &first.instrument_id,
+        first.bids[0].price.precision,
+        first.bids[0].size.precision,
+    );
+
+    OrderBookDepth10::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
+}
+
+pub fn quote_ticks_to_arrow_record_batch_bytes(
+    data: Vec<QuoteTick>,
+) -> Result<RecordBatch, EncodingError> {
+    if data.is_empty() {
+        return Err(EncodingError::EmptyData);
+    }
+
+    // Take first element and extract metadata
+    // SAFETY: Unwrap safe as already checked that `data` not empty
+    let first = data.first().unwrap();
+    let metadata = QuoteTick::get_metadata(
+        &first.instrument_id,
+        first.bid_price.precision,
+        first.bid_size.precision,
+    );
+
+    QuoteTick::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
+}
+
+pub fn trade_ticks_to_arrow_record_batch_bytes(
+    data: Vec<TradeTick>,
+) -> Result<RecordBatch, EncodingError> {
+    if data.is_empty() {
+        return Err(EncodingError::EmptyData);
+    }
+
+    // Take first element and extract metadata
+    // SAFETY: Unwrap safe as already checked that `data` not empty
+    let first = data.first().unwrap();
+    let metadata = TradeTick::get_metadata(
+        &first.instrument_id,
+        first.price.precision,
+        first.size.precision,
+    );
+
+    TradeTick::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
+}
+
+pub fn bars_to_arrow_record_batch_bytes(data: Vec<Bar>) -> Result<RecordBatch, EncodingError> {
+    if data.is_empty() {
+        return Err(EncodingError::EmptyData);
+    }
+
+    // Take first element and extract metadata
+    // SAFETY: Unwrap safe as already checked that `data` not empty
+    let first = data.first().unwrap();
+    let metadata = Bar::get_metadata(
+        &first.bar_type,
+        first.open.precision,
+        first.volume.precision,
+    );
+
+    Bar::encode_batch(&metadata, &data).map_err(EncodingError::ArrowError)
 }
