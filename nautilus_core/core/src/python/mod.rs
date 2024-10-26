@@ -25,7 +25,10 @@ use pyo3::{
     wrap_pyfunction,
 };
 
-use crate::uuid::UUID4;
+use crate::{
+    uuid::UUID4,
+    version::{NAUTILUS_VERSION, USER_AGENT},
+};
 pub mod casing;
 pub mod datetime;
 pub mod serialization;
@@ -58,6 +61,8 @@ pub fn to_pyruntime_err(e: impl std::fmt::Display) -> PyErr {
 /// Loaded as nautilus_pyo3.core
 #[pymodule]
 pub fn core(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+    m.add(stringify!(NAUTILUS_VERSION), NAUTILUS_VERSION)?;
+    m.add(stringify!(USER_AGENT), USER_AGENT)?;
     m.add_class::<UUID4>()?;
     m.add_function(wrap_pyfunction!(casing::py_convert_to_snake_case, m)?)?;
     m.add_function(wrap_pyfunction!(datetime::py_secs_to_nanos, m)?)?;

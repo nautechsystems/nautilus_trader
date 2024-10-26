@@ -13,27 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{fs, sync::LazyLock};
+use std::env;
 
-use toml::Value;
+/// The `NautilusTrader` version string read from the top-level `pyproject.toml` at compile time.
+pub static NAUTILUS_VERSION: &str = env!("NAUTILUS_VERSION");
 
-use crate::paths::get_project_root_path;
-
-// Reads the NautilusTrader version from the top-level `pyproject.toml`.
-fn read_nautilus_version() -> String {
-    let filepath = get_project_root_path().join("pyproject.toml");
-    let data = fs::read_to_string(filepath).expect("Unable to read pyproject.toml");
-    let parsed_toml: Value = toml::from_str(&data).expect("Unable to parse pyproject.toml");
-
-    parsed_toml["tool"]["poetry"]["version"]
-        .as_str()
-        .expect("Unable to find version in pyproject.toml")
-        .to_string()
-}
-
-/// The `NautilusTrader` version string read from the top-level `pyproject.toml`.
-pub static NAUTILUS_VERSION: LazyLock<String> = LazyLock::new(read_nautilus_version);
-
-/// The `NautilusTrader` common User-Agent string including the current version.
-pub static USER_AGENT: LazyLock<String> =
-    LazyLock::new(|| format!("NautilusTrader/{}", NAUTILUS_VERSION.clone()));
+/// The `NautilusTrader` common User-Agent string including the current version at compile time.
+pub static USER_AGENT: &str = env!("NAUTILUS_USER_AGENT");
