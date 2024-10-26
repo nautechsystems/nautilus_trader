@@ -22,6 +22,7 @@ Released on TBD (UTC).
 ### Fixes
 - Fixed use of Redis `KEYS` command which, is unsupported in cluster environments (replaced with `SCAN` for compatibility)
 - Fixed decoding fill HTTP messages for dYdX (#2022), thanks @davidsblom
+- Fixed account balance report for dYdX (#2024), thanks @davidsblom
 
 ---
 
