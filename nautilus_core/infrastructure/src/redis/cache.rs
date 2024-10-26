@@ -43,7 +43,7 @@ use nautilus_model::{
     position::Position,
     types::currency::Currency,
 };
-use redis::{Commands, Connection, Pipeline};
+use redis::{Commands, Connection, Pipeline, RedisError};
 use ustr::Ustr;
 
 use super::{REDIS_DELIMITER, REDIS_FLUSHDB};
@@ -197,10 +197,7 @@ impl RedisCacheDatabase {
     pub fn keys(&mut self, pattern: &str) -> anyhow::Result<Vec<String>> {
         let pattern = format!("{}{REDIS_DELIMITER}{pattern}", self.trader_key);
         log::debug!("Querying keys: {pattern}");
-        match self.con.keys(pattern) {
-            Ok(keys) => Ok(keys),
-            Err(e) => Err(e.into()),
-        }
+        Ok(scan_keys(&mut self.con, pattern)?)
     }
 
     pub fn read(&mut self, key: &str) -> anyhow::Result<Vec<Bytes>> {
@@ -340,6 +337,10 @@ fn drain_buffer(conn: &mut Connection, trader_key: &str, buffer: &mut VecDeque<D
     if let Err(e) = pipe.query::<()>(conn) {
         tracing::error!("{e}");
     }
+}
+
+fn scan_keys(con: &mut Connection, pattern: String) -> Result<Vec<String>, RedisError> {
+    Ok(con.scan_match::<String, String>(pattern)?.collect())
 }
 
 fn read_index(conn: &mut Connection, key: &str) -> anyhow::Result<Vec<Bytes>> {
@@ -685,8 +686,9 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
 
     fn load_currencies(&mut self) -> anyhow::Result<HashMap<Ustr, Currency>> {
         let mut currencies = HashMap::new();
+        let pattern = format!("{CURRENCIES}*");
 
-        for key in self.database.keys(&format!("{CURRENCIES}*"))? {
+        for key in scan_keys(&mut self.database.con, pattern)? {
             let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
             let currency_code = Ustr::from(parts.first().unwrap());
             let result = self.load_currency(&currency_code)?;
@@ -704,8 +706,9 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
 
     fn load_instruments(&mut self) -> anyhow::Result<HashMap<InstrumentId, InstrumentAny>> {
         let mut instruments = HashMap::new();
+        let pattern = format!("{INSTRUMENTS}*");
 
-        for key in self.database.keys(&format!("{INSTRUMENTS}*"))? {
+        for key in scan_keys(&mut self.database.con, pattern)? {
             let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
             let instrument_id = InstrumentId::from_str(parts.first().unwrap())?;
             let result = self.load_instrument(&instrument_id)?;
@@ -724,8 +727,9 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
 
     fn load_synthetics(&mut self) -> anyhow::Result<HashMap<InstrumentId, SyntheticInstrument>> {
         let mut synthetics = HashMap::new();
+        let pattern = format!("{SYNTHETICS}*");
 
-        for key in self.database.keys(&format!("{SYNTHETICS}*"))? {
+        for key in scan_keys(&mut self.database.con, pattern)? {
             let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
             let instrument_id = InstrumentId::from_str(parts.first().unwrap())?;
             let synthetic = self.load_synthetic(&instrument_id)?;
@@ -737,8 +741,9 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
 
     fn load_accounts(&mut self) -> anyhow::Result<HashMap<AccountId, AccountAny>> {
         let mut accounts = HashMap::new();
+        let pattern = format!("{ACCOUNTS}*");
 
-        for key in self.database.keys(&format!("{ACCOUNTS}*"))? {
+        for key in scan_keys(&mut self.database.con, pattern)? {
             let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
             let account_id = AccountId::from(*parts.first().unwrap());
             let result = self.load_account(&account_id)?;
@@ -757,8 +762,9 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
 
     fn load_orders(&mut self) -> anyhow::Result<HashMap<ClientOrderId, OrderAny>> {
         let mut orders = HashMap::new();
+        let pattern = format!("{ORDERS}*");
 
-        for key in self.database.keys(&format!("{ORDERS}*"))? {
+        for key in scan_keys(&mut self.database.con, pattern)? {
             let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
             let client_order_id = ClientOrderId::from(*parts.first().unwrap());
             let result = self.load_order(&client_order_id)?;
@@ -776,8 +782,9 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
 
     fn load_positions(&mut self) -> anyhow::Result<HashMap<PositionId, Position>> {
         let mut positions = HashMap::new();
+        let pattern = format!("{POSITIONS}*");
 
-        for key in self.database.keys(&format!("{POSITIONS}*"))? {
+        for key in scan_keys(&mut self.database.con, pattern)? {
             let parts: Vec<&str> = key.as_str().rsplitn(2, ':').collect();
             let position_id = PositionId::from(*parts.first().unwrap());
             let position = self.load_position(&position_id)?;

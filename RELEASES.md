@@ -15,10 +15,11 @@ Released on TBD (UTC).
 - Upgraded `tokio` crate to v1.41.0
 
 ### Breaking Changes
-- Removed pyo3 `DataTransformer` (was being used for namespacing so refactored to separate functions)
+- Removed pyo3 `DataTransformer` (was being used for namespacing, so refactored to separate functions)
 - Moved `TEST_DATA_DIR` constant to `nautilus_trader` module (from `tests`)
 
 ### Fixes
+- Fixed use of Redis `KEYS` command which, is unsupported in cluster environments (replaced with `SCAN` for compatibility)
 - Upgraded Polymarket WebSocket data API to new version
 
 ---
