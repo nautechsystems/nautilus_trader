@@ -11,10 +11,11 @@ Released on TBD (UTC).
 - Improved Redis version parsing to support truncated versions (improves compatibility with Redis-compliant databases)
 - Refined Arrow serialization (record batch functions now also available in Rust)
 - Refined core `Bar` API to remove unnecessary unwraps
+- Standardized network client logging
 - Upgraded `tokio` crate to v1.41.0
 
 ### Breaking Changes
-- Removed pyo3 `DataTransformer` (was being used for namespacing for refactored to separate functions)
+- Removed pyo3 `DataTransformer` (was being used for namespacing so refactored to separate functions)
 - Moved `TEST_DATA_DIR` constant to `nautilus_trader` module (from `tests`)
 
 ### Fixes
