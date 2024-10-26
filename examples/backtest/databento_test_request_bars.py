@@ -52,7 +52,7 @@ from nautilus_trader.trading.strategy import Strategy
 # from option_trader import DATA_PATH, DATABENTO_API_KEY # personal library, use your own values especially for DATABENTO_API_KEY
 # db_data_utils.DATA_PATH = DATA_PATH
 
-catalog_folder = "histo_bars_catalog"
+catalog_folder = "historical_bars_catalog"
 catalog = load_catalog(catalog_folder)
 
 future_symbols = ["ESU4"]
@@ -98,30 +98,31 @@ futures_data_trades = databento_data(
 
 
 # %%
-class TestHistoAggConfig(StrategyConfig, frozen=True):
+class TestHistoricalAggConfig(StrategyConfig, frozen=True):
     symbol_id: InstrumentId
-    histo_start_delay: int = 10
-    histo_end_delay: int = 1
+    historical_start_delay: int = 10
+    historical_end_delay: int = 1
 
 
-class TestHistoAggStrategy(Strategy):
-    def __init__(self, config: TestHistoAggConfig):
+class TestHistoricalAggStrategy(Strategy):
+    def __init__(self, config: TestHistoricalAggConfig):
         super().__init__(config=config)
 
         self._symbol_id = config.symbol_id
-        self._histo_start_delay = config.histo_start_delay
-        self._histo_end_delay = config.histo_end_delay
+        self._historical_start_delay = config.historical_start_delay
+        self._historical_end_delay = config.historical_end_delay
         # self.external_sma = SimpleMovingAverage(2)
         # self.composite_sma = SimpleMovingAverage(2)
 
     def on_start(self):
         ######### for testing bars
-        start_histo_bars = self._clock.utc_now() - pd.Timedelta(minutes=self._histo_start_delay)
-        end_histo_bars = self._clock.utc_now() - pd.Timedelta(minutes=self._histo_end_delay)
-        self.user_log(f"on_start: {start_histo_bars=}, {end_histo_bars=}")
+        utc_now = self._clock.utc_now()
+        start_historical_bars = utc_now - pd.Timedelta(minutes=self._historical_start_delay)
+        end_historical_bars = utc_now - pd.Timedelta(minutes=self._historical_end_delay)
+        self.user_log(f"on_start: {start_historical_bars=}, {end_historical_bars=}")
 
-        # # external_bar_type = BarType.from_str(f"{self._symbol_id}-1-MINUTE-LAST-EXTERNAL")
-        # # self.subscribe_bars(external_bar_type)
+        # external_bar_type = BarType.from_str(f"{self._symbol_id}-1-MINUTE-LAST-EXTERNAL")
+        # self.subscribe_bars(external_bar_type)
 
         bar_type_1 = BarType.from_str(f"{self._symbol_id}-2-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")
         bar_type_2 = BarType.from_str(f"{self._symbol_id}-4-MINUTE-LAST-INTERNAL@2-MINUTE-INTERNAL")
@@ -133,8 +134,8 @@ class TestHistoAggStrategy(Strategy):
 
         self.request_aggregated_bars(
             [bar_type_1, bar_type_2, bar_type_3],
-            start=start_histo_bars,
-            end=end_histo_bars,
+            start=start_historical_bars,
+            end=end_historical_bars,
             update_existing_subscriptions=True,
             include_external_data=False,
         )
@@ -144,12 +145,13 @@ class TestHistoAggStrategy(Strategy):
         # self.register_indicator_for_bars(composite_bar_type, self.composite_sma)
 
         ######### for testing quote ticks
-        # start_histo_bars = self._clock.utc_now() - pd.Timedelta(minutes=self._histo_start_delay)
-        # end_histo_bars = self._clock.utc_now() - pd.Timedelta(
-        #     minutes=self._histo_end_delay,
+        # utc_now = self._clock.utc_now()
+        # start_historical_bars = utc_now - pd.Timedelta(minutes=self._historical_start_delay)
+        # end_historical_bars = utc_now - pd.Timedelta(
+        #     minutes=self._historical_end_delay,
         #     milliseconds=1,
         # )
-        # self.user_log(f"on_start: {start_histo_bars=}, {end_histo_bars=}")
+        # self.user_log(f"on_start: {start_historical_bars=}, {end_historical_bars=}")
 
         # bar_type_1 = BarType.from_str(f"{self._symbol_id}-1-MINUTE-BID-INTERNAL")
         # bar_type_2 = BarType.from_str(f"{self._symbol_id}-2-MINUTE-BID-INTERNAL@1-MINUTE-INTERNAL")
@@ -159,19 +161,20 @@ class TestHistoAggStrategy(Strategy):
 
         # self.request_aggregated_bars(
         #     [bar_type_1, bar_type_2],
-        #     start=start_histo_bars,
-        #     end=end_histo_bars,
+        #     start=start_historical_bars,
+        #     end=end_historical_bars,
         #     update_existing_subscriptions=True,
         #     include_external_data=False,
         # )
 
         ######### for testing trade ticks
-        # start_histo_bars = self._clock.utc_now() - pd.Timedelta(minutes=self._histo_start_delay)
-        # end_histo_bars = self._clock.utc_now() - pd.Timedelta(
-        #     minutes=self._histo_end_delay,
+        # utc_now = self._clock.utc_now()
+        # start_historical_bars = utc_now - pd.Timedelta(minutes=self._historical_start_delay)
+        # end_historical_bars = utc_now - pd.Timedelta(
+        #     minutes=self._historical_end_delay,
         #     milliseconds=1,
         # )
-        # self.user_log(f"on_start: {start_histo_bars=}, {end_histo_bars=}")
+        # self.user_log(f"on_start: {start_historical_bars=}, {end_historical_bars=}")
 
         # bar_type_1 = BarType.from_str(f"{self._symbol_id}-1-MINUTE-LAST-INTERNAL")
         # bar_type_2 = BarType.from_str(f"{self._symbol_id}-2-MINUTE-LAST-INTERNAL@1-MINUTE-INTERNAL")
@@ -181,15 +184,15 @@ class TestHistoAggStrategy(Strategy):
 
         # self.request_aggregated_bars(
         #     [bar_type_1, bar_type_2],
-        #     start=start_histo_bars,
-        #     end=end_histo_bars,
+        #     start=start_historical_bars,
+        #     end=end_historical_bars,
         #     update_existing_subscriptions=True,
         #     include_external_data=False,
         # )
 
     def on_historical_data(self, data):
         if type(data) is Bar:
-            self.user_log(f"histo bar ts_init = {unix_nanos_to_str(data.ts_init)}")
+            self.user_log(f"historical bar ts_init = {unix_nanos_to_str(data.ts_init)}")
             self.user_log(data)
 
             # self.user_log(f"{self.external_sma.value=}, {self.external_sma.initialized=}")
@@ -214,16 +217,16 @@ class TestHistoAggStrategy(Strategy):
 
 strategies = [
     ImportableStrategyConfig(
-        strategy_path=TestHistoAggStrategy.fully_qualified_name(),
-        config_path=TestHistoAggConfig.fully_qualified_name(),
+        strategy_path=TestHistoricalAggStrategy.fully_qualified_name(),
+        config_path=TestHistoricalAggConfig.fully_qualified_name(),
         config={
             "symbol_id": InstrumentId.from_str(f"{future_symbols[0]}.GLBX"),
             # for bars
-            "histo_start_delay": 10,
-            "histo_end_delay": 1,
+            "historical_start_delay": 10,
+            "historical_end_delay": 1,
             # for quotes
-            # "histo_start_delay": 2,
-            # "histo_end_delay": 0,
+            # "historical_start_delay": 2,
+            # "historical_end_delay": 0,
         },
     ),
 ]
