@@ -21,9 +21,6 @@ from nautilus_trader.core.data import Data
 # Core
 ###################################################################################################
 
-def get_nautilus_version() -> str: ...
-def get_user_agent() -> str: ...
-
 class UUID4:
     def __init__(self, value: str) -> None: ...
 
