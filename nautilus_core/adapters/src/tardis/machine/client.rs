@@ -47,8 +47,9 @@ pub struct TardisMachineClient {
 
 impl TardisMachineClient {
     /// Creates a new [`TardisMachineClient`] instance.
+    #[must_use]
     pub fn new(base_url: Option<&str>) -> Self {
-        let base_url = base_url.map(|url| url.to_string()).unwrap_or_else(|| {
+        let base_url = base_url.map(std::string::ToString::to_string).unwrap_or_else(|| {
             env::var("TARDIS_MACHINE_WS_URL").expect(
                 "Tardis Machine `base_url` must be provided or set in the 'TARDIS_MACHINE_WS_URL' environment variable",
             )

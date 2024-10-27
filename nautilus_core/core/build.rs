@@ -45,7 +45,7 @@ fn main() {
         .to_string();
 
     // Set compile-time environment variables
-    println!("cargo:rustc-env=NAUTILUS_VERSION={}", nautilus_version);
+    println!("cargo:rustc-env=NAUTILUS_VERSION={nautilus_version}");
     println!("cargo:rustc-env=NAUTILUS_USER_AGENT=NautilusTrader/{nautilus_version}");
 
     #[cfg(feature = "ffi")]
