@@ -2693,6 +2693,7 @@ dependencies = [
  "serde_json",
  "strum",
  "thiserror",
+ "thousands",
  "time",
  "tokio",
  "tokio-tungstenite",

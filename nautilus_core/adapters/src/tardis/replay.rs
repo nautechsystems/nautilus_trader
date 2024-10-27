@@ -44,6 +44,7 @@ use nautilus_serialization::{
     },
     parquet::write_batch_to_parquet,
 };
+use thousands::Separable;
 
 use super::{
     enums::Exchange,
@@ -153,6 +154,8 @@ pub async fn run_tardis_machine_replay(config_filepath: &Path) {
     let mut trades_map: HashMap<InstrumentId, Vec<TradeTick>> = HashMap::new();
     let mut bars_map: HashMap<BarType, Vec<Bar>> = HashMap::new();
 
+    let mut msg_count = 0;
+
     while let Some(msg) = stream.next().await {
         match msg {
             Data::Deltas(msg) => handle_deltas_msg(msg, &mut deltas_map, &mut deltas_cursors),
@@ -162,43 +165,42 @@ pub async fn run_tardis_machine_replay(config_filepath: &Path) {
             Data::Bar(msg) => handle_bar_msg(msg, &mut bars_map, &mut bars_cursors),
             Data::Delta(_) => panic!("Individual delta message not implemented (or required)"),
         }
+
+        msg_count += 1;
+        if msg_count % 100_000 == 0 {
+            tracing::debug!("Processed {} messages", msg_count.separate_with_commas());
+        }
     }
 
     // Naively iterate through every remaining type and instrument sequentially
+
     for (instrument_id, deltas) in deltas_map.into_iter() {
-        let cursor = deltas_cursors
-            .get(&instrument_id)
-            .unwrap_or_else(|| panic!("Cursor for {instrument_id} deltas not found"));
+        let cursor = deltas_cursors.get(&instrument_id).expect("Expected cursor");
         batch_and_write_deltas(deltas, &instrument_id, cursor.date_utc);
     }
 
     for (instrument_id, depths) in depths_map.into_iter() {
-        let cursor = depths_cursors
-            .get(&instrument_id)
-            .unwrap_or_else(|| panic!("Cursor for {instrument_id} depths not found"));
+        let cursor = depths_cursors.get(&instrument_id).expect("Expected cursor");
         batch_and_write_depths(depths, &instrument_id, cursor.date_utc);
     }
 
     for (instrument_id, quotes) in quotes_map.into_iter() {
-        let cursor = quotes_cursors
-            .get(&instrument_id)
-            .unwrap_or_else(|| panic!("Cursor for {instrument_id} quotes not found"));
+        let cursor = quotes_cursors.get(&instrument_id).expect("Expected cursor");
         batch_and_write_quotes(quotes, &instrument_id, cursor.date_utc);
     }
 
     for (instrument_id, trades) in trades_map.into_iter() {
-        let cursor = trades_cursors
-            .get(&instrument_id)
-            .unwrap_or_else(|| panic!("Cursor for {instrument_id} trades not found"));
+        let cursor = trades_cursors.get(&instrument_id).expect("Expected cursor");
         batch_and_write_trades(trades, &instrument_id, cursor.date_utc);
     }
 
     for (bar_type, bars) in bars_map.into_iter() {
-        let cursor = bars_cursors
-            .get(&bar_type)
-            .unwrap_or_else(|| panic!("Cursor for {bar_type} bars not found"));
+        // SAFETY: Cursor is guaranteed unless above logic changes
+        let cursor = bars_cursors.get(&bar_type).expect("Expected cursor");
         batch_and_write_bars(bars, &bar_type, cursor.date_utc);
     }
+
+    tracing::info!("Replay completed");
 }
 
 fn handle_deltas_msg(
