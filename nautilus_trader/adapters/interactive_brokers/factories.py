@@ -209,6 +209,8 @@ class InteractiveBrokersLiveDataClientFactory(LiveDataClientFactory):
             ibg_client_id=config.ibg_client_id,
             config=config,
             name=name,
+            connection_timeout=config.connection_timeout,
+            request_timeout=config.request_timeout,
         )
         return data_client
 
@@ -286,5 +288,6 @@ class InteractiveBrokersLiveExecClientFactory(LiveExecClientFactory):
             instrument_provider=provider,
             config=config,
             name=name,
+            connection_timeout=config.connection_timeout,
         )
         return exec_client
