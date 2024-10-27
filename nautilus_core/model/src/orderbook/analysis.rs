@@ -78,6 +78,45 @@ pub fn get_avg_px_for_quantity(qty: Quantity, levels: &BTreeMap<BookPrice, Level
     }
 }
 
+/// Calculates the estimated average price for a specified exposure from a set of
+/// order book levels.
+#[must_use]
+pub fn get_avg_px_qty_for_exposure(
+    target_exposure: Quantity,
+    levels: &BTreeMap<BookPrice, Level>,
+) -> (f64, f64, f64) {
+    let mut cumulative_exposure = 0.0;
+    let mut cumulative_size_raw = 0u64;
+    let mut final_price = levels
+        .first_key_value()
+        .map(|(price, _)| price.value.as_f64())
+        .unwrap_or(0.0);
+
+    for (book_price, level) in levels {
+        let price = book_price.value.as_f64();
+        final_price = price;
+
+        let level_exposure = price * level.size_raw() as f64;
+        let exposure_this_level =
+            level_exposure.min(target_exposure.raw as f64 - cumulative_exposure);
+        let size_this_level = (exposure_this_level / price).floor() as u64;
+
+        cumulative_exposure += price * size_this_level as f64;
+        cumulative_size_raw += size_this_level;
+
+        if cumulative_exposure >= target_exposure.as_f64() {
+            break;
+        }
+    }
+
+    if cumulative_size_raw == 0 {
+        (0.0, 0.0, final_price)
+    } else {
+        let avg_price = cumulative_exposure / cumulative_size_raw as f64;
+        (avg_price, cumulative_size_raw as f64, final_price)
+    }
+}
+
 pub fn book_check_integrity(book: &OrderBook) -> Result<(), BookIntegrityError> {
     match book.book_type {
         BookType::L1_MBP => {

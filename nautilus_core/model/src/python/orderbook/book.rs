@@ -193,6 +193,15 @@ impl OrderBook {
         self.get_avg_px_for_quantity(qty, order_side)
     }
 
+    #[pyo3(name = "get_avg_px_qty_for_exposure")]
+    fn py_get_avg_px_qty_for_exposure(
+        &self,
+        qty: Quantity,
+        order_side: OrderSide,
+    ) -> (f64, f64, f64) {
+        self.get_avg_px_qty_for_exposure(qty, order_side)
+    }
+
     #[pyo3(name = "get_quantity_for_price")]
     fn py_get_quantity_for_price(&self, price: Price, order_side: OrderSide) -> f64 {
         self.get_quantity_for_price(price, order_side)
