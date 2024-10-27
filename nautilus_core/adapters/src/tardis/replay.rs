@@ -58,7 +58,7 @@ use crate::tardis::{
 
 struct DateCursor {
     /// Cursor date UTC.
-    date: NaiveDate,
+    date_utc: NaiveDate,
     /// Cursor end timestamp UNIX nanoseconds.
     end_ns: UnixNanos,
 }
@@ -74,10 +74,7 @@ impl DateCursor {
             date_utc.and_hms_opt(23, 59, 59).unwrap() + Duration::nanoseconds(999_999_999);
         let end_ns = UnixNanos::from(end_utc.and_utc().timestamp_nanos_opt().unwrap() as u64);
 
-        Self {
-            date: date_utc,
-            end_ns,
-        }
+        Self { date_utc, end_ns }
     }
 }
 
@@ -172,39 +169,38 @@ pub async fn run_tardis_machine_replay(config_filepath: &Path) {
         let cursor = deltas_cursors
             .get(&instrument_id)
             .unwrap_or_else(|| panic!("Cursor for {instrument_id} deltas not found"));
-        batch_and_write_deltas(deltas, &instrument_id, cursor.date);
+        batch_and_write_deltas(deltas, &instrument_id, cursor.date_utc);
     }
 
     for (instrument_id, depths) in depths_map.into_iter() {
         let cursor = depths_cursors
             .get(&instrument_id)
             .unwrap_or_else(|| panic!("Cursor for {instrument_id} depths not found"));
-        batch_and_write_depths(depths, &instrument_id, cursor.date);
+        batch_and_write_depths(depths, &instrument_id, cursor.date_utc);
     }
 
     for (instrument_id, quotes) in quotes_map.into_iter() {
         let cursor = quotes_cursors
             .get(&instrument_id)
             .unwrap_or_else(|| panic!("Cursor for {instrument_id} quotes not found"));
-        batch_and_write_quotes(quotes, &instrument_id, cursor.date);
+        batch_and_write_quotes(quotes, &instrument_id, cursor.date_utc);
     }
 
     for (instrument_id, trades) in trades_map.into_iter() {
         let cursor = trades_cursors
             .get(&instrument_id)
             .unwrap_or_else(|| panic!("Cursor for {instrument_id} trades not found"));
-        batch_and_write_trades(trades, &instrument_id, cursor.date);
+        batch_and_write_trades(trades, &instrument_id, cursor.date_utc);
     }
 
     for (bar_type, bars) in bars_map.into_iter() {
         let cursor = bars_cursors
             .get(&bar_type)
             .unwrap_or_else(|| panic!("Cursor for {bar_type} bars not found"));
-        batch_and_write_bars(bars, &bar_type, cursor.date);
+        batch_and_write_bars(bars, &bar_type, cursor.date_utc);
     }
 }
 
-// TODO: Make this generic across data types
 fn handle_deltas_msg(
     deltas: OrderBookDeltas_API,
     map: &mut HashMap<InstrumentId, Vec<OrderBookDelta>>,
@@ -216,7 +212,7 @@ fn handle_deltas_msg(
 
     if deltas.ts_init > cursor.end_ns {
         if let Some(deltas_vec) = map.remove(&deltas.instrument_id) {
-            batch_and_write_deltas(deltas_vec, &deltas.instrument_id, cursor.date);
+            batch_and_write_deltas(deltas_vec, &deltas.instrument_id, cursor.date_utc);
         };
         // Update cursor
         *cursor = DateCursor::new(deltas.ts_init)
@@ -238,7 +234,7 @@ fn handle_depth10_msg(
 
     if depth10.ts_init > cursor.end_ns {
         if let Some(depths_vec) = map.remove(&depth10.instrument_id) {
-            batch_and_write_depths(depths_vec, &depth10.instrument_id, cursor.date);
+            batch_and_write_depths(depths_vec, &depth10.instrument_id, cursor.date_utc);
         };
         // Update cursor
         *cursor = DateCursor::new(depth10.ts_init)
@@ -260,7 +256,7 @@ fn handle_quote_msg(
 
     if quote.ts_init > cursor.end_ns {
         if let Some(quotes_vec) = map.remove(&quote.instrument_id) {
-            batch_and_write_quotes(quotes_vec, &quote.instrument_id, cursor.date);
+            batch_and_write_quotes(quotes_vec, &quote.instrument_id, cursor.date_utc);
         };
         // Update cursor
         *cursor = DateCursor::new(quote.ts_init)
@@ -282,7 +278,7 @@ fn handle_trade_msg(
 
     if trade.ts_init > cursor.end_ns {
         if let Some(trades_vec) = map.remove(&trade.instrument_id) {
-            batch_and_write_trades(trades_vec, &trade.instrument_id, cursor.date);
+            batch_and_write_trades(trades_vec, &trade.instrument_id, cursor.date_utc);
         };
         // Update cursor
         *cursor = DateCursor::new(trade.ts_init)
@@ -304,7 +300,7 @@ fn handle_bar_msg(
 
     if bar.ts_init > cursor.end_ns {
         if let Some(bars_vec) = map.remove(&bar.bar_type) {
-            batch_and_write_bars(bars_vec, &bar.bar_type, cursor.date);
+            batch_and_write_bars(bars_vec, &bar.bar_type, cursor.date_utc);
         };
         // Update cursor
         *cursor = DateCursor::new(bar.ts_init)
@@ -387,5 +383,53 @@ fn write_batch(batch: RecordBatch, typename: &str, instrument_id: &InstrumentId,
     match write_batch_to_parquet(&batch, &filepath, None) {
         Ok(_) => tracing::info!("File written: {}", filepath.display()),
         Err(e) => tracing::error!("Error writing {}: {e:?}", filepath.display()),
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// Tests
+///////////////////////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use chrono::{TimeZone, Utc};
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(
+    // Start of day: 2024-01-01 00:00:00 UTC
+    Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap().timestamp_nanos_opt().unwrap() as u64,
+    NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
+    Utc.with_ymd_and_hms(2024, 1, 1, 23, 59, 59).unwrap().timestamp_nanos_opt().unwrap() as u64 + 999_999_999
+)]
+    #[case(
+    // Midday: 2024-01-01 12:00:00 UTC
+    Utc.with_ymd_and_hms(2024, 1, 1, 12, 0, 0).unwrap().timestamp_nanos_opt().unwrap() as u64,
+    NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
+    Utc.with_ymd_and_hms(2024, 1, 1, 23, 59, 59).unwrap().timestamp_nanos_opt().unwrap() as u64 + 999_999_999
+)]
+    #[case(
+    // End of day: 2024-01-01 23:59:59.999999999 UTC
+    Utc.with_ymd_and_hms(2024, 1, 1, 23, 59, 59).unwrap().timestamp_nanos_opt().unwrap() as u64 + 999_999_999,
+    NaiveDate::from_ymd_opt(2024, 1, 1).unwrap(),
+    Utc.with_ymd_and_hms(2024, 1, 1, 23, 59, 59).unwrap().timestamp_nanos_opt().unwrap() as u64 + 999_999_999
+)]
+    #[case(
+    // Start of new day: 2024-01-02 00:00:00 UTC
+    Utc.with_ymd_and_hms(2024, 1, 2, 0, 0, 0).unwrap().timestamp_nanos_opt().unwrap() as u64,
+    NaiveDate::from_ymd_opt(2024, 1, 2).unwrap(),
+    Utc.with_ymd_and_hms(2024, 1, 2, 23, 59, 59).unwrap().timestamp_nanos_opt().unwrap() as u64 + 999_999_999
+)]
+    fn test_date_cursor(
+        #[case] timestamp: u64,
+        #[case] expected_date: NaiveDate,
+        #[case] expected_end_ns: u64,
+    ) {
+        let unix_nanos = UnixNanos::from(timestamp);
+        let cursor = DateCursor::new(unix_nanos);
+
+        assert_eq!(cursor.date_utc, expected_date);
+        assert_eq!(cursor.end_ns, UnixNanos::from(expected_end_ns));
     }
 }
