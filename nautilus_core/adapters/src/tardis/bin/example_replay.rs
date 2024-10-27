@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::path::PathBuf;
+use std::{env, path::PathBuf};
 
 use nautilus_adapters::tardis::replay::run_tardis_machine_replay;
 
@@ -23,11 +23,14 @@ async fn main() {
         .with_max_level(tracing::Level::DEBUG)
         .init();
 
-    let config_filepath = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("src")
-        .join("tardis")
-        .join("bin")
-        .join("example_config.json");
+    // Retrieve the config path from first argument, or use a default example config
+    let config_filepath = env::args().nth(1).map(PathBuf::from).unwrap_or_else(|| {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("src")
+            .join("tardis")
+            .join("bin")
+            .join("example_config.json")
+    });
 
     run_tardis_machine_replay(&config_filepath).await;
 }
