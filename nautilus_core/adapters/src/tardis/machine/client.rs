@@ -15,6 +15,7 @@
 
 use std::{
     collections::HashMap,
+    env,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -22,16 +23,15 @@ use std::{
 };
 
 use futures_util::{pin_mut, Stream, StreamExt};
-use nautilus_model::{
-    data::Data,
-    identifiers::{InstrumentId, Symbol, Venue},
-};
+use nautilus_model::{data::Data, identifiers::InstrumentId};
 
 use super::{
     message::WsMessage, replay_normalized, stream_normalized, Error, InstrumentMiniInfo,
     ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions,
 };
-use crate::tardis::{enums::Exchange, machine::parse::parse_tardis_ws_message};
+use crate::tardis::{
+    machine::parse::parse_tardis_ws_message, parse::parse_instrument_id_with_enum,
+};
 
 /// Provides a client for connecting to a [Tardis Machine Server](https://docs.tardis.dev/api/tardis-machine).
 #[cfg_attr(
@@ -47,9 +47,15 @@ pub struct TardisMachineClient {
 
 impl TardisMachineClient {
     /// Creates a new [`TardisMachineClient`] instance.
-    pub fn new(base_url: impl ToString) -> Self {
+    pub fn new(base_url: Option<&str>) -> Self {
+        let base_url = base_url.map(|url| url.to_string()).unwrap_or_else(|| {
+            env::var("TARDIS_MACHINE_WS_URL").expect(
+                "Tardis Machine `base_url` must be provided or set in the 'TARDIS_MACHINE_WS_URL' environment variable",
+            )
+        });
+
         Self {
-            base_url: base_url.to_string(),
+            base_url,
             replay_signal: Arc::new(AtomicBool::new(false)),
             stream_signals: HashMap::new(),
             instruments: HashMap::new(),
@@ -167,9 +173,4 @@ pub fn determine_instrument_info(
         tracing::error!("Instrument definition info not available for {instrument_id}");
         None
     }
-}
-
-#[must_use]
-fn parse_instrument_id_with_enum(symbol: &str, exchange: &Exchange) -> InstrumentId {
-    InstrumentId::new(Symbol::from(symbol), Venue::from(exchange.as_venue_str()))
 }

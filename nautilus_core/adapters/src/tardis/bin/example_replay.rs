@@ -23,8 +23,6 @@ async fn main() {
         .with_max_level(tracing::Level::DEBUG)
         .init();
 
-    tracing::info!("Starting replay");
-
     let config_filepath = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("src")
         .join("tardis")

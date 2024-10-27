@@ -14,6 +14,7 @@ crate-type = ["rlib", "staticlib"]
 anyhow = { workspace = true }
 bytes = { workspace = true }
 chrono = { workspace = true }
+heck = { workspace = true }
 indexmap = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rmp-serde = { workspace = true }
@@ -21,7 +22,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true }
-heck = "0.5.0"
 
 [dev-dependencies]
 criterion = { workspace = true }

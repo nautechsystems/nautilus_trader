@@ -31,7 +31,7 @@ use crate::tardis::machine::{
 #[pymethods]
 impl TardisMachineClient {
     #[new]
-    fn py_new(base_url: &str) -> PyResult<Self> {
+    fn py_new(base_url: Option<&str>) -> PyResult<Self> {
         Ok(Self::new(base_url))
     }
 

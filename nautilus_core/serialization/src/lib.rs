@@ -30,6 +30,7 @@
 #![allow(deprecated)] // TODO: Temporary for pyo3 upgrade
 
 pub mod arrow;
+pub mod parquet;
 
 #[cfg(feature = "python")]
 pub mod python;

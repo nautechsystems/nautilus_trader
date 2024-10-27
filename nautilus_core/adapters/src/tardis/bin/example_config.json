@@ -1,5 +1,6 @@
 {
   "catalog_path": null,
+  "tardis_ws_url": "ws://localhost:8001",
   "options": [
     {
       "exchange": "bitmex",

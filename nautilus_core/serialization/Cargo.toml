@@ -14,9 +14,10 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model", features = ["stubs"] }
 anyhow = { workspace = true }
+arrow = { workspace = true }
+parquet = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 thiserror = { workspace = true }
-arrow = "52.2.0"  # Should be kept in line with datafusion
 
 [dev-dependencies]
 nautilus-test-kit = { path = "../test_kit" }
