@@ -222,8 +222,8 @@ class HistoricInteractiveBrokersClient:
             Instrument IDs (e.g. AAPL.NASDAQ) defining which bars to retrieve.
         use_rth : bool, default 'True'
             Whether to use regular trading hours.
-        timeout : int, default '120'
-            The timeout in seconds for each request.
+        timeout : int, default 120
+            The timeout (seconds) for each request.
 
         Returns
         -------
@@ -315,8 +315,8 @@ class HistoricInteractiveBrokersClient:
             Instrument IDs (e.g. AAPL.NASDAQ) defining which ticks to retrieve.
         use_rth : bool, default 'True'
             Whether to use regular trading hours.
-        timeout : int, default '60'
-            The timeout in seconds for each request.
+        timeout : int, default 60
+            The timeout (seconds) for each request.
 
         Returns
         -------
