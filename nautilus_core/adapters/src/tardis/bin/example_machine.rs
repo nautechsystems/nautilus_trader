@@ -20,6 +20,7 @@ use nautilus_adapters::tardis::{
     machine::{InstrumentMiniInfo, ReplayNormalizedRequestOptions, TardisMachineClient},
 };
 use nautilus_model::identifiers::InstrumentId;
+use thousands::Separable;
 
 #[tokio::main]
 async fn main() {
@@ -55,20 +56,24 @@ async fn main() {
         with_disconnect_messages: Some(false),
     }];
 
-    // Signal to stop after a number of messages
-    let stop_count = 100;
-    let mut counter = 0;
-
     // Start the replay and receive the stream of messages
     let stream = client.replay(options).await;
     pin_mut!(stream);
 
-    while let Some(msg) = stream.next().await {
-        println!("Received message: {msg:?}");
+    // Signal to stop after a number of messages
+    let stop_count = 2_000_000;
+    let mut msg_count = 0;
 
-        counter += 1;
-        if counter >= stop_count {
+    while let Some(msg) = stream.next().await {
+        tracing::trace!("Received {msg:?}");
+
+        if msg_count >= stop_count {
             client.close();
+        }
+
+        msg_count += 1;
+        if msg_count % 100_000 == 0 {
+            tracing::debug!("Processed {} messages", msg_count.separate_with_commas());
         }
     }
 
