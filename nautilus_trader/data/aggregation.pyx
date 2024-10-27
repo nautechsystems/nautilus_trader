@@ -16,6 +16,8 @@
 from decimal import Decimal
 from typing import Callable
 
+import pandas as pd
+
 from cpython.datetime cimport datetime
 from cpython.datetime cimport timedelta
 from libc.stdint cimport uint64_t
@@ -623,7 +625,8 @@ cdef class ValueBarAggregator(BarAggregator):
 
     cdef void _apply_update_bar(self, Bar bar, Quantity volume, uint64_t ts_init):
         volume_update = volume
-        average_price = Quantity((bar.high + bar.low + bar.close) / Decimal(3.0), precision=self._builder.price_precision)
+        average_price = Quantity((bar.high + bar.low + bar.close) / Decimal(3.0),
+                                 precision=self._builder.price_precision)
 
         while volume_update > 0:  # While there is value to apply
             value_update = average_price * volume_update  # Calculated value in quote currency
@@ -780,8 +783,13 @@ cdef class TimeBarAggregator(BarAggregator):
             )
             start_time = (now - diff).floor(freq="h")
         elif self.bar_type.spec.aggregation == BarAggregation.DAY:
-            diff = timedelta(days=now.day % step)
-            start_time = (now - diff).floor(freq="d")
+            start_time = (now - timedelta(days=(now.day - 1))).floor(freq="d")
+        elif self.bar_type.spec.aggregation == BarAggregation.WEEK:
+            start_time = (now - timedelta(days=now.dayofweek)).floor(freq="d")
+        elif self.bar_type.spec.aggregation == BarAggregation.MONTH:
+            diff_months = (now.month - 1) % step
+            diff = pd.DateOffset(months=diff_months)
+            start_time = (now - timedelta(days=(now.day - 1)) - diff).floor(freq="d")
         else:  # pragma: no cover (design-time error)
             raise ValueError(
                 f"Aggregation type not supported for time bars, "
@@ -813,6 +821,11 @@ cdef class TimeBarAggregator(BarAggregator):
             return timedelta(hours=(1 * step))
         elif aggregation == BarAggregation.DAY:
             return timedelta(days=(1 * step))
+        elif aggregation == BarAggregation.WEEK:
+            return timedelta(days=(7 * step))
+        elif aggregation == BarAggregation.MONTH:
+            # not actually used
+            return timedelta(days=0)
         else:
             # Design time error
             raise ValueError(
@@ -833,6 +846,11 @@ cdef class TimeBarAggregator(BarAggregator):
             return secs_to_nanos(step) * 60 * 60
         elif aggregation == BarAggregation.DAY:
             return secs_to_nanos(step) * 60 * 60 * 24
+        elif aggregation == BarAggregation.WEEK:
+            return secs_to_nanos(step) * 60 * 60 * 24 * 7
+        elif aggregation == BarAggregation.MONTH:
+            # not actually used
+            return 0
         else:
             # Design time error
             raise ValueError(
@@ -842,27 +860,47 @@ cdef class TimeBarAggregator(BarAggregator):
     cpdef void _set_build_timer(self):
         self._timer_name = str(self.bar_type)
         cdef datetime now = self._clock.utc_now()
+        cdef datetime start_time = self.get_start_time(now)
+        cdef int step = self.bar_type.spec.step
 
-        self._clock.set_timer(
-            name=self._timer_name,
-            interval=self.interval,
-            start_time=self.get_start_time(now),
-            stop_time=None,
-            callback=self._build_bar,
-        )
+        if self.bar_type.spec.aggregation != BarAggregation.MONTH:
+            self._clock.set_timer(
+                name=self._timer_name,
+                interval=self.interval,
+                start_time=start_time,
+                stop_time=None,
+                callback=self._build_bar,
+            )
+        else:
+            # the monthly alert time is define iteratively at each alert time as there is no regular interval
+            alert_time = start_time + pd.DateOffset(months=step)
+
+            self._clock.set_time_alert(
+                name=self._timer_name,
+                alert_time=alert_time,
+                callback=self._build_bar,
+                override=True,
+            )
 
         self._log.debug(f"Started timer {self._timer_name}")
 
     def _start_batch_time(self, uint64_t time_ns):
+        cdef int step = self.bar_type.spec.step
         self._batch_mode = True
 
         start_time = self.get_start_time(unix_nanos_to_dt(time_ns), enable_delay=False)
         self._batch_open_ns = dt_to_unix_nanos(start_time)
 
-        if self._batch_open_ns == time_ns:
-            self._batch_open_ns -= self.interval_ns
+        if self.bar_type.spec.aggregation != BarAggregation.MONTH:
+            if self._batch_open_ns == time_ns:
+                self._batch_open_ns -= self.interval_ns
 
-        self._batch_next_close_ns = self._batch_open_ns + self.interval_ns
+            self._batch_next_close_ns = self._batch_open_ns + self.interval_ns
+        else:
+            if self._batch_open_ns == time_ns:
+                self._batch_open_ns -= pd.DateOffset(months=step)
+
+            self._batch_next_close_ns = self._batch_open_ns + pd.DateOffset(months=step)
 
     cdef void _batch_pre_update(self, uint64_t time_ns):
         if time_ns > self._batch_next_close_ns and self._builder.initialized:
@@ -877,6 +915,8 @@ cdef class TimeBarAggregator(BarAggregator):
             self._build_and_send(ts_event=ts_event, ts_init=ts_init)
 
     cdef void _batch_post_update(self, uint64_t time_ns):
+        cdef int step = self.bar_type.spec.step
+
         # update has already been done, resetting _batch_next_close_ns
         if not self._batch_mode and time_ns == self._batch_next_close_ns and time_ns > self._stored_open_ns:
             self._batch_next_close_ns = 0
@@ -884,10 +924,16 @@ cdef class TimeBarAggregator(BarAggregator):
 
         if time_ns > self._batch_next_close_ns:
             # We ensure that _batch_next_close_ns and _batch_open_ns are coherent with the last builder update
-            while self._batch_next_close_ns < time_ns:
-                self._batch_next_close_ns += self.interval_ns
+            if self.bar_type.spec.aggregation != BarAggregation.MONTH:
+                while self._batch_next_close_ns < time_ns:
+                    self._batch_next_close_ns += self.interval_ns
 
-            self._batch_open_ns = self._batch_next_close_ns - self.interval_ns
+                self._batch_open_ns = self._batch_next_close_ns - self.interval_ns
+            else:
+                while self._batch_next_close_ns < time_ns:
+                    self._batch_next_close_ns += pd.DateOffset(months=step)
+
+                self._batch_open_ns = self._batch_next_close_ns - pd.DateOffset(months=step)
 
         if time_ns == self._batch_next_close_ns:
             # Adjusting the timestamp logic based on interval_type
@@ -897,9 +943,12 @@ cdef class TimeBarAggregator(BarAggregator):
                 ts_event = self._batch_open_ns
 
             self._build_and_send(ts_event=ts_event, ts_init=time_ns)
+            self._batch_open_ns = self._batch_next_close_ns
 
-            self._batch_next_close_ns += self.interval_ns
-            self._batch_open_ns = self._batch_next_close_ns - self.interval_ns
+            if self.bar_type.spec.aggregation != BarAggregation.MONTH:
+                self._batch_next_close_ns += self.interval_ns
+            else:
+                self._batch_next_close_ns += pd.DateOffset(months=step)
 
         # Delay to reset of _batch_next_close_ns to allow the creation of a last histo bar
         # when transitioning to regular bars
@@ -961,5 +1010,19 @@ cdef class TimeBarAggregator(BarAggregator):
         # Close time becomes the next open time
         self._stored_open_ns = event.ts_event
 
-        # On receiving this event, timer should now have a new `next_time_ns`
-        self.next_close_ns = self._clock.next_time_ns(self._timer_name)
+        cdef int step = self.bar_type.spec.step
+
+        if self.bar_type.spec.aggregation != BarAggregation.MONTH:
+            # On receiving this event, timer should now have a new `next_time_ns`
+            self.next_close_ns = self._clock.next_time_ns(self._timer_name)
+        else:
+            alert_time = unix_nanos_to_dt(event.ts_event) + pd.DateOffset(months=step)
+
+            self._clock.set_time_alert(
+                name=self._timer_name,
+                alert_time=alert_time,
+                callback=self._build_bar,
+                override=True,
+            )
+
+            self.next_close_ns = dt_to_unix_nanos(alert_time)
