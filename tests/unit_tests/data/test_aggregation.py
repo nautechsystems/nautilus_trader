@@ -1960,6 +1960,156 @@ class TestTimeBarAggregator:
         assert bar.volume == Quantity.from_int(3)
         assert bar.ts_init == 3 * 60 * 1_000_000_000
 
+    def test_update_timer_with_test_clock_sends_single_monthly_bar_to_handler_with_bars(self):
+        # Arrange
+        clock = TestClock()
+        clock.set_time(pd.Timestamp("2024-3-23").value)
+        handler = []
+        instrument_id = TestIdStubs.audusd_id()
+        bar_spec3 = BarSpecification(1, BarAggregation.MONTH, PriceType.LAST)
+        bar_spec1 = BarSpecification(1, BarAggregation.DAY, PriceType.LAST)
+        bar_type = BarType.new_composite(
+            instrument_id,
+            bar_spec3,
+            AggregationSource.INTERNAL,
+            bar_spec1.step,
+            bar_spec1.aggregation,
+            AggregationSource.EXTERNAL,
+        )
+        aggregator = TimeBarAggregator(
+            AUDUSD_SIM,
+            bar_type,
+            handler.append,
+            clock,
+        )
+        composite_bar_type = bar_type.composite()
+
+        bar1 = Bar(
+            bar_type=composite_bar_type,
+            open=Price.from_str("1.00005"),
+            high=Price.from_str("1.00010"),
+            low=Price.from_str("1.00004"),
+            close=Price.from_str("1.00007"),
+            volume=Quantity.from_int(1),
+            ts_event=pd.Timestamp("2024-3-24").value,  # 1 minute in nanoseconds
+            ts_init=pd.Timestamp("2024-3-24").value,  # 1 minute in nanoseconds
+        )
+
+        bar2 = Bar(
+            bar_type=composite_bar_type,
+            open=Price.from_str("1.00007"),
+            high=Price.from_str("1.00020"),
+            low=Price.from_str("1.00003"),
+            close=Price.from_str("1.00015"),
+            volume=Quantity.from_int(1),
+            ts_event=pd.Timestamp("2024-3-25").value,  # 1 minute in nanoseconds
+            ts_init=pd.Timestamp("2024-3-25").value,  # 1 minute in nanoseconds
+        )
+
+        bar3 = Bar(
+            bar_type=composite_bar_type,
+            open=Price.from_str("1.00015"),
+            high=Price.from_str("1.00015"),
+            low=Price.from_str("1.00007"),
+            close=Price.from_str("1.00008"),
+            volume=Quantity.from_int(1),
+            ts_event=pd.Timestamp("2024-3-26").value,  # 1 minute in nanoseconds
+            ts_init=pd.Timestamp("2024-3-26").value,  # 1 minute in nanoseconds
+        )
+
+        # Act
+        aggregator.handle_bar(bar1)
+        aggregator.handle_bar(bar2)
+        aggregator.handle_bar(bar3)
+        events = clock.advance_time(pd.Timestamp("2024-4-1").value)
+        events[0].handle()
+
+        # Assert
+        bar = handler[0]
+        assert len(handler) == 1
+        assert bar.bar_type == bar_type.standard()
+        assert bar.open == Price.from_str("1.00005")
+        assert bar.high == Price.from_str("1.00020")
+        assert bar.low == Price.from_str("1.00003")
+        assert bar.close == Price.from_str("1.00008")
+        assert bar.volume == Quantity.from_int(3)
+        assert bar.ts_init == pd.Timestamp("2024-4-1").value
+
+    def test_update_timer_with_test_clock_sends_single_weekly_bar_to_handler_with_bars(self):
+        # Arrange
+        clock = TestClock()
+        clock.set_time(pd.Timestamp("2024-3-20").value)
+        handler = []
+        instrument_id = TestIdStubs.audusd_id()
+        bar_spec3 = BarSpecification(1, BarAggregation.WEEK, PriceType.LAST)
+        bar_spec1 = BarSpecification(1, BarAggregation.DAY, PriceType.LAST)
+        bar_type = BarType.new_composite(
+            instrument_id,
+            bar_spec3,
+            AggregationSource.INTERNAL,
+            bar_spec1.step,
+            bar_spec1.aggregation,
+            AggregationSource.EXTERNAL,
+        )
+        aggregator = TimeBarAggregator(
+            AUDUSD_SIM,
+            bar_type,
+            handler.append,
+            clock,
+        )
+        composite_bar_type = bar_type.composite()
+
+        bar1 = Bar(
+            bar_type=composite_bar_type,
+            open=Price.from_str("1.00005"),
+            high=Price.from_str("1.00010"),
+            low=Price.from_str("1.00004"),
+            close=Price.from_str("1.00007"),
+            volume=Quantity.from_int(1),
+            ts_event=pd.Timestamp("2024-3-20").value,  # 1 minute in nanoseconds
+            ts_init=pd.Timestamp("2024-3-20").value,  # 1 minute in nanoseconds
+        )
+
+        bar2 = Bar(
+            bar_type=composite_bar_type,
+            open=Price.from_str("1.00007"),
+            high=Price.from_str("1.00020"),
+            low=Price.from_str("1.00003"),
+            close=Price.from_str("1.00015"),
+            volume=Quantity.from_int(1),
+            ts_event=pd.Timestamp("2024-3-21").value,  # 1 minute in nanoseconds
+            ts_init=pd.Timestamp("2024-3-21").value,  # 1 minute in nanoseconds
+        )
+
+        bar3 = Bar(
+            bar_type=composite_bar_type,
+            open=Price.from_str("1.00015"),
+            high=Price.from_str("1.00015"),
+            low=Price.from_str("1.00007"),
+            close=Price.from_str("1.00008"),
+            volume=Quantity.from_int(1),
+            ts_event=pd.Timestamp("2024-3-22").value,  # 1 minute in nanoseconds
+            ts_init=pd.Timestamp("2024-3-22").value,  # 1 minute in nanoseconds
+        )
+
+        # Act
+        aggregator.handle_bar(bar1)
+        aggregator.handle_bar(bar2)
+        aggregator.handle_bar(bar3)
+        events = clock.advance_time(pd.Timestamp("2024-3-25").value)
+        events[0].handle()
+
+        # Assert
+        bar = handler[0]
+        assert len(handler) == 1
+        assert bar.bar_type == bar_type.standard()
+        assert bar.open == Price.from_str("1.00005")
+        assert bar.high == Price.from_str("1.00020")
+        assert bar.low == Price.from_str("1.00003")
+        assert bar.close == Price.from_str("1.00008")
+        assert bar.volume == Quantity.from_int(3)
+        assert bar.ts_init == pd.Timestamp("2024-3-25").value
+
     def test_batch_update_sends_single_bar_to_handler_with_bars(self):
         # Arrange
         clock = TestClock()
