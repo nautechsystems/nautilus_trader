@@ -195,7 +195,6 @@ pub async fn run_tardis_machine_replay(config_filepath: &Path) {
     }
 
     for (bar_type, bars) in bars_map.into_iter() {
-        // SAFETY: Cursor is guaranteed unless above logic changes
         let cursor = bars_cursors.get(&bar_type).expect("Expected cursor");
         batch_and_write_bars(bars, &bar_type, cursor.date_utc);
     }
