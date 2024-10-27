@@ -44,7 +44,7 @@ class DockerizedIBGatewayConfig(NautilusConfig, frozen=True):
     read_only_api: bool, optional, default True
         If True, no order execution is allowed. Set read_only_api=False to allow executing live orders.
     timeout: int, optional
-        The timeout for trying to launch IBG docker container when start=True
+        The timeout (seconds) for trying to launch IBG docker container when start=True.
     container_image: str, optional
         The reference to the container image used by the IB Gateway.
 
@@ -179,9 +179,9 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig, frozen=True):
     dockerized_gateway : DockerizedIBGatewayConfig, Optional
         The client's gateway container configuration.
     connection_timeout : int, default 300
-        Time in seconds to wait for the client to be ready.
+        The timeout (seconds) to wait for the client connection to be established.
     request_timeout : int, default 60
-        The maximum time in seconds to wait for the historical data response.
+        The timeout (seconds) to wait for a historical data response.
 
     """
 
@@ -219,7 +219,7 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig, frozen=True):
     dockerized_gateway : DockerizedIBGatewayConfig, Optional
         The client's gateway container configuration.
     connection_timeout : int, default 300
-        Time in seconds to wait for the client to be ready.
+        The timeout (seconds) to wait for the client connection to be established.
 
     """
 
