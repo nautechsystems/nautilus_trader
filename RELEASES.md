@@ -4,11 +4,14 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added aggregation of bars from historical data (#2002), thanks @faysou
+- Added monthly and weekly bar aggregations (#2025), thanks @faysou
 - Added `raise_exception` optional parameter to `TradingNode.run` (#2021), thanks @faysou
 - Added `OrderBook.get_avg_px_qty_for_exposure` in Rust (#1893), thanks @elementace
+- Added timeouts to Interactive Brokers adapter configurations (#2026), thanks @rsmb7z
 - Upgraded Polymarket WebSocket API to new version
 
 ### Internal Improvements
+- Ported analysis subpackage to Rust (#2016), thanks @Pushkarm029
 - Improved Postgres testing (#2018), thanks @filipmacek
 - Improved Redis version parsing to support truncated versions (improves compatibility with Redis-compliant databases)
 - Refined Arrow serialization (record batch functions now also available in Rust)
