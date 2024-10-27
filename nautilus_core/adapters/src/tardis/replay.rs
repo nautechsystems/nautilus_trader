@@ -126,8 +126,8 @@ pub async fn run_tardis_machine_replay(config_filepath: &Path) {
 
     let info_map = gather_instruments(&config, &http_client).await;
 
-    for (exchange, instruments) in info_map.iter() {
-        for inst in instruments.iter() {
+    for (exchange, instruments) in &info_map {
+        for inst in instruments {
             let instrument_id = parse_instrument_id_with_enum(&inst.id, exchange);
             let price_precision = precision_from_str(&inst.price_increment.to_string());
             let size_precision = precision_from_str(&inst.amount_increment.to_string());
@@ -174,27 +174,27 @@ pub async fn run_tardis_machine_replay(config_filepath: &Path) {
 
     // Naively iterate through every remaining type and instrument sequentially
 
-    for (instrument_id, deltas) in deltas_map.into_iter() {
+    for (instrument_id, deltas) in deltas_map {
         let cursor = deltas_cursors.get(&instrument_id).expect("Expected cursor");
         batch_and_write_deltas(deltas, &instrument_id, cursor.date_utc);
     }
 
-    for (instrument_id, depths) in depths_map.into_iter() {
+    for (instrument_id, depths) in depths_map {
         let cursor = depths_cursors.get(&instrument_id).expect("Expected cursor");
         batch_and_write_depths(depths, &instrument_id, cursor.date_utc);
     }
 
-    for (instrument_id, quotes) in quotes_map.into_iter() {
+    for (instrument_id, quotes) in quotes_map {
         let cursor = quotes_cursors.get(&instrument_id).expect("Expected cursor");
         batch_and_write_quotes(quotes, &instrument_id, cursor.date_utc);
     }
 
-    for (instrument_id, trades) in trades_map.into_iter() {
+    for (instrument_id, trades) in trades_map {
         let cursor = trades_cursors.get(&instrument_id).expect("Expected cursor");
         batch_and_write_trades(trades, &instrument_id, cursor.date_utc);
     }
 
-    for (bar_type, bars) in bars_map.into_iter() {
+    for (bar_type, bars) in bars_map {
         let cursor = bars_cursors.get(&bar_type).expect("Expected cursor");
         batch_and_write_bars(bars, &bar_type, cursor.date_utc);
     }
@@ -216,7 +216,7 @@ fn handle_deltas_msg(
             batch_and_write_deltas(deltas_vec, &deltas.instrument_id, cursor.date_utc);
         };
         // Update cursor
-        *cursor = DateCursor::new(deltas.ts_init)
+        *cursor = DateCursor::new(deltas.ts_init);
     }
 
     map.entry(deltas.instrument_id)
@@ -238,7 +238,7 @@ fn handle_depth10_msg(
             batch_and_write_depths(depths_vec, &depth10.instrument_id, cursor.date_utc);
         };
         // Update cursor
-        *cursor = DateCursor::new(depth10.ts_init)
+        *cursor = DateCursor::new(depth10.ts_init);
     }
 
     map.entry(depth10.instrument_id)
@@ -260,7 +260,7 @@ fn handle_quote_msg(
             batch_and_write_quotes(quotes_vec, &quote.instrument_id, cursor.date_utc);
         };
         // Update cursor
-        *cursor = DateCursor::new(quote.ts_init)
+        *cursor = DateCursor::new(quote.ts_init);
     }
 
     map.entry(quote.instrument_id)
@@ -282,7 +282,7 @@ fn handle_trade_msg(
             batch_and_write_trades(trades_vec, &trade.instrument_id, cursor.date_utc);
         };
         // Update cursor
-        *cursor = DateCursor::new(trade.ts_init)
+        *cursor = DateCursor::new(trade.ts_init);
     }
 
     map.entry(trade.instrument_id)
@@ -304,7 +304,7 @@ fn handle_bar_msg(
             batch_and_write_bars(bars_vec, &bar.bar_type, cursor.date_utc);
         };
         // Update cursor
-        *cursor = DateCursor::new(bar.ts_init)
+        *cursor = DateCursor::new(bar.ts_init);
     }
 
     map.entry(bar.bar_type)
@@ -373,8 +373,8 @@ fn batch_and_write_bars(bars: Vec<Bar>, bar_type: &BarType, date: NaiveDate) {
 
 fn parquet_filepath(typename: &str, instrument_id: &InstrumentId, date: NaiveDate) -> PathBuf {
     let typename = typename.to_snake_case();
-    let instrument_id_str = instrument_id.to_string().replace("/", "");
-    let date_str = date.to_string().replace("-", "");
+    let instrument_id_str = instrument_id.to_string().replace('/', "");
+    let date_str = date.to_string().replace('-', "");
     let filename = format!("{typename}-{instrument_id_str}-{date_str}.parquet",);
     PathBuf::new().join(filename)
 }
@@ -382,7 +382,7 @@ fn parquet_filepath(typename: &str, instrument_id: &InstrumentId, date: NaiveDat
 fn write_batch(batch: RecordBatch, typename: &str, instrument_id: &InstrumentId, date: NaiveDate) {
     let filepath = parquet_filepath(typename, instrument_id, date);
     match write_batch_to_parquet(&batch, &filepath, None) {
-        Ok(_) => tracing::info!("File written: {}", filepath.display()),
+        Ok(()) => tracing::info!("File written: {}", filepath.display()),
         Err(e) => tracing::error!("Error writing {}: {e:?}", filepath.display()),
     }
 }

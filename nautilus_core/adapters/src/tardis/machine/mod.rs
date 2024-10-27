@@ -55,7 +55,8 @@ pub struct InstrumentMiniInfo {
 }
 
 impl InstrumentMiniInfo {
-    pub fn new(instrument_id: InstrumentId, price_precision: u8, size_precision: u8) -> Self {
+    #[must_use]
+    pub const fn new(instrument_id: InstrumentId, price_precision: u8, size_precision: u8) -> Self {
         Self {
             instrument_id,
             price_precision,
