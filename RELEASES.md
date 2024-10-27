@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 - Added aggregation of bars from historical data (#2002), thanks @faysou
 - Added `raise_exception` optional parameter to `TradingNode.run` (#2021), thanks @faysou
+- Added `OrderBook.get_avg_px_qty_for_exposure` in Rust (#1893), thanks @elementace
 - Upgraded Polymarket WebSocket API to new version
 
 ### Internal Improvements
