@@ -54,7 +54,7 @@ pub enum BarKind {
     Tick,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 /// Represents a crypto exchange.
 /// See <https://api.tardis.dev/v1/exchanges> for all supported exchanges.

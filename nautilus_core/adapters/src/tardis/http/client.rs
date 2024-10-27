@@ -52,11 +52,15 @@ pub struct TardisHttpClient {
 impl TardisHttpClient {
     /// Creates a new [`TardisHttpClient`] instance.
     pub fn new(api_key: Option<&str>, base_url: Option<&str>, timeout_secs: Option<u64>) -> Self {
-        let api_key = api_key.map(ToString::to_string).unwrap_or_else(|| {
+        let api_key = api_key.map(|url| url.to_string()).unwrap_or_else(|| {
             env::var("TARDIS_API_KEY").expect(
                 "API key must be provided or set in the 'TARDIS_API_KEY' environment variable",
             )
         });
+
+        let base_url = base_url
+            .map(|url| url.to_string())
+            .unwrap_or_else(|| TARDIS_BASE_URL.to_string());
 
         let timeout = timeout_secs.map_or_else(|| Duration::from_secs(60), Duration::from_secs);
 
@@ -67,7 +71,7 @@ impl TardisHttpClient {
             .expect("Failed to create client");
 
         Self {
-            base_url: base_url.unwrap_or(TARDIS_BASE_URL).to_string(),
+            base_url,
             api_key,
             client,
         }

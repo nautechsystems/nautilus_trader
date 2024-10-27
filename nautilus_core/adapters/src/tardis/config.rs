@@ -22,5 +22,6 @@ use super::machine::ReplayNormalizedRequestOptions;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TardisReplayConfig {
     pub catalog_path: Option<PathBuf>,
+    pub tardis_ws_url: Option<String>,
     pub options: Vec<ReplayNormalizedRequestOptions>,
 }

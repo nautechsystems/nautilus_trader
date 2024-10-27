@@ -27,8 +27,8 @@ async fn main() {
         .with_max_level(tracing::Level::DEBUG)
         .init();
 
-    let base_url = std::env::var("TARDIS_MACHINE_WS_URL").unwrap();
-    let mut client = TardisMachineClient::new(base_url.clone());
+    // let base_url = "ws://localhost:8001";
+    let mut client = TardisMachineClient::new(None);
     // TODO: Add instrument info constructor
     let instrument_info1 = InstrumentMiniInfo {
         instrument_id: InstrumentId::from("XBTUSD.BITMEX"),

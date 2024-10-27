@@ -54,6 +54,16 @@ pub struct InstrumentMiniInfo {
     pub size_precision: u8,
 }
 
+impl InstrumentMiniInfo {
+    pub fn new(instrument_id: InstrumentId, price_precision: u8, size_precision: u8) -> Self {
+        Self {
+            instrument_id,
+            price_precision,
+            size_precision,
+        }
+    }
+}
+
 /// The options that can be specified for calling Tardis Machine Server's replay-normalized.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
