@@ -47,3 +47,64 @@ impl PortfolioStatistic for ReturnsAverageWin {
         Some(sum / count)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use nautilus_core::nanos::UnixNanos;
+
+    use super::*;
+
+    fn create_returns(values: Vec<f64>) -> Returns {
+        let mut new_return = BTreeMap::new();
+        for (i, value) in values.iter().enumerate() {
+            new_return.insert(UnixNanos::from(i as u64), *value);
+        }
+        new_return
+    }
+
+    #[test]
+    fn test_empty_returns() {
+        let avg_win = ReturnsAverageWin {};
+        let returns = create_returns(vec![]);
+        let result = avg_win.calculate_from_returns(&returns);
+        assert!(result.is_some());
+        assert!(result.unwrap().is_nan());
+    }
+
+    #[test]
+    fn test_all_negative() {
+        let avg_win = ReturnsAverageWin {};
+        let returns = create_returns(vec![-10.0, -20.0, -30.0]);
+        let result = avg_win.calculate_from_returns(&returns);
+        assert!(result.is_some());
+        assert!(result.unwrap().is_nan());
+    }
+
+    #[test]
+    fn test_all_positive() {
+        let avg_win = ReturnsAverageWin {};
+        let returns = create_returns(vec![10.0, 20.0, 30.0]);
+        let result = avg_win.calculate_from_returns(&returns);
+        assert!(result.is_some());
+        // Average of [10.0, 20.0, 30.0] = (10 + 20 + 30) / 3 = 20.0
+        assert_eq!(result.unwrap(), 20.0);
+    }
+
+    #[test]
+    fn test_mixed_returns() {
+        let avg_win = ReturnsAverageWin {};
+        let returns = create_returns(vec![10.0, -20.0, 30.0, -40.0]);
+        let result = avg_win.calculate_from_returns(&returns);
+        assert!(result.is_some());
+        // Average of [10.0, 30.0] = (10 + 30) / 2 = 20.0
+        assert_eq!(result.unwrap(), 20.0);
+    }
+
+    #[test]
+    fn test_name() {
+        let avg_win = ReturnsAverageWin {};
+        assert_eq!(avg_win.name(), "ReturnsAverageWin");
+    }
+}

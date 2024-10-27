@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Debug;
+use std::{collections::BTreeMap, fmt::Debug};
 
 use nautilus_model::{orders::base::Order, position::Position};
 
@@ -52,16 +52,19 @@ pub trait PortfolioStatistic: Debug {
         !returns.is_empty()
     }
 
-    // TODO: Future enhancement - implement proper downsampling using the Polars library.
-    // Currently, we have only a 1D array of returns, so we can’t perform time-based resampling as we could with a DataFrame in Python (e.g., Pandas).
-    // In Python, the data structure supports easy time-based resampling, but here, we’ll need to use Polars' Series with a DateTime index
-    // to enable similar resampling capabilities in Rust.
-    // Example future function signature:
-    // fn downsample_to_daily_bins(&self, returns: &polars::Series) -> polars::Series
-    fn downsample_to_daily_bins(&self, returns: &[f64]) -> Vec<f64> {
-        // For now, we return the input array directly, assuming daily data
-        // Future implementation will include time-based resampling, e.g., returns.dropna().resample("1D").sum()
-        returns.to_vec()
+    fn downsample_to_daily_bins(&self, returns: Returns) -> Returns {
+        let nanos_per_day = 86_400_000_000_000; // Number of nanoseconds in a day
+        let mut daily_bins = BTreeMap::new();
+
+        for (&timestamp, &value) in &returns {
+            // Calculate the start of the day in nanoseconds for the given timestamp
+            let day_start = timestamp - (timestamp.as_u64() % nanos_per_day);
+
+            // Sum returns for each day
+            *daily_bins.entry(day_start).or_insert(0.0) += value;
+        }
+
+        daily_bins
     }
 
     fn calculate_std(&self, returns: &Returns) -> f64 {

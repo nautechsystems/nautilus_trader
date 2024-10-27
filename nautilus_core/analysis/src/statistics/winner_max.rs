@@ -38,6 +38,52 @@ impl PortfolioStatistic for MaxWinner {
         realized_pnls
             .iter()
             .copied()
+            .filter(|&pnl| pnl > 0.0)
             .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_empty_pnls() {
+        let max_winner = MaxWinner {};
+        let result = max_winner.calculate_from_realized_pnls(&[]);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), 0.0);
+    }
+
+    #[test]
+    fn test_no_winning_trades() {
+        let max_winner = MaxWinner {};
+        let realized_pnls = vec![-100.0, -50.0, -200.0];
+        let result = max_winner.calculate_from_realized_pnls(&realized_pnls);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_all_winning_trades() {
+        let max_winner = MaxWinner {};
+        let realized_pnls = vec![100.0, 50.0, 200.0];
+        let result = max_winner.calculate_from_realized_pnls(&realized_pnls);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), 200.0);
+    }
+
+    #[test]
+    fn test_mixed_trades() {
+        let max_winner = MaxWinner {};
+        let realized_pnls = vec![100.0, -50.0, 200.0, -100.0];
+        let result = max_winner.calculate_from_realized_pnls(&realized_pnls);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), 200.0);
+    }
+
+    #[test]
+    fn test_name() {
+        let max_winner = MaxWinner {};
+        assert_eq!(max_winner.name(), "MaxWinner");
     }
 }

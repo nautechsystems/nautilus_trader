@@ -42,3 +42,57 @@ impl PortfolioStatistic for MinWinner {
             .copied()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_empty_pnls() {
+        let min_winner = MinWinner {};
+        let result = min_winner.calculate_from_realized_pnls(&[]);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), 0.0);
+    }
+
+    #[test]
+    fn test_no_winning_trades() {
+        let min_winner = MinWinner {};
+        let realized_pnls = vec![-100.0, -50.0, -200.0];
+        let result = min_winner.calculate_from_realized_pnls(&realized_pnls);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_all_winning_trades() {
+        let min_winner = MinWinner {};
+        let realized_pnls = vec![100.0, 50.0, 200.0];
+        let result = min_winner.calculate_from_realized_pnls(&realized_pnls);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), 50.0); // Minimum of 100.0, 50.0, and 200.0 is 50.0
+    }
+
+    #[test]
+    fn test_mixed_trades() {
+        let min_winner = MinWinner {};
+        let realized_pnls = vec![100.0, -50.0, 200.0, -100.0];
+        let result = min_winner.calculate_from_realized_pnls(&realized_pnls);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), 100.0); // Minimum of 100.0 and 200.0 is 100.0
+    }
+
+    #[test]
+    fn test_single_winning_trade() {
+        let min_winner = MinWinner {};
+        let realized_pnls = vec![50.0];
+        let result = min_winner.calculate_from_realized_pnls(&realized_pnls);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), 50.0);
+    }
+
+    #[test]
+    fn test_name() {
+        let min_winner = MinWinner {};
+        assert_eq!(min_winner.name(), "MinWinner");
+    }
+}

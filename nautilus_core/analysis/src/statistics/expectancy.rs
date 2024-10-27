@@ -58,3 +58,74 @@ impl PortfolioStatistic for Expectancy {
         Some(avg_winner.mul_add(win_rate, avg_loser * loss_rate))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_empty_pnl_list() {
+        let expectancy = Expectancy {};
+        let result = expectancy.calculate_from_realized_pnls(&[]);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), 0.0);
+    }
+
+    #[test]
+    fn test_all_winners() {
+        let expectancy = Expectancy {};
+        let pnls = vec![10.0, 20.0, 30.0];
+        let result = expectancy.calculate_from_realized_pnls(&pnls);
+
+        assert!(result.is_some());
+        // Expected: avg_winner = 20.0, win_rate = 1.0, loss_rate = 0.0
+        // Expectancy = (20.0 * 1.0) + (0.0 * 0.0) = 20.0
+        assert_eq!(result.unwrap(), 20.0);
+    }
+
+    #[test]
+    fn test_all_losers() {
+        let expectancy = Expectancy {};
+        let pnls = vec![-10.0, -20.0, -30.0];
+        let result = expectancy.calculate_from_realized_pnls(&pnls);
+
+        assert!(result.is_some());
+        // Expected: avg_loser = -20.0, win_rate = 0.0, loss_rate = 1.0
+        // Expectancy = (0.0 * 0.0) + (-20.0 * 1.0) = -20.0
+        assert_eq!(result.unwrap(), -20.0);
+    }
+
+    #[test]
+    fn test_mixed_pnls() {
+        let expectancy = Expectancy {};
+        let pnls = vec![10.0, -5.0, 15.0, -10.0];
+        let result = expectancy.calculate_from_realized_pnls(&pnls);
+
+        assert!(result.is_some());
+        // Expected:
+        // avg_winner = 12.5 (average of 10.0 and 15.0)
+        // avg_loser = -7.5 (average of -5.0 and -10.0)
+        // win_rate = 0.5 (2 winners out of 4 trades)
+        // loss_rate = 0.5
+        // Expectancy = (12.5 * 0.5) + (-7.5 * 0.5) = 2.5
+        assert_eq!(result.unwrap(), 2.5);
+    }
+
+    #[test]
+    fn test_single_trade() {
+        let expectancy = Expectancy {};
+        let pnls = vec![10.0];
+        let result = expectancy.calculate_from_realized_pnls(&pnls);
+
+        assert!(result.is_some());
+        // Expected: avg_winner = 10.0, win_rate = 1.0, loss_rate = 0.0
+        // Expectancy = (10.0 * 1.0) + (0.0 * 0.0) = 10.0
+        assert_eq!(result.unwrap(), 10.0);
+    }
+
+    #[test]
+    fn test_name() {
+        let expectancy = Expectancy {};
+        assert_eq!(expectancy.name(), "Expectancy");
+    }
+}

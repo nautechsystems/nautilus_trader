@@ -42,3 +42,49 @@ impl PortfolioStatistic for WinRate {
         Some(winners.len() as f64 / total_trades.max(1) as f64)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_empty_pnls() {
+        let win_rate = WinRate {};
+        let result = win_rate.calculate_from_realized_pnls(&[]);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), 0.0);
+    }
+
+    #[test]
+    fn test_all_winning_trades() {
+        let win_rate = WinRate {};
+        let realized_pnls = vec![100.0, 50.0, 200.0];
+        let result = win_rate.calculate_from_realized_pnls(&realized_pnls);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), 1.0);
+    }
+
+    #[test]
+    fn test_all_losing_trades() {
+        let win_rate = WinRate {};
+        let realized_pnls = vec![-100.0, -50.0, -200.0];
+        let result = win_rate.calculate_from_realized_pnls(&realized_pnls);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), 0.0);
+    }
+
+    #[test]
+    fn test_mixed_trades() {
+        let win_rate = WinRate {};
+        let realized_pnls = vec![100.0, -50.0, 200.0, -100.0];
+        let result = win_rate.calculate_from_realized_pnls(&realized_pnls);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), 0.5);
+    }
+
+    #[test]
+    fn test_name() {
+        let win_rate = WinRate {};
+        assert_eq!(win_rate.name(), "WinRate");
+    }
+}

@@ -45,3 +45,53 @@ impl PortfolioStatistic for RiskReturnRatio {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use nautilus_core::nanos::UnixNanos;
+
+    use super::*;
+
+    fn create_returns(values: Vec<f64>) -> Returns {
+        let mut new_return = BTreeMap::new();
+        for (i, value) in values.iter().enumerate() {
+            new_return.insert(UnixNanos::from(i as u64), *value);
+        }
+        new_return
+    }
+
+    #[test]
+    fn test_empty_returns() {
+        let ratio = RiskReturnRatio {};
+        let returns = create_returns(vec![]);
+        let result = ratio.calculate_from_returns(&returns);
+        assert!(result.is_some());
+        assert!(result.unwrap().is_nan());
+    }
+
+    #[test]
+    fn test_zero_std_dev() {
+        let ratio = RiskReturnRatio {};
+        let returns = create_returns(vec![0.05; 10]);
+        let result = ratio.calculate_from_returns(&returns);
+        assert!(result.is_some());
+        assert!(result.unwrap().is_nan());
+    }
+
+    #[test]
+    fn test_valid_risk_return_ratio() {
+        let ratio = RiskReturnRatio {};
+        let returns = create_returns(vec![0.1, -0.05, 0.2, -0.1, 0.15]);
+        let result = ratio.calculate_from_returns(&returns);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), 0.46360044557175345);
+    }
+
+    #[test]
+    fn test_name() {
+        let ratio = RiskReturnRatio {};
+        assert_eq!(ratio.name(), "RiskReturnRatio");
+    }
+}

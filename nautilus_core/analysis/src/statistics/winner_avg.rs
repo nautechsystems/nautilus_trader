@@ -49,3 +49,49 @@ impl PortfolioStatistic for AvgWinner {
         Some(sum / winners.len() as f64)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_empty_pnls() {
+        let avg_winner = AvgWinner {};
+        let result = avg_winner.calculate_from_realized_pnls(&[]);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), 0.0);
+    }
+
+    #[test]
+    fn test_no_winning_trades() {
+        let avg_winner = AvgWinner {};
+        let realized_pnls = vec![-100.0, -50.0, -200.0];
+        let result = avg_winner.calculate_from_realized_pnls(&realized_pnls);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), 0.0);
+    }
+
+    #[test]
+    fn test_all_winning_trades() {
+        let avg_winner = AvgWinner {};
+        let realized_pnls = vec![100.0, 50.0, 200.0];
+        let result = avg_winner.calculate_from_realized_pnls(&realized_pnls);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), 116.66666666666667);
+    }
+
+    #[test]
+    fn test_mixed_trades() {
+        let avg_winner = AvgWinner {};
+        let realized_pnls = vec![100.0, -50.0, 200.0, -100.0];
+        let result = avg_winner.calculate_from_realized_pnls(&realized_pnls);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), 150.0);
+    }
+
+    #[test]
+    fn test_name() {
+        let avg_winner = AvgWinner {};
+        assert_eq!(avg_winner.name(), "AvgWinner");
+    }
+}

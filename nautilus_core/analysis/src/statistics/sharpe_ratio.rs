@@ -41,13 +41,14 @@ impl PortfolioStatistic for SharpeRatio {
         stringify!(SharpeRatio).to_string()
     }
 
-    fn calculate_from_returns(&self, returns: &Returns) -> Option<Self::Item> {
-        if !self.check_valid_returns(returns) {
+    fn calculate_from_returns(&self, raw_returns: &Returns) -> Option<Self::Item> {
+        if !self.check_valid_returns(raw_returns) {
             return Some(f64::NAN);
         }
 
+        let returns = self.downsample_to_daily_bins(raw_returns.clone());
         let mean = returns.values().sum::<f64>() / returns.len() as f64;
-        let std = self.calculate_std(returns);
+        let std = self.calculate_std(&returns);
 
         if std < f64::EPSILON {
             return Some(f64::NAN);
@@ -56,5 +57,60 @@ impl PortfolioStatistic for SharpeRatio {
         let annualized_ratio = (mean / std) * (self.period as f64).sqrt();
 
         Some(annualized_ratio)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use nautilus_core::nanos::UnixNanos;
+
+    use super::*;
+
+    fn create_returns(values: Vec<f64>) -> BTreeMap<UnixNanos, f64> {
+        let mut new_return = BTreeMap::new();
+        let one_day_in_nanos = 86_400_000_000_000;
+        let start_time = 1_600_000_000_000_000_000;
+
+        for (i, &value) in values.iter().enumerate() {
+            let timestamp = start_time + i as u64 * one_day_in_nanos;
+            new_return.insert(UnixNanos::from(timestamp), value);
+        }
+
+        new_return
+    }
+
+    #[test]
+    fn test_empty_returns() {
+        let ratio = SharpeRatio::new(None);
+        let returns = create_returns(vec![]);
+        let result = ratio.calculate_from_returns(&returns);
+        assert!(result.is_some());
+        assert!(result.unwrap().is_nan());
+    }
+
+    #[test]
+    fn test_zero_std_dev() {
+        let ratio = SharpeRatio::new(None);
+        let returns = create_returns(vec![0.01; 10]);
+        let result = ratio.calculate_from_returns(&returns);
+        assert!(result.is_some());
+        assert!(result.unwrap().is_nan());
+    }
+
+    #[test]
+    fn test_valid_sharpe_ratio() {
+        let ratio = SharpeRatio::new(Some(252));
+        let returns = create_returns(vec![0.01, -0.02, 0.015, -0.005, 0.025]);
+        let result = ratio.calculate_from_returns(&returns);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), 4.48998886412873);
+    }
+
+    #[test]
+    fn test_name() {
+        let ratio = SharpeRatio::new(None);
+        assert_eq!(ratio.name(), "SharpeRatio");
     }
 }
