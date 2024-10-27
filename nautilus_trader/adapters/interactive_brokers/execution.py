@@ -142,6 +142,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         instrument_provider: InteractiveBrokersInstrumentProvider,
         config: InteractiveBrokersExecClientConfig,
         name: str | None = None,
+        connection_timeout: int = 300,
     ) -> None:
         super().__init__(
             loop=loop,
@@ -156,6 +157,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
             clock=clock,
             config=config,
         )
+        self._connection_timeout = connection_timeout
         self._client: InteractiveBrokersClient = client
         self._set_account_id(account_id)
         self._account_summary_tags = {
@@ -176,7 +178,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
 
     async def _connect(self):
         # Connect client
-        await self._client.wait_until_ready()
+        await self._client.wait_until_ready(self._connection_timeout)
         await self.instrument_provider.initialize()
 
         # Validate if connected to expected TWS/Gateway using Account

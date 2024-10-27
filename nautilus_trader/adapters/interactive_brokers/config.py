@@ -178,6 +178,10 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig, frozen=True):
         all updates, including those where only the size has changed.
     dockerized_gateway : DockerizedIBGatewayConfig, Optional
         The client's gateway container configuration.
+    connection_timeout : int, default 300
+        Time in seconds to wait for the client to be ready.
+    request_timeout : int, default 60
+        The maximum time in seconds to wait for the historical data response.
 
     """
 
@@ -192,6 +196,8 @@ class InteractiveBrokersDataClientConfig(LiveDataClientConfig, frozen=True):
     market_data_type: IBMarketDataTypeEnum = IBMarketDataTypeEnum.REALTIME
     ignore_quote_tick_size_updates: bool = False
     dockerized_gateway: DockerizedIBGatewayConfig | None = None
+    connection_timeout: int = 300
+    request_timeout: int = 60
 
 
 class InteractiveBrokersExecClientConfig(LiveExecClientConfig, frozen=True):
@@ -212,6 +218,8 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig, frozen=True):
         If the account_id is `None`, the system will fallback to use the `TWS_ACCOUNT` from environment variable.
     dockerized_gateway : DockerizedIBGatewayConfig, Optional
         The client's gateway container configuration.
+    connection_timeout : int, default 300
+        Time in seconds to wait for the client to be ready.
 
     """
 
@@ -223,3 +231,4 @@ class InteractiveBrokersExecClientConfig(LiveExecClientConfig, frozen=True):
     ibg_client_id: int = 1
     account_id: str | None = None
     dockerized_gateway: DockerizedIBGatewayConfig | None = None
+    connection_timeout: int = 300
