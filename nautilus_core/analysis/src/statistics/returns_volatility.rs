@@ -46,7 +46,7 @@ impl PortfolioStatistic for ReturnsVolatility {
             return Some(f64::NAN);
         }
 
-        let returns = self.downsample_to_daily_bins(raw_returns.clone());
+        let returns = self.downsample_to_daily_bins(raw_returns);
         let daily_std = self.calculate_std(&returns);
         let annualized_std = daily_std * (self.period as f64).sqrt();
         Some(annualized_std)

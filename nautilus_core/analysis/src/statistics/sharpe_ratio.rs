@@ -46,7 +46,7 @@ impl PortfolioStatistic for SharpeRatio {
             return Some(f64::NAN);
         }
 
-        let returns = self.downsample_to_daily_bins(raw_returns.clone());
+        let returns = self.downsample_to_daily_bins(raw_returns);
         let mean = returns.values().sum::<f64>() / returns.len() as f64;
         let std = self.calculate_std(&returns);
 

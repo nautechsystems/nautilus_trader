@@ -43,7 +43,6 @@ pub trait PortfolioStatistic: Debug {
         panic!("`calculate_from_orders` {IMPL_ERR} `{}`", self.name());
     }
 
-    #[allow(dead_code)]
     fn calculate_from_positions(&self, positions: &[Position]) -> Option<Self::Item> {
         panic!("`calculate_from_positions` {IMPL_ERR} `{}`", self.name());
     }
@@ -52,11 +51,11 @@ pub trait PortfolioStatistic: Debug {
         !returns.is_empty()
     }
 
-    fn downsample_to_daily_bins(&self, returns: Returns) -> Returns {
+    fn downsample_to_daily_bins(&self, returns: &Returns) -> Returns {
         let nanos_per_day = 86_400_000_000_000; // Number of nanoseconds in a day
         let mut daily_bins = BTreeMap::new();
 
-        for (&timestamp, &value) in &returns {
+        for (&timestamp, &value) in returns {
             // Calculate the start of the day in nanoseconds for the given timestamp
             let day_start = timestamp - (timestamp.as_u64() % nanos_per_day);
 

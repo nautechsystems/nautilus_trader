@@ -32,6 +32,11 @@ use crate::{statistic::PortfolioStatistic, Returns};
 
 pub type Statistic = Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync>;
 
+/// Analyzes portfolio performance and calculates various statistics
+///
+/// The `PortfolioAnalyzer` tracks account balances, positions, and realized PnLs
+/// to provide comprehensive portfolio analysis including returns, PnL calculations,
+/// and customizable statistics.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(
@@ -54,6 +59,7 @@ impl Default for PortfolioAnalyzer {
 }
 
 impl PortfolioAnalyzer {
+    /// Creates a new empty portfolio analyzer
     pub fn new() -> Self {
         Self {
             statistics: HashMap::new(),
@@ -65,18 +71,22 @@ impl PortfolioAnalyzer {
         }
     }
 
+    /// Registers a new portfolio statistic for calculation
     pub fn register_statistic(&mut self, statistic: Statistic) {
         self.statistics.insert(statistic.name(), statistic);
     }
 
+    /// Removes a specific statistic from calculation
     pub fn deregister_statistic(&mut self, statistic: Statistic) {
         self.statistics.remove(&statistic.name());
     }
 
+    /// Removes all registered statistics
     pub fn deregister_statistics(&mut self) {
         self.statistics.clear();
     }
 
+    /// Resets all analysis data to initial state
     pub fn reset(&mut self) {
         self.account_balances_starting.clear();
         self.account_balances.clear();
@@ -84,29 +94,22 @@ impl PortfolioAnalyzer {
         self.returns.clear();
     }
 
-    fn get_max_length_name(&self) -> usize {
-        self.statistics
-            .keys()
-            .map(std::string::String::len)
-            .max()
-            .unwrap_or(0)
-    }
-
+    /// Returns all tracked currencies
     pub fn currencies(&self) -> Vec<&Currency> {
         self.account_balances.keys().collect()
     }
 
-    pub fn statistic(
-        &self,
-        name: &str,
-    ) -> Option<&Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync>> {
+    /// Retrieves a specific statistic by name
+    pub fn statistic(&self, name: &str) -> Option<&Statistic> {
         self.statistics.get(name)
     }
 
+    /// Returns all calculated returns
     pub const fn returns(&self) -> &Returns {
         &self.returns
     }
 
+    /// Calculates statistics based on account and position data
     pub fn calculate_statistics(&mut self, account: &dyn Account, positions: &[Position]) {
         self.account_balances_starting = account.starting_balances();
         self.account_balances = account.balances_total();
@@ -116,6 +119,7 @@ impl PortfolioAnalyzer {
         self.add_positions(positions);
     }
 
+    /// Adds new positions for analysis
     pub fn add_positions(&mut self, positions: &[Position]) {
         self.positions.extend_from_slice(positions);
         for position in positions {
@@ -129,12 +133,14 @@ impl PortfolioAnalyzer {
         }
     }
 
+    /// Records a trade's `PnL`
     pub fn add_trade(&mut self, position_id: &PositionId, pnl: &Money) {
         let currency = pnl.currency;
         let entry = self.realized_pnls.entry(currency).or_default();
         entry.push((*position_id, pnl.as_f64()));
     }
 
+    /// Records a return at a specific timestamp
     pub fn add_return(&mut self, timestamp: UnixNanos, value: f64) {
         self.returns
             .entry(timestamp)
@@ -142,6 +148,7 @@ impl PortfolioAnalyzer {
             .or_insert(value);
     }
 
+    /// Retrieves realized `PnLs` for a specific currency
     pub fn realized_pnls(&self, currency: Option<&Currency>) -> Option<Vec<(PositionId, f64)>> {
         if self.realized_pnls.is_empty() {
             return None;
@@ -150,6 +157,7 @@ impl PortfolioAnalyzer {
         self.realized_pnls.get(currency).cloned()
     }
 
+    /// Calculates total `PnL` including unrealized `PnL` if provided
     pub fn total_pnl(
         &self,
         currency: Option<&Currency>,
@@ -180,11 +188,11 @@ impl PortfolioAnalyzer {
             .get(currency)
             .unwrap_or(default_money);
 
-        let unrealized_pnl_f64 =
-            unrealized_pnl.map_or(0.0, nautilus_model::types::money::Money::as_f64);
+        let unrealized_pnl_f64 = unrealized_pnl.map_or(0.0, Money::as_f64);
         Ok((account_balance.as_f64() - account_balance_starting.as_f64()) + unrealized_pnl_f64)
     }
 
+    /// Calculates total `PnL` as a percentage of starting balance
     pub fn total_pnl_percentage(
         &self,
         currency: Option<&Currency>,
@@ -208,6 +216,7 @@ impl PortfolioAnalyzer {
             .account_balances
             .get(currency)
             .ok_or("Specified currency not found in account balances")?;
+
         let default_money = &Money::new(0.0, *currency);
         let account_balance_starting = self
             .account_balances_starting
@@ -218,8 +227,7 @@ impl PortfolioAnalyzer {
             return Ok(0.0);
         }
 
-        let unrealized_pnl_f64 =
-            unrealized_pnl.map_or(0.0, nautilus_model::types::money::Money::as_f64);
+        let unrealized_pnl_f64 = unrealized_pnl.map_or(0.0, Money::as_f64);
         let current = account_balance.as_f64() + unrealized_pnl_f64;
         let starting = account_balance_starting.as_f64();
         let difference = current - starting;
@@ -227,6 +235,7 @@ impl PortfolioAnalyzer {
         Ok((difference / starting) * 100.0)
     }
 
+    /// Gets all PnL-related performance statistics
     pub fn get_performance_stats_pnls(
         &self,
         currency: Option<&Currency>,
@@ -259,6 +268,7 @@ impl PortfolioAnalyzer {
         Ok(output)
     }
 
+    /// Gets all return-based performance statistics
     pub fn get_performance_stats_returns(&self) -> HashMap<String, f64> {
         let mut output = HashMap::new();
 
@@ -271,6 +281,7 @@ impl PortfolioAnalyzer {
         output
     }
 
+    /// Gets general portfolio statistics
     pub fn get_performance_stats_general(&self) -> HashMap<String, f64> {
         let mut output = HashMap::new();
 
@@ -283,6 +294,12 @@ impl PortfolioAnalyzer {
         output
     }
 
+    /// Calculates the maximum length of statistic names for formatting
+    fn get_max_length_name(&self) -> usize {
+        self.statistics.keys().map(String::len).max().unwrap_or(0)
+    }
+
+    /// Gets formatted `PnL` statistics as strings
     pub fn get_stats_pnls_formatted(
         &self,
         currency: Option<&Currency>,
@@ -304,6 +321,7 @@ impl PortfolioAnalyzer {
         Ok(output)
     }
 
+    /// Gets formatted return statistics as strings
     pub fn get_stats_returns_formatted(&self) -> Vec<String> {
         let max_length = self.get_max_length_name();
         let stats = self.get_performance_stats_returns();
@@ -317,6 +335,7 @@ impl PortfolioAnalyzer {
         output
     }
 
+    /// Gets formatted general statistics as strings
     pub fn get_stats_general_formatted(&self) -> Vec<String> {
         let max_length = self.get_max_length_name();
         let stats = self.get_performance_stats_general();
