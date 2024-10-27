@@ -85,6 +85,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         ibg_client_id: int,
         config: InteractiveBrokersDataClientConfig,
         name: str | None = None,
+        connection_timeout: int = 300,
+        request_timeout: int = 60,
     ) -> None:
         super().__init__(
             loop=loop,
@@ -96,6 +98,8 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             instrument_provider=instrument_provider,
             config=config,
         )
+        self._connection_timeout = connection_timeout
+        self._request_timeout = request_timeout
         self._client = client
         self._handle_revised_bars = config.handle_revised_bars
         self._use_regular_trading_hours = config.use_regular_trading_hours
@@ -108,7 +112,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
     async def _connect(self):
         # Connect client
-        await self._client.wait_until_ready()
+        await self._client.wait_until_ready(self._connection_timeout)
         self._client.registered_nautilus_clients.add(self.id)
 
         # Set Market Data Type
@@ -386,6 +390,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 tick_type,
                 end_date_time=end,
                 use_rth=self._use_regular_trading_hours,
+                timeout=self._request_timeout,
             )
             if not ticks_part:
                 break
@@ -435,6 +440,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
                 use_rth=self._use_regular_trading_hours,
                 end_date_time=end,
                 duration=duration_str,
+                timeout=self._request_timeout,
             )
             bars.extend(bars_part)
             if not bars_part or start:
