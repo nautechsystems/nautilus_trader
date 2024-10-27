@@ -50,6 +50,7 @@ rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
+thousands = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true, optional = true }
 tracing = { workspace = true }

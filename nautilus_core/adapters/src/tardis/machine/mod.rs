@@ -232,7 +232,6 @@ async fn stream_from_websocket(
                             yield Err(Error::ConnectionClosed { reason });
                         } else {
                             tracing::debug!("Connection closed normally: {reason}");
-                            yield Err(Error::ConnectionClosed { reason });
                         }
                         break;
                     }
@@ -301,9 +300,7 @@ async fn heartbeat(
 
         while count > 0 {
             retry_interval.tick().await;
-            if let Err(e) = sender.send(tungstenite::Message::Ping(vec![])).await {
-                tracing::error!("Failed to send PING message: {e}");
-            }
+            let _ = sender.send(tungstenite::Message::Ping(vec![])).await;
             count -= 1;
         }
     }

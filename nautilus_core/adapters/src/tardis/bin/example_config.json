@@ -1,5 +1,5 @@
 {
-  "catalog_path": null,
+  "output_dir": null,
   "tardis_ws_url": "ws://localhost:8001",
   "options": [
     {
@@ -9,7 +9,6 @@
         "ethusd"
       ],
       "data_types": [
-        "book_change",
         "trade"
       ],
       "from": "2019-10-01",

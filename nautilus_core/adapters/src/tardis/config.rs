@@ -19,9 +19,13 @@ use serde::{Deserialize, Serialize};
 
 use super::machine::ReplayNormalizedRequestOptions;
 
+/// Provides a configuration for a Tarid Machine -> Nautilus data -> Parquet replay run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TardisReplayConfig {
-    pub catalog_path: Option<PathBuf>,
+    /// The output directory for the replay (can set to catalog/data directory).
+    pub output_dir: Option<PathBuf>,
+    /// The Tardis Machine websocket url.
     pub tardis_ws_url: Option<String>,
+    /// The Tardis Machine replay options.
     pub options: Vec<ReplayNormalizedRequestOptions>,
 }
