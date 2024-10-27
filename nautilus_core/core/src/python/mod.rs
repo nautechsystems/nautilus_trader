@@ -26,6 +26,10 @@ use pyo3::{
 };
 
 use crate::{
+    datetime::{
+        MILLISECONDS_IN_SECOND, NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND,
+        NANOSECONDS_IN_SECOND,
+    },
     uuid::UUID4,
     version::{NAUTILUS_VERSION, USER_AGENT},
 };
@@ -60,9 +64,14 @@ pub fn to_pyruntime_err(e: impl std::fmt::Display) -> PyErr {
 
 /// Loaded as nautilus_pyo3.core
 #[pymodule]
+#[rustfmt::skip]
 pub fn core(_: Python<'_>, m: &PyModule) -> PyResult<()> {
     m.add(stringify!(NAUTILUS_VERSION), NAUTILUS_VERSION)?;
     m.add(stringify!(USER_AGENT), USER_AGENT)?;
+    m.add(stringify!(MILLISECONDS_IN_SECOND), MILLISECONDS_IN_SECOND)?;
+    m.add(stringify!(NANOSECONDS_IN_SECOND), NANOSECONDS_IN_SECOND)?;
+    m.add(stringify!(NANOSECONDS_IN_MILLISECOND), NANOSECONDS_IN_MILLISECOND)?;
+    m.add(stringify!(NANOSECONDS_IN_MICROSECOND), NANOSECONDS_IN_MICROSECOND)?;
     m.add_class::<UUID4>()?;
     m.add_function(wrap_pyfunction!(casing::py_convert_to_snake_case, m)?)?;
     m.add_function(wrap_pyfunction!(datetime::py_secs_to_nanos, m)?)?;
