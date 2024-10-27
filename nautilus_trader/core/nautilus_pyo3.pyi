@@ -24,6 +24,11 @@ from nautilus_trader.core.data import Data
 NAUTILUS_VERSION: Final[str]
 USER_AGENT: Final[str]
 
+MILLISECONDS_IN_SECOND: Final[int]
+NANOSECONDS_IN_SECOND: Final[int]
+NANOSECONDS_IN_MILLISECOND: Final[int]
+NANOSECONDS_IN_MICROSECOND: Final[int]
+
 class UUID4:
     def __init__(self, value: str) -> None: ...
 
