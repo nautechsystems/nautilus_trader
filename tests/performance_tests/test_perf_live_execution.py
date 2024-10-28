@@ -139,8 +139,7 @@ class TestLiveExecutionPerformance:
         def execute_command():
             self.exec_engine.execute(command)
 
-        benchmark.pedantic(execute_command, iterations=100, rounds=100, warmup_rounds=5)
-        # ~0.0ms / ~0.2μs / 218ns minimum of 10,000 runs @ 1 iteration each run.
+        benchmark(execute_command)
 
     @pytest.mark.asyncio()
     async def test_submit_order(self, benchmark):
@@ -156,8 +155,7 @@ class TestLiveExecutionPerformance:
 
             self.strategy.submit_order(order)
 
-        benchmark.pedantic(submit_order, iterations=100, rounds=100, warmup_rounds=5)
-        # ~0.0ms / ~25.3μs / 25326ns minimum of 10,000 runs @ 1 iteration each run.
+        benchmark(submit_order)
 
     @pytest.mark.asyncio()
     async def test_submit_order_end_to_end(self, benchmark):
@@ -174,4 +172,4 @@ class TestLiveExecutionPerformance:
 
                 self.strategy.submit_order(order)
 
-        benchmark.pedantic(run, rounds=10, warmup_rounds=5)
+        benchmark(run)

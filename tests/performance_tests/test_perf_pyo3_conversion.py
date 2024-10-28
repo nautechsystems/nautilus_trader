@@ -22,87 +22,39 @@ from nautilus_trader.test_kit.rust.data_pyo3 import TestDataProviderPyo3
 
 def test_pyo3_delta_to_legacy_cython(benchmark):
     pyo3_delta = TestDataProviderPyo3.order_book_delta()
-
-    benchmark.pedantic(
-        target=OrderBookDelta.from_pyo3,
-        args=(pyo3_delta,),
-        rounds=100_000,
-        iterations=1,
-    )
+    benchmark(OrderBookDelta.from_pyo3, pyo3_delta)
 
 
 def test_pyo3_deltas_to_legacy_cython_list(benchmark):
     pyo3_deltas = [TestDataProviderPyo3.order_book_delta()] * 10_000
-
-    benchmark.pedantic(
-        target=OrderBookDelta.from_pyo3_list,
-        args=(pyo3_deltas,),
-        rounds=10,
-        iterations=1,
-    )
+    benchmark(OrderBookDelta.from_pyo3_list, pyo3_deltas)
 
 
 def test_pyo3_quote_to_legacy_cython(benchmark):
     pyo3_quote = TestDataProviderPyo3.quote_tick()
-
-    benchmark.pedantic(
-        target=QuoteTick.from_pyo3,
-        args=(pyo3_quote,),
-        rounds=100_000,
-        iterations=1,
-    )
+    benchmark(QuoteTick.from_pyo3, pyo3_quote)
 
 
 def test_pyo3_quotes_to_legacy_cython_list(benchmark):
     pyo3_quotes = [TestDataProviderPyo3.quote_tick()] * 10_000
-
-    benchmark.pedantic(
-        target=QuoteTick.from_pyo3_list,
-        args=(pyo3_quotes,),
-        rounds=10,
-        iterations=1,
-    )
+    benchmark(QuoteTick.from_pyo3_list, pyo3_quotes)
 
 
 def test_pyo3_trade_to_legacy_cython(benchmark):
     pyo3_trade = TestDataProviderPyo3.trade_tick()
-
-    benchmark.pedantic(
-        target=TradeTick.from_pyo3,
-        args=(pyo3_trade,),
-        rounds=100_000,
-        iterations=1,
-    )
+    benchmark(TradeTick.from_pyo3, pyo3_trade)
 
 
 def test_pyo3_trades_to_legacy_cython_list(benchmark):
     pyo3_trades = [TestDataProviderPyo3.trade_tick()] * 10_000
-
-    benchmark.pedantic(
-        target=TradeTick.from_pyo3_list,
-        args=(pyo3_trades,),
-        rounds=10,
-        iterations=1,
-    )
+    benchmark(TradeTick.from_pyo3_list, pyo3_trades)
 
 
 def test_pyo3_bar_to_legacy_cython(benchmark):
     pyo3_bar = TestDataProviderPyo3.bar_5decimal()
-
-    benchmark.pedantic(
-        target=Bar.from_pyo3,
-        args=(pyo3_bar,),
-        rounds=100_000,
-        iterations=1,
-    )
+    benchmark(Bar.from_pyo3, pyo3_bar)
 
 
 def test_pyo3_bars_to_legacy_cython_list(benchmark):
     pyo3_bars = [TestDataProviderPyo3.bar_5decimal()] * 10_000
-
-    benchmark.pedantic(
-        target=Bar.from_pyo3_list,
-        args=(pyo3_bars,),
-        rounds=10,
-        iterations=1,
-    )
+    benchmark(Bar.from_pyo3_list, pyo3_bars)

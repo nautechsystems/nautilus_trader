@@ -44,133 +44,116 @@ USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 
 def test_run_with_empty_strategy(benchmark):
-    def setup():
-        # Arrange
-        config = BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True))
-        engine = BacktestEngine(config=config)
+    config = BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True))
+    engine = BacktestEngine(config=config)
 
-        engine.add_venue(
-            venue=Venue("SIM"),
-            oms_type=OmsType.HEDGING,
-            account_type=AccountType.MARGIN,
-            base_currency=USD,
-            starting_balances=[Money(1_000_000, USD)],
-            fill_model=FillModel(),
-        )
+    engine.add_venue(
+        venue=Venue("SIM"),
+        oms_type=OmsType.HEDGING,
+        account_type=AccountType.MARGIN,
+        base_currency=USD,
+        starting_balances=[Money(1_000_000, USD)],
+        fill_model=FillModel(),
+    )
 
-        engine.add_instrument(USDJPY_SIM)
+    engine.add_instrument(USDJPY_SIM)
 
-        # Set up data
-        wrangler = QuoteTickDataWrangler(USDJPY_SIM)
-        provider = TestDataProvider()
-        ticks = wrangler.process_bar_data(
-            bid_data=provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv"),
-            ask_data=provider.read_csv_bars("fxcm/usdjpy-m1-ask-2013.csv"),
-        )
-        engine.add_data(ticks)
+    # Set up data
+    wrangler = QuoteTickDataWrangler(USDJPY_SIM)
+    provider = TestDataProvider()
+    ticks = wrangler.process_bar_data(
+        bid_data=provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv"),
+        ask_data=provider.read_csv_bars("fxcm/usdjpy-m1-ask-2013.csv"),
+    )
+    engine.add_data(ticks)
 
-        strategies = [Strategy()]
-        start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=pytz.utc)
-        end = datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
-        return (engine, start, end, strategies), {}
+    strategy = Strategy()
+    engine.add_strategy(strategy)
 
-    def run(engine, start, end, strategies):
-        engine.add_strategies(strategies=strategies)
-        engine.run(start=start, end=end)
+    start = datetime(2013, 1, 1, 22, 0, 0, 0, tzinfo=pytz.utc)
+    end = datetime(2013, 8, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
 
-    benchmark.pedantic(run, setup=setup, rounds=1, iterations=1, warmup_rounds=1)
+    benchmark(engine.run, start, end)
 
 
 def test_run_for_tick_processing(benchmark):
-    def setup():
-        config = BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True))
-        engine = BacktestEngine(config=config)
+    config = BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True))
+    engine = BacktestEngine(config=config)
 
-        engine.add_venue(
-            venue=Venue("SIM"),
-            oms_type=OmsType.HEDGING,
-            account_type=AccountType.MARGIN,
-            base_currency=USD,
-            starting_balances=[Money(1_000_000, USD)],
-        )
+    engine.add_venue(
+        venue=Venue("SIM"),
+        oms_type=OmsType.HEDGING,
+        account_type=AccountType.MARGIN,
+        base_currency=USD,
+        starting_balances=[Money(1_000_000, USD)],
+    )
 
-        engine.add_instrument(USDJPY_SIM)
+    engine.add_instrument(USDJPY_SIM)
 
-        # Set up data
-        wrangler = QuoteTickDataWrangler(USDJPY_SIM)
-        provider = TestDataProvider()
-        ticks = wrangler.process_bar_data(
-            bid_data=provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv"),
-            ask_data=provider.read_csv_bars("fxcm/usdjpy-m1-ask-2013.csv"),
-        )
-        engine.add_data(ticks)
+    # Set up data
+    wrangler = QuoteTickDataWrangler(USDJPY_SIM)
+    provider = TestDataProvider()
+    ticks = wrangler.process_bar_data(
+        bid_data=provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv"),
+        ask_data=provider.read_csv_bars("fxcm/usdjpy-m1-ask-2013.csv"),
+    )
+    engine.add_data(ticks)
 
-        config = EMACrossConfig(
-            instrument_id=USDJPY_SIM.id,
-            bar_type=TestDataStubs.bartype_usdjpy_1min_bid(),
-            trade_size=Decimal(1_000_000),
-            fast_ema_period=10,
-            slow_ema_period=20,
-        )
-        strategy = EMACross(config=config)
+    config = EMACrossConfig(
+        instrument_id=USDJPY_SIM.id,
+        bar_type=TestDataStubs.bartype_usdjpy_1min_bid(),
+        trade_size=Decimal(1_000_000),
+        fast_ema_period=10,
+        slow_ema_period=20,
+    )
+    strategy = EMACross(config=config)
+    engine.add_strategy(strategy)
 
-        start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
-        end = datetime(2013, 2, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
+    start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+    end = datetime(2013, 2, 10, 0, 0, 0, 0, tzinfo=pytz.utc)
 
-        return (engine, start, end, strategy), {}
-
-    def run(engine, start, end, strategy):
-        engine.add_strategy(strategy)
-        engine.run(start=start, end=end)
-
-    benchmark.pedantic(run, setup=setup, rounds=1, iterations=1)
+    benchmark(engine.run, start, end)
 
 
 def test_run_with_ema_cross_strategy(benchmark):
-    def setup():
-        config = BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True))
-        engine = BacktestEngine(config=config)
+    config = BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True))
+    engine = BacktestEngine(config=config)
 
-        provider = TestDataProvider()
-        interest_rate_data = pd.read_csv(TEST_DATA_DIR / "short-term-interest.csv")
-        config = FXRolloverInterestConfig(interest_rate_data)
-        fx_rollover_interest = FXRolloverInterestModule(config)
+    provider = TestDataProvider()
+    interest_rate_data = pd.read_csv(TEST_DATA_DIR / "short-term-interest.csv")
+    config = FXRolloverInterestConfig(interest_rate_data)
+    fx_rollover_interest = FXRolloverInterestModule(config)
 
-        engine.add_venue(
-            venue=Venue("SIM"),
-            oms_type=OmsType.HEDGING,
-            account_type=AccountType.MARGIN,
-            base_currency=USD,
-            starting_balances=[Money(1_000_000, USD)],
-            modules=[fx_rollover_interest],
-        )
+    engine.add_venue(
+        venue=Venue("SIM"),
+        oms_type=OmsType.HEDGING,
+        account_type=AccountType.MARGIN,
+        base_currency=USD,
+        starting_balances=[Money(1_000_000, USD)],
+        modules=[fx_rollover_interest],
+    )
 
-        engine.add_instrument(USDJPY_SIM)
+    engine.add_instrument(USDJPY_SIM)
 
-        # Set up data
-        wrangler = QuoteTickDataWrangler(USDJPY_SIM)
-        ticks = wrangler.process_bar_data(
-            bid_data=provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv"),
-            ask_data=provider.read_csv_bars("fxcm/usdjpy-m1-ask-2013.csv"),
-        )
-        engine.add_data(ticks)
+    # Set up data
+    wrangler = QuoteTickDataWrangler(USDJPY_SIM)
+    ticks = wrangler.process_bar_data(
+        bid_data=provider.read_csv_bars("fxcm/usdjpy-m1-bid-2013.csv"),
+        ask_data=provider.read_csv_bars("fxcm/usdjpy-m1-ask-2013.csv"),
+    )
+    engine.add_data(ticks)
 
-        config = EMACrossConfig(
-            instrument_id=USDJPY_SIM.id,
-            bar_type=TestDataStubs.bartype_usdjpy_1min_bid(),
-            trade_size=Decimal(1_000_000),
-            fast_ema_period=10,
-            slow_ema_period=20,
-        )
-        strategy = EMACross(config=config)
+    config = EMACrossConfig(
+        instrument_id=USDJPY_SIM.id,
+        bar_type=TestDataStubs.bartype_usdjpy_1min_bid(),
+        trade_size=Decimal(1_000_000),
+        fast_ema_period=10,
+        slow_ema_period=20,
+    )
+    strategy = EMACross(config=config)
+    engine.add_strategy(strategy)
 
-        start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
-        end = datetime(2013, 3, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+    start = datetime(2013, 2, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
+    end = datetime(2013, 3, 1, 0, 0, 0, 0, tzinfo=pytz.utc)
 
-        return (engine, start, end, [strategy]), {}
-
-    def run(engine, start, end, strategies):
-        engine.add_strategies(strategies)
-        engine.run(start=start, end=end)
-
-    benchmark.pedantic(run, setup=setup, rounds=1, iterations=1)
+    benchmark(engine.run, start, end)
