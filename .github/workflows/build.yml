@@ -164,6 +164,12 @@ jobs:
           make pytest
           make test-examples
 
+      - name: Run benchmarks (Linux)
+        uses: CodSpeedHQ/action@v3
+        with:
+          token: ${{ secrets.CODSPEED_TOKEN }}
+          run: make test-performance
+
   build-windows:
     strategy:
       fail-fast: false

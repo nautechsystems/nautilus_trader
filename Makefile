@@ -157,6 +157,10 @@ pytest:
 pytest-coverage:
 	bash scripts/test-coverage.sh
 
+.PHONY: test-performance
+test-performance:
+	bash scripts/test-performance.sh
+
 .PHONY: test-examples
 test-examples:
 	bash scripts/test-examples.sh
