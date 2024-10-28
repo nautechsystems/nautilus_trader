@@ -79,7 +79,7 @@ impl DateCursor {
     }
 }
 
-async fn gather_instruments(
+async fn gather_instruments_info(
     config: &TardisReplayConfig,
     http_client: &TardisHttpClient,
 ) -> HashMap<Exchange, Vec<InstrumentInfo>> {
@@ -90,7 +90,7 @@ async fn gather_instruments(
         tracing::info!("Requesting instruments for {exchange}");
 
         async move {
-            match client.instruments(exchange.clone()).await {
+            match client.instruments_info(exchange.clone()).await {
                 Ok(Response::Success(instruments)) => Some((exchange, instruments)),
                 Ok(Response::Error { code, message }) => {
                     tracing::error!(
@@ -124,7 +124,7 @@ pub async fn run_tardis_machine_replay(config_filepath: &Path) {
     let http_client = TardisHttpClient::new(None, None, None);
     let mut machine_client = TardisMachineClient::new(config.tardis_ws_url.as_deref());
 
-    let info_map = gather_instruments(&config, &http_client).await;
+    let info_map = gather_instruments_info(&config, &http_client).await;
 
     for (exchange, instruments) in &info_map {
         for inst in instruments {

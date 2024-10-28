@@ -23,11 +23,11 @@ async fn main() {
 
     let client = TardisHttpClient::new(None, None, None);
 
-    let resp = client.instruments(Exchange::Bitmex).await;
+    let resp = client.instruments_info(Exchange::Bitmex).await;
     println!("Received: {resp:?}");
 
     let resp = client
-        .instrument(Exchange::Bitmex, "ETHUSDT".to_string())
+        .instrument_info(Exchange::Bitmex, "ETHUSDT".to_string())
         .await;
     println!("Received: {resp:?}");
 }
