@@ -16,12 +16,11 @@
 //! Real-time and static test `Clock` implementations.
 
 use std::{
-    cell::OnceCell,
-    cell::RefCell,
+    cell::{OnceCell, RefCell},
     collections::{BTreeMap, BinaryHeap, HashMap},
     ops::Deref,
     rc::Rc,
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
 use chrono::{DateTime, Utc};
@@ -38,23 +37,29 @@ use crate::{
     timer::{LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandlerV2},
 };
 
-pub static CLOCK: OnceCell<Rc<RefCell<dyn Clock>>> = OnceCell::new();
+thread_local! {
+    static CLOCK: OnceCell<Rc<RefCell<dyn Clock>>> = OnceCell::new();
+}
 
-/// Retrieves a reference to a globally shared Tokio runtime.
-/// The runtime is lazily initialized on the first call and reused thereafter.
-///
-/// This global runtime is intended for use cases where passing a runtime
-/// around is impractical. It uses default configuration values.
-///
-/// # Panics
-///
-/// Panics if the runtime could not be created, which typically indicates
-/// an inability to spawn threads or allocate necessary resources.
 pub fn get_clock() -> Rc<RefCell<dyn Clock>> {
     CLOCK
-        .get()
-        .expect("Clock should be initialized by runner")
-        .clone()
+        .try_with(|clock| {
+            clock
+                .get()
+                .expect("Clock should be initialized by runner")
+                .clone()
+        })
+        .expect("Should be able to access thread local storage")
+}
+
+pub fn set_clock(c: Rc<RefCell<dyn Clock>>) {
+    CLOCK
+        .try_with(|clock| {
+            if let Err(_) = clock.set(c) {
+                panic!("Global clock already set")
+            }
+        })
+        .expect("Should be able to access thread local clock")
 }
 
 /// Represents a type of clock.

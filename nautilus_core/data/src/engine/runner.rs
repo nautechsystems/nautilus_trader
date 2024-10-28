@@ -16,7 +16,7 @@
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
 use nautilus_common::{
-    clock::TestClock,
+    clock::{set_clock, TestClock},
     messages::data::{DataClientResponse, DataResponse},
     timer::TimeEventHandlerV2,
 };
@@ -49,10 +49,17 @@ impl Runner for BacktestRunner {
     type Sender = DataResponseQueue;
 
     fn new() -> Self {
+        #[cfg(feature = "clock_v2")]
+        let clock = {
+            let clock = Rc::new(RefCell::new(TestClock::new()));
+            set_clock(clock.clone());
+            clock
+        };
+
         Self {
             queue: Rc::new(RefCell::new(VecDeque::new())),
             #[cfg(feature = "clock_v2")]
-            clock: Rc::new(RefCell::new(TestClock::new())),
+            clock,
         }
     }
 
