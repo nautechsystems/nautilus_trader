@@ -32,7 +32,7 @@ use crate::{statistic::PortfolioStatistic, Returns};
 
 pub type Statistic = Arc<dyn PortfolioStatistic<Item = f64> + Send + Sync>;
 
-/// Analyzes portfolio performance and calculates various statistics
+/// Analyzes portfolio performance and calculates various statistics.
 ///
 /// The `PortfolioAnalyzer` tracks account balances, positions, and realized PnLs
 /// to provide comprehensive portfolio analysis including returns, PnL calculations,
@@ -59,7 +59,7 @@ impl Default for PortfolioAnalyzer {
 }
 
 impl PortfolioAnalyzer {
-    /// Creates a new empty portfolio analyzer
+    /// Creates a new empty portfolio analyzer.
     pub fn new() -> Self {
         Self {
             statistics: HashMap::new(),
@@ -71,22 +71,22 @@ impl PortfolioAnalyzer {
         }
     }
 
-    /// Registers a new portfolio statistic for calculation
+    /// Registers a new portfolio statistic for calculation.
     pub fn register_statistic(&mut self, statistic: Statistic) {
         self.statistics.insert(statistic.name(), statistic);
     }
 
-    /// Removes a specific statistic from calculation
+    /// Removes a specific statistic from calculation.
     pub fn deregister_statistic(&mut self, statistic: Statistic) {
         self.statistics.remove(&statistic.name());
     }
 
-    /// Removes all registered statistics
+    /// Removes all registered statistics.
     pub fn deregister_statistics(&mut self) {
         self.statistics.clear();
     }
 
-    /// Resets all analysis data to initial state
+    /// Resets all analysis data to initial state.
     pub fn reset(&mut self) {
         self.account_balances_starting.clear();
         self.account_balances.clear();
@@ -94,22 +94,22 @@ impl PortfolioAnalyzer {
         self.returns.clear();
     }
 
-    /// Returns all tracked currencies
+    /// Returns all tracked currencies.
     pub fn currencies(&self) -> Vec<&Currency> {
         self.account_balances.keys().collect()
     }
 
-    /// Retrieves a specific statistic by name
+    /// Retrieves a specific statistic by name.
     pub fn statistic(&self, name: &str) -> Option<&Statistic> {
         self.statistics.get(name)
     }
 
-    /// Returns all calculated returns
+    /// Returns all calculated returns.
     pub const fn returns(&self) -> &Returns {
         &self.returns
     }
 
-    /// Calculates statistics based on account and position data
+    /// Calculates statistics based on account and position data.
     pub fn calculate_statistics(&mut self, account: &dyn Account, positions: &[Position]) {
         self.account_balances_starting = account.starting_balances();
         self.account_balances = account.balances_total();
@@ -119,7 +119,7 @@ impl PortfolioAnalyzer {
         self.add_positions(positions);
     }
 
-    /// Adds new positions for analysis
+    /// Adds new positions for analysis.
     pub fn add_positions(&mut self, positions: &[Position]) {
         self.positions.extend_from_slice(positions);
         for position in positions {
@@ -133,14 +133,14 @@ impl PortfolioAnalyzer {
         }
     }
 
-    /// Records a trade's `PnL`
+    /// Records a trade's `PnL`.
     pub fn add_trade(&mut self, position_id: &PositionId, pnl: &Money) {
         let currency = pnl.currency;
         let entry = self.realized_pnls.entry(currency).or_default();
         entry.push((*position_id, pnl.as_f64()));
     }
 
-    /// Records a return at a specific timestamp
+    /// Records a return at a specific timestamp.
     pub fn add_return(&mut self, timestamp: UnixNanos, value: f64) {
         self.returns
             .entry(timestamp)
@@ -148,7 +148,7 @@ impl PortfolioAnalyzer {
             .or_insert(value);
     }
 
-    /// Retrieves realized `PnLs` for a specific currency
+    /// Retrieves realized `PnLs` for a specific currency.
     pub fn realized_pnls(&self, currency: Option<&Currency>) -> Option<Vec<(PositionId, f64)>> {
         if self.realized_pnls.is_empty() {
             return None;
@@ -157,7 +157,7 @@ impl PortfolioAnalyzer {
         self.realized_pnls.get(currency).cloned()
     }
 
-    /// Calculates total `PnL` including unrealized `PnL` if provided
+    /// Calculates total `PnL` including unrealized `PnL` if provided.
     pub fn total_pnl(
         &self,
         currency: Option<&Currency>,
@@ -192,7 +192,7 @@ impl PortfolioAnalyzer {
         Ok((account_balance.as_f64() - account_balance_starting.as_f64()) + unrealized_pnl_f64)
     }
 
-    /// Calculates total `PnL` as a percentage of starting balance
+    /// Calculates total `PnL` as a percentage of starting balance.
     pub fn total_pnl_percentage(
         &self,
         currency: Option<&Currency>,
@@ -235,7 +235,7 @@ impl PortfolioAnalyzer {
         Ok((difference / starting) * 100.0)
     }
 
-    /// Gets all PnL-related performance statistics
+    /// Gets all PnL-related performance statistics.
     pub fn get_performance_stats_pnls(
         &self,
         currency: Option<&Currency>,
@@ -268,7 +268,7 @@ impl PortfolioAnalyzer {
         Ok(output)
     }
 
-    /// Gets all return-based performance statistics
+    /// Gets all return-based performance statistics.
     pub fn get_performance_stats_returns(&self) -> HashMap<String, f64> {
         let mut output = HashMap::new();
 
@@ -281,7 +281,7 @@ impl PortfolioAnalyzer {
         output
     }
 
-    /// Gets general portfolio statistics
+    /// Gets general portfolio statistics.
     pub fn get_performance_stats_general(&self) -> HashMap<String, f64> {
         let mut output = HashMap::new();
 
@@ -294,12 +294,12 @@ impl PortfolioAnalyzer {
         output
     }
 
-    /// Calculates the maximum length of statistic names for formatting
+    /// Calculates the maximum length of statistic names for formatting.
     fn get_max_length_name(&self) -> usize {
         self.statistics.keys().map(String::len).max().unwrap_or(0)
     }
 
-    /// Gets formatted `PnL` statistics as strings
+    /// Gets formatted `PnL` statistics as strings.
     pub fn get_stats_pnls_formatted(
         &self,
         currency: Option<&Currency>,
@@ -321,7 +321,7 @@ impl PortfolioAnalyzer {
         Ok(output)
     }
 
-    /// Gets formatted return statistics as strings
+    /// Gets formatted return statistics as strings.
     pub fn get_stats_returns_formatted(&self) -> Vec<String> {
         let max_length = self.get_max_length_name();
         let stats = self.get_performance_stats_returns();
@@ -335,7 +335,7 @@ impl PortfolioAnalyzer {
         output
     }
 
-    /// Gets formatted general statistics as strings
+    /// Gets formatted general statistics as strings.
     pub fn get_stats_general_formatted(&self) -> Vec<String> {
         let max_length = self.get_max_length_name();
         let stats = self.get_performance_stats_general();
@@ -367,7 +367,7 @@ mod tests {
 
     use super::*;
 
-    // Mock implementation of PortfolioStatistic for testing
+    // Mock implementation of PortfolioStatistic for testing.
     #[derive(Debug)]
     struct MockStatistic {
         name: String,
@@ -401,7 +401,7 @@ mod tests {
         }
     }
 
-    // Helper function to create a mock position
+    // Helper function to create a mock position.
     fn create_mock_position(
         id: String,
         realized_pnl: f64,
@@ -445,7 +445,7 @@ mod tests {
         }
     }
 
-    // // Helper function to create a mock account implementation
+    // // Helper function to create a mock account implementation.
     struct MockAccount {
         starting_balances: HashMap<Currency, Money>,
         current_balances: HashMap<Currency, Money>,
@@ -560,15 +560,15 @@ mod tests {
         let mut analyzer = PortfolioAnalyzer::new();
         let stat = Arc::new(MockStatistic::new("test_stat"));
 
-        // Test registration
+        // Test registration.
         analyzer.register_statistic(Arc::clone(&stat));
         assert!(analyzer.statistic("test_stat").is_some());
 
-        // Test deregistration
+        // Test deregistration.
         analyzer.deregister_statistic(Arc::clone(&stat));
         assert!(analyzer.statistic("test_stat").is_none());
 
-        // Test deregister all
+        // Test deregister all.
         let stat1 = Arc::new(MockStatistic::new("stat1"));
         let stat2 = Arc::new(MockStatistic::new("stat2"));
         analyzer.register_statistic(Arc::clone(&stat1));
@@ -582,7 +582,7 @@ mod tests {
         let mut analyzer = PortfolioAnalyzer::new();
         let currency = Currency::USD();
 
-        // Set up mock account data
+        // Set up mock account data.
         let mut starting_balances = HashMap::new();
         starting_balances.insert(currency, Money::new(1000.0, currency));
 
@@ -596,11 +596,11 @@ mod tests {
 
         analyzer.calculate_statistics(&account, &[]);
 
-        // Test total PnL calculation
+        // Test total PnL calculation.
         let result = analyzer.total_pnl(Some(&currency), None).unwrap();
         assert_eq!(result, 500.0);
 
-        // Test with unrealized PnL
+        // Test with unrealized PnL.
         let unrealized_pnl = Money::new(100.0, currency);
         let result = analyzer
             .total_pnl(Some(&currency), Some(&unrealized_pnl))
@@ -613,7 +613,7 @@ mod tests {
         let mut analyzer = PortfolioAnalyzer::new();
         let currency = Currency::USD();
 
-        // Set up mock account data
+        // Set up mock account data.
         let mut starting_balances = HashMap::new();
         starting_balances.insert(currency, Money::new(1000.0, currency));
 
@@ -627,7 +627,7 @@ mod tests {
 
         analyzer.calculate_statistics(&account, &[]);
 
-        // Test percentage calculation
+        // Test percentage calculation.
         let result = analyzer
             .total_pnl_percentage(Some(&currency), None)
             .unwrap();
@@ -653,13 +653,13 @@ mod tests {
 
         analyzer.add_positions(&positions);
 
-        // Verify realized PnLs were recorded
+        // Verify realized PnLs were recorded.
         let pnls = analyzer.realized_pnls(Some(&currency)).unwrap();
         assert_eq!(pnls.len(), 2);
         assert_eq!(pnls[0].1, 100.0);
         assert_eq!(pnls[1].1, 200.0);
 
-        // Verify returns were recorded
+        // Verify returns were recorded.
         let returns = analyzer.returns();
         assert_eq!(returns.len(), 1);
         assert_eq!(*returns.values().next().unwrap(), 0.30000000000000004);
@@ -672,7 +672,7 @@ mod tests {
         let stat = Arc::new(MockStatistic::new("test_stat"));
         analyzer.register_statistic(Arc::clone(&stat));
 
-        // Add some positions
+        // Add some positions.
         let positions = vec![
             create_mock_position("AUD/USD".to_owned(), 100.0, 0.1, currency),
             create_mock_position("AUD/USD".to_owned(), 200.0, 0.2, currency),
@@ -691,7 +691,7 @@ mod tests {
 
         analyzer.calculate_statistics(&account, &positions);
 
-        // Test PnL stats
+        // Test PnL stats.
         let pnl_stats = analyzer
             .get_performance_stats_pnls(Some(&currency), None)
             .unwrap();
@@ -699,11 +699,11 @@ mod tests {
         assert!(pnl_stats.contains_key("PnL% (total)"));
         assert!(pnl_stats.contains_key("test_stat"));
 
-        // Test returns stats
+        // Test returns stats.
         let return_stats = analyzer.get_performance_stats_returns();
         assert!(return_stats.contains_key("test_stat"));
 
-        // Test general stats
+        // Test general stats.
         let general_stats = analyzer.get_performance_stats_general();
         assert!(general_stats.contains_key("test_stat"));
     }
@@ -733,7 +733,7 @@ mod tests {
 
         analyzer.calculate_statistics(&account, &positions);
 
-        // Test formatted outputs
+        // Test formatted outputs.
         let pnl_formatted = analyzer
             .get_stats_pnls_formatted(Some(&currency), None)
             .unwrap();
@@ -754,7 +754,6 @@ mod tests {
         let mut analyzer = PortfolioAnalyzer::new();
         let currency = Currency::USD();
 
-        // Add some data
         let positions = vec![create_mock_position(
             "AUD/USD".to_owned(),
             100.0,
@@ -773,10 +772,8 @@ mod tests {
 
         analyzer.calculate_statistics(&account, &positions);
 
-        // Reset
         analyzer.reset();
 
-        // Verify everything is cleared
         assert!(analyzer.account_balances_starting.is_empty());
         assert!(analyzer.account_balances.is_empty());
         assert!(analyzer.realized_pnls.is_empty());
