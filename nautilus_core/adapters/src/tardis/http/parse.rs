@@ -13,10 +13,33 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-pub mod client;
-pub mod parse;
-pub mod types;
+use nautilus_model::instruments::any::InstrumentAny;
 
-pub use crate::tardis::http::client::TardisHttpClient;
+use crate::tardis::enums::InstrumentType;
 
-pub const TARDIS_BASE_URL: &str = "https://api.tardis.dev/v1";
+use super::types::InstrumentInfo;
+
+pub fn parse_instrument_any(info: InstrumentInfo) -> InstrumentAny {
+    match info.instrument_type {
+        InstrumentType::Spot => parse_spot_instrument(info),
+        InstrumentType::Perpetual => parse_perp_instrument(info),
+        InstrumentType::Future => parse_future_instrument(info),
+        InstrumentType::Option => parse_option_instrument(info),
+    }
+}
+
+fn parse_spot_instrument(_info: InstrumentInfo) -> InstrumentAny {
+    todo!()
+}
+
+fn parse_perp_instrument(_info: InstrumentInfo) -> InstrumentAny {
+    todo!()
+}
+
+fn parse_future_instrument(_info: InstrumentInfo) -> InstrumentAny {
+    todo!()
+}
+
+fn parse_option_instrument(_info: InstrumentInfo) -> InstrumentAny {
+    todo!()
+}
