@@ -15,7 +15,12 @@
 
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
-use nautilus_common::messages::data::{DataClientResponse, DataResponse};
+use nautilus_common::{
+    clock::TestClock,
+    messages::data::{DataClientResponse, DataResponse},
+    timer::TimeEventHandlerV2,
+};
+use nautilus_model::data::GetTsInit;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use super::DataEngine;
@@ -36,6 +41,8 @@ pub type DataResponseQueue = Rc<RefCell<VecDeque<DataClientResponse>>>;
 
 pub struct BacktestRunner {
     queue: DataResponseQueue,
+    #[cfg(feature = "clock_v2")]
+    pub clock: Rc<RefCell<TestClock>>,
 }
 
 impl Runner for BacktestRunner {
@@ -44,6 +51,8 @@ impl Runner for BacktestRunner {
     fn new() -> Self {
         Self {
             queue: Rc::new(RefCell::new(VecDeque::new())),
+            #[cfg(feature = "clock_v2")]
+            clock: Rc::new(RefCell::new(TestClock::new())),
         }
     }
 
@@ -51,7 +60,23 @@ impl Runner for BacktestRunner {
         while let Some(resp) = self.queue.as_ref().borrow_mut().pop_front() {
             match resp {
                 DataClientResponse::Response(resp) => engine.response(resp),
-                DataClientResponse::Data(data) => engine.process_data(data),
+                DataClientResponse::Data(data) => {
+                    #[cfg(feature = "clock_v2")]
+                    {
+                        // Advance clock time and collect all triggered events
+                        // and there handlers
+                        let handlers: Vec<TimeEventHandlerV2> = {
+                            let mut guard = self.clock.borrow_mut();
+                            guard.advance_time(data.ts_init(), true);
+                            guard.by_ref().collect()
+                        };
+
+                        // Execut all handlers before processing the data
+                        handlers.into_iter().for_each(TimeEventHandlerV2::run);
+                    }
+
+                    engine.process_data(data);
+                }
             }
         }
     }
