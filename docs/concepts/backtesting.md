@@ -64,6 +64,14 @@ Data provided for backtesting drives the execution flow. Since a variety of data
 it's crucial that your venue configurations align with the data being provided for backtesting.
 Mismatches between data and configuration can lead to unexpected behavior during execution.
 
+:::info
+NautilusTrader is primarily designed and optimized for backtesting on order book or tick data, providing the highest
+execution granularity and realism. If order book or tick data is unavailable or unsuitable, backtests
+can also be run on bar data; however, users should note that this results in a loss of information and detail,
+reducing execution precision and realism.
+:::
+
+
 ## Venues
 
 When initializing a venue for backtesting, you must specify its internal order `book_type` for execution processing from the following options:

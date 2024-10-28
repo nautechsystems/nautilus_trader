@@ -277,17 +277,17 @@ pub enum BarAggregation {
     TickImbalance = 2,
     /// Based on sequential buy/sell runs of ticks.
     TickRuns = 3,
-    /// Based on trading volume.
+    /// Based on traded volume.
     Volume = 4,
-    /// Based on the buy/sell imbalance of trading volume.
+    /// Based on the buy/sell imbalance of traded volume.
     VolumeImbalance = 5,
-    /// Based on sequential runs of buy/sell trading volume.
+    /// Based on sequential runs of buy/sell traded volume.
     VolumeRuns = 6,
     /// Based on the 'notional' value of the instrument.
     Value = 7,
-    /// Based on the buy/sell imbalance of trading by 'notional' value.
+    /// Based on the buy/sell imbalance of trading by notional value.
     ValueImbalance = 8,
-    /// Based on sequential buy/sell runs of trading by 'notional' value.
+    /// Based on sequential buy/sell runs of trading by notional value.
     ValueRuns = 9,
     /// Based on time intervals with millisecond granularity.
     Millisecond = 10,

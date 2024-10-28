@@ -43,6 +43,51 @@ The following instrument definitions are available:
 - `OptionsSpread`: Represents a generic options spread instrument.
 - `Synthetic`: Represents a synthetic instrument with prices derived from component instruments using a formula.
 
+## Bars and aggregation
+
+A *bar*—also known as a candle, candlestick, or kline—is a data structure that represents price and
+volume information over a specific period, including the opening price, highest price, lowest price, closing price,
+and traded volume (or ticks as a volume proxy). These values are generated using an *aggregation method*,
+which groups data based on specific criteria to create the bar.
+
+| Name               | Description                                                                | Category     |
+|:-------------------|:---------------------------------------------------------------------------|:-------------|
+| `TICK`             | Aggregation of a number of ticks.                                          | Threshold    |
+| `TICK_IMBALANCE`   | Aggregation of the buy/sell imbalance of ticks.                            | Threshold    |
+| `TICK_RUNS`        | Aggregation of sequential buy/sell runs of ticks.                          | Information  |
+| `VOLUME`           | Aggregation of traded volume.                                              | Threshold    |
+| `VOLUME_IMBALANCE` | Aggregation of the buy/sell imbalance of traded volume.                    | Threshold    |
+| `VOLUME_RUNS`      | Aggregation of sequential runs of buy/sell traded volume.                  | Information  |
+| `VALUE`            | Aggregation of the notional value of trades (also known as "Dollar bars"). | Threshold    |
+| `VALUE_IMBALANCE`  | Aggregation of the buy/sell imbalance of trading by notional value.        | Information  |
+| `VALUE_RUNS`       | Aggregation of sequential buy/sell runs of trading by notional value.      | Threshold    |
+| `MILLISECOND`      | Aggregation of time intervals with millisecond granularity.                | Time         |
+| `SECOND`           | Aggregation of time intervals with second granularity.                     | Time         |
+| `MINUTE`           | Aggregation of time intervals with minute granularity.                     | Time         |
+| `HOUR`             | Aggregation of time intervals with hour granularity.                       | Time         |
+| `DAY`              | Aggregation of time intervals with day granularity.                        | Time         |
+| `WEEK`             | Aggregation of time intervals with week granularity.                       | Time         |
+| `MONTH`            | Aggregation of time intervals with month granularity.                      | Time         |
+
+Bar data can be aggregated either internally or externally:
+
+- `INTERNAL`: The bar is aggregated inside the local Nautilus system boundary.
+- `EXTERNAL`: The bar is aggregated outside the local Nautilus system boundary (typically by a trading venue or data provider).
+
+NautilusTrader defines a unique *bar type* (`BarType`) based on the following components:
+
+- **Instrument ID** (`InstrumentId`): Specifies the particular instrument for the bar.
+- **Bar Specification** (`BarSpecification`):
+  - Step Size: Defines the interval or frequency of each bar.
+  - Aggregation Method: Specifies the approach used for data aggregation (see the list above).
+  - Price Type: Indicates the price basis of the bar (e.g., bid, ask, mid, last).
+- **Aggregation Source** (`AggregationSource`): Indicates whether the bar was aggregated internally (within Nautilus) or externally (by a trading venue or data provider).
+
+Bar types can also be classified as either *standard* or *composite*:
+
+- **Standard**: Generated from granular market data, such as quotes or trade ticks.
+- **Composite**: Derived from a higher-granularity bar type through subsampling.
+
 ## Data flow
 
 The platform ensures consistency by flowing data through the same pathways across all system [environment contexts](/concepts/architecture.md#environment-contexts)
