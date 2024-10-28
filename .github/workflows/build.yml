@@ -168,7 +168,7 @@ jobs:
         uses: CodSpeedHQ/action@v3
         with:
           token: ${{ secrets.CODSPEED_TOKEN }}
-          run: poetry run pytest tests/performance_tests --codspeed
+          run: make test-performance
 
   build-windows:
     strategy:
