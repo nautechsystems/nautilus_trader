@@ -266,6 +266,8 @@ filterwarnings = [
     "ignore::UserWarning",
     "ignore::DeprecationWarning",
 ]
+codspeed-warmup-time = "0"
+codspeed-max-rounds = "1"
 
 [tool.coverage.run]
 plugins = ["Cython.Coverage"]
