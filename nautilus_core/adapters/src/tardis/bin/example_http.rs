@@ -23,11 +23,21 @@ async fn main() {
 
     let client = TardisHttpClient::new(None, None, None);
 
+    // Tardis instrument definitions
     let resp = client.instruments_info(Exchange::Bitmex).await;
     println!("Received: {resp:?}");
 
     let resp = client
         .instrument_info(Exchange::Bitmex, "ETHUSDT".to_string())
+        .await;
+    println!("Received: {resp:?}");
+
+    // Nautilus instrument definitions
+    let resp = client.instruments(Exchange::Bitmex).await;
+    println!("Received: {resp:?}");
+
+    let resp = client
+        .instrument(Exchange::Bitmex, "ETHUSDT".to_string())
         .await;
     println!("Received: {resp:?}");
 }
