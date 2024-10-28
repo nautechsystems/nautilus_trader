@@ -17,6 +17,7 @@ from datetime import datetime
 from decimal import Decimal
 
 import pandas as pd
+import pytest
 import pytz
 
 from nautilus_trader import TEST_DATA_DIR
@@ -43,6 +44,7 @@ from nautilus_trader.trading.strategy import Strategy
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 
+@pytest.mark.benchmark(min_rounds=1)
 def test_run_with_empty_strategy(benchmark):
     config = BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True))
     engine = BacktestEngine(config=config)
@@ -76,6 +78,7 @@ def test_run_with_empty_strategy(benchmark):
     benchmark(engine.run, start, end)
 
 
+@pytest.mark.benchmark(min_rounds=1)
 def test_run_for_tick_processing(benchmark):
     config = BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True))
     engine = BacktestEngine(config=config)
@@ -115,6 +118,7 @@ def test_run_for_tick_processing(benchmark):
     benchmark(engine.run, start, end)
 
 
+@pytest.mark.benchmark(min_rounds=1)
 def test_run_with_ema_cross_strategy(benchmark):
     config = BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True))
     engine = BacktestEngine(config=config)
