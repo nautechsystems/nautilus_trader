@@ -164,11 +164,11 @@ jobs:
           make pytest
           make test-examples
 
-      # - name: Run benchmarks (Linux)
-      #   uses: CodSpeedHQ/action@v3
-      #   with:
-      #     token: ${{ secrets.CODSPEED_TOKEN }}
-      #     run: poetry run pytest tests/performance_tests --codspeed
+      - name: Run benchmarks (Linux)
+        uses: CodSpeedHQ/action@v3
+        with:
+          token: ${{ secrets.CODSPEED_TOKEN }}
+          run: poetry run pytest tests/performance_tests --codspeed
 
   build-windows:
     strategy:
