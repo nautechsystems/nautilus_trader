@@ -18,11 +18,11 @@ use std::str::FromStr;
 use nautilus_core::{datetime::NANOSECONDS_IN_MICROSECOND, nanos::UnixNanos};
 use nautilus_model::{
     data::bar::BarSpecification,
-    enums::{AggressorSide, BarAggregation, BookAction, OrderSide, PriceType},
+    enums::{AggressorSide, BarAggregation, BookAction, OptionKind, OrderSide, PriceType},
     identifiers::{InstrumentId, Symbol, Venue},
 };
 
-use super::enums::Exchange;
+use super::enums::{Exchange, OptionType};
 
 /// Parse an instrument ID from the given venue and symbol values.
 #[must_use]
@@ -55,6 +55,15 @@ pub fn parse_aggressor_side(value: &str) -> AggressorSide {
         "buy" => AggressorSide::Buyer,
         "sell" => AggressorSide::Seller,
         _ => AggressorSide::NoAggressor,
+    }
+}
+
+/// Parse an option_kind from the Tardis enum value.
+#[must_use]
+pub fn parse_option_kind(value: OptionType) -> OptionKind {
+    match value {
+        OptionType::Call => OptionKind::Call,
+        OptionType::Put => OptionKind::Put,
     }
 }
 
