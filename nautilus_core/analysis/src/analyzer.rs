@@ -133,7 +133,7 @@ impl PortfolioAnalyzer {
         }
     }
 
-    /// Records a trade's `PnL`.
+    /// Records a trade's PnL.
     pub fn add_trade(&mut self, position_id: &PositionId, pnl: &Money) {
         let currency = pnl.currency;
         let entry = self.realized_pnls.entry(currency).or_default();
@@ -148,7 +148,7 @@ impl PortfolioAnalyzer {
             .or_insert(value);
     }
 
-    /// Retrieves realized `PnLs` for a specific currency.
+    /// Retrieves realized PnLs for a specific currency.
     pub fn realized_pnls(&self, currency: Option<&Currency>) -> Option<Vec<(PositionId, f64)>> {
         if self.realized_pnls.is_empty() {
             return None;
@@ -157,7 +157,7 @@ impl PortfolioAnalyzer {
         self.realized_pnls.get(currency).cloned()
     }
 
-    /// Calculates total `PnL` including unrealized `PnL` if provided.
+    /// Calculates total PnL including unrealized PnL if provided.
     pub fn total_pnl(
         &self,
         currency: Option<&Currency>,
@@ -192,7 +192,7 @@ impl PortfolioAnalyzer {
         Ok((account_balance.as_f64() - account_balance_starting.as_f64()) + unrealized_pnl_f64)
     }
 
-    /// Calculates total `PnL` as a percentage of starting balance.
+    /// Calculates total PnL as a percentage of starting balance.
     pub fn total_pnl_percentage(
         &self,
         currency: Option<&Currency>,
@@ -299,7 +299,7 @@ impl PortfolioAnalyzer {
         self.statistics.keys().map(String::len).max().unwrap_or(0)
     }
 
-    /// Gets formatted `PnL` statistics as strings.
+    /// Gets formatted PnL statistics as strings.
     pub fn get_stats_pnls_formatted(
         &self,
         currency: Option<&Currency>,
@@ -367,7 +367,7 @@ mod tests {
 
     use super::*;
 
-    // Mock implementation of PortfolioStatistic for testing.
+    /// Mock implementation of PortfolioStatistic for testing.
     #[derive(Debug)]
     struct MockStatistic {
         name: String,
@@ -401,7 +401,6 @@ mod tests {
         }
     }
 
-    // Helper function to create a mock position.
     fn create_mock_position(
         id: String,
         realized_pnl: f64,
@@ -445,7 +444,6 @@ mod tests {
         }
     }
 
-    // // Helper function to create a mock account implementation.
     struct MockAccount {
         starting_balances: HashMap<Currency, Money>,
         current_balances: HashMap<Currency, Money>,
@@ -560,15 +558,15 @@ mod tests {
         let mut analyzer = PortfolioAnalyzer::new();
         let stat = Arc::new(MockStatistic::new("test_stat"));
 
-        // Test registration.
+        // Test registration
         analyzer.register_statistic(Arc::clone(&stat));
         assert!(analyzer.statistic("test_stat").is_some());
 
-        // Test deregistration.
+        // Test deregistration
         analyzer.deregister_statistic(Arc::clone(&stat));
         assert!(analyzer.statistic("test_stat").is_none());
 
-        // Test deregister all.
+        // Test deregister all
         let stat1 = Arc::new(MockStatistic::new("stat1"));
         let stat2 = Arc::new(MockStatistic::new("stat2"));
         analyzer.register_statistic(Arc::clone(&stat1));
@@ -582,7 +580,7 @@ mod tests {
         let mut analyzer = PortfolioAnalyzer::new();
         let currency = Currency::USD();
 
-        // Set up mock account data.
+        // Set up mock account data
         let mut starting_balances = HashMap::new();
         starting_balances.insert(currency, Money::new(1000.0, currency));
 
@@ -596,11 +594,11 @@ mod tests {
 
         analyzer.calculate_statistics(&account, &[]);
 
-        // Test total PnL calculation.
+        // Test total PnL calculation
         let result = analyzer.total_pnl(Some(&currency), None).unwrap();
         assert_eq!(result, 500.0);
 
-        // Test with unrealized PnL.
+        // Test with unrealized PnL
         let unrealized_pnl = Money::new(100.0, currency);
         let result = analyzer
             .total_pnl(Some(&currency), Some(&unrealized_pnl))
@@ -613,7 +611,7 @@ mod tests {
         let mut analyzer = PortfolioAnalyzer::new();
         let currency = Currency::USD();
 
-        // Set up mock account data.
+        // Set up mock account data
         let mut starting_balances = HashMap::new();
         starting_balances.insert(currency, Money::new(1000.0, currency));
 
@@ -627,7 +625,7 @@ mod tests {
 
         analyzer.calculate_statistics(&account, &[]);
 
-        // Test percentage calculation.
+        // Test percentage calculation
         let result = analyzer
             .total_pnl_percentage(Some(&currency), None)
             .unwrap();
@@ -653,13 +651,13 @@ mod tests {
 
         analyzer.add_positions(&positions);
 
-        // Verify realized PnLs were recorded.
+        // Verify realized PnLs were recorded
         let pnls = analyzer.realized_pnls(Some(&currency)).unwrap();
         assert_eq!(pnls.len(), 2);
         assert_eq!(pnls[0].1, 100.0);
         assert_eq!(pnls[1].1, 200.0);
 
-        // Verify returns were recorded.
+        // Verify returns were recorded
         let returns = analyzer.returns();
         assert_eq!(returns.len(), 1);
         assert_eq!(*returns.values().next().unwrap(), 0.30000000000000004);
@@ -672,7 +670,7 @@ mod tests {
         let stat = Arc::new(MockStatistic::new("test_stat"));
         analyzer.register_statistic(Arc::clone(&stat));
 
-        // Add some positions.
+        // Add some positions
         let positions = vec![
             create_mock_position("AUD/USD".to_owned(), 100.0, 0.1, currency),
             create_mock_position("AUD/USD".to_owned(), 200.0, 0.2, currency),
@@ -691,7 +689,7 @@ mod tests {
 
         analyzer.calculate_statistics(&account, &positions);
 
-        // Test PnL stats.
+        // Test PnL stats
         let pnl_stats = analyzer
             .get_performance_stats_pnls(Some(&currency), None)
             .unwrap();
@@ -699,11 +697,11 @@ mod tests {
         assert!(pnl_stats.contains_key("PnL% (total)"));
         assert!(pnl_stats.contains_key("test_stat"));
 
-        // Test returns stats.
+        // Test returns stats
         let return_stats = analyzer.get_performance_stats_returns();
         assert!(return_stats.contains_key("test_stat"));
 
-        // Test general stats.
+        // Test general stats
         let general_stats = analyzer.get_performance_stats_general();
         assert!(general_stats.contains_key("test_stat"));
     }
@@ -733,7 +731,7 @@ mod tests {
 
         analyzer.calculate_statistics(&account, &positions);
 
-        // Test formatted outputs.
+        // Test formatted outputs
         let pnl_formatted = analyzer
             .get_stats_pnls_formatted(Some(&currency), None)
             .unwrap();
