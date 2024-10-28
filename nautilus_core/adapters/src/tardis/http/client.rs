@@ -15,7 +15,8 @@
 
 use std::{env, time::Duration};
 
-use nautilus_core::version::USER_AGENT;
+use chrono::Utc;
+use nautilus_core::{nanos::UnixNanos, version::USER_AGENT};
 use nautilus_model::instruments::any::InstrumentAny;
 
 use super::{
@@ -132,9 +133,12 @@ impl TardisHttpClient {
             }
         };
 
+        let now = Utc::now();
+        let ts_init = UnixNanos::from(now.timestamp_nanos_opt().expect("Invalid timestamp") as u64);
+
         infos
             .into_iter()
-            .map(|info| Ok(parse_instrument_any(info)))
+            .map(|info| Ok(parse_instrument_any(info, ts_init)))
             .collect()
     }
 
@@ -150,6 +154,9 @@ impl TardisHttpClient {
             }
         };
 
-        Ok(parse_instrument_any(info))
+        let now = Utc::now();
+        let ts_init = UnixNanos::from(now.timestamp_nanos_opt().expect("Invalid timestamp") as u64);
+
+        Ok(parse_instrument_any(info, ts_init))
     }
 }
