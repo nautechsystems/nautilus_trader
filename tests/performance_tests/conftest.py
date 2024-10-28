@@ -18,13 +18,6 @@ import pytest
 from nautilus_trader.common.component import LiveClock
 
 
-@pytest.fixture(autouse=True)
-def setup_benchmark(benchmark):
-    benchmark.extra_info["disable_gc"] = True
-    benchmark.extra_info["warmup"] = True
-    return benchmark
-
-
-@pytest.fixture()
-def clock():
+@pytest.fixture(name="clock")
+def fixture_clock():
     return LiveClock()
