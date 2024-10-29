@@ -51,12 +51,12 @@ impl OrderBookDeltaDataWrangler {
     }
 
     #[getter]
-    fn price_precision(&self) -> u8 {
+    const fn price_precision(&self) -> u8 {
         self.price_precision
     }
 
     #[getter]
-    fn size_precision(&self) -> u8 {
+    const fn size_precision(&self) -> u8 {
         self.size_precision
     }
 

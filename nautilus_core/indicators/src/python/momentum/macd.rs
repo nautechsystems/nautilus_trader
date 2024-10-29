@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
@@ -29,6 +28,8 @@ use crate::{
 #[pymethods]
 impl MovingAverageConvergenceDivergence {
     #[new]
+    #[pyo3(signature = (fast_period, slow_period, ma_type=None, price_type=None))]
+    #[must_use]
     pub fn py_new(
         fast_period: usize,
         slow_period: usize,
@@ -53,13 +54,13 @@ impl MovingAverageConvergenceDivergence {
 
     #[getter]
     #[pyo3(name = "fast_period")]
-    fn py_fast_period(&self) -> usize {
+    const fn py_fast_period(&self) -> usize {
         self.fast_period
     }
 
     #[getter]
     #[pyo3(name = "slow_period")]
-    fn py_slow_period(&self) -> usize {
+    const fn py_slow_period(&self) -> usize {
         self.slow_period
     }
 
@@ -77,13 +78,13 @@ impl MovingAverageConvergenceDivergence {
 
     #[getter]
     #[pyo3(name = "initialized")]
-    fn py_initialized(&self) -> bool {
+    const fn py_initialized(&self) -> bool {
         self.initialized
     }
 
     #[getter]
     #[pyo3(name = "value")]
-    fn py_value(&self) -> f64 {
+    const fn py_value(&self) -> f64 {
         self.value
     }
 

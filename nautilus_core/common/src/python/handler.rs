@@ -34,9 +34,10 @@ pub struct PythonMessageHandler {
 #[pymethods]
 impl PythonMessageHandler {
     #[new]
+    #[must_use]
     pub fn new(id: &str, handler: PyObject) -> Self {
         let id = Ustr::from(id);
-        PythonMessageHandler {
+        Self {
             id,
             handler: Arc::new(handler),
         }
@@ -59,7 +60,7 @@ impl MessageHandler for PythonMessageHandler {
         self.id
     }
 
-    fn handle_response(&self, resp: DataResponse) {
+    fn handle_response(&self, _resp: DataResponse) {
         // TODO: convert message to PyObject
         let py_event = ();
         let result =
@@ -69,7 +70,7 @@ impl MessageHandler for PythonMessageHandler {
         }
     }
 
-    fn handle_data(&self, data: Data) {
+    fn handle_data(&self, _data: Data) {
         let py_event = ();
         let result =
             pyo3::Python::with_gil(|py| self.handler.call_method1(py, "handle", (py_event,)));

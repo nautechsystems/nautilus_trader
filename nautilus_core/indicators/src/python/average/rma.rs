@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
@@ -28,6 +27,7 @@ use crate::{
 #[pymethods]
 impl WilderMovingAverage {
     #[new]
+    #[pyo3(signature = (period, price_type=None))]
     fn py_new(period: usize, price_type: Option<PriceType>) -> Self {
         Self::new(period, price_type)
     }
@@ -44,25 +44,25 @@ impl WilderMovingAverage {
 
     #[getter]
     #[pyo3(name = "period")]
-    fn py_period(&self) -> usize {
+    const fn py_period(&self) -> usize {
         self.period
     }
 
     #[getter]
     #[pyo3(name = "alpha")]
-    fn py_alpha(&self) -> f64 {
+    const fn py_alpha(&self) -> f64 {
         self.alpha
     }
 
     #[getter]
     #[pyo3(name = "count")]
-    fn py_count(&self) -> usize {
+    const fn py_count(&self) -> usize {
         self.count
     }
 
     #[getter]
     #[pyo3(name = "value")]
-    fn py_value(&self) -> f64 {
+    const fn py_value(&self) -> f64 {
         self.value
     }
 
@@ -74,7 +74,7 @@ impl WilderMovingAverage {
 
     #[getter]
     #[pyo3(name = "initialized")]
-    fn py_initialized(&self) -> bool {
+    const fn py_initialized(&self) -> bool {
         self.initialized
     }
 

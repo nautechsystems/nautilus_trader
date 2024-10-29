@@ -58,9 +58,9 @@ pub fn parse_aggressor_side(value: &str) -> AggressorSide {
     }
 }
 
-/// Parse an option_kind from the Tardis enum value.
+/// Parse an `option_kind` from the Tardis enum value.
 #[must_use]
-pub fn parse_option_kind(value: OptionType) -> OptionKind {
+pub const fn parse_option_kind(value: OptionType) -> OptionKind {
     match value {
         OptionType::Call => OptionKind::Call,
         OptionType::Put => OptionKind::Put,

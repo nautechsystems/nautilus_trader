@@ -20,14 +20,10 @@ use nautilus_model::data::{
     bar::Bar, delta::OrderBookDelta, is_monotonically_increasing_by_init, quote::QuoteTick,
     trade::TradeTick, Data,
 };
-use nautilus_persistence::{
-    backend::session::{DataBackendSession, DataQueryResult, QueryResult},
-    python::backend::session::NautilusDataType,
-};
+use nautilus_persistence::backend::session::{DataBackendSession, DataQueryResult, QueryResult};
 use nautilus_test_kit::common::get_test_data_file_path;
 #[cfg(target_os = "linux")]
 use procfs::{self, process::Process};
-use pyo3::{types::PyCapsule, IntoPy, Py, PyAny, Python};
 use rstest::rstest;
 
 /// Memory leak test

@@ -25,6 +25,7 @@ use crate::socket::{SocketClient, SocketConfig};
 #[pymethods]
 impl SocketConfig {
     #[new]
+    #[pyo3(signature = (url, ssl, suffix, handler, heartbeat=None))]
     fn py_new(
         url: String,
         ssl: bool,
@@ -52,6 +53,7 @@ impl SocketClient {
     /// - Throws an Exception if it is unable to make socket connection.
     #[staticmethod]
     #[pyo3(name = "connect")]
+    #[pyo3(signature = (config, post_connection=None, post_reconnection=None, post_disconnection=None))]
     fn py_connect(
         config: SocketConfig,
         post_connection: Option<PyObject>,

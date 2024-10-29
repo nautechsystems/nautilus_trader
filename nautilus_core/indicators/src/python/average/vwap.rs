@@ -13,27 +13,21 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{nanos::UnixNanos, python::to_pyvalue_err};
-use nautilus_model::{
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
-    enums::PriceType,
-};
+use nautilus_model::data::bar::Bar;
 use pyo3::prelude::*;
 
-use crate::{
-    average::vwap::VolumeWeightedAveragePrice,
-    indicator::{Indicator, MovingAverage},
-};
+use crate::{average::vwap::VolumeWeightedAveragePrice, indicator::Indicator};
 
 #[pymethods]
 impl VolumeWeightedAveragePrice {
     #[new]
-    pub fn py_new() -> Self {
+    #[must_use]
+    pub const fn py_new() -> Self {
         Self::new()
     }
 
     fn __repr__(&self) -> String {
-        format!("VolumeWeightedAveragePrice")
+        "VolumeWeightedAveragePrice".to_string()
     }
 
     #[getter]
@@ -50,13 +44,13 @@ impl VolumeWeightedAveragePrice {
 
     #[getter]
     #[pyo3(name = "value")]
-    fn py_value(&self) -> f64 {
+    const fn py_value(&self) -> f64 {
         self.value
     }
 
     #[getter]
     #[pyo3(name = "initialized")]
-    fn py_initialized(&self) -> bool {
+    const fn py_initialized(&self) -> bool {
         self.initialized
     }
 

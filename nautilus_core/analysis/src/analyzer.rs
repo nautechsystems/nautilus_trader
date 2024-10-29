@@ -133,7 +133,7 @@ impl PortfolioAnalyzer {
         }
     }
 
-    /// Records a trade's PnL.
+    /// Records a trade's `PnL`.
     pub fn add_trade(&mut self, position_id: &PositionId, pnl: &Money) {
         let currency = pnl.currency;
         let entry = self.realized_pnls.entry(currency).or_default();
@@ -148,7 +148,7 @@ impl PortfolioAnalyzer {
             .or_insert(value);
     }
 
-    /// Retrieves realized PnLs for a specific currency.
+    /// Retrieves realized `PnLs` for a specific currency.
     pub fn realized_pnls(&self, currency: Option<&Currency>) -> Option<Vec<(PositionId, f64)>> {
         if self.realized_pnls.is_empty() {
             return None;
@@ -157,7 +157,7 @@ impl PortfolioAnalyzer {
         self.realized_pnls.get(currency).cloned()
     }
 
-    /// Calculates total PnL including unrealized PnL if provided.
+    /// Calculates total `PnL` including unrealized `PnL` if provided.
     pub fn total_pnl(
         &self,
         currency: Option<&Currency>,
@@ -192,7 +192,7 @@ impl PortfolioAnalyzer {
         Ok((account_balance.as_f64() - account_balance_starting.as_f64()) + unrealized_pnl_f64)
     }
 
-    /// Calculates total PnL as a percentage of starting balance.
+    /// Calculates total `PnL` as a percentage of starting balance.
     pub fn total_pnl_percentage(
         &self,
         currency: Option<&Currency>,
@@ -299,7 +299,7 @@ impl PortfolioAnalyzer {
         self.statistics.keys().map(String::len).max().unwrap_or(0)
     }
 
-    /// Gets formatted PnL statistics as strings.
+    /// Gets formatted `PnL` statistics as strings.
     pub fn get_stats_pnls_formatted(
         &self,
         currency: Option<&Currency>,
@@ -367,7 +367,7 @@ mod tests {
 
     use super::*;
 
-    /// Mock implementation of PortfolioStatistic for testing.
+    /// Mock implementation of `PortfolioStatistic` for testing.
     #[derive(Debug)]
     struct MockStatistic {
         name: String,

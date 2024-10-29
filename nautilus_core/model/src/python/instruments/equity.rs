@@ -33,6 +33,7 @@ use crate::{
 impl Equity {
     #[allow(clippy::too_many_arguments)]
     #[new]
+    #[pyo3(signature = (id, raw_symbol, currency, price_precision, price_increment, ts_event, ts_init, maker_fee=None, taker_fee=None, margin_init=None, margin_maint=None, isin=None, lot_size=None, max_quantity=None, min_quantity=None, max_price=None, min_price=None))]
     fn py_new(
         id: InstrumentId,
         raw_symbol: Symbol,

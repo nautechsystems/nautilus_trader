@@ -15,11 +15,7 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::{
-    nanos::UnixNanos,
-    python::{serialization::from_dict_pyo3, to_pyvalue_err},
-    uuid::UUID4,
-};
+use nautilus_core::{nanos::UnixNanos, python::serialization::from_dict_pyo3, uuid::UUID4};
 use pyo3::{
     basic::CompareOp,
     prelude::*,
@@ -41,6 +37,7 @@ use crate::{
 impl OrderInitialized {
     #[allow(clippy::too_many_arguments)]
     #[new]
+    #[pyo3(signature = (trader_id, strategy_id, instrument_id, client_order_id, order_side, order_type, quantity, time_in_force, post_only, reduce_only, quote_quantity, reconciliation, event_id, ts_event, ts_init, price=None, trigger_price=None, trigger_type=None, limit_offset=None, trailing_offset=None, trailing_offset_type=None, expire_time=None, display_qty=None, emulation_trigger=None, trigger_instrument_id=None, contingency_type=None, order_list_id=None, linked_order_ids=None, parent_order_id=None, exec_algorithm_id=None, exec_algorithm_params=None, exec_spawn_id=None, tags=None))]
     fn py_new(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -109,7 +106,7 @@ impl OrderInitialized {
             exec_algorithm_id,
             exec_algorithm_params.map(str_hashmap_to_ustr),
             exec_spawn_id,
-            tags.map(|vec| vec.iter().map(|s| Ustr::from(&s)).collect()),
+            tags.map(|vec| vec.iter().map(|s| Ustr::from(s)).collect()),
         )
     }
 

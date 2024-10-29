@@ -340,7 +340,7 @@ impl SocketClient {
         })
         .await
         {
-            Ok(_) => {
+            Ok(()) => {
                 tracing::debug!("Controller task finished");
             }
             Err(_) => {

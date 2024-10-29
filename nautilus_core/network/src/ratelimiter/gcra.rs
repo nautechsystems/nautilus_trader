@@ -36,7 +36,7 @@ pub struct StateSnapshot {
 impl StateSnapshot {
     /// Creates a new [`StateSnapshot`] instance.
     #[inline]
-    pub(crate) fn new(t: Nanos, tau: Nanos, time_of_measurement: Nanos, tat: Nanos) -> Self {
+    pub(crate) const fn new(t: Nanos, tau: Nanos, time_of_measurement: Nanos, tat: Nanos) -> Self {
         Self {
             t,
             tau,
@@ -77,7 +77,7 @@ pub struct NotUntil<P: clock::Reference> {
 impl<P: clock::Reference> NotUntil<P> {
     /// Create a `NotUntil` as a negative rate-limiting result.
     #[inline]
-    pub(crate) fn new(state: StateSnapshot, start: P) -> Self {
+    pub(crate) const fn new(state: StateSnapshot, start: P) -> Self {
         Self { state, start }
     }
 

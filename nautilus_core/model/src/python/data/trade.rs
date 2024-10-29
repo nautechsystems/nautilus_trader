@@ -103,59 +103,73 @@ impl TradeTick {
         )
     }
 
-    // fn __setstate__(&mut self, py: Python, state: Bound<'_, PyAny>) -> PyResult<()> {
-    //     let tuple: (
-    //         &PyString,
-    //         &PyLong,
-    //         &PyLong,
-    //         &PyLong,
-    //         &PyLong,
-    //         &PyLong,
-    //         &PyString,
-    //         &PyLong,
-    //         &PyLong,
-    //     ) = state.extract()?;
-    //     let instrument_id_str: &str = tuple.0.extract()?;
-    //     let price_raw = tuple.1.extract()?;
-    //     let price_prec = tuple.2.extract()?;
-    //     let size_raw = tuple.3.extract()?;
-    //     let size_prec = tuple.4.extract()?;
-    //     let aggressor_side_u8 = tuple.5.extract()?;
-    //     let trade_id_str: String = tuple.6.extract()?;
-    //     let ts_event: u64 = tuple.7.extract()?;
-    //     let ts_init: u64 = tuple.8.extract()?;
-    //
-    //     self.instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
-    //     self.price = Price::from_raw(price_raw, price_prec);
-    //     self.size = Quantity::from_raw(size_raw, size_prec);
-    //     self.aggressor_side = AggressorSide::from_u8(aggressor_side_u8).unwrap();
-    //     self.trade_id = TradeId::from(trade_id_str.as_str());
-    //     self.ts_event = ts_event.into();
-    //     self.ts_init = ts_init.into();
-    //
-    //     Ok(())
-    // }
-    //
-    // fn __getstate__(&self, _py: Python) -> PyResult<PyObject> {
-    //     Ok((
-    //         self.instrument_id.to_string(),
-    //         self.price.raw,
-    //         self.price.precision,
-    //         self.size.raw,
-    //         self.size.precision,
-    //         self.aggressor_side as u8,
-    //         self.trade_id.to_string(),
-    //         self.ts_event.as_u64(),
-    //         self.ts_init.as_u64(),
-    //     )
-    //         .to_object(_py))
-    // }
-    //
-    // fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
-    //     let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
-    //     let state = self.__getstate__(py)?;
-    //     Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
-    // }
+    fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
+        let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
+        let binding = py_tuple.get_item(0)?;
+        let instrument_id_str = binding.downcast::<PyString>()?.extract::<&str>()?;
+        let price_raw = py_tuple
+            .get_item(1)?
+            .downcast::<PyLong>()?
+            .extract::<i64>()?;
+        let price_prec = py_tuple
+            .get_item(2)?
+            .downcast::<PyLong>()?
+            .extract::<u8>()?;
+        let size_raw = py_tuple
+            .get_item(3)?
+            .downcast::<PyLong>()?
+            .extract::<u64>()?;
+        let size_prec = py_tuple
+            .get_item(4)?
+            .downcast::<PyLong>()?
+            .extract::<u8>()?;
+
+        let aggressor_side_u8 = py_tuple
+            .get_item(5)?
+            .downcast::<PyLong>()?
+            .extract::<u8>()?;
+        let binding = py_tuple.get_item(6)?;
+        let trade_id_str = binding.downcast::<PyString>()?.extract::<&str>()?;
+        let ts_event = py_tuple
+            .get_item(7)?
+            .downcast::<PyLong>()?
+            .extract::<u64>()?;
+        let ts_init = py_tuple
+            .get_item(8)?
+            .downcast::<PyLong>()?
+            .extract::<u64>()?;
+
+        self.instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
+        self.price = Price::from_raw(price_raw, price_prec);
+        self.size = Quantity::from_raw(size_raw, size_prec);
+        self.aggressor_side = AggressorSide::from_u8(aggressor_side_u8).unwrap();
+        self.trade_id = TradeId::from(trade_id_str);
+        self.ts_event = ts_event.into();
+        self.ts_init = ts_init.into();
+
+        Ok(())
+    }
+
+    fn __getstate__(&self, _py: Python) -> PyResult<PyObject> {
+        Ok((
+            self.instrument_id.to_string(),
+            self.price.raw,
+            self.price.precision,
+            self.size.raw,
+            self.size.precision,
+            self.aggressor_side as u8,
+            self.trade_id.to_string(),
+            self.ts_event.as_u64(),
+            self.ts_init.as_u64(),
+        )
+            .to_object(_py))
+    }
+
+    fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
+        let safe_constructor = py.get_type_bound::<Self>().getattr("_safe_constructor")?;
+        let state = self.__getstate__(py)?;
+        Ok((safe_constructor, PyTuple::empty_bound(py), state).to_object(py))
+    }
 
     #[staticmethod]
     fn _safe_constructor() -> Self {

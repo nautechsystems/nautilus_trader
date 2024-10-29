@@ -13,19 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, ops::Deref};
-
-use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
-use pyo3::{
-    prelude::*,
-    types::{PyString, PyTuple},
-};
-use ustr::Ustr;
+use nautilus_core::nanos::UnixNanos;
+use pyo3::prelude::*;
 
 use super::timer::TimeEventHandler_Py;
 use crate::{
     clock::{Clock, LiveClock, TestClock},
-    timer::{LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandlerV2},
+    timer::{TimeEvent, TimeEventCallback},
 };
 
 /// PyO3 compatible interface for an underlying [`TestClock`].
@@ -47,7 +41,7 @@ pub struct TestClock_Py(Box<TestClock>);
 impl TestClock_Py {
     #[new]
     fn py_new() -> Self {
-        TestClock_Py(Box::new(TestClock::new()))
+        Self(Box::new(TestClock::new()))
     }
 
     fn advance_time(&mut self, to_time_ns: u64, set_time: bool) -> Vec<TimeEvent> {
@@ -64,17 +58,19 @@ impl TestClock_Py {
 
     fn register_default_handler(&mut self, callback: PyObject) {
         self.0
-            .register_default_handler(TimeEventCallback::from(callback))
+            .register_default_handler(TimeEventCallback::from(callback));
     }
 
+    #[pyo3(signature = (name, alert_time_ns, callback=None))]
     fn set_time_alert_ns(&mut self, name: &str, alert_time_ns: u64, callback: Option<PyObject>) {
         self.0.set_time_alert_ns(
             name,
             alert_time_ns.into(),
             callback.map(TimeEventCallback::from),
-        )
+        );
     }
 
+    #[pyo3(signature = (name, interval_ns, start_time_ns, stop_time_ns=None, callback=None))]
     fn set_timer_ns(
         &mut self,
         name: &str,
@@ -89,7 +85,7 @@ impl TestClock_Py {
             start_time_ns.into(),
             stop_time_ns.map(UnixNanos::from),
             callback.map(TimeEventCallback::from),
-        )
+        );
     }
 
     fn next_time_ns(&self, name: &str) -> u64 {
@@ -97,11 +93,11 @@ impl TestClock_Py {
     }
 
     fn cancel_timer(&mut self, name: &str) {
-        self.0.cancel_timer(name)
+        self.0.cancel_timer(name);
     }
 
     fn cancel_timers(&mut self) {
-        self.0.cancel_timers()
+        self.0.cancel_timers();
     }
 }
 
@@ -124,22 +120,24 @@ pub struct LiveClock_Py(Box<LiveClock>);
 impl LiveClock_Py {
     #[new]
     fn py_new() -> Self {
-        LiveClock_Py(Box::new(LiveClock::new()))
+        Self(Box::new(LiveClock::new()))
     }
 
     fn register_default_handler(&mut self, callback: PyObject) {
         self.0
-            .register_default_handler(TimeEventCallback::from(callback))
+            .register_default_handler(TimeEventCallback::from(callback));
     }
 
+    #[pyo3(signature = (name, alert_time_ns, callback=None))]
     fn set_time_alert_ns(&mut self, name: &str, alert_time_ns: u64, callback: Option<PyObject>) {
         self.0.set_time_alert_ns(
             name,
             alert_time_ns.into(),
             callback.map(TimeEventCallback::from),
-        )
+        );
     }
 
+    #[pyo3(signature = (name, interval_ns, start_time_ns, stop_time_ns=None, callback=None))]
     fn set_timer_ns(
         &mut self,
         name: &str,
@@ -154,7 +152,7 @@ impl LiveClock_Py {
             start_time_ns.into(),
             stop_time_ns.map(UnixNanos::from),
             callback.map(TimeEventCallback::from),
-        )
+        );
     }
 
     fn next_time_ns(&self, name: &str) -> u64 {
@@ -162,11 +160,11 @@ impl LiveClock_Py {
     }
 
     fn cancel_timer(&mut self, name: &str) {
-        self.0.cancel_timer(name)
+        self.0.cancel_timer(name);
     }
 
     fn cancel_timers(&mut self) {
-        self.0.cancel_timers()
+        self.0.cancel_timers();
     }
 }
 
@@ -175,13 +173,10 @@ impl LiveClock_Py {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
-
     use nautilus_core::nanos::UnixNanos;
     use pyo3::{prelude::*, types::PyList};
     use rstest::*;
 
-    use super::*;
     use crate::{
         clock::{Clock, TestClock},
         timer::TimeEventCallback,
@@ -204,7 +199,7 @@ mod tests {
     fn test_set_timer_ns_py(mut test_clock: TestClock) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
+        Python::with_gil(|_py| {
             let callback = test_callback();
             test_clock.register_default_handler(callback);
 
@@ -220,7 +215,7 @@ mod tests {
     fn test_cancel_timer(mut test_clock: TestClock) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
+        Python::with_gil(|_py| {
             let callback = test_callback();
             test_clock.register_default_handler(callback);
 
@@ -237,7 +232,7 @@ mod tests {
     fn test_cancel_timers(mut test_clock: TestClock) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
+        Python::with_gil(|_py| {
             let callback = test_callback();
             test_clock.register_default_handler(callback);
 
@@ -254,7 +249,7 @@ mod tests {
     fn test_advance_within_stop_time_py(mut test_clock: TestClock) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
+        Python::with_gil(|_py| {
             let callback = test_callback();
             test_clock.register_default_handler(callback);
 
@@ -271,7 +266,7 @@ mod tests {
     fn test_advance_time_to_stop_time_with_set_time_true(mut test_clock: TestClock) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
+        Python::with_gil(|_py| {
             let callback = test_callback();
             test_clock.register_default_handler(callback);
 
@@ -288,7 +283,7 @@ mod tests {
     fn test_advance_time_to_stop_time_with_set_time_false(mut test_clock: TestClock) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
+        Python::with_gil(|_py| {
             let callback = test_callback();
             test_clock.register_default_handler(callback);
 

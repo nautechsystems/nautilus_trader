@@ -40,9 +40,10 @@ rstest = { workspace = true }
 tracing-test = { workspace = true }
 
 [features]
-default = ["python"]
+default = ["python", "std"]
 extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",
 ]
 python = ["pyo3", "pyo3-async-runtimes"]
+std = []

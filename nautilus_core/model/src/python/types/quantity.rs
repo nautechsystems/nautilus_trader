@@ -17,25 +17,17 @@ use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
     ops::Neg,
-    str::FromStr,
 };
 
-use nautilus_core::{
-    correctness::check_in_range_inclusive_f64,
-    python::{get_pytype_name, to_pytype_err, to_pyvalue_err},
-};
+use nautilus_core::python::{get_pytype_name, to_pytype_err, to_pyvalue_err};
 use pyo3::{
-    exceptions::PyValueError,
     prelude::*,
     pyclass::CompareOp,
-    types::{PyFloat, PyLong, PyTuple},
+    types::{PyFloat, PyTuple},
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 
-use crate::types::{
-    fixed::check_fixed_precision,
-    quantity::{Quantity, QUANTITY_MAX, QUANTITY_MIN},
-};
+use crate::types::quantity::Quantity;
 
 #[pymethods]
 impl Quantity {
@@ -44,22 +36,22 @@ impl Quantity {
         Self::new_checked(value, precision).map_err(to_pyvalue_err)
     }
 
-    // fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-    //     let tuple: (&PyLong, &PyLong) = state.extract(py)?;
-    //     self.raw = tuple.0.extract()?;
-    //     self.precision = tuple.1.extract::<u8>()?;
-    //     Ok(())
-    // }
-    //
-    // fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-    //     Ok((self.raw, self.precision).to_object(py))
-    // }
-    //
-    // fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
-    //     let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
-    //     let state = self.__getstate__(py)?;
-    //     Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
-    // }
+    fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
+        let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
+        self.raw = py_tuple.get_item(0)?.extract::<u64>()?;
+        self.precision = py_tuple.get_item(1)?.extract::<u8>()?;
+        Ok(())
+    }
+
+    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        Ok((self.raw, self.precision).to_object(py))
+    }
+
+    fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
+        let safe_constructor = py.get_type_bound::<Self>().getattr("_safe_constructor")?;
+        let state = self.__getstate__(py)?;
+        Ok((safe_constructor, PyTuple::empty_bound(py), state).to_object(py))
+    }
 
     #[staticmethod]
     fn _safe_constructor() -> PyResult<Self> {
@@ -75,7 +67,7 @@ impl Quantity {
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             Ok((self.as_decimal() + other_dec).into_py(py))
         } else {
-            let pytype_name = get_pytype_name(&other)?;
+            let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
                 "Unsupported type for __add__, was `{pytype_name}`"
             )))
@@ -91,7 +83,7 @@ impl Quantity {
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             Ok((other_dec + self.as_decimal()).into_py(py))
         } else {
-            let pytype_name = get_pytype_name(&other)?;
+            let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
                 "Unsupported type for __radd__, was `{pytype_name}`"
             )))
@@ -107,7 +99,7 @@ impl Quantity {
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             Ok((self.as_decimal() - other_dec).into_py(py))
         } else {
-            let pytype_name = get_pytype_name(&other)?;
+            let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
                 "Unsupported type for __sub__, was `{pytype_name}`"
             )))
@@ -123,7 +115,7 @@ impl Quantity {
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             Ok((other_dec - self.as_decimal()).into_py(py))
         } else {
-            let pytype_name = get_pytype_name(&other)?;
+            let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
                 "Unsupported type for __rsub__, was `{pytype_name}`"
             )))
@@ -139,7 +131,7 @@ impl Quantity {
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             Ok((self.as_decimal() * other_dec).into_py(py))
         } else {
-            let pytype_name = get_pytype_name(&other)?;
+            let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
                 "Unsupported type for __mul__, was `{pytype_name}`"
             )))
@@ -155,7 +147,7 @@ impl Quantity {
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             Ok((other_dec * self.as_decimal()).into_py(py))
         } else {
-            let pytype_name = get_pytype_name(&other)?;
+            let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
                 "Unsupported type for __rmul__, was `{pytype_name}`"
             )))
@@ -171,7 +163,7 @@ impl Quantity {
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             Ok((self.as_decimal() / other_dec).into_py(py))
         } else {
-            let pytype_name = get_pytype_name(&other)?;
+            let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
                 "Unsupported type for __truediv__, was `{pytype_name}`"
             )))
@@ -187,7 +179,7 @@ impl Quantity {
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             Ok((other_dec / self.as_decimal()).into_py(py))
         } else {
-            let pytype_name = get_pytype_name(&other)?;
+            let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
                 "Unsupported type for __rtruediv__, was `{pytype_name}`"
             )))
@@ -205,7 +197,7 @@ impl Quantity {
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             Ok((self.as_decimal() / other_dec).floor().into_py(py))
         } else {
-            let pytype_name = get_pytype_name(&other)?;
+            let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
                 "Unsupported type for __floordiv__, was `{pytype_name}`"
             )))
@@ -223,7 +215,7 @@ impl Quantity {
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             Ok((other_dec / self.as_decimal()).floor().into_py(py))
         } else {
-            let pytype_name = get_pytype_name(&other)?;
+            let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
                 "Unsupported type for __rfloordiv__, was `{pytype_name}`"
             )))
@@ -239,7 +231,7 @@ impl Quantity {
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             Ok((self.as_decimal() % other_dec).into_py(py))
         } else {
-            let pytype_name = get_pytype_name(&other)?;
+            let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
                 "Unsupported type for __mod__, was `{pytype_name}`"
             )))
@@ -255,7 +247,7 @@ impl Quantity {
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             Ok((other_dec % self.as_decimal()).into_py(py))
         } else {
-            let pytype_name = get_pytype_name(&other)?;
+            let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
                 "Unsupported type for __rmod__, was `{pytype_name}`"
             )))
@@ -284,6 +276,7 @@ impl Quantity {
         self.as_f64()
     }
 
+    #[pyo3(signature = (ndigits=None))]
     fn __round__(&self, ndigits: Option<u32>) -> Decimal {
         self.as_decimal()
             .round_dp_with_strategy(ndigits.unwrap_or(0), RoundingStrategy::MidpointNearestEven)

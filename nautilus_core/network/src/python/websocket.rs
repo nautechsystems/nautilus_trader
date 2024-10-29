@@ -17,17 +17,16 @@ use std::sync::{atomic::Ordering, Arc};
 
 use futures::SinkExt;
 use futures_util::{stream, StreamExt};
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
-use pyo3::{create_exception, exceptions::PyException, prelude::*, types::PyBytes};
+use nautilus_core::python::to_pyvalue_err;
+use pyo3::{create_exception, exceptions::PyException, prelude::*};
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::{
-    http::{HttpClient, HttpMethod, HttpResponse, InnerHttpClient},
-    ratelimiter::{quota::Quota, RateLimiter},
+    ratelimiter::quota::Quota,
     websocket::{WebSocketClient, WebSocketConfig},
 };
 
-/// Python exception class for websocket errors.
+// Python exception class for websocket errors.
 create_exception!(network, WebSocketClientError, PyException);
 
 fn to_websocket_pyerr(e: tokio_tungstenite::tungstenite::Error) -> PyErr {
@@ -37,6 +36,7 @@ fn to_websocket_pyerr(e: tokio_tungstenite::tungstenite::Error) -> PyErr {
 #[pymethods]
 impl WebSocketConfig {
     #[new]
+    #[pyo3(signature = (url, handler, headers, heartbeat=None, heartbeat_msg=None, ping_handler=None))]
     fn py_new(
         url: String,
         handler: PyObject,
@@ -127,6 +127,7 @@ impl WebSocketClient {
     ///
     /// - Raises PyRuntimeError if not able to send data.
     #[pyo3(name = "send")]
+    #[pyo3(signature = (data, keys=None))]
     fn py_send<'py>(
         slf: PyRef<'_, Self>,
         data: Vec<u8>,
@@ -169,6 +170,7 @@ impl WebSocketClient {
     ///
     /// For request /foo/bar, should pass keys ["foo/bar", "foo"] for rate limiting.
     #[pyo3(name = "send_text")]
+    #[pyo3(signature = (data, keys=None))]
     fn py_send_text<'py>(
         slf: PyRef<'_, Self>,
         data: Vec<u8>,

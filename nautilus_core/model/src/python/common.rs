@@ -64,7 +64,7 @@ impl EnumIterator {
     }
 }
 
-pub fn value_to_pydict<'py>(py: Python<'py>, val: &Value) -> PyResult<Py<PyAny>> {
+pub fn value_to_pydict(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
     let dict = PyDict::new_bound(py);
 
     match val {
@@ -105,15 +105,12 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<PyObject> {
         }
         Value::Object(_) => {
             let py_dict = value_to_pydict(py, val)?;
-            Ok(py_dict.into())
+            Ok(py_dict)
         }
     }
 }
 
-pub fn commissions_from_vec<'py>(
-    py: Python<'py>,
-    commissions: Vec<Money>,
-) -> PyResult<Bound<'_, PyAny>> {
+pub fn commissions_from_vec(py: Python<'_>, commissions: Vec<Money>) -> PyResult<Bound<'_, PyAny>> {
     let mut values = Vec::new();
 
     for value in commissions {
@@ -128,8 +125,8 @@ pub fn commissions_from_vec<'py>(
     }
 }
 
-pub fn commissions_from_hashmap<'py>(
-    py: Python<'py>,
+pub fn commissions_from_hashmap(
+    py: Python<'_>,
     commissions: HashMap<Currency, Money>,
 ) -> PyResult<Bound<'_, PyAny>> {
     commissions_from_vec(py, commissions.values().cloned().collect())

@@ -13,8 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
+use nautilus_model::data::bar::Bar;
 use pyo3::prelude::*;
 
 use crate::{
@@ -24,6 +23,8 @@ use crate::{
 #[pymethods]
 impl KlingerVolumeOscillator {
     #[new]
+    #[pyo3(signature = (fast_period, slow_period, signal_period, ma_type=None))]
+    #[must_use]
     pub fn py_new(
         fast_period: usize,
         slow_period: usize,
@@ -48,19 +49,19 @@ impl KlingerVolumeOscillator {
 
     #[getter]
     #[pyo3(name = "fast_period")]
-    fn py_fast_period(&self) -> usize {
+    const fn py_fast_period(&self) -> usize {
         self.fast_period
     }
 
     #[getter]
     #[pyo3(name = "slow_period")]
-    fn py_slow_period(&self) -> usize {
+    const fn py_slow_period(&self) -> usize {
         self.slow_period
     }
 
     #[getter]
     #[pyo3(name = "signal_period")]
-    fn py_signal_period(&self) -> usize {
+    const fn py_signal_period(&self) -> usize {
         self.signal_period
     }
 
@@ -72,13 +73,13 @@ impl KlingerVolumeOscillator {
 
     #[getter]
     #[pyo3(name = "value")]
-    fn py_value(&self) -> f64 {
+    const fn py_value(&self) -> f64 {
         self.value
     }
 
     #[getter]
     #[pyo3(name = "initialized")]
-    fn py_initialized(&self) -> bool {
+    const fn py_initialized(&self) -> bool {
         self.initialized
     }
 

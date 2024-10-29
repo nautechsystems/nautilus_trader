@@ -13,10 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-};
+use std::{collections::HashMap, path::PathBuf};
 
 use databento::dbn;
 use nautilus_core::{ffi::cvec::CVec, python::to_pyvalue_err};
@@ -41,6 +38,7 @@ use crate::databento::{
 #[pymethods]
 impl DatabentoDataLoader {
     #[new]
+    #[pyo3(signature = (publishers_filepath=None))]
     fn py_new(publishers_filepath: Option<PathBuf>) -> PyResult<Self> {
         Self::new(publishers_filepath).map_err(to_pyvalue_err)
     }
@@ -94,17 +92,18 @@ impl DatabentoDataLoader {
 
     // Cannot include trades
     #[pyo3(name = "load_order_book_deltas")]
+    #[pyo3(signature = (filepath, instrument_id=None))]
     fn py_load_order_book_deltas(
         &self,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
     ) -> PyResult<Vec<OrderBookDelta>> {
-        Ok(self
-            .load_order_book_deltas(&filepath, instrument_id)
-            .map_err(to_pyvalue_err)?)
+        self.load_order_book_deltas(&filepath, instrument_id)
+            .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_order_book_deltas_as_pycapsule")]
+    #[pyo3(signature = (filepath, instrument_id=None, include_trades=None))]
     fn py_load_order_book_deltas_as_pycapsule(
         &self,
         py: Python,
@@ -120,17 +119,18 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_order_book_depth10")]
+    #[pyo3(signature = (filepath, instrument_id=None))]
     fn py_load_order_book_depth10(
         &self,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
     ) -> PyResult<Vec<OrderBookDepth10>> {
-        Ok(self
-            .load_order_book_depth10(&filepath, instrument_id)
-            .map_err(to_pyvalue_err)?)
+        self.load_order_book_depth10(&filepath, instrument_id)
+            .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_order_book_depth10_as_pycapsule")]
+    #[pyo3(signature = (filepath, instrument_id=None))]
     fn py_load_order_book_depth10_as_pycapsule(
         &self,
         py: Python,
@@ -145,17 +145,18 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_quotes")]
+    #[pyo3(signature = (filepath, instrument_id=None))]
     fn py_load_quotes(
         &self,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
     ) -> PyResult<Vec<QuoteTick>> {
-        Ok(self
-            .load_quotes(&filepath, instrument_id)
-            .map_err(to_pyvalue_err)?)
+        self.load_quotes(&filepath, instrument_id)
+            .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_quotes_as_pycapsule")]
+    #[pyo3(signature = (filepath, instrument_id=None, include_trades=None))]
     fn py_load_quotes_as_pycapsule(
         &self,
         py: Python,
@@ -171,17 +172,18 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_bbo_quotes")]
+    #[pyo3(signature = (filepath, instrument_id=None))]
     fn py_load_bbo_quotes(
         &self,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
     ) -> PyResult<Vec<QuoteTick>> {
-        Ok(self
-            .load_bbo_quotes(&filepath, instrument_id)
-            .map_err(to_pyvalue_err)?)
+        self.load_bbo_quotes(&filepath, instrument_id)
+            .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_bbo_quotes_as_pycapsule")]
+    #[pyo3(signature = (filepath, instrument_id=None))]
     fn py_load_bbo_quotes_as_pycapsule(
         &self,
         py: Python,
@@ -196,17 +198,18 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_tbbo_trades")]
+    #[pyo3(signature = (filepath, instrument_id=None))]
     fn py_load_tbbo_trades(
         &self,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
     ) -> PyResult<Vec<TradeTick>> {
-        Ok(self
-            .load_tbbo_trades(&filepath, instrument_id)
-            .map_err(to_pyvalue_err)?)
+        self.load_tbbo_trades(&filepath, instrument_id)
+            .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_tbbo_trades_as_pycapsule")]
+    #[pyo3(signature = (filepath, instrument_id=None))]
     fn py_load_tbbo_trades_as_pycapsule(
         &self,
         py: Python,
@@ -221,17 +224,18 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_trades")]
+    #[pyo3(signature = (filepath, instrument_id=None))]
     fn py_load_trades(
         &self,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
     ) -> PyResult<Vec<TradeTick>> {
-        Ok(self
-            .load_trades(&filepath, instrument_id)
-            .map_err(to_pyvalue_err)?)
+        self.load_trades(&filepath, instrument_id)
+            .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_trades_as_pycapsule")]
+    #[pyo3(signature = (filepath, instrument_id=None))]
     fn py_load_trades_as_pycapsule(
         &self,
         py: Python,
@@ -246,17 +250,18 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_bars")]
+    #[pyo3(signature = (filepath, instrument_id=None))]
     fn py_load_bars(
         &self,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
     ) -> PyResult<Vec<Bar>> {
-        Ok(self
-            .load_bars(&filepath, instrument_id)
-            .map_err(to_pyvalue_err)?)
+        self.load_bars(&filepath, instrument_id)
+            .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_bars_as_pycapsule")]
+    #[pyo3(signature = (filepath, instrument_id=None))]
     fn py_load_bars_as_pycapsule(
         &self,
         py: Python,
@@ -271,6 +276,7 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_status")]
+    #[pyo3(signature = (filepath, instrument_id=None))]
     fn py_load_status(
         &self,
         filepath: PathBuf,
@@ -292,6 +298,7 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_imbalance")]
+    #[pyo3(signature = (filepath, instrument_id=None))]
     fn py_load_imbalance(
         &self,
         filepath: PathBuf,
@@ -313,6 +320,7 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_statistics")]
+    #[pyo3(signature = (filepath, instrument_id=None))]
     fn py_load_statistics(
         &self,
         filepath: PathBuf,

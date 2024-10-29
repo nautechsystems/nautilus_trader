@@ -15,8 +15,6 @@
 
 use std::{
     collections::{hash_map::DefaultHasher, HashMap},
-    error::Error,
-    fmt::Display,
     hash::{Hash, Hasher},
     sync::Arc,
 };
@@ -30,17 +28,18 @@ use crate::{
     ratelimiter::{quota::Quota, RateLimiter},
 };
 
-/// Python exception class for generic HTTP errors.
+// Python exception class for generic HTTP errors.
 create_exception!(network, HttpError, PyException);
 
-/// Python exception class for generic HTTP timeout errors.
+// Python exception class for generic HTTP timeout errors.
 create_exception!(network, HttpTimeoutError, PyException);
 
 impl HttpClientError {
+    #[must_use]
     pub fn into_py_err(self) -> PyErr {
         match self {
-            HttpClientError::Error(e) => PyErr::new::<HttpError, _>(e),
-            HttpClientError::TimeoutError(e) => PyErr::new::<HttpTimeoutError, _>(e.to_string()),
+            Self::Error(e) => PyErr::new::<HttpError, _>(e),
+            Self::TimeoutError(e) => PyErr::new::<HttpTimeoutError, _>(e),
         }
     }
 }
@@ -57,6 +56,7 @@ impl HttpMethod {
 #[pymethods]
 impl HttpResponse {
     #[new]
+    #[must_use]
     pub fn py_new(status: u16, body: Vec<u8>) -> Self {
         Self {
             status,
@@ -67,7 +67,7 @@ impl HttpResponse {
 
     #[getter]
     #[pyo3(name = "status")]
-    pub fn py_status(&self) -> u16 {
+    pub const fn py_status(&self) -> u16 {
         self.status
     }
 
@@ -143,6 +143,8 @@ impl HttpClient {
     ///
     /// For request /foo/bar, should pass keys ["foo/bar", "foo"] for rate limiting.
     #[pyo3(name = "request")]
+    #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (method, url, headers=None, body=None, keys=None, timeout_secs=None))]
     fn py_request<'py>(
         &self,
         method: HttpMethod,
@@ -170,7 +172,7 @@ impl HttpClient {
             client
                 .send_request(method, url, headers, body_vec, timeout_secs)
                 .await
-                .map_err(|e| e.into_py_err())
+                .map_err(super::super::http::HttpClientError::into_py_err)
         })
     }
 }

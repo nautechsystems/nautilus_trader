@@ -18,12 +18,10 @@ use std::path::Path;
 use nautilus_core::python::to_pyruntime_err;
 use pyo3::prelude::*;
 
-use crate::{
-    common::get_test_data_large_checksums_filepath, files::ensure_file_exists_or_download_http,
-};
+use crate::files::ensure_file_exists_or_download_http;
 
-#[must_use]
 #[pyfunction(name = "ensure_file_exists_or_download_http")]
+#[pyo3(signature = (filepath, url, checksums=None))]
 pub fn py_ensure_file_exists_or_download_http(
     filepath: &str,
     url: &str,

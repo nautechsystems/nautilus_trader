@@ -32,7 +32,7 @@ use super::clock;
 pub struct Nanos(u64);
 
 impl Nanos {
-    pub fn as_u64(self) -> u64 {
+    pub const fn as_u64(self) -> u64 {
         self.0
     }
 }
@@ -41,7 +41,7 @@ impl Nanos {
 #[cfg(feature = "std")]
 impl Nanos {
     pub const fn new(u: u64) -> Self {
-        Nanos(u)
+        Self(u)
     }
 }
 
@@ -107,7 +107,7 @@ impl From<Nanos> for Duration {
 
 impl Nanos {
     #[inline]
-    pub fn saturating_sub(self, rhs: Self) -> Self {
+    pub const fn saturating_sub(self, rhs: Self) -> Self {
         Self(self.0.saturating_sub(rhs.0))
     }
 }
@@ -145,7 +145,7 @@ mod test {
     #[test]
     fn nanos_impls() {
         let n = Nanos::new(20);
-        assert_eq!("Nanos(20ns)", format!("{:?}", n));
+        assert_eq!("Nanos(20ns)", format!("{n:?}"));
     }
 
     #[test]
