@@ -13,12 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    env, fs,
-    fs::File,
-    io::{Read, Write},
-    path::PathBuf,
-};
+use std::{env, fs, path::PathBuf};
 
 use toml::Value;
 
@@ -51,6 +46,8 @@ fn main() {
     #[cfg(feature = "ffi")]
     if env::var("CARGO_FEATURE_FFI").is_ok() {
         use cbindgen;
+        use fs::File;
+        use std::io::{Read, Write};
 
         // Generate C headers
         let config_c = cbindgen::Config::from_file("cbindgen.toml")
