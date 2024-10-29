@@ -133,7 +133,7 @@ cdef class DataEngine(Component):
         self._routing_map: dict[Venue, DataClient] = {}
         self._default_client: DataClient | None = None
         self._external_clients: set[ClientId] = set()
-        self._catalog: ParquetDataCatalog | None = None
+        self._catalogs: list[ParquetDataCatalog] = []
         self._order_book_intervals: dict[tuple[InstrumentId, int], list[Callable[[OrderBook], None]]] = {}
         self._bar_aggregators: dict[BarType, BarAggregator] = {}
         self._synthetic_quote_feeds: dict[InstrumentId, list[SyntheticInstrument]] = {}
@@ -251,7 +251,7 @@ cdef class DataEngine(Component):
         """
         Condition.not_none(catalog, "catalog")
 
-        self._catalog = catalog
+        self._catalogs.append(catalog)
 
     cpdef void register_client(self, DataClient client):
         """
@@ -1268,7 +1268,7 @@ cdef class DataEngine(Component):
         self.request_count += 1
 
         # Query data catalog
-        if self._catalog:
+        if self._catalogs:
             # For now we'll just query the catalog if its present (as very likely this is a backtest)
             self._query_catalog(request)
             return
@@ -1366,49 +1366,58 @@ cdef class DataEngine(Component):
 
         # Field defined when using actor.request_aggregated_bars
         market_data_type = request.data_type.metadata.get("market_data_type")
+        data = []
 
         if request.data_type.type == Instrument:
             instrument_id = request.data_type.metadata.get("instrument_id")
             if instrument_id is None:
-                data = self._catalog.instruments()
+                for catalog in self._catalogs:
+                    data += catalog.instruments()
             else:
-                data = self._catalog.instruments(instrument_ids=[str(instrument_id)])
+                for catalog in self._catalogs:
+                    data += catalog.instruments(instrument_ids=[str(instrument_id)])
         elif request.data_type.type == QuoteTick or (market_data_type and market_data_type == "quote_ticks"):
-            data = self._catalog.quote_ticks(
-                instrument_ids=[str(request.data_type.metadata.get("instrument_id"))],
-                start=ts_start,
-                end=ts_end,
-            )
+            for catalog in self._catalogs:
+                data += catalog.quote_ticks(
+                    instrument_ids=[str(request.data_type.metadata.get("instrument_id"))],
+                    start=ts_start,
+                    end=ts_end,
+                )
         elif request.data_type.type == TradeTick or (market_data_type and market_data_type == "trade_ticks"):
-            data = self._catalog.trade_ticks(
-                instrument_ids=[str(request.data_type.metadata.get("instrument_id"))],
-                start=ts_start,
-                end=ts_end,
-            )
+            for catalog in self._catalogs:
+                data += catalog.trade_ticks(
+                    instrument_ids=[str(request.data_type.metadata.get("instrument_id"))],
+                    start=ts_start,
+                    end=ts_end,
+                )
         elif request.data_type.type == Bar or (market_data_type and market_data_type == "bars"):
             bar_type = request.data_type.metadata.get("bar_type")
             if bar_type is None:
                 self._log.error("No bar type provided for bars request")
                 return
-            data = self._catalog.bars(
-                instrument_ids=[str(bar_type.instrument_id)],
-                bar_type=str(bar_type),
-                start=ts_start,
-                end=ts_end,
-            )
+
+            for catalog in self._catalogs:
+                data += catalog.bars(
+                    instrument_ids=[str(bar_type.instrument_id)],
+                    bar_type=str(bar_type),
+                    start=ts_start,
+                    end=ts_end,
+                )
         elif request.data_type.type == InstrumentClose:
-            data = self._catalog.instrument_closes(
-                instrument_ids=[str(request.data_type.metadata.get("instrument_id"))],
-                start=ts_start,
-                end=ts_end,
-            )
+            for catalog in self._catalogs:
+                data += catalog.instrument_closes(
+                    instrument_ids=[str(request.data_type.metadata.get("instrument_id"))],
+                    start=ts_start,
+                    end=ts_end,
+                )
         else:
-            data = self._catalog.custom_data(
-                cls=request.data_type.type,
-                metadata=request.data_type.metadata,
-                start=ts_start,
-                end=ts_end,
-            )
+            for catalog in self._catalogs:
+                data += catalog.custom_data(
+                    cls=request.data_type.type,
+                    metadata=request.data_type.metadata,
+                    start=ts_start,
+                    end=ts_end,
+                )
 
         # Validation data is not from the future
         if data and data[-1].ts_init > ts_now:

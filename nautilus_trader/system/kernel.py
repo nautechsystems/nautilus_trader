@@ -469,14 +469,16 @@ class NautilusKernel:
             self._setup_streaming(config=config.streaming)
 
         # Set up data catalog
-        self._catalog: ParquetDataCatalog | None = None
-        if config.catalog:
-            self._catalog = ParquetDataCatalog(
-                path=config.catalog.path,
-                fs_protocol=config.catalog.fs_protocol,
-                fs_storage_options=config.catalog.fs_storage_options,
-            )
-            self._data_engine.register_catalog(catalog=self._catalog)
+        self._catalogs: list[ParquetDataCatalog] = []
+        if config.catalogs:
+            for catalog_config in config.catalogs:
+                catalog = ParquetDataCatalog(
+                    path=catalog_config.path,
+                    fs_protocol=catalog_config.fs_protocol,
+                    fs_storage_options=catalog_config.fs_storage_options,
+                )
+                self._catalogs.append(catalog)
+                self._data_engine.register_catalog(catalog=catalog)
 
         # Create importable actors
         for actor_config in config.actors:
@@ -836,16 +838,16 @@ class NautilusKernel:
         return self._writer
 
     @property
-    def catalog(self) -> ParquetDataCatalog | None:
+    def catalogs(self) -> list[ParquetDataCatalog]:
         """
-        Return the kernels data catalog.
+        Return the kernel's list of data catalogs.
 
         Returns
         -------
-        ParquetDataCatalog or ``None``
+        list[ParquetDataCatalog]
 
         """
-        return self._catalog
+        return self._catalogs
 
     def get_log_guard(self) -> nautilus_pyo3.LogGuard | LogGuard | None:
         """

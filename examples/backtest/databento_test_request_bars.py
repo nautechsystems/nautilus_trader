@@ -244,9 +244,11 @@ logging = LoggingConfig(
     clear_log_file=True,
 )
 
-catalog = DataCatalogConfig(
-    path=catalog.path,
-)
+catalogs = [
+    DataCatalogConfig(
+        path=catalog.path,
+    ),
+]
 
 data_engine = DataEngineConfig(
     time_bars_origins={
@@ -257,7 +259,7 @@ data_engine = DataEngineConfig(
 engine_config = BacktestEngineConfig(
     strategies=strategies,
     logging=logging,
-    catalog=catalog,
+    catalogs=catalogs,
     data_engine=data_engine,
 )
 

@@ -15,6 +15,7 @@
 
 from libc.stdint cimport uint64_t
 
+from nautilus_trader.persistence.catalog import ParquetDataCatalog
 from nautilus_trader.cache.cache cimport Cache
 from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport TimeEvent
@@ -51,7 +52,7 @@ cdef class DataEngine(Component):
     cdef readonly Cache _cache
     cdef readonly DataClient _default_client
     cdef readonly set[ClientId] _external_clients
-    cdef readonly object _catalog
+    cdef readonly list[ParquetDataCatalog] _catalogs
 
     cdef readonly dict[ClientId, DataClient] _clients
     cdef readonly dict[Venue, DataClient] _routing_map
