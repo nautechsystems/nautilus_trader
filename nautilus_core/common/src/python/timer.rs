@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::str::FromStr;
+use std::{str::FromStr, sync::Arc};
 
 use nautilus_core::{nanos::UnixNanos, python::to_pyvalue_err, uuid::UUID4};
 use pyo3::{
@@ -40,7 +40,7 @@ pub struct TimeEventHandler_Py {
     /// The time event.
     pub event: TimeEvent,
     /// The callable python object.
-    pub callback: PyObject,
+    pub callback: Arc<PyObject>,
 }
 
 impl From<TimeEventHandlerV2> for TimeEventHandler_Py {
@@ -64,34 +64,34 @@ impl TimeEvent {
         Self::new(Ustr::from(name), event_id, ts_event.into(), ts_init.into())
     }
 
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        let tuple: (&PyString, &PyString, &PyLong, &PyLong) = state.extract(py)?;
-        let ts_event: u64 = tuple.2.extract()?;
-        let ts_init: u64 = tuple.3.extract()?;
-
-        self.name = Ustr::from(tuple.0.extract()?);
-        self.event_id = UUID4::from_str(tuple.1.extract()?).map_err(to_pyvalue_err)?;
-        self.ts_event = ts_event.into();
-        self.ts_init = ts_init.into();
-
-        Ok(())
-    }
-
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        Ok((
-            self.name.to_string(),
-            self.event_id.to_string(),
-            self.ts_event.as_u64(),
-            self.ts_init.as_u64(),
-        )
-            .to_object(py))
-    }
-
-    fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
-        let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
-        let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
-    }
+    // fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+    //     let tuple: (&PyString, &PyString, &PyLong, &PyLong) = state.extract(py)?;
+    //     let ts_event: u64 = tuple.2.extract()?;
+    //     let ts_init: u64 = tuple.3.extract()?;
+    //
+    //     self.name = Ustr::from(tuple.0.extract()?);
+    //     self.event_id = UUID4::from_str(tuple.1.extract()?).map_err(to_pyvalue_err)?;
+    //     self.ts_event = ts_event.into();
+    //     self.ts_init = ts_init.into();
+    //
+    //     Ok(())
+    // }
+    //
+    // fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    //     Ok((
+    //         self.name.to_string(),
+    //         self.event_id.to_string(),
+    //         self.ts_event.as_u64(),
+    //         self.ts_init.as_u64(),
+    //     )
+    //         .to_object(py))
+    // }
+    //
+    // fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
+    //     let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
+    //     let state = self.__getstate__(py)?;
+    //     Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+    // }
 
     #[staticmethod]
     fn _safe_constructor() -> Self {

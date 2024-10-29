@@ -42,22 +42,22 @@ impl Symbol {
         Self::from("NULL")
     }
 
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        let value: (&PyString,) = state.extract(py)?;
-        let value: &str = value.0.extract()?;
-        self.set_inner(value);
-        Ok(())
-    }
-
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        Ok((self.to_string(),).to_object(py))
-    }
-
-    fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
-        let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
-        let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
-    }
+    // fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
+    //     let value: (&PyString,) = state.extract(py)?;
+    //     let value: &str = value.0.extract()?;
+    //     self.set_inner(value);
+    //     Ok(())
+    // }
+    //
+    // fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    //     Ok((self.to_string(),).to_object(py))
+    // }
+    //
+    // fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
+    //     let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
+    //     let state = self.__getstate__(py)?;
+    //     Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+    // }
 
     fn __richcmp__(&self, other: PyObject, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
         if let Ok(other) = other.extract::<Self>(py) {

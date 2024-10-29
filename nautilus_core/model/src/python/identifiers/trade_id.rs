@@ -37,29 +37,29 @@ impl TradeId {
         Self::new_checked(value).map_err(to_pyvalue_err)
     }
 
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        let value: (&PyString,) = state.extract(py)?;
-        let value_str: String = value.0.extract()?;
-
-        // TODO: Extract this to single function
-        let c_string = CString::new(value_str).expect("`CString` conversion failed");
-        let bytes = c_string.as_bytes_with_nul();
-        let mut value = [0; TRADE_ID_LEN];
-        value[..bytes.len()].copy_from_slice(bytes);
-        self.value = value;
-
-        Ok(())
-    }
-
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        Ok((self.to_string(),).to_object(py))
-    }
-
-    fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
-        let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
-        let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
-    }
+    // fn __setstate__(&mut self, py: Python, state: &Bound<'_, PyAny>) -> PyResult<()> {
+    //     let value: Bound<'_, (&PyString,)> = state.extract()?;
+    //     let value_str: String = value.0.extract()?;
+    //
+    //     // TODO: Extract this to single function
+    //     let c_string = CString::new(value_str).expect("`CString` conversion failed");
+    //     let bytes = c_string.as_bytes_with_nul();
+    //     let mut value = [0; TRADE_ID_LEN];
+    //     value[..bytes.len()].copy_from_slice(bytes);
+    //     self.value = value;
+    //
+    //     Ok(())
+    // }
+    //
+    // fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    //     Ok((self.to_string(),).to_object(py))
+    // }
+    //
+    // fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
+    //     let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
+    //     let state = self.__getstate__(py)?;
+    //     Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+    // }
 
     #[staticmethod]
     fn _safe_constructor() -> Self {

@@ -23,7 +23,7 @@ derive_builder = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-pyo3-asyncio-0-21 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
 log = { workspace = true }  # Required until Cython gone
 rmp-serde = { workspace = true }
 rust_decimal = { workspace = true }
@@ -60,6 +60,6 @@ extension-module = [
     "nautilus-core/extension-module",
     "nautilus-model/extension-module",
 ]
-python = ["pyo3", "pyo3-asyncio-0-21"]
+python = ["pyo3", "pyo3-async-runtimes"]
 redis = ["dep:redis"]
 postgres = ["dep:sqlx"]

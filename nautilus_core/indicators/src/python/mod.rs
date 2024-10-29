@@ -15,8 +15,6 @@
 
 //! Python bindings from `pyo3`.
 
-#![allow(warnings)] // non-local `impl` definition, temporary allow until pyo3 upgrade
-
 use pyo3::{prelude::*, pymodule};
 
 pub mod average;
@@ -26,7 +24,7 @@ pub mod ratio;
 pub mod volatility;
 
 #[pymodule]
-pub fn indicators(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub fn indicators(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Average
     m.add_class::<crate::average::MovingAverageType>()?;
     m.add_class::<crate::average::ema::ExponentialMovingAverage>()?;

@@ -23,7 +23,6 @@ use std::{
     time::Duration,
 };
 
-use nautilus_core::python::to_pyruntime_err;
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use pyo3::prelude::*;
 use tokio::{
@@ -58,7 +57,7 @@ pub struct SocketConfig {
     /// The sequence of bytes which separates lines.
     pub suffix: Vec<u8>,
     /// The Python function to handle incoming messages.
-    pub handler: PyObject,
+    pub handler: Arc<PyObject>,
     /// The optional heartbeat with period and beat message.
     pub heartbeat: Option<(u64, Vec<u8>)>,
 }
@@ -132,7 +131,7 @@ impl SocketClientInner {
     #[must_use]
     pub fn spawn_read_task(
         mut reader: TcpReader,
-        handler: PyObject,
+        handler: Arc<PyObject>,
         suffix: Vec<u8>,
     ) -> task::JoinHandle<()> {
         // Keep receiving messages from socket pass them as arguments to handler

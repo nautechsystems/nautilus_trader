@@ -106,9 +106,9 @@ pub fn data_to_pycapsule(py: Python, data: Data) -> PyObject {
 /// Incorrect usage can lead to memory corruption or undefined behavior.
 #[pyfunction]
 #[cfg(feature = "ffi")]
-pub fn drop_cvec_pycapsule(capsule: &PyAny) {
-    let capsule: &PyCapsule = capsule
-        .downcast()
+pub fn drop_cvec_pycapsule(capsule: &Bound<'_, PyAny>) {
+    let capsule: &Bound<'_, PyCapsule> = capsule
+        .downcast::<PyCapsule>()
         .expect("Error on downcast to `&PyCapsule`");
     let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
     let data: Vec<Data> =
@@ -124,12 +124,11 @@ pub fn drop_cvec_pycapsule(_capsule: &PyAny) {
 
 /// Transforms the given `data` Python objects into a vector of [`OrderBookDelta`] objects.
 pub fn pyobjects_to_order_book_deltas(
-    py: Python<'_>,
-    data: Vec<PyObject>,
+    data: Vec<Bound<'_, PyAny>>,
 ) -> PyResult<Vec<OrderBookDelta>> {
     let deltas: Vec<OrderBookDelta> = data
         .into_iter()
-        .map(|obj| OrderBookDelta::from_pyobject(obj.as_ref(py)))
+        .map(|obj| OrderBookDelta::from_pyobject(&obj))
         .collect::<PyResult<Vec<OrderBookDelta>>>()?;
 
     // Validate monotonically increasing
@@ -141,10 +140,10 @@ pub fn pyobjects_to_order_book_deltas(
 }
 
 /// Transforms the given `data` Python objects into a vector of [`QuoteTick`] objects.
-pub fn pyobjects_to_quote_ticks(py: Python<'_>, data: Vec<PyObject>) -> PyResult<Vec<QuoteTick>> {
+pub fn pyobjects_to_quote_ticks(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<QuoteTick>> {
     let ticks: Vec<QuoteTick> = data
         .into_iter()
-        .map(|obj| QuoteTick::from_pyobject(obj.bind(py)))
+        .map(|obj| QuoteTick::from_pyobject(&obj))
         .collect::<PyResult<Vec<QuoteTick>>>()?;
 
     // Validate monotonically increasing
@@ -156,10 +155,10 @@ pub fn pyobjects_to_quote_ticks(py: Python<'_>, data: Vec<PyObject>) -> PyResult
 }
 
 /// Transforms the given `data` Python objects into a vector of [`TradeTick`] objects.
-pub fn pyobjects_to_trade_ticks(py: Python<'_>, data: Vec<PyObject>) -> PyResult<Vec<TradeTick>> {
+pub fn pyobjects_to_trade_ticks(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<TradeTick>> {
     let ticks: Vec<TradeTick> = data
         .into_iter()
-        .map(|obj| TradeTick::from_pyobject(obj.bind(py)))
+        .map(|obj| TradeTick::from_pyobject(&obj))
         .collect::<PyResult<Vec<TradeTick>>>()?;
 
     // Validate monotonically increasing
@@ -171,10 +170,10 @@ pub fn pyobjects_to_trade_ticks(py: Python<'_>, data: Vec<PyObject>) -> PyResult
 }
 
 /// Transforms the given `data` Python objects into a vector of [`Bar`] objects.
-pub fn pyobjects_to_bars(py: Python<'_>, data: Vec<PyObject>) -> PyResult<Vec<Bar>> {
+pub fn pyobjects_to_bars(data: Vec<Bound<'_, PyAny>>) -> PyResult<Vec<Bar>> {
     let bars: Vec<Bar> = data
         .into_iter()
-        .map(|obj| Bar::from_pyobject(obj.as_ref(py)))
+        .map(|obj| Bar::from_pyobject(&obj))
         .collect::<PyResult<Vec<Bar>>>()?;
 
     // Validate monotonically increasing

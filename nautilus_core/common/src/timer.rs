@@ -102,7 +102,7 @@ pub type RustTimeEventCallback = dyn Fn(TimeEvent);
 #[derive(Clone)]
 pub enum TimeEventCallback {
     #[cfg(feature = "python")]
-    Python(PyObject),
+    Python(Arc<PyObject>),
     Rust(Rc<RustTimeEventCallback>),
 }
 
@@ -139,7 +139,7 @@ impl From<Rc<RustTimeEventCallback>> for TimeEventCallback {
 #[cfg(feature = "python")]
 impl From<PyObject> for TimeEventCallback {
     fn from(value: PyObject) -> Self {
-        Self::Python(value)
+        Self::Python(Arc::new(value))
     }
 }
 
@@ -390,7 +390,7 @@ impl LiveTimer {
         // TODO: Live timer is currently multi-threaded
         // and only supports the python event handler
         #[cfg(feature = "python")]
-        let callback: PyObject = match self.callback.clone() {
+        let callback = match self.callback.clone() {
             TimeEventCallback::Python(callback) => callback,
             TimeEventCallback::Rust(_) => {
                 panic!("Live timer does not support Rust callbacks right now")

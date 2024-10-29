@@ -24,9 +24,9 @@ use crate::enums::{LogColor, LogLevel};
 #[pymethods]
 impl LogLevel {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -59,14 +59,14 @@ impl LogLevel {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -105,9 +105,9 @@ impl LogLevel {
 #[pymethods]
 impl LogColor {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -140,14 +140,14 @@ impl LogColor {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }

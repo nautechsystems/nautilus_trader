@@ -18,7 +18,7 @@ bytes = { workspace = true }
 futures = { workspace = true }
 futures-util = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-pyo3-asyncio-0-21 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
 reqwest = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
@@ -45,4 +45,4 @@ extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",
 ]
-python = ["pyo3", "pyo3-asyncio-0-21"]
+python = ["pyo3", "pyo3-async-runtimes"]

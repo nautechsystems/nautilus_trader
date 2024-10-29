@@ -23,7 +23,7 @@ tokio = { workspace = true }
 thiserror = { workspace = true }
 binary-heap-plus = "0.5.0"
 compare = "0.1.0"
-datafusion = { version = "41.0.0", default-features = false, features = ["compression", "regex_expressions", "unicode_expressions", "pyarrow"] }
+datafusion = { version = "42.1.0", default-features = false, features = ["compression", "regex_expressions", "unicode_expressions", "pyarrow"] }
 
 [dev-dependencies]
 nautilus-test-kit = { path = "../test_kit" }

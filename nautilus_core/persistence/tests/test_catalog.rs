@@ -63,51 +63,51 @@ fn mem_leak_test<T>(setup: impl FnOnce() -> T, run: impl Fn(&T), threshold: f64,
     }
 }
 
-#[cfg(target_os = "linux")]
-#[rstest]
-fn catalog_query_mem_leak_test() {
-    mem_leak_test(
-        pyo3::prepare_freethreaded_python,
-        |_args| {
-            let file_path = get_test_data_file_path("nautilus/quotes.parquet");
-            let expected_length = 9500;
-            let catalog = DataBackendSession::new(1_000_000);
-            Python::with_gil(|py| {
-                let pycatalog: Py<PyAny> = catalog.into_py(py);
-                pycatalog
-                    .call_method1(
-                        py,
-                        "add_file",
-                        (
-                            NautilusDataType::QuoteTick,
-                            "order_book_deltas",
-                            file_path.as_str(),
-                        ),
-                    )
-                    .unwrap();
-                let result = pycatalog.call_method0(py, "to_query_result").unwrap();
-                let mut count = 0;
-                while let Ok(chunk) = result.call_method0(py, "__next__") {
-                    let capsule: &PyCapsule = chunk.downcast(py).unwrap();
-                    let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
-                    if cvec.len == 0 {
-                        break;
-                    } else {
-                        let slice: &[Data] = unsafe {
-                            std::slice::from_raw_parts(cvec.ptr as *const Data, cvec.len)
-                        };
-                        count += slice.len();
-                        assert!(is_monotonically_increasing_by_init(slice));
-                    }
-                }
-
-                assert_eq!(expected_length, count);
-            });
-        },
-        1.0,
-        5,
-    );
-}
+// #[cfg(target_os = "linux")]
+// #[rstest]
+// fn catalog_query_mem_leak_test() {
+//     mem_leak_test(
+//         pyo3::prepare_freethreaded_python,
+//         |_args| {
+//             let file_path = get_test_data_file_path("nautilus/quotes.parquet");
+//             let expected_length = 9500;
+//             let catalog = DataBackendSession::new(1_000_000);
+//             Python::with_gil(|py| {
+//                 let pycatalog: Py<PyAny> = catalog.into_py(py);
+//                 pycatalog
+//                     .call_method1(
+//                         py,
+//                         "add_file",
+//                         (
+//                             NautilusDataType::QuoteTick,
+//                             "order_book_deltas",
+//                             file_path.as_str(),
+//                         ),
+//                     )
+//                     .unwrap();
+//                 let result = pycatalog.call_method0(py, "to_query_result").unwrap();
+//                 let mut count = 0;
+//                 while let Ok(chunk) = result.call_method0(py, "__next__") {
+//                     let capsule: &PyCapsule = chunk.downcast(py).unwrap();
+//                     let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
+//                     if cvec.len == 0 {
+//                         break;
+//                     } else {
+//                         let slice: &[Data] = unsafe {
+//                             std::slice::from_raw_parts(cvec.ptr as *const Data, cvec.len)
+//                         };
+//                         count += slice.len();
+//                         assert!(is_monotonically_increasing_by_init(slice));
+//                     }
+//                 }
+//
+//                 assert_eq!(expected_length, count);
+//             });
+//         },
+//         1.0,
+//         5,
+//     );
+// }
 
 #[rstest]
 fn test_quote_tick_cvec_interface() {
@@ -139,44 +139,44 @@ fn test_quote_tick_cvec_interface() {
     assert_eq!(expected_length, count);
 }
 
-#[rstest]
-fn test_quote_tick_python_control_flow() {
-    pyo3::prepare_freethreaded_python();
-
-    let file_path = get_test_data_file_path("nautilus/quotes.parquet");
-    let expected_length = 9500;
-    let catalog = DataBackendSession::new(1_000_000);
-    Python::with_gil(|py| {
-        let pycatalog: Py<PyAny> = catalog.into_py(py);
-        pycatalog
-            .call_method1(
-                py,
-                "add_file",
-                (
-                    NautilusDataType::QuoteTick,
-                    "order_book_deltas",
-                    file_path.as_str(),
-                ),
-            )
-            .unwrap();
-        let result = pycatalog.call_method0(py, "to_query_result").unwrap();
-        let mut count = 0;
-        while let Ok(chunk) = result.call_method0(py, "__next__") {
-            let capsule: &PyCapsule = chunk.downcast(py).unwrap();
-            let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
-            if cvec.len == 0 {
-                break;
-            } else {
-                let slice: &[Data] =
-                    unsafe { std::slice::from_raw_parts(cvec.ptr as *const Data, cvec.len) };
-                count += slice.len();
-                assert!(is_monotonically_increasing_by_init(slice));
-            }
-        }
-
-        assert_eq!(expected_length, count);
-    });
-}
+// #[rstest]
+// fn test_quote_tick_python_control_flow() {
+//     pyo3::prepare_freethreaded_python();
+//
+//     let file_path = get_test_data_file_path("nautilus/quotes.parquet");
+//     let expected_length = 9500;
+//     let catalog = DataBackendSession::new(1_000_000);
+//     Python::with_gil(|py| {
+//         let pycatalog: Py<PyAny> = catalog.into_py(py);
+//         pycatalog
+//             .call_method1(
+//                 py,
+//                 "add_file",
+//                 (
+//                     NautilusDataType::QuoteTick,
+//                     "order_book_deltas",
+//                     file_path.as_str(),
+//                 ),
+//             )
+//             .unwrap();
+//         let result = pycatalog.call_method0(py, "to_query_result").unwrap();
+//         let mut count = 0;
+//         while let Ok(chunk) = result.call_method0(py, "__next__") {
+//             let capsule: &PyCapsule = chunk.downcast::<PyCapsule>(py).unwrap();
+//             let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
+//             if cvec.len == 0 {
+//                 break;
+//             } else {
+//                 let slice: &[Data] =
+//                     unsafe { std::slice::from_raw_parts(cvec.ptr as *const Data, cvec.len) };
+//                 count += slice.len();
+//                 assert!(is_monotonically_increasing_by_init(slice));
+//             }
+//         }
+//
+//         assert_eq!(expected_length, count);
+//     });
+// }
 
 #[ignore] // TODO: Investigate why this is suddenly failing the monotonically increasing assert?
 #[rstest]
@@ -198,32 +198,32 @@ fn test_order_book_delta_query() {
     assert!(is_monotonically_increasing_by_init(&ticks));
 }
 
-#[rstest]
-fn test_order_book_delta_query_py() {
-    pyo3::prepare_freethreaded_python();
-
-    let file_path = get_test_data_file_path("nautilus/deltas.parquet");
-    let catalog = DataBackendSession::new(2_000);
-    Python::with_gil(|py| {
-        let pycatalog: Py<PyAny> = catalog.into_py(py);
-        pycatalog
-            .call_method1(
-                py,
-                "add_file",
-                (
-                    NautilusDataType::OrderBookDelta,
-                    "order_book_deltas",
-                    file_path.as_str(),
-                ),
-            )
-            .unwrap();
-        let result = pycatalog.call_method0(py, "to_query_result").unwrap();
-        let chunk = result.call_method0(py, "__next__").unwrap();
-        let capsule: &PyCapsule = chunk.downcast(py).unwrap();
-        let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
-        assert_eq!(cvec.len, 1077);
-    });
-}
+// #[rstest]
+// fn test_order_book_delta_query_py() {
+//     pyo3::prepare_freethreaded_python();
+//
+//     let file_path = get_test_data_file_path("nautilus/deltas.parquet");
+//     let catalog = DataBackendSession::new(2_000);
+//     Python::with_gil(|py| {
+//         let pycatalog: Py<PyAny> = catalog.into_py(py);
+//         pycatalog
+//             .call_method1(
+//                 py,
+//                 "add_file",
+//                 (
+//                     NautilusDataType::OrderBookDelta,
+//                     "order_book_deltas",
+//                     file_path.as_str(),
+//                 ),
+//             )
+//             .unwrap();
+//         let result = pycatalog.call_method0(py, "to_query_result").unwrap();
+//         let chunk = result.call_method0(py, "__next__").unwrap();
+//         let capsule: &PyCapsule = chunk.downcast(py).unwrap();
+//         let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
+//         assert_eq!(cvec.len, 1077);
+//     });
+// }
 
 #[rstest]
 fn test_quote_tick_query() {

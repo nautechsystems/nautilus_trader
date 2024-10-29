@@ -15,13 +15,10 @@
 
 //! Python bindings from `pyo3`.
 
-#![allow(warnings)] // non-local `impl` definition, temporary allow until pyo3 upgrade
-
-use std::borrow::Cow;
-
 use pyo3::{
     exceptions::{PyRuntimeError, PyTypeError, PyValueError},
     prelude::*,
+    types::PyString,
     wrap_pyfunction,
 };
 
@@ -40,11 +37,8 @@ pub mod uuid;
 pub mod version;
 
 /// Gets the type name for the given Python `obj`.
-pub fn get_pytype_name<'p>(obj: &'p PyObject, py: Python<'p>) -> PyResult<&'p str> {
-    match obj.as_ref(py).get_type().name()? {
-        Cow::Borrowed(s) => Ok(s),
-        Cow::Owned(s) => Ok(py.allow_threads(|| Box::leak(s.into_boxed_str()))),
-    }
+pub fn get_pytype_name<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyString>> {
+    obj.get_type().name()
 }
 
 /// Converts any type that implements `Display` to a Python `ValueError`.
@@ -65,7 +59,7 @@ pub fn to_pyruntime_err(e: impl std::fmt::Display) -> PyErr {
 /// Loaded as nautilus_pyo3.core
 #[pymodule]
 #[rustfmt::skip]
-pub fn core(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub fn core(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(NAUTILUS_VERSION), NAUTILUS_VERSION)?;
     m.add(stringify!(USER_AGENT), USER_AGENT)?;
     m.add(stringify!(MILLISECONDS_IN_SECOND), MILLISECONDS_IN_SECOND)?;

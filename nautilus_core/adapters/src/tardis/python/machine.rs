@@ -56,7 +56,7 @@ impl TardisMachineClient {
         let replay_signal = self.replay_signal.clone();
         let map = self.instruments.clone();
 
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let stream = replay_normalized(&base_url, options, replay_signal)
                 .await
                 .expect("Failed to connect to WebSocket");
@@ -79,7 +79,7 @@ impl TardisMachineClient {
         let base_url = self.base_url.clone();
         let replay_signal = self.replay_signal.clone();
 
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let stream = stream_normalized(&base_url, options, replay_signal)
                 .await
                 .expect("Failed to connect to WebSocket");
@@ -94,7 +94,7 @@ impl TardisMachineClient {
 }
 
 async fn handle_python_stream<S>(
-    mut stream: S,
+    stream: S,
     callback: PyObject,
     instrument: Option<Arc<InstrumentMiniInfo>>,
     instrument_map: Option<HashMap<InstrumentId, Arc<InstrumentMiniInfo>>>,

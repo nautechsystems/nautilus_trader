@@ -89,7 +89,7 @@ impl DatabentoDataLoader {
             data.push(py_object);
         }
 
-        Ok(PyList::new(py, &data).into())
+        Ok(PyList::new_bound(py, &data).into())
     }
 
     // Cannot include trades

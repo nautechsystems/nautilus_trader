@@ -36,22 +36,22 @@ impl InstrumentId {
         Self::new(symbol, venue)
     }
 
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        let tuple: (&PyString, &PyString) = state.extract(py)?;
-        self.symbol = Symbol::new_checked(tuple.0.extract()?).map_err(to_pyvalue_err)?;
-        self.venue = Venue::new_checked(tuple.1.extract()?).map_err(to_pyvalue_err)?;
-        Ok(())
-    }
-
-    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-        Ok((self.symbol.to_string(), self.venue.to_string()).to_object(py))
-    }
-
-    fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
-        let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
-        let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
-    }
+    // fn __setstate__(&mut self, py: Python, state: Bound<'_, PyObject>) -> PyResult<()> {
+    //     let tuple: Bound<'_, (&PyString, &PyString)> = state.extract(py)?;
+    //     self.symbol = Symbol::new_checked(tuple.0.extract()?).map_err(to_pyvalue_err)?;
+    //     self.venue = Venue::new_checked(tuple.1.extract()?).map_err(to_pyvalue_err)?;
+    //     Ok(())
+    // }
+    //
+    // fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+    //     Ok((self.symbol.to_string(), self.venue.to_string()).to_object(py))
+    // }
+    //
+    // fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
+    //     let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
+    //     let state = self.__getstate__(py)?;
+    //     Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+    // }
 
     #[staticmethod]
     fn _safe_constructor() -> PyResult<Self> {

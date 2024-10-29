@@ -30,7 +30,7 @@ documentation = "https://nautilustrader.io/docs"
 
 [workspace.dependencies]
 anyhow = "1.0.91"
-arrow = "52.2.0"  # Keep in line with datafusion
+arrow = "53.2.0"  # Keep in line with datafusion
 async-stream = "0.3.6"
 base64 = "0.22.1"
 bytes = { version = "1.8.0", features = ["serde"] }
@@ -45,17 +45,17 @@ itertools = "0.12.1"
 itoa = "1.0.11"
 once_cell = "1.20.2"
 log = { version = "0.4.22", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
-parquet = "52.2.0"  # Keep in line with datafusion
-pyo3 = { version = "0.21.2", features = ["rust_decimal", "indexmap"] }
-pyo3-asyncio-0-21 = { version = "0.21.0", features = ["tokio-runtime", "tokio", "attributes"] }
+parquet = "53.2.0"  # Keep in line with datafusion
+pyo3 = { version = "0.22.5", features = ["rust_decimal", "indexmap"] }
+pyo3-async-runtimes = { version = "0.22.0", features = ["tokio-runtime", "tokio", "attributes"] }
 rand = "0.8.5"
-reqwest = { version = "0.12.8", features = ["blocking"] }
+reqwest = { version = "0.12.9", features = ["blocking"] }
 ring = "0.17.8"
 rmp-serde = "1.3.0"
 rust_decimal = "1.36.0"
 rust_decimal_macros = "1.36.0"
 semver = "1.0.23"
-serde = { version = "1.0.213", features = ["derive"] }
+serde = { version = "1.0.214", features = ["derive"] }
 serde_json = "1.0.132"
 strum = { version = "0.26.3", features = ["derive"] }
 thiserror = "1.0.65"

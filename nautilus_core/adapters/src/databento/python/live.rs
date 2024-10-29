@@ -221,7 +221,7 @@ impl DatabentoLiveClient {
 
         self.send_command(LiveCommand::Start)?;
 
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let (proc_handle, feed_handle) = tokio::join!(
                 Self::process_messages(msg_rx, callback, callback_pyo3),
                 feed_handler.run(),

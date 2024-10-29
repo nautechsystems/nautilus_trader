@@ -15,14 +15,12 @@
 
 use std::io::Cursor;
 
-use arrow::{
-    datatypes::Schema, error::ArrowError, ipc::writer::StreamWriter, record_batch::RecordBatch,
-};
+use arrow::{ipc::writer::StreamWriter, record_batch::RecordBatch};
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     data::{
-        bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10,
-        is_monotonically_increasing_by_init, quote::QuoteTick, trade::TradeTick,
+        bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick,
+        trade::TradeTick,
     },
     python::data::{
         pyobjects_to_bars, pyobjects_to_order_book_deltas, pyobjects_to_quote_ticks,
@@ -32,13 +30,13 @@ use nautilus_model::{
 use pyo3::{
     exceptions::{PyRuntimeError, PyTypeError, PyValueError},
     prelude::*,
-    types::{IntoPyDict, PyBytes, PyDict, PyType},
+    types::{PyBytes, PyType},
 };
 
 use crate::arrow::{
     bars_to_arrow_record_batch_bytes, order_book_deltas_to_arrow_record_batch_bytes,
     order_book_depth10_to_arrow_record_batch_bytes, quote_ticks_to_arrow_record_batch_bytes,
-    trade_ticks_to_arrow_record_batch_bytes, ArrowSchemaProvider, EncodeToRecordBatch,
+    trade_ticks_to_arrow_record_batch_bytes, ArrowSchemaProvider,
 };
 
 /// Transforms the given record `batches` into Python `bytes`.
@@ -59,15 +57,15 @@ fn arrow_record_batch_to_pybytes(py: Python, batch: RecordBatch) -> PyResult<Py<
     }
 
     let buffer = cursor.into_inner();
-    let pybytes = PyBytes::new(py, &buffer);
+    let pybytes = PyBytes::new_bound(py, &buffer);
 
     Ok(pybytes.into())
 }
 
 #[pyfunction]
-pub fn get_arrow_schema_map(py: Python, cls: &PyType) -> PyResult<Py<PyDict>> {
-    let cls_str: &str = cls.getattr("__name__")?.extract()?;
-    let result_map = match cls_str {
+pub fn get_arrow_schema_map<'py>(py: Python<'py>, cls: &Bound<'_, PyType>) -> PyResult<Py<PyAny>> {
+    let cls_str: String = cls.getattr("__name__")?.extract()?;
+    let result_map = match cls_str.as_str() {
         stringify!(OrderBookDelta) => OrderBookDelta::get_schema_map(),
         stringify!(OrderBookDepth10) => OrderBookDepth10::get_schema_map(),
         stringify!(QuoteTick) => QuoteTick::get_schema_map(),
@@ -80,7 +78,7 @@ pub fn get_arrow_schema_map(py: Python, cls: &PyType) -> PyResult<Py<PyDict>> {
         }
     };
 
-    Ok(result_map.into_py_dict(py).into())
+    Ok(result_map.into_py(py))
 }
 
 /// Return Python `bytes` from the given list of 'legacy' data objects, which can be passed
@@ -88,7 +86,7 @@ pub fn get_arrow_schema_map(py: Python, cls: &PyType) -> PyResult<Py<PyDict>> {
 #[pyfunction]
 pub fn pyobjects_to_arrow_record_batch_bytes(
     py: Python,
-    data: Vec<PyObject>,
+    data: Vec<Bound<'_, PyAny>>,
 ) -> PyResult<Py<PyBytes>> {
     if data.is_empty() {
         return Err(to_pyvalue_err("Empty data"));
@@ -97,26 +95,26 @@ pub fn pyobjects_to_arrow_record_batch_bytes(
     let data_type: String = data
         .first()
         .unwrap() // SAFETY: Unwrap safe as already checked that `data` not empty
-        .as_ref(py)
+        .as_ref()
         .getattr("__class__")?
         .getattr("__name__")?
         .extract()?;
 
     match data_type.as_str() {
         stringify!(OrderBookDelta) => {
-            let deltas = pyobjects_to_order_book_deltas(py, data)?;
+            let deltas = pyobjects_to_order_book_deltas(data)?;
             py_order_book_deltas_to_arrow_record_batch_bytes(py, deltas)
         }
         stringify!(QuoteTick) => {
-            let quotes = pyobjects_to_quote_ticks(py, data)?;
+            let quotes = pyobjects_to_quote_ticks(data)?;
             py_quote_ticks_to_arrow_record_batch_bytes(py, quotes)
         }
         stringify!(TradeTick) => {
-            let trades = pyobjects_to_trade_ticks(py, data)?;
+            let trades = pyobjects_to_trade_ticks(data)?;
             py_trade_ticks_to_arrow_record_batch_bytes(py, trades)
         }
         stringify!(Bar) => {
-            let bars = pyobjects_to_bars(py, data)?;
+            let bars = pyobjects_to_bars(data)?;
             py_bars_to_arrow_record_batch_bytes(py, bars)
         }
         _ => Err(PyValueError::new_err(format!(
