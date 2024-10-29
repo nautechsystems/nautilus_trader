@@ -130,7 +130,6 @@ def test_symbol_repr() -> None:
     assert repr(symbol) == "Symbol('AUD/USD')"
 
 
-@pytest.mark.skip(reason="Repair from pyo3 upgrade")
 def test_symbol_pickling() -> None:
     # Arrange
     symbol = Symbol("AUD/USD")
@@ -171,7 +170,6 @@ def test_venue_repr() -> None:
     assert repr(venue) == "Venue('NYMEX')"
 
 
-@pytest.mark.skip(reason="Repair from pyo3 upgrade")
 def test_venue_pickling() -> None:
     # Arrange
     venue = Venue("NYMEX")
@@ -204,7 +202,6 @@ def test_instrument_id_str() -> None:
     assert str(instrument_id) == "AUD/USD.SIM"
 
 
-@pytest.mark.skip(reason="Repair from pyo3 upgrade")
 def test_instrument_id_pickling() -> None:
     # Arrange
     instrument_id = InstrumentId(Symbol("AUD/USD"), Venue("SIM"))
