@@ -1004,16 +1004,17 @@ cdef class TimeBarAggregator(BarAggregator):
 
         self._builder.update(price, size, ts_event)
 
-        if self._batch_next_close_ns == 0 and self._build_on_next_tick:
-            ts_init = ts_event
+        if self._build_on_next_tick:
+            if ts_event <= self._stored_close_ns:
+                ts_init = ts_event
 
-            # Adjusting the timestamp logic based on interval_type
-            if self._is_left_open:
-                ts_event = self._stored_close_ns if self._timestamp_on_close else self._stored_open_ns
-            else:
-                ts_event = self._stored_open_ns
+                # Adjusting the timestamp logic based on interval_type
+                if self._is_left_open:
+                    ts_event = self._stored_close_ns if self._timestamp_on_close else self._stored_open_ns
+                else:
+                    ts_event = self._stored_open_ns
 
-            self._build_and_send(ts_event=ts_event, ts_init=ts_init)
+                self._build_and_send(ts_event=ts_event, ts_init=ts_init)
 
             # Reset flag and clear stored close
             self._build_on_next_tick = False
@@ -1028,12 +1029,27 @@ cdef class TimeBarAggregator(BarAggregator):
 
         self._builder.update_bar(bar, volume, ts_init)
 
+        if self._build_on_next_tick:
+            if ts_init <= self._stored_close_ns:
+                # Adjusting the timestamp logic based on interval_type
+                if self._is_left_open:
+                    ts_event = self._stored_close_ns if self._timestamp_on_close else self._stored_open_ns
+                else:
+                    ts_event = self._stored_open_ns
+
+                self._build_and_send(ts_event=ts_event, ts_init=ts_init)
+
+            # Reset flag and clear stored close
+            self._build_on_next_tick = False
+            self._stored_close_ns = 0
+
         if self._batch_next_close_ns != 0:
             self._batch_post_update(ts_init)
 
     cpdef void _build_bar(self, TimeEvent event):
         if not self._builder.initialized:
             # Set flag to build on next close with the stored close time
+            # _build_on_next_tick is used to avoid a race condition between a data update and a TimeEvent from the timer
             self._build_on_next_tick = True
             self._stored_close_ns = self.next_close_ns
             return
