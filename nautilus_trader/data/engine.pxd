@@ -20,6 +20,7 @@ from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport BookType
+from nautilus_trader.data.aggregation cimport BarAggregator
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
 from nautilus_trader.data.messages cimport DataCommand
@@ -28,6 +29,7 @@ from nautilus_trader.data.messages cimport DataResponse
 from nautilus_trader.data.messages cimport Subscribe
 from nautilus_trader.data.messages cimport Unsubscribe
 from nautilus_trader.model.data cimport Bar
+from nautilus_trader.model.data cimport BarAggregation
 from nautilus_trader.model.data cimport BarType
 from nautilus_trader.model.data cimport CustomData
 from nautilus_trader.model.data cimport DataType
@@ -38,12 +40,11 @@ from nautilus_trader.model.data cimport OrderBookDeltas
 from nautilus_trader.model.data cimport OrderBookDepth10
 from nautilus_trader.model.data cimport QuoteTick
 from nautilus_trader.model.data cimport TradeTick
+from nautilus_trader.model.identifiers cimport ClientId
 from nautilus_trader.model.identifiers cimport InstrumentId
 from nautilus_trader.model.identifiers cimport Venue
 from nautilus_trader.model.instruments.base cimport Instrument
 from nautilus_trader.model.instruments.synthetic cimport SyntheticInstrument
-from nautilus_trader.model.objects cimport Price
-from nautilus_trader.model.objects cimport Quantity
 
 
 cdef class DataEngine(Component):
@@ -65,6 +66,7 @@ cdef class DataEngine(Component):
     cdef readonly bint _time_bars_build_with_no_updates
     cdef readonly bint _time_bars_timestamp_on_close
     cdef readonly str _time_bars_interval_type
+    cdef readonly dict[BarAggregation, object] _time_bars_origins # pd.Timedelta or pd.DateOffset
     cdef readonly bint _validate_data_sequence
     cdef readonly bint _buffer_deltas
 

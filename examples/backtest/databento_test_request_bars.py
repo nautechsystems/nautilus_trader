@@ -30,11 +30,13 @@ from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.config import DataEngineConfig
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import LoggingConfig
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core.datetime import unix_nanos_to_str
 from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarAggregation
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
@@ -246,10 +248,17 @@ catalog = DataCatalogConfig(
     path=catalog.path,
 )
 
+data_engine = DataEngineConfig(
+    time_bars_origins={
+        BarAggregation.MINUTE: pd.Timedelta(seconds=0),
+    },
+)
+
 engine_config = BacktestEngineConfig(
     strategies=strategies,
     logging=logging,
     catalog=catalog,
+    data_engine=data_engine,
 )
 
 # BacktestRunConfig
