@@ -40,6 +40,7 @@ use crate::sql::{cache::PostgresCacheDatabase, queries::DatabaseQueries};
 impl PostgresCacheDatabase {
     #[staticmethod]
     #[pyo3(name = "connect")]
+    #[pyo3(signature = (host, port, username=None, password=None, database=None))]
     fn py_connect(
         host: Option<String>,
         port: Option<u16>,
@@ -234,6 +235,7 @@ impl PostgresCacheDatabase {
     }
 
     #[pyo3(name = "add_order")]
+    #[pyo3(signature = (order, client_id=None))]
     fn py_add_order(
         &self,
         py: Python,

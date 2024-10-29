@@ -22,8 +22,8 @@ use pyo3::{prelude::*, types::PyCapsule};
 use crate::backend::session::{DataBackendSession, DataQueryResult};
 
 #[repr(C)]
-#[pyclass]
-#[derive(Clone, Copy, Debug)]
+#[pyclass(eq, eq_int)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum NautilusDataType {
     // Custom = 0,  # First slot reserved for custom data
     OrderBookDelta = 1,
@@ -55,6 +55,7 @@ impl DataBackendSession {
     /// The file data must be ordered by the ts_init in ascending order for this
     /// to work correctly.
     #[pyo3(name = "add_file")]
+    #[pyo3(signature = (data_type, table_name, file_path, sql_query=None))]
     fn add_file_py(
         mut slf: PyRefMut<'_, Self>,
         data_type: NautilusDataType,
