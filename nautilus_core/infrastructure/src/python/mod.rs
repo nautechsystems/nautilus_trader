@@ -24,7 +24,7 @@ pub mod sql;
 use pyo3::{prelude::*, pymodule};
 
 #[pymodule]
-pub fn infrastructure(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub fn infrastructure(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "redis")]
     m.add_class::<crate::redis::cache::RedisCacheDatabase>()?;
     #[cfg(feature = "redis")]

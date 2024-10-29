@@ -143,8 +143,8 @@ impl OrderInitialized {
 
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let dict = PyDict::new(py);
-        dict.set_item("type", stringify!(OrderInitiliazed));
+        let dict = PyDict::new_bound(py);
+        dict.set_item("type", stringify!(OrderInitiliazed))?;
         dict.set_item("trader_id", self.trader_id.to_string())?;
         dict.set_item("strategy_id", self.strategy_id.to_string())?;
         dict.set_item("instrument_id", self.instrument_id.to_string())?;
@@ -158,7 +158,7 @@ impl OrderInitialized {
         dict.set_item("quote_quantity", self.quote_quantity)?;
         dict.set_item("reconciliation", self.reconciliation)?;
         // TODO remove options as in legacy cython only
-        let options = PyDict::new(py);
+        let options = PyDict::new_bound(py);
         if self.order_type == OrderType::StopMarket {
             options.set_item("trigger_type", self.trigger_type.map(|x| x.to_string()))?;
             options.set_item("trigger_price", self.trigger_price.map(|x| x.to_string()))?;
@@ -228,7 +228,7 @@ impl OrderInitialized {
         }
         match &self.linked_order_ids {
             Some(linked_order_ids) => {
-                let py_linked_order_ids = PyList::empty(py);
+                let py_linked_order_ids = PyList::empty_bound(py);
                 for linked_order_id in linked_order_ids {
                     py_linked_order_ids.append(linked_order_id.to_string())?;
                 }
@@ -250,7 +250,7 @@ impl OrderInitialized {
         }
         match &self.exec_algorithm_params {
             Some(exec_algorithm_params) => {
-                let py_exec_algorithm_params = PyDict::new(py);
+                let py_exec_algorithm_params = PyDict::new_bound(py);
                 for (key, value) in exec_algorithm_params {
                     py_exec_algorithm_params.set_item(key.to_string(), value.to_string())?;
                 }

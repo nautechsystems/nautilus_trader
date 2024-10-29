@@ -23,9 +23,9 @@ use crate::databento::enums::{DatabentoStatisticType, DatabentoStatisticUpdateAc
 #[pymethods]
 impl DatabentoStatisticType {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value).map_err(to_pyvalue_err)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value).map_err(to_pyvalue_err)
     }
 
     fn __hash__(&self) -> isize {
@@ -64,8 +64,8 @@ impl DatabentoStatisticType {
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -151,9 +151,9 @@ impl DatabentoStatisticType {
 #[pymethods]
 impl DatabentoStatisticUpdateAction {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value).map_err(to_pyvalue_err)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value).map_err(to_pyvalue_err)
     }
 
     fn __hash__(&self) -> isize {
@@ -192,8 +192,8 @@ impl DatabentoStatisticUpdateAction {
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }

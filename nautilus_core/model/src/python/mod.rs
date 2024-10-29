@@ -15,8 +15,6 @@
 
 //! Python bindings from `pyo3`.
 
-#![allow(warnings)] // non-local `impl` definition, temporary allow until pyo3 upgrade
-
 use pyo3::prelude::*;
 
 pub mod account;
@@ -34,7 +32,7 @@ pub mod types;
 
 /// Loaded as nautilus_pyo3.model
 #[pymodule]
-pub fn model(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Types
     m.add_class::<crate::types::currency::Currency>()?;
     m.add_class::<crate::types::money::Money>()?;

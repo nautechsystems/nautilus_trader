@@ -15,15 +15,13 @@
 
 //! Python bindings from `pyo3`.
 
-#![allow(warnings)] // non-local `impl` definition, temporary allow until pyo3 upgrade
-
 use pyo3::prelude::*;
 
 pub mod arrow;
 
 /// Loaded as nautilus_pyo3.serialization
 #[pymodule]
-pub fn serialization(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub fn serialization(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(
         crate::python::arrow::get_arrow_schema_map,
         m

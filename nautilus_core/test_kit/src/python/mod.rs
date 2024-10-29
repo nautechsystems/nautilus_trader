@@ -25,8 +25,6 @@
 
 //! Nautilus core test kit from `pyo3`.
 
-#![allow(warnings)] // non-local `impl` definition, temporary allow until pyo3 upgrade
-
 use pyo3::{
     exceptions::{PyRuntimeError, PyTypeError, PyValueError},
     prelude::*,
@@ -37,7 +35,7 @@ pub mod files;
 
 /// Loaded as nautilus_pyo3.test_kit
 #[pymodule]
-pub fn test_kit(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub fn test_kit(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(
         files::py_ensure_file_exists_or_download_http,
         m

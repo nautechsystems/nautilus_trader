@@ -34,9 +34,9 @@ use crate::{
 #[pymethods]
 impl AccountType {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -69,14 +69,14 @@ impl AccountType {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -103,9 +103,9 @@ impl AccountType {
 #[pymethods]
 impl AggregationSource {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -138,14 +138,14 @@ impl AggregationSource {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -166,9 +166,9 @@ impl AggregationSource {
 #[pymethods]
 impl AggressorSide {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -201,14 +201,14 @@ impl AggressorSide {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -235,9 +235,9 @@ impl AggressorSide {
 #[pymethods]
 impl AssetClass {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -270,14 +270,14 @@ impl AssetClass {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -328,9 +328,9 @@ impl AssetClass {
 #[pymethods]
 impl InstrumentClass {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -363,14 +363,14 @@ impl InstrumentClass {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -433,9 +433,9 @@ impl InstrumentClass {
 #[pymethods]
 impl BarAggregation {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -468,14 +468,14 @@ impl BarAggregation {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -579,9 +579,9 @@ impl BarAggregation {
 #[pymethods]
 impl BookAction {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -614,14 +614,14 @@ impl BookAction {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -654,9 +654,9 @@ impl BookAction {
 #[pymethods]
 impl ContingencyType {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -689,14 +689,14 @@ impl ContingencyType {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -729,9 +729,9 @@ impl ContingencyType {
 #[pymethods]
 impl CurrencyType {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -764,14 +764,14 @@ impl CurrencyType {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -798,9 +798,9 @@ impl CurrencyType {
 #[pymethods]
 impl InstrumentCloseType {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -833,14 +833,14 @@ impl InstrumentCloseType {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -861,9 +861,9 @@ impl InstrumentCloseType {
 #[pymethods]
 impl LiquiditySide {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -896,14 +896,14 @@ impl LiquiditySide {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -930,9 +930,9 @@ impl LiquiditySide {
 #[pymethods]
 impl MarketStatus {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -965,14 +965,14 @@ impl MarketStatus {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -1018,9 +1018,9 @@ impl MarketStatus {
 #[pymethods]
 impl MarketStatusAction {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -1053,14 +1053,14 @@ impl MarketStatusAction {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -1165,9 +1165,9 @@ impl MarketStatusAction {
 #[pymethods]
 impl OmsType {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -1200,14 +1200,14 @@ impl OmsType {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -1234,9 +1234,9 @@ impl OmsType {
 #[pymethods]
 impl OptionKind {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -1269,14 +1269,14 @@ impl OptionKind {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -1297,9 +1297,9 @@ impl OptionKind {
 #[pymethods]
 impl OrderSide {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -1332,14 +1332,14 @@ impl OrderSide {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -1366,9 +1366,9 @@ impl OrderSide {
 #[pymethods]
 impl OrderStatus {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -1401,14 +1401,14 @@ impl OrderStatus {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -1501,9 +1501,9 @@ impl OrderStatus {
 #[pymethods]
 impl OrderType {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -1536,14 +1536,14 @@ impl OrderType {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -1606,9 +1606,9 @@ impl OrderType {
 #[pymethods]
 impl PositionSide {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -1641,14 +1641,14 @@ impl PositionSide {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -1708,9 +1708,9 @@ impl PriceType {
 #[pymethods]
 impl RecordFlag {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -1743,14 +1743,14 @@ impl RecordFlag {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -1788,9 +1788,9 @@ impl RecordFlag {
 #[pymethods]
 impl TimeInForce {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -1823,14 +1823,14 @@ impl TimeInForce {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -1881,9 +1881,9 @@ impl TimeInForce {
 #[pymethods]
 impl TrailingOffsetType {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -1916,14 +1916,14 @@ impl TrailingOffsetType {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -1962,9 +1962,9 @@ impl TrailingOffsetType {
 #[pymethods]
 impl TriggerType {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -1997,14 +1997,14 @@ impl TriggerType {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -2073,9 +2073,9 @@ impl TriggerType {
 #[pymethods]
 impl BookType {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -2108,14 +2108,14 @@ impl BookType {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
@@ -2142,9 +2142,9 @@ impl BookType {
 #[pymethods]
 impl TradingState {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value)
     }
 
     fn __hash__(&self) -> isize {
@@ -2177,14 +2177,14 @@ impl TradingState {
     }
 
     #[classmethod]
-    fn variants(_: &PyType, py: Python<'_>) -> EnumIterator {
+    fn variants(_: &Bound<'_, PyType>, py: Python<'_>) -> EnumIterator {
         EnumIterator::new::<Self>(py)
     }
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }

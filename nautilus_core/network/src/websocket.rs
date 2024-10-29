@@ -26,8 +26,6 @@ use futures_util::{
     stream::{SplitSink, SplitStream},
     SinkExt, StreamExt,
 };
-use hyper::header::HeaderName;
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_cryptography::providers::install_cryptographic_provider;
 use pyo3::{prelude::*, types::PyBytes};
 use tokio::{net::TcpStream, sync::Mutex, task, time::sleep};
@@ -50,11 +48,11 @@ type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 )]
 pub struct WebSocketConfig {
     pub url: String,
-    pub handler: PyObject,
+    pub handler: Arc<PyObject>,
     pub headers: Vec<(String, String)>,
     pub heartbeat: Option<u64>,
     pub heartbeat_msg: Option<String>,
-    pub ping_handler: Option<PyObject>,
+    pub ping_handler: Option<Arc<PyObject>>,
 }
 
 /// `WebSocketClient` connects to a websocket server to read and send messages.
@@ -159,8 +157,8 @@ impl WebSocketClientInner {
     /// Keep receiving messages from socket and pass them as arguments to handler.
     pub fn spawn_read_task(
         mut reader: MessageReader,
-        handler: PyObject,
-        ping_handler: Option<PyObject>,
+        handler: Arc<PyObject>,
+        ping_handler: Option<Arc<PyObject>>,
     ) -> task::JoinHandle<()> {
         tracing::debug!("Started task 'read'");
         task::spawn(async move {
@@ -168,9 +166,9 @@ impl WebSocketClientInner {
                 match reader.next().await {
                     Some(Ok(Message::Binary(data))) => {
                         tracing::trace!("Received message <binary> {} bytes", data.len());
-                        if let Err(e) =
-                            Python::with_gil(|py| handler.call1(py, (PyBytes::new(py, &data),)))
-                        {
+                        if let Err(e) = Python::with_gil(|py| {
+                            handler.call1(py, (PyBytes::new_bound(py, &data),))
+                        }) {
                             tracing::error!("Error calling handler: {e}");
                             break;
                         }
@@ -179,7 +177,7 @@ impl WebSocketClientInner {
                     Some(Ok(Message::Text(data))) => {
                         tracing::trace!("Received message: {data}");
                         if let Err(e) = Python::with_gil(|py| {
-                            handler.call1(py, (PyBytes::new(py, data.as_bytes()),))
+                            handler.call1(py, (PyBytes::new_bound(py, data.as_bytes()),))
                         }) {
                             tracing::error!("Error calling handler: {e}");
                             break;
@@ -190,9 +188,9 @@ impl WebSocketClientInner {
                         let payload = String::from_utf8(ping.clone()).expect("Invalid payload");
                         tracing::trace!("Received ping: {payload}",);
                         if let Some(ref handler) = ping_handler {
-                            if let Err(e) =
-                                Python::with_gil(|py| handler.call1(py, (PyBytes::new(py, &ping),)))
-                            {
+                            if let Err(e) = Python::with_gil(|py| {
+                                handler.call1(py, (PyBytes::new_bound(py, &ping),))
+                            }) {
                                 tracing::error!("Error calling handler: {e}");
                                 break;
                             }

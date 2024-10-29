@@ -42,12 +42,13 @@ use crate::{
 
 impl InstrumentStatus {
     /// Create a new [`QuoteTick`] extracted from the given [`PyAny`].
-    pub fn from_pyobject(obj: &Bound<PyAny>) -> PyResult<Self> {
-        let instrument_id_obj: &PyAny = obj.getattr("instrument_id")?.extract()?;
-        let instrument_id_str = instrument_id_obj.getattr("value")?.extract()?;
-        let instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
+    pub fn from_pyobject(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let instrument_id_obj: Bound<'_, PyAny> = obj.getattr("instrument_id")?.extract()?;
+        let instrument_id_str: String = instrument_id_obj.getattr("value")?.extract()?;
+        let instrument_id =
+            InstrumentId::from_str(instrument_id_str.as_str()).map_err(to_pyvalue_err)?;
 
-        let action_obj: &PyAny = obj.getattr("action")?.extract()?;
+        let action_obj: Bound<'_, PyAny> = obj.getattr("action")?.extract()?;
         let action_u16: u16 = action_obj.getattr("value")?.extract()?;
         let action = MarketStatusAction::from_u16(action_u16).unwrap();
 
@@ -223,7 +224,7 @@ impl InstrumentStatus {
         // Serialize object to JSON bytes
         let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
         // Parse JSON into a Python dictionary
-        let py_dict: Py<PyDict> = PyModule::import(py, "json")?
+        let py_dict: Py<PyDict> = PyModule::import_bound(py, "json")?
             .call_method("loads", (json_str,), None)?
             .extract()?;
         Ok(py_dict)

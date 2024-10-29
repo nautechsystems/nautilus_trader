@@ -148,7 +148,7 @@ impl HttpClient {
         method: HttpMethod,
         url: String,
         headers: Option<HashMap<String, String>>,
-        body: Option<&'py PyBytes>,
+        body: Option<Bound<'py, PyBytes>>,
         keys: Option<Vec<String>>,
         timeout_secs: Option<u64>,
         py: Python<'py>,
@@ -159,7 +159,7 @@ impl HttpClient {
         let client = self.client.clone();
         let rate_limiter = self.rate_limiter.clone();
         let method = method.into();
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             // Check keys for rate limiting quota
             let tasks = keys.iter().map(|key| rate_limiter.until_key_ready(key));
             stream::iter(tasks)

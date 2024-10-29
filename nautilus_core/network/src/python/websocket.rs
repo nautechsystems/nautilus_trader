@@ -13,11 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::{hash_map::DefaultHasher, HashMap},
-    hash::{Hash, Hasher},
-    sync::{atomic::Ordering, Arc},
-};
+use std::sync::{atomic::Ordering, Arc};
 
 use futures::SinkExt;
 use futures_util::{stream, StreamExt};
@@ -51,11 +47,11 @@ impl WebSocketConfig {
     ) -> Self {
         Self {
             url,
-            handler,
+            handler: Arc::new(handler),
             headers,
             heartbeat,
             heartbeat_msg,
-            ping_handler,
+            ping_handler: ping_handler.map(Arc::new),
         }
     }
 }
@@ -78,7 +74,7 @@ impl WebSocketClient {
         default_quota: Option<Quota>,
         py: Python<'_>,
     ) -> PyResult<Bound<PyAny>> {
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             Self::connect(
                 config,
                 post_connection,
@@ -104,7 +100,7 @@ impl WebSocketClient {
     #[pyo3(name = "disconnect")]
     fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let disconnect_mode = slf.disconnect_mode.clone();
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             disconnect_mode.store(true, Ordering::SeqCst);
             Ok(())
         })
@@ -140,7 +136,7 @@ impl WebSocketClient {
         let keys = keys.unwrap_or_default();
         let writer = slf.writer.clone();
         let rate_limiter = slf.rate_limiter.clone();
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let tasks = keys.iter().map(|key| rate_limiter.until_key_ready(key));
             stream::iter(tasks)
                 .for_each(|key| async move {
@@ -183,7 +179,7 @@ impl WebSocketClient {
         let keys = keys.unwrap_or_default();
         let writer = slf.writer.clone();
         let rate_limiter = slf.rate_limiter.clone();
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let tasks = keys.iter().map(|key| rate_limiter.until_key_ready(key));
             stream::iter(tasks)
                 .for_each(|key| async move {
@@ -216,7 +212,7 @@ impl WebSocketClient {
         let data_str = String::from_utf8(data.clone()).map_err(to_pyvalue_err)?;
         tracing::trace!("Sending pong: {data_str}");
         let writer = slf.writer.clone();
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut guard = writer.lock().await;
             guard
                 .send(Message::Pong(data))
@@ -339,7 +335,7 @@ mod tests {
 
         // Create counter class and handler that increments it
         let (counter, handler) = Python::with_gil(|py| {
-            let pymod = PyModule::from_code(
+            let pymod = PyModule::from_code_bound(
                 py,
                 r"
 class Counter:
@@ -367,7 +363,7 @@ counter = Counter()",
 
         let config = WebSocketConfig::py_new(
             format!("ws://127.0.0.1:{}", server.port),
-            handler.clone(),
+            Python::with_gil(|py| handler.clone_ref(py)),
             vec![(header_key, header_value)],
             None,
             None,
@@ -441,7 +437,7 @@ counter = Counter()",
         let header_value = "hello-custom-value".to_string();
 
         let (checker, handler) = Python::with_gil(|py| {
-            let pymod = PyModule::from_code(
+            let pymod = PyModule::from_code_bound(
                 py,
                 r"
 class Checker:
@@ -471,7 +467,7 @@ checker = Checker()",
         let server = TestServer::setup(header_key.clone(), header_value.clone()).await;
         let config = WebSocketConfig::py_new(
             format!("ws://127.0.0.1:{}", server.port),
-            handler.clone(),
+            Python::with_gil(|py| handler.clone_ref(py)),
             vec![(header_key, header_value)],
             Some(1),
             Some("heartbeat message".to_string()),

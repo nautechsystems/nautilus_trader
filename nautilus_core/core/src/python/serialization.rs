@@ -22,7 +22,7 @@ where
 {
     // Extract to JSON string
     use crate::python::to_pyvalue_err;
-    let json_str: String = PyModule::import(py, "json")?
+    let json_str: String = PyModule::import_bound(py, "json")?
         .call_method("dumps", (values,), None)?
         .extract()?;
 

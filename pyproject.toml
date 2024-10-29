@@ -57,9 +57,9 @@ click = "^8.1.7"
 fsspec = "==2023.6.0"  # Pinned due breaking changes
 msgspec = "^0.18.6"
 pandas = "^2.2.3"
-pyarrow = ">=17.0.0"
+pyarrow = ">=18.0.0"
 pytz = ">=2024.2.0"
-tqdm = "^4.66.5"
+tqdm = "^4.66.6"
 uvloop = {version = "^0.21.0", markers = "sys_platform != 'win32'"}
 
 async-timeout = {version = "^4.0.3", optional = true}

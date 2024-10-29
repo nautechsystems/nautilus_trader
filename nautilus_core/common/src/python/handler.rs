@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::any::Any;
+use std::{any::Any, sync::Arc};
 
 use nautilus_model::data::Data;
 use pyo3::prelude::*;
@@ -28,7 +28,7 @@ use crate::{messages::data::DataResponse, msgbus::handler::MessageHandler};
 )]
 pub struct PythonMessageHandler {
     id: Ustr,
-    handler: PyObject,
+    handler: Arc<PyObject>,
 }
 
 #[pymethods]
@@ -36,7 +36,10 @@ impl PythonMessageHandler {
     #[new]
     pub fn new(id: &str, handler: PyObject) -> Self {
         let id = Ustr::from(id);
-        PythonMessageHandler { id, handler }
+        PythonMessageHandler {
+            id,
+            handler: Arc::new(handler),
+        }
     }
 }
 

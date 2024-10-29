@@ -19,7 +19,7 @@ pyo3 = { workspace = true, optional = true }
 rand = { workspace = true }
 ring = { workspace = true }
 tracing = { workspace = true }
-rustls = { version = "0.23.15", features = ["ring"] }
+rustls = { version = "0.23.16", features = ["ring"] }
 rustls-native-certs = "0.8.0"
 tokio-rustls = "0.26.0"
 pem = "3.0.4"

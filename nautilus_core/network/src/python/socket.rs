@@ -13,23 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::{hash_map::DefaultHasher, HashMap},
-    hash::{Hash, Hasher},
-    sync::{atomic::Ordering, Arc},
-};
+use std::sync::{atomic::Ordering, Arc};
 
-use futures_util::{stream, StreamExt};
 use nautilus_core::python::to_pyruntime_err;
-use pyo3::{exceptions::PyException, prelude::*, types::PyBytes};
+use pyo3::prelude::*;
 use tokio::io::AsyncWriteExt;
 use tokio_tungstenite::tungstenite::stream::Mode;
 
-use crate::{
-    http::{HttpClient, HttpMethod, HttpResponse, InnerHttpClient},
-    ratelimiter::{quota::Quota, RateLimiter},
-    socket::{SocketClient, SocketConfig},
-};
+use crate::socket::{SocketClient, SocketConfig};
 
 #[pymethods]
 impl SocketConfig {
@@ -46,7 +37,7 @@ impl SocketConfig {
             url,
             mode,
             suffix,
-            handler,
+            handler: Arc::new(handler),
             heartbeat,
         }
     }
@@ -68,7 +59,7 @@ impl SocketClient {
         post_disconnection: Option<PyObject>,
         py: Python<'_>,
     ) -> PyResult<Bound<PyAny>> {
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             Self::connect(
                 config,
                 post_connection,
@@ -92,7 +83,7 @@ impl SocketClient {
     #[pyo3(name = "disconnect")]
     fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let disconnect_mode = slf.disconnect_mode.clone();
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             disconnect_mode.store(true, Ordering::SeqCst);
             Ok(())
         })
@@ -127,7 +118,7 @@ impl SocketClient {
         let writer = slf.writer.clone();
         data.extend(&slf.suffix);
 
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut writer = writer.lock().await;
             writer.write_all(&data).await?;
             Ok(())
@@ -140,6 +131,8 @@ impl SocketClient {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use pyo3::{prelude::*, prepare_freethreaded_python};
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt},
@@ -228,7 +221,7 @@ mod tests {
 
         // Create counter class and handler that increments it
         let (counter, handler) = Python::with_gil(|py| {
-            let pymod = PyModule::from_code(
+            let pymod = PyModule::from_code_bound(
                 py,
                 r"
 class Counter:
@@ -256,7 +249,7 @@ counter = Counter()",
 
         let config = SocketConfig {
             url: format!("127.0.0.1:{}", server.port),
-            handler: handler.clone(),
+            handler: Python::with_gil(|py| Arc::new(handler.clone_ref(py))),
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             heartbeat: None,

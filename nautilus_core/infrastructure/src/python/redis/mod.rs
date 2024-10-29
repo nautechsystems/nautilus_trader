@@ -15,7 +15,5 @@
 
 //! Provides a Redis cache database and message bus backing.
 
-#![allow(warnings)] // non-local `impl` definition, temporary allow until pyo3 upgrade
-
 pub mod cache;
 pub mod msgbus;

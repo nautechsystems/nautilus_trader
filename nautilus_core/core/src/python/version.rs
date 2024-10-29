@@ -27,10 +27,9 @@ pub fn get_python_version() -> String {
             Err(_) => return "Unavailable (version_info not found)".to_string(),
         };
 
-        let version_tuple: &PyTuple = match version_info.extract() {
-            Ok(tuple) => tuple,
-            Err(_) => return "Unavailable (failed to extract version_info)".to_string(),
-        };
+        let version_tuple: &Bound<'_, PyTuple> = version_info
+            .downcast::<PyTuple>()
+            .expect("Failed to extract version_info");
 
         let major = version_tuple
             .get_item(0)

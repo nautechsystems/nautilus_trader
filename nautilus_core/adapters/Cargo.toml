@@ -43,7 +43,7 @@ indexmap = { workspace = true }
 itoa = { workspace = true }
 parquet = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
-pyo3-asyncio-0-21 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
 reqwest = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
@@ -89,7 +89,7 @@ ffi = [
 ]
 python = [
   "pyo3",
-  "pyo3-asyncio-0-21",
+  "pyo3-async-runtimes",
   "nautilus-common/python",
   "nautilus-core/python",
   "nautilus-model/python",
