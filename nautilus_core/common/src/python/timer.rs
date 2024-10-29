@@ -36,6 +36,7 @@ use crate::timer::{TimeEvent, TimeEventCallback, TimeEventHandlerV2};
 ///
 /// `TimeEventHandler` associates a `TimeEvent` with a callback function that is triggered
 /// when the event's timestamp is reached.
+#[allow(non_camel_case_types)]
 pub struct TimeEventHandler_Py {
     /// The time event.
     pub event: TimeEvent,

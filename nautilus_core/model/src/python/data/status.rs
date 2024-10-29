@@ -49,18 +49,11 @@ impl InstrumentStatus {
         let ts_init: u64 = obj.getattr("ts_init")?.extract()?;
 
         let reason_str: Option<String> = obj.getattr("reason")?.extract()?;
-        let reason = if let Some(reason_str) = reason_str {
-            Some(Ustr::from(&reason_str))
-        } else {
-            None
-        };
+        let reason = reason_str.map(|reason_str| Ustr::from(&reason_str));
 
         let trading_event_str: Option<String> = obj.getattr("trading_event")?.extract()?;
-        let trading_event = if let Some(trading_event_str) = trading_event_str {
-            Some(Ustr::from(&trading_event_str))
-        } else {
-            None
-        };
+        let trading_event =
+            trading_event_str.map(|trading_event_str| Ustr::from(&trading_event_str));
 
         let is_trading: Option<bool> = obj.getattr("is_trading")?.extract()?;
         let is_quoting: Option<bool> = obj.getattr("is_quoting")?.extract()?;
@@ -85,6 +78,7 @@ impl InstrumentStatus {
 impl InstrumentStatus {
     #[new]
     #[pyo3(signature = (instrument_id, action, ts_event, ts_init, reason=None, trading_event=None, is_trading=None, is_quoting=None, is_short_sell_restricted=None))]
+    #[allow(clippy::too_many_arguments)]
     fn py_new(
         instrument_id: InstrumentId,
         action: MarketStatusAction,

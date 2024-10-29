@@ -67,7 +67,7 @@ impl Quantity {
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             Ok((self.as_decimal() + other_dec).into_py(py))
         } else {
-            let pytype_name = get_pytype_name(&other)?;
+            let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
                 "Unsupported type for __add__, was `{pytype_name}`"
             )))
@@ -83,7 +83,7 @@ impl Quantity {
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             Ok((other_dec + self.as_decimal()).into_py(py))
         } else {
-            let pytype_name = get_pytype_name(&other)?;
+            let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
                 "Unsupported type for __radd__, was `{pytype_name}`"
             )))
@@ -99,7 +99,7 @@ impl Quantity {
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             Ok((self.as_decimal() - other_dec).into_py(py))
         } else {
-            let pytype_name = get_pytype_name(&other)?;
+            let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
                 "Unsupported type for __sub__, was `{pytype_name}`"
             )))
@@ -115,7 +115,7 @@ impl Quantity {
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             Ok((other_dec - self.as_decimal()).into_py(py))
         } else {
-            let pytype_name = get_pytype_name(&other)?;
+            let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
                 "Unsupported type for __rsub__, was `{pytype_name}`"
             )))
@@ -131,7 +131,7 @@ impl Quantity {
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             Ok((self.as_decimal() * other_dec).into_py(py))
         } else {
-            let pytype_name = get_pytype_name(&other)?;
+            let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
                 "Unsupported type for __mul__, was `{pytype_name}`"
             )))
@@ -147,7 +147,7 @@ impl Quantity {
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             Ok((other_dec * self.as_decimal()).into_py(py))
         } else {
-            let pytype_name = get_pytype_name(&other)?;
+            let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
                 "Unsupported type for __rmul__, was `{pytype_name}`"
             )))
@@ -163,7 +163,7 @@ impl Quantity {
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             Ok((self.as_decimal() / other_dec).into_py(py))
         } else {
-            let pytype_name = get_pytype_name(&other)?;
+            let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
                 "Unsupported type for __truediv__, was `{pytype_name}`"
             )))
@@ -179,7 +179,7 @@ impl Quantity {
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             Ok((other_dec / self.as_decimal()).into_py(py))
         } else {
-            let pytype_name = get_pytype_name(&other)?;
+            let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
                 "Unsupported type for __rtruediv__, was `{pytype_name}`"
             )))
@@ -197,7 +197,7 @@ impl Quantity {
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             Ok((self.as_decimal() / other_dec).floor().into_py(py))
         } else {
-            let pytype_name = get_pytype_name(&other)?;
+            let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
                 "Unsupported type for __floordiv__, was `{pytype_name}`"
             )))
@@ -215,7 +215,7 @@ impl Quantity {
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             Ok((other_dec / self.as_decimal()).floor().into_py(py))
         } else {
-            let pytype_name = get_pytype_name(&other)?;
+            let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
                 "Unsupported type for __rfloordiv__, was `{pytype_name}`"
             )))
@@ -231,7 +231,7 @@ impl Quantity {
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             Ok((self.as_decimal() % other_dec).into_py(py))
         } else {
-            let pytype_name = get_pytype_name(&other)?;
+            let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
                 "Unsupported type for __mod__, was `{pytype_name}`"
             )))
@@ -247,7 +247,7 @@ impl Quantity {
         } else if let Ok(other_dec) = other.extract::<Decimal>() {
             Ok((other_dec % self.as_decimal()).into_py(py))
         } else {
-            let pytype_name = get_pytype_name(&other)?;
+            let pytype_name = get_pytype_name(other)?;
             Err(to_pytype_err(format!(
                 "Unsupported type for __rmod__, was `{pytype_name}`"
             )))

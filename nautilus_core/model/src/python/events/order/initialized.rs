@@ -106,7 +106,7 @@ impl OrderInitialized {
             exec_algorithm_id,
             exec_algorithm_params.map(str_hashmap_to_ustr),
             exec_spawn_id,
-            tags.map(|vec| vec.iter().map(|s| Ustr::from(&s)).collect()),
+            tags.map(|vec| vec.iter().map(|s| Ustr::from(s)).collect()),
         )
     }
 

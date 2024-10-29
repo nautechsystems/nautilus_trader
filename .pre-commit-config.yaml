@@ -42,7 +42,6 @@ repos:
   ##############################################################################
   #  Rust formatting and linting
   ##############################################################################
-  # Temporarily disable pending repair from pyo3 upgrade
   - repo: local
     hooks:
       - id: fmt

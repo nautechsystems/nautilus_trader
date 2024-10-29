@@ -12,7 +12,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
+#![allow(clippy::legacy_numeric_constants)]
 use std::{fs, i128, path::PathBuf, str::FromStr};
 
 use databento::{dbn, live::Subscription};

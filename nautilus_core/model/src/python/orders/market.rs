@@ -207,11 +207,9 @@ impl MarketOrder {
     #[getter]
     #[pyo3(name = "exec_algorithm_params")]
     fn py_exec_algorithm_params(&self) -> Option<HashMap<&str, &str>> {
-        self.exec_algorithm_params.as_ref().map(|x| {
-            x.into_iter()
-                .map(|(k, v)| (k.as_str(), v.as_str()))
-                .collect()
-        })
+        self.exec_algorithm_params
+            .as_ref()
+            .map(|x| x.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect())
     }
 
     #[getter]
@@ -484,7 +482,7 @@ impl MarketOrder {
         let tags = dict.get_item("tags").map(|x| {
             let extracted_str = x.extract::<Vec<String>>();
             match extracted_str {
-                Ok(item) => Some(item.iter().map(|s| Ustr::from(&s)).collect()),
+                Ok(item) => Some(item.iter().map(|s| Ustr::from(s)).collect()),
                 Err(_) => None,
             }
         })?;

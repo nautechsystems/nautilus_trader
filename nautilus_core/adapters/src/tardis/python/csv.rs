@@ -29,7 +29,6 @@ use crate::tardis::csv::{
     load_trade_ticks,
 };
 
-#[must_use]
 #[pyfunction(name = "load_tardis_deltas")]
 #[pyo3(signature = (filepath, price_precision, size_precision, instrument_id=None, limit=None))]
 pub fn py_load_tardis_deltas(
@@ -49,7 +48,6 @@ pub fn py_load_tardis_deltas(
     .map_err(to_pyvalue_err)
 }
 
-#[must_use]
 #[pyfunction(name = "load_tardis_deltas_as_pycapsule")]
 #[pyo3(signature = (filepath, price_precision, size_precision, instrument_id=None, limit=None))]
 pub fn py_load_tardis_deltas_as_pycapsule(
@@ -75,7 +73,6 @@ pub fn py_load_tardis_deltas_as_pycapsule(
     Ok(capsule.into_py(py))
 }
 
-#[must_use]
 #[pyfunction(name = "load_tardis_depth10_from_snapshot5")]
 #[pyo3(signature = (filepath, price_precision, size_precision, instrument_id=None, limit=None))]
 pub fn py_load_tardis_depth10_from_snapshot5(
@@ -95,7 +92,6 @@ pub fn py_load_tardis_depth10_from_snapshot5(
     .map_err(to_pyvalue_err)
 }
 
-#[must_use]
 #[pyfunction(name = "load_tardis_depth10_from_snapshot5_as_pycapsule")]
 #[pyo3(signature = (filepath, price_precision, size_precision, instrument_id=None, limit=None))]
 pub fn py_load_tardis_depth10_from_snapshot5_as_pycapsule(
@@ -121,7 +117,6 @@ pub fn py_load_tardis_depth10_from_snapshot5_as_pycapsule(
     Ok(capsule.into_py(py))
 }
 
-#[must_use]
 #[pyfunction(name = "load_tardis_depth10_from_snapshot25")]
 #[pyo3(signature = (filepath, price_precision, size_precision, instrument_id=None, limit=None))]
 pub fn py_load_tardis_depth10_from_snapshot25(
@@ -141,7 +136,6 @@ pub fn py_load_tardis_depth10_from_snapshot25(
     .map_err(to_pyvalue_err)
 }
 
-#[must_use]
 #[pyfunction(name = "load_tardis_depth10_from_snapshot25_as_pycapsule")]
 #[pyo3(signature = (filepath, price_precision, size_precision, instrument_id=None, limit=None))]
 pub fn py_load_tardis_depth10_from_snapshot25_as_pycapsule(
@@ -167,7 +161,6 @@ pub fn py_load_tardis_depth10_from_snapshot25_as_pycapsule(
     Ok(capsule.into_py(py))
 }
 
-#[must_use]
 #[pyfunction(name = "load_tardis_quotes")]
 #[pyo3(signature = (filepath, price_precision, size_precision, instrument_id=None, limit=None))]
 pub fn py_load_tardis_quotes(
@@ -187,7 +180,6 @@ pub fn py_load_tardis_quotes(
     .map_err(to_pyvalue_err)
 }
 
-#[must_use]
 #[pyfunction(name = "load_tardis_quotes_as_pycapsule")]
 #[pyo3(signature = (filepath, price_precision, size_precision, instrument_id=None, limit=None))]
 pub fn py_load_tardis_quotes_as_pycapsule(
@@ -213,7 +205,6 @@ pub fn py_load_tardis_quotes_as_pycapsule(
     Ok(capsule.into_py(py))
 }
 
-#[must_use]
 #[pyfunction(name = "load_tardis_trades")]
 #[pyo3(signature = (filepath, price_precision, size_precision, instrument_id=None, limit=None))]
 pub fn py_load_tardis_trades(
@@ -233,7 +224,6 @@ pub fn py_load_tardis_trades(
     .map_err(to_pyvalue_err)
 }
 
-#[must_use]
 #[pyfunction(name = "load_tardis_trades_as_pycapsule")]
 #[pyo3(signature = (filepath, price_precision, size_precision, instrument_id=None, limit=None))]
 pub fn py_load_tardis_trades_as_pycapsule(
