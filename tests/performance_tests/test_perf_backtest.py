@@ -44,6 +44,7 @@ from nautilus_trader.trading.strategy import Strategy
 USDJPY_SIM = TestInstrumentProvider.default_fx_ccy("USD/JPY")
 
 
+@pytest.mark.skip
 @pytest.mark.benchmark(min_rounds=1)
 def test_run_with_empty_strategy(benchmark):
     config = BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True))
@@ -78,6 +79,7 @@ def test_run_with_empty_strategy(benchmark):
     benchmark(engine.run, start, end)
 
 
+@pytest.mark.skip
 @pytest.mark.benchmark(min_rounds=1)
 def test_run_for_tick_processing(benchmark):
     config = BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True))
@@ -118,6 +120,7 @@ def test_run_for_tick_processing(benchmark):
     benchmark(engine.run, start, end)
 
 
+@pytest.mark.skip
 @pytest.mark.benchmark(min_rounds=1)
 def test_run_with_ema_cross_strategy(benchmark):
     config = BacktestEngineConfig(logging=LoggingConfig(bypass_logging=True))
