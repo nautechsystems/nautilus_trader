@@ -21,6 +21,7 @@ use crate::{indicator::Indicator, momentum::obv::OnBalanceVolume};
 #[pymethods]
 impl OnBalanceVolume {
     #[new]
+    #[must_use]
     pub fn py_new(period: usize) -> Self {
         Self::new(period)
     }
@@ -37,7 +38,7 @@ impl OnBalanceVolume {
 
     #[getter]
     #[pyo3(name = "period")]
-    fn py_period(&self) -> usize {
+    const fn py_period(&self) -> usize {
         self.period
     }
 
@@ -49,13 +50,13 @@ impl OnBalanceVolume {
 
     #[getter]
     #[pyo3(name = "value")]
-    fn py_value(&self) -> f64 {
+    const fn py_value(&self) -> f64 {
         self.value
     }
 
     #[getter]
     #[pyo3(name = "initialized")]
-    fn py_initialized(&self) -> bool {
+    const fn py_initialized(&self) -> bool {
         self.initialized
     }
 

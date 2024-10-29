@@ -26,7 +26,8 @@ use crate::{
 #[pymethods]
 impl FuzzyCandle {
     #[new]
-    pub fn py_new(
+    #[must_use]
+    pub const fn py_new(
         direction: CandleDirection,
         size: CandleSize,
         body_size: CandleBodySize,
@@ -45,31 +46,31 @@ impl FuzzyCandle {
 
     #[getter]
     #[pyo3(name = "direction")]
-    fn py_direction(&self) -> CandleDirection {
+    const fn py_direction(&self) -> CandleDirection {
         self.direction
     }
 
     #[getter]
     #[pyo3(name = "size")]
-    fn py_size(&self) -> CandleSize {
+    const fn py_size(&self) -> CandleSize {
         self.size
     }
 
     #[getter]
     #[pyo3(name = "body_size")]
-    fn py_body_size(&self) -> CandleBodySize {
+    const fn py_body_size(&self) -> CandleBodySize {
         self.body_size
     }
 
     #[getter]
     #[pyo3(name = "upper_wick_size")]
-    fn py_upper_wick_size(&self) -> CandleWickSize {
+    const fn py_upper_wick_size(&self) -> CandleWickSize {
         self.upper_wick_size
     }
 
     #[getter]
     #[pyo3(name = "lower_wick_size")]
-    fn py_lower_wick_size(&self) -> CandleWickSize {
+    const fn py_lower_wick_size(&self) -> CandleWickSize {
         self.lower_wick_size
     }
 }
@@ -77,6 +78,7 @@ impl FuzzyCandle {
 #[pymethods]
 impl FuzzyCandlesticks {
     #[new]
+    #[must_use]
     pub fn py_new(
         period: usize,
         threshold1: f64,
@@ -102,31 +104,31 @@ impl FuzzyCandlesticks {
 
     #[getter]
     #[pyo3(name = "period")]
-    fn py_period(&self) -> usize {
+    const fn py_period(&self) -> usize {
         self.period
     }
 
     #[getter]
     #[pyo3(name = "threshold1")]
-    fn py_threshold1(&self) -> f64 {
+    const fn py_threshold1(&self) -> f64 {
         self.threshold1
     }
 
     #[getter]
     #[pyo3(name = "threshold2")]
-    fn py_threshold2(&self) -> f64 {
+    const fn py_threshold2(&self) -> f64 {
         self.threshold2
     }
 
     #[getter]
     #[pyo3(name = "threshold3")]
-    fn py_threshold3(&self) -> f64 {
+    const fn py_threshold3(&self) -> f64 {
         self.threshold3
     }
 
     #[getter]
     #[pyo3(name = "threshold4")]
-    fn py_threshold4(&self) -> f64 {
+    const fn py_threshold4(&self) -> f64 {
         self.threshold4
     }
 
@@ -138,7 +140,7 @@ impl FuzzyCandlesticks {
 
     #[getter]
     #[pyo3(name = "value")]
-    fn py_value(&self) -> FuzzyCandle {
+    const fn py_value(&self) -> FuzzyCandle {
         self.value
     }
 
@@ -150,7 +152,7 @@ impl FuzzyCandlesticks {
 
     #[getter]
     #[pyo3(name = "initialized")]
-    fn py_initialized(&self) -> bool {
+    const fn py_initialized(&self) -> bool {
         self.initialized
     }
 

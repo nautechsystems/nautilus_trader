@@ -41,7 +41,7 @@ pub struct TestClock_Py(Box<TestClock>);
 impl TestClock_Py {
     #[new]
     fn py_new() -> Self {
-        TestClock_Py(Box::new(TestClock::new()))
+        Self(Box::new(TestClock::new()))
     }
 
     fn advance_time(&mut self, to_time_ns: u64, set_time: bool) -> Vec<TimeEvent> {
@@ -58,7 +58,7 @@ impl TestClock_Py {
 
     fn register_default_handler(&mut self, callback: PyObject) {
         self.0
-            .register_default_handler(TimeEventCallback::from(callback))
+            .register_default_handler(TimeEventCallback::from(callback));
     }
 
     #[pyo3(signature = (name, alert_time_ns, callback=None))]
@@ -67,7 +67,7 @@ impl TestClock_Py {
             name,
             alert_time_ns.into(),
             callback.map(TimeEventCallback::from),
-        )
+        );
     }
 
     #[pyo3(signature = (name, interval_ns, start_time_ns, stop_time_ns=None, callback=None))]
@@ -85,7 +85,7 @@ impl TestClock_Py {
             start_time_ns.into(),
             stop_time_ns.map(UnixNanos::from),
             callback.map(TimeEventCallback::from),
-        )
+        );
     }
 
     fn next_time_ns(&self, name: &str) -> u64 {
@@ -93,11 +93,11 @@ impl TestClock_Py {
     }
 
     fn cancel_timer(&mut self, name: &str) {
-        self.0.cancel_timer(name)
+        self.0.cancel_timer(name);
     }
 
     fn cancel_timers(&mut self) {
-        self.0.cancel_timers()
+        self.0.cancel_timers();
     }
 }
 
@@ -120,12 +120,12 @@ pub struct LiveClock_Py(Box<LiveClock>);
 impl LiveClock_Py {
     #[new]
     fn py_new() -> Self {
-        LiveClock_Py(Box::new(LiveClock::new()))
+        Self(Box::new(LiveClock::new()))
     }
 
     fn register_default_handler(&mut self, callback: PyObject) {
         self.0
-            .register_default_handler(TimeEventCallback::from(callback))
+            .register_default_handler(TimeEventCallback::from(callback));
     }
 
     #[pyo3(signature = (name, alert_time_ns, callback=None))]
@@ -134,7 +134,7 @@ impl LiveClock_Py {
             name,
             alert_time_ns.into(),
             callback.map(TimeEventCallback::from),
-        )
+        );
     }
 
     #[pyo3(signature = (name, interval_ns, start_time_ns, stop_time_ns=None, callback=None))]
@@ -152,7 +152,7 @@ impl LiveClock_Py {
             start_time_ns.into(),
             stop_time_ns.map(UnixNanos::from),
             callback.map(TimeEventCallback::from),
-        )
+        );
     }
 
     fn next_time_ns(&self, name: &str) -> u64 {
@@ -160,11 +160,11 @@ impl LiveClock_Py {
     }
 
     fn cancel_timer(&mut self, name: &str) {
-        self.0.cancel_timer(name)
+        self.0.cancel_timer(name);
     }
 
     fn cancel_timers(&mut self) {
-        self.0.cancel_timers()
+        self.0.cancel_timers();
     }
 }
 

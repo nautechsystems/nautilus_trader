@@ -36,13 +36,14 @@ impl TardisMachineClient {
     }
 
     #[pyo3(name = "is_closed")]
+    #[must_use]
     pub fn py_is_closed(&self) -> bool {
         self.is_closed()
     }
 
     #[pyo3(name = "close")]
     fn py_close(&mut self) {
-        self.close()
+        self.close();
     }
 
     #[pyo3(name = "replay")]

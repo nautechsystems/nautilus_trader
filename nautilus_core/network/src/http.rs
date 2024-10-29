@@ -147,17 +147,17 @@ impl InnerHttpClient {
         timeout_secs: Option<u64>,
     ) -> Result<HttpResponse, HttpClientError> {
         let reqwest_url = Url::parse(url.as_str())
-            .map_err(|e| HttpClientError::from(format!("URL parse error: {}", e)))?;
+            .map_err(|e| HttpClientError::from(format!("URL parse error: {e}")))?;
 
         let mut header_map = HeaderMap::new();
         for (header_key, header_value) in &headers {
             let key = HeaderName::from_bytes(header_key.as_bytes())
-                .map_err(|e| HttpClientError::from(format!("Invalid header name: {}", e)))?;
+                .map_err(|e| HttpClientError::from(format!("Invalid header name: {e}")))?;
             let _ = header_map.insert(
                 key,
                 header_value
                     .parse()
-                    .map_err(|e| HttpClientError::from(format!("Invalid header value: {}", e)))?,
+                    .map_err(|e| HttpClientError::from(format!("Invalid header value: {e}")))?,
             );
         }
 

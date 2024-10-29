@@ -147,12 +147,12 @@ impl DatabentoLiveClient {
     }
 
     #[pyo3(name = "is_running")]
-    fn py_is_running(&self) -> bool {
+    const fn py_is_running(&self) -> bool {
         self.is_running
     }
 
     #[pyo3(name = "is_closed")]
-    fn py_is_closed(&self) -> bool {
+    const fn py_is_closed(&self) -> bool {
         self.is_closed
     }
 
@@ -166,7 +166,7 @@ impl DatabentoLiveClient {
         snapshot: Option<bool>,
     ) -> PyResult<()> {
         let stype_in = infer_symbology_type(symbols.first().unwrap());
-        let symbols: Vec<&str> = symbols.iter().map(|s| s.as_str()).collect();
+        let symbols: Vec<&str> = symbols.iter().map(std::string::String::as_str).collect();
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let mut sub = Subscription::builder()
             .symbols(symbols)

@@ -92,7 +92,7 @@ impl DataBackendSession {
 #[pymethods]
 impl DataQueryResult {
     /// The reader implements an iterator.
-    fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+    const fn __iter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
         slf
     }
 

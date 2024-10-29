@@ -34,9 +34,10 @@ pub struct PythonMessageHandler {
 #[pymethods]
 impl PythonMessageHandler {
     #[new]
+    #[must_use]
     pub fn new(id: &str, handler: PyObject) -> Self {
         let id = Ustr::from(id);
-        PythonMessageHandler {
+        Self {
             id,
             handler: Arc::new(handler),
         }

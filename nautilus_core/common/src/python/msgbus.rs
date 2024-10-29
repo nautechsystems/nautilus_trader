@@ -42,7 +42,7 @@ impl MessageBus {
     #[pyo3(name = "send")]
     pub fn send_py(&self, endpoint: &str, message: PyObject) {
         if let Some(handler) = self.get_endpoint(&Ustr::from(endpoint)) {
-            handler.0.handle(&message)
+            handler.0.handle(&message);
         }
     }
 

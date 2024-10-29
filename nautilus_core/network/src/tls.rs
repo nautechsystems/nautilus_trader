@@ -15,7 +15,6 @@
 
 //! Module for wrapping raw socket streams with TLS encryption.
 
-use rustls;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_tungstenite::{
     tungstenite::{handshake::client::Request, stream::Mode, Error},
@@ -27,6 +26,7 @@ use tokio_tungstenite::{
 /// `Plain` variant.
 #[non_exhaustive]
 #[derive(Clone)]
+#[allow(dead_code)]
 pub enum Connector {
     /// No TLS connection.
     Plain,

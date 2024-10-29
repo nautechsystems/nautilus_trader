@@ -21,6 +21,7 @@ use crate::{indicator::Indicator, momentum::swings::Swings};
 #[pymethods]
 impl Swings {
     #[new]
+    #[must_use]
     pub fn py_new(period: usize) -> Self {
         Self::new(period)
     }
@@ -37,7 +38,7 @@ impl Swings {
 
     #[getter]
     #[pyo3(name = "period")]
-    fn py_period(&self) -> usize {
+    const fn py_period(&self) -> usize {
         self.period
     }
 
@@ -49,61 +50,61 @@ impl Swings {
 
     #[getter]
     #[pyo3(name = "direction")]
-    fn py_direction(&self) -> i64 {
+    const fn py_direction(&self) -> i64 {
         self.direction
     }
 
     #[getter]
     #[pyo3(name = "changed")]
-    fn py_changed(&self) -> bool {
+    const fn py_changed(&self) -> bool {
         self.changed
     }
 
     #[getter]
     #[pyo3(name = "high_datetime")]
-    fn py_high_datetime(&self) -> f64 {
+    const fn py_high_datetime(&self) -> f64 {
         self.high_datetime
     }
 
     #[getter]
     #[pyo3(name = "low_datetime")]
-    fn py_low_datetime(&self) -> f64 {
+    const fn py_low_datetime(&self) -> f64 {
         self.low_datetime
     }
 
     #[getter]
     #[pyo3(name = "high_price")]
-    fn py_high_price(&self) -> f64 {
+    const fn py_high_price(&self) -> f64 {
         self.high_price
     }
 
     #[getter]
     #[pyo3(name = "low_price")]
-    fn py_low_price(&self) -> f64 {
+    const fn py_low_price(&self) -> f64 {
         self.low_price
     }
 
     #[getter]
     #[pyo3(name = "length")]
-    fn py_length(&self) -> usize {
+    const fn py_length(&self) -> usize {
         self.length
     }
 
     #[getter]
     #[pyo3(name = "duration")]
-    fn py_duration(&self) -> usize {
+    const fn py_duration(&self) -> usize {
         self.duration
     }
 
     #[getter]
     #[pyo3(name = "since_high")]
-    fn py_since_high(&self) -> usize {
+    const fn py_since_high(&self) -> usize {
         self.since_high
     }
 
     #[getter]
     #[pyo3(name = "since_low")]
-    fn py_since_low(&self) -> usize {
+    const fn py_since_low(&self) -> usize {
         self.since_low
     }
 

@@ -145,19 +145,19 @@ impl TimeEvent {
 
     #[getter]
     #[pyo3(name = "event_id")]
-    fn py_event_id(&self) -> UUID4 {
+    const fn py_event_id(&self) -> UUID4 {
         self.event_id
     }
 
     #[getter]
     #[pyo3(name = "ts_event")]
-    fn py_ts_event(&self) -> u64 {
+    const fn py_ts_event(&self) -> u64 {
         self.ts_event.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> u64 {
+    const fn py_ts_init(&self) -> u64 {
         self.ts_init.as_u64()
     }
 }

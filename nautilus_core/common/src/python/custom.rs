@@ -46,13 +46,13 @@ impl CustomData {
 
     #[getter]
     #[pyo3(name = "ts_event")]
-    fn py_ts_event(&self) -> u64 {
+    const fn py_ts_event(&self) -> u64 {
         self.ts_event.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> u64 {
+    const fn py_ts_init(&self) -> u64 {
         self.ts_init.as_u64()
     }
 }

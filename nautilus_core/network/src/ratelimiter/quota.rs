@@ -126,7 +126,7 @@ impl Quota {
     /// necessary.
     ///
     /// If the time interval is zero, returns `None`.
-    pub fn with_period(replenish_1_per: Duration) -> Option<Self> {
+    pub const fn with_period(replenish_1_per: Duration) -> Option<Self> {
         if replenish_1_per.as_nanos() == 0 {
             None
         } else {

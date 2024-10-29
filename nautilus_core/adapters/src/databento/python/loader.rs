@@ -98,9 +98,8 @@ impl DatabentoDataLoader {
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
     ) -> PyResult<Vec<OrderBookDelta>> {
-        Ok(self
-            .load_order_book_deltas(&filepath, instrument_id)
-            .map_err(to_pyvalue_err)?)
+        self.load_order_book_deltas(&filepath, instrument_id)
+            .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_order_book_deltas_as_pycapsule")]
@@ -126,9 +125,8 @@ impl DatabentoDataLoader {
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
     ) -> PyResult<Vec<OrderBookDepth10>> {
-        Ok(self
-            .load_order_book_depth10(&filepath, instrument_id)
-            .map_err(to_pyvalue_err)?)
+        self.load_order_book_depth10(&filepath, instrument_id)
+            .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_order_book_depth10_as_pycapsule")]
@@ -153,9 +151,8 @@ impl DatabentoDataLoader {
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
     ) -> PyResult<Vec<QuoteTick>> {
-        Ok(self
-            .load_quotes(&filepath, instrument_id)
-            .map_err(to_pyvalue_err)?)
+        self.load_quotes(&filepath, instrument_id)
+            .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_quotes_as_pycapsule")]
@@ -181,9 +178,8 @@ impl DatabentoDataLoader {
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
     ) -> PyResult<Vec<QuoteTick>> {
-        Ok(self
-            .load_bbo_quotes(&filepath, instrument_id)
-            .map_err(to_pyvalue_err)?)
+        self.load_bbo_quotes(&filepath, instrument_id)
+            .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_bbo_quotes_as_pycapsule")]
@@ -208,9 +204,8 @@ impl DatabentoDataLoader {
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
     ) -> PyResult<Vec<TradeTick>> {
-        Ok(self
-            .load_tbbo_trades(&filepath, instrument_id)
-            .map_err(to_pyvalue_err)?)
+        self.load_tbbo_trades(&filepath, instrument_id)
+            .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_tbbo_trades_as_pycapsule")]
@@ -235,9 +230,8 @@ impl DatabentoDataLoader {
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
     ) -> PyResult<Vec<TradeTick>> {
-        Ok(self
-            .load_trades(&filepath, instrument_id)
-            .map_err(to_pyvalue_err)?)
+        self.load_trades(&filepath, instrument_id)
+            .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_trades_as_pycapsule")]
@@ -262,9 +256,8 @@ impl DatabentoDataLoader {
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
     ) -> PyResult<Vec<Bar>> {
-        Ok(self
-            .load_bars(&filepath, instrument_id)
-            .map_err(to_pyvalue_err)?)
+        self.load_bars(&filepath, instrument_id)
+            .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_bars_as_pycapsule")]

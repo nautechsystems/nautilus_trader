@@ -21,6 +21,7 @@ use crate::{indicator::Indicator, momentum::stochastics::Stochastics};
 #[pymethods]
 impl Stochastics {
     #[new]
+    #[must_use]
     pub fn py_new(period_k: usize, period_d: usize) -> Self {
         Self::new(period_k, period_d)
     }
@@ -37,13 +38,13 @@ impl Stochastics {
 
     #[getter]
     #[pyo3(name = "period_k")]
-    fn py_period_k(&self) -> usize {
+    const fn py_period_k(&self) -> usize {
         self.period_k
     }
 
     #[getter]
     #[pyo3(name = "period_d")]
-    fn py_period_d(&self) -> usize {
+    const fn py_period_d(&self) -> usize {
         self.period_d
     }
 
@@ -55,19 +56,19 @@ impl Stochastics {
 
     #[getter]
     #[pyo3(name = "value_k")]
-    fn py_value_k(&self) -> f64 {
+    const fn py_value_k(&self) -> f64 {
         self.value_k
     }
 
     #[getter]
     #[pyo3(name = "value_d")]
-    fn py_value_d(&self) -> f64 {
+    const fn py_value_d(&self) -> f64 {
         self.value_d
     }
 
     #[getter]
     #[pyo3(name = "initialized")]
-    fn py_initialized(&self) -> bool {
+    const fn py_initialized(&self) -> bool {
         self.initialized
     }
 

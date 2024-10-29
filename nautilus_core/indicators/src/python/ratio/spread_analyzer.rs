@@ -37,25 +37,25 @@ impl SpreadAnalyzer {
 
     #[getter]
     #[pyo3(name = "capacity")]
-    fn py_capacity(&self) -> usize {
+    const fn py_capacity(&self) -> usize {
         self.capacity
     }
 
     #[getter]
     #[pyo3(name = "current")]
-    fn py_current(&self) -> f64 {
+    const fn py_current(&self) -> f64 {
         self.current
     }
 
     #[getter]
     #[pyo3(name = "average")]
-    fn py_average(&self) -> f64 {
+    const fn py_average(&self) -> f64 {
         self.average
     }
 
     #[getter]
     #[pyo3(name = "initialized")]
-    fn py_initialized(&self) -> bool {
+    const fn py_initialized(&self) -> bool {
         self.initialized
     }
 
