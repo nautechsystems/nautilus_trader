@@ -76,6 +76,7 @@ impl RedisCacheDatabase {
     }
 
     #[pyo3(name = "delete")]
+    #[pyo3(signature = (key, payload=None))]
     fn py_delete(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> PyResult<()> {
         let payload: Option<Vec<Bytes>> =
             payload.map(|vec| vec.into_iter().map(Bytes::from).collect());

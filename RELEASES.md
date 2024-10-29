@@ -17,6 +17,10 @@ Released on TBD (UTC).
 - Refined Arrow serialization (record batch functions now also available in Rust)
 - Refined core `Bar` API to remove unnecessary unwraps
 - Standardized network client logging
+- Fixed all pyo3 deprecations for API breaking changes
+- Fixed all clippy warning lints for PyO3 changes (#2030), thanks @Pushkarm029
+- Upgraded `pyo3` crate to v0.22.5
+- Upgraded `pyo3-async-runtimes` crate to v0.22.0
 - Upgraded `tokio` crate to v1.41.0
 
 ### Breaking Changes
