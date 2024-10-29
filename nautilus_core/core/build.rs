@@ -45,9 +45,10 @@ fn main() {
 
     #[cfg(feature = "ffi")]
     if env::var("CARGO_FEATURE_FFI").is_ok() {
+        use std::io::{Read, Write};
+
         use cbindgen;
         use fs::File;
-        use std::io::{Read, Write};
 
         // Generate C headers
         let config_c = cbindgen::Config::from_file("cbindgen.toml")
