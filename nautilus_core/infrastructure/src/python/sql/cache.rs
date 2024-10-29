@@ -40,7 +40,7 @@ use crate::sql::{cache::PostgresCacheDatabase, queries::DatabaseQueries};
 impl PostgresCacheDatabase {
     #[staticmethod]
     #[pyo3(name = "connect")]
-    #[pyo3(signature = (host, port, username=None, password=None, database=None))]
+    #[pyo3(signature = (host=None, port=None, username=None, password=None, database=None))]
     fn py_connect(
         host: Option<String>,
         port: Option<u16>,
