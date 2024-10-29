@@ -118,7 +118,7 @@ pub fn drop_cvec_pycapsule(capsule: &Bound<'_, PyAny>) {
 
 #[pyfunction]
 #[cfg(not(feature = "ffi"))]
-pub fn drop_cvec_pycapsule(_capsule: &PyAny) {
+pub fn drop_cvec_pycapsule(_capsule: &Bound<'_, PyAny>) {
     panic!("`ffi` feature is not enabled");
 }
 
