@@ -40,6 +40,7 @@ use crate::{
 impl StopLimitOrder {
     #[new]
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (trader_id, strategy_id, instrument_id, client_order_id, order_side, quantity, price, trigger_price, trigger_type, time_in_force, post_only, reduce_only, quote_quantity, init_id, ts_init, expire_time=None, display_qty=None, emulation_trigger=None, trigger_instrument_id=None, contingency_type=None, order_list_id=None, linked_order_ids=None, parent_order_id=None, exec_algorithm_id=None, exec_algorithm_params=None, exec_spawn_id=None, tags=None))]
     fn py_new(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -326,11 +327,9 @@ impl StopLimitOrder {
     #[getter]
     #[pyo3(name = "exec_algorithm_params")]
     fn py_exec_algorithm_params(&self) -> Option<HashMap<&str, &str>> {
-        self.exec_algorithm_params.as_ref().map(|x| {
-            x.into_iter()
-                .map(|(k, v)| (k.as_str(), v.as_str()))
-                .collect()
-        })
+        self.exec_algorithm_params
+            .as_ref()
+            .map(|x| x.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect())
     }
 
     #[getter]
@@ -591,7 +590,7 @@ impl StopLimitOrder {
         let tags = dict.get_item("tags").map(|x| {
             let extracted_str = x.extract::<Vec<String>>();
             match extracted_str {
-                Ok(item) => Some(item.iter().map(|s| Ustr::from(&s)).collect()),
+                Ok(item) => Some(item.iter().map(|s| Ustr::from(s)).collect()),
                 Err(_) => None,
             }
         })?;

@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{orderbook::book::OrderBook, types::quantity::Quantity};
 use pyo3::prelude::*;
 
@@ -22,7 +21,7 @@ use crate::{book::imbalance::BookImbalanceRatio, indicator::Indicator};
 #[pymethods]
 impl BookImbalanceRatio {
     #[new]
-    fn py_new() -> Self {
+    const fn py_new() -> Self {
         Self::new()
     }
 
@@ -38,13 +37,13 @@ impl BookImbalanceRatio {
 
     #[getter]
     #[pyo3(name = "count")]
-    fn py_count(&self) -> usize {
+    const fn py_count(&self) -> usize {
         self.count
     }
 
     #[getter]
     #[pyo3(name = "value")]
-    fn py_value(&self) -> f64 {
+    const fn py_value(&self) -> f64 {
         self.value
     }
 
@@ -56,7 +55,7 @@ impl BookImbalanceRatio {
 
     #[getter]
     #[pyo3(name = "initialized")]
-    fn py_initialized(&self) -> bool {
+    const fn py_initialized(&self) -> bool {
         self.initialized
     }
 
@@ -66,6 +65,7 @@ impl BookImbalanceRatio {
     }
 
     #[pyo3(name = "update")]
+    #[pyo3(signature = (best_bid=None, best_ask=None))]
     fn py_update(&mut self, best_bid: Option<Quantity>, best_ask: Option<Quantity>) {
         self.update(best_bid, best_ask);
     }

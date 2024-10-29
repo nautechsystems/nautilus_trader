@@ -153,6 +153,7 @@ impl MarginAccount {
     }
 
     #[pyo3(name = "calculate_initial_margin")]
+    #[pyo3(signature = (instrument, quantity, price, use_quote_for_inverse=None))]
     pub fn py_calculate_initial_margin(
         &mut self,
         instrument: PyObject,
@@ -186,6 +187,7 @@ impl MarginAccount {
     }
 
     #[pyo3(name = "calculate_maintenance_margin")]
+    #[pyo3(signature = (instrument, quantity, price, use_quote_for_inverse=None))]
     pub fn py_calculate_maintenance_margin(
         &mut self,
         instrument: PyObject,

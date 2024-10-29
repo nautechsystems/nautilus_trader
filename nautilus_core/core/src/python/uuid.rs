@@ -94,7 +94,7 @@ impl UUID4 {
 
     /// Returns a detailed string representation of the `UUID4` instance.
     fn __repr__(&self) -> String {
-        format!("{:?}", self)
+        format!("{self:?}")
     }
 
     /// Returns the `UUID4` as a string.

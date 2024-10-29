@@ -15,6 +15,7 @@
 
 use pyo3::{prelude::*, types::PyTuple};
 
+#[must_use]
 pub fn get_python_version() -> String {
     Python::with_gil(|py| {
         let sys = match py.import_bound("sys") {
@@ -50,11 +51,12 @@ pub fn get_python_version() -> String {
         if major == -1 || minor == -1 || micro == -1 {
             "Unavailable (failed to extract version components)".to_string()
         } else {
-            format!("{}.{}.{}", major, minor, micro)
+            format!("{major}.{minor}.{micro}")
         }
     })
 }
 
+#[must_use]
 pub fn get_python_package_version(package_name: &str) -> String {
     Python::with_gil(|py| match py.import_bound(package_name) {
         Ok(package) => match package.getattr("__version__") {

@@ -16,7 +16,6 @@
 use std::{collections::HashMap, sync::Arc};
 
 use futures_util::{pin_mut, Stream, StreamExt};
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{identifiers::InstrumentId, python::data::data_to_pycapsule};
 use pyo3::prelude::*;
 
@@ -31,18 +30,20 @@ use crate::tardis::machine::{
 #[pymethods]
 impl TardisMachineClient {
     #[new]
+    #[pyo3(signature = (base_url=None))]
     fn py_new(base_url: Option<&str>) -> PyResult<Self> {
         Ok(Self::new(base_url))
     }
 
     #[pyo3(name = "is_closed")]
+    #[must_use]
     pub fn py_is_closed(&self) -> bool {
         self.is_closed()
     }
 
     #[pyo3(name = "close")]
     fn py_close(&mut self) {
-        self.close()
+        self.close();
     }
 
     #[pyo3(name = "replay")]
@@ -119,7 +120,7 @@ async fn handle_python_stream<S>(
                     if let Some(data) = parse_tardis_ws_message(msg, info) {
                         Python::with_gil(|py| {
                             let py_obj = data_to_pycapsule(py, data);
-                            call_python(py, &callback, py_obj);
+                            let _ = call_python(py, &callback, py_obj);
                         });
                     } else {
                         continue; // Non-data message

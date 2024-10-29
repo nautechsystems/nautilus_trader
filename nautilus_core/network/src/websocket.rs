@@ -379,7 +379,7 @@ impl WebSocketClient {
         })
         .await
         {
-            Ok(_) => {
+            Ok(()) => {
                 tracing::debug!("Controller task finished");
             }
             Err(_) => {
@@ -453,7 +453,7 @@ impl WebSocketClient {
                     (true, false) => {
                         tracing::debug!("Inner client is disconnected");
                         tracing::debug!("Shutting down inner client to clean up running tasks");
-                        inner.shutdown().await
+                        inner.shutdown().await;
                     }
                     _ => (),
                 }

@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
@@ -28,6 +27,8 @@ use crate::{
 #[pymethods]
 impl AdaptiveMovingAverage {
     #[new]
+    #[pyo3(signature = (period_efficiency_ratio, period_fast, period_slow, price_type=None))]
+    #[must_use]
     pub fn py_new(
         period_efficiency_ratio: usize,
         period_fast: usize,
@@ -60,7 +61,7 @@ impl AdaptiveMovingAverage {
 
     #[getter]
     #[pyo3(name = "count")]
-    fn py_count(&self) -> usize {
+    const fn py_count(&self) -> usize {
         self.count
     }
 
@@ -72,7 +73,7 @@ impl AdaptiveMovingAverage {
 
     #[getter]
     #[pyo3(name = "initialized")]
-    fn py_initialized(&self) -> bool {
+    const fn py_initialized(&self) -> bool {
         self.initialized
     }
 

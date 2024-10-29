@@ -29,7 +29,7 @@ impl LogLevel {
         Self::py_from_str(&t, value)
     }
 
-    fn __hash__(&self) -> isize {
+    const fn __hash__(&self) -> isize {
         *self as isize
     }
 
@@ -54,7 +54,7 @@ impl LogLevel {
 
     #[getter]
     #[must_use]
-    pub fn value(&self) -> u8 {
+    pub const fn value(&self) -> u8 {
         *self as u8
     }
 
@@ -73,31 +73,31 @@ impl LogLevel {
 
     #[classattr]
     #[pyo3(name = "OFF")]
-    fn py_off() -> Self {
+    const fn py_off() -> Self {
         Self::Off
     }
 
     #[classattr]
     #[pyo3(name = "DEBUG")]
-    fn py_debug() -> Self {
+    const fn py_debug() -> Self {
         Self::Debug
     }
 
     #[classattr]
     #[pyo3(name = "INFO")]
-    fn py_info() -> Self {
+    const fn py_info() -> Self {
         Self::Info
     }
 
     #[classattr]
     #[pyo3(name = "WARNING")]
-    fn py_warning() -> Self {
+    const fn py_warning() -> Self {
         Self::Warning
     }
 
     #[classattr]
     #[pyo3(name = "ERROR")]
-    fn py_error() -> Self {
+    const fn py_error() -> Self {
         Self::Error
     }
 }
@@ -110,7 +110,7 @@ impl LogColor {
         Self::py_from_str(&t, value)
     }
 
-    fn __hash__(&self) -> isize {
+    const fn __hash__(&self) -> isize {
         *self as isize
     }
 
@@ -135,7 +135,7 @@ impl LogColor {
 
     #[getter]
     #[must_use]
-    pub fn value(&self) -> u8 {
+    pub const fn value(&self) -> u8 {
         *self as u8
     }
 
@@ -154,43 +154,43 @@ impl LogColor {
 
     #[classattr]
     #[pyo3(name = "NORMAL")]
-    fn py_normal() -> Self {
+    const fn py_normal() -> Self {
         Self::Normal
     }
 
     #[classattr]
     #[pyo3(name = "GREEN")]
-    fn py_green() -> Self {
+    const fn py_green() -> Self {
         Self::Green
     }
 
     #[classattr]
     #[pyo3(name = "BLUE")]
-    fn py_blue() -> Self {
+    const fn py_blue() -> Self {
         Self::Blue
     }
 
     #[classattr]
     #[pyo3(name = "MAGENTA")]
-    fn py_magenta() -> Self {
+    const fn py_magenta() -> Self {
         Self::Magenta
     }
 
     #[classattr]
     #[pyo3(name = "CYAN")]
-    fn py_cyan() -> Self {
+    const fn py_cyan() -> Self {
         Self::Cyan
     }
 
     #[classattr]
     #[pyo3(name = "YELLOW")]
-    fn py_error() -> Self {
+    const fn py_error() -> Self {
         Self::Yellow
     }
 
     #[classattr]
     #[pyo3(name = "RED")]
-    fn py_red() -> Self {
+    const fn py_red() -> Self {
         Self::Red
     }
 }

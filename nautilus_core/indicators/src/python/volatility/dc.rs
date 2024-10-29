@@ -13,15 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
-use pyo3::{exceptions::PyPermissionError, prelude::*};
+use nautilus_model::data::bar::Bar;
+use pyo3::prelude::*;
 
-use crate::{average::MovingAverageType, indicator::Indicator, volatility::dc::DonchianChannel};
+use crate::{indicator::Indicator, volatility::dc::DonchianChannel};
 
 #[pymethods]
 impl DonchianChannel {
     #[new]
+    #[must_use]
     pub fn py_new(period: usize) -> Self {
         Self::new(period)
     }
@@ -38,7 +38,7 @@ impl DonchianChannel {
 
     #[getter]
     #[pyo3(name = "period")]
-    fn py_period(&self) -> usize {
+    const fn py_period(&self) -> usize {
         self.period
     }
 
@@ -50,25 +50,25 @@ impl DonchianChannel {
 
     #[getter]
     #[pyo3(name = "upper")]
-    fn py_upper(&self) -> f64 {
+    const fn py_upper(&self) -> f64 {
         self.upper
     }
 
     #[getter]
     #[pyo3(name = "middle")]
-    fn py_middle(&self) -> f64 {
+    const fn py_middle(&self) -> f64 {
         self.middle
     }
 
     #[getter]
     #[pyo3(name = "lower")]
-    fn py_lower(&self) -> f64 {
+    const fn py_lower(&self) -> f64 {
         self.lower
     }
 
     #[getter]
     #[pyo3(name = "initialized")]
-    fn py_initialized(&self) -> bool {
+    const fn py_initialized(&self) -> bool {
         self.initialized
     }
 

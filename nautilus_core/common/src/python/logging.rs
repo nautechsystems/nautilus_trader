@@ -35,15 +35,18 @@ use crate::{
 impl LoggerConfig {
     #[staticmethod]
     #[pyo3(name = "from_spec")]
+    #[must_use]
     pub fn py_from_spec(spec: String) -> Self {
-        LoggerConfig::from_spec(&spec)
+        Self::from_spec(&spec)
     }
 }
 
 #[pymethods]
 impl FileWriterConfig {
     #[new]
-    pub fn py_new(
+    #[pyo3(signature = (directory=None, file_name=None, file_format=None))]
+    #[must_use]
+    pub const fn py_new(
         directory: Option<String>,
         file_name: Option<String>,
         file_format: Option<String>,
@@ -82,6 +85,7 @@ pub fn py_init_tracing() {
 #[pyfunction]
 #[pyo3(name = "init_logging")]
 #[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (trader_id, instance_id, level_stdout, level_file=None, component_levels=None, directory=None, file_name=None, file_format=None, is_colored=None, is_bypassed=None, print_config=None))]
 pub fn py_init_logging(
     trader_id: TraderId,
     instance_id: UUID4,
@@ -95,9 +99,7 @@ pub fn py_init_logging(
     is_bypassed: Option<bool>,
     print_config: Option<bool>,
 ) -> LogGuard {
-    let level_file = level_file
-        .map(map_log_level_to_filter)
-        .unwrap_or(LevelFilter::Off);
+    let level_file = level_file.map_or(LevelFilter::Off, map_log_level_to_filter);
 
     let config = LoggerConfig::new(
         map_log_level_to_filter(level_stdout),
@@ -151,5 +153,5 @@ pub fn py_log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, 
 #[pyfunction]
 #[pyo3(name = "log_sysinfo")]
 pub fn py_log_sysinfo(component: &str) {
-    headers::log_sysinfo(Ustr::from(component))
+    headers::log_sysinfo(Ustr::from(component));
 }

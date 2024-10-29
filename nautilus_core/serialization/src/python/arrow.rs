@@ -63,7 +63,7 @@ fn arrow_record_batch_to_pybytes(py: Python, batch: RecordBatch) -> PyResult<Py<
 }
 
 #[pyfunction]
-pub fn get_arrow_schema_map<'py>(py: Python<'py>, cls: &Bound<'_, PyType>) -> PyResult<Py<PyAny>> {
+pub fn get_arrow_schema_map(py: Python<'_>, cls: &Bound<'_, PyType>) -> PyResult<Py<PyAny>> {
     let cls_str: String = cls.getattr("__name__")?.extract()?;
     let result_map = match cls_str.as_str() {
         stringify!(OrderBookDelta) => OrderBookDelta::get_schema_map(),

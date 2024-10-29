@@ -35,6 +35,7 @@ use crate::tardis::{
     parse::{parse_instrument_id_with_enum, parse_option_kind},
 };
 
+#[must_use]
 pub fn parse_instrument_any(info: InstrumentInfo, ts_init: UnixNanos) -> InstrumentAny {
     match info.instrument_type {
         InstrumentType::Spot => parse_spot_instrument(info, ts_init),

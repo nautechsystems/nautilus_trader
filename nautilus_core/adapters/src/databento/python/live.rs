@@ -12,7 +12,7 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
+#![allow(clippy::legacy_numeric_constants)]
 use std::{fs, i128, path::PathBuf, str::FromStr};
 
 use databento::{dbn, live::Subscription};
@@ -93,9 +93,6 @@ impl DatabentoLiveClient {
                     // Return error to Python
                     return Err(to_pyruntime_err(e));
                 }
-                _ => {
-                    panic!("Message did not match any case: {msg:?}");
-                }
             };
 
             result?;
@@ -150,16 +147,17 @@ impl DatabentoLiveClient {
     }
 
     #[pyo3(name = "is_running")]
-    fn py_is_running(&self) -> bool {
+    const fn py_is_running(&self) -> bool {
         self.is_running
     }
 
     #[pyo3(name = "is_closed")]
-    fn py_is_closed(&self) -> bool {
+    const fn py_is_closed(&self) -> bool {
         self.is_closed
     }
 
     #[pyo3(name = "subscribe")]
+    #[pyo3(signature = (schema, symbols, start=None, snapshot=None))]
     fn py_subscribe(
         &mut self,
         schema: String,
@@ -168,7 +166,7 @@ impl DatabentoLiveClient {
         snapshot: Option<bool>,
     ) -> PyResult<()> {
         let stype_in = infer_symbology_type(symbols.first().unwrap());
-        let symbols: Vec<&str> = symbols.iter().map(|s| s.as_str()).collect();
+        let symbols: Vec<&str> = symbols.iter().map(std::string::String::as_str).collect();
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let mut sub = Subscription::builder()
             .symbols(symbols)

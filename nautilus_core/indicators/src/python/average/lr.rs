@@ -13,18 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
-use pyo3::{exceptions::PyPermissionError, prelude::*};
+use nautilus_model::data::bar::Bar;
+use pyo3::prelude::*;
 
-use crate::{
-    average::{lr::LinearRegression, MovingAverageType},
-    indicator::Indicator,
-};
+use crate::{average::lr::LinearRegression, indicator::Indicator};
 
 #[pymethods]
 impl LinearRegression {
     #[new]
+    #[must_use]
     pub fn py_new(period: usize) -> Self {
         Self::new(period)
     }
@@ -41,37 +38,37 @@ impl LinearRegression {
 
     #[getter]
     #[pyo3(name = "period")]
-    fn py_period(&self) -> usize {
+    const fn py_period(&self) -> usize {
         self.period
     }
 
     #[getter]
     #[pyo3(name = "slope")]
-    fn py_slope(&self) -> f64 {
+    const fn py_slope(&self) -> f64 {
         self.slope
     }
 
     #[getter]
     #[pyo3(name = "intercept")]
-    fn py_intercept(&self) -> f64 {
+    const fn py_intercept(&self) -> f64 {
         self.intercept
     }
 
     #[getter]
     #[pyo3(name = "degree")]
-    fn py_degree(&self) -> f64 {
+    const fn py_degree(&self) -> f64 {
         self.degree
     }
 
     #[getter]
     #[pyo3(name = "cfo")]
-    fn py_cfo(&self) -> f64 {
+    const fn py_cfo(&self) -> f64 {
         self.cfo
     }
 
     #[getter]
     #[pyo3(name = "r2")]
-    fn py_r2(&self) -> f64 {
+    const fn py_r2(&self) -> f64 {
         self.r2
     }
 
@@ -83,13 +80,13 @@ impl LinearRegression {
 
     #[getter]
     #[pyo3(name = "value")]
-    fn py_value(&self) -> f64 {
+    const fn py_value(&self) -> f64 {
         self.value
     }
 
     #[getter]
     #[pyo3(name = "initialized")]
-    fn py_initialized(&self) -> bool {
+    const fn py_initialized(&self) -> bool {
         self.initialized
     }
 

@@ -13,15 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
 use pyo3::prelude::*;
 
-use crate::{average::MovingAverageType, indicator::Indicator, momentum::roc::RateOfChange};
+use crate::{indicator::Indicator, momentum::roc::RateOfChange};
 
 #[pymethods]
 impl RateOfChange {
     #[new]
+    #[pyo3(signature = (period, use_log=None))]
+    #[must_use]
     pub fn py_new(period: usize, use_log: Option<bool>) -> Self {
         Self::new(period, use_log)
     }
@@ -38,13 +39,13 @@ impl RateOfChange {
 
     #[getter]
     #[pyo3(name = "period")]
-    fn py_period(&self) -> usize {
+    const fn py_period(&self) -> usize {
         self.period
     }
 
     #[getter]
     #[pyo3(name = "use_log")]
-    fn py_use_log(&self) -> bool {
+    const fn py_use_log(&self) -> bool {
         self.use_log
     }
 
@@ -56,13 +57,13 @@ impl RateOfChange {
 
     #[getter]
     #[pyo3(name = "value")]
-    fn py_value(&self) -> f64 {
+    const fn py_value(&self) -> f64 {
         self.value
     }
 
     #[getter]
     #[pyo3(name = "initialized")]
-    fn py_initialized(&self) -> bool {
+    const fn py_initialized(&self) -> bool {
         self.initialized
     }
 
