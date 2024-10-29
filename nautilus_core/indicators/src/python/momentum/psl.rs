@@ -13,15 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
-use pyo3::{exceptions::PyPermissionError, prelude::*};
+use nautilus_model::data::bar::Bar;
+use pyo3::prelude::*;
 
 use crate::{average::MovingAverageType, indicator::Indicator, momentum::psl::PsychologicalLine};
 
 #[pymethods]
 impl PsychologicalLine {
     #[new]
+    #[pyo3(signature = (period, ma_type=None))]
     pub fn py_new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
         Self::new(period, ma_type)
     }

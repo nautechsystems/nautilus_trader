@@ -285,6 +285,7 @@ impl Money {
         self.as_f64()
     }
 
+    #[pyo3(signature = (ndigits=None))]
     fn __round__(&self, ndigits: Option<u32>) -> Decimal {
         self.as_decimal()
             .round_dp_with_strategy(ndigits.unwrap_or(0), RoundingStrategy::MidpointNearestEven)

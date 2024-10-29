@@ -20,24 +20,17 @@ use std::{
 };
 
 use nautilus_core::{
-    nanos::UnixNanos,
     python::{serialization::from_dict_pyo3, to_pyvalue_err},
     serialization::Serializable,
 };
-use pyo3::{
-    prelude::*,
-    pyclass::CompareOp,
-    types::{PyDict, PyLong, PyString, PyTuple},
-};
+use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 use ustr::Ustr;
 
-use super::data_to_pycapsule;
 use crate::{
-    data::{status::InstrumentStatus, Data},
-    enums::{FromU16, FromU8, MarketStatusAction, PriceType},
+    data::status::InstrumentStatus,
+    enums::{FromU16, MarketStatusAction},
     identifiers::InstrumentId,
     python::common::PY_MODULE_MODEL,
-    types::{price::Price, quantity::Quantity},
 };
 
 impl InstrumentStatus {
@@ -91,6 +84,7 @@ impl InstrumentStatus {
 #[pymethods]
 impl InstrumentStatus {
     #[new]
+    #[pyo3(signature = (instrument_id, action, ts_event, ts_init, reason=None, trading_event=None, is_trading=None, is_quoting=None, is_short_sell_restricted=None))]
     fn py_new(
         instrument_id: InstrumentId,
         action: MarketStatusAction,
@@ -278,11 +272,7 @@ mod tests {
     use pyo3::{IntoPy, Python};
     use rstest::rstest;
 
-    use crate::data::{
-        quote::QuoteTick,
-        status::InstrumentStatus,
-        stubs::{quote_ethusdt_binance, stub_instrument_status},
-    };
+    use crate::data::{status::InstrumentStatus, stubs::stub_instrument_status};
 
     #[rstest]
     fn test_as_dict(stub_instrument_status: InstrumentStatus) {

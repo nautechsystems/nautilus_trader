@@ -93,9 +93,6 @@ impl DatabentoLiveClient {
                     // Return error to Python
                     return Err(to_pyruntime_err(e));
                 }
-                _ => {
-                    panic!("Message did not match any case: {msg:?}");
-                }
             };
 
             result?;
@@ -160,6 +157,7 @@ impl DatabentoLiveClient {
     }
 
     #[pyo3(name = "subscribe")]
+    #[pyo3(signature = (schema, symbols, start=None, snapshot=None))]
     fn py_subscribe(
         &mut self,
         schema: String,

@@ -25,22 +25,23 @@ macro_rules! identifier_for_python {
                 <$ty>::new_checked(value).map_err(to_pyvalue_err)
             }
 
-            // fn __setstate__(&mut self, py: Python, state: Bound<'_, PyDict>) -> PyResult<()> {
-            //     let value: (&PyString,) = state.extract(py)?;
-            //     let value: &str = value.0.extract()?;
-            //     self.set_inner(value);
-            //     Ok(())
-            // }
-            //
-            // fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-            //     Ok((self.to_string(),).to_object(py))
-            // }
-            //
-            // fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
-            //     let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
-            //     let state = self.__getstate__(py)?;
-            //     Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
-            // }
+            fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
+                let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
+                let bindings = py_tuple.get_item(0)?;
+                let value = bindings.downcast::<PyString>()?.extract::<&str>()?;
+                self.set_inner(value);
+                Ok(())
+            }
+
+            fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+                Ok((self.to_string(),).to_object(py))
+            }
+
+            fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
+                let safe_constructor = py.get_type_bound::<Self>().getattr("_safe_constructor")?;
+                let state = self.__getstate__(py)?;
+                Ok((safe_constructor, PyTuple::empty_bound(py), state).to_object(py))
+            }
 
             #[staticmethod]
             fn _safe_constructor() -> PyResult<Self> {

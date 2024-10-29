@@ -40,6 +40,7 @@ const ERROR_MONOTONICITY: &str = "`data` was not monotonically increasing by the
 #[pymethods]
 impl DataType {
     #[new]
+    #[pyo3(signature = (type_name, metadata=None))]
     fn py_new(type_name: &str, metadata: Option<IndexMap<String, String>>) -> Self {
         Self::new(type_name, metadata)
     }

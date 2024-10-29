@@ -13,19 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, ops::Deref};
-
-use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
-use pyo3::{
-    prelude::*,
-    types::{PyString, PyTuple},
-};
-use ustr::Ustr;
+use nautilus_core::nanos::UnixNanos;
+use pyo3::prelude::*;
 
 use super::timer::TimeEventHandler_Py;
 use crate::{
     clock::{Clock, LiveClock, TestClock},
-    timer::{LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandlerV2},
+    timer::{TimeEvent, TimeEventCallback},
 };
 
 /// PyO3 compatible interface for an underlying [`TestClock`].
@@ -67,6 +61,7 @@ impl TestClock_Py {
             .register_default_handler(TimeEventCallback::from(callback))
     }
 
+    #[pyo3(signature = (name, alert_time_ns, callback=None))]
     fn set_time_alert_ns(&mut self, name: &str, alert_time_ns: u64, callback: Option<PyObject>) {
         self.0.set_time_alert_ns(
             name,
@@ -75,6 +70,7 @@ impl TestClock_Py {
         )
     }
 
+    #[pyo3(signature = (name, interval_ns, start_time_ns, stop_time_ns=None, callback=None))]
     fn set_timer_ns(
         &mut self,
         name: &str,
@@ -132,6 +128,7 @@ impl LiveClock_Py {
             .register_default_handler(TimeEventCallback::from(callback))
     }
 
+    #[pyo3(signature = (name, alert_time_ns, callback=None))]
     fn set_time_alert_ns(&mut self, name: &str, alert_time_ns: u64, callback: Option<PyObject>) {
         self.0.set_time_alert_ns(
             name,
@@ -140,6 +137,7 @@ impl LiveClock_Py {
         )
     }
 
+    #[pyo3(signature = (name, interval_ns, start_time_ns, stop_time_ns=None, callback=None))]
     fn set_timer_ns(
         &mut self,
         name: &str,
@@ -175,13 +173,10 @@ impl LiveClock_Py {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
-
     use nautilus_core::nanos::UnixNanos;
     use pyo3::{prelude::*, types::PyList};
     use rstest::*;
 
-    use super::*;
     use crate::{
         clock::{Clock, TestClock},
         timer::TimeEventCallback,
@@ -204,7 +199,7 @@ mod tests {
     fn test_set_timer_ns_py(mut test_clock: TestClock) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
+        Python::with_gil(|_py| {
             let callback = test_callback();
             test_clock.register_default_handler(callback);
 
@@ -220,7 +215,7 @@ mod tests {
     fn test_cancel_timer(mut test_clock: TestClock) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
+        Python::with_gil(|_py| {
             let callback = test_callback();
             test_clock.register_default_handler(callback);
 
@@ -237,7 +232,7 @@ mod tests {
     fn test_cancel_timers(mut test_clock: TestClock) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
+        Python::with_gil(|_py| {
             let callback = test_callback();
             test_clock.register_default_handler(callback);
 
@@ -254,7 +249,7 @@ mod tests {
     fn test_advance_within_stop_time_py(mut test_clock: TestClock) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
+        Python::with_gil(|_py| {
             let callback = test_callback();
             test_clock.register_default_handler(callback);
 
@@ -271,7 +266,7 @@ mod tests {
     fn test_advance_time_to_stop_time_with_set_time_true(mut test_clock: TestClock) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
+        Python::with_gil(|_py| {
             let callback = test_callback();
             test_clock.register_default_handler(callback);
 
@@ -288,7 +283,7 @@ mod tests {
     fn test_advance_time_to_stop_time_with_set_time_false(mut test_clock: TestClock) {
         pyo3::prepare_freethreaded_python();
 
-        Python::with_gil(|py| {
+        Python::with_gil(|_py| {
             let callback = test_callback();
             test_clock.register_default_handler(callback);
 

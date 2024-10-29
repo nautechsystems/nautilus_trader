@@ -25,11 +25,7 @@
 
 //! Nautilus core test kit from `pyo3`.
 
-use pyo3::{
-    exceptions::{PyRuntimeError, PyTypeError, PyValueError},
-    prelude::*,
-    wrap_pyfunction,
-};
+use pyo3::{prelude::*, wrap_pyfunction};
 
 pub mod files;
 

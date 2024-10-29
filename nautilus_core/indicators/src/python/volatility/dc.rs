@@ -13,11 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
-use pyo3::{exceptions::PyPermissionError, prelude::*};
+use nautilus_model::data::bar::Bar;
+use pyo3::prelude::*;
 
-use crate::{average::MovingAverageType, indicator::Indicator, volatility::dc::DonchianChannel};
+use crate::{indicator::Indicator, volatility::dc::DonchianChannel};
 
 #[pymethods]
 impl DonchianChannel {

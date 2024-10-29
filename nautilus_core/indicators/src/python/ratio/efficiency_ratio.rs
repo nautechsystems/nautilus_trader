@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::enums::PriceType;
 use pyo3::prelude::*;
 
@@ -22,6 +21,7 @@ use crate::{indicator::Indicator, ratio::efficiency_ratio::EfficiencyRatio};
 #[pymethods]
 impl EfficiencyRatio {
     #[new]
+    #[pyo3(signature = (period, price_type=None))]
     fn py_new(period: usize, price_type: Option<PriceType>) -> Self {
         Self::new(period, price_type)
     }

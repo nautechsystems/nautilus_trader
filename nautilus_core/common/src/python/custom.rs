@@ -13,18 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, ops::Deref};
-
 use bytes::Bytes;
-use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
+use nautilus_core::nanos::UnixNanos;
 use nautilus_model::data::DataType;
-use pyo3::{
-    prelude::*,
-    types::{PyString, PyTuple},
-};
-use ustr::Ustr;
+use pyo3::prelude::*;
 
-use super::timer::TimeEventHandler_Py;
 use crate::custom::CustomData;
 
 #[pymethods]

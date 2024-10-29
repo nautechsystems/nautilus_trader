@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
 use pyo3::prelude::*;
 
@@ -24,6 +23,7 @@ use crate::{
 #[pymethods]
 impl ChandeMomentumOscillator {
     #[new]
+    #[pyo3(signature = (period, ma_type=None))]
     pub fn py_new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
         Self::new(period, ma_type)
     }

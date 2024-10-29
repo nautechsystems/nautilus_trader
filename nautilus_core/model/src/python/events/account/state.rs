@@ -36,6 +36,7 @@ use crate::{
 impl AccountState {
     #[allow(clippy::too_many_arguments)]
     #[new]
+    #[pyo3(signature = (account_id, account_type, balances, margins, is_reported, event_id, ts_event, ts_init, base_currency=None))]
     fn py_new(
         account_id: AccountId,
         account_type: AccountType,

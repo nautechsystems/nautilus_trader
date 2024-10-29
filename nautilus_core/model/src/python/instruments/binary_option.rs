@@ -34,6 +34,7 @@ use crate::{
 impl BinaryOption {
     #[allow(clippy::too_many_arguments)]
     #[new]
+    #[pyo3(signature = (id, raw_symbol, asset_class, currency, activation_ns, expiration_ns, price_precision, size_precision, price_increment, size_increment, maker_fee, taker_fee, ts_event, ts_init, outcome=None, description=None, margin_init=None, margin_maint=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None))]
     fn py_new(
         id: InstrumentId,
         raw_symbol: Symbol,

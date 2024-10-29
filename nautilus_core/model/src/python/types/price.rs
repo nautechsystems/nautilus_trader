@@ -20,22 +20,15 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::{
-    correctness::check_in_range_inclusive_f64,
-    python::{get_pytype_name, to_pytype_err, to_pyvalue_err},
-};
+use nautilus_core::python::{get_pytype_name, to_pytype_err, to_pyvalue_err};
 use pyo3::{
-    exceptions::PyValueError,
     prelude::*,
     pyclass::CompareOp,
-    types::{PyFloat, PyLong, PyTuple},
+    types::{PyFloat, PyTuple},
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 
-use crate::types::{
-    fixed::{check_fixed_precision, fixed_i64_to_f64},
-    price::{Price, PRICE_MAX, PRICE_MIN},
-};
+use crate::types::{fixed::fixed_i64_to_f64, price::Price};
 
 #[pymethods]
 impl Price {
@@ -44,22 +37,22 @@ impl Price {
         Self::new_checked(value, precision).map_err(to_pyvalue_err)
     }
 
-    // fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-    //     let tuple: (&PyLong, &PyLong) = state.extract(py)?;
-    //     self.raw = tuple.0.extract()?;
-    //     self.precision = tuple.1.extract::<u8>()?;
-    //     Ok(())
-    // }
-    //
-    // fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
-    //     Ok((self.raw, self.precision).to_object(py))
-    // }
-    //
-    // fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
-    //     let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
-    //     let state = self.__getstate__(py)?;
-    //     Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
-    // }
+    fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
+        let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
+        self.raw = py_tuple.get_item(0)?.extract::<i64>()?;
+        self.precision = py_tuple.get_item(1)?.extract::<u8>()?;
+        Ok(())
+    }
+
+    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        Ok((self.raw, self.precision).to_object(py))
+    }
+
+    fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
+        let safe_constructor = py.get_type_bound::<Self>().getattr("_safe_constructor")?;
+        let state = self.__getstate__(py)?;
+        Ok((safe_constructor, PyTuple::empty_bound(py), state).to_object(py))
+    }
 
     #[staticmethod]
     fn _safe_constructor() -> PyResult<Self> {
@@ -284,6 +277,7 @@ impl Price {
         self.as_f64()
     }
 
+    #[pyo3(signature = (ndigits=None))]
     fn __round__(&self, ndigits: Option<u32>) -> Decimal {
         self.as_decimal()
             .round_dp_with_strategy(ndigits.unwrap_or(0), RoundingStrategy::MidpointNearestEven)

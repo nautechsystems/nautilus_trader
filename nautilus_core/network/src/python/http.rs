@@ -15,8 +15,6 @@
 
 use std::{
     collections::{hash_map::DefaultHasher, HashMap},
-    error::Error,
-    fmt::Display,
     hash::{Hash, Hasher},
     sync::Arc,
 };
@@ -143,6 +141,7 @@ impl HttpClient {
     ///
     /// For request /foo/bar, should pass keys ["foo/bar", "foo"] for rate limiting.
     #[pyo3(name = "request")]
+    #[pyo3(signature = (method, url, headers=None, body=None, keys=None, timeout_secs=None))]
     fn py_request<'py>(
         &self,
         method: HttpMethod,

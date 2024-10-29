@@ -13,17 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{nanos::UnixNanos, python::to_pyvalue_err};
-use nautilus_model::{
-    data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
-    enums::PriceType,
-};
+use nautilus_model::data::bar::Bar;
 use pyo3::prelude::*;
 
-use crate::{
-    average::vwap::VolumeWeightedAveragePrice,
-    indicator::{Indicator, MovingAverage},
-};
+use crate::{average::vwap::VolumeWeightedAveragePrice, indicator::Indicator};
 
 #[pymethods]
 impl VolumeWeightedAveragePrice {

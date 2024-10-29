@@ -32,6 +32,7 @@ use crate::{
 impl CryptoPerpetual {
     #[allow(clippy::too_many_arguments)]
     #[new]
+    #[pyo3(signature = (id, raw_symbol, base_currency, quote_currency, settlement_currency, is_inverse, price_precision, size_precision, price_increment, size_increment, maker_fee, taker_fee, margin_init, margin_maint, ts_event, ts_init, multiplier=None, lot_size=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None))]
     fn py_new(
         id: InstrumentId,
         raw_symbol: Symbol,

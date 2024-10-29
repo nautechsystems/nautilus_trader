@@ -15,7 +15,7 @@
 
 use std::rc::Rc;
 
-use pyo3::{pymethods, PyObject, PyRef, PyRefMut};
+use pyo3::{pymethods, PyObject, PyRefMut};
 use ustr::Ustr;
 
 use super::handler::PythonMessageHandler;
@@ -82,6 +82,7 @@ impl MessageBus {
     /// system components have been able to process necessary calculations and
     /// produce potential side effects for logically sound behavior.
     #[pyo3(name = "subscribe")]
+    #[pyo3(signature = (topic, handler, priority=None))]
     pub fn subscribe_py(
         mut slf: PyRefMut<'_, Self>,
         topic: &str,

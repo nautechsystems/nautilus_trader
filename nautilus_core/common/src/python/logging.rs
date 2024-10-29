@@ -43,6 +43,7 @@ impl LoggerConfig {
 #[pymethods]
 impl FileWriterConfig {
     #[new]
+    #[pyo3(signature = (directory=None, file_name=None, file_format=None))]
     pub fn py_new(
         directory: Option<String>,
         file_name: Option<String>,
@@ -82,6 +83,7 @@ pub fn py_init_tracing() {
 #[pyfunction]
 #[pyo3(name = "init_logging")]
 #[allow(clippy::too_many_arguments)]
+#[pyo3(signature = (trader_id, instance_id, level_stdout, level_file=None, component_levels=None, directory=None, file_name=None, file_format=None, is_colored=None, is_bypassed=None, print_config=None))]
 pub fn py_init_logging(
     trader_id: TraderId,
     instance_id: UUID4,

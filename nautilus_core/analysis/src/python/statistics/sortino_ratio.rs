@@ -23,6 +23,7 @@ use crate::{statistic::PortfolioStatistic, statistics::sortino_ratio::SortinoRat
 #[pymethods]
 impl SortinoRatio {
     #[new]
+    #[pyo3(signature = (period=None))]
     fn py_new(period: Option<usize>) -> Self {
         Self::new(period)
     }

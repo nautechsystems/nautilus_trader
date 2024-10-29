@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
 use pyo3::prelude::*;
 
@@ -22,6 +21,7 @@ use crate::{average::MovingAverageType, indicator::Indicator, momentum::bb::Boll
 #[pymethods]
 impl BollingerBands {
     #[new]
+    #[pyo3(signature = (period, k, ma_type=None))]
     pub fn py_new(period: usize, k: f64, ma_type: Option<MovingAverageType>) -> Self {
         Self::new(period, k, ma_type)
     }

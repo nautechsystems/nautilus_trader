@@ -113,6 +113,7 @@ impl DatabentoHistoricalClient {
     }
 
     #[pyo3(name = "get_range_instruments")]
+    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None))]
     fn py_get_range_instruments<'py>(
         &self,
         py: Python<'py>,
@@ -182,6 +183,7 @@ impl DatabentoHistoricalClient {
     }
 
     #[pyo3(name = "get_range_quotes")]
+    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None))]
     fn py_get_range_quotes<'py>(
         &self,
         py: Python<'py>,
@@ -250,6 +252,7 @@ impl DatabentoHistoricalClient {
     }
 
     #[pyo3(name = "get_range_trades")]
+    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None))]
     fn py_get_range_trades<'py>(
         &self,
         py: Python<'py>,
@@ -319,6 +322,7 @@ impl DatabentoHistoricalClient {
 
     #[pyo3(name = "get_range_bars")]
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (dataset, symbols, aggregation, start, end=None, limit=None))]
     fn py_get_range_bars<'py>(
         &self,
         py: Python<'py>,
@@ -396,6 +400,7 @@ impl DatabentoHistoricalClient {
 
     #[pyo3(name = "get_range_imbalance")]
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None))]
     fn py_get_range_imbalance<'py>(
         &self,
         py: Python<'py>,
@@ -454,6 +459,7 @@ impl DatabentoHistoricalClient {
 
     #[pyo3(name = "get_range_statistics")]
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None))]
     fn py_get_range_statistics<'py>(
         &self,
         py: Python<'py>,
@@ -513,6 +519,7 @@ impl DatabentoHistoricalClient {
 
     #[pyo3(name = "get_range_status")]
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None))]
     fn py_get_range_status<'py>(
         &self,
         py: Python<'py>,

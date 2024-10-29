@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
@@ -29,6 +28,7 @@ use crate::{
 #[pymethods]
 impl MovingAverageConvergenceDivergence {
     #[new]
+    #[pyo3(signature = (fast_period, slow_period, ma_type=None, price_type=None))]
     pub fn py_new(
         fast_period: usize,
         slow_period: usize,

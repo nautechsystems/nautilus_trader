@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
@@ -28,6 +27,7 @@ use crate::{
 #[pymethods]
 impl VariableIndexDynamicAverage {
     #[new]
+    #[pyo3(signature = (period, price_type=None, cmo_ma_type=None))]
     pub fn py_new(
         period: usize,
         price_type: Option<PriceType>,

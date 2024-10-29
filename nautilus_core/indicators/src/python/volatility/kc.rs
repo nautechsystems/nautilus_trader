@@ -13,16 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
-use pyo3::{exceptions::PyPermissionError, prelude::*};
+use nautilus_model::data::bar::Bar;
+use pyo3::prelude::*;
 
-use super::atr;
 use crate::{average::MovingAverageType, indicator::Indicator, volatility::kc::KeltnerChannel};
 
 #[pymethods]
 impl KeltnerChannel {
     #[new]
+    #[pyo3(signature = (period, k_multiplier, ma_type=None, ma_type_atr=None, use_previous=None, atr_floor=None))]
     pub fn py_new(
         period: usize,
         k_multiplier: f64,

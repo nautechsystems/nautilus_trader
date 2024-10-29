@@ -13,11 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::{
-    data::quote::QuoteTick, enums::PriceType, identifiers::InstrumentId,
-    python::identifiers::instrument_id,
-};
+use nautilus_model::{data::quote::QuoteTick, identifiers::InstrumentId};
 use pyo3::prelude::*;
 
 use crate::{indicator::Indicator, ratio::spread_analyzer::SpreadAnalyzer};

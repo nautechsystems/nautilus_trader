@@ -32,6 +32,7 @@ use crate::{
 impl CurrencyPair {
     #[allow(clippy::too_many_arguments)]
     #[new]
+    #[pyo3(signature = (id, raw_symbol, base_currency, quote_currency, price_precision, size_precision, price_increment, size_increment, maker_fee, taker_fee, margin_init, margin_maint, ts_event, ts_init, lot_size=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None))]
     fn py_new(
         id: InstrumentId,
         raw_symbol: Symbol,

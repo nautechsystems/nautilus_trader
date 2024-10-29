@@ -15,30 +15,21 @@
 
 //! A high-performance HTTP client implementation.
 
-use std::{
-    collections::{hash_map::DefaultHasher, HashMap},
-    error::Error,
-    fmt::Display,
-    hash::{Hash, Hasher},
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashMap, hash::Hash, sync::Arc, time::Duration};
 
 use bytes::Bytes;
-use futures_util::{stream, StreamExt};
-use pyo3::{exceptions::PyException, prelude::*, types::PyBytes};
 use reqwest::{
     header::{HeaderMap, HeaderName},
     Method, Response, Url,
 };
 
-use crate::ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter};
+use crate::ratelimiter::{clock::MonotonicClock, RateLimiter};
 
 /// Represents the HTTP methods supported by the `HttpClient`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[cfg_attr(
     feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+    pyo3::pyclass(eq, eq_int, module = "nautilus_trader.core.nautilus_pyo3.network")
 )]
 pub enum HttpMethod {
     GET,

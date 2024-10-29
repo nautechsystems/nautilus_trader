@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{correctness::check_predicate_true, python::to_pyvalue_err};
+use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{
     data::{bar::Bar, quote::QuoteTick, trade::TradeTick},
     enums::PriceType,
@@ -28,6 +28,7 @@ use crate::{
 #[pymethods]
 impl WeightedMovingAverage {
     #[new]
+    #[pyo3(signature = (period, weights, price_type=None))]
     pub fn py_new(
         period: usize,
         weights: Vec<f64>,

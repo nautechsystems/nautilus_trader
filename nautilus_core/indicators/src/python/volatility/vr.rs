@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
 use pyo3::prelude::*;
 
@@ -22,6 +21,7 @@ use crate::{average::MovingAverageType, indicator::Indicator, volatility::vr::Vo
 #[pymethods]
 impl VolatilityRatio {
     #[new]
+    #[pyo3(signature = (fast_period, slow_period, use_previous=None, value_floor=None, ma_type=None))]
     pub fn py_new(
         fast_period: usize,
         slow_period: usize,
@@ -90,12 +90,12 @@ impl VolatilityRatio {
     }
 
     #[pyo3(name = "handle_quote_tick")]
-    fn py_handle_quote_tick(&mut self, quote: &QuoteTick) {
+    fn py_handle_quote_tick(&mut self, _quote: &QuoteTick) {
         // Function body intentionally left blank.
     }
 
     #[pyo3(name = "handle_trade_tick")]
-    fn py_handle_trade_tick(&mut self, trade: &TradeTick) {
+    fn py_handle_trade_tick(&mut self, _trade: &TradeTick) {
         // Function body intentionally left blank.
     }
 

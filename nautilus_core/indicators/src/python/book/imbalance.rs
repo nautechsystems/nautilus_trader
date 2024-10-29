@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{orderbook::book::OrderBook, types::quantity::Quantity};
 use pyo3::prelude::*;
 
@@ -66,6 +65,7 @@ impl BookImbalanceRatio {
     }
 
     #[pyo3(name = "update")]
+    #[pyo3(signature = (best_bid=None, best_ask=None))]
     fn py_update(&mut self, best_bid: Option<Quantity>, best_ask: Option<Quantity>) {
         self.update(best_bid, best_ask);
     }

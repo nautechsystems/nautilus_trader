@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
 use pyo3::prelude::*;
 
@@ -24,6 +23,7 @@ use crate::{
 #[pymethods]
 impl ArcherMovingAveragesTrends {
     #[new]
+    #[pyo3(signature = (fast_period, slow_period, signal_period, ma_type=None))]
     pub fn py_new(
         fast_period: usize,
         slow_period: usize,
