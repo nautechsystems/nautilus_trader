@@ -54,12 +54,7 @@ def test_order_denied_to_dict(benchmark):
     def call_to_dict() -> None:
         OrderDenied.to_dict(_STUB_ORDER_DENIED)
 
-    benchmark.pedantic(
-        target=call_to_dict,
-        rounds=100_000,
-        iterations=1,
-    )
-    # ~0.0ms / ~1.8μs / 1841ns minimum of 100,000 runs @ 1 iteration each run.
+    benchmark(call_to_dict)
 
 
 def test_order_denied_to_dict_then_msgspec_to_json(benchmark):
@@ -67,9 +62,4 @@ def test_order_denied_to_dict_then_msgspec_to_json(benchmark):
         denied_dict = OrderDenied.to_dict(_STUB_ORDER_DENIED)
         msgspec.json.encode(denied_dict)
 
-    benchmark.pedantic(
-        target=call_to_dict_then_json,
-        rounds=100_000,
-        iterations=1,
-    )
-    # ~0.0ms / ~2.4μs / 2441ns minimum of 100,000 runs @ 1 iteration each run.
+    benchmark(call_to_dict_then_json)

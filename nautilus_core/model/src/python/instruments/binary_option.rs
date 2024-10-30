@@ -34,6 +34,7 @@ use crate::{
 impl BinaryOption {
     #[allow(clippy::too_many_arguments)]
     #[new]
+    #[pyo3(signature = (id, raw_symbol, asset_class, currency, activation_ns, expiration_ns, price_precision, size_precision, price_increment, size_increment, maker_fee, taker_fee, ts_event, ts_init, outcome=None, description=None, margin_init=None, margin_maint=None, max_quantity=None, min_quantity=None, max_notional=None, min_notional=None, max_price=None, min_price=None))]
     fn py_new(
         id: InstrumentId,
         raw_symbol: Symbol,
@@ -248,7 +249,7 @@ impl BinaryOption {
     #[getter]
     #[pyo3(name = "info")]
     fn py_info(&self, py: Python<'_>) -> PyResult<PyObject> {
-        Ok(PyDict::new(py).into())
+        Ok(PyDict::new_bound(py).into())
     }
 
     #[getter]
@@ -271,7 +272,7 @@ impl BinaryOption {
 
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let dict = PyDict::new(py);
+        let dict = PyDict::new_bound(py);
         dict.set_item("type", stringify!(BinaryOption))?;
         dict.set_item("id", self.id.to_string())?;
         dict.set_item("raw_symbol", self.raw_symbol.to_string())?;
@@ -283,7 +284,7 @@ impl BinaryOption {
         dict.set_item("size_precision", self.size_precision)?;
         dict.set_item("price_increment", self.price_increment.to_string())?;
         dict.set_item("size_increment", self.size_increment.to_string())?;
-        dict.set_item("info", PyDict::new(py))?;
+        dict.set_item("info", PyDict::new_bound(py))?;
         dict.set_item("maker_fee", self.maker_fee.to_string())?;
         dict.set_item("taker_fee", self.taker_fee.to_string())?;
         dict.set_item("ts_event", self.ts_event.as_u64())?;

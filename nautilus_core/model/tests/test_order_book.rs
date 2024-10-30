@@ -16,11 +16,10 @@
 use std::path::Path;
 
 use nautilus_adapters::databento::loader::DatabentoDataLoader;
+use nautilus_core::paths::get_workspace_root_path;
 use nautilus_model::{enums::BookType, identifiers::InstrumentId, orderbook::book::OrderBook};
 use nautilus_test_kit::{
-    common::{
-        get_test_data_file_path, get_test_data_large_checksums_filepath, get_workspace_root_path,
-    },
+    common::{get_test_data_file_path, get_test_data_large_checksums_filepath},
     files::ensure_file_exists_or_download_http,
 };
 use rstest::*;

@@ -25,7 +25,6 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.message import Event
-from nautilus_trader.core.nautilus_pyo3 import DataTransformer
 from nautilus_trader.model import NautilusRustDataType
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import CustomData
@@ -122,34 +121,38 @@ class ArrowSerializer:
 
         match data_cls:
             case nautilus_pyo3.OrderBookDelta:
-                batch_bytes = DataTransformer.pyo3_order_book_deltas_to_record_batch_bytes(data)
+                batch_bytes = nautilus_pyo3.order_book_deltas_to_arrow_record_batch_bytes(
+                    data,
+                )
             case nautilus_pyo3.OrderBookDepth10:
-                batch_bytes = DataTransformer.pyo3_order_book_depth10_to_record_batch_bytes(data)
+                batch_bytes = nautilus_pyo3.order_book_depth10_to_arrow_record_batch_bytes(
+                    data,
+                )
             case nautilus_pyo3.QuoteTick:
-                batch_bytes = DataTransformer.pyo3_quote_ticks_to_record_batch_bytes(data)
+                batch_bytes = nautilus_pyo3.quote_ticks_to_arrow_record_batch_bytes(data)
             case nautilus_pyo3.TradeTick:
-                batch_bytes = DataTransformer.pyo3_trade_ticks_to_record_batch_bytes(data)
+                batch_bytes = nautilus_pyo3.trade_ticks_to_arrow_record_batch_bytes(data)
             case nautilus_pyo3.Bar:
-                batch_bytes = DataTransformer.pyo3_bars_to_record_batch_bytes(data)
+                batch_bytes = nautilus_pyo3.bars_to_arrow_record_batch_bytes(data)
             case _:
                 if data_cls == OrderBookDelta or data_cls == OrderBookDeltas:
                     pyo3_deltas = OrderBookDelta.to_pyo3_list(data)
-                    batch_bytes = DataTransformer.pyo3_order_book_deltas_to_record_batch_bytes(
+                    batch_bytes = nautilus_pyo3.order_book_deltas_to_arrow_record_batch_bytes(
                         pyo3_deltas,
                     )
                 elif data_cls == QuoteTick:
                     pyo3_quotes = QuoteTick.to_pyo3_list(data)
-                    batch_bytes = DataTransformer.pyo3_quote_ticks_to_record_batch_bytes(
+                    batch_bytes = nautilus_pyo3.quote_ticks_to_arrow_record_batch_bytes(
                         pyo3_quotes,
                     )
                 elif data_cls == TradeTick:
                     pyo3_trades = TradeTick.to_pyo3_list(data)
-                    batch_bytes = DataTransformer.pyo3_trade_ticks_to_record_batch_bytes(
+                    batch_bytes = nautilus_pyo3.trade_ticks_to_arrow_record_batch_bytes(
                         pyo3_trades,
                     )
                 elif data_cls == Bar:
                     pyo3_bars = Bar.to_pyo3_list(data)
-                    batch_bytes = DataTransformer.pyo3_bars_to_record_batch_bytes(pyo3_bars)
+                    batch_bytes = nautilus_pyo3.bars_to_arrow_record_batch_bytes(pyo3_bars)
                 elif data_cls == OrderBookDepth10:
                     raise RuntimeError(
                         f"Unsupported Rust defined data type for catalog write, was `{data_cls}`. "

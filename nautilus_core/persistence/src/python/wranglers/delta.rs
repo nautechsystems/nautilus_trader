@@ -18,9 +18,8 @@ use std::{collections::HashMap, io::Cursor, str::FromStr};
 use datafusion::arrow::ipc::reader::StreamReader;
 use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::{data::delta::OrderBookDelta, identifiers::InstrumentId};
+use nautilus_serialization::arrow::DecodeFromRecordBatch;
 use pyo3::prelude::*;
-
-use crate::arrow::DecodeFromRecordBatch;
 
 #[pyclass()]
 pub struct OrderBookDeltaDataWrangler {
@@ -52,12 +51,12 @@ impl OrderBookDeltaDataWrangler {
     }
 
     #[getter]
-    fn price_precision(&self) -> u8 {
+    const fn price_precision(&self) -> u8 {
         self.price_precision
     }
 
     #[getter]
-    fn size_precision(&self) -> u8 {
+    const fn size_precision(&self) -> u8 {
         self.size_precision
     }
 

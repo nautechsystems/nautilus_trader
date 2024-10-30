@@ -13,15 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
-use pyo3::{exceptions::PyPermissionError, prelude::*};
+use nautilus_model::data::bar::Bar;
+use pyo3::prelude::*;
 
 use crate::{average::MovingAverageType, indicator::Indicator, momentum::dm::DirectionalMovement};
 
 #[pymethods]
 impl DirectionalMovement {
     #[new]
+    #[pyo3(signature = (period, ma_type=None))]
+    #[must_use]
     pub fn py_new(period: usize, ma_type: Option<MovingAverageType>) -> Self {
         Self::new(period, ma_type)
     }
@@ -38,7 +39,7 @@ impl DirectionalMovement {
 
     #[getter]
     #[pyo3(name = "period")]
-    fn py_period(&self) -> usize {
+    const fn py_period(&self) -> usize {
         self.period
     }
 
@@ -50,19 +51,19 @@ impl DirectionalMovement {
 
     #[getter]
     #[pyo3(name = "pos")]
-    fn py_pos(&self) -> f64 {
+    const fn py_pos(&self) -> f64 {
         self.pos
     }
 
     #[getter]
     #[pyo3(name = "neg")]
-    fn py_neg(&self) -> f64 {
+    const fn py_neg(&self) -> f64 {
         self.neg
     }
 
     #[getter]
     #[pyo3(name = "initialized")]
-    fn py_initialized(&self) -> bool {
+    const fn py_initialized(&self) -> bool {
         self.initialized
     }
 

@@ -20,34 +20,28 @@ use std::{
 };
 
 use nautilus_core::{
-    nanos::UnixNanos,
     python::{serialization::from_dict_pyo3, to_pyvalue_err},
     serialization::Serializable,
 };
-use pyo3::{
-    prelude::*,
-    pyclass::CompareOp,
-    types::{PyDict, PyLong, PyString, PyTuple},
-};
+use pyo3::{prelude::*, pyclass::CompareOp, types::PyDict};
 use ustr::Ustr;
 
-use super::data_to_pycapsule;
 use crate::{
-    data::{status::InstrumentStatus, Data},
-    enums::{FromU16, FromU8, MarketStatusAction, PriceType},
+    data::status::InstrumentStatus,
+    enums::{FromU16, MarketStatusAction},
     identifiers::InstrumentId,
     python::common::PY_MODULE_MODEL,
-    types::{price::Price, quantity::Quantity},
 };
 
 impl InstrumentStatus {
     /// Create a new [`QuoteTick`] extracted from the given [`PyAny`].
-    pub fn from_pyobject(obj: &Bound<PyAny>) -> PyResult<Self> {
-        let instrument_id_obj: &PyAny = obj.getattr("instrument_id")?.extract()?;
-        let instrument_id_str = instrument_id_obj.getattr("value")?.extract()?;
-        let instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
+    pub fn from_pyobject(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let instrument_id_obj: Bound<'_, PyAny> = obj.getattr("instrument_id")?.extract()?;
+        let instrument_id_str: String = instrument_id_obj.getattr("value")?.extract()?;
+        let instrument_id =
+            InstrumentId::from_str(instrument_id_str.as_str()).map_err(to_pyvalue_err)?;
 
-        let action_obj: &PyAny = obj.getattr("action")?.extract()?;
+        let action_obj: Bound<'_, PyAny> = obj.getattr("action")?.extract()?;
         let action_u16: u16 = action_obj.getattr("value")?.extract()?;
         let action = MarketStatusAction::from_u16(action_u16).unwrap();
 
@@ -55,18 +49,11 @@ impl InstrumentStatus {
         let ts_init: u64 = obj.getattr("ts_init")?.extract()?;
 
         let reason_str: Option<String> = obj.getattr("reason")?.extract()?;
-        let reason = if let Some(reason_str) = reason_str {
-            Some(Ustr::from(&reason_str))
-        } else {
-            None
-        };
+        let reason = reason_str.map(|reason_str| Ustr::from(&reason_str));
 
         let trading_event_str: Option<String> = obj.getattr("trading_event")?.extract()?;
-        let trading_event = if let Some(trading_event_str) = trading_event_str {
-            Some(Ustr::from(&trading_event_str))
-        } else {
-            None
-        };
+        let trading_event =
+            trading_event_str.map(|trading_event_str| Ustr::from(&trading_event_str));
 
         let is_trading: Option<bool> = obj.getattr("is_trading")?.extract()?;
         let is_quoting: Option<bool> = obj.getattr("is_quoting")?.extract()?;
@@ -90,6 +77,8 @@ impl InstrumentStatus {
 #[pymethods]
 impl InstrumentStatus {
     #[new]
+    #[pyo3(signature = (instrument_id, action, ts_event, ts_init, reason=None, trading_event=None, is_trading=None, is_quoting=None, is_short_sell_restricted=None))]
+    #[allow(clippy::too_many_arguments)]
     fn py_new(
         instrument_id: InstrumentId,
         action: MarketStatusAction,
@@ -223,7 +212,7 @@ impl InstrumentStatus {
         // Serialize object to JSON bytes
         let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
         // Parse JSON into a Python dictionary
-        let py_dict: Py<PyDict> = PyModule::import(py, "json")?
+        let py_dict: Py<PyDict> = PyModule::import_bound(py, "json")?
             .call_method("loads", (json_str,), None)?
             .extract()?;
         Ok(py_dict)
@@ -277,11 +266,7 @@ mod tests {
     use pyo3::{IntoPy, Python};
     use rstest::rstest;
 
-    use crate::data::{
-        quote::QuoteTick,
-        status::InstrumentStatus,
-        stubs::{quote_ethusdt_binance, stub_instrument_status},
-    };
+    use crate::data::{status::InstrumentStatus, stubs::stub_instrument_status};
 
     #[rstest]
     fn test_as_dict(stub_instrument_status: InstrumentStatus) {

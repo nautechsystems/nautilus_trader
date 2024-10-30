@@ -106,7 +106,7 @@ impl BookOrder {
         // Serialize object to JSON bytes
         let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
         // Parse JSON into a Python dictionary
-        let py_dict: Py<PyDict> = PyModule::import(py, "json")?
+        let py_dict: Py<PyDict> = PyModule::import_bound(py, "json")?
             .call_method("loads", (json_str,), None)?
             .extract()?;
         Ok(py_dict)

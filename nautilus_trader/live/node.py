@@ -263,7 +263,7 @@ class TradingNode:
         self._builder.build_exec_clients(self._config.exec_clients)
         self._is_built = True
 
-    def run(self) -> None:
+    def run(self, raise_exception=False) -> None:
         """
         Start and run the trading node.
         """
@@ -274,6 +274,9 @@ class TradingNode:
                 self.kernel.loop.run_until_complete(self.run_async())
         except RuntimeError as e:
             self.kernel.logger.exception("Error on run", e)
+
+            if raise_exception:
+                raise e
 
     def publish_bus_message(self, bus_msg: nautilus_pyo3.BusMessage) -> None:
         """

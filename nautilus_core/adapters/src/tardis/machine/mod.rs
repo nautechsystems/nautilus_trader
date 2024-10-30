@@ -54,6 +54,17 @@ pub struct InstrumentMiniInfo {
     pub size_precision: u8,
 }
 
+impl InstrumentMiniInfo {
+    #[must_use]
+    pub const fn new(instrument_id: InstrumentId, price_precision: u8, size_precision: u8) -> Self {
+        Self {
+            instrument_id,
+            price_precision,
+            size_precision,
+        }
+    }
+}
+
 /// The options that can be specified for calling Tardis Machine Server's replay-normalized.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -222,7 +233,6 @@ async fn stream_from_websocket(
                             yield Err(Error::ConnectionClosed { reason });
                         } else {
                             tracing::debug!("Connection closed normally: {reason}");
-                            yield Err(Error::ConnectionClosed { reason });
                         }
                         break;
                     }
@@ -291,9 +301,7 @@ async fn heartbeat(
 
         while count > 0 {
             retry_interval.tick().await;
-            if let Err(e) = sender.send(tungstenite::Message::Ping(vec![])).await {
-                tracing::error!("Failed to send PING message: {e}");
-            }
+            let _ = sender.send(tungstenite::Message::Ping(vec![])).await;
             count -= 1;
         }
     }

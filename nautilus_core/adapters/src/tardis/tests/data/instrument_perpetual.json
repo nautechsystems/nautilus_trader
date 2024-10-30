@@ -1,0 +1,18 @@
+{
+  "id": "XBTUSD",
+  "datasetId": "XBTUSD",
+  "exchange": "bitmex",
+  "baseCurrency": "BTC",
+  "quoteCurrency": "USD",
+  "type": "perpetual",
+  "active": true,
+  "availableSince": "2019-03-30T00:00:00.000Z",
+  "priceIncrement": 0.5,
+  "amountIncrement": 1,
+  "minTradeAmount": 1,
+  "makerFee": -0.00025,
+  "takerFee": 0.00075,
+  "inverse": true,
+  "contractType": "inverse_perpetual",
+  "contractMultiplier": 1
+}

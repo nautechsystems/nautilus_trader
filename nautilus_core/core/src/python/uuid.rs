@@ -35,6 +35,7 @@ impl UUID4 {
     /// If a string value is provided, it attempts to parse it into a UUID.
     /// If no value is provided, a new random UUID is generated.
     #[new]
+    #[pyo3(signature = (value=None))]
     fn py_new(value: Option<&str>) -> PyResult<Self> {
         match value {
             Some(val) => Self::from_str(val).map_err(to_pyvalue_err),
@@ -44,7 +45,7 @@ impl UUID4 {
 
     /// Sets the state of the `UUID4` instance during unpickling.
     fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        let bytes: &PyBytes = state.extract(py)?;
+        let bytes: &Bound<'_, PyBytes> = state.downcast_bound::<PyBytes>(py)?;
         let slice = bytes.as_bytes();
 
         if slice.len() != UUID4_LEN {
@@ -59,14 +60,14 @@ impl UUID4 {
 
     /// Gets the state of the `UUID4` instance for pickling.
     fn __getstate__(&self, _py: Python) -> PyResult<PyObject> {
-        Ok(PyBytes::new(_py, &self.value).to_object(_py))
+        Ok(PyBytes::new_bound(_py, &self.value).to_object(_py))
     }
 
     /// Reduces the `UUID4` instance for pickling.
     fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
-        let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
+        let safe_constructor = py.get_type_bound::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+        Ok((safe_constructor, PyTuple::empty_bound(py), state).to_object(py))
     }
 
     /// A safe constructor used during unpickling to ensure the correct initialization of `UUID4`.
@@ -93,7 +94,7 @@ impl UUID4 {
 
     /// Returns a detailed string representation of the `UUID4` instance.
     fn __repr__(&self) -> String {
-        format!("{:?}", self)
+        format!("{self:?}")
     }
 
     /// Returns the `UUID4` as a string.

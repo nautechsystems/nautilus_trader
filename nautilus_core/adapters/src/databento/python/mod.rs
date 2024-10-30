@@ -15,8 +15,6 @@
 
 //! Python bindings from `pyo3`.
 
-#![allow(warnings)] // non-local `impl` definition, temporary allow until pyo3 upgrade
-
 pub mod enums;
 pub mod historical;
 pub mod live;
@@ -27,7 +25,7 @@ use pyo3::prelude::*;
 
 /// Loaded as nautilus_pyo3.databento
 #[pymodule]
-pub fn databento(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub fn databento(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<super::enums::DatabentoStatisticType>()?;
     m.add_class::<super::enums::DatabentoStatisticUpdateAction>()?;
     m.add_class::<super::types::DatabentoPublisher>()?;

@@ -57,13 +57,13 @@ pub fn py_nanos_to_secs(nanos: u64) -> f64 {
 
 #[must_use]
 #[pyfunction(name = "nanos_to_millis")]
-pub fn py_nanos_to_millis(nanos: u64) -> u64 {
+pub const fn py_nanos_to_millis(nanos: u64) -> u64 {
     nanos_to_millis(nanos)
 }
 
 #[must_use]
 #[pyfunction(name = "nanos_to_micros")]
-pub fn py_nanos_to_micros(nanos: u64) -> u64 {
+pub const fn py_nanos_to_micros(nanos: u64) -> u64 {
     nanos_to_micros(nanos)
 }
 

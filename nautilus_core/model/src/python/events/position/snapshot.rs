@@ -13,21 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{
-    python::{serialization::from_dict_pyo3, to_pyvalue_err},
-    uuid::UUID4,
-};
+use nautilus_core::python::serialization::from_dict_pyo3;
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
-use crate::{
-    enums::{LiquiditySide, OrderSide, OrderType},
-    events::{order::OrderFilled, position::snapshot::PositionSnapshot},
-    identifiers::{
-        AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
-        VenueOrderId,
-    },
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
-};
+use crate::events::position::snapshot::PositionSnapshot;
 
 #[pymethods]
 impl PositionSnapshot {

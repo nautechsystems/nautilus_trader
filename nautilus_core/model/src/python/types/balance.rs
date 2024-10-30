@@ -16,7 +16,7 @@
 use std::str::FromStr;
 
 use nautilus_core::python::to_pyvalue_err;
-use pyo3::{basic::CompareOp, exceptions::PyValueError, prelude::*, types::PyDict};
+use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::{
     identifiers::InstrumentId,
@@ -52,16 +52,16 @@ impl AccountBalance {
 
     #[staticmethod]
     #[pyo3(name = "from_dict")]
-    pub fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-        let dict = values.as_ref(py);
-        let currency: &str = dict.get_item("currency")?.unwrap().extract()?;
-        let total_str: &str = dict.get_item("total")?.unwrap().extract()?;
+    pub fn py_from_dict(values: &Bound<'_, PyDict>) -> PyResult<Self> {
+        let dict = values.as_ref();
+        let currency: String = dict.get_item("currency")?.extract()?;
+        let total_str: String = dict.get_item("total")?.extract()?;
         let total: f64 = total_str.parse::<f64>().unwrap();
-        let free_str: &str = dict.get_item("free")?.unwrap().extract()?;
+        let free_str: String = dict.get_item("free")?.extract()?;
         let free: f64 = free_str.parse::<f64>().unwrap();
-        let locked_str: &str = dict.get_item("locked")?.unwrap().extract()?;
+        let locked_str: String = dict.get_item("locked")?.extract()?;
         let locked: f64 = locked_str.parse::<f64>().unwrap();
-        let currency = Currency::from_str(currency).map_err(to_pyvalue_err)?;
+        let currency = Currency::from_str(currency.as_str()).map_err(to_pyvalue_err)?;
         Self::new_checked(
             Money::new(total, currency),
             Money::new(locked, currency),
@@ -72,7 +72,7 @@ impl AccountBalance {
 
     #[pyo3(name = "to_dict")]
     pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let dict = PyDict::new(py);
+        let dict = PyDict::new_bound(py);
         dict.set_item("type", stringify!(AccountBalance))?;
         dict.set_item(
             "total",
@@ -127,26 +127,26 @@ impl MarginBalance {
 
     #[staticmethod]
     #[pyo3(name = "from_dict")]
-    pub fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-        let dict = values.as_ref(py);
-        let currency: &str = dict.get_item("currency")?.unwrap().extract()?;
-        let initial_str: &str = dict.get_item("initial")?.unwrap().extract()?;
+    pub fn py_from_dict(values: &Bound<'_, PyDict>) -> PyResult<Self> {
+        let dict = values.as_ref();
+        let currency: String = dict.get_item("currency")?.extract()?;
+        let initial_str: String = dict.get_item("initial")?.extract()?;
         let initial: f64 = initial_str.parse::<f64>().unwrap();
-        let maintenance_str: &str = dict.get_item("maintenance")?.unwrap().extract()?;
+        let maintenance_str: String = dict.get_item("maintenance")?.extract()?;
         let maintenance: f64 = maintenance_str.parse::<f64>().unwrap();
-        let instrument_id_str: &str = dict.get_item("instrument_id")?.unwrap().extract()?;
-        let currency = Currency::from_str(currency).map_err(to_pyvalue_err)?;
+        let instrument_id_str: String = dict.get_item("instrument_id")?.extract()?;
+        let currency = Currency::from_str(currency.as_str()).map_err(to_pyvalue_err)?;
         let account_balance = Self::new(
             Money::new(initial, currency),
             Money::new(maintenance, currency),
-            InstrumentId::from(instrument_id_str),
+            InstrumentId::from(instrument_id_str.as_str()),
         );
         Ok(account_balance)
     }
 
     #[pyo3(name = "to_dict")]
     pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let dict = PyDict::new(py);
+        let dict = PyDict::new_bound(py);
         dict.set_item("type", stringify!(MarginBalance))?;
         dict.set_item(
             "initial",

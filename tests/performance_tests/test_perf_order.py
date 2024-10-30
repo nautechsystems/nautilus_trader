@@ -27,7 +27,6 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 class TestOrderPerformance:
     def setup(self):
-        # Fixture Setup
         self.generator = ClientOrderIdGenerator(
             trader_id=TraderId("TRADER-001"),
             strategy_id=StrategyId("S-001"),
@@ -41,36 +40,21 @@ class TestOrderPerformance:
         )
 
     def test_order_id_generator(self, benchmark):
-        benchmark.pedantic(
-            target=self.generator.generate,
-            iterations=100_000,
-            rounds=1,
-        )
-        # ~0.0ms / ~2.9μs / 2894ns minimum of 100,000 runs @ 1 iteration each run.
+        benchmark(self.generator.generate)
 
     def test_market_order_creation(self, benchmark):
-        benchmark.pedantic(
-            target=self.order_factory.market,
-            args=(
-                TestIdStubs.audusd_id(),
-                OrderSide.BUY,
-                Quantity.from_int(100_000),
-            ),
-            iterations=10_000,
-            rounds=1,
+        benchmark(
+            self.order_factory.market,
+            TestIdStubs.audusd_id(),
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
         )
-        # ~0.0ms / ~10.7μs / 10682ns minimum of 10,000 runs @ 1 iteration each run.
 
     def test_limit_order_creation(self, benchmark):
-        benchmark.pedantic(
-            target=self.order_factory.limit,
-            args=(
-                TestIdStubs.audusd_id(),
-                OrderSide.BUY,
-                Quantity.from_int(100_000),
-                Price.from_str("0.80010"),
-            ),
-            iterations=10_000,
-            rounds=1,
+        benchmark(
+            self.order_factory.limit,
+            TestIdStubs.audusd_id(),
+            OrderSide.BUY,
+            Quantity.from_int(100_000),
+            Price.from_str("0.80010"),
         )
-        # ~0.0ms / ~14.5μs / 14469ns minimum of 10,000 runs @ 1 iteration each run.

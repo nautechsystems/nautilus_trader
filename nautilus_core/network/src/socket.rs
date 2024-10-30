@@ -23,12 +23,8 @@ use std::{
     time::Duration,
 };
 
-use nautilus_core::python::to_pyruntime_err;
+use nautilus_cryptography::providers::install_cryptographic_provider;
 use pyo3::prelude::*;
-use rustls::{
-    crypto::{aws_lc_rs, ring, CryptoProvider},
-    ClientConfig, RootCertStore,
-};
 use tokio::{
     io::{split, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf},
     net::TcpStream,
@@ -61,7 +57,7 @@ pub struct SocketConfig {
     /// The sequence of bytes which separates lines.
     pub suffix: Vec<u8>,
     /// The Python function to handle incoming messages.
-    pub handler: PyObject,
+    pub handler: Arc<PyObject>,
     /// The optional heartbeat with period and beat message.
     pub heartbeat: Option<(u64, Vec<u8>)>,
 }
@@ -94,14 +90,7 @@ struct SocketClientInner {
 
 impl SocketClientInner {
     pub async fn connect_url(config: SocketConfig) -> Result<Self, Error> {
-        if CryptoProvider::get_default().is_none() {
-            tracing::debug!("Installing `ring` cryptographic provider");
-            // An error can occur on install if there is a race condition with another component
-            match ring::default_provider().install_default() {
-                Ok(_) => tracing::debug!("Cryptographic provider installed successfully"),
-                Err(e) => tracing::debug!("Error installing cryptographic provider: {e:?}"),
-            }
-        }
+        install_cryptographic_provider();
 
         let SocketConfig {
             url,
@@ -142,7 +131,7 @@ impl SocketClientInner {
     #[must_use]
     pub fn spawn_read_task(
         mut reader: TcpReader,
-        handler: PyObject,
+        handler: Arc<PyObject>,
         suffix: Vec<u8>,
     ) -> task::JoinHandle<()> {
         // Keep receiving messages from socket pass them as arguments to handler
@@ -162,7 +151,7 @@ impl SocketClientInner {
                     }
                     // Received bytes of data
                     Ok(bytes) => {
-                        tracing::debug!("Received {bytes} bytes of data");
+                        tracing::trace!("Received <binary> {bytes} bytes");
 
                         // While received data has a line break
                         // drain it and pass it to the handler
@@ -351,7 +340,7 @@ impl SocketClient {
         })
         .await
         {
-            Ok(_) => {
+            Ok(()) => {
                 tracing::debug!("Controller task finished");
             }
             Err(_) => {

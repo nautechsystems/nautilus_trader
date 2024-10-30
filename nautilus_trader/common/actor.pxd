@@ -231,6 +231,16 @@ cdef class Actor(Component):
         ClientId client_id=*,
         callback=*,
     )
+    cpdef UUID4 request_aggregated_bars(
+        self,
+        list bar_types,
+        datetime start=*,
+        datetime end=*,
+        bint update_existing_subscriptions=*,
+        bint include_external_data=*,
+        ClientId client_id=*,
+        callback=*,
+    )
     cpdef bint is_pending_request(self, UUID4 request_id)
     cpdef bint has_pending_requests(self)
     cpdef set pending_requests(self)
@@ -262,6 +272,7 @@ cdef class Actor(Component):
     cpdef void _handle_quote_ticks_response(self, DataResponse response)
     cpdef void _handle_trade_ticks_response(self, DataResponse response)
     cpdef void _handle_bars_response(self, DataResponse response)
+    cpdef void _handle_aggregated_bars_response(self, DataResponse response)
     cpdef void _finish_response(self, UUID4 request_id)
     cpdef void _handle_indicators_for_quote(self, list indicators, QuoteTick tick)
     cpdef void _handle_indicators_for_trade(self, list indicators, TradeTick tick)

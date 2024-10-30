@@ -17,7 +17,7 @@ from io import BytesIO
 
 import pyarrow as pa
 
-from nautilus_trader.core.nautilus_pyo3 import DataTransformer
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.data import OrderBookDelta
 
 
@@ -44,7 +44,7 @@ def test_legacy_deltas_to_record_batch_reader() -> None:
     ]
 
     # Act
-    batch_bytes = DataTransformer.pyobjects_to_record_batch_bytes(ticks)
+    batch_bytes = nautilus_pyo3.pyobjects_to_arrow_record_batch_bytes(ticks)
     reader = pa.ipc.open_stream(BytesIO(batch_bytes))
 
     # Assert

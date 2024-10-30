@@ -34,6 +34,7 @@ use crate::{
 impl FuturesSpread {
     #[allow(clippy::too_many_arguments)]
     #[new]
+    #[pyo3(signature = (id, raw_symbol, asset_class, underlying, strategy_type, activation_ns, expiration_ns, currency, price_precision, price_increment, multiplier, lot_size, ts_event, ts_init, margin_init=None, margin_maint=None, max_quantity=None, min_quantity=None, max_price=None, min_price=None, exchange=None))]
     fn py_new(
         id: InstrumentId,
         raw_symbol: Symbol,
@@ -230,7 +231,7 @@ impl FuturesSpread {
     #[getter]
     #[pyo3(name = "info")]
     fn py_info(&self, py: Python<'_>) -> PyResult<PyObject> {
-        Ok(PyDict::new(py).into())
+        Ok(PyDict::new_bound(py).into())
     }
 
     #[getter]
@@ -253,7 +254,7 @@ impl FuturesSpread {
 
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let dict = PyDict::new(py);
+        let dict = PyDict::new_bound(py);
         dict.set_item("type", stringify!(FuturesSpread))?;
         dict.set_item("id", self.id.to_string())?;
         dict.set_item("raw_symbol", self.raw_symbol.to_string())?;
@@ -271,7 +272,7 @@ impl FuturesSpread {
         dict.set_item("lot_size", self.lot_size.to_string())?;
         dict.set_item("margin_init", self.margin_init.to_string())?;
         dict.set_item("margin_maint", self.margin_maint.to_string())?;
-        dict.set_item("info", PyDict::new(py))?;
+        dict.set_item("info", PyDict::new_bound(py))?;
         dict.set_item("ts_event", self.ts_event.as_u64())?;
         dict.set_item("ts_init", self.ts_init.as_u64())?;
         match self.max_quantity {

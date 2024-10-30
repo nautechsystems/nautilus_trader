@@ -3,18 +3,35 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added aggregation of bars from historical data (#2002), thanks @faysou
+- Added monthly and weekly bar aggregations (#2025), thanks @faysou
+- Added `raise_exception` optional parameter to `TradingNode.run` (#2021), thanks @faysou
+- Added `OrderBook.get_avg_px_qty_for_exposure` in Rust (#1893), thanks @elementace
+- Added timeouts to Interactive Brokers adapter configurations (#2026), thanks @rsmb7z
+- Upgraded Polymarket WebSocket API to new version
 
 ### Internal Improvements
+- Ported analysis subpackage to Rust (#2016), thanks @Pushkarm029
 - Improved Postgres testing (#2018), thanks @filipmacek
+- Improved Redis version parsing to support truncated versions (improves compatibility with Redis-compliant databases)
+- Refined Arrow serialization (record batch functions now also available in Rust)
 - Refined core `Bar` API to remove unnecessary unwraps
+- Standardized network client logging
+- Fixed all pyo3 deprecations for API breaking changes
+- Fixed all clippy warning lints for PyO3 changes (#2030), thanks @Pushkarm029
+- Upgraded `pyo3` crate to v0.22.5
+- Upgraded `pyo3-async-runtimes` crate to v0.22.0
 - Upgraded `tokio` crate to v1.41.0
 
 ### Breaking Changes
+- Removed pyo3 `DataTransformer` (was being used for namespacing, so refactored to separate functions)
 - Moved `TEST_DATA_DIR` constant to `nautilus_trader` module (from `tests`)
 
 ### Fixes
-- Upgraded Polymarket WebSocket data API to new version
+- Fixed use of Redis `KEYS` command which, is unsupported in cluster environments (replaced with `SCAN` for compatibility)
+- Fixed decoding fill HTTP messages for dYdX (#2022), thanks @davidsblom
+- Fixed account balance report for dYdX (#2024), thanks @davidsblom
+- Fixed Interactive Brokers market data client subscription log message (#2012), thanks @marcodambros
 
 ---
 

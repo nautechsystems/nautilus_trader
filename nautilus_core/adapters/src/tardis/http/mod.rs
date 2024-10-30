@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 pub mod client;
+pub mod parse;
 pub mod types;
 
 pub use crate::tardis::http::client::TardisHttpClient;

@@ -40,14 +40,14 @@ use crate::{
 
 impl OrderBookDelta {
     /// Create a new [`OrderBookDelta`] extracted from the given [`PyAny`].
-    pub fn from_pyobject(obj: &PyAny) -> PyResult<Self> {
-        let instrument_id_obj: &PyAny = obj.getattr("instrument_id")?.extract()?;
-        let instrument_id_str = instrument_id_obj.getattr("value")?.extract()?;
-        let instrument_id = InstrumentId::from_str(instrument_id_str)
+    pub fn from_pyobject(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let instrument_id_obj: Bound<'_, PyAny> = obj.getattr("instrument_id")?.extract()?;
+        let instrument_id_str: String = instrument_id_obj.getattr("value")?.extract()?;
+        let instrument_id = InstrumentId::from_str(instrument_id_str.as_str())
             .map_err(to_pyvalue_err)
             .unwrap();
 
-        let action_obj: &PyAny = obj.getattr("action")?.extract()?;
+        let action_obj: Bound<'_, PyAny> = obj.getattr("action")?.extract()?;
         let action_u8 = action_obj.getattr("value")?.extract()?;
         let action = BookAction::from_u8(action_u8).unwrap();
 
@@ -60,16 +60,16 @@ impl OrderBookDelta {
         let order: BookOrder = if order_pyobject.is_none() {
             NULL_ORDER
         } else {
-            let side_obj: &PyAny = order_pyobject.getattr("side")?.extract()?;
+            let side_obj: Bound<'_, PyAny> = order_pyobject.getattr("side")?.extract()?;
             let side_u8 = side_obj.getattr("value")?.extract()?;
             let side = OrderSide::from_u8(side_u8).unwrap();
 
-            let price_py: &PyAny = order_pyobject.getattr("price")?;
+            let price_py: Bound<'_, PyAny> = order_pyobject.getattr("price")?;
             let price_raw: i64 = price_py.getattr("raw")?.extract()?;
             let price_prec: u8 = price_py.getattr("precision")?.extract()?;
             let price = Price::from_raw(price_raw, price_prec);
 
-            let size_py: &PyAny = order_pyobject.getattr("size")?;
+            let size_py: Bound<'_, PyAny> = order_pyobject.getattr("size")?;
             let size_raw: u64 = size_py.getattr("raw")?.extract()?;
             let size_prec: u8 = size_py.getattr("precision")?.extract()?;
             let size = Quantity::from_raw(size_raw, size_prec);
@@ -204,8 +204,8 @@ impl OrderBookDelta {
 
     #[staticmethod]
     #[pyo3(name = "get_fields")]
-    fn py_get_fields(py: Python<'_>) -> PyResult<&PyDict> {
-        let py_dict = PyDict::new(py);
+    fn py_get_fields(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
+        let py_dict = PyDict::new_bound(py);
         for (k, v) in Self::get_fields() {
             py_dict.set_item(k, v)?;
         }
@@ -258,7 +258,7 @@ impl OrderBookDelta {
         // Serialize object to JSON bytes
         let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
         // Parse JSON into a Python dictionary
-        let py_dict: Py<PyDict> = PyModule::import(py, "json")?
+        let py_dict: Py<PyDict> = PyModule::import_bound(py, "json")?
             .call_method("loads", (json_str,), None)?
             .extract()?;
         Ok(py_dict)
@@ -320,7 +320,7 @@ mod tests {
 
         Python::with_gil(|py| {
             let delta_pyobject = delta.into_py(py);
-            let parsed_delta = OrderBookDelta::from_pyobject(delta_pyobject.as_ref(py)).unwrap();
+            let parsed_delta = OrderBookDelta::from_pyobject(delta_pyobject.bind(py)).unwrap();
             assert_eq!(parsed_delta, delta);
         });
     }

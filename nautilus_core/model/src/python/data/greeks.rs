@@ -125,6 +125,7 @@ impl BlackScholesGreeksResult {
 
 #[pyfunction]
 #[pyo3(name = "black_scholes_greeks")]
+#[allow(clippy::too_many_arguments)]
 pub fn py_black_scholes_greeks(
     s: f64,
     r: f64,
@@ -156,6 +157,7 @@ pub fn py_imply_vol(
 
 #[pyfunction]
 #[pyo3(name = "imply_vol_and_greeks")]
+#[allow(clippy::too_many_arguments)]
 pub fn py_imply_vol_and_greeks(
     s: f64,
     r: f64,

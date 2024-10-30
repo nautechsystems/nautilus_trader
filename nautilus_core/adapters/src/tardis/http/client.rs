@@ -15,9 +15,12 @@
 
 use std::{env, time::Duration};
 
-use nautilus_common::version::USER_AGENT;
+use chrono::Utc;
+use nautilus_core::{nanos::UnixNanos, version::USER_AGENT};
+use nautilus_model::instruments::any::InstrumentAny;
 
 use super::{
+    parse::parse_instrument_any,
     types::{InstrumentInfo, Response},
     TARDIS_BASE_URL,
 };
@@ -31,7 +34,9 @@ pub enum Error {
     /// An error when sending a request to the server.
     #[error("Error sending request: {0}")]
     Request(#[from] reqwest::Error),
-
+    /// An API error returned by Tardis.
+    #[error("Tardis API error {code}: {message}")]
+    ApiError { code: u64, message: String },
     /// An error when deserializing the response from the server.
     #[error("Error deserializing message: {0}")]
     Deserialization(#[from] serde_json::Error),
@@ -52,32 +57,40 @@ pub struct TardisHttpClient {
 impl TardisHttpClient {
     /// Creates a new [`TardisHttpClient`] instance.
     pub fn new(api_key: Option<&str>, base_url: Option<&str>, timeout_secs: Option<u64>) -> Self {
-        let api_key = api_key.map(ToString::to_string).unwrap_or_else(|| {
-            env::var("TARDIS_API_KEY").expect(
-                "API key must be provided or set in the 'TARDIS_API_KEY' environment variable",
-            )
-        });
+        let api_key = api_key
+            .map(std::string::ToString::to_string)
+            .unwrap_or_else(|| {
+                env::var("TARDIS_API_KEY").expect(
+                    "API key must be provided or set in the 'TARDIS_API_KEY' environment variable",
+                )
+            });
 
-        let timeout = timeout_secs
-            .map(Duration::from_secs)
-            .unwrap_or_else(|| Duration::from_secs(60));
+        let base_url = base_url.map_or_else(
+            || TARDIS_BASE_URL.to_string(),
+            std::string::ToString::to_string,
+        );
+
+        let timeout = timeout_secs.map_or_else(|| Duration::from_secs(60), Duration::from_secs);
 
         let client = reqwest::Client::builder()
-            .user_agent(USER_AGENT.clone())
+            .user_agent(USER_AGENT)
             .timeout(timeout)
             .build()
             .expect("Failed to create client");
 
         Self {
-            base_url: base_url.unwrap_or(TARDIS_BASE_URL).to_string(),
+            base_url,
             api_key,
             client,
         }
     }
 
-    /// Returns all instrument definitions for the given `exchange`.
+    /// Returns all Tardis instrument definitions for the given `exchange`.
     /// See <https://docs.tardis.dev/api/instruments-metadata-api>
-    pub async fn instruments(&self, exchange: Exchange) -> Result<Response<Vec<InstrumentInfo>>> {
+    pub async fn instruments_info(
+        &self,
+        exchange: Exchange,
+    ) -> Result<Response<Vec<InstrumentInfo>>> {
         Ok(self
             .client
             .get(format!("{}/instruments/{exchange}", &self.base_url))
@@ -88,9 +101,9 @@ impl TardisHttpClient {
             .await?)
     }
 
-    /// Returns the instrument definition for a given `exchange` and `symbol`.
+    /// Returns the Tardis instrument definition for a given `exchange` and `symbol`.
     /// See <https://docs.tardis.dev/api/instruments-metadata-api#single-instrument-info-endpoint>
-    pub async fn instrument(
+    pub async fn instrument_info(
         &self,
         exchange: Exchange,
         symbol: String,
@@ -106,5 +119,44 @@ impl TardisHttpClient {
             .await?
             .json::<Response<InstrumentInfo>>()
             .await?)
+    }
+
+    /// Returns all Nautilus instrument definitions for the given `exchange`.
+    /// See <https://docs.tardis.dev/api/instruments-metadata-api>
+    pub async fn instruments(&self, exchange: Exchange) -> Result<Vec<InstrumentAny>> {
+        let response = self.instruments_info(exchange).await?;
+
+        let infos = match response {
+            Response::Success(data) => data,
+            Response::Error { code, message } => {
+                return Err(Error::ApiError { code, message });
+            }
+        };
+
+        let now = Utc::now();
+        let ts_init = UnixNanos::from(now.timestamp_nanos_opt().expect("Invalid timestamp") as u64);
+
+        infos
+            .into_iter()
+            .map(|info| Ok(parse_instrument_any(info, ts_init)))
+            .collect()
+    }
+
+    /// Returns a Nautilus instrument definition for the given `exchange` and `symbol`.
+    /// See <https://docs.tardis.dev/api/instruments-metadata-api>
+    pub async fn instrument(&self, exchange: Exchange, symbol: String) -> Result<InstrumentAny> {
+        let response = self.instrument_info(exchange, symbol).await?;
+
+        let info = match response {
+            Response::Success(data) => data,
+            Response::Error { code, message } => {
+                return Err(Error::ApiError { code, message });
+            }
+        };
+
+        let now = Utc::now();
+        let ts_init = UnixNanos::from(now.timestamp_nanos_opt().expect("Invalid timestamp") as u64);
+
+        Ok(parse_instrument_any(info, ts_init))
     }
 }

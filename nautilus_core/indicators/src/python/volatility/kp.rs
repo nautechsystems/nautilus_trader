@@ -13,16 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
-use pyo3::{exceptions::PyPermissionError, prelude::*};
+use nautilus_model::data::bar::Bar;
+use pyo3::prelude::*;
 
-use super::atr;
 use crate::{average::MovingAverageType, indicator::Indicator, volatility::kp::KeltnerPosition};
 
 #[pymethods]
 impl KeltnerPosition {
     #[new]
+    #[pyo3(signature = (period, k_multiplier, ma_type=None, ma_type_atr=None, use_previous=None, atr_floor=None))]
+    #[must_use]
     pub fn py_new(
         period: usize,
         k_multiplier: f64,
@@ -53,25 +53,25 @@ impl KeltnerPosition {
 
     #[getter]
     #[pyo3(name = "period")]
-    fn py_period(&self) -> usize {
+    const fn py_period(&self) -> usize {
         self.period
     }
 
     #[getter]
     #[pyo3(name = "k_multiplier")]
-    fn py_k_multiplier(&self) -> f64 {
+    const fn py_k_multiplier(&self) -> f64 {
         self.k_multiplier
     }
 
     #[getter]
     #[pyo3(name = "use_previous")]
-    fn py_use_previous(&self) -> bool {
+    const fn py_use_previous(&self) -> bool {
         self.use_previous
     }
 
     #[getter]
     #[pyo3(name = "atr_floor")]
-    fn py_atr_floor(&self) -> f64 {
+    const fn py_atr_floor(&self) -> f64 {
         self.atr_floor
     }
 
@@ -83,13 +83,13 @@ impl KeltnerPosition {
 
     #[getter]
     #[pyo3(name = "value")]
-    fn py_value(&self) -> f64 {
+    const fn py_value(&self) -> f64 {
         self.value
     }
 
     #[getter]
     #[pyo3(name = "initialized")]
-    fn py_initialized(&self) -> bool {
+    const fn py_initialized(&self) -> bool {
         self.initialized
     }
 

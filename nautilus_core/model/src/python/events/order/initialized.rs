@@ -15,11 +15,7 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::{
-    nanos::UnixNanos,
-    python::{serialization::from_dict_pyo3, to_pyvalue_err},
-    uuid::UUID4,
-};
+use nautilus_core::{nanos::UnixNanos, python::serialization::from_dict_pyo3, uuid::UUID4};
 use pyo3::{
     basic::CompareOp,
     prelude::*,
@@ -41,6 +37,7 @@ use crate::{
 impl OrderInitialized {
     #[allow(clippy::too_many_arguments)]
     #[new]
+    #[pyo3(signature = (trader_id, strategy_id, instrument_id, client_order_id, order_side, order_type, quantity, time_in_force, post_only, reduce_only, quote_quantity, reconciliation, event_id, ts_event, ts_init, price=None, trigger_price=None, trigger_type=None, limit_offset=None, trailing_offset=None, trailing_offset_type=None, expire_time=None, display_qty=None, emulation_trigger=None, trigger_instrument_id=None, contingency_type=None, order_list_id=None, linked_order_ids=None, parent_order_id=None, exec_algorithm_id=None, exec_algorithm_params=None, exec_spawn_id=None, tags=None))]
     fn py_new(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -109,7 +106,7 @@ impl OrderInitialized {
             exec_algorithm_id,
             exec_algorithm_params.map(str_hashmap_to_ustr),
             exec_spawn_id,
-            tags.map(|vec| vec.iter().map(|s| Ustr::from(&s)).collect()),
+            tags.map(|vec| vec.iter().map(|s| Ustr::from(s)).collect()),
         )
     }
 
@@ -143,8 +140,8 @@ impl OrderInitialized {
 
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let dict = PyDict::new(py);
-        dict.set_item("type", stringify!(OrderInitiliazed));
+        let dict = PyDict::new_bound(py);
+        dict.set_item("type", stringify!(OrderInitiliazed))?;
         dict.set_item("trader_id", self.trader_id.to_string())?;
         dict.set_item("strategy_id", self.strategy_id.to_string())?;
         dict.set_item("instrument_id", self.instrument_id.to_string())?;
@@ -158,7 +155,7 @@ impl OrderInitialized {
         dict.set_item("quote_quantity", self.quote_quantity)?;
         dict.set_item("reconciliation", self.reconciliation)?;
         // TODO remove options as in legacy cython only
-        let options = PyDict::new(py);
+        let options = PyDict::new_bound(py);
         if self.order_type == OrderType::StopMarket {
             options.set_item("trigger_type", self.trigger_type.map(|x| x.to_string()))?;
             options.set_item("trigger_price", self.trigger_price.map(|x| x.to_string()))?;
@@ -228,7 +225,7 @@ impl OrderInitialized {
         }
         match &self.linked_order_ids {
             Some(linked_order_ids) => {
-                let py_linked_order_ids = PyList::empty(py);
+                let py_linked_order_ids = PyList::empty_bound(py);
                 for linked_order_id in linked_order_ids {
                     py_linked_order_ids.append(linked_order_id.to_string())?;
                 }
@@ -250,7 +247,7 @@ impl OrderInitialized {
         }
         match &self.exec_algorithm_params {
             Some(exec_algorithm_params) => {
-                let py_exec_algorithm_params = PyDict::new(py);
+                let py_exec_algorithm_params = PyDict::new_bound(py);
                 for (key, value) in exec_algorithm_params {
                     py_exec_algorithm_params.set_item(key.to_string(), value.to_string())?;
                 }

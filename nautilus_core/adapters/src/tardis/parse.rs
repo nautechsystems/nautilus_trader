@@ -18,9 +18,11 @@ use std::str::FromStr;
 use nautilus_core::{datetime::NANOSECONDS_IN_MICROSECOND, nanos::UnixNanos};
 use nautilus_model::{
     data::bar::BarSpecification,
-    enums::{AggressorSide, BarAggregation, BookAction, OrderSide, PriceType},
-    identifiers::InstrumentId,
+    enums::{AggressorSide, BarAggregation, BookAction, OptionKind, OrderSide, PriceType},
+    identifiers::{InstrumentId, Symbol, Venue},
 };
+
+use super::enums::{Exchange, OptionType};
 
 /// Parse an instrument ID from the given venue and symbol values.
 #[must_use]
@@ -28,6 +30,12 @@ pub fn parse_instrument_id(exchange: &str, symbol: &str) -> InstrumentId {
     let venue = exchange.split('-').next().unwrap_or(exchange);
     InstrumentId::from_str(&format!("{symbol}.{venue}").to_uppercase())
         .expect("Failed to parse `instrument_id`")
+}
+
+/// Parse an instrument ID from the given `symbol` and Tardis `exchange` values.
+#[must_use]
+pub fn parse_instrument_id_with_enum(symbol: &str, exchange: &Exchange) -> InstrumentId {
+    InstrumentId::new(Symbol::from(symbol), Venue::from(exchange.as_venue_str()))
 }
 
 /// Parse an order side from the given string.
@@ -47,6 +55,15 @@ pub fn parse_aggressor_side(value: &str) -> AggressorSide {
         "buy" => AggressorSide::Buyer,
         "sell" => AggressorSide::Seller,
         _ => AggressorSide::NoAggressor,
+    }
+}
+
+/// Parse an `option_kind` from the Tardis enum value.
+#[must_use]
+pub const fn parse_option_kind(value: OptionType) -> OptionKind {
+    match value {
+        OptionType::Call => OptionKind::Call,
+        OptionType::Put => OptionKind::Put,
     }
 }
 

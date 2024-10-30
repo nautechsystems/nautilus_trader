@@ -23,12 +23,12 @@ use crate::databento::enums::{DatabentoStatisticType, DatabentoStatisticUpdateAc
 #[pymethods]
 impl DatabentoStatisticType {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value).map_err(to_pyvalue_err)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value).map_err(to_pyvalue_err)
     }
 
-    fn __hash__(&self) -> isize {
+    const fn __hash__(&self) -> isize {
         *self as isize
     }
 
@@ -53,7 +53,7 @@ impl DatabentoStatisticType {
 
     #[getter]
     #[must_use]
-    pub fn value(&self) -> u8 {
+    pub const fn value(&self) -> u8 {
         *self as u8
     }
 
@@ -64,86 +64,86 @@ impl DatabentoStatisticType {
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
     #[classattr]
     #[pyo3(name = "OPENING_PRICE")]
-    fn py_opening_price() -> Self {
+    const fn py_opening_price() -> Self {
         Self::OpeningPrice
     }
 
     #[classattr]
     #[pyo3(name = "INDICATIVE_OPENING_PRICE")]
-    fn py_indicative_opening_price() -> Self {
+    const fn py_indicative_opening_price() -> Self {
         Self::IndicativeOpeningPrice
     }
 
     #[classattr]
     #[pyo3(name = "SETTLEMENT_PRICE")]
-    fn py_settlement_price() -> Self {
+    const fn py_settlement_price() -> Self {
         Self::SettlementPrice
     }
 
     #[classattr]
     #[pyo3(name = "TRADING_SESSION_LOW_PRICE")]
-    fn py_trading_session_low_price() -> Self {
+    const fn py_trading_session_low_price() -> Self {
         Self::TradingSessionLowPrice
     }
 
     #[classattr]
     #[pyo3(name = "TRADING_SESSION_HIGH_PRICE")]
-    fn py_trading_session_high_price() -> Self {
+    const fn py_trading_session_high_price() -> Self {
         Self::TradingSessionHighPrice
     }
 
     #[classattr]
     #[pyo3(name = "CLEARED_VOLUME")]
-    fn py_cleared_volume() -> Self {
+    const fn py_cleared_volume() -> Self {
         Self::ClearedVolume
     }
 
     #[classattr]
     #[pyo3(name = "LOWEST_OFFER")]
-    fn py_lowest_offer() -> Self {
+    const fn py_lowest_offer() -> Self {
         Self::LowestOffer
     }
 
     #[classattr]
     #[pyo3(name = "HIGHEST_BID")]
-    fn py_highest_bid() -> Self {
+    const fn py_highest_bid() -> Self {
         Self::HighestBid
     }
 
     #[classattr]
     #[pyo3(name = "OPEN_INTEREST")]
-    fn py_open_interest() -> Self {
+    const fn py_open_interest() -> Self {
         Self::OpenInterest
     }
 
     #[classattr]
     #[pyo3(name = "FIXING_PRICE")]
-    fn py_fixing_price() -> Self {
+    const fn py_fixing_price() -> Self {
         Self::FixingPrice
     }
 
     #[classattr]
     #[pyo3(name = "CLOSE_PRICE")]
-    fn py_close_price() -> Self {
+    const fn py_close_price() -> Self {
         Self::ClosePrice
     }
 
     #[classattr]
     #[pyo3(name = "NET_CHANGE")]
-    fn py_net_change() -> Self {
+    const fn py_net_change() -> Self {
         Self::NetChange
     }
 
     #[classattr]
     #[pyo3(name = "VWAP")]
-    fn py_vwap() -> Self {
+    const fn py_vwap() -> Self {
         Self::Vwap
     }
 }
@@ -151,12 +151,12 @@ impl DatabentoStatisticType {
 #[pymethods]
 impl DatabentoStatisticUpdateAction {
     #[new]
-    fn py_new(py: Python<'_>, value: &PyAny) -> PyResult<Self> {
-        let t = Self::type_object(py);
-        Self::py_from_str(t, value).map_err(to_pyvalue_err)
+    fn py_new(py: Python<'_>, value: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let t = Self::type_object_bound(py);
+        Self::py_from_str(&t, value).map_err(to_pyvalue_err)
     }
 
-    fn __hash__(&self) -> isize {
+    const fn __hash__(&self) -> isize {
         *self as isize
     }
 
@@ -181,7 +181,7 @@ impl DatabentoStatisticUpdateAction {
 
     #[getter]
     #[must_use]
-    pub fn value(&self) -> u8 {
+    pub const fn value(&self) -> u8 {
         *self as u8
     }
 
@@ -192,20 +192,20 @@ impl DatabentoStatisticUpdateAction {
 
     #[classmethod]
     #[pyo3(name = "from_str")]
-    fn py_from_str(_: &PyType, data: &PyAny) -> PyResult<Self> {
-        let data_str: &str = data.str().and_then(|s| s.extract())?;
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
         let tokenized = data_str.to_uppercase();
         Self::from_str(&tokenized).map_err(to_pyvalue_err)
     }
     #[classattr]
     #[pyo3(name = "ADDED")]
-    fn py_added() -> Self {
+    const fn py_added() -> Self {
         Self::Added
     }
 
     #[classattr]
     #[pyo3(name = "DELETED")]
-    fn py_deleted() -> Self {
+    const fn py_deleted() -> Self {
         Self::Deleted
     }
 }

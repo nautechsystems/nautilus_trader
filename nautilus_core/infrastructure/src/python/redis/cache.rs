@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
 use bytes::Bytes;
 use nautilus_core::{
     python::{to_pyruntime_err, to_pyvalue_err},
@@ -57,7 +55,7 @@ impl RedisCacheDatabase {
             Ok(result) => {
                 let vec_py_bytes = result
                     .into_iter()
-                    .map(|r| PyBytes::new(py, &r.as_ref()).into())
+                    .map(|r| PyBytes::new_bound(py, r.as_ref()).into())
                     .collect::<Vec<PyObject>>();
                 Ok(vec_py_bytes)
             }
@@ -78,6 +76,7 @@ impl RedisCacheDatabase {
     }
 
     #[pyo3(name = "delete")]
+    #[pyo3(signature = (key, payload=None))]
     fn py_delete(&mut self, key: String, payload: Option<Vec<Vec<u8>>>) -> PyResult<()> {
         let payload: Option<Vec<Bytes>> =
             payload.map(|vec| vec.into_iter().map(Bytes::from).collect());

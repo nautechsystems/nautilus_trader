@@ -32,9 +32,11 @@ pub mod datetime;
 pub mod message;
 pub mod nanos;
 pub mod parsing;
+pub mod paths;
 pub mod serialization;
 pub mod time;
 pub mod uuid;
+pub mod version;
 
 #[cfg(feature = "ffi")]
 pub mod ffi;

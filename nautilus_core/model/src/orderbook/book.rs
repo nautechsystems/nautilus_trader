@@ -247,6 +247,20 @@ impl OrderBook {
     }
 
     #[must_use]
+    pub fn get_avg_px_qty_for_exposure(
+        &self,
+        target_exposure: Quantity,
+        order_side: OrderSide,
+    ) -> (f64, f64, f64) {
+        let levels = match order_side.as_specified() {
+            OrderSideSpecified::Buy => &self.asks.levels,
+            OrderSideSpecified::Sell => &self.bids.levels,
+        };
+
+        analysis::get_avg_px_qty_for_exposure(target_exposure, levels)
+    }
+
+    #[must_use]
     pub fn get_quantity_for_price(&self, price: Price, order_side: OrderSide) -> f64 {
         let levels = match order_side.as_specified() {
             OrderSideSpecified::Buy => &self.asks.levels,
@@ -601,6 +615,41 @@ mod tests {
         assert_eq!(
             book.get_quantity_for_price(Price::from("0.990"), OrderSide::Sell),
             3.0
+        );
+    }
+
+    #[rstest]
+    fn test_get_price_for_exposure_no_market() {
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let book = OrderBook::new(instrument_id, BookType::L2_MBP);
+        let qty = Quantity::from(1);
+
+        assert_eq!(
+            book.get_avg_px_qty_for_exposure(qty, OrderSide::Buy),
+            (0.0, 0.0, 0.0)
+        );
+        assert_eq!(
+            book.get_avg_px_qty_for_exposure(qty, OrderSide::Sell),
+            (0.0, 0.0, 0.0)
+        );
+    }
+
+    #[rstest]
+    fn test_get_price_for_exposure(stub_depth10: OrderBookDepth10) {
+        let depth = stub_depth10;
+        let instrument_id = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let mut book = OrderBook::new(instrument_id, BookType::L2_MBP);
+        book.apply_depth(&depth);
+
+        let qty = Quantity::from(1);
+
+        assert_eq!(
+            book.get_avg_px_qty_for_exposure(qty, OrderSide::Buy),
+            (100.0, 10_000_000.0, 100.0)
+        );
+        assert_eq!(
+            book.get_avg_px_qty_for_exposure(qty, OrderSide::Sell),
+            (99.0, 10_101_010.0, 99.0)
         );
     }
 

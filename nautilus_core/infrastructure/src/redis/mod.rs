@@ -106,18 +106,17 @@ pub fn create_redis_connection(
     let client = redis::Client::open(redis_url)?;
     let mut con = client.get_connection_with_timeout(timeout)?;
 
-    let redis_version = get_redis_version(&mut con)?;
-    let con_msg = format!("Connected to redis v{redis_version}");
-    let version = Version::parse(&redis_version)?;
+    let version = get_redis_version(&mut con)?;
     let min_version = Version::parse(REDIS_MIN_VERSION)?;
+    let con_msg = format!("Connected to redis v{version}");
 
     if version >= min_version {
         tracing::info!(con_msg);
     } else {
         // TODO: Using `log` error here so that the message is displayed regardless of whether
         // the logging config has pyo3 enabled. Later we can standardize this to `tracing`.
-        log::error!("{con_msg}, but minimum supported verson {REDIS_MIN_VERSION}");
-    };
+        log::error!("{con_msg}, but minimum supported version is {REDIS_MIN_VERSION}");
+    }
 
     Ok(con)
 }
@@ -153,23 +152,31 @@ pub fn get_stream_key(
     stream_key
 }
 
-/// Parse the Redis database version with the given connection.
-pub fn get_redis_version(conn: &mut Connection) -> anyhow::Result<String> {
+/// Parses the Redis version from the "INFO" command output.
+pub fn get_redis_version(conn: &mut Connection) -> anyhow::Result<Version> {
     let info: String = redis::cmd("INFO").query(conn)?;
-    parse_redis_version(&info)
+    let version_str = info
+        .lines()
+        .find_map(|line| {
+            if line.starts_with("redis_version:") {
+                line.split(':').nth(1).map(|s| s.trim().to_string())
+            } else {
+                None
+            }
+        })
+        .expect("Redis version not available");
+
+    parse_redis_version(&version_str)
 }
 
-fn parse_redis_version(info: &str) -> anyhow::Result<String> {
-    for line in info.lines() {
-        if line.starts_with("redis_version:") {
-            let version = line
-                .split(':')
-                .nth(1)
-                .ok_or(anyhow::anyhow!("Version not found"))?;
-            return Ok(version.trim().to_string());
-        }
-    }
-    Err(anyhow::anyhow!("redis version not found in info"))
+fn parse_redis_version(version_str: &str) -> anyhow::Result<Version> {
+    let mut components = version_str.split('.').map(|s| s.parse::<u64>());
+
+    let major = components.next().unwrap_or(Ok(0))?;
+    let minor = components.next().unwrap_or(Ok(0))?;
+    let patch = components.next().unwrap_or(Ok(0))?;
+
+    Ok(Version::new(major, minor, patch))
 }
 
 ////////////////////////////////////////////////////////////////////////////////

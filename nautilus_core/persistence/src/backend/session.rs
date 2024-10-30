@@ -22,11 +22,11 @@ use datafusion::{
 use futures::StreamExt;
 use nautilus_core::ffi::cvec::CVec;
 use nautilus_model::data::{Data, GetTsInit};
-
-use super::kmerge_batch::{EagerStream, ElementBatchIter, KMerge};
-use crate::arrow::{
+use nautilus_serialization::arrow::{
     DataStreamingError, DecodeDataFromRecordBatch, EncodeToRecordBatch, WriteStream,
 };
+
+use super::kmerge_batch::{EagerStream, ElementBatchIter, KMerge};
 
 #[derive(Debug, Default)]
 pub struct TsInitComparator;
@@ -117,11 +117,11 @@ impl DataBackendSession {
     {
         let parquet_options = ParquetReadOptions::<'_> {
             skip_metadata: Some(false),
-            file_sort_order: vec![vec![Expr::Sort(Sort {
-                expr: Box::new(col("ts_init")),
+            file_sort_order: vec![vec![Sort {
+                expr: col("ts_init"),
                 asc: true,
                 nulls_first: false,
-            })]],
+            }]],
             ..Default::default()
         };
         self.runtime.block_on(self.session_ctx.register_parquet(

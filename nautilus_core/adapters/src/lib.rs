@@ -33,8 +33,6 @@
 //! - `python`: Enables Python bindings from `pyo3`.
 //! - `tardis`: Includes the Tardis data loader.
 
-pub mod crypto;
-
 #[cfg(feature = "databento")]
 pub mod databento;
 

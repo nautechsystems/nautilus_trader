@@ -32,12 +32,7 @@ def test_quote_tick_data_wrangler_process_tick_data(benchmark):
             default_volume=1_000_000,
         )
 
-    benchmark.pedantic(
-        target=wrangler_process,
-        rounds=100,
-        iterations=1,
-    )
-    # ~7.8ms / ~7766.6μs / 7766626ns minimum of 100 runs @ 1 iteration each run.
+    benchmark(wrangler_process)
 
 
 def test_trade_tick_data_wrangler_process(benchmark):
@@ -46,12 +41,7 @@ def test_trade_tick_data_wrangler_process(benchmark):
     provider = TestDataProvider()
 
     def wrangler_process():
-        # 69806 ticks in data
+        # 69_806 ticks in data
         wrangler.process(data=provider.read_csv_ticks("binance/ethusdt-trades.csv"))
 
-    benchmark.pedantic(
-        target=wrangler_process,
-        rounds=10,
-        iterations=1,
-    )
-    # ~500.2ms / ~500210.6μs / 500210608ns minimum of 10 runs @ 1 iteration each run.
+    benchmark(wrangler_process)

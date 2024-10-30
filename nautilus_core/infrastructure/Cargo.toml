@@ -13,6 +13,7 @@ crate-type = ["rlib", "cdylib"]
 [dependencies]
 nautilus-common = { path = "../common", features = ["python"] }
 nautilus-core = { path = "../core" , features = ["python"] }
+nautilus-cryptography = { path = "../cryptography" }
 nautilus-model = { path = "../model" , features = ["python", "stubs"] }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
@@ -22,7 +23,7 @@ derive_builder = { workspace = true }
 futures = { workspace = true }
 indexmap = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-pyo3-asyncio-0-21 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
 log = { workspace = true }  # Required until Cython gone
 rmp-serde = { workspace = true }
 rust_decimal = { workspace = true }
@@ -30,7 +31,7 @@ semver = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
-tracing = {workspace = true }
+tracing = { workspace = true }
 ustr = { workspace = true }
 redis = { version = "0.27.5", features = [
     "connection-manager",
@@ -59,6 +60,6 @@ extension-module = [
     "nautilus-core/extension-module",
     "nautilus-model/extension-module",
 ]
-python = ["pyo3", "pyo3-asyncio-0-21"]
+python = ["pyo3", "pyo3-async-runtimes"]
 redis = ["dep:redis"]
 postgres = ["dep:sqlx"]

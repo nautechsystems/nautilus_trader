@@ -107,9 +107,9 @@ impl OrderBookDeltas {
 
     #[staticmethod]
     #[pyo3(name = "from_pycapsule")]
-    pub fn py_from_pycapsule(capsule: &PyAny) -> Self {
-        let capsule: &PyCapsule = capsule
-            .downcast()
+    pub fn py_from_pycapsule(capsule: Bound<'_, PyAny>) -> Self {
+        let capsule: &Bound<'_, PyCapsule> = capsule
+            .downcast::<PyCapsule>()
             .expect("Error on downcast to `&PyCapsule`");
         let data: &OrderBookDeltas_API =
             unsafe { &*(capsule.pointer() as *const OrderBookDeltas_API) };
