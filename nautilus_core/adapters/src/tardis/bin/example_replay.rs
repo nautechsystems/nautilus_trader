@@ -32,5 +32,8 @@ async fn main() {
             .join("example_config.json")
     });
 
-    run_tardis_machine_replay(&config_filepath, None).await;
+    // Retrieve optional output path
+    let output_path = env::args().nth(2).map(PathBuf::from);
+
+    run_tardis_machine_replay(&config_filepath, output_path.as_deref()).await;
 }
