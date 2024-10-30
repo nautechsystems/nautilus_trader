@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::atomic::Ordering;
 
 use futures::SinkExt;
 use futures_util::{stream, StreamExt};
@@ -47,11 +47,11 @@ impl WebSocketConfig {
     ) -> Self {
         Self {
             url,
-            handler: Arc::new(handler),
+            handler,
             headers,
             heartbeat,
             heartbeat_msg,
-            ping_handler: ping_handler.map(Arc::new),
+            ping_handler,
         }
     }
 }

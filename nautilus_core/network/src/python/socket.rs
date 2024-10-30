@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::atomic::Ordering;
 
 use nautilus_core::python::to_pyruntime_err;
 use pyo3::prelude::*;
@@ -38,7 +38,7 @@ impl SocketConfig {
             url,
             mode,
             suffix,
-            handler: Arc::new(handler),
+            handler,
             heartbeat,
         }
     }
@@ -251,7 +251,7 @@ counter = Counter()",
 
         let config = SocketConfig {
             url: format!("127.0.0.1:{}", server.port),
-            handler: Python::with_gil(|py| Arc::new(handler.clone_ref(py))),
+            handler: Python::with_gil(|py| handler.clone_ref(py)),
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             heartbeat: None,

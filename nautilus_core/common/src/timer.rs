@@ -99,11 +99,22 @@ impl PartialEq for TimeEvent {
 
 pub type RustTimeEventCallback = dyn Fn(TimeEvent);
 
-#[derive(Clone)]
 pub enum TimeEventCallback {
     #[cfg(feature = "python")]
-    Python(Arc<PyObject>),
+    // TODO: Cloning activated with pyo3/py-clone feature flag
+    // It will panic if cloned without holding GIL
+    // Test to see such logic exists then adapt accordingly
+    Python(PyObject),
     Rust(Rc<RustTimeEventCallback>),
+}
+
+impl Clone for TimeEventCallback {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Python(arg0) => Python::with_gil(|py| Self::Python(arg0.clone_ref(py))),
+            Self::Rust(arg0) => Self::Rust(arg0.clone()),
+        }
+    }
 }
 
 impl Debug for TimeEventCallback {
@@ -139,7 +150,7 @@ impl From<Rc<RustTimeEventCallback>> for TimeEventCallback {
 #[cfg(feature = "python")]
 impl From<PyObject> for TimeEventCallback {
     fn from(value: PyObject) -> Self {
-        Self::Python(Arc::new(value))
+        Self::Python(value)
     }
 }
 
