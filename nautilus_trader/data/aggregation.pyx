@@ -699,6 +699,7 @@ cdef class TimeBarAggregator(BarAggregator):
         bint build_with_no_updates = True,
         bint timestamp_on_close = True,
         str interval_type = "left-open",
+        object time_bars_origin=None, # pd.Timedelta or pd.DateOffset
         int composite_bar_build_delay=15, # in microsecond
     ):
         super().__init__(
@@ -724,6 +725,7 @@ cdef class TimeBarAggregator(BarAggregator):
         self._add_delay = bar_type.is_composite() and bar_type.composite().is_internally_aggregated()
         self._batch_open_ns = 0
         self._batch_next_close_ns = 0
+        self._time_bars_origin = time_bars_origin
 
         if interval_type == "left-open":
             self._is_left_open = True
@@ -737,7 +739,7 @@ cdef class TimeBarAggregator(BarAggregator):
     def __str__(self):
         return f"{type(self).__name__}(interval_ns={self.interval_ns}, next_close_ns={self.next_close_ns})"
 
-    cpdef datetime get_start_time(self, datetime now, bint enable_delay=True):
+    def get_start_time(self, now: datetime, enable_delay: bool = True) -> datetime:
         """
         Return the start time for the aggregators next bar.
 
@@ -747,53 +749,94 @@ cdef class TimeBarAggregator(BarAggregator):
             The timestamp (UTC).
 
         """
-        cdef int step = self.bar_type.spec.step
-        cdef datetime start_time
+        step = self.bar_type.spec.step
+        aggregation = self.bar_type.spec.aggregation
 
-        if self.bar_type.spec.aggregation == BarAggregation.MILLISECOND:
-            diff_microseconds = ((now.microsecond // 1000) % step) * 1000
-            diff_seconds = 0 if diff_microseconds == 0 else max(0, (step // 1000) - 1)
-            diff = timedelta(
-                seconds=diff_seconds,
-                microseconds=diff_microseconds,
-            )
-            start_time = (now - diff).floor(freq="ms")
-        elif self.bar_type.spec.aggregation == BarAggregation.SECOND:
-            diff_seconds = now.second % step
-            diff_minutes = 0 if diff_seconds == 0 else max(0, (step // 60) - 1)
-            diff = timedelta(
-                minutes=diff_minutes,
-                seconds=diff_seconds,
-            )
-            start_time = (now - diff).floor(freq="s")
-        elif self.bar_type.spec.aggregation == BarAggregation.MINUTE:
-            diff_minutes = now.minute % step
-            diff_hours = 0 if diff_minutes == 0 else max(0, (step // 60) - 1)
-            diff = timedelta(
-                hours=diff_hours,
-                minutes=diff_minutes,
-            )
-            start_time = (now - diff).floor(freq="min")
-        elif self.bar_type.spec.aggregation == BarAggregation.HOUR:
-            diff_hours = now.hour % step
-            diff_days = 0 if diff_hours == 0 else max(0, (step // 24) - 1)
-            diff = timedelta(
-                days=diff_days,
-                hours=diff_hours,
-            )
-            start_time = (now - diff).floor(freq="h")
-        elif self.bar_type.spec.aggregation == BarAggregation.DAY:
-            start_time = (now - timedelta(days=(now.day - 1))).floor(freq="d")
-        elif self.bar_type.spec.aggregation == BarAggregation.WEEK:
-            start_time = (now - timedelta(days=now.dayofweek)).floor(freq="d")
-        elif self.bar_type.spec.aggregation == BarAggregation.MONTH:
-            diff_months = (now.month - 1) % step
-            diff = pd.DateOffset(months=diff_months)
-            start_time = (now - timedelta(days=(now.day - 1)) - diff).floor(freq="d")
+        if aggregation == BarAggregation.MILLISECOND:
+            start_time = now.floor(freq="s")
+
+            if self._time_bars_origin is not None:
+                start_time += self._time_bars_origin
+
+            if now < start_time:
+                start_time -= pd.Timedelta(seconds=1)
+
+            while start_time <= now:
+                start_time += pd.Timedelta(milliseconds=step)
+
+            start_time -= pd.Timedelta(milliseconds=step)
+        elif aggregation == BarAggregation.SECOND:
+            start_time = now.floor(freq="min")
+
+            if self._time_bars_origin is not None:
+                start_time += self._time_bars_origin
+
+            if now < start_time:
+                start_time -= pd.Timedelta(minutes=1)
+
+            while start_time <= now:
+                start_time += pd.Timedelta(seconds=step)
+
+            start_time -= pd.Timedelta(seconds=step)
+        elif aggregation == BarAggregation.MINUTE:
+            start_time = now.floor(freq="h")
+
+            if self._time_bars_origin is not None:
+                start_time += self._time_bars_origin
+
+            if now < start_time:
+                start_time -= pd.Timedelta(hours=1)
+
+            while start_time <= now:
+                start_time += pd.Timedelta(minutes=step)
+
+            start_time -= pd.Timedelta(minutes=step)
+        elif aggregation == BarAggregation.HOUR:
+            start_time = now.floor(freq="d")
+
+            if self._time_bars_origin is not None:
+                start_time += self._time_bars_origin
+
+            if now < start_time:
+                start_time -= pd.Timedelta(days=1)
+
+            while start_time <= now:
+                start_time += pd.Timedelta(hours=step)
+
+            start_time -= pd.Timedelta(hours=step)
+        elif aggregation == BarAggregation.DAY:
+            start_time = now.floor(freq="d")
+
+            if self._time_bars_origin is not None:
+                start_time += self._time_bars_origin
+
+            if now < start_time:
+                start_time -= pd.Timedelta(days=1)
+        elif aggregation == BarAggregation.WEEK:
+            start_time = (now - pd.Timedelta(days=now.dayofweek)).floor(freq="d")
+
+            if self._time_bars_origin is not None:
+                start_time += self._time_bars_origin
+
+            if now < start_time:
+                start_time -= pd.Timedelta(weeks=1)
+        elif aggregation == BarAggregation.MONTH:
+            start_time = (now - pd.DateOffset(months=now.month - 1, days=now.day - 1)).floor(freq="d")
+
+            if self._time_bars_origin is not None:
+                start_time += self._time_bars_origin
+
+            if now < start_time:
+                start_time -= pd.DateOffset(years=1)
+
+            while start_time <= now:
+                start_time += pd.DateOffset(months=step)
+
+            start_time -= pd.DateOffset(months=step)
         else:  # pragma: no cover (design-time error)
             raise ValueError(
                 f"Aggregation type not supported for time bars, "
-                f"was {bar_aggregation_to_str(self.bar_type.spec.aggregation)}",
+                f"was {bar_aggregation_to_str(aggregation)}",
             )
 
         if self._add_delay and enable_delay:
@@ -872,7 +915,7 @@ cdef class TimeBarAggregator(BarAggregator):
                 callback=self._build_bar,
             )
         else:
-            # the monthly alert time is define iteratively at each alert time as there is no regular interval
+            # The monthly alert time is defined iteratively at each alert time as there is no regular interval
             alert_time = start_time + pd.DateOffset(months=step)
 
             self._clock.set_time_alert(
@@ -917,7 +960,7 @@ cdef class TimeBarAggregator(BarAggregator):
     cdef void _batch_post_update(self, uint64_t time_ns):
         cdef int step = self.bar_type.spec.step
 
-        # update has already been done, resetting _batch_next_close_ns
+        # Update has already been done, resetting _batch_next_close_ns
         if not self._batch_mode and time_ns == self._batch_next_close_ns and time_ns > self._stored_open_ns:
             self._batch_next_close_ns = 0
             return
@@ -961,16 +1004,17 @@ cdef class TimeBarAggregator(BarAggregator):
 
         self._builder.update(price, size, ts_event)
 
-        if self._batch_next_close_ns == 0 and self._build_on_next_tick:
-            ts_init = ts_event
+        if self._build_on_next_tick:
+            if ts_event <= self._stored_close_ns:
+                ts_init = ts_event
 
-            # Adjusting the timestamp logic based on interval_type
-            if self._is_left_open:
-                ts_event = self._stored_close_ns if self._timestamp_on_close else self._stored_open_ns
-            else:
-                ts_event = self._stored_open_ns
+                # Adjusting the timestamp logic based on interval_type
+                if self._is_left_open:
+                    ts_event = self._stored_close_ns if self._timestamp_on_close else self._stored_open_ns
+                else:
+                    ts_event = self._stored_open_ns
 
-            self._build_and_send(ts_event=ts_event, ts_init=ts_init)
+                self._build_and_send(ts_event=ts_event, ts_init=ts_init)
 
             # Reset flag and clear stored close
             self._build_on_next_tick = False
@@ -985,12 +1029,27 @@ cdef class TimeBarAggregator(BarAggregator):
 
         self._builder.update_bar(bar, volume, ts_init)
 
+        if self._build_on_next_tick:
+            if ts_init <= self._stored_close_ns:
+                # Adjusting the timestamp logic based on interval_type
+                if self._is_left_open:
+                    ts_event = self._stored_close_ns if self._timestamp_on_close else self._stored_open_ns
+                else:
+                    ts_event = self._stored_open_ns
+
+                self._build_and_send(ts_event=ts_event, ts_init=ts_init)
+
+            # Reset flag and clear stored close
+            self._build_on_next_tick = False
+            self._stored_close_ns = 0
+
         if self._batch_next_close_ns != 0:
             self._batch_post_update(ts_init)
 
     cpdef void _build_bar(self, TimeEvent event):
         if not self._builder.initialized:
             # Set flag to build on next close with the stored close time
+            # _build_on_next_tick is used to avoid a race condition between a data update and a TimeEvent from the timer
             self._build_on_next_tick = True
             self._stored_close_ns = self.next_close_ns
             return
