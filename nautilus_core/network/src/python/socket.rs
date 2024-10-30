@@ -26,7 +26,7 @@ use crate::socket::{SocketClient, SocketConfig};
 impl SocketConfig {
     #[new]
     #[pyo3(signature = (url, ssl, suffix, handler, heartbeat=None))]
-    fn py_new(
+    const fn py_new(
         url: String,
         ssl: bool,
         suffix: Vec<u8>,
@@ -133,7 +133,6 @@ impl SocketClient {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
 
     use pyo3::{prelude::*, prepare_freethreaded_python};
     use tokio::{

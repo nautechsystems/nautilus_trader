@@ -20,6 +20,7 @@ Released on TBD (UTC).
 - Standardized network client logging
 - Fixed all pyo3 deprecations for API breaking changes
 - Fixed all clippy warning lints for PyO3 changes (#2030), thanks @Pushkarm029
+- PyO3 upgrade refactor: repair catalog tests and make `PyObject` cloneable (#2032), thanks @twitu
 - Upgraded `pyo3` crate to v0.22.5
 - Upgraded `pyo3-async-runtimes` crate to v0.22.0
 - Upgraded `tokio` crate to v1.41.0
