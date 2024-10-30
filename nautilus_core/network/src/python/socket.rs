@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::atomic::Ordering;
 
 use nautilus_core::python::to_pyruntime_err;
 use pyo3::prelude::*;

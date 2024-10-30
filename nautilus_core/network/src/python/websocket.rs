@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::atomic::Ordering;
 
 use futures::SinkExt;
 use futures_util::{stream, StreamExt};

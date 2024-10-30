@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{str::FromStr, sync::Arc};
+use std::str::FromStr;
 
 use nautilus_core::{nanos::UnixNanos, python::to_pyvalue_err, uuid::UUID4};
 use pyo3::{
