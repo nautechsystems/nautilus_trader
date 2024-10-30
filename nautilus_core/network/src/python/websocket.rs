@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::atomic::Ordering;
 
 use futures::SinkExt;
 use futures_util::{stream, StreamExt};
@@ -37,7 +37,7 @@ fn to_websocket_pyerr(e: tokio_tungstenite::tungstenite::Error) -> PyErr {
 impl WebSocketConfig {
     #[new]
     #[pyo3(signature = (url, handler, headers, heartbeat=None, heartbeat_msg=None, ping_handler=None))]
-    fn py_new(
+    const fn py_new(
         url: String,
         handler: PyObject,
         headers: Vec<(String, String)>,
@@ -47,11 +47,11 @@ impl WebSocketConfig {
     ) -> Self {
         Self {
             url,
-            handler: Arc::new(handler),
+            handler,
             headers,
             heartbeat,
             heartbeat_msg,
-            ping_handler: ping_handler.map(Arc::new),
+            ping_handler,
         }
     }
 }

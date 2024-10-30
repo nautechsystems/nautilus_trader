@@ -48,11 +48,11 @@ type MessageReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 )]
 pub struct WebSocketConfig {
     pub url: String,
-    pub handler: Arc<PyObject>,
+    pub handler: PyObject,
     pub headers: Vec<(String, String)>,
     pub heartbeat: Option<u64>,
     pub heartbeat_msg: Option<String>,
-    pub ping_handler: Option<Arc<PyObject>>,
+    pub ping_handler: Option<PyObject>,
 }
 
 /// `WebSocketClient` connects to a websocket server to read and send messages.
@@ -93,8 +93,10 @@ impl WebSocketClientInner {
         let (writer, reader) = Self::connect_with_server(url, headers.clone()).await?;
         let writer = Arc::new(Mutex::new(writer));
 
+        let (handler1, ping_handler1) =
+            Python::with_gil(|py| (handler.clone_ref(py), ping_handler.clone()));
         // Keep receiving messages from socket and pass them as arguments to handler
-        let read_task = Self::spawn_read_task(reader, handler.clone(), ping_handler.clone());
+        let read_task = Self::spawn_read_task(reader, handler1, ping_handler1);
         let heartbeat_task =
             Self::spawn_heartbeat_task(*heartbeat, heartbeat_msg.clone(), writer.clone());
 
@@ -157,8 +159,8 @@ impl WebSocketClientInner {
     /// Keep receiving messages from socket and pass them as arguments to handler.
     pub fn spawn_read_task(
         mut reader: MessageReader,
-        handler: Arc<PyObject>,
-        ping_handler: Option<Arc<PyObject>>,
+        handler: PyObject,
+        ping_handler: Option<PyObject>,
     ) -> task::JoinHandle<()> {
         tracing::debug!("Started task 'read'");
         task::spawn(async move {
@@ -264,11 +266,15 @@ impl WebSocketClientInner {
         *guard = new_writer;
         drop(guard);
 
-        self.read_task = Self::spawn_read_task(
-            reader,
-            self.config.handler.clone(),
-            self.config.ping_handler.clone(),
-        );
+        let (handler1, ping_handler1) = Python::with_gil(|py| {
+            (
+                // Prefer clone_ref for PyObjects
+                self.config.handler.clone_ref(py),
+                // Can't clone_ref an Option
+                self.config.ping_handler.clone(),
+            )
+        });
+        self.read_task = Self::spawn_read_task(reader, handler1, ping_handler1);
         self.heartbeat_task = Self::spawn_heartbeat_task(
             self.config.heartbeat,
             self.config.heartbeat_msg.clone(),

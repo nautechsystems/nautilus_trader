@@ -85,7 +85,7 @@ jobs:
           version: ${{ env.POETRY_VERSION }}
 
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel pre-commit msgspec
+        run: python -m pip install --upgrade pip setuptools wheel pre-commit msgspec pytest-codspeed
 
       # ta-lib Python install currently broken
       # https://github.com/TA-Lib/ta-lib-python/issues/655
@@ -166,7 +166,7 @@ jobs:
 
       # Run codspeed for latest python-version only
       - name: Run benchmarks (Linux)
-        if: ${{ matrix.python-version }} == "3.12"
+        if: ${{ matrix.python-version == '3.12' }}
         uses: CodSpeedHQ/action@v3
         with:
           token: ${{ secrets.CODSPEED_TOKEN }}

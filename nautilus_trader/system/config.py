@@ -59,8 +59,8 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         The order emulator configuration.
     streaming : StreamingConfig, optional
         The configuration for streaming to feather files.
-    catalog : DataCatalogConfig, optional
-        The data catalog config.
+    catalogs : list[DataCatalogConfig], optional
+        The list of data catalog configs.
     actors : list[ImportableActorConfig]
         The actor configurations for the kernel.
     strategies : list[ImportableStrategyConfig]
@@ -100,7 +100,7 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     exec_engine: ExecEngineConfig | None = None
     emulator: OrderEmulatorConfig | None = None
     streaming: StreamingConfig | None = None
-    catalog: DataCatalogConfig | None = None
+    catalogs: list[DataCatalogConfig] = []
     actors: list[ImportableActorConfig] = []
     strategies: list[ImportableStrategyConfig] = []
     exec_algorithms: list[ImportableExecAlgorithmConfig] = []

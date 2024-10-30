@@ -144,3 +144,33 @@ pub fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) -> PyResul
     })?;
     Ok(())
 }
+
+#[pymethods]
+impl ReplayNormalizedRequestOptions {
+    #[staticmethod]
+    #[pyo3(name = "from_json")]
+    fn py_from_json(data: Vec<u8>) -> Self {
+        serde_json::from_slice(&data).expect("Failed to parse JSON")
+    }
+
+    #[pyo3(name = "from_json_array")]
+    #[staticmethod]
+    fn py_from_json_array(data: Vec<u8>) -> Vec<Self> {
+        serde_json::from_slice(&data).expect("Failed to parse JSON array")
+    }
+}
+
+#[pymethods]
+impl StreamNormalizedRequestOptions {
+    #[staticmethod]
+    #[pyo3(name = "from_json")]
+    fn py_from_json(data: Vec<u8>) -> Self {
+        serde_json::from_slice(&data).expect("Failed to parse JSON")
+    }
+
+    #[pyo3(name = "from_json_array")]
+    #[staticmethod]
+    fn py_from_json_array(data: Vec<u8>) -> Vec<Self> {
+        serde_json::from_slice(&data).expect("Failed to parse JSON array")
+    }
+}

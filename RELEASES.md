@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added `raise_exception` optional parameter to `TradingNode.run` (#2021), thanks @faysou
 - Added `OrderBook.get_avg_px_qty_for_exposure` in Rust (#1893), thanks @elementace
 - Added timeouts to Interactive Brokers adapter configurations (#2026), thanks @rsmb7z
+- Added optional time origins for time bar aggregation (#2028), thanks @faysou
 - Upgraded Polymarket WebSocket API to new version
 
 ### Internal Improvements
@@ -19,6 +20,7 @@ Released on TBD (UTC).
 - Standardized network client logging
 - Fixed all pyo3 deprecations for API breaking changes
 - Fixed all clippy warning lints for PyO3 changes (#2030), thanks @Pushkarm029
+- PyO3 upgrade refactor: repair catalog tests and make `PyObject` cloneable (#2032), thanks @twitu
 - Upgraded `pyo3` crate to v0.22.5
 - Upgraded `pyo3-async-runtimes` crate to v0.22.0
 - Upgraded `tokio` crate to v1.41.0
@@ -32,6 +34,7 @@ Released on TBD (UTC).
 - Fixed decoding fill HTTP messages for dYdX (#2022), thanks @davidsblom
 - Fixed account balance report for dYdX (#2024), thanks @davidsblom
 - Fixed Interactive Brokers market data client subscription log message (#2012), thanks @marcodambros
+- Fixed catalog query mem leak test (#2031), thanks @Pushkarm029
 
 ---
 
