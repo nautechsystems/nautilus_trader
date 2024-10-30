@@ -33,7 +33,7 @@ pub struct PythonMessageHandler {
 impl Clone for PythonMessageHandler {
     fn clone(&self) -> Self {
         Self {
-            id: self.id.clone(),
+            id: self.id,
             handler: Python::with_gil(|py| self.handler.clone_ref(py)),
         }
     }
