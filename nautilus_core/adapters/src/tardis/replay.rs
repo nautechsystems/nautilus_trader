@@ -114,8 +114,17 @@ async fn gather_instruments_info(
     results.into_iter().collect()
 }
 
-pub async fn run_tardis_machine_replay(config_filepath: &Path) {
+pub async fn run_tardis_machine_replay(config_filepath: &Path, output_path: Option<&Path>) {
     tracing::info!("Starting replay");
+
+    let path = output_path
+        .map(|path| path.to_path_buf())
+        .or_else(|| {
+            std::env::var("NAUTILUS_CATALOG_PATH")
+                .ok()
+                .map(|env_path| PathBuf::from(env_path).join("data"))
+        })
+        .unwrap_or_else(|| std::env::current_dir().expect("Failed to get current directory"));
 
     let config_data = fs::read_to_string(config_filepath).expect("Failed to read config file");
     let config: TardisReplayConfig =
@@ -158,11 +167,15 @@ pub async fn run_tardis_machine_replay(config_filepath: &Path) {
 
     while let Some(msg) = stream.next().await {
         match msg {
-            Data::Deltas(msg) => handle_deltas_msg(msg, &mut deltas_map, &mut deltas_cursors),
-            Data::Depth10(msg) => handle_depth10_msg(msg, &mut depths_map, &mut depths_cursors),
-            Data::Quote(msg) => handle_quote_msg(msg, &mut quotes_map, &mut quotes_cursors),
-            Data::Trade(msg) => handle_trade_msg(msg, &mut trades_map, &mut trades_cursors),
-            Data::Bar(msg) => handle_bar_msg(msg, &mut bars_map, &mut bars_cursors),
+            Data::Deltas(msg) => {
+                handle_deltas_msg(msg, &mut deltas_map, &mut deltas_cursors, &path)
+            }
+            Data::Depth10(msg) => {
+                handle_depth10_msg(msg, &mut depths_map, &mut depths_cursors, &path)
+            }
+            Data::Quote(msg) => handle_quote_msg(msg, &mut quotes_map, &mut quotes_cursors, &path),
+            Data::Trade(msg) => handle_trade_msg(msg, &mut trades_map, &mut trades_cursors, &path),
+            Data::Bar(msg) => handle_bar_msg(msg, &mut bars_map, &mut bars_cursors, &path),
             Data::Delta(_) => panic!("Individual delta message not implemented (or required)"),
         }
 
@@ -176,27 +189,27 @@ pub async fn run_tardis_machine_replay(config_filepath: &Path) {
 
     for (instrument_id, deltas) in deltas_map {
         let cursor = deltas_cursors.get(&instrument_id).expect("Expected cursor");
-        batch_and_write_deltas(deltas, &instrument_id, cursor.date_utc);
+        batch_and_write_deltas(deltas, &instrument_id, cursor.date_utc, &path);
     }
 
     for (instrument_id, depths) in depths_map {
         let cursor = depths_cursors.get(&instrument_id).expect("Expected cursor");
-        batch_and_write_depths(depths, &instrument_id, cursor.date_utc);
+        batch_and_write_depths(depths, &instrument_id, cursor.date_utc, &path);
     }
 
     for (instrument_id, quotes) in quotes_map {
         let cursor = quotes_cursors.get(&instrument_id).expect("Expected cursor");
-        batch_and_write_quotes(quotes, &instrument_id, cursor.date_utc);
+        batch_and_write_quotes(quotes, &instrument_id, cursor.date_utc, &path);
     }
 
     for (instrument_id, trades) in trades_map {
         let cursor = trades_cursors.get(&instrument_id).expect("Expected cursor");
-        batch_and_write_trades(trades, &instrument_id, cursor.date_utc);
+        batch_and_write_trades(trades, &instrument_id, cursor.date_utc, &path);
     }
 
     for (bar_type, bars) in bars_map {
         let cursor = bars_cursors.get(&bar_type).expect("Expected cursor");
-        batch_and_write_bars(bars, &bar_type, cursor.date_utc);
+        batch_and_write_bars(bars, &bar_type, cursor.date_utc, &path);
     }
 
     tracing::info!("Replay completed");
@@ -206,6 +219,7 @@ fn handle_deltas_msg(
     deltas: OrderBookDeltas_API,
     map: &mut HashMap<InstrumentId, Vec<OrderBookDelta>>,
     cursors: &mut HashMap<InstrumentId, DateCursor>,
+    path: &Path,
 ) {
     let cursor = cursors
         .entry(deltas.instrument_id)
@@ -213,7 +227,7 @@ fn handle_deltas_msg(
 
     if deltas.ts_init > cursor.end_ns {
         if let Some(deltas_vec) = map.remove(&deltas.instrument_id) {
-            batch_and_write_deltas(deltas_vec, &deltas.instrument_id, cursor.date_utc);
+            batch_and_write_deltas(deltas_vec, &deltas.instrument_id, cursor.date_utc, path);
         };
         // Update cursor
         *cursor = DateCursor::new(deltas.ts_init);
@@ -228,6 +242,7 @@ fn handle_depth10_msg(
     depth10: OrderBookDepth10,
     map: &mut HashMap<InstrumentId, Vec<OrderBookDepth10>>,
     cursors: &mut HashMap<InstrumentId, DateCursor>,
+    path: &Path,
 ) {
     let cursor = cursors
         .entry(depth10.instrument_id)
@@ -235,7 +250,7 @@ fn handle_depth10_msg(
 
     if depth10.ts_init > cursor.end_ns {
         if let Some(depths_vec) = map.remove(&depth10.instrument_id) {
-            batch_and_write_depths(depths_vec, &depth10.instrument_id, cursor.date_utc);
+            batch_and_write_depths(depths_vec, &depth10.instrument_id, cursor.date_utc, path);
         };
         // Update cursor
         *cursor = DateCursor::new(depth10.ts_init);
@@ -250,6 +265,7 @@ fn handle_quote_msg(
     quote: QuoteTick,
     map: &mut HashMap<InstrumentId, Vec<QuoteTick>>,
     cursors: &mut HashMap<InstrumentId, DateCursor>,
+    path: &Path,
 ) {
     let cursor = cursors
         .entry(quote.instrument_id)
@@ -257,7 +273,7 @@ fn handle_quote_msg(
 
     if quote.ts_init > cursor.end_ns {
         if let Some(quotes_vec) = map.remove(&quote.instrument_id) {
-            batch_and_write_quotes(quotes_vec, &quote.instrument_id, cursor.date_utc);
+            batch_and_write_quotes(quotes_vec, &quote.instrument_id, cursor.date_utc, path);
         };
         // Update cursor
         *cursor = DateCursor::new(quote.ts_init);
@@ -272,6 +288,7 @@ fn handle_trade_msg(
     trade: TradeTick,
     map: &mut HashMap<InstrumentId, Vec<TradeTick>>,
     cursors: &mut HashMap<InstrumentId, DateCursor>,
+    path: &Path,
 ) {
     let cursor = cursors
         .entry(trade.instrument_id)
@@ -279,7 +296,7 @@ fn handle_trade_msg(
 
     if trade.ts_init > cursor.end_ns {
         if let Some(trades_vec) = map.remove(&trade.instrument_id) {
-            batch_and_write_trades(trades_vec, &trade.instrument_id, cursor.date_utc);
+            batch_and_write_trades(trades_vec, &trade.instrument_id, cursor.date_utc, path);
         };
         // Update cursor
         *cursor = DateCursor::new(trade.ts_init);
@@ -294,6 +311,7 @@ fn handle_bar_msg(
     bar: Bar,
     map: &mut HashMap<BarType, Vec<Bar>>,
     cursors: &mut HashMap<BarType, DateCursor>,
+    path: &Path,
 ) {
     let cursor = cursors
         .entry(bar.bar_type)
@@ -301,7 +319,7 @@ fn handle_bar_msg(
 
     if bar.ts_init > cursor.end_ns {
         if let Some(bars_vec) = map.remove(&bar.bar_type) {
-            batch_and_write_bars(bars_vec, &bar.bar_type, cursor.date_utc);
+            batch_and_write_bars(bars_vec, &bar.bar_type, cursor.date_utc, path);
         };
         // Update cursor
         *cursor = DateCursor::new(bar.ts_init);
@@ -316,10 +334,11 @@ fn batch_and_write_deltas(
     deltas: Vec<OrderBookDelta>,
     instrument_id: &InstrumentId,
     date: NaiveDate,
+    path: &Path,
 ) {
     let typename = stringify!(OrderBookDeltas);
     match order_book_deltas_to_arrow_record_batch_bytes(deltas) {
-        Ok(batch) => write_batch(batch, typename, instrument_id, date),
+        Ok(batch) => write_batch(batch, typename, instrument_id, date, path),
         Err(e) => {
             tracing::error!("Error converting `{typename}` to Arrow: {e:?}",);
         }
@@ -330,37 +349,48 @@ fn batch_and_write_depths(
     depths: Vec<OrderBookDepth10>,
     instrument_id: &InstrumentId,
     date: NaiveDate,
+    path: &Path,
 ) {
     let typename = stringify!(OrderBookDepth10);
     match order_book_depth10_to_arrow_record_batch_bytes(depths) {
-        Ok(batch) => write_batch(batch, typename, instrument_id, date),
+        Ok(batch) => write_batch(batch, typename, instrument_id, date, path),
         Err(e) => {
             tracing::error!("Error converting `{typename}` to Arrow: {e:?}",);
         }
     };
 }
 
-fn batch_and_write_quotes(quotes: Vec<QuoteTick>, instrument_id: &InstrumentId, date: NaiveDate) {
+fn batch_and_write_quotes(
+    quotes: Vec<QuoteTick>,
+    instrument_id: &InstrumentId,
+    date: NaiveDate,
+    path: &Path,
+) {
     let typename = stringify!(QuoteTick);
     match quote_ticks_to_arrow_record_batch_bytes(quotes) {
-        Ok(batch) => write_batch(batch, typename, instrument_id, date),
+        Ok(batch) => write_batch(batch, typename, instrument_id, date, path),
         Err(e) => {
             tracing::error!("Error converting `{typename}` to Arrow: {e:?}",);
         }
     };
 }
 
-fn batch_and_write_trades(trades: Vec<TradeTick>, instrument_id: &InstrumentId, date: NaiveDate) {
+fn batch_and_write_trades(
+    trades: Vec<TradeTick>,
+    instrument_id: &InstrumentId,
+    date: NaiveDate,
+    path: &Path,
+) {
     let typename = stringify!(TradeTick);
     match trade_ticks_to_arrow_record_batch_bytes(trades) {
-        Ok(batch) => write_batch(batch, typename, instrument_id, date),
+        Ok(batch) => write_batch(batch, typename, instrument_id, date, path),
         Err(e) => {
             tracing::error!("Error converting `{typename}` to Arrow: {e:?}",);
         }
     };
 }
 
-fn batch_and_write_bars(bars: Vec<Bar>, bar_type: &BarType, date: NaiveDate) {
+fn batch_and_write_bars(bars: Vec<Bar>, bar_type: &BarType, date: NaiveDate, path: &Path) {
     let typename = stringify!(Bar);
     let batch = match bars_to_arrow_record_batch_bytes(bars) {
         // TODO: Handle bar type
@@ -371,7 +401,7 @@ fn batch_and_write_bars(bars: Vec<Bar>, bar_type: &BarType, date: NaiveDate) {
         }
     };
 
-    let filepath = parquet_filepath_bars(bar_type, date);
+    let filepath = path.join(parquet_filepath_bars(bar_type, date));
     match write_batch_to_parquet(&batch, &filepath, None) {
         Ok(()) => tracing::info!("File written: {}", filepath.display()),
         Err(e) => tracing::error!("Error writing {}: {e:?}", filepath.display()),
@@ -397,8 +427,14 @@ fn parquet_filepath_bars(bar_type: &BarType, date: NaiveDate) -> PathBuf {
         .join(format!("{date_str}.parquet"))
 }
 
-fn write_batch(batch: RecordBatch, typename: &str, instrument_id: &InstrumentId, date: NaiveDate) {
-    let filepath = parquet_filepath(typename, instrument_id, date);
+fn write_batch(
+    batch: RecordBatch,
+    typename: &str,
+    instrument_id: &InstrumentId,
+    date: NaiveDate,
+    path: &Path,
+) {
+    let filepath = path.join(parquet_filepath(typename, instrument_id, date));
     match write_batch_to_parquet(&batch, &filepath, None) {
         Ok(()) => tracing::info!("File written: {}", filepath.display()),
         Err(e) => tracing::error!("Error writing {}: {e:?}", filepath.display()),
