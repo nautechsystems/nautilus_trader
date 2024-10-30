@@ -15,10 +15,12 @@
 
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
+use futures::StreamExt;
 use nautilus_common::{
-    clock::{set_clock, TestClock},
+    clock::{set_clock, Clock, LiveClock, TestClock},
     messages::data::{DataClientResponse, DataResponse},
-    timer::TimeEventHandlerV2,
+    runtime::get_runtime,
+    timer::{TimeEvent, TimeEventHandlerV2},
 };
 use nautilus_model::data::GetTsInit;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
@@ -96,6 +98,8 @@ impl Runner for BacktestRunner {
 pub struct LiveRunner {
     resp_tx: UnboundedSender<DataClientResponse>,
     resp_rx: UnboundedReceiver<DataClientResponse>,
+    #[cfg(feature = "clock_v2")]
+    pub clock: Rc<RefCell<LiveClock>>,
 }
 
 impl Runner for LiveRunner {
@@ -103,15 +107,54 @@ impl Runner for LiveRunner {
 
     fn new() -> Self {
         let (resp_tx, resp_rx) = tokio::sync::mpsc::unbounded_channel::<DataClientResponse>();
-        Self { resp_tx, resp_rx }
+
+        #[cfg(feature = "clock_v2")]
+        let clock = {
+            let clock = Rc::new(RefCell::new(LiveClock::new()));
+            set_clock(clock.clone());
+            clock
+        };
+
+        Self {
+            resp_tx,
+            resp_rx,
+            #[cfg(feature = "clock_v2")]
+            clock,
+        }
     }
 
     fn run(&mut self, engine: &mut DataEngine) {
-        // TODO: Listen to new events created by LiveTimers push on the heap
+        #[cfg(not(feature = "clock_v2"))]
         while let Some(resp) = self.resp_rx.blocking_recv() {
             match resp {
                 DataClientResponse::Response(resp) => engine.response(resp),
                 DataClientResponse::Data(data) => engine.process_data(data),
+            }
+        }
+
+        // Clone the heap for event streaming
+        #[cfg(feature = "clock_v2")]
+        {
+            let mut time_event_stream = self.clock.borrow().get_event_stream();
+            loop {
+                // Collect the next event to process
+                let next_event = get_runtime().block_on(async {
+                    tokio::select! {
+                        Some(resp) = self.resp_rx.recv() => Some(RunnerEvent::Data(resp)),
+                        Some(event) = time_event_stream.next() => Some(RunnerEvent::Timer(event)),
+                        else => None,
+                    }
+                });
+
+                // Process the event outside of the async context
+                match next_event {
+                    Some(RunnerEvent::Data(resp)) => match resp {
+                        DataClientResponse::Response(resp) => engine.response(resp),
+                        DataClientResponse::Data(data) => engine.process_data(data),
+                    },
+                    Some(RunnerEvent::Timer(event)) => self.clock.borrow().get_handler(event).run(),
+                    None => break,
+                }
             }
         }
     }
@@ -119,4 +162,10 @@ impl Runner for LiveRunner {
     fn get_sender(&self) -> Self::Sender {
         self.resp_tx.clone()
     }
+}
+
+// Helper enum to represent different event types
+enum RunnerEvent {
+    Data(DataClientResponse),
+    Timer(TimeEvent),
 }

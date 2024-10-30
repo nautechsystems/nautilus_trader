@@ -165,11 +165,13 @@ impl TimeEvent {
 
 #[cfg(test)]
 mod tests {
+    use std::{collections::BinaryHeap, sync::Arc};
+
     use nautilus_core::{
         datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos, time::get_atomic_clock_realtime,
     };
     use pyo3::prelude::*;
-    use tokio::time::Duration;
+    use tokio::{sync::Mutex, time::Duration};
 
     use crate::{
         testing::wait_until,
@@ -198,11 +200,18 @@ mod tests {
         #[cfg(not(feature = "clock_v2"))]
         let mut timer = LiveTimer::new("TEST_TIMER", interval_ns, start_time, None, callback);
         #[cfg(feature = "clock_v2")]
-        let (rx, mut timer) = {
-            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_heap, mut timer) = {
+            let heap = Arc::new(Mutex::new(BinaryHeap::new()));
             (
-                rx,
-                LiveTimer::new("TEST_TIMER", interval_ns, start_time, None, callback, tx),
+                heap.clone(),
+                LiveTimer::new(
+                    "TEST_TIMER",
+                    interval_ns,
+                    start_time,
+                    None,
+                    callback,
+                    heap.clone(),
+                ),
             )
         };
         let next_time_ns = timer.next_time_ns();
@@ -231,27 +240,18 @@ mod tests {
         let interval_ns = 100 * NANOSECONDS_IN_MILLISECOND;
         let stop_time = start_time + 500 * NANOSECONDS_IN_MILLISECOND;
 
-        #[cfg(not(feature = "clock_v2"))]
-        let mut timer = LiveTimer::new(
-            "TEST_TIMER",
-            interval_ns,
-            start_time,
-            Some(stop_time),
-            callback,
-        );
-
         #[cfg(feature = "clock_v2")]
-        let (rx, mut timer) = {
-            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_heap, mut timer) = {
+            let heap = Arc::new(Mutex::new(BinaryHeap::new()));
             (
-                rx,
+                heap.clone(),
                 LiveTimer::new(
                     "TEST_TIMER",
                     interval_ns,
                     start_time,
                     Some(stop_time),
                     callback,
-                    tx,
+                    heap.clone(),
                 ),
             )
         };
@@ -281,27 +281,18 @@ mod tests {
         let interval_ns = 0;
         let stop_time = clock.get_time_ns();
 
-        #[cfg(not(feature = "clock_v2"))]
-        let mut timer = LiveTimer::new(
-            "TEST_TIMER",
-            interval_ns,
-            start_time,
-            Some(stop_time),
-            callback,
-        );
-
         #[cfg(feature = "clock_v2")]
-        let (rx, mut timer) = {
-            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_heap, mut timer) = {
+            let heap = Arc::new(Mutex::new(BinaryHeap::new()));
             (
-                rx,
+                heap.clone(),
                 LiveTimer::new(
                     "TEST_TIMER",
                     interval_ns,
                     start_time,
                     Some(stop_time),
                     callback,
-                    tx,
+                    heap.clone(),
                 ),
             )
         };
