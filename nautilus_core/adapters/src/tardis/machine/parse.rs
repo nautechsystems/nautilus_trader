@@ -59,7 +59,7 @@ pub fn parse_tardis_ws_message(msg: WsMessage, info: Arc<InstrumentMiniInfo>) ->
             info.size_precision,
             info.instrument_id,
         ))),
-        WsMessage::Bar(msg) => Some(Data::Bar(parse_bar_msg(
+        WsMessage::TradeBar(msg) => Some(Data::Bar(parse_bar_msg(
             msg,
             info.price_precision,
             info.size_precision,

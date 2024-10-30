@@ -362,13 +362,20 @@ fn batch_and_write_trades(trades: Vec<TradeTick>, instrument_id: &InstrumentId, 
 
 fn batch_and_write_bars(bars: Vec<Bar>, bar_type: &BarType, date: NaiveDate) {
     let typename = stringify!(Bar);
-    match bars_to_arrow_record_batch_bytes(bars) {
+    let batch = match bars_to_arrow_record_batch_bytes(bars) {
         // TODO: Handle bar type
-        Ok(batch) => write_batch(batch, typename, &bar_type.instrument_id(), date),
+        Ok(batch) => batch,
         Err(e) => {
-            tracing::error!("Error converting `{typename}` to Arrow: {e:?}",);
+            tracing::error!("Error converting `{typename}` to Arrow: {e:?}");
+            return;
         }
     };
+
+    let filepath = parquet_filepath_bars(bar_type, date);
+    match write_batch_to_parquet(&batch, &filepath, None) {
+        Ok(()) => tracing::info!("File written: {}", filepath.display()),
+        Err(e) => tracing::error!("Error writing {}: {e:?}", filepath.display()),
+    }
 }
 
 fn parquet_filepath(typename: &str, instrument_id: &InstrumentId, date: NaiveDate) -> PathBuf {
@@ -378,6 +385,15 @@ fn parquet_filepath(typename: &str, instrument_id: &InstrumentId, date: NaiveDat
     PathBuf::new()
         .join(typename)
         .join(instrument_id_str)
+        .join(format!("{date_str}.parquet"))
+}
+
+fn parquet_filepath_bars(bar_type: &BarType, date: NaiveDate) -> PathBuf {
+    let bar_type_str = bar_type.to_string().replace('/', "");
+    let date_str = date.to_string().replace('-', "");
+    PathBuf::new()
+        .join("bar")
+        .join(bar_type_str)
         .join(format!("{date_str}.parquet"))
 }
 

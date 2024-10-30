@@ -1,5 +1,5 @@
 {
-  "output_dir": null,
+  "output_dir": "catalog/data/",
   "tardis_ws_url": "ws://localhost:8001",
   "options": [
     {
