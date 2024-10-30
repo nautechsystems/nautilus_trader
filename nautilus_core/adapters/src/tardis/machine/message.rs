@@ -179,7 +179,7 @@ pub enum WsMessage {
     BookChange(BookChangeMsg),
     BookSnapshot(BookSnapshotMsg),
     Trade(TradeMsg),
-    Bar(BarMsg),
+    TradeBar(BarMsg),
     DerivativeTicker(DerivativeTickerMsg),
     Disconnect(DisconnectMsg),
 }

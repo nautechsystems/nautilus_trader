@@ -164,7 +164,7 @@ pub fn determine_instrument_info(
         WsMessage::BookChange(msg) => parse_instrument_id_with_enum(&msg.symbol, &msg.exchange),
         WsMessage::BookSnapshot(msg) => parse_instrument_id_with_enum(&msg.symbol, &msg.exchange),
         WsMessage::Trade(msg) => parse_instrument_id_with_enum(&msg.symbol, &msg.exchange),
-        WsMessage::Bar(msg) => parse_instrument_id_with_enum(&msg.symbol, &msg.exchange),
+        WsMessage::TradeBar(msg) => parse_instrument_id_with_enum(&msg.symbol, &msg.exchange),
         WsMessage::DerivativeTicker(_) => return None,
         WsMessage::Disconnect(_) => return None,
     };
