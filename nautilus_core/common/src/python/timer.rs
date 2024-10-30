@@ -41,7 +41,7 @@ pub struct TimeEventHandler_Py {
     /// The time event.
     pub event: TimeEvent,
     /// The callable python object.
-    pub callback: Arc<PyObject>,
+    pub callback: PyObject,
 }
 
 impl From<TimeEventHandlerV2> for TimeEventHandler_Py {
