@@ -1,0 +1,20 @@
+[
+  {
+    "exchange": "bitmex",
+    "symbols": [
+      "xbtusd"
+    ],
+    "dataTypes": [
+      "trade"
+    ]
+  },
+  {
+    "exchange": "deribit",
+    "symbols": [
+      "btc-perpetual"
+    ],
+    "dataTypes": [
+      "book_change"
+    ]
+  }
+]
