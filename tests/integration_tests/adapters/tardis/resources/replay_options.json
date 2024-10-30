@@ -1,0 +1,12 @@
+{
+  "exchange": "bitmex",
+  "symbols": [
+    "xbtusd",
+    "ethusd"
+  ],
+  "data_types": [
+    "trade"
+  ],
+  "from": "2019-10-01",
+  "to": "2019-10-02"
+}

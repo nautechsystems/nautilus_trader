@@ -23,6 +23,8 @@ use nautilus_persistence::{
     python::backend::session::NautilusDataType,
 };
 use nautilus_test_kit::common::get_test_data_file_path;
+#[cfg(target_os = "linux")]
+use procfs::{self, process::Process};
 use pyo3::{prelude::*, types::PyCapsule};
 use rstest::rstest;
 
@@ -33,8 +35,6 @@ use rstest::rstest;
 /// less than threshold.
 #[cfg(target_os = "linux")]
 fn mem_leak_test<T>(setup: impl FnOnce() -> T, run: impl Fn(&T), threshold: f64, iter: usize) {
-    use procfs::process::Process;
-
     let args = setup();
     // measure mem after setup
     let page_size = procfs::page_size();
@@ -86,7 +86,7 @@ fn catalog_query_mem_leak_test() {
                 let result = pycatalog.call_method0(py, "to_query_result").unwrap();
                 let mut count = 0;
                 while let Ok(chunk) = result.call_method0(py, "__next__") {
-                    let capsule: &Bound<'_, PyCapsule> = chunk.downcast_bound(py).unwrap();
+                    let capsule: &Bound<'_, _> = chunk.downcast_bound(py).unwrap();
                     let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
                     if cvec.len == 0 {
                         break;

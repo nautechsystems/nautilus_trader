@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added `raise_exception` optional parameter to `TradingNode.run` (#2021), thanks @faysou
 - Added `OrderBook.get_avg_px_qty_for_exposure` in Rust (#1893), thanks @elementace
 - Added timeouts to Interactive Brokers adapter configurations (#2026), thanks @rsmb7z
+- Added optional time origins for time bar aggregation (#2028), thanks @faysou
 - Upgraded Polymarket WebSocket API to new version
 
 ### Internal Improvements
@@ -32,6 +33,7 @@ Released on TBD (UTC).
 - Fixed decoding fill HTTP messages for dYdX (#2022), thanks @davidsblom
 - Fixed account balance report for dYdX (#2024), thanks @davidsblom
 - Fixed Interactive Brokers market data client subscription log message (#2012), thanks @marcodambros
+- Fixed catalog query mem leak test (#2031), thanks @Pushkarm029
 
 ---
 

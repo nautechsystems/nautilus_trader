@@ -1,0 +1,11 @@
+{
+  "exchange": "bitmex",
+  "symbols": [
+    "xbtusd"
+  ],
+  "dataTypes": [
+    "trade",
+    "book_change",
+    "book_snapshot_10_100ms"
+  ]
+}
