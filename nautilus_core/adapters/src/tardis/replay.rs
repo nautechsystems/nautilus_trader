@@ -375,8 +375,10 @@ fn parquet_filepath(typename: &str, instrument_id: &InstrumentId, date: NaiveDat
     let typename = typename.to_snake_case();
     let instrument_id_str = instrument_id.to_string().replace('/', "");
     let date_str = date.to_string().replace('-', "");
-    let filename = format!("{typename}-{instrument_id_str}-{date_str}.parquet",);
-    PathBuf::new().join(filename)
+    PathBuf::new()
+        .join(typename)
+        .join(instrument_id_str)
+        .join(format!("{date_str}.parquet"))
 }
 
 fn write_batch(batch: RecordBatch, typename: &str, instrument_id: &InstrumentId, date: NaiveDate) {
