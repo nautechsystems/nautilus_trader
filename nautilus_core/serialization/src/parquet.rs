@@ -24,6 +24,11 @@ pub fn write_batch_to_parquet(
     filepath: &Path,
     compression: Option<parquet::basic::Compression>,
 ) -> Result<(), Box<dyn Error>> {
+    // Ensure the parent directory exists
+    if let Some(parent) = filepath.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
     let file = File::create(filepath)?;
 
     // Configure writer properties, defaulting to Zstandard compression if not specified
