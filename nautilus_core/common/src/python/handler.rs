@@ -21,7 +21,6 @@ use ustr::Ustr;
 
 use crate::{messages::data::DataResponse, msgbus::handler::MessageHandler};
 
-#[derive(Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.common")
@@ -29,6 +28,15 @@ use crate::{messages::data::DataResponse, msgbus::handler::MessageHandler};
 pub struct PythonMessageHandler {
     id: Ustr,
     handler: PyObject,
+}
+
+impl Clone for PythonMessageHandler {
+    fn clone(&self) -> Self {
+        Self {
+            id: self.id.clone(),
+            handler: Python::with_gil(|py| self.handler.clone_ref(py)),
+        }
+    }
 }
 
 #[pymethods]

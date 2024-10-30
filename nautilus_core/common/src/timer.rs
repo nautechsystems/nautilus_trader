@@ -99,7 +99,6 @@ impl PartialEq for TimeEvent {
 
 pub type RustTimeEventCallback = dyn Fn(TimeEvent);
 
-#[derive(Clone)]
 pub enum TimeEventCallback {
     #[cfg(feature = "python")]
     // TODO: Cloning activated with pyo3/py-clone feature flag
@@ -107,6 +106,15 @@ pub enum TimeEventCallback {
     // Test to see such logic exists then adapt accordingly
     Python(PyObject),
     Rust(Rc<RustTimeEventCallback>),
+}
+
+impl Clone for TimeEventCallback {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Python(arg0) => Python::with_gil(|py| Self::Python(arg0.clone_ref(py))),
+            Self::Rust(arg0) => Self::Rust(arg0.clone()),
+        }
+    }
 }
 
 impl Debug for TimeEventCallback {
