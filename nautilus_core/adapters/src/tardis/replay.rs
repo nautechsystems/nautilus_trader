@@ -118,7 +118,7 @@ pub async fn run_tardis_machine_replay(config_filepath: &Path, output_path: Opti
     tracing::info!("Starting replay");
 
     let path = output_path
-        .map(|path| path.to_path_buf())
+        .map(std::path::Path::to_path_buf)
         .or_else(|| {
             std::env::var("NAUTILUS_CATALOG_PATH")
                 .ok()
@@ -168,10 +168,10 @@ pub async fn run_tardis_machine_replay(config_filepath: &Path, output_path: Opti
     while let Some(msg) = stream.next().await {
         match msg {
             Data::Deltas(msg) => {
-                handle_deltas_msg(msg, &mut deltas_map, &mut deltas_cursors, &path)
+                handle_deltas_msg(msg, &mut deltas_map, &mut deltas_cursors, &path);
             }
             Data::Depth10(msg) => {
-                handle_depth10_msg(msg, &mut depths_map, &mut depths_cursors, &path)
+                handle_depth10_msg(msg, &mut depths_map, &mut depths_cursors, &path);
             }
             Data::Quote(msg) => handle_quote_msg(msg, &mut quotes_map, &mut quotes_cursors, &path),
             Data::Trade(msg) => handle_trade_msg(msg, &mut trades_map, &mut trades_cursors, &path),
