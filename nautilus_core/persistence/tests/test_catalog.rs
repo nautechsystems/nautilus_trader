@@ -18,92 +18,94 @@ use nautilus_model::data::{
     bar::Bar, delta::OrderBookDelta, is_monotonically_increasing_by_init, quote::QuoteTick,
     trade::TradeTick, Data,
 };
-use nautilus_persistence::backend::session::{DataBackendSession, DataQueryResult, QueryResult};
+use nautilus_persistence::{
+    backend::session::{DataBackendSession, DataQueryResult, QueryResult},
+    python::backend::session::NautilusDataType,
+};
 use nautilus_test_kit::common::get_test_data_file_path;
+#[cfg(target_os = "linux")]
+use procfs::{self, process::Process};
+use pyo3::prelude::*;
 use rstest::rstest;
-
-// #[cfg(target_os = "linux")]
-// use procfs::{self};
-// TODO: Repair catalog tests
 
 /// Memory leak test
 ///
 /// Uses arguments from setup to run function for given number of iterations.
 /// Checks that the difference between memory after 1 and iter + 1 runs is
 /// less than threshold.
-// #[cfg(target_os = "linux")]
-// fn mem_leak_test<T>(setup: impl FnOnce() -> T, run: impl Fn(&T), threshold: f64, iter: usize) {
-//     let args = setup();
-//     // measure mem after setup
-//     let page_size = procfs::page_size();
-//     let me = Process::myself().unwrap();
-//     let setup_mem = me.stat().unwrap().rss * page_size / 1024;
-//
-//     {
-//         run(&args);
-//     }
-//
-//     let before = me.stat().unwrap().rss * page_size / 1024 - setup_mem;
-//
-//     for _ in 0..iter {
-//         run(&args);
-//     }
-//
-//     let after = me.stat().unwrap().rss * page_size / 1024 - setup_mem;
-//
-//     if !(after.abs_diff(before) as f64 / (before as f64) < threshold) {
-//         println!("Memory leak detected after {iter} iterations");
-//         println!("Memory before runs (in KB): {before}");
-//         println!("Memory after runs (in KB): {after}");
-//         assert!(false);
-//     }
-// }
+#[cfg(target_os = "linux")]
+fn mem_leak_test<T>(setup: impl FnOnce() -> T, run: impl Fn(&T), threshold: f64, iter: usize) {
+    let args = setup();
+    // measure mem after setup
+    let page_size = procfs::page_size();
+    let me = Process::myself().unwrap();
+    let setup_mem = me.stat().unwrap().rss * page_size / 1024;
 
-// #[cfg(target_os = "linux")]
-// #[rstest]
-// fn catalog_query_mem_leak_test() {
-//     mem_leak_test(
-//         pyo3::prepare_freethreaded_python,
-//         |_args| {
-//             let file_path = get_test_data_file_path("nautilus/quotes.parquet");
-//             let expected_length = 9500;
-//             let catalog = DataBackendSession::new(1_000_000);
-//             Python::with_gil(|py| {
-//                 let pycatalog: Py<PyAny> = catalog.into_py(py);
-//                 pycatalog
-//                     .call_method1(
-//                         py,
-//                         "add_file",
-//                         (
-//                             NautilusDataType::QuoteTick,
-//                             "order_book_deltas",
-//                             file_path.as_str(),
-//                         ),
-//                     )
-//                     .unwrap();
-//                 let result = pycatalog.call_method0(py, "to_query_result").unwrap();
-//                 let mut count = 0;
-//                 while let Ok(chunk) = result.call_method0(py, "__next__") {
-//                     let capsule: &PyCapsule = chunk.downcast(py).unwrap();
-//                     let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
-//                     if cvec.len == 0 {
-//                         break;
-//                     } else {
-//                         let slice: &[Data] = unsafe {
-//                             std::slice::from_raw_parts(cvec.ptr as *const Data, cvec.len)
-//                         };
-//                         count += slice.len();
-//                         assert!(is_monotonically_increasing_by_init(slice));
-//                     }
-//                 }
-//
-//                 assert_eq!(expected_length, count);
-//             });
-//         },
-//         1.0,
-//         5,
-//     );
-// }
+    {
+        run(&args);
+    }
+
+    let before = me.stat().unwrap().rss * page_size / 1024 - setup_mem;
+
+    for _ in 0..iter {
+        run(&args);
+    }
+
+    let after = me.stat().unwrap().rss * page_size / 1024 - setup_mem;
+
+    if !(after.abs_diff(before) as f64 / (before as f64) < threshold) {
+        println!("Memory leak detected after {iter} iterations");
+        println!("Memory before runs (in KB): {before}");
+        println!("Memory after runs (in KB): {after}");
+        assert!(false);
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[rstest]
+fn catalog_query_mem_leak_test() {
+    mem_leak_test(
+        pyo3::prepare_freethreaded_python,
+        |_args| {
+            let file_path = get_test_data_file_path("nautilus/quotes.parquet");
+            let expected_length = 9500;
+            let catalog = DataBackendSession::new(1_000_000);
+            Python::with_gil(|py| {
+                let pycatalog: Py<PyAny> = catalog.into_py(py);
+                pycatalog
+                    .call_method1(
+                        py,
+                        "add_file",
+                        (
+                            NautilusDataType::QuoteTick,
+                            "order_book_deltas",
+                            file_path.as_str(),
+                        ),
+                    )
+                    .unwrap();
+                let result = pycatalog.call_method0(py, "to_query_result").unwrap();
+                let mut count = 0;
+                while let Ok(chunk) = result.call_method0(py, "__next__") {
+                    let capsule: &pyo3::Bound<'_, _> = chunk.downcast_bound(py).unwrap();
+                    let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
+                    if cvec.len == 0 {
+                        break;
+                    } else {
+                        let slice: &[Data] = unsafe {
+                            std::slice::from_raw_parts(cvec.ptr as *const Data, cvec.len)
+                        };
+                        count += slice.len();
+                        assert!(is_monotonically_increasing_by_init(slice));
+                    }
+                }
+
+                assert_eq!(expected_length, count);
+            });
+        },
+        1.0,
+        5,
+    );
+}
 
 #[rstest]
 fn test_quote_tick_cvec_interface() {
