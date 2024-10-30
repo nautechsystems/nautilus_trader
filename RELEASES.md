@@ -33,6 +33,7 @@ Released on TBD (UTC).
 - Fixed decoding fill HTTP messages for dYdX (#2022), thanks @davidsblom
 - Fixed account balance report for dYdX (#2024), thanks @davidsblom
 - Fixed Interactive Brokers market data client subscription log message (#2012), thanks @marcodambros
+- Fixed catalog query mem leak test (#2031), thanks @Pushkarm029
 
 ---
 
