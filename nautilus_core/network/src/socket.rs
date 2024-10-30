@@ -57,7 +57,7 @@ pub struct SocketConfig {
     /// The sequence of bytes which separates lines.
     pub suffix: Vec<u8>,
     /// The Python function to handle incoming messages.
-    pub handler: Arc<PyObject>,
+    pub handler: PyObject,
     /// The optional heartbeat with period and beat message.
     pub heartbeat: Option<(u64, Vec<u8>)>,
 }
@@ -102,8 +102,9 @@ impl SocketClientInner {
         let (reader, writer) = Self::tls_connect_with_server(url, *mode).await?;
         let shared_writer = Arc::new(Mutex::new(writer));
 
+        let handler1 = Python::with_gil(|py| handler.clone_ref(py));
         // Keep receiving messages from socket pass them as arguments to handler
-        let read_task = Self::spawn_read_task(reader, handler.clone(), suffix.clone());
+        let read_task = Self::spawn_read_task(reader, handler1, suffix.clone());
 
         // Optionally create heartbeat task
         let heartbeat_task =
@@ -131,7 +132,7 @@ impl SocketClientInner {
     #[must_use]
     pub fn spawn_read_task(
         mut reader: TcpReader,
-        handler: Arc<PyObject>,
+        handler: PyObject,
         suffix: Vec<u8>,
     ) -> task::JoinHandle<()> {
         // Keep receiving messages from socket pass them as arguments to handler
@@ -246,8 +247,9 @@ impl SocketClientInner {
         *guard = new_writer;
         drop(guard);
 
+        let handler1 = Python::with_gil(|py| handler.clone_ref(py));
         tracing::debug!("Recreate reader and heartbeat task");
-        self.read_task = Self::spawn_read_task(reader, handler.clone(), suffix.clone());
+        self.read_task = Self::spawn_read_task(reader, handler1, suffix.clone());
         self.heartbeat_task =
             Self::spawn_heartbeat_task(heartbeat.clone(), self.writer.clone(), suffix.clone());
         Ok(())

@@ -47,11 +47,11 @@ impl WebSocketConfig {
     ) -> Self {
         Self {
             url,
-            handler: Arc::new(handler),
+            handler,
             headers,
             heartbeat,
             heartbeat_msg,
-            ping_handler: ping_handler.map(Arc::new),
+            ping_handler,
         }
     }
 }

@@ -94,7 +94,7 @@ impl WebSocketClientInner {
         let writer = Arc::new(Mutex::new(writer));
 
         let (handler1, ping_handler1) =
-            Python::with_gil(|_| (handler.clone(), ping_handler.clone()));
+            Python::with_gil(|py| (handler.clone_ref(py), ping_handler.clone()));
         // Keep receiving messages from socket and pass them as arguments to handler
         let read_task = Self::spawn_read_task(reader, handler1, ping_handler1);
         let heartbeat_task =
@@ -266,9 +266,11 @@ impl WebSocketClientInner {
         *guard = new_writer;
         drop(guard);
 
-        let (handler1, ping_handler1) = Python::with_gil(|_| {
+        let (handler1, ping_handler1) = Python::with_gil(|py| {
             (
-                self.config.handler.clone(),
+                // Prefer clone_ref for PyObjects
+                self.config.handler.clone_ref(py),
+                // Can't clone_ref an Option
                 self.config.ping_handler.clone(),
             )
         });
