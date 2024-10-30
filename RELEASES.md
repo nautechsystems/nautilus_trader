@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added `raise_exception` optional parameter to `TradingNode.run` (#2021), thanks @faysou
 - Added `OrderBook.get_avg_px_qty_for_exposure` in Rust (#1893), thanks @elementace
 - Added timeouts to Interactive Brokers adapter configurations (#2026), thanks @rsmb7z
+- Added optional time origins for time bar aggregation (#2028), thanks @faysou
 - Upgraded Polymarket WebSocket API to new version
 
 ### Internal Improvements
