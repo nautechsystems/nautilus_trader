@@ -18,11 +18,6 @@
 use nautilus_model::identifiers::{ClientId, InstrumentId};
 use strum::Display;
 
-use self::{
-    cancel::CancelOrder, cancel_all::CancelAllOrders, cancel_batch::BatchCancelOrders,
-    modify::ModifyOrder, query::QueryOrder, submit::SubmitOrder, submit_list::SubmitOrderList,
-};
-
 pub mod cancel;
 pub mod cancel_all;
 pub mod cancel_batch;
@@ -30,6 +25,12 @@ pub mod modify;
 pub mod query;
 pub mod submit;
 pub mod submit_list;
+
+// Re-exports
+pub use self::{
+    cancel::CancelOrder, cancel_all::CancelAllOrders, cancel_batch::BatchCancelOrders,
+    modify::ModifyOrder, query::QueryOrder, submit::SubmitOrder, submit_list::SubmitOrderList,
+};
 
 #[derive(Clone, Debug, Display)]
 pub enum TradingCommand {
