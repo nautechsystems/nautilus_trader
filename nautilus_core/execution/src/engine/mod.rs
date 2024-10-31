@@ -25,6 +25,7 @@ use std::{
     rc::Rc,
 };
 
+use config::ExecutionEngineConfig;
 use nautilus_common::{
     cache::Cache, clock::Clock, generators::position_id::PositionIdGenerator, msgbus::MessageBus,
 };
@@ -47,9 +48,7 @@ use crate::{
     },
 };
 
-pub struct ExecutionEngineConfig {
-    pub debug: bool,
-}
+pub mod config;
 
 pub struct ExecutionEngine<C>
 where

@@ -3084,6 +3084,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-risk"
+version = "0.35.0"
+dependencies = [
+ "anyhow",
+ "criterion",
+ "derive_builder",
+ "indexmap",
+ "log",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-execution",
+ "nautilus-model",
+ "pyo3",
+ "pyo3-async-runtimes",
+ "rstest",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "strum",
+ "thiserror",
+ "ustr",
+]
+
+[[package]]
 name = "nautilus-serialization"
 version = "0.35.0"
 dependencies = [
