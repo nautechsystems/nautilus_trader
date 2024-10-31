@@ -14,6 +14,7 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model", features = ["stubs"] }
 nautilus-serialization = { path = "../serialization" }
+
 anyhow = { workspace = true }
 futures = { workspace = true }
 log = { workspace = true }
@@ -32,7 +33,7 @@ rstest = { workspace = true }
 quickcheck = "1"
 quickcheck_macros = "1"
 [target.'cfg(target_os = "linux")'.dependencies]
-procfs = "0.16.0"
+procfs = "0.17.0"
 
 [features]
 default = ["ffi", "python"]
