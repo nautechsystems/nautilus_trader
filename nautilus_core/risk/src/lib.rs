@@ -28,3 +28,4 @@
 //! - `python`: Enables Python bindings from `pyo3`.
 
 pub mod engine;
+pub mod sizing;
