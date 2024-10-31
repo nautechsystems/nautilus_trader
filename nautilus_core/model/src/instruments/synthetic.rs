@@ -19,7 +19,7 @@ use std::{
 };
 
 use derive_builder::Builder;
-use evalexpr::{ContextWithMutableVariables, HashMapContext, Node, Value};
+use evalexpr::{ContextWithMutableVariables, DefaultNumericTypes, HashMapContext, Node, Value};
 use nautilus_core::{correctness::FAILED, nanos::UnixNanos};
 
 use crate::{
@@ -107,11 +107,11 @@ impl SyntheticInstrument {
 
     #[must_use]
     pub fn is_valid_formula(&self, formula: &str) -> bool {
-        evalexpr::build_operator_tree(formula).is_ok()
+        evalexpr::build_operator_tree::<DefaultNumericTypes>(formula).is_ok()
     }
 
     pub fn change_formula(&mut self, formula: String) -> anyhow::Result<()> {
-        let operator_tree = evalexpr::build_operator_tree(&formula)?;
+        let operator_tree = evalexpr::build_operator_tree::<DefaultNumericTypes>(&formula)?;
         self.formula = formula;
         self.operator_tree = operator_tree;
         Ok(())
@@ -127,7 +127,7 @@ impl SyntheticInstrument {
             if let Some(&value) = inputs.get(variable) {
                 input_values.push(value);
                 self.context
-                    .set_value(variable.clone(), Value::from(value))
+                    .set_value(variable.clone(), Value::Float(value))
                     .expect("TODO: Unable to set value");
             } else {
                 panic!("Missing price for component: {variable}");
@@ -146,7 +146,7 @@ impl SyntheticInstrument {
 
         for (variable, input) in self.variables.iter().zip(inputs) {
             self.context
-                .set_value(variable.clone(), Value::from(*input))?;
+                .set_value(variable.clone(), Value::Float(*input))?;
         }
 
         let result: Value = self.operator_tree.eval_with_context(&self.context)?;
