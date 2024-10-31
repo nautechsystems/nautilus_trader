@@ -23,6 +23,18 @@ use inner::InnerThrottler;
 
 use crate::clock::Clock;
 
+/// Represents a throttling limit per interval.
+pub struct RateLimit {
+    pub limit: usize,
+    pub interval_ns: u64,
+}
+
+impl RateLimit {
+    pub fn new(limit: usize, interval_ns: u64) -> Self {
+        Self { limit, interval_ns }
+    }
+}
+
 /// Shareable reference to an [`InnerThrottler`]
 ///
 /// Throttler takes messages of type T and callback of type F for dropping
@@ -45,15 +57,20 @@ where
 
 impl<T, F> Throttler<T, F> {
     pub fn new(
-        limit: usize,
-        interval: u64,
+        rate_limit: RateLimit,
         clock: Rc<RefCell<dyn Clock>>,
         timer_name: String,
         output_send: F,
         output_drop: Option<F>,
     ) -> Self {
-        let inner =
-            InnerThrottler::new(limit, interval, clock, timer_name, output_send, output_drop);
+        let inner = InnerThrottler::new(
+            rate_limit.limit,
+            rate_limit.interval_ns,
+            clock,
+            timer_name,
+            output_send,
+            output_drop,
+        );
 
         Self {
             inner: Rc::new(RefCell::new(inner)),
@@ -115,7 +132,7 @@ mod tests {
 
     use rstest::{fixture, rstest};
 
-    use super::Throttler;
+    use super::{RateLimit, Throttler};
     use crate::clock::TestClock;
 
     /// Test throttler with default values for testing
@@ -135,12 +152,12 @@ mod tests {
         });
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let inner_clock = Rc::clone(&clock);
-        let interval = 10;
+        let rate_limit = RateLimit::new(5, 10);
+        let interval = rate_limit.interval_ns;
 
         TestThrottler {
             throttler: Throttler::new(
-                5,
-                interval,
+                rate_limit,
                 clock,
                 "buffer_timer".to_string(),
                 output_send,
@@ -161,12 +178,12 @@ mod tests {
         });
         let clock = Rc::new(RefCell::new(TestClock::new()));
         let inner_clock = Rc::clone(&clock);
-        let interval = 10;
+        let rate_limit = RateLimit::new(5, 10);
+        let interval = rate_limit.interval_ns;
 
         TestThrottler {
             throttler: Throttler::new(
-                5,
-                interval,
+                rate_limit,
                 clock,
                 "dropper_timer".to_string(),
                 output_send,
