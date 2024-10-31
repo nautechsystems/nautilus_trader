@@ -13,31 +13,30 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides a configuration for `ExecutionEngine` instances.
+//! Position sizing calculation functions.
 
-use std::collections::HashMap;
+// Under development
+#![allow(dead_code)]
+#![allow(unused_variables)]
 
-use nautilus_common::throttler::RateLimit;
-use nautilus_core::datetime::NANOSECONDS_IN_SECOND;
-use nautilus_model::identifiers::InstrumentId;
+use nautilus_model::{
+    instruments::any::InstrumentAny,
+    types::{money::Money, price::Price, quantity::Quantity},
+};
 use rust_decimal::Decimal;
 
-pub struct RiskEngineConfig {
-    pub bypass: bool,
-    pub max_order_submit: RateLimit,
-    pub max_order_modify: RateLimit,
-    pub max_notional_per_order: HashMap<InstrumentId, Decimal>,
-    pub debug: bool,
-}
-
-impl Default for RiskEngineConfig {
-    fn default() -> Self {
-        Self {
-            bypass: false,
-            max_order_submit: RateLimit::new(100, NANOSECONDS_IN_SECOND),
-            max_order_modify: RateLimit::new(100, NANOSECONDS_IN_SECOND),
-            max_notional_per_order: HashMap::new(),
-            debug: false,
-        }
-    }
+#[allow(clippy::too_many_arguments)]
+pub fn calculate_fixed_risk_position_size(
+    instrument: InstrumentAny,
+    entry: Price,
+    stop_loss: Price,
+    equity: Money,
+    risk: Decimal,
+    commission_rate: Decimal,
+    exchange_range: Decimal,
+    hard_limit: Option<Decimal>,
+    unit_batch_size: Decimal,
+    units: usize,
+) -> Quantity {
+    todo!()
 }
