@@ -35,6 +35,8 @@ Released on TBD (UTC).
 - Fixed account balance report for dYdX (#2024), thanks @davidsblom
 - Fixed Interactive Brokers market data client subscription log message (#2012), thanks @marcodambros
 - Fixed catalog query mem leak test (#2031), thanks @Pushkarm029
+- Fixed `OrderInitialized.to_dict()` `tags` value type to `list[str]` (was a concatenated `str`)
+- Fixed `OrderInitialized.to_dict()` `linked_order_ids` value type to `list[str]` (was a concatenated `str`)
 
 ---
 
@@ -73,7 +75,7 @@ Released on 22nd October 2024 (UTC).
 - Removed legacy `TardisQuoteDataLoader` (now redundant with new Rust implemented loader)
 - Removed legacy `TardisTradeDataLoader` (now redundant with new Rust implemented loader)
 - Custom signals are now passed to `on_signal(signal)` instead of `on_data(data)`
-- Changed `Position.to_dict()` `commissions` value type to `list[str]` (rather than an optional `str` of a list of strings)
+- Changed `Position.to_dict()` `commissions` value type to `list[str]` (was an optional `str` of a list of strings)
 - Changed `Position.to_dict()` `avg_px_open` value type to `float`
 - Changed `Position.to_dict()` `avg_px_close` value type to `float | None`
 - Changed `Position.to_dict()` `realized_return` value type to `float | None`
