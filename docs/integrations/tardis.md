@@ -3,3 +3,183 @@
 :::info
 We are currently working on this integration guide.
 :::
+
+Tardis provides granular data for cryptocurrency markets including tick-by-tick order book snapshots & updates,
+trades, open interest, funding rates, options chains and liquidations data for leading crypto exchanges.
+
+NautilusTrader provides an integration with the Tardis API and data formats, enabling seamless access.
+The capabilities of this adapter include:
+
+- `TardisCSVDataLoader`: Reads Tardis-format CSV files and converts them into Nautilus data.
+- `TardisMachineClient`: Supports live streaming and historical replay of data from the Tardis Machine WebSocket server - converting messages into Nautilus data.
+- `TardisHttpClient`: Requests instrument definition metadata from the Tardis HTTP API, parsing it into Nautilus instrument definitions.
+- `TardisDataClient`: Provides a live data client for requesting historical data and subscribing to WebSocket data streams.
+- **Data pipeline functions**: Enables replay of historical data from Tardis Machine and writes it to the Nautilus Parquet format, including direct catalog integration for streamlined data management (see below).
+
+## Overview
+
+This adapter is implemented in Rust, with optional Python bindings for ease of use in Python-based workflows.
+It also does not require any external Tardis client library dependencies.
+
+:::info
+There is **no** need for additional installation steps for `tardis`.
+The core components of the adapter are compiled as static libraries and automatically linked during the build process.
+:::
+
+## Tardis documentation
+
+Tardis provides extensive user [documentation](https://docs.tardis.dev/).
+It's recommended you also refer to the Tardis documentation in conjunction with this NautilusTrader integration guide.
+
+## Supported formats
+
+Tardis provides *normalized* market data—a unified format consistent across all supported exchanges.
+This normalization is highly valuable because it allows a single parser to handle data from any Tardis-listed exchange, reducing development time and complexity.
+As a result, NautilusTrader will not support exchange-native market data formats, as it would be inefficient to implement separate parsers for each exchange at this stage.
+
+The following normalized Tardis formats are supported by NautilusTrader:
+
+| Tardis format       | Nautilus data type                                                     |
+|:--------------------|:-----------------------------------------------------------------------|
+| `book_change`       | `OrderBookDelta`                                                       |
+| `book_snapshot_*`   | `OrderBookDepth10`                                                     |
+| `quote`             | `QuoteTick` *Not yet supported*                                        |
+| `quote_10s`         | `QuoteTick` *Not yet supported*                                        |
+| `trade`             | `Trade`                                                                |
+| `trade_bar_*`       | `Bar`                                                                  |
+| `instrument`        | `CurrencyPair`, `CryptoFuture`, `CryptoPerpetual`, `OptionsContract`   |
+| `derivative_ticker` | *Not yet supported*                                                    |
+| `disconnect`        | *Not applicable*                                                       |
+
+:::note
+- `quote` is an alias of `book_snapshot_1_0ms`
+- `quote_10s` is an alias of `book_snapshot_1_10s`
+:::
+
+:::info
+See also the Tardis [normalized market data APIs](https://docs.tardis.dev/api/tardis-machine#normalized-market-data-apis).
+:::
+
+## Bars
+
+The adapter will automatically convert [Tardis trade bar interval and suffix](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix) in Nautilus `BarType`s.
+This includes the following:
+
+| Tardis suffix             | Nautilus bar aggregation    |
+|:--------------------------|:----------------------------|
+| `ms` - milliseconds       | `MILLISECOND`               |
+| `s` - seconds             | `SECOND`                    |
+| `m` - minutes             | `MINUTE`                    |
+| `ticks` - number of ticks | `TICK`                      |
+| `vol` - volume size       | `VOLUME`                    |
+
+## Running Tardis Machine replays
+
+You can perform end-to-end [Tardis Machine](https://docs.tardis.dev/api/tardis-machine) replays, outputting data in Nautilus format Parquet, using either Python or Rust.
+Since the function is implemented in Rust, performance remains consistent whether you run it from Python or Rust, allowing you to choose based on your preferred workflow.
+
+The `run_tardis_machine_replay` data pipeline function utilizes a specified [configuration](#configuration) to execute the following steps:
+
+- Connect to the Tardis Machine WebSocket server.
+- Stream all requested instruments and data types for the specified time ranges. 
+- For each instrument, data type and date (UTC), generate a `.parquet` file in the Nautilus format.
+- Disconnect from the Tardis Marchine WebSocket server, and terminate the program.
+
+This process is optimized for direct output to a Nautilus Parquet data catalog.
+Ensure that the `NAUTILUS_CATALOG_PATH` environment variable is set to the root `/catalog/` directory.
+Parquet files will then be organized under `/catalog/data/` in the expected subdirectories corresponding to data type and instrument.
+
+If no `output_path` is specified in the configuration file and the `NAUTILUS_CATALOG_PATH` environment variable is unset, the system will default to the current working directory.
+
+### Procedure
+
+First, ensure the `tardis-machine` docker container is running. Use the following command:
+
+  docker run -p 8000:8000 -p 8001:8001 -e "TM_API_KEY=YOUR_API_KEY" -d tardisdev/tardis-machine
+
+This command starts the `tardis-machine` server without a persistent local cache, which may affect performance.
+For improved performance, consider running the server with a persistent volume. Refer to the [Tardis Docker documentation](https://docs.tardis.dev/api/tardis-machine#docker) for details.
+
+### Configuration
+
+Next, ensure you have a configuration JSON file available.
+
+**Configuration JSON format**
+
+| name            | type              | description                                                  | default                                                                                               |
+|:----------------|:------------------|:-------------------------------------------------------------|:------------------------------------------------------------------------------------------------------|
+| `tardis_ws_url` | string (optional) | The Tardis Machine WebSocket URL.                            | If `null` then will use the `TARDIS_WS_URL` env var.                                                  |
+| `output_path`   | string (optional) | The output directory path to write Nautilus Parquet data to. | If `null` then will use the `NAUTILUS_CATALOG_PATH` env var, otherwise the current working directory. |
+| `options`       | JSON[]            | An array of [ReplayNormalizedRequestOptions](https://docs.tardis.dev/api/tardis-machine#replay-normalized-options) objects.                                          |
+
+An example configuration file, `example_config.json`, is available [here](https://github.com/nautechsystems/nautilus_trader/blob/develop/nautilus_core/adapters/src/tardis/bin/example_config.json):
+
+```{json}
+{
+  "tardis_ws_url": "ws://localhost:8001",
+  "output_path": null,
+  "options": [
+    {
+      "exchange": "bitmex",
+      "symbols": [
+        "xbtusd",
+        "ethusd"
+      ],
+      "data_types": [
+        "trade"
+      ],
+      "from": "2019-10-01",
+      "to": "2019-10-02"
+    }
+  ]
+}
+```
+
+### Python replays
+
+To run a replay in Python, create a script similar to the following:
+
+```{python}
+import asyncio
+
+from nautilus_trader.core import nautilus_pyo3
+
+
+async def run():
+    config_filepath = Path("YOUR_CONFIG_FILEPATH")
+    await nautilus_pyo3.run_tardis_machine_replay(str(config_filepath.resolve()))
+
+
+if __name__ == "__main__":
+    asyncio.run(run())
+```
+
+### Rust replays
+
+To run a replay in Rust, create a binary similar to the following:
+
+```{rust}
+use std::{env, path::PathBuf};
+
+use nautilus_adapters::tardis::replay::run_tardis_machine_replay_from_config;
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .init();
+
+    let config_filepath = PathBuf::from("YOUR_CONFIG_FILEPATH");
+    run_tardis_machine_replay_from_config(&config_filepath).await;
+}
+```
+
+Make sure to enable Rust logging by exporting the following environment variable:
+
+  export RUST_LOG=devbug
+
+A working example binary can be found [here](https://github.com/nautechsystems/nautilus_trader/blob/develop/nautilus_core/adapters/src/tardis/bin/example_replay.rs).
+
+This can also be run using cargo:
+
+  cargo run --bin tardis-replay <path_to_your_config>
