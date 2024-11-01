@@ -114,11 +114,19 @@ async fn gather_instruments_info(
     results.into_iter().collect()
 }
 
-pub async fn run_tardis_machine_replay(config_filepath: &Path, output_path: Option<&Path>) {
+pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) {
     tracing::info!("Starting replay");
+    tracing::info!("Config filepath: {}", config_filepath.display());
 
-    let path = output_path
-        .map(std::path::Path::to_path_buf)
+    let config_data = fs::read_to_string(config_filepath).expect("Failed to read config file");
+    let config: TardisReplayConfig =
+        serde_json::from_str(&config_data).expect("Failed to parse config JSON");
+
+    let path = config
+        .output_path
+        .as_deref()
+        .map(Path::new)
+        .map(Path::to_path_buf)
         .or_else(|| {
             std::env::var("NAUTILUS_CATALOG_PATH")
                 .ok()
@@ -126,9 +134,7 @@ pub async fn run_tardis_machine_replay(config_filepath: &Path, output_path: Opti
         })
         .unwrap_or_else(|| std::env::current_dir().expect("Failed to get current directory"));
 
-    let config_data = fs::read_to_string(config_filepath).expect("Failed to read config file");
-    let config: TardisReplayConfig =
-        serde_json::from_str(&config_data).expect("Failed to parse config JSON");
+    tracing::info!("Output path: {}", path.display());
 
     let http_client = TardisHttpClient::new(None, None, None);
     let mut machine_client = TardisMachineClient::new(config.tardis_ws_url.as_deref());

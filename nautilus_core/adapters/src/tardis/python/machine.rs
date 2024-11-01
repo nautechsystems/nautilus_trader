@@ -13,18 +13,21 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 use futures_util::{pin_mut, Stream, StreamExt};
 use nautilus_model::{identifiers::InstrumentId, python::data::data_to_pycapsule};
 use pyo3::prelude::*;
 
-use crate::tardis::machine::{
-    client::{determine_instrument_info, TardisMachineClient},
-    message::WsMessage,
-    parse::parse_tardis_ws_message,
-    replay_normalized, stream_normalized, Error, InstrumentMiniInfo,
-    ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions,
+use crate::tardis::{
+    machine::{
+        client::{determine_instrument_info, TardisMachineClient},
+        message::WsMessage,
+        parse::parse_tardis_ws_message,
+        replay_normalized, stream_normalized, Error, InstrumentMiniInfo,
+        ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions,
+    },
+    replay::run_tardis_machine_replay_from_config,
 };
 
 #[pymethods]
@@ -92,6 +95,24 @@ impl TardisMachineClient {
             Ok(())
         })
     }
+}
+
+#[pyfunction]
+#[pyo3(name = "run_tardis_machine_replay")]
+#[pyo3(signature = (config_filepath))]
+pub fn py_run_tardis_machine_replay(
+    py: Python<'_>,
+    config_filepath: String,
+) -> PyResult<Bound<'_, PyAny>> {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .init();
+
+    pyo3_async_runtimes::tokio::future_into_py(py, async move {
+        let config_filepath = Path::new(&config_filepath);
+        run_tardis_machine_replay_from_config(config_filepath).await;
+        Ok(())
+    })
 }
 
 async fn handle_python_stream<S>(

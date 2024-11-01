@@ -15,7 +15,7 @@
 
 use std::{env, path::PathBuf};
 
-use nautilus_adapters::tardis::replay::run_tardis_machine_replay;
+use nautilus_adapters::tardis::replay::run_tardis_machine_replay_from_config;
 
 #[tokio::main]
 async fn main() {
@@ -32,8 +32,5 @@ async fn main() {
             .join("example_config.json")
     });
 
-    // Retrieve optional output path
-    let output_path = env::args().nth(2).map(PathBuf::from);
-
-    run_tardis_machine_replay(&config_filepath, output_path.as_deref()).await;
+    run_tardis_machine_replay_from_config(&config_filepath).await;
 }
