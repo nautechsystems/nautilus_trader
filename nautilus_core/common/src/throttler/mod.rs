@@ -30,7 +30,8 @@ pub struct RateLimit {
 }
 
 impl RateLimit {
-    pub fn new(limit: usize, interval_ns: u64) -> Self {
+    #[must_use]
+    pub const fn new(limit: usize, interval_ns: u64) -> Self {
         Self { limit, interval_ns }
     }
 }
@@ -49,7 +50,7 @@ where
     T: Debug,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Throttler")
+        f.debug_struct(stringify!(Throttler))
             .field("inner", &self.inner)
             .finish()
     }
