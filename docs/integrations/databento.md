@@ -1,6 +1,6 @@
 # Databento
 
-NautilusTrader provides an adapter for integrating with the Databento API and [Databento Binary Encoding (DBN)](https://databento.com/docs/knowledge-base/new-users/dbn-encoding) format data.
+NautilusTrader provides an adapter for integrating with the Databento API and [Databento Binary Encoding (DBN)](https://databento.com/docs/standards-and-conventions/databento-binary-encoding) format data.
 As Databento is purely a market data provider, there is no execution client provided - although a sandbox environment with simulated execution could still be set up.
 It's also possible to match Databento data with Interactive Brokers execution, or to calculate traditional asset class signals for crypto trading.
 
@@ -39,13 +39,13 @@ and won't need to necessarily work with these lower level components directly.
 
 ## Databento documentation
 
-Databento provides extensive documentation for users which can be found in the [Databento knowledge base](https://databento.com/docs/knowledge-base/new-users).
+Databento provides extensive documentation for new users which can be found in the [Databento new users guide](https://databento.com/docs/quickstart/new-user-guides).
 It's recommended you also refer to the Databento documentation in conjunction with this NautilusTrader integration guide.
 
 ## Databento Binary Encoding (DBN)
 
 Databento Binary Encoding (DBN) is an extremely fast message encoding and storage format for normalized market data.
-The [DBN specification](https://databento.com/docs/knowledge-base/new-users/dbn-encoding) includes a simple, self-describing metadata header and a fixed set of struct definitions,
+The [DBN specification](https://databento.com/docs/standards-and-conventions/databento-binary-encoding) includes a simple, self-describing metadata header and a fixed set of struct definitions,
 which enforce a standardized way to normalize market data.
 
 The integration provides a decoder which can convert DBN format data to Nautilus objects.
@@ -106,7 +106,7 @@ instruments `exchange` field:
 - `XNYM`: New York Mercantile Exchange (NYMEX)
 
 :::info
-Other venue MICs can be found in the `venue` field of responses from the [metadata.list_publishers](https://databento.com/docs/api-reference-historical/metadata/metadata-list-publishers?historical=http&live=python) endpoint.
+Other venue MICs can be found in the `venue` field of responses from the [metadata.list_publishers](https://databento.com/docs/api-reference-historical/metadata/metadata-list-publishers) endpoint.
 :::
 
 ## Timestamps
@@ -125,13 +125,12 @@ Nautilus data includes at *least* two timestamps (required by the `Data` contrac
 
 When decoding and normalizing Databento to Nautilus we generally assign the Databento `ts_recv` value to the Nautilus
 `ts_event` field, as this timestamp is much more reliable and consistent, and is guaranteed to be monotonically increasing per instrument.
-The exception to this are the `DatabentoImbalance` and `DatabentoStatistics` data types, which have fields for all timestamps
-- as the types are defined specifically for the adapter.
+The exception to this are the `DatabentoImbalance` and `DatabentoStatistics` data types, which have fields for all timestamps as these types are defined specifically for the adapter.
 
 :::info
 See the following Databento docs for further information:
-- [Databento standards and conventions - timestamps](https://databento.com/docs/knowledge-base/new-users/standards-conventions/timestamps)
-- [Databento timestamping guide](https://databento.com/docs/knowledge-base/data-integrity/timestamping/timestamps-on-databento-and-how-to-use-them)
+- [Databento standards and conventions - timestamps](https://databento.com/docs/standards-and-conventions/common-fields-enums-types#timestamps)
+- [Databento timestamping guide](https://databento.com/docs/architecture/timestamping-guide)
 :::
 
 ## Data types
@@ -140,7 +139,7 @@ The following section discusses Databento schema -> Nautilus data type equivalen
 and considerations.
 
 :::info
-See the Databento [list of fields by schema guide](https://databento.com/docs/knowledge-base/new-users/fields-by-schema).
+See Databento [schemas and data formats](https://databento.com/docs/schemas-and-data-formats).
 :::
 
 ### Instrument definitions
