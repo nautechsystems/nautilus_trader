@@ -39,22 +39,20 @@ As a result, NautilusTrader will not support exchange-native market data formats
 
 The following normalized Tardis formats are supported by NautilusTrader:
 
-| Tardis format       | Nautilus data type                                                     |
-|:--------------------|:-----------------------------------------------------------------------|
-| `book_change`       | `OrderBookDelta`                                                       |
-| `book_snapshot_*`   | `OrderBookDepth10`                                                     |
-| `quote`             | `QuoteTick` *Not yet supported*                                        |
-| `quote_10s`         | `QuoteTick` *Not yet supported*                                        |
-| `trade`             | `Trade`                                                                |
-| `trade_bar_*`       | `Bar`                                                                  |
-| `instrument`        | `CurrencyPair`, `CryptoFuture`, `CryptoPerpetual`, `OptionsContract`   |
-| `derivative_ticker` | *Not yet supported*                                                    |
-| `disconnect`        | *Not applicable*                                                       |
+| Tardis format     | Nautilus data type                                                     |
+|:------------------|:-----------------------------------------------------------------------|
+| book_change       | `OrderBookDelta`                                                       |
+| book_snapshot_*   | `OrderBookDepth10`                                                     |
+| quote             | `QuoteTick` *Not yet supported*                                        |
+| quote_10s         | `QuoteTick` *Not yet supported*                                        |
+| trade             | `Trade`                                                                |
+| trade_bar_*       | `Bar`                                                                  |
+| instrument        | `CurrencyPair`, `CryptoFuture`, `CryptoPerpetual`, `OptionsContract`   |
+| derivative_ticker | *Not yet supported*                                                    |
+| disconnect        | *Not applicable*                                                       |
 
-:::note
 - `quote` is an alias of `book_snapshot_1_0ms`
 - `quote_10s` is an alias of `book_snapshot_1_10s`
-:::
 
 :::info
 See also the Tardis [normalized market data APIs](https://docs.tardis.dev/api/tardis-machine#normalized-market-data-apis).
@@ -62,7 +60,7 @@ See also the Tardis [normalized market data APIs](https://docs.tardis.dev/api/ta
 
 ## Bars
 
-The adapter will automatically convert [Tardis trade bar interval and suffix](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix) in Nautilus `BarType`s.
+The adapter will automatically convert [Tardis trade bar interval and suffix](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix) to Nautilus `BarType`s.
 This includes the following:
 
 | Tardis suffix             | Nautilus bar aggregation    |
@@ -95,7 +93,9 @@ If no `output_path` is specified in the configuration file and the `NAUTILUS_CAT
 
 First, ensure the `tardis-machine` docker container is running. Use the following command:
 
-  docker run -p 8000:8000 -p 8001:8001 -e "TM_API_KEY=YOUR_API_KEY" -d tardisdev/tardis-machine
+```bash
+docker run -p 8000:8000 -p 8001:8001 -e "TM_API_KEY=YOUR_API_KEY" -d tardisdev/tardis-machine
+```
 
 This command starts the `tardis-machine` server without a persistent local cache, which may affect performance.
 For improved performance, consider running the server with a persistent volume. Refer to the [Tardis Docker documentation](https://docs.tardis.dev/api/tardis-machine#docker) for details.
@@ -176,10 +176,14 @@ async fn main() {
 
 Make sure to enable Rust logging by exporting the following environment variable:
 
-  export RUST_LOG=devbug
+```bash
+export RUST_LOG=devbug
+```
 
 A working example binary can be found [here](https://github.com/nautechsystems/nautilus_trader/blob/develop/nautilus_core/adapters/src/tardis/bin/example_replay.rs).
 
 This can also be run using cargo:
 
-  cargo run --bin tardis-replay <path_to_your_config>
+```bash
+cargo run --bin tardis-replay <path_to_your_config>
+```
