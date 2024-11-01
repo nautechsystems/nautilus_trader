@@ -114,7 +114,7 @@ Next, ensure you have a configuration JSON file available.
 
 An example configuration file, `example_config.json`, is available [here](https://github.com/nautechsystems/nautilus_trader/blob/develop/nautilus_core/adapters/src/tardis/bin/example_config.json):
 
-```{json}
+```json
 {
   "tardis_ws_url": "ws://localhost:8001",
   "output_path": null,
@@ -139,7 +139,7 @@ An example configuration file, `example_config.json`, is available [here](https:
 
 To run a replay in Python, create a script similar to the following:
 
-```{python}
+```python
 import asyncio
 
 from nautilus_trader.core import nautilus_pyo3
@@ -158,7 +158,7 @@ if __name__ == "__main__":
 
 To run a replay in Rust, create a binary similar to the following:
 
-```{rust}
+```rust
 use std::{env, path::PathBuf};
 
 use nautilus_adapters::tardis::replay::run_tardis_machine_replay_from_config;
