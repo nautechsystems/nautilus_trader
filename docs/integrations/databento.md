@@ -5,9 +5,11 @@ As Databento is purely a market data provider, there is no execution client prov
 It's also possible to match Databento data with Interactive Brokers execution, or to calculate traditional asset class signals for crypto trading.
 
 The capabilities of this adapter include:
+
 - Loading historical data from DBN files and decoding into Nautilus objects for backtesting or writing to the data catalog
 - Requesting historical data which is decoded to Nautilus objects to support live trading and backtesting
 - Subscribing to real-time data feeds which are decoded to Nautilus objects to support live trading and sandbox environments
+
 :::tip
 [Databento](https://databento.com/signup) currently offers 125 USD in free data credits (historical data only) for new account sign-ups.
 
@@ -18,11 +20,11 @@ It's recommended you make use of the [/metadata.get_cost](https://databento.com/
 ## Overview
 
 The adapter implementation takes the [databento-rs](https://crates.io/crates/databento) crate as a dependency,
-which is the official Rust client library provided by Databento. There are actually no Databento Python dependencies.
+which is the official Rust client library provided by Databento.
 
 :::info
-There is no optional extra installation for `databento`, at this stage the core components of the adapter are compiled
-as static libraries and linked during the build by default.
+There is **no** need for an optional extra installation of `databento`, as the core components of the
+adapter are compiled as static libraries and linked automatically during the build process.
 :::
 
 The following adapter classes are available:
@@ -59,7 +61,7 @@ The same Rust implemented Nautilus decoder is used for:
 The following Databento schemas are supported by NautilusTrader:
 
 | Databento schema | Nautilus data type                |
-|------------------|-----------------------------------|
+|:-----------------|:----------------------------------|
 | MBO              | `OrderBookDelta`                  |
 | MBP_1            | `(QuoteTick, Option<TradeTick>)`  |
 | MBP_10           | `OrderBookDepth10`                |
