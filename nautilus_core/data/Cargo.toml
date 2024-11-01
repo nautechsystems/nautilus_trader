@@ -16,7 +16,6 @@ nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model", features = ["stubs"] }
 anyhow = { workspace = true }
 chrono = { workspace = true }
-derive_builder = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
@@ -25,7 +24,6 @@ rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-strum = { workspace = true }
 tokio = { workspace = true }
 thiserror = { workspace = true }
 ustr = { workspace = true }

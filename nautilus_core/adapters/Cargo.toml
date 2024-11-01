@@ -30,7 +30,6 @@ path = "src/tardis/bin/example_replay.rs"
 nautilus-common = { path = "../common" }
 nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model" }
-nautilus-persistence = { path = "../persistence" }
 nautilus-serialization = { path = "../serialization" }
 anyhow = { workspace = true }
 arrow = { workspace = true, optional = true }
@@ -77,7 +76,6 @@ extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
-  "nautilus-persistence/extension-module",
 ]
 databento = ["dep:databento", "fallible-streaming-iterator", "python", "time"]
 ffi = [
@@ -91,6 +89,5 @@ python = [
   "nautilus-common/python",
   "nautilus-core/python",
   "nautilus-model/python",
-  "nautilus-persistence/python",
 ]
 tardis = ["arrow", "parquet", "python", "csv", "flate2", "tokio-tungstenite", "urlencoding", "uuid"]
