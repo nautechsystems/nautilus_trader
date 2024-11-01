@@ -521,10 +521,18 @@ cdef class OrderInitialized(OrderEvent):
         Condition.not_none(values, "values")
         cdef str trigger_instrument_id = values["trigger_instrument_id"]
         cdef str order_list_id_str = values["order_list_id"]
-        cdef list[str] linked_order_ids = values["linked_order_ids"]
         cdef str parent_order_id_str = values["parent_order_id"]
         cdef str exec_algorithm_id_str = values["exec_algorithm_id"]
         cdef str exec_spawn_id_str = values["exec_spawn_id"]
+
+        linked_order_ids = values["linked_order_ids"]
+        tags = values["tags"]
+
+        if isinstance(linked_order_ids, str):
+            linked_order_ids = linked_order_ids.split(",")
+        if isinstance(tags, str):
+            tags = tags.split(",")
+
         return OrderInitialized(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -547,7 +555,7 @@ cdef class OrderInitialized(OrderEvent):
             exec_algorithm_id=ExecAlgorithmId(exec_algorithm_id_str) if exec_algorithm_id_str is not None else None,
             exec_algorithm_params=values["exec_algorithm_params"],
             exec_spawn_id=ClientOrderId(exec_spawn_id_str) if exec_spawn_id_str is not None else None,
-            tags=values["tags"],
+            tags=tags,
             event_id=UUID4(values["event_id"]),
             ts_init=values["ts_init"],
             reconciliation=values.get("reconciliation", False),
