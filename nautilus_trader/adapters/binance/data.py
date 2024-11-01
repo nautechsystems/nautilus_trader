@@ -953,10 +953,11 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     # -- WEBSOCKET HANDLERS ---------------------------------------------------------------------------------
 
     def _handle_ws_message(self, raw: bytes) -> None:
-        wrapper = self._decoder_data_msg_wrapper.decode(raw)
-        if not wrapper.stream:
-            return  # Control message response
         try:
+            wrapper = self._decoder_data_msg_wrapper.decode(raw)
+            if not wrapper.stream:
+                return  # Control message response
+
             handled = False
             for handler in self._ws_handlers:
                 if handler in wrapper.stream:
@@ -967,7 +968,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                     f"Unrecognized websocket message type: {wrapper.stream}",
                 )
         except Exception as e:
-            self._log.error(f"Error handling websocket message, {e}")
+            self._log.error(f"Error handling websocket message {raw!r}, {e}")
 
     def _handle_book_diff_update(self, raw: bytes) -> None:
         msg = self._decoder_order_book_msg.decode(raw)
