@@ -275,10 +275,11 @@ class BinanceFuturesExecutionClient(BinanceCommonExecutionClient):
     # -- WEBSOCKET EVENT HANDLERS --------------------------------------------------------------------
 
     def _handle_user_ws_message(self, raw: bytes) -> None:
-        wrapper = self._decoder_futures_user_msg_wrapper.decode(raw)
-        if not wrapper.stream or not wrapper.data:
-            return  # Control message response
         try:
+            wrapper = self._decoder_futures_user_msg_wrapper.decode(raw)
+            if not wrapper.stream or not wrapper.data:
+                return  # Control message response
+
             self._futures_user_ws_handlers[wrapper.data.e](raw)
         except Exception as e:
             self._log.exception(f"Error on handling {raw!r}", e)
