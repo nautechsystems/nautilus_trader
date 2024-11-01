@@ -3,6 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Added Tardis Machine and HTTP API integration in Python and Rust
 - Added aggregation of bars from historical data (#2002), thanks @faysou
 - Added monthly and weekly bar aggregations (#2025), thanks @faysou
 - Added `raise_exception` optional parameter to `TradingNode.run` (#2021), thanks @faysou
@@ -27,7 +28,7 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 - Removed pyo3 `DataTransformer` (was being used for namespacing, so refactored to separate functions)
-- Moved `TEST_DATA_DIR` constant to `nautilus_trader` module (from `tests`)
+- Moved `TEST_DATA_DIR` constant from `tests` to `nautilus_trader` package (#2020), thanks @faysou
 
 ### Fixes
 - Fixed use of Redis `KEYS` command which, is unsupported in cluster environments (replaced with `SCAN` for compatibility)

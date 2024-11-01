@@ -43,16 +43,19 @@ The following normalized Tardis formats are supported by NautilusTrader:
 |:------------------|:-----------------------------------------------------------------------|
 | book_change       | `OrderBookDelta`                                                       |
 | book_snapshot_*   | `OrderBookDepth10`                                                     |
-| quote             | `QuoteTick` *Not yet supported*                                        |
-| quote_10s         | `QuoteTick` *Not yet supported*                                        |
+| quote             | `QuoteTick`                                                            |
+| quote_10s         | `QuoteTick`                                                            |
 | trade             | `Trade`                                                                |
 | trade_bar_*       | `Bar`                                                                  |
 | instrument        | `CurrencyPair`, `CryptoFuture`, `CryptoPerpetual`, `OptionsContract`   |
 | derivative_ticker | *Not yet supported*                                                    |
 | disconnect        | *Not applicable*                                                       |
 
-- `quote` is an alias of `book_snapshot_1_0ms`
-- `quote_10s` is an alias of `book_snapshot_1_10s`
+**Notes:**
+
+- `quote` is an alias for `book_snapshot_1_0ms`.
+- `quote_10s` is an alias for `book_snapshot_1_10s`.
+- Both `quote`, `quote_10s`, and one-level snapshots are parsed as `QuoteTick`.
 
 :::info
 See also the Tardis [normalized market data APIs](https://docs.tardis.dev/api/tardis-machine#normalized-market-data-apis).
@@ -186,4 +189,63 @@ This can also be run using cargo:
 
 ```bash
 cargo run --bin tardis-replay <path_to_your_config>
+```
+
+## Loading Tardis CSV data
+
+Tardis-format CSV data can be loaded using either Python or Rust. The loader reads the CSV text data
+from disk and parses it into Nautilus data. Since the loader is implemented in Rust, performance remains
+consistent regardless of whether you run it from Python or Rust, allowing you to choose based on your preferred workflow.
+
+You can also optionally specify a `limit` parameter for the `load_*` functions/methods to control the maximum number of rows loaded.
+
+:::note
+Loading mixed-instrument CSV files is challenging due to precision requirements and is not recommended. Use single-instrument CSV files instead (see below).
+:::
+
+### Loading CSV data in Python
+
+When loading Tardis-format CSV data in Python, you can optionally specify both the instrument ID but must specify the price precision, and size precision.
+Providing the instrument ID improves loading performance, while specifying the precisions is required, as they cannot be inferred from the text data alone.
+
+To load the data, create a script similar to the following:
+
+```python
+from nautilus_trader.adapters.tardis.loaders import TardisCSVDataLoader
+from nautilus_trader.model.identifiers import InstrumentId
+
+
+instrument_id = InstrumentId.from_str("BTC-PERPETUAL.DERIBIT")
+loader = TardisCSVDataLoader(
+    price_precision=1,
+    size_precision=0,
+    instrument_id=instrument_id,
+)
+
+filepath = Path("YOUR_CSV_DATA_PATH")
+limit = None
+
+deltas = loader.load_deltas(filepath, limit)
+```
+
+### Loading CSV data in Rust
+
+When loading Tardis-format CSV data in Rust, you can optionally specify the instrument ID but must specify both the price precision and size precision.
+Providing the instrument ID improves loading performance, while specifying the precisions is required, as they cannot be inferred from the text data alone.
+
+To load the data, create code similar to the following:
+
+```rust
+use std::path::Path;
+use nautilus_trader::model::identifiers::InstrumentId;
+
+
+let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+let price_precision = 1;
+let size_precision = 0;
+let filepath = Path::new("YOUR_CSV_DATA_PATH");
+let limit = None;
+
+// Consider propagating any parsing error depending on your workflow
+let deltas = tardis::csv::load_deltas(filepath, price_precision, size_precision, instrument_id, limit).unwrap();
 ```
