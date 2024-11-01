@@ -33,6 +33,7 @@ pub use self::{
 };
 
 #[derive(Clone, Debug, Display)]
+#[allow(clippy::large_enum_variant)] // TODO: why?
 pub enum TradingCommand {
     SubmitOrder(SubmitOrder),
     SubmitOrderList(SubmitOrderList),

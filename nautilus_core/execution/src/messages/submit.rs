@@ -17,9 +17,12 @@ use std::fmt::Display;
 
 use derive_builder::Builder;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
-use nautilus_model::identifiers::{
-    ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId, TraderId,
-    VenueOrderId,
+use nautilus_model::{
+    identifiers::{
+        ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId, TraderId,
+        VenueOrderId,
+    },
+    orders::any::OrderAny,
 };
 use serde::{Deserialize, Serialize};
 
@@ -33,7 +36,7 @@ pub struct SubmitOrder {
     pub instrument_id: InstrumentId,
     pub client_order_id: ClientOrderId,
     pub venue_order_id: VenueOrderId,
-    // order: OrderAny,  // TODO: Implement Eq
+    pub order: OrderAny, // TODO: Implement Eq
     pub exec_algorith_id: Option<ExecAlgorithmId>,
     pub position_id: Option<PositionId>,
     pub command_id: UUID4,
@@ -50,6 +53,7 @@ impl SubmitOrder {
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
         venue_order_id: VenueOrderId,
+        order: OrderAny,
         exec_algorith_id: Option<ExecAlgorithmId>,
         position_id: Option<PositionId>,
         command_id: UUID4,
@@ -62,6 +66,7 @@ impl SubmitOrder {
             instrument_id,
             client_order_id,
             venue_order_id,
+            order,
             exec_algorith_id,
             position_id,
             command_id,
