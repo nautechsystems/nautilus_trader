@@ -1,9 +1,5 @@
 # Polymarket
 
-:::info
-We are currently working on this integration guide.
-:::
-
 Founded in 2020, Polymarket is the world’s largest decentralized prediction market platform,
 enabling traders to speculate on the outcomes of world events by buying and selling binary option contracts using cryptocurrency.
 

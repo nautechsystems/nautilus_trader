@@ -30,7 +30,7 @@ It's recommended you also refer to the Tardis documentation in conjunction with 
 ## Supported formats
 
 Tardis provides *normalized* market data—a unified format consistent across all supported exchanges.
-This normalization is highly valuable because it allows a single parser to handle data from any Tardis-listed exchange, reducing development time and complexity.
+This normalization is highly valuable because it allows a single parser to handle data from any Tardis-supported exchange, reducing development time and complexity.
 As a result, NautilusTrader will not support exchange-native market data formats, as it would be inefficient to implement separate parsers for each exchange at this stage.
 
 The following normalized Tardis formats are supported by NautilusTrader:
@@ -70,17 +70,22 @@ This includes the following:
 | `ticks` - number of ticks | `TICK`                      |
 | `vol` - volume size       | `VOLUME`                    |
 
-## Running Tardis Machine replays
+## Running Tardis Machine historical replays
 
-You can perform end-to-end [Tardis Machine](https://docs.tardis.dev/api/tardis-machine) replays, outputting data in Nautilus format Parquet, using either Python or Rust.
-Since the function is implemented in Rust, performance remains consistent whether you run it from Python or Rust, allowing you to choose based on your preferred workflow.
+The [Tardis Machine Server](https://docs.tardis.dev/api/tardis-machine) is a locally runnable server
+with built-in data caching, providing both tick-level historical and consolidated real-time cryptocurrency market data through HTTP and WebSocket APIs.
 
-The `run_tardis_machine_replay` data pipeline function utilizes a specified [configuration](#configuration) to execute the following steps:
+You can perform complete Tardis Machine WebSocket replays of historical data and output the results
+in Nautilus Parquet format, using either Python or Rust. Since the function is implemented in Rust,
+performance is consistent whether run from Python or Rust, letting you choose based on your preferred workflow.
 
-- Connect to the Tardis Machine WebSocket server.
-- Stream all requested instruments and data types for the specified time ranges. 
+The end-to-end `run_tardis_machine_replay` data pipeline function utilizes a specified [configuration](#configuration) to execute the following steps:
+
+- Connect to the Tardis Machine server.
+- Request and parse all necessary instrument definitions from the [Tardis instruments metadata](https://docs.tardis.dev/api/instruments-metadata-api) HTTP API.
+- Stream all requested instruments and data types for the specified time ranges from the Tardis Machine server.
 - For each instrument, data type and date (UTC), generate a `.parquet` file in the Nautilus format.
-- Disconnect from the Tardis Marchine WebSocket server, and terminate the program.
+- Disconnect from the Tardis Marchine server, and terminate the program.
 
 This process is optimized for direct output to a Nautilus Parquet data catalog.
 Ensure that the `NAUTILUS_CATALOG_PATH` environment variable is set to the root `/catalog/` directory.
@@ -176,7 +181,7 @@ async fn main() {
 Make sure to enable Rust logging by exporting the following environment variable:
 
 ```bash
-export RUST_LOG=devbug
+export RUST_LOG=debug
 ```
 
 A working example binary can be found [here](https://github.com/nautechsystems/nautilus_trader/blob/develop/nautilus_core/adapters/src/tardis/bin/example_replay.rs).
@@ -201,7 +206,7 @@ Loading mixed-instrument CSV files is challenging due to precision requirements 
 
 ### Loading CSV data in Python
 
-When loading Tardis-format CSV data in Python, you can optionally specify both the instrument ID but must specify the price precision, and size precision.
+When loading Tardis-format CSV data in Python, you can optionally specify the instrument ID but must specify both the price precision, and size precision.
 Providing the instrument ID improves loading performance, while specifying the precisions is required, as they cannot be inferred from the text data alone.
 
 To load the data, create a script similar to the following:
@@ -233,15 +238,29 @@ To load the data, create code similar to the following:
 
 ```rust
 use std::path::Path;
-use nautilus_trader::model::identifiers::InstrumentId;
 
+use nautilus_adapters::tardis;
+use nautilus_model::identifiers::InstrumentId;
 
-let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
-let price_precision = 1;
-let size_precision = 0;
-let filepath = Path::new("YOUR_CSV_DATA_PATH");
-let limit = None;
+#[tokio::main]
+async fn main() {
+    // You must specify precisions and the CSV filepath
+    let price_precision = 1;
+    let size_precision = 0;
+    let filepath = Path::new("YOUR_CSV_DATA_PATH");
 
-// Consider propagating any parsing error depending on your workflow
-let deltas = tardis::csv::load_deltas(filepath, price_precision, size_precision, instrument_id, limit).unwrap();
+    // Optionally specify an instrument ID and/or limit
+    let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+    let limit = None;
+
+    // Consider propagating any parsing error depending on your workflow
+    let _deltas = tardis::csv::load_deltas(
+        filepath,
+        price_precision,
+        size_precision,
+        Some(instrument_id),
+        limit,
+    )
+    .unwrap();
+}
 ```
