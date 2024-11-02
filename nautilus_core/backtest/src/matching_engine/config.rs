@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-/// Configuration for [`OrderMatchingEngine`] instances.
+/// Configuration for `OrderMatchingEngine` instances.
 #[derive(Debug, Clone)]
 pub struct OrderMatchingEngineConfig {
     pub bar_execution: bool,
