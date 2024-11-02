@@ -39,6 +39,10 @@ As with the other integration adapters, most users will simply define a configur
 and won't need to necessarily work with these lower level components directly.
 :::
 
+## Examples
+
+You can find working live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/databento/).
+
 ## Databento documentation
 
 Databento provides extensive documentation for new users which can be found in the [Databento new users guide](https://databento.com/docs/quickstart/new-user-guides).

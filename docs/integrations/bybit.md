@@ -23,6 +23,10 @@ To install from source using poetry:
 poetry install --extras bybit
 ```
 
+## Examples
+
+You can find working live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/bybit/).
+
 ## Overview
 
 The following documentation assumes a trader is setting up for both live market

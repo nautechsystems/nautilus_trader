@@ -1,9 +1,5 @@
 # Tardis
 
-:::info
-We are currently working on this integration guide.
-:::
-
 Tardis provides granular data for cryptocurrency markets including tick-by-tick order book snapshots & updates,
 trades, open interest, funding rates, options chains and liquidations data for leading crypto exchanges.
 
