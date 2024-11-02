@@ -30,7 +30,7 @@ It's recommended you also refer to the Tardis documentation in conjunction with 
 ## Supported formats
 
 Tardis provides *normalized* market data—a unified format consistent across all supported exchanges.
-This normalization is highly valuable because it allows a single parser to handle data from any Tardis-supported exchange, reducing development time and complexity.
+This normalization is highly valuable because it allows a single parser to handle data from any [Tardis-supported exchange](https://api.tardis.dev/v1/exchanges), reducing development time and complexity.
 As a result, NautilusTrader will not support exchange-native market data formats, as it would be inefficient to implement separate parsers for each exchange at this stage.
 
 The following normalized Tardis formats are supported by NautilusTrader:
@@ -87,11 +87,25 @@ The end-to-end `run_tardis_machine_replay` data pipeline function utilizes a spe
 - (4) For each instrument, data type and date (UTC), generate a `.parquet` file in the Nautilus format.
 - (5) Disconnect from the Tardis Marchine server, and terminate the program.
 
+:::note
+You can request data for the first day of each month without an API key. For all other dates, a Tardis Machine API key is required.
+:::
+
 This process is optimized for direct output to a Nautilus Parquet data catalog.
 Ensure that the `NAUTILUS_CATALOG_PATH` environment variable is set to the root `/catalog/` directory.
 Parquet files will then be organized under `/catalog/data/` in the expected subdirectories corresponding to data type and instrument.
 
 If no `output_path` is specified in the configuration file and the `NAUTILUS_CATALOG_PATH` environment variable is unset, the system will default to the current working directory.
+
+### Environment variables
+
+The following environment variables are used by Tardis and NautilusTrader.
+
+- `TM_API_KEY`: API key for the Tardis Machine.
+- `TARDIS_API_KEY`: API key for NautilusTrader Tardis clients.
+- `TARDIS_WS_URL` (optional): WebSocket URL for the `TardisMachineClient` in NautilusTrader.
+- `TARDIS_BASE_URL` (optional): Base URL for the `TardisHttpClient` in NautilusTrader.
+- `NAUTILUS_CATALOG_PATH` (optional): Root directory for writing replay data in the Nautilus catalog.
 
 ### Procedure
 
@@ -264,5 +278,68 @@ async fn main() {
         limit,
     )
     .unwrap();
+}
+```
+
+## Requesting instrument definitions
+
+You can request instrument definitions in both Python and Rust using the `TardisHttpClient`.
+This client interacts with the [Tardis instruments metadata API](https://docs.tardis.dev/api/instruments-metadata-api) to fetch and parse instrument metadata into Nautilus instruments.
+
+The `TardisHttpClient` constructor accepts optional parameters for `api_key`, `base_url`, and `timeout_secs` (default is 60 seconds).
+
+The client provides methods to retrieve either a specific instrument or all instruments available on a particular exchange.
+Ensure that you use Tardis’s lower-kebab casing when referring to a [Tardis-supported exchange](https://api.tardis.dev/v1/exchanges).
+
+:::note
+A Tardis API key is required to access the instruments metadata API.
+:::
+
+### Requesting instruments in Python
+
+To request instrument definitions in Python, create a script similar to the following:
+
+```python
+import asyncio
+
+from nautilus_trader.core import nautilus_pyo3
+
+
+async def run():
+    http_client = nautilus_pyo3.TardisHttpClient()
+
+    instrument = await http_client.instrument("bitmex", "xbtusd")
+    print(f"Received: {instrument}")
+
+    instruments = await http_client.instruments("bitmex")
+    print(f"Received: {len(instruments)} instruments")
+
+
+if __name__ == "__main__":
+    asyncio.run(run())
+```
+
+### Requesting instruments in Rust
+
+To request instrument definitions in Rust, use code similar to the following.
+For a complete example, see the [example binary here](https://github.com/nautechsystems/nautilus_trader/blob/develop/nautilus_core/adapters/src/tardis/bin/example_http.rs).
+
+```rust
+use nautilus_adapters::tardis::{enums::Exchange, http::client::TardisHttpClient};
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .init();
+
+    let client = TardisHttpClient::new(None, None, None).unwrap();
+
+    // Nautilus instrument definitions
+    let resp = client.instruments(Exchange::Bitmex).await;
+    println!("Received: {resp:?}");
+
+    let resp = client.instrument(Exchange::Bitmex, "ETHUSDT").await;
+    println!("Received: {resp:?}");
 }
 ```
