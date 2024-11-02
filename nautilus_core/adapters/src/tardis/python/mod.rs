@@ -16,6 +16,7 @@
 //! Python bindings from `pyo3`.
 
 pub mod csv;
+pub mod http;
 pub mod machine;
 
 use pyo3::prelude::*;
