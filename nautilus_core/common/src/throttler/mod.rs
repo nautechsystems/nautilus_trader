@@ -30,7 +30,8 @@ pub struct RateLimit {
 }
 
 impl RateLimit {
-    pub fn new(limit: usize, interval_ns: u64) -> Self {
+    #[must_use]
+    pub const fn new(limit: usize, interval_ns: u64) -> Self {
         Self { limit, interval_ns }
     }
 }

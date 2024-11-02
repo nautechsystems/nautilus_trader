@@ -26,6 +26,7 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 
 #[allow(clippy::too_many_arguments)]
+#[must_use]
 pub fn calculate_fixed_risk_position_size(
     instrument: InstrumentAny,
     entry: Price,
