@@ -368,34 +368,49 @@ class PolymarketDataClient(LiveMarketDataClient):
         self._log.error("Cannot request historical bars: not published by Polymarket")
 
     def _handle_ws_message(self, raw: bytes) -> None:
-        # Uncomment for development
-        # self._log.info(str(raw), LogColor.MAGENTA)
         try:
-            ws_message = self._decoder_market_msg.decode(raw)
-            for msg in ws_message:
-                if isinstance(msg, list):
-                    if isinstance(msg, PolymarketBookSnapshot):
-                        instrument_id = get_polymarket_instrument_id(msg.market, msg.asset_id)
-                        instrument = self._cache.instrument(instrument_id)
-                        if instrument is None:
-                            self._log.error(f"Cannot find instrument for {instrument_id}")
-                            return
-                        self._handle_book_snapshot(instrument=instrument, ws_message=msg)
-                else:
-                    instrument_id = get_polymarket_instrument_id(msg.market, msg.asset_id)
+            # decode to JSON first
+            import json
+            messages = json.loads(raw)
+            
+            # if instance
+            if isinstance(messages, list):
+                for msg in messages:
+                    msg_bytes = json.dumps(msg).encode()
+                    ws_message = self._decoder_market_msg.decode(msg_bytes)
+                    
+                    instrument_id = get_polymarket_instrument_id(ws_message.market, ws_message.asset_id)
                     instrument = self._cache.instrument(instrument_id)
                     if instrument is None:
                         self._log.error(f"Cannot find instrument for {instrument_id}")
-                        return
+                        continue
 
-                    if isinstance(msg, PolymarketBookSnapshot):
-                        self._handle_book_snapshot(instrument=instrument, ws_message=msg)
-                    elif isinstance(msg, PolymarketQuotes):
-                        self._handle_quote(instrument=instrument, ws_message=msg)
-                    elif isinstance(msg, PolymarketTrade):
-                        self._handle_trade(instrument=instrument, ws_message=msg)
+                    if isinstance(ws_message, PolymarketBookSnapshot):
+                        self._handle_book_snapshot(instrument=instrument, ws_message=ws_message)
+                    elif isinstance(ws_message, PolymarketQuote):
+                        self._handle_quote(instrument=instrument, ws_message=ws_message)
+                    elif isinstance(ws_message, PolymarketTrade):
+                        self._handle_trade(instrument=instrument, ws_message=ws_message)
                     else:
                         self._log.error(f"Unknown websocket message topic: {ws_message}")
+            else:
+                # initial method
+                ws_message = self._decoder_market_msg.decode(raw)
+                instrument_id = get_polymarket_instrument_id(ws_message.market, ws_message.asset_id)
+                instrument = self._cache.instrument(instrument_id)
+                if instrument is None:
+                    self._log.error(f"Cannot find instrument for {instrument_id}")
+                    return
+
+                if isinstance(ws_message, PolymarketBookSnapshot):
+                    self._handle_book_snapshot(instrument=instrument, ws_message=ws_message)
+                elif isinstance(ws_message, PolymarketQuote):
+                    self._handle_quote(instrument=instrument, ws_message=ws_message)
+                elif isinstance(ws_message, PolymarketTrade):
+                    self._handle_trade(instrument=instrument, ws_message=ws_message)
+                else:
+                    self._log.error(f"Unknown websocket message topic: {ws_message}")
+
         except Exception as e:
             self._log.error(f"Failed to parse websocket message: {raw.decode()} with error {e}")
 
