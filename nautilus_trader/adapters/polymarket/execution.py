@@ -33,7 +33,6 @@ from nautilus_trader.adapters.polymarket.common.cache import get_polymarket_trad
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MAX_PRICE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MIN_PRICE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
-from nautilus_trader.adapters.polymarket.common.constants import USDC_POS
 from nautilus_trader.adapters.polymarket.common.constants import VALID_POLYMARKET_TIME_IN_FORCE
 from nautilus_trader.adapters.polymarket.common.credentials import PolymarketWebSocketAuth
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketEventType
@@ -71,6 +70,7 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.live.retry import RetryManagerPool
+from nautilus_trader.model.currencies import USDC_POS
 from nautilus_trader.model.enums import AccountType
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import LiquiditySide

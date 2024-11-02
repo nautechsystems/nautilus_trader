@@ -11,6 +11,7 @@ Released on TBD (UTC).
 - Added timeouts to Interactive Brokers adapter configurations (#2026), thanks @rsmb7z
 - Added optional time origins for time bar aggregation (#2028), thanks @faysou
 - Added Polymarket position status reports and order status report generation based on fill reports
+- Added USDC.e (PoS) currency (used by Polymarket) to internal currency map
 - Upgraded Polymarket WebSocket API to new version
 
 ### Internal Improvements

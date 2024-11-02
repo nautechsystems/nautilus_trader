@@ -15,26 +15,14 @@
 
 from typing import Final
 
-from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import Venue
-from nautilus_trader.model.objects import Currency
 
 
 POLYMARKET: Final[str] = "POLYMARKET"
 POLYMARKET_VENUE: Final[Venue] = Venue(POLYMARKET)
 POLYMARKET_CLIENT_ID: Final[ClientId] = ClientId(POLYMARKET)
-
-USDC_POS: Final[Currency] = Currency(
-    code="USDC.e",
-    precision=6,
-    iso4217=0,
-    name="USD Coin (PoS)",
-    currency_type=CurrencyType.CRYPTO,
-)
-
-Currency.register(USDC_POS)
 
 POLYMARKET_MAX_PRICE: Final[float] = 0.999
 POLYMARKET_MIN_PRICE: Final[float] = 0.001
