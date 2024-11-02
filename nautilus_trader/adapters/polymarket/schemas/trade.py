@@ -15,7 +15,6 @@
 
 import msgspec
 
-from nautilus_trader.adapters.polymarket.common.constants import USDC_POS
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketLiquiditySide
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderSide
 from nautilus_trader.adapters.polymarket.common.parsing import parse_order_side
@@ -23,6 +22,7 @@ from nautilus_trader.adapters.polymarket.schemas.user import PolymarketMakerOrde
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import FillReport
+from nautilus_trader.model.currencies import USDC_POS
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import AccountId
