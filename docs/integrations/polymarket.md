@@ -29,6 +29,10 @@ To install from source using poetry:
 poetry install --extras polymarket
 ```
 
+## Examples
+
+You can find working live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/polymarket/).
+
 ## Binary options
 
 A [binary option](https://en.wikipedia.org/wiki/Binary_option) is a type of financial exotic option contract in which traders bet on the outcome of a yes-or-no proposition.
