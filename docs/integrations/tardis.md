@@ -35,23 +35,23 @@ As a result, NautilusTrader will not support exchange-native market data formats
 
 The following normalized Tardis formats are supported by NautilusTrader:
 
-| Tardis format     | Nautilus data type                                                     |
-|:------------------|:-----------------------------------------------------------------------|
-| book_change       | `OrderBookDelta`                                                       |
-| book_snapshot_*   | `OrderBookDepth10`                                                     |
-| quote             | `QuoteTick`                                                            |
-| quote_10s         | `QuoteTick`                                                            |
-| trade             | `Trade`                                                                |
-| trade_bar_*       | `Bar`                                                                  |
-| instrument        | `CurrencyPair`, `CryptoFuture`, `CryptoPerpetual`, `OptionsContract`   |
-| derivative_ticker | *Not yet supported*                                                    |
-| disconnect        | *Not applicable*                                                       |
+| Tardis format          | Nautilus data type                                                   |
+|:-----------------------|:---------------------------------------------------------------------|
+| **book_change**        | `OrderBookDelta`                                                     |
+| **book_snapshot\_\***  | `OrderBookDepth10`                                                   |
+| **quote**              | `QuoteTick`                                                          |
+| **quote\_10s**         | `QuoteTick`                                                          |
+| **trade**              | `Trade`                                                              |
+| **trade_bar_\***       | `Bar`                                                                |
+| **instrument**         | `CurrencyPair`, `CryptoFuture`, `CryptoPerpetual`, `OptionsContract` |
+| **derivative\_ticker** | *Not yet supported*                                                  |
+| **disconnect**         | *Not applicable*                                                     |
 
 **Notes:**
 
-- `quote` is an alias for `book_snapshot_1_0ms`.
-- `quote_10s` is an alias for `book_snapshot_1_10s`.
-- Both `quote`, `quote_10s`, and one-level snapshots are parsed as `QuoteTick`.
+- **quote** is an alias for **book\_snapshot\_1\_0ms**.
+- **quote\_10s** is an alias for **book\_snapshot\_1\_10s**.
+- Both **quote**, **quote\_10s**, and one-level snapshots are parsed as `QuoteTick`.
 
 :::info
 See also the Tardis [normalized market data APIs](https://docs.tardis.dev/api/tardis-machine#normalized-market-data-apis).
