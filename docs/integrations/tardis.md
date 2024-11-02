@@ -234,7 +234,9 @@ deltas = loader.load_deltas(filepath, limit)
 When loading Tardis-format CSV data in Rust, you can optionally specify the instrument ID but must specify both the price precision and size precision.
 Providing the instrument ID improves loading performance, while specifying the precisions is required, as they cannot be inferred from the text data alone.
 
-To load the data, create code similar to the following:
+For a complete example, see the [example binary here](https://github.com/nautechsystems/nautilus_trader/blob/develop/nautilus_core/adapters/src/tardis/bin/example_csv.rs).
+
+To load the data, you can use code similar to the following:
 
 ```rust
 use std::path::Path;
