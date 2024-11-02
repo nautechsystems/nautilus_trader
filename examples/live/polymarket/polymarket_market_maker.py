@@ -23,7 +23,6 @@ from nautilus_trader.adapters.polymarket.config import PolymarketExecClientConfi
 from nautilus_trader.adapters.polymarket.factories import PolymarketLiveDataClientFactory
 from nautilus_trader.adapters.polymarket.factories import PolymarketLiveExecClientFactory
 from nautilus_trader.cache.config import CacheConfig
-from nautilus_trader.common.config import DatabaseConfig
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
@@ -55,9 +54,7 @@ from nautilus_trader.trading.strategy import Strategy
 condition_id = "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917"
 token_id1 = 21742633143463906290569050155826241533067272736897614950488156847949938836455  # (Yes)
 token_id2 = 48331043336612883890938759509493159234755048973500640148014422747788308965732  # (No)
-# condition_id = "0xbd00b7bbe9cfd644555601eab5e6839d300f157655c7398e52363d65ca31d60e"
-# token_id1 = 39610451808489359091225744616605783593218688051033352591068084124126317646408  # (Yes)
-# token_id2 = 46295355012862633280841323519184879706138175839204568272783303327732070711432  # (No)
+
 instrument_ids = [
     get_polymarket_instrument_id(condition_id, token_id1),
     get_polymarket_instrument_id(condition_id, token_id2),
@@ -83,7 +80,7 @@ config_node = TradingNodeConfig(
         # snapshot_positions_interval_secs=5.0,
     ),
     cache=CacheConfig(
-        database=DatabaseConfig(),  # <-- Recommend Redis cache backing for Polymarket
+        # database=DatabaseConfig(),  # <-- Recommend Redis cache backing for Polymarket
         encoding="msgpack",
         timestamps_as_iso8601=True,
         buffer_interval_ms=100,
@@ -340,7 +337,7 @@ class TOBQuoter(Strategy):
         Actions to be performed when the strategy is stopped.
         """
         self.cancel_all_orders(self.instrument_id)
-        self.close_all_positions(self.instrument_id, reduce_only=False)
+        # self.close_all_positions(self.instrument_id, reduce_only=False)
 
     def on_reset(self) -> None:
         """
@@ -349,20 +346,29 @@ class TOBQuoter(Strategy):
         self.atr.reset()
 
 
-instrument_id = instrument_ids[0]
+instrument_id1 = instrument_ids[0]
+# instrument_id2 = instrument_ids[1]
 trade_size = Decimal("5")
 
 # Configure your strategy
-strat_config = TOBQuoterConfig(
-    instrument_id=instrument_id,
-    external_order_claims=[instrument_id],
+strat_config1 = TOBQuoterConfig(
+    instrument_id=instrument_id1,
+    external_order_claims=[instrument_id1],
     trade_size=trade_size,
 )
+# strat_config2 = TOBQuoterConfig(
+#     instrument_id=instrument_id2,
+#     external_order_claims=[instrument_id2],
+#     trade_size=trade_size,
+# )
+
 # Instantiate your strategy
-strategy = TOBQuoter(config=strat_config)
+strategy1 = TOBQuoter(config=strat_config1)
+# strategy2 = TOBQuoter(config=strat_config2)
 
 # Add your strategies and modules
-node.trader.add_strategy(strategy)
+node.trader.add_strategy(strategy1)
+# node.trader.add_strategy(strategy2)
 
 # Register your client factories with the node (can take user-defined factories)
 node.add_data_client_factory(POLYMARKET, PolymarketLiveDataClientFactory)

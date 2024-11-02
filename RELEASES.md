@@ -10,6 +10,7 @@ Released on TBD (UTC).
 - Added `OrderBook.get_avg_px_qty_for_exposure` in Rust (#1893), thanks @elementace
 - Added timeouts to Interactive Brokers adapter configurations (#2026), thanks @rsmb7z
 - Added optional time origins for time bar aggregation (#2028), thanks @faysou
+- Added Polymarket position status reports and order status report generation based on fill reports
 - Upgraded Polymarket WebSocket API to new version
 
 ### Internal Improvements
@@ -35,6 +36,7 @@ Released on TBD (UTC).
 - Fixed decoding fill HTTP messages for dYdX (#2022), thanks @davidsblom
 - Fixed account balance report for dYdX (#2024), thanks @davidsblom
 - Fixed Interactive Brokers market data client subscription log message (#2012), thanks @marcodambros
+- Fixed Polymarket execution reconciliation (was not able to reconcile from closed orders)
 - Fixed catalog query mem leak test (#2031), thanks @Pushkarm029
 - Fixed `OrderInitialized.to_dict()` `tags` value type to `list[str]` (was a concatenated `str`)
 - Fixed `OrderInitialized.to_dict()` `linked_order_ids` value type to `list[str]` (was a concatenated `str`)
