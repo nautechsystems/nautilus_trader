@@ -35,23 +35,23 @@ As a result, NautilusTrader will not support exchange-native market data formats
 
 The following normalized Tardis formats are supported by NautilusTrader:
 
-| Tardis format          | Nautilus data type                                                   |
-|:-----------------------|:---------------------------------------------------------------------|
-| **book_change**        | `OrderBookDelta`                                                     |
-| **book_snapshot\_\***  | `OrderBookDepth10`                                                   |
-| **quote**              | `QuoteTick`                                                          |
-| **quote\_10s**         | `QuoteTick`                                                          |
-| **trade**              | `Trade`                                                              |
-| **trade_bar_\***       | `Bar`                                                                |
-| **instrument**         | `CurrencyPair`, `CryptoFuture`, `CryptoPerpetual`, `OptionsContract` |
-| **derivative\_ticker** | *Not yet supported*                                                  |
-| **disconnect**         | *Not applicable*                                                     |
+| Tardis format                                                                                                               | Nautilus data type                                                   |
+|:----------------------------------------------------------------------------------------------------------------------------|:---------------------------------------------------------------------|
+| [book_change](https://docs.tardis.dev/api/tardis-machine#book_change)                                                       | `OrderBookDelta`                                                     |
+| [book_snapshot_*](https://docs.tardis.dev/api/tardis-machine#book_snapshot_-number_of_levels-_-snapshot_interval-time_unit) | `OrderBookDepth10`                                                   |
+| [quote](https://docs.tardis.dev/api/tardis-machine#book_snapshot_-number_of_levels-_-snapshot_interval-time_unit)           | `QuoteTick`                                                          |
+| [quote_10s](https://docs.tardis.dev/api/tardis-machine#book_snapshot_-number_of_levels-_-snapshot_interval-time_unit)       | `QuoteTick`                                                          |
+| [trade](https://docs.tardis.dev/api/tardis-machine#trade)                                                                   | `Trade`                                                              |
+| [trade_bar_*](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix)                            | `Bar`                                                                |
+| [instrument](https://docs.tardis.dev/api/instruments-metadata-api)                                                          | `CurrencyPair`, `CryptoFuture`, `CryptoPerpetual`, `OptionsContract` |
+| [derivative_ticker](https://docs.tardis.dev/api/tardis-machine#derivative_ticker)                                           | *Not yet supported*                                                  |
+| [disconnect](https://docs.tardis.dev/api/tardis-machine#disconnect)                                                         | *Not applicable*                                                     |
 
 **Notes:**
 
-- **quote** is an alias for **book\_snapshot\_1\_0ms**.
-- **quote\_10s** is an alias for **book\_snapshot\_1\_10s**.
-- Both **quote**, **quote\_10s**, and one-level snapshots are parsed as `QuoteTick`.
+- [quote](https://docs.tardis.dev/api/tardis-machine#book_snapshot_-number_of_levels-_-snapshot_interval-time_unit) is an alias for [book_snapshot_1_0ms](https://docs.tardis.dev/api/tardis-machine#book_snapshot_-number_of_levels-_-snapshot_interval-time_unit).
+- [quote_10s](https://docs.tardis.dev/api/tardis-machine#book_snapshot_-number_of_levels-_-snapshot_interval-time_unit) is an alias for [book_snapshot_1_10s](https://docs.tardis.dev/api/tardis-machine#book_snapshot_-number_of_levels-_-snapshot_interval-time_unit).
+- Both quote, quote\_10s, and one-level snapshots are parsed as `QuoteTick`.
 
 :::info
 See also the Tardis [normalized market data APIs](https://docs.tardis.dev/api/tardis-machine#normalized-market-data-apis).
@@ -62,13 +62,13 @@ See also the Tardis [normalized market data APIs](https://docs.tardis.dev/api/ta
 The adapter will automatically convert [Tardis trade bar interval and suffix](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix) to Nautilus `BarType`s.
 This includes the following:
 
-| Tardis suffix             | Nautilus bar aggregation    |
-|:--------------------------|:----------------------------|
-| `ms` - milliseconds       | `MILLISECOND`               |
-| `s` - seconds             | `SECOND`                    |
-| `m` - minutes             | `MINUTE`                    |
-| `ticks` - number of ticks | `TICK`                      |
-| `vol` - volume size       | `VOLUME`                    |
+| Tardis suffix                                                                                                | Nautilus bar aggregation    |
+|:-------------------------------------------------------------------------------------------------------------|:----------------------------|
+| [ms](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix) - milliseconds       | `MILLISECOND`               |
+| [s](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix) - seconds             | `SECOND`                    |
+| [m](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix) - minutes             | `MINUTE`                    |
+| [ticks](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix) - number of ticks | `TICK`                      |
+| [vol](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix) - volume size       | `VOLUME`                    |
 
 ## Running Tardis Machine historical replays
 
@@ -81,11 +81,11 @@ performance is consistent whether run from Python or Rust, letting you choose ba
 
 The end-to-end `run_tardis_machine_replay` data pipeline function utilizes a specified [configuration](#configuration) to execute the following steps:
 
-- Connect to the Tardis Machine server.
-- Request and parse all necessary instrument definitions from the [Tardis instruments metadata](https://docs.tardis.dev/api/instruments-metadata-api) HTTP API.
-- Stream all requested instruments and data types for the specified time ranges from the Tardis Machine server.
-- For each instrument, data type and date (UTC), generate a `.parquet` file in the Nautilus format.
-- Disconnect from the Tardis Marchine server, and terminate the program.
+- (1) Connect to the Tardis Machine server.
+- (2) Request and parse all necessary instrument definitions from the [Tardis instruments metadata](https://docs.tardis.dev/api/instruments-metadata-api) HTTP API.
+- (3) Stream all requested instruments and data types for the specified time ranges from the Tardis Machine server.
+- (4) For each instrument, data type and date (UTC), generate a `.parquet` file in the Nautilus format.
+- (5) Disconnect from the Tardis Marchine server, and terminate the program.
 
 This process is optimized for direct output to a Nautilus Parquet data catalog.
 Ensure that the `NAUTILUS_CATALOG_PATH` environment variable is set to the root `/catalog/` directory.
