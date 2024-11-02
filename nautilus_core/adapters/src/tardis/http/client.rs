@@ -56,14 +56,19 @@ pub struct TardisHttpClient {
 
 impl TardisHttpClient {
     /// Creates a new [`TardisHttpClient`] instance.
-    pub fn new(api_key: Option<&str>, base_url: Option<&str>, timeout_secs: Option<u64>) -> Self {
-        let api_key = api_key
-            .map(std::string::ToString::to_string)
-            .unwrap_or_else(|| {
-                env::var("TARDIS_API_KEY").expect(
-                    "API key must be provided or set in the 'TARDIS_API_KEY' environment variable",
+    pub fn new(
+        api_key: Option<&str>,
+        base_url: Option<&str>,
+        timeout_secs: Option<u64>,
+    ) -> anyhow::Result<Self> {
+        let api_key = match api_key {
+            Some(key) => key.to_string(),
+            None => env::var("TARDIS_API_KEY").map_err(|_| {
+                anyhow::anyhow!(
+                    "API key must be provided or set in the 'TARDIS_API_KEY' environment variable"
                 )
-            });
+            })?,
+        };
 
         let base_url = base_url.map_or_else(
             || TARDIS_BASE_URL.to_string(),
@@ -75,14 +80,13 @@ impl TardisHttpClient {
         let client = reqwest::Client::builder()
             .user_agent(USER_AGENT)
             .timeout(timeout)
-            .build()
-            .expect("Failed to create client");
+            .build()?;
 
-        Self {
+        Ok(Self {
             base_url,
             api_key,
             client,
-        }
+        })
     }
 
     /// Returns all Tardis instrument definitions for the given `exchange`.

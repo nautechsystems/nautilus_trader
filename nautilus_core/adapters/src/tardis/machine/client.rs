@@ -47,20 +47,22 @@ pub struct TardisMachineClient {
 
 impl TardisMachineClient {
     /// Creates a new [`TardisMachineClient`] instance.
-    #[must_use]
-    pub fn new(base_url: Option<&str>) -> Self {
-        let base_url = base_url.map(std::string::ToString::to_string).unwrap_or_else(|| {
-            env::var("TARDIS_MACHINE_WS_URL").expect(
-                "Tardis Machine `base_url` must be provided or set in the 'TARDIS_MACHINE_WS_URL' environment variable",
-            )
-        });
+    pub fn new(base_url: Option<&str>) -> anyhow::Result<Self> {
+        let base_url = base_url
+            .map(ToString::to_string)
+            .or_else(|| env::var("TARDIS_MACHINE_WS_URL").ok())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Tardis Machine `base_url` must be provided or set in the 'TARDIS_MACHINE_WS_URL' environment variable"
+                )
+            })?;
 
-        Self {
+        Ok(Self {
             base_url,
             replay_signal: Arc::new(AtomicBool::new(false)),
             stream_signals: HashMap::new(),
             instruments: HashMap::new(),
-        }
+        })
     }
 
     pub fn add_instrument_info(&mut self, info: InstrumentMiniInfo) {

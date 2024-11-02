@@ -114,7 +114,7 @@ async fn gather_instruments_info(
     results.into_iter().collect()
 }
 
-pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) {
+pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> anyhow::Result<()> {
     tracing::info!("Starting replay");
     tracing::info!("Config filepath: {}", config_filepath.display());
 
@@ -136,8 +136,8 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) {
 
     tracing::info!("Output path: {}", path.display());
 
-    let http_client = TardisHttpClient::new(None, None, None);
-    let mut machine_client = TardisMachineClient::new(config.tardis_ws_url.as_deref());
+    let http_client = TardisHttpClient::new(None, None, None)?;
+    let mut machine_client = TardisMachineClient::new(config.tardis_ws_url.as_deref())?;
 
     let info_map = gather_instruments_info(&config, &http_client).await;
 
@@ -219,6 +219,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) {
     }
 
     tracing::info!("Replay completed");
+    Ok(())
 }
 
 fn handle_deltas_msg(

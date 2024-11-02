@@ -32,5 +32,7 @@ async fn main() {
             .join("example_config.json")
     });
 
-    run_tardis_machine_replay_from_config(&config_filepath).await;
+    run_tardis_machine_replay_from_config(&config_filepath)
+        .await
+        .unwrap();
 }
