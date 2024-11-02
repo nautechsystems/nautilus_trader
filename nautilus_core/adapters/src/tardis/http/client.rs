@@ -48,6 +48,7 @@ pub enum Error {
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
 )]
+#[derive(Debug, Clone)]
 pub struct TardisHttpClient {
     base_url: String,
     api_key: String,
@@ -70,11 +71,7 @@ impl TardisHttpClient {
             })?,
         };
 
-        let base_url = base_url.map_or_else(
-            || TARDIS_BASE_URL.to_string(),
-            std::string::ToString::to_string,
-        );
-
+        let base_url = base_url.map_or_else(|| TARDIS_BASE_URL.to_string(), ToString::to_string);
         let timeout = timeout_secs.map_or_else(|| Duration::from_secs(60), Duration::from_secs);
 
         let client = reqwest::Client::builder()
@@ -95,6 +92,8 @@ impl TardisHttpClient {
         &self,
         exchange: Exchange,
     ) -> Result<Response<Vec<InstrumentInfo>>> {
+        tracing::debug!("Requesting instruments for {exchange}");
+
         Ok(self
             .client
             .get(format!("{}/instruments/{exchange}", &self.base_url))
@@ -110,8 +109,10 @@ impl TardisHttpClient {
     pub async fn instrument_info(
         &self,
         exchange: Exchange,
-        symbol: String,
+        symbol: &str,
     ) -> Result<Response<InstrumentInfo>> {
+        tracing::debug!("Requesting instrument {exchange} {symbol}");
+
         Ok(self
             .client
             .get(format!(
@@ -138,7 +139,7 @@ impl TardisHttpClient {
         };
 
         let now = Utc::now();
-        let ts_init = UnixNanos::from(now.timestamp_nanos_opt().expect("Invalid timestamp") as u64);
+        let ts_init = UnixNanos::from(now.timestamp_nanos_opt().unwrap() as u64);
 
         infos
             .into_iter()
@@ -148,7 +149,7 @@ impl TardisHttpClient {
 
     /// Returns a Nautilus instrument definition for the given `exchange` and `symbol`.
     /// See <https://docs.tardis.dev/api/instruments-metadata-api>
-    pub async fn instrument(&self, exchange: Exchange, symbol: String) -> Result<InstrumentAny> {
+    pub async fn instrument(&self, exchange: Exchange, symbol: &str) -> Result<InstrumentAny> {
         let response = self.instrument_info(exchange, symbol).await?;
 
         let info = match response {
@@ -159,7 +160,7 @@ impl TardisHttpClient {
         };
 
         let now = Utc::now();
-        let ts_init = UnixNanos::from(now.timestamp_nanos_opt().expect("Invalid timestamp") as u64);
+        let ts_init = UnixNanos::from(now.timestamp_nanos_opt().unwrap() as u64);
 
         Ok(parse_instrument_any(info, ts_init))
     }

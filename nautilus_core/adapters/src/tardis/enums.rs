@@ -13,11 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::fmt::Display;
-
 use serde::{Deserialize, Serialize};
+use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display)]
 #[serde(rename_all = "lowercase")]
 /// The instrument type for the symbol.
 pub enum InstrumentType {
@@ -27,7 +26,7 @@ pub enum InstrumentType {
     Option,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display)]
 #[serde(rename_all = "lowercase")]
 /// The type of option.
 pub enum OptionType {
@@ -36,7 +35,7 @@ pub enum OptionType {
 }
 
 /// The aggressor side of the trade.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display)]
 #[serde(rename_all = "lowercase")]
 pub enum TradeSide {
     Buy,
@@ -46,7 +45,7 @@ pub enum TradeSide {
 
 /// The bar kind.
 #[allow(missing_docs)]
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display)]
 #[serde(rename_all = "lowercase")]
 pub enum BarKind {
     Time,
@@ -54,7 +53,22 @@ pub enum BarKind {
     Tick,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    Hash,
+    Serialize,
+    Deserialize,
+    Display,
+    AsRefStr,
+    EnumIter,
+    EnumString,
+    FromRepr,
+)]
+#[strum(ascii_case_insensitive)]
+#[strum(serialize_all = "kebab-case")]
 #[serde(rename_all = "kebab-case")]
 /// Represents a crypto exchange.
 /// See <https://api.tardis.dev/v1/exchanges> for all supported exchanges.
@@ -168,13 +182,5 @@ impl Exchange {
             Self::Upbit => "UPBIT",
             Self::WooX => "WOOX",
         }
-    }
-}
-
-impl Display for Exchange {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let binding = serde_json::to_value(self).unwrap();
-        let value = binding.as_str().unwrap();
-        write!(f, "{value}")
     }
 }
