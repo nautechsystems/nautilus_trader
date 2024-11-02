@@ -139,8 +139,12 @@ class BetfairDataClient(LiveMarketDataClient):
 
     async def _post_connect_heartbeat(self) -> None:
         for _ in range(3):
-            await self._stream.send(msgspec.json.encode({"op": "heartbeat"}))
-            await asyncio.sleep(5)
+            try:
+                await self._stream.send(msgspec.json.encode({"op": "heartbeat"}))
+                await asyncio.sleep(5)
+            except BrokenPipeError:
+                self._log.warning("Heartbeat failed, reconnecting")
+                await self._stream.connect()
 
     async def _disconnect(self) -> None:
         # Close socket
