@@ -15,6 +15,10 @@ name = "databento-sandbox"
 path = "src/databento/bin/sandbox.rs"
 
 [[bin]]
+name = "tardis-csv"
+path = "src/tardis/bin/example_csv.rs"
+
+[[bin]]
 name = "tardis-machine"
 path = "src/tardis/bin/example_machine.rs"
 
