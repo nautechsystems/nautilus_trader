@@ -120,7 +120,7 @@ class DYDXAccountHttpAPI:
         self,
         address: str,
         subaccount_number: int,
-        status: DYDXPerpetualPositionStatus | None = None,
+        status: list[DYDXPerpetualPositionStatus] | None = None,
         limit: int | None = None,
         created_before_or_at: datetime.datetime | None = None,
     ) -> DYDXPerpetualPositionsResponse | None:
