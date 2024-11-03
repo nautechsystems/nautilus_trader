@@ -34,6 +34,8 @@ class DataEngineConfig(NautilusConfig, frozen=True):
         Determines the type of interval used for time aggregation.
         - 'left-open': start time is excluded and end time is included (default).
         - 'right-open': start time is included and end time is excluded.
+    time_bars_origins : dict[BarAggregation, pd.Timedelta | pd.DateOffset], optional
+            A dictionary mapping time bar aggregations to their origin time offsets.
     validate_data_sequence : bool, default False
         If data objects timestamp sequencing will be validated and handled.
     buffer_deltas : bool, default False
@@ -49,6 +51,7 @@ class DataEngineConfig(NautilusConfig, frozen=True):
     time_bars_build_with_no_updates: bool = True
     time_bars_timestamp_on_close: bool = True
     time_bars_interval_type: str = "left-open"
+    time_bars_origins: dict | None = None
     validate_data_sequence: bool = False
     buffer_deltas: bool = False
     external_clients: list[ClientId] | None = None

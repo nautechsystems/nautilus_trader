@@ -251,7 +251,7 @@ class BybitExecutionClient(LiveExecutionClient):
         end: pd.Timestamp | None = None,
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
-        self._log.info("Requesting OrderStatusReports...")
+        self._log.debug("Requesting OrderStatusReports...")
         reports: list[OrderStatusReport] = []
 
         try:
@@ -261,7 +261,11 @@ class BybitExecutionClient(LiveExecutionClient):
             # active_symbols.update(await self._get_active_position_symbols(symbol))
             # open_orders: dict[BybitProductType, list[BybitOrder]] = dict()
             for product_type in self._product_types:
-                bybit_orders = await self._http_account.query_order_history(product_type, symbol)
+                bybit_orders = await self._http_account.query_order_history(
+                    product_type,
+                    symbol,
+                    open_only,
+                )
                 for bybit_order in bybit_orders:
                     # Uncomment for development
                     # self._log.info(f"Generating report {bybit_order}", LogColor.MAGENTA)
@@ -364,7 +368,7 @@ class BybitExecutionClient(LiveExecutionClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> list[FillReport]:
-        self._log.info("Requesting FillReports...")
+        self._log.debug("Requesting FillReports...")
         reports: list[FillReport] = []
 
         try:
@@ -409,7 +413,7 @@ class BybitExecutionClient(LiveExecutionClient):
 
         try:
             if instrument_id:
-                self._log.info(f"Requesting PositionStatusReport for {instrument_id}")
+                self._log.debug(f"Requesting PositionStatusReport for {instrument_id}")
                 bybit_symbol = BybitSymbol(instrument_id.symbol.value)
                 positions = await self._http_account.query_position_info(
                     bybit_symbol.product_type,
@@ -425,7 +429,7 @@ class BybitExecutionClient(LiveExecutionClient):
                     self._log.debug(f"Received {position_report}")
                     reports.append(position_report)
             else:
-                self._log.info("Requesting PositionStatusReports...")
+                self._log.debug("Requesting PositionStatusReports...")
                 for product_type in self._product_types:
                     if product_type == BybitProductType.SPOT:
                         continue  # No positions on spot

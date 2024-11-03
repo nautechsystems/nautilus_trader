@@ -166,31 +166,29 @@ impl BarType {
 }
 
 impl Bar {
-    pub fn from_pyobject(obj: &PyAny) -> PyResult<Self> {
-        let bar_type_obj: &PyAny = obj.getattr("bar_type")?.extract()?;
-        let bar_type_str = bar_type_obj.call_method0("__str__")?.extract()?;
-        let bar_type = BarType::from_str(bar_type_str)
-            .map_err(to_pyvalue_err)
-            .unwrap();
+    pub fn from_pyobject(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let bar_type_obj: Bound<'_, PyAny> = obj.getattr("bar_type")?.extract()?;
+        let bar_type_str: String = bar_type_obj.call_method0("__str__")?.extract()?;
+        let bar_type = BarType::from(bar_type_str.as_str());
 
-        let open_py: &PyAny = obj.getattr("open")?;
+        let open_py: Bound<'_, PyAny> = obj.getattr("open")?;
         let price_prec: u8 = open_py.getattr("precision")?.extract()?;
         let open_raw: i64 = open_py.getattr("raw")?.extract()?;
         let open = Price::from_raw(open_raw, price_prec);
 
-        let high_py: &PyAny = obj.getattr("high")?;
+        let high_py: Bound<'_, PyAny> = obj.getattr("high")?;
         let high_raw: i64 = high_py.getattr("raw")?.extract()?;
         let high = Price::from_raw(high_raw, price_prec);
 
-        let low_py: &PyAny = obj.getattr("low")?;
+        let low_py: Bound<'_, PyAny> = obj.getattr("low")?;
         let low_raw: i64 = low_py.getattr("raw")?.extract()?;
         let low = Price::from_raw(low_raw, price_prec);
 
-        let close_py: &PyAny = obj.getattr("close")?;
+        let close_py: Bound<'_, PyAny> = obj.getattr("close")?;
         let close_raw: i64 = close_py.getattr("raw")?.extract()?;
         let close = Price::from_raw(close_raw, price_prec);
 
-        let volume_py: &PyAny = obj.getattr("volume")?;
+        let volume_py: Bound<'_, PyAny> = obj.getattr("volume")?;
         let volume_raw: u64 = volume_py.getattr("raw")?.extract()?;
         let volume_prec: u8 = volume_py.getattr("precision")?.extract()?;
         let volume = Quantity::from_raw(volume_raw, volume_prec);
@@ -207,8 +205,7 @@ impl Bar {
             volume,
             ts_event.into(),
             ts_init.into(),
-        )
-        .unwrap())
+        ))
     }
 }
 
@@ -235,8 +232,7 @@ impl Bar {
             volume,
             ts_event.into(),
             ts_init.into(),
-        )
-        .unwrap())
+        ))
     }
 
     fn __richcmp__(&self, other: &Self, op: CompareOp, py: Python<'_>) -> Py<PyAny> {
@@ -331,8 +327,8 @@ impl Bar {
 
     #[staticmethod]
     #[pyo3(name = "get_fields")]
-    fn py_get_fields(py: Python<'_>) -> PyResult<&PyDict> {
-        let py_dict = PyDict::new(py);
+    fn py_get_fields(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
+        let py_dict = PyDict::new_bound(py);
         for (k, v) in Self::get_fields() {
             py_dict.set_item(k, v)?;
         }
@@ -385,7 +381,7 @@ impl Bar {
         // Serialize object to JSON bytes
         let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
         // Parse JSON into a Python dictionary
-        let py_dict: Py<PyDict> = PyModule::import(py, "json")?
+        let py_dict: Py<PyDict> = PyModule::import_bound(py, "json")?
             .call_method("loads", (json_str,), None)?
             .extract()?;
         Ok(py_dict)
@@ -447,7 +443,7 @@ mod tests {
 
         Python::with_gil(|py| {
             let bar_pyobject = bar.into_py(py);
-            let parsed_bar = Bar::from_pyobject(bar_pyobject.as_ref(py)).unwrap();
+            let parsed_bar = Bar::from_pyobject(bar_pyobject.bind(py)).unwrap();
             assert_eq!(parsed_bar, bar);
         });
     }

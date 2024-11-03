@@ -71,43 +71,43 @@ impl DatabentoImbalance {
 
     #[getter]
     #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
+    const fn py_instrument_id(&self) -> InstrumentId {
         self.instrument_id
     }
 
     #[getter]
     #[pyo3(name = "ref_price")]
-    fn py_ref_price(&self) -> Price {
+    const fn py_ref_price(&self) -> Price {
         self.ref_price
     }
 
     #[getter]
     #[pyo3(name = "cont_book_clr_price")]
-    fn py_cont_book_clr_price(&self) -> Price {
+    const fn py_cont_book_clr_price(&self) -> Price {
         self.cont_book_clr_price
     }
 
     #[getter]
     #[pyo3(name = "auct_interest_clr_price")]
-    fn py_auct_interest_clr_price(&self) -> Price {
+    const fn py_auct_interest_clr_price(&self) -> Price {
         self.auct_interest_clr_price
     }
 
     #[getter]
     #[pyo3(name = "paired_qty")]
-    fn py_paired_qty(&self) -> Quantity {
+    const fn py_paired_qty(&self) -> Quantity {
         self.paired_qty
     }
 
     #[getter]
     #[pyo3(name = "total_imbalance_qty")]
-    fn py_total_imbalance_qty(&self) -> Quantity {
+    const fn py_total_imbalance_qty(&self) -> Quantity {
         self.total_imbalance_qty
     }
 
     #[getter]
     #[pyo3(name = "side")]
-    fn py_side(&self) -> OrderSide {
+    const fn py_side(&self) -> OrderSide {
         self.side
     }
 
@@ -119,19 +119,19 @@ impl DatabentoImbalance {
 
     #[getter]
     #[pyo3(name = "ts_event")]
-    fn py_ts_event(&self) -> u64 {
+    const fn py_ts_event(&self) -> u64 {
         self.ts_event.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_recv")]
-    fn py_ts_recv(&self) -> u64 {
+    const fn py_ts_recv(&self) -> u64 {
         self.ts_recv.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> u64 {
+    const fn py_ts_init(&self) -> u64 {
         self.ts_init.as_u64()
     }
 
@@ -144,7 +144,7 @@ impl DatabentoImbalance {
     // TODO
     #[pyo3(name = "to_dict")]
     pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let dict = PyDict::new(py);
+        let dict = PyDict::new_bound(py);
         dict.set_item("type", stringify!(DatabentoImbalance))?;
         Ok(dict.into())
     }
@@ -192,79 +192,79 @@ impl DatabentoStatistics {
 
     #[getter]
     #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
+    const fn py_instrument_id(&self) -> InstrumentId {
         self.instrument_id
     }
 
     #[getter]
     #[pyo3(name = "stat_type")]
-    fn py_stat_type(&self) -> DatabentoStatisticType {
+    const fn py_stat_type(&self) -> DatabentoStatisticType {
         self.stat_type
     }
 
     #[getter]
     #[pyo3(name = "update_action")]
-    fn py_update_action(&self) -> DatabentoStatisticUpdateAction {
+    const fn py_update_action(&self) -> DatabentoStatisticUpdateAction {
         self.update_action
     }
 
     #[getter]
     #[pyo3(name = "price")]
-    fn py_price(&self) -> Option<Price> {
+    const fn py_price(&self) -> Option<Price> {
         self.price
     }
 
     #[getter]
     #[pyo3(name = "quantity")]
-    fn py_quantity(&self) -> Option<Quantity> {
+    const fn py_quantity(&self) -> Option<Quantity> {
         self.quantity
     }
 
     #[getter]
     #[pyo3(name = "channel_id")]
-    fn py_channel_id(&self) -> u16 {
+    const fn py_channel_id(&self) -> u16 {
         self.channel_id
     }
 
     #[getter]
     #[pyo3(name = "stat_flags")]
-    fn py_stat_flags(&self) -> u8 {
+    const fn py_stat_flags(&self) -> u8 {
         self.stat_flags
     }
 
     #[getter]
     #[pyo3(name = "sequence")]
-    fn py_sequence(&self) -> u32 {
+    const fn py_sequence(&self) -> u32 {
         self.sequence
     }
 
     #[getter]
     #[pyo3(name = "ts_ref")]
-    fn py_ts_ref(&self) -> u64 {
+    const fn py_ts_ref(&self) -> u64 {
         self.ts_ref.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_in_delta")]
-    fn py_ts_in_delta(&self) -> i32 {
+    const fn py_ts_in_delta(&self) -> i32 {
         self.ts_in_delta
     }
 
     #[getter]
     #[pyo3(name = "ts_event")]
-    fn py_ts_event(&self) -> u64 {
+    const fn py_ts_event(&self) -> u64 {
         self.ts_event.as_u64()
     }
 
     #[pyo3(name = "ts_recv")]
     #[getter]
-    fn py_ts_recv(&self) -> u64 {
+    const fn py_ts_recv(&self) -> u64 {
         self.ts_recv.as_u64()
     }
 
     #[pyo3(name = "ts_init")]
     #[getter]
-    fn py_ts_init(&self) -> u64 {
+    const fn py_ts_init(&self) -> u64 {
         self.ts_init.as_u64()
     }
 
@@ -277,7 +277,7 @@ impl DatabentoStatistics {
     // TODO
     #[pyo3(name = "to_dict")]
     pub fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let dict = PyDict::new(py);
+        let dict = PyDict::new_bound(py);
         dict.set_item("type", stringify!(DatabentoStatistics))?;
         Ok(dict.into())
     }

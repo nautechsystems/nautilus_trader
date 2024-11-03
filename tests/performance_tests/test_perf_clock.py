@@ -14,55 +14,33 @@
 # -------------------------------------------------------------------------------------------------
 
 from datetime import timedelta
-from typing import Any
 
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import TestClock
-from nautilus_trader.common.component import TimeEvent
+from nautilus_trader.common.events import TimeEvent
 
 
 _LIVE_CLOCK = LiveClock()
 _TEST_CLOCK = TestClock()
 
 
-def test_live_clock_utc_now(benchmark: Any) -> None:
-    benchmark.pedantic(
-        target=_LIVE_CLOCK.timestamp_ns,
-        iterations=100_000,
-        rounds=1,
-    )
-    # ~0.0ms / ~1.3μs / 1330ns minimum of 100,000 runs @ 1 iteration each run.
+def test_live_clock_utc_now(benchmark) -> None:
+    benchmark(_LIVE_CLOCK.timestamp_ns)
 
 
-def test_live_clock_unix_timestamp(benchmark: Any) -> None:
-    benchmark.pedantic(
-        target=_LIVE_CLOCK.timestamp,
-        iterations=100_000,
-        rounds=1,
-    )
-    # ~0.0ms / ~0.1μs / 101ns minimum of 100,000 runs @ 1 iteration each run.
+def test_live_clock_unix_timestamp(benchmark) -> None:
+    benchmark(_LIVE_CLOCK.timestamp)
 
 
-def test_live_clock_timestamp_ns(benchmark: Any) -> None:
-    benchmark.pedantic(
-        target=_LIVE_CLOCK.timestamp_ns,
-        iterations=100_000,
-        rounds=1,
-    )
-    # ~0.0ms / ~0.1μs / 101ns minimum of 100,000 runs @ 1 iteration each run.
+def test_live_clock_timestamp_ns(benchmark) -> None:
+    benchmark(_LIVE_CLOCK.timestamp_ns)
 
 
-def test_advance_time(benchmark: Any) -> None:
-    benchmark.pedantic(
-        target=_TEST_CLOCK.advance_time,
-        args=(0,),
-        iterations=100_000,
-        rounds=1,
-    )
-    # ~0.0ms / ~0.2μs / 175ns minimum of 100,000 runs @ 1 iteration each run.
+def test_advance_time(benchmark) -> None:
+    benchmark(_TEST_CLOCK.advance_time, 0)
 
 
-def test_iteratively_advance_time(benchmark: Any) -> None:
+def test_iteratively_advance_time(benchmark) -> None:
     store: list[TimeEvent] = []
     _TEST_CLOCK.set_timer("test", timedelta(seconds=1), callback=store.append)
 
@@ -72,10 +50,4 @@ def test_iteratively_advance_time(benchmark: Any) -> None:
             test_time += 1
         _TEST_CLOCK.advance_time(to_time_ns=test_time)
 
-    benchmark.pedantic(
-        target=_iteratively_advance_time,
-        iterations=1,
-        rounds=1,
-    )
-    # ~320.1ms                       minimum of 1 runs @ 1 iteration each run. (100000 advances)
-    # ~3.7ms / ~3655.1μs / 3655108ns minimum of 1 runs @ 1 iteration each run.
+    benchmark(_iteratively_advance_time)

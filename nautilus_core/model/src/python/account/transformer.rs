@@ -23,13 +23,12 @@ use crate::{
 
 #[pyfunction]
 pub fn cash_account_from_account_events(
-    py: Python<'_>,
-    events: Vec<Py<PyDict>>,
+    events: Vec<Bound<'_, PyDict>>,
     calculate_account_state: bool,
 ) -> PyResult<CashAccount> {
     let account_events = events
         .into_iter()
-        .map(|obj| AccountState::py_from_dict(py, obj))
+        .map(|obj| AccountState::py_from_dict(&obj))
         .collect::<PyResult<Vec<AccountState>>>()
         .unwrap();
     if account_events.is_empty() {
@@ -45,13 +44,12 @@ pub fn cash_account_from_account_events(
 
 #[pyfunction]
 pub fn margin_account_from_account_events(
-    py: Python<'_>,
-    events: Vec<Py<PyDict>>,
+    events: Vec<Bound<'_, PyDict>>,
     calculate_account_state: bool,
 ) -> PyResult<MarginAccount> {
     let account_events = events
         .into_iter()
-        .map(|obj| AccountState::py_from_dict(py, obj))
+        .map(|obj| AccountState::py_from_dict(&obj))
         .collect::<PyResult<Vec<AccountState>>>()
         .unwrap();
     if account_events.is_empty() {

@@ -15,22 +15,15 @@
 
 use std::str::FromStr;
 
-use nautilus_core::{
-    correctness::check_valid_string,
-    python::{to_pyruntime_err, to_pyvalue_err},
-};
+use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use pyo3::{
-    exceptions::{PyRuntimeError, PyValueError},
     prelude::*,
     pyclass::CompareOp,
     types::{PyLong, PyString, PyTuple},
 };
 use ustr::Ustr;
 
-use crate::{
-    enums::CurrencyType,
-    types::{currency::Currency, fixed::check_fixed_precision},
-};
+use crate::{enums::CurrencyType, types::currency::Currency};
 
 #[pymethods]
 impl Currency {
@@ -45,13 +38,35 @@ impl Currency {
         Self::new_checked(code, precision, iso4217, name, currency_type).map_err(to_pyvalue_err)
     }
 
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        let tuple: (&PyString, &PyLong, &PyLong, &PyString, &PyString) = state.extract(py)?;
-        self.code = Ustr::from(tuple.0.extract()?);
-        self.precision = tuple.1.extract::<u8>()?;
-        self.iso4217 = tuple.2.extract::<u16>()?;
-        self.name = Ustr::from(tuple.3.extract()?);
-        self.currency_type = CurrencyType::from_str(tuple.4.extract()?).map_err(to_pyvalue_err)?;
+    fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
+        let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
+        self.code = Ustr::from(
+            py_tuple
+                .get_item(0)?
+                .downcast::<PyString>()?
+                .extract::<&str>()?,
+        );
+        self.precision = py_tuple
+            .get_item(1)?
+            .downcast::<PyLong>()?
+            .extract::<u8>()?;
+        self.iso4217 = py_tuple
+            .get_item(2)?
+            .downcast::<PyLong>()?
+            .extract::<u16>()?;
+        self.name = Ustr::from(
+            py_tuple
+                .get_item(3)?
+                .downcast::<PyString>()?
+                .extract::<&str>()?,
+        );
+        self.currency_type = CurrencyType::from_str(
+            py_tuple
+                .get_item(4)?
+                .downcast::<PyString>()?
+                .extract::<&str>()?,
+        )
+        .map_err(to_pyvalue_err)?;
         Ok(())
     }
 
@@ -67,9 +82,9 @@ impl Currency {
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
-        let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
+        let safe_constructor = py.get_type_bound::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+        Ok((safe_constructor, PyTuple::empty_bound(py), state).to_object(py))
     }
 
     #[staticmethod]

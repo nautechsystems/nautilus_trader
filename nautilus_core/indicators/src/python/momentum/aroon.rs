@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
 use pyo3::prelude::*;
 
@@ -22,6 +21,7 @@ use crate::{indicator::Indicator, momentum::aroon::AroonOscillator};
 #[pymethods]
 impl AroonOscillator {
     #[new]
+    #[must_use]
     pub fn py_new(period: usize) -> Self {
         Self::new(period)
     }
@@ -38,7 +38,7 @@ impl AroonOscillator {
 
     #[getter]
     #[pyo3(name = "period")]
-    fn py_period(&self) -> usize {
+    const fn py_period(&self) -> usize {
         self.period
     }
 
@@ -50,31 +50,31 @@ impl AroonOscillator {
 
     #[getter]
     #[pyo3(name = "count")]
-    fn py_count(&self) -> usize {
+    const fn py_count(&self) -> usize {
         self.count
     }
 
     #[getter]
     #[pyo3(name = "aroon_up")]
-    fn py_aroon_up(&self) -> f64 {
+    const fn py_aroon_up(&self) -> f64 {
         self.aroon_up
     }
 
     #[getter]
     #[pyo3(name = "aroon_down")]
-    fn py_aroon_down(&self) -> f64 {
+    const fn py_aroon_down(&self) -> f64 {
         self.aroon_down
     }
 
     #[getter]
     #[pyo3(name = "value")]
-    fn py_value(&self) -> f64 {
+    const fn py_value(&self) -> f64 {
         self.value
     }
 
     #[getter]
     #[pyo3(name = "initialized")]
-    fn py_initialized(&self) -> bool {
+    const fn py_initialized(&self) -> bool {
         self.initialized
     }
 

@@ -15,30 +15,44 @@ name = "databento-sandbox"
 path = "src/databento/bin/sandbox.rs"
 
 [[bin]]
+name = "tardis-csv"
+path = "src/tardis/bin/example_csv.rs"
+
+[[bin]]
 name = "tardis-machine"
-path = "src/tardis/bin/example.rs"
+path = "src/tardis/bin/example_machine.rs"
+
+[[bin]]
+name = "tardis-http"
+path = "src/tardis/bin/example_http.rs"
+
+[[bin]]
+name = "tardis-replay"
+path = "src/tardis/bin/example_replay.rs"
 
 [dependencies]
 nautilus-common = { path = "../common" }
 nautilus-core = { path = "../core" }
-nautilus-model = { path = "../model", features = ["stubs"] }
+nautilus-model = { path = "../model" }
+nautilus-serialization = { path = "../serialization" }
 anyhow = { workspace = true }
+arrow = { workspace = true, optional = true }
 async-stream = { workspace = true }
-base64 = { workspace = true }
 chrono = { workspace = true }
 futures-util = { workspace = true }
-hex = { workspace = true }
+heck = { workspace = true }
 indexmap = { workspace = true }
 itoa = { workspace = true }
+parquet = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
-pyo3-asyncio-0-21 = { workspace = true, optional = true }
-rand = { workspace = true }
-ring = { workspace = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
+reqwest = { workspace = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
+thousands = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true, optional = true }
 tracing = { workspace = true }
@@ -47,10 +61,9 @@ thiserror = { workspace = true }
 ustr = { workspace = true }
 uuid = { workspace = true, optional = true }
 csv = { version = "1.3.0", optional = true }
-databento = { version = "0.14.1", optional = true }
+databento = { version = "0.15.0", optional = true }
 fallible-streaming-iterator = { version = "0.1.9", optional = true }
 flate2 = { version = "1.0.34", optional = true }
-pem = "3.0.4"
 time = { version = "0.3.36", optional = true }
 urlencoding = { version = "2.1.3", optional = true }
 
@@ -76,9 +89,9 @@ ffi = [
 ]
 python = [
   "pyo3",
-  "pyo3-asyncio-0-21",
+  "pyo3-async-runtimes",
   "nautilus-common/python",
   "nautilus-core/python",
   "nautilus-model/python",
 ]
-tardis = ["python", "csv", "flate2", "tokio-tungstenite", "urlencoding", "uuid"]
+tardis = ["arrow", "parquet", "python", "csv", "flate2", "tokio-tungstenite", "urlencoding", "uuid"]

@@ -13,9 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
-use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
-use pyo3::{exceptions::PyPermissionError, prelude::*};
+use nautilus_model::data::bar::Bar;
+use pyo3::prelude::*;
 
 use crate::{
     average::MovingAverageType, indicator::Indicator, momentum::cci::CommodityChannelIndex,
@@ -24,6 +23,8 @@ use crate::{
 #[pymethods]
 impl CommodityChannelIndex {
     #[new]
+    #[pyo3(signature = (period, scalar, ma_type=None))]
+    #[must_use]
     pub fn py_new(period: usize, scalar: f64, ma_type: Option<MovingAverageType>) -> Self {
         Self::new(period, scalar, ma_type)
     }
@@ -40,13 +41,13 @@ impl CommodityChannelIndex {
 
     #[getter]
     #[pyo3(name = "period")]
-    fn py_period(&self) -> usize {
+    const fn py_period(&self) -> usize {
         self.period
     }
 
     #[getter]
     #[pyo3(name = "scalar")]
-    fn py_scalar(&self) -> f64 {
+    const fn py_scalar(&self) -> f64 {
         self.scalar
     }
 
@@ -58,13 +59,13 @@ impl CommodityChannelIndex {
 
     #[getter]
     #[pyo3(name = "value")]
-    fn py_value(&self) -> f64 {
+    const fn py_value(&self) -> f64 {
         self.value
     }
 
     #[getter]
     #[pyo3(name = "initialized")]
-    fn py_initialized(&self) -> bool {
+    const fn py_initialized(&self) -> bool {
         self.initialized
     }
 

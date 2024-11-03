@@ -9,8 +9,25 @@ These data types include:
 - `QuoteTick`: Represents the best bid and ask prices along with their sizes at the top-of-book.
 - `TradeTick`: A single trade/match event between counterparties.
 - `Bar`: OHLCV (Open, High, Low, Close, Volume) bar/candle, aggregated using a specified *aggregation method*.
-- `InstrumentStatus`: An instrument level status event.
-- `InstrumentClose`: An instrument closing price.
+- `InstrumentStatus`: An instrument-level status event.
+- `InstrumentClose`: The closing price of an instrument.
+
+NautilusTrader is designed primarily to operate on granular order book data, providing the highest realism
+for execution simulations in backtesting.
+However, backtests can also be conducted on any of the supported market data types, depending on the desired simulation fidelity.
+
+## Order books
+
+A high-performance order book implemented in Rust is available to maintain order book state based on provided data.
+
+`OrderBook` instances are maintained per instrument for both backtesting and live trading, with the following book types available:
+- `L3_MBO`: **Market by order (MBO)** or L3 data, uses every order book event at every price level, keyed by order ID.
+- `L2_MBP`: **Market by price (MBP)** or L2 data, aggregates order book events by price level.
+- `L1_MBP`: **Market by price (MBP)** or L1 data, also known as best bid and offer (BBO), captures only top-level updates.
+
+:::note
+Top-of-book data, such as `QuoteTick`, `TradeTick` and `Bar`, can also be used for backtesting, with markets operating on `L1_MBP` book types.
+:::
 
 ## Timestamps
 
@@ -42,6 +59,84 @@ The following instrument definitions are available:
 - `OptionsContract`: Represents a generic options contract instrument.
 - `OptionsSpread`: Represents a generic options spread instrument.
 - `Synthetic`: Represents a synthetic instrument with prices derived from component instruments using a formula.
+
+## Bars and aggregation
+
+A *bar*—also known as a candle, candlestick, or kline—is a data structure that represents price and
+volume information over a specific period, including the opening price, highest price, lowest price, closing price,
+and traded volume (or ticks as a volume proxy). These values are generated using an *aggregation method*,
+which groups data based on specific criteria to create the bar.
+
+The implemented aggregation methods are:
+
+| Name               | Description                                                                | Category     |
+|:-------------------|:---------------------------------------------------------------------------|:-------------|
+| `TICK`             | Aggregation of a number of ticks.                                          | Threshold    |
+| `TICK_IMBALANCE`   | Aggregation of the buy/sell imbalance of ticks.                            | Threshold    |
+| `TICK_RUNS`        | Aggregation of sequential buy/sell runs of ticks.                          | Information  |
+| `VOLUME`           | Aggregation of traded volume.                                              | Threshold    |
+| `VOLUME_IMBALANCE` | Aggregation of the buy/sell imbalance of traded volume.                    | Threshold    |
+| `VOLUME_RUNS`      | Aggregation of sequential runs of buy/sell traded volume.                  | Information  |
+| `VALUE`            | Aggregation of the notional value of trades (also known as "Dollar bars"). | Threshold    |
+| `VALUE_IMBALANCE`  | Aggregation of the buy/sell imbalance of trading by notional value.        | Information  |
+| `VALUE_RUNS`       | Aggregation of sequential buy/sell runs of trading by notional value.      | Threshold    |
+| `MILLISECOND`      | Aggregation of time intervals with millisecond granularity.                | Time         |
+| `SECOND`           | Aggregation of time intervals with second granularity.                     | Time         |
+| `MINUTE`           | Aggregation of time intervals with minute granularity.                     | Time         |
+| `HOUR`             | Aggregation of time intervals with hour granularity.                       | Time         |
+| `DAY`              | Aggregation of time intervals with day granularity.                        | Time         |
+| `WEEK`             | Aggregation of time intervals with week granularity.                       | Time         |
+| `MONTH`            | Aggregation of time intervals with month granularity.                      | Time         |
+
+### Bar types
+
+NautilusTrader defines a unique *bar type* (`BarType`) based on the following components:
+
+- **Instrument ID** (`InstrumentId`): Specifies the particular instrument for the bar.
+- **Bar Specification** (`BarSpecification`):
+  - `step`: Defines the interval or frequency of each bar.
+  - `aggregation`: Specifies the method used for data aggregation (see the list above).
+  - `price_type`: Indicates the price basis of the bar (e.g., bid, ask, mid, last).
+- **Aggregation Source** (`AggregationSource`): Indicates whether the bar was aggregated internally (within Nautilus) or externally (by a trading venue or data provider).
+
+Bar data can be aggregated either internally or externally:
+
+- `INTERNAL`: The bar is aggregated inside the local Nautilus system boundary.
+- `EXTERNAL`: The bar is aggregated outside the local Nautilus system boundary (typically by a trading venue or data provider).
+
+Bar types can also be classified as either *standard* or *composite*:
+
+- **Standard**: Generated from granular market data, such as quotes or trade ticks.
+- **Composite**: Derived from a higher-granularity bar type through subsampling.
+
+### Defining standard bars
+
+You can define bar types from strings using the following convention:
+
+`{instrument_id}-{step}-{aggregation}-{price_type}-{INTERNAL | EXTERNAL}`
+
+For example, to define a `BarType` for AAPL trades (last price) on Nasdaq (XNAS) using a 5-minute interval, aggregated from trades locally by Nautilus:
+```python
+bar_type = BarType.from_str("AAPL.XNAS-5-MINUTE-LAST-INTERNAL")
+```
+
+### Defining composite bars
+
+Composite bars are derived by aggregating higher-granularity bars into the desired bar type.
+To define a composite bar, use a similar convention to standard bars:
+
+`{instrument_id}-{step}-{aggregation}-{price_type}-INTERNAL@{step}-{aggregation}-{INTERNAL | EXTERNAL}`
+
+**Notes**:
+- The derived bar type must use an `INTERNAL` aggregation source (since this is how the bar is aggregated).
+- The sampled bar type must have a higher granularity than the derived bar type.
+- The sampled instrument ID is inferred to match that of the derived bar type.
+- Composite bars can be aggregated *from* `INTERNAL` or `EXTERNAL` aggregation sources.
+
+For example, to define a `BarType` for AAPL trades (last price) on Nasdaq (XNAS) using a 5-minute interval, aggregated locally by Nautilus, from 1-minute interval bars aggregated externally:
+```python
+bar_type = BarType.from_str("AAPL.XNAS-5-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL")
+```
 
 ## Data flow
 

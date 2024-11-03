@@ -550,14 +550,14 @@ class DYDXWsSubaccountsSubscribedContents(msgspec.Struct, forbid_unknown_fields=
         """
         orders: dict[str, list[DYDXOrderResponse]] = defaultdict(list)
 
+        # Orders with state BEST_EFFORT_CANCELED are not considered to be
+        # included in the locked account balance.
         if self.orders is not None:
             for order in self.orders:
                 if (
                     order.status
                     in (
                         DYDXOrderStatus.OPEN,
-                        DYDXOrderStatus.BEST_EFFORT_CANCELED,
-                        DYDXOrderStatus.UNTRIGGERED,
                         DYDXOrderStatus.BEST_EFFORT_OPENED,
                     )
                     and order.type == DYDXOrderType.LIMIT

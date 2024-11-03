@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::str::FromStr;
+use std::{str::FromStr, sync::Arc};
 
 use nautilus_core::{nanos::UnixNanos, python::to_pyvalue_err, uuid::UUID4};
 use pyo3::{
@@ -23,7 +23,7 @@ use pyo3::{
 };
 use ustr::Ustr;
 
-use crate::timer::{RustTimeEventCallback, TimeEvent, TimeEventCallback, TimeEventHandlerV2};
+use crate::timer::{TimeEvent, TimeEventCallback, TimeEventHandlerV2};
 
 #[pyo3::pyclass(
     module = "nautilus_trader.core.nautilus_pyo3.common",
@@ -36,11 +36,12 @@ use crate::timer::{RustTimeEventCallback, TimeEvent, TimeEventCallback, TimeEven
 ///
 /// `TimeEventHandler` associates a `TimeEvent` with a callback function that is triggered
 /// when the event's timestamp is reached.
+#[allow(non_camel_case_types)]
 pub struct TimeEventHandler_Py {
     /// The time event.
     pub event: TimeEvent,
     /// The callable python object.
-    pub callback: PyObject,
+    pub callback: Arc<PyObject>,
 }
 
 impl From<TimeEventHandlerV2> for TimeEventHandler_Py {
@@ -64,13 +65,31 @@ impl TimeEvent {
         Self::new(Ustr::from(name), event_id, ts_event.into(), ts_init.into())
     }
 
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        let tuple: (&PyString, &PyString, &PyLong, &PyLong) = state.extract(py)?;
-        let ts_event: u64 = tuple.2.extract()?;
-        let ts_init: u64 = tuple.3.extract()?;
+    fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
+        let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
 
-        self.name = Ustr::from(tuple.0.extract()?);
-        self.event_id = UUID4::from_str(tuple.1.extract()?).map_err(to_pyvalue_err)?;
+        let ts_event = py_tuple
+            .get_item(2)?
+            .downcast::<PyLong>()?
+            .extract::<u64>()?;
+        let ts_init: u64 = py_tuple
+            .get_item(3)?
+            .downcast::<PyLong>()?
+            .extract::<u64>()?;
+
+        self.name = Ustr::from(
+            py_tuple
+                .get_item(0)?
+                .downcast::<PyString>()?
+                .extract::<&str>()?,
+        );
+        self.event_id = UUID4::from_str(
+            py_tuple
+                .get_item(1)?
+                .downcast::<PyString>()?
+                .extract::<&str>()?,
+        )
+        .map_err(to_pyvalue_err)?;
         self.ts_event = ts_event.into();
         self.ts_init = ts_init.into();
 
@@ -88,9 +107,9 @@ impl TimeEvent {
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
-        let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
+        let safe_constructor = py.get_type_bound::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+        Ok((safe_constructor, PyTuple::empty_bound(py), state).to_object(py))
     }
 
     #[staticmethod]
@@ -127,37 +146,34 @@ impl TimeEvent {
 
     #[getter]
     #[pyo3(name = "event_id")]
-    fn py_event_id(&self) -> UUID4 {
+    const fn py_event_id(&self) -> UUID4 {
         self.event_id
     }
 
     #[getter]
     #[pyo3(name = "ts_event")]
-    fn py_ts_event(&self) -> u64 {
+    const fn py_ts_event(&self) -> u64 {
         self.ts_event.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> u64 {
+    const fn py_ts_init(&self) -> u64 {
         self.ts_init.as_u64()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::rc::Rc;
-
     use nautilus_core::{
         datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos, time::get_atomic_clock_realtime,
     };
     use pyo3::prelude::*;
-    use rstest::*;
     use tokio::time::Duration;
 
     use crate::{
         testing::wait_until,
-        timer::{LiveTimer, RustTimeEventCallback, TimeEvent, TimeEventCallback},
+        timer::{LiveTimer, TimeEvent, TimeEventCallback},
     };
 
     #[pyfunction]

@@ -44,6 +44,5 @@ pub fn convert_account_any_to_pyobject(py: Python, account: AccountAny) -> PyRes
     match account {
         AccountAny::Cash(account) => Ok(account.into_py(py)),
         AccountAny::Margin(account) => Ok(account.into_py(py)),
-        _ => Err(to_pyvalue_err("Unsupported account type")),
     }
 }

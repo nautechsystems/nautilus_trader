@@ -41,27 +41,28 @@ use crate::{
 
 impl QuoteTick {
     /// Create a new [`QuoteTick`] extracted from the given [`PyAny`].
-    pub fn from_pyobject(obj: &Bound<PyAny>) -> PyResult<Self> {
-        let instrument_id_obj: &PyAny = obj.getattr("instrument_id")?.extract()?;
-        let instrument_id_str = instrument_id_obj.getattr("value")?.extract()?;
-        let instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
+    pub fn from_pyobject(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let instrument_id_obj: Bound<'_, PyAny> = obj.getattr("instrument_id")?.extract()?;
+        let instrument_id_str: String = instrument_id_obj.getattr("value")?.extract()?;
+        let instrument_id =
+            InstrumentId::from_str(instrument_id_str.as_str()).map_err(to_pyvalue_err)?;
 
-        let bid_price_py: &PyAny = obj.getattr("bid_price")?.extract()?;
+        let bid_price_py: Bound<'_, PyAny> = obj.getattr("bid_price")?.extract()?;
         let bid_price_raw: i64 = bid_price_py.getattr("raw")?.extract()?;
         let bid_price_prec: u8 = bid_price_py.getattr("precision")?.extract()?;
         let bid_price = Price::from_raw(bid_price_raw, bid_price_prec);
 
-        let ask_price_py: &PyAny = obj.getattr("ask_price")?.extract()?;
+        let ask_price_py: Bound<'_, PyAny> = obj.getattr("ask_price")?.extract()?;
         let ask_price_raw: i64 = ask_price_py.getattr("raw")?.extract()?;
         let ask_price_prec: u8 = ask_price_py.getattr("precision")?.extract()?;
         let ask_price = Price::from_raw(ask_price_raw, ask_price_prec);
 
-        let bid_size_py: &PyAny = obj.getattr("bid_size")?.extract()?;
+        let bid_size_py: Bound<'_, PyAny> = obj.getattr("bid_size")?.extract()?;
         let bid_size_raw: u64 = bid_size_py.getattr("raw")?.extract()?;
         let bid_size_prec: u8 = bid_size_py.getattr("precision")?.extract()?;
         let bid_size = Quantity::from_raw(bid_size_raw, bid_size_prec);
 
-        let ask_size_py: &PyAny = obj.getattr("ask_size")?.extract()?;
+        let ask_size_py: Bound<'_, PyAny> = obj.getattr("ask_size")?.extract()?;
         let ask_size_raw: u64 = ask_size_py.getattr("raw")?.extract()?;
         let ask_size_prec: u8 = ask_size_py.getattr("precision")?.extract()?;
         let ask_size = Quantity::from_raw(ask_size_raw, ask_size_prec);
@@ -106,32 +107,21 @@ impl QuoteTick {
         .map_err(to_pyvalue_err)
     }
 
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        let tuple: (
-            &PyString,
-            &PyLong,
-            &PyLong,
-            &PyLong,
-            &PyLong,
-            &PyLong,
-            &PyLong,
-            &PyLong,
-            &PyLong,
-            &PyLong,
-            &PyLong,
-        ) = state.extract(py)?;
-        let instrument_id_str: &str = tuple.0.extract()?;
-        let bid_price_raw = tuple.1.extract()?;
-        let ask_price_raw = tuple.2.extract()?;
-        let bid_price_prec = tuple.3.extract()?;
-        let ask_price_prec = tuple.4.extract()?;
+    fn __setstate__(&mut self, _py: Python, state: &Bound<'_, PyAny>) -> PyResult<()> {
+        let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
+        let binding = py_tuple.get_item(0)?;
+        let instrument_id_str: &str = binding.downcast::<PyString>()?.extract()?;
+        let bid_price_raw: i64 = py_tuple.get_item(1)?.downcast::<PyLong>()?.extract()?;
+        let ask_price_raw: i64 = py_tuple.get_item(2)?.downcast::<PyLong>()?.extract()?;
+        let bid_price_prec: u8 = py_tuple.get_item(3)?.downcast::<PyLong>()?.extract()?;
+        let ask_price_prec: u8 = py_tuple.get_item(4)?.downcast::<PyLong>()?.extract()?;
 
-        let bid_size_raw = tuple.5.extract()?;
-        let ask_size_raw = tuple.6.extract()?;
-        let bid_size_prec = tuple.7.extract()?;
-        let ask_size_prec = tuple.8.extract()?;
-        let ts_event: u64 = tuple.9.extract()?;
-        let ts_init: u64 = tuple.10.extract()?;
+        let bid_size_raw: u64 = py_tuple.get_item(5)?.downcast::<PyLong>()?.extract()?;
+        let ask_size_raw: u64 = py_tuple.get_item(6)?.downcast::<PyLong>()?.extract()?;
+        let bid_size_prec: u8 = py_tuple.get_item(7)?.downcast::<PyLong>()?.extract()?;
+        let ask_size_prec: u8 = py_tuple.get_item(8)?.downcast::<PyLong>()?.extract()?;
+        let ts_event: u64 = py_tuple.get_item(9)?.downcast::<PyLong>()?.extract()?;
+        let ts_init: u64 = py_tuple.get_item(10)?.downcast::<PyLong>()?.extract()?;
 
         self.instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
         self.bid_price = Price::from_raw(bid_price_raw, bid_price_prec);
@@ -162,9 +152,9 @@ impl QuoteTick {
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
-        let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
+        let safe_constructor = py.get_type_bound::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+        Ok((safe_constructor, PyTuple::empty_bound(py), state).to_object(py))
     }
 
     #[staticmethod]
@@ -267,8 +257,8 @@ impl QuoteTick {
 
     #[staticmethod]
     #[pyo3(name = "get_fields")]
-    fn py_get_fields(py: Python<'_>) -> PyResult<&PyDict> {
-        let py_dict = PyDict::new(py);
+    fn py_get_fields(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
+        let py_dict = PyDict::new_bound(py);
         for (k, v) in Self::get_fields() {
             py_dict.set_item(k, v)?;
         }
@@ -360,7 +350,7 @@ impl QuoteTick {
         // Serialize object to JSON bytes
         let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
         // Parse JSON into a Python dictionary
-        let py_dict: Py<PyDict> = PyModule::import(py, "json")?
+        let py_dict: Py<PyDict> = PyModule::import_bound(py, "json")?
             .call_method("loads", (json_str,), None)?
             .extract()?;
         Ok(py_dict)

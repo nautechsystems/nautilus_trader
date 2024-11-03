@@ -26,12 +26,7 @@
 //!
 //! - `ffi`: Enables the C foreign function interface (FFI) from `cbindgen`.
 
-#![allow(deprecated)] // TODO: Temporary for pyo3 upgrade
-
-use pyo3::{
-    prelude::*,
-    types::{PyDict, PyString},
-};
+use pyo3::prelude::*;
 
 /// We modify sys modules so that submodule can be loaded directly as
 /// import supermodule.submodule
@@ -39,9 +34,10 @@ use pyo3::{
 /// Also re-exports all submodule attributes so they can be imported directly from `nautilus_pyo3`
 /// refer: https://github.com/PyO3/pyo3/issues/2644
 #[pymodule]
-fn nautilus_pyo3(py: Python<'_>, m: &PyModule) -> PyResult<()> {
-    let sys = PyModule::import(py, "sys")?;
-    let sys_modules: &PyDict = sys.getattr("modules")?.downcast()?;
+fn nautilus_pyo3(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    let sys = PyModule::import_bound(py, "sys")?;
+    let modules = sys.getattr("modules")?;
+    let sys_modules: &Bound<'_, PyAny> = modules.downcast()?;
     let module_name = "nautilus_trader.core.nautilus_pyo3";
 
     // Set pyo3_nautilus to be recognized as a subpackage
@@ -65,8 +61,8 @@ fn nautilus_pyo3(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     re_export_module_attributes(m, n)?;
 
-    let n = "crypto";
-    let submodule = pyo3::wrap_pymodule!(nautilus_adapters::crypto::python::crypto);
+    let n = "cryptography";
+    let submodule = pyo3::wrap_pymodule!(nautilus_cryptography::python::cryptography);
     m.add_wrapped(submodule)?;
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     re_export_module_attributes(m, n)?;
@@ -101,6 +97,12 @@ fn nautilus_pyo3(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     re_export_module_attributes(m, n)?;
 
+    let n = "serialization";
+    let submodule = pyo3::wrap_pymodule!(nautilus_serialization::python::serialization);
+    m.add_wrapped(submodule)?;
+    sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    re_export_module_attributes(m, n)?;
+
     let n = "test_kit";
     let submodule = pyo3::wrap_pymodule!(nautilus_test_kit::python::test_kit);
     m.add_wrapped(submodule)?;
@@ -116,12 +118,15 @@ fn nautilus_pyo3(py: Python<'_>, m: &PyModule) -> PyResult<()> {
     Ok(())
 }
 
-fn re_export_module_attributes(parent_module: &PyModule, submodule_name: &str) -> PyResult<()> {
+fn re_export_module_attributes(
+    parent_module: &Bound<'_, PyModule>,
+    submodule_name: &str,
+) -> PyResult<()> {
     let submodule = parent_module.getattr(submodule_name)?;
-    for item in submodule.dir() {
-        let item_name: &PyString = item.extract()?;
-        if let Ok(attr) = submodule.getattr(item_name) {
-            parent_module.add(item_name.to_str()?, attr)?;
+    for item_name in submodule.dir()? {
+        let item_name_str: &str = item_name.extract()?;
+        if let Ok(attr) = submodule.getattr(item_name_str) {
+            parent_module.add(item_name_str, attr)?;
         }
     }
 

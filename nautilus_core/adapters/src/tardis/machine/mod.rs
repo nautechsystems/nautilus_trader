@@ -34,14 +34,13 @@ use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream,
 };
 
-use super::machine::enums::Exchange;
+use super::enums::Exchange;
 
 pub mod client;
-pub mod enums;
 pub mod message;
 pub mod parse;
 
-pub use crate::tardis::machine::client::TardisClient;
+pub use crate::tardis::machine::client::TardisMachineClient;
 
 /// Instrument definition information necessary for stream parsing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,10 +48,21 @@ pub use crate::tardis::machine::client::TardisClient;
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
 )]
-pub struct TardisInstrumentInfo {
+pub struct InstrumentMiniInfo {
     pub instrument_id: InstrumentId,
     pub price_precision: u8,
     pub size_precision: u8,
+}
+
+impl InstrumentMiniInfo {
+    #[must_use]
+    pub const fn new(instrument_id: InstrumentId, price_precision: u8, size_precision: u8) -> Self {
+        Self {
+            instrument_id,
+            price_precision,
+            size_precision,
+        }
+    }
 }
 
 /// The options that can be specified for calling Tardis Machine Server's replay-normalized.
@@ -76,11 +86,13 @@ pub struct ReplayNormalizedRequestOptions {
     pub to: NaiveDate,
     /// Array of normalized [data types](https://docs.tardis.dev/api/tardis-machine#normalized-data-types)
     /// for which real-time data will be provided.
+    #[serde(alias = "data_types")]
     pub data_types: Vec<String>,
     /// When set to true, sends also disconnect messages that mark events when real-time WebSocket
     /// connection that was used to collect the historical data got disconnected.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
+    #[serde(alias = "with_disconnect_messages")]
     pub with_disconnect_messages: Option<bool>,
 }
 
@@ -100,6 +112,7 @@ pub struct StreamNormalizedRequestOptions {
     pub symbols: Option<Vec<String>>,
     /// Array of normalized [data types](https://docs.tardis.dev/api/tardis-machine#normalized-data-types)
     /// for which real-time data will be provided.
+    #[serde(alias = "data_types")]
     pub data_types: Vec<String>,
     /// When set to true, sends disconnect messages anytime underlying exchange real-time WebSocket
     /// connection(s) gets disconnected.
@@ -220,7 +233,6 @@ async fn stream_from_websocket(
                             yield Err(Error::ConnectionClosed { reason });
                         } else {
                             tracing::debug!("Connection closed normally: {reason}");
-                            yield Err(Error::ConnectionClosed { reason });
                         }
                         break;
                     }
@@ -289,9 +301,7 @@ async fn heartbeat(
 
         while count > 0 {
             retry_interval.tick().await;
-            if let Err(e) = sender.send(tungstenite::Message::Ping(vec![])).await {
-                tracing::error!("Failed to send PING message: {e}");
-            }
+            let _ = sender.send(tungstenite::Message::Ping(vec![])).await;
             count -= 1;
         }
     }

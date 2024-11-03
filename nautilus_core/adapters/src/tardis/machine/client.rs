@@ -15,6 +15,7 @@
 
 use std::{
     collections::HashMap,
+    env,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
@@ -22,41 +23,50 @@ use std::{
 };
 
 use futures_util::{pin_mut, Stream, StreamExt};
-use nautilus_model::{
-    data::Data,
-    identifiers::{InstrumentId, Symbol, Venue},
-};
+use nautilus_model::{data::Data, identifiers::InstrumentId};
 
 use super::{
-    enums::Exchange, message::WsMessage, replay_normalized, stream_normalized, Error,
-    ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions, TardisInstrumentInfo,
+    message::WsMessage, replay_normalized, stream_normalized, Error, InstrumentMiniInfo,
+    ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions,
 };
-use crate::tardis::machine::parse::parse_tardis_ws_message;
+use crate::tardis::{
+    machine::parse::parse_tardis_ws_message, parse::parse_instrument_id_with_enum,
+};
 
 /// Provides a client for connecting to a [Tardis Machine Server](https://docs.tardis.dev/api/tardis-machine).
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
 )]
-pub struct TardisClient {
+#[derive(Debug, Clone)]
+pub struct TardisMachineClient {
     pub base_url: String,
     pub replay_signal: Arc<AtomicBool>,
-    pub stream_signals: HashMap<TardisInstrumentInfo, Arc<AtomicBool>>,
-    pub instruments: HashMap<InstrumentId, Arc<TardisInstrumentInfo>>,
+    pub stream_signals: HashMap<InstrumentMiniInfo, Arc<AtomicBool>>,
+    pub instruments: HashMap<InstrumentId, Arc<InstrumentMiniInfo>>,
 }
 
-impl TardisClient {
-    /// Creates a new [`TardisClient`] instance.
-    pub fn new(base_url: impl ToString) -> Self {
-        Self {
-            base_url: base_url.to_string(),
+impl TardisMachineClient {
+    /// Creates a new [`TardisMachineClient`] instance.
+    pub fn new(base_url: Option<&str>) -> anyhow::Result<Self> {
+        let base_url = base_url
+            .map(ToString::to_string)
+            .or_else(|| env::var("TARDIS_MACHINE_WS_URL").ok())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Tardis Machine `base_url` must be provided or set in the 'TARDIS_MACHINE_WS_URL' environment variable"
+                )
+            })?;
+
+        Ok(Self {
+            base_url,
             replay_signal: Arc::new(AtomicBool::new(false)),
             stream_signals: HashMap::new(),
             instruments: HashMap::new(),
-        }
+        })
     }
 
-    pub fn add_instrument_info(&mut self, info: TardisInstrumentInfo) {
+    pub fn add_instrument_info(&mut self, info: InstrumentMiniInfo) {
         self.instruments.insert(info.instrument_id, Arc::new(info));
     }
 
@@ -92,7 +102,7 @@ impl TardisClient {
 
     pub async fn stream(
         &self,
-        instrument: TardisInstrumentInfo,
+        instrument: InstrumentMiniInfo,
         options: Vec<StreamNormalizedRequestOptions>,
     ) -> impl Stream<Item = Data> {
         let stream = stream_normalized(&self.base_url, options, self.replay_signal.clone())
@@ -107,8 +117,8 @@ impl TardisClient {
 
 fn handle_ws_stream<S>(
     stream: S,
-    instrument: Option<Arc<TardisInstrumentInfo>>,
-    instrument_map: Option<HashMap<InstrumentId, Arc<TardisInstrumentInfo>>>,
+    instrument: Option<Arc<InstrumentMiniInfo>>,
+    instrument_map: Option<HashMap<InstrumentId, Arc<InstrumentMiniInfo>>>,
 ) -> impl Stream<Item = Data>
 where
     S: Stream<Item = Result<WsMessage, Error>> + Unpin,
@@ -151,26 +161,20 @@ where
 
 pub fn determine_instrument_info(
     msg: &WsMessage,
-    instrument_map: &HashMap<InstrumentId, Arc<TardisInstrumentInfo>>,
-) -> Option<Arc<TardisInstrumentInfo>> {
+    instrument_map: &HashMap<InstrumentId, Arc<InstrumentMiniInfo>>,
+) -> Option<Arc<InstrumentMiniInfo>> {
     let instrument_id = match msg {
         WsMessage::BookChange(msg) => parse_instrument_id_with_enum(&msg.symbol, &msg.exchange),
         WsMessage::BookSnapshot(msg) => parse_instrument_id_with_enum(&msg.symbol, &msg.exchange),
         WsMessage::Trade(msg) => parse_instrument_id_with_enum(&msg.symbol, &msg.exchange),
-        WsMessage::Bar(msg) => parse_instrument_id_with_enum(&msg.symbol, &msg.exchange),
+        WsMessage::TradeBar(msg) => parse_instrument_id_with_enum(&msg.symbol, &msg.exchange),
         WsMessage::DerivativeTicker(_) => return None,
         WsMessage::Disconnect(_) => return None,
     };
-    match instrument_map.get(&instrument_id) {
-        Some(instr) => Some(instr.clone().clone()),
-        None => {
-            tracing::error!("Instrument definition info not available for {instrument_id}");
-            None
-        }
+    if let Some(instr) = instrument_map.get(&instrument_id) {
+        Some(instr.clone())
+    } else {
+        tracing::error!("Instrument definition info not available for {instrument_id}");
+        None
     }
-}
-
-#[must_use]
-fn parse_instrument_id_with_enum(symbol: &str, exchange: &Exchange) -> InstrumentId {
-    InstrumentId::new(Symbol::from(symbol), Venue::from(exchange.as_venue_str()))
 }

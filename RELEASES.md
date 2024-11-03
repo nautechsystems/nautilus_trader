@@ -1,3 +1,51 @@
+# NautilusTrader 1.205.0 Beta
+
+Released on 3rd November 2024 (UTC).
+
+### Enhancements
+- Added Tardis Machine and HTTP API integration in Python and Rust
+- Added `LiveExecEngineConfig.open_check_interval_secs` config option to actively reconcile open orders with the venue
+- Added aggregation of bars from historical data (#2002), thanks @faysou
+- Added monthly and weekly bar aggregations (#2025), thanks @faysou
+- Added `raise_exception` optional parameter to `TradingNode.run` (#2021), thanks @faysou
+- Added `OrderBook.get_avg_px_qty_for_exposure` in Rust (#1893), thanks @elementace
+- Added timeouts to Interactive Brokers adapter configurations (#2026), thanks @rsmb7z
+- Added optional time origins for time bar aggregation (#2028), thanks @faysou
+- Added Polymarket position status reports and order status report generation based on fill reports
+- Added USDC.e (PoS) currency (used by Polymarket) to internal currency map
+- Upgraded Polymarket WebSocket API to new version
+
+### Internal Improvements
+- Ported analysis subpackage to Rust (#2016), thanks @Pushkarm029
+- Improved Postgres testing (#2018), thanks @filipmacek
+- Improved Redis version parsing to support truncated versions (improves compatibility with Redis-compliant databases)
+- Refined Arrow serialization (record batch functions now also available in Rust)
+- Refined core `Bar` API to remove unnecessary unwraps
+- Standardized network client logging
+- Fixed all pyo3 deprecations for API breaking changes
+- Fixed all clippy warning lints for PyO3 changes (#2030), thanks @Pushkarm029
+- PyO3 upgrade refactor and repair catalog tests (#2032), thanks @twitu
+- Upgraded `pyo3` crate to v0.22.5
+- Upgraded `pyo3-async-runtimes` crate to v0.22.0
+- Upgraded `tokio` crate to v1.41.0
+
+### Breaking Changes
+- Removed pyo3 `DataTransformer` (was being used for namespacing, so refactored to separate functions)
+- Moved `TEST_DATA_DIR` constant from `tests` to `nautilus_trader` package (#2020), thanks @faysou
+
+### Fixes
+- Fixed use of Redis `KEYS` command which, is unsupported in cluster environments (replaced with `SCAN` for compatibility)
+- Fixed decoding fill HTTP messages for dYdX (#2022), thanks @davidsblom
+- Fixed account balance report for dYdX (#2024), thanks @davidsblom
+- Fixed Interactive Brokers market data client subscription log message (#2012), thanks @marcodambros
+- Fixed Polymarket execution reconciliation (was not able to reconcile from closed orders)
+- Fixed catalog query mem leak test (#2031), thanks @Pushkarm029
+- Fixed `OrderInitialized.to_dict()` `tags` value type to `list[str]` (was a concatenated `str`)
+- Fixed `OrderInitialized.to_dict()` `linked_order_ids` value type to `list[str]` (was a concatenated `str`)
+- Fix Betfair clients shutdown (#2037), thanks @limx0
+
+---
+
 # NautilusTrader 1.204.0 Beta
 
 Released on 22nd October 2024 (UTC).
@@ -33,7 +81,7 @@ Released on 22nd October 2024 (UTC).
 - Removed legacy `TardisQuoteDataLoader` (now redundant with new Rust implemented loader)
 - Removed legacy `TardisTradeDataLoader` (now redundant with new Rust implemented loader)
 - Custom signals are now passed to `on_signal(signal)` instead of `on_data(data)`
-- Changed `Position.to_dict()` `commissions` value type to `list[str]` (rather than an optional `str` of a list of strings)
+- Changed `Position.to_dict()` `commissions` value type to `list[str]` (was an optional `str` of a list of strings)
 - Changed `Position.to_dict()` `avg_px_open` value type to `float`
 - Changed `Position.to_dict()` `avg_px_close` value type to `float | None`
 - Changed `Position.to_dict()` `realized_return` value type to `float | None`

@@ -506,6 +506,9 @@ class LoggingConfig(NautilusConfig, frozen=True):
         If the logging system should be initialized via pyo3,
         this isn't recommended for backtesting as the performance is much lower
         but can be useful for seeing logs originating from Rust.
+    clear_log_file : bool, default False
+        If the log file name should be cleared before being used (e.g. for testing).
+        Only applies if `log_file_name` is not ``None``.
 
     """
 
@@ -519,6 +522,7 @@ class LoggingConfig(NautilusConfig, frozen=True):
     bypass_logging: bool = False
     print_config: bool = False
     use_pyo3: bool = False
+    clear_log_file: bool = False
 
 
 class ImportableFactoryConfig(NautilusConfig, frozen=True):

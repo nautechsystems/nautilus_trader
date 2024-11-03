@@ -1,0 +1,33 @@
+[package]
+name = "nautilus-serialization"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description.workspace = true
+documentation.workspace = true
+
+[lib]
+name = "nautilus_serialization"
+crate-type = ["rlib", "staticlib", "cdylib"]
+
+[dependencies]
+nautilus-core = { path = "../core" }
+nautilus-model = { path = "../model", features = ["stubs"] }
+arrow = { workspace = true }
+parquet = { workspace = true }
+pyo3 = { workspace = true, optional = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+nautilus-test-kit = { path = "../test_kit" }
+criterion = { workspace = true }
+rstest = { workspace = true }
+
+[features]
+default = ["python"]
+extension-module = [
+  "pyo3/extension-module",
+  "nautilus-core/extension-module",
+  "nautilus-model/extension-module",
+]
+python = ["pyo3", "nautilus-core/python", "nautilus-model/python"]

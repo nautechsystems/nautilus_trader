@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import os
-from typing import Any
 
 import pytest
 
@@ -27,7 +26,9 @@ from nautilus_trader.test_kit.mocks.data import load_catalog_with_stub_trade_tic
 from nautilus_trader.test_kit.mocks.data import setup_catalog
 
 
-def test_write_quote_ticks(benchmark: Any) -> None:
+@pytest.mark.skip
+@pytest.mark.benchmark(min_rounds=1)
+def test_write_quote_ticks(benchmark) -> None:
     catalog = setup_catalog("file")
 
     def run():
@@ -35,10 +36,12 @@ def test_write_quote_ticks(benchmark: Any) -> None:
         quotes = catalog.quote_ticks()
         assert len(quotes) == 100_000
 
-    benchmark.pedantic(run, rounds=1, iterations=1, warmup_rounds=1)
+    benchmark(run)
 
 
-def test_load_quote_ticks(benchmark: Any) -> None:
+@pytest.mark.skip
+@pytest.mark.benchmark(min_rounds=1)
+def test_load_quote_ticks(benchmark) -> None:
     catalog = setup_catalog("file")
     load_catalog_with_stub_quote_ticks_audusd(catalog)
 
@@ -46,10 +49,12 @@ def test_load_quote_ticks(benchmark: Any) -> None:
         quotes = catalog.quote_ticks()
         assert len(quotes) == 100_000
 
-    benchmark.pedantic(run, rounds=10, iterations=1, warmup_rounds=1)
+    benchmark(run)
 
 
-def test_write_trade_ticks(benchmark: Any) -> None:
+@pytest.mark.skip
+@pytest.mark.benchmark(min_rounds=1)
+def test_write_trade_ticks(benchmark) -> None:
     catalog = setup_catalog("file")
 
     def run():
@@ -57,10 +62,12 @@ def test_write_trade_ticks(benchmark: Any) -> None:
         trades = catalog.trade_ticks()
         assert len(trades) == 69_806
 
-    benchmark.pedantic(run, rounds=1, iterations=1, warmup_rounds=1)
+    benchmark(run)
 
 
-def test_load_trade_ticks(benchmark: Any) -> None:
+@pytest.mark.skip
+@pytest.mark.benchmark(min_rounds=1)
+def test_load_trade_ticks(benchmark) -> None:
     catalog = setup_catalog("file")
     load_catalog_with_stub_trade_ticks_ethusdt(catalog)
 
@@ -68,20 +75,18 @@ def test_load_trade_ticks(benchmark: Any) -> None:
         trades = catalog.trade_ticks()
         assert len(trades) == 69_806
 
-    benchmark.pedantic(run, rounds=10, iterations=1, warmup_rounds=1)
+    benchmark(run)
 
 
 @pytest.mark.skip(reason="development_only")
-def test_load_single_stream(benchmark: Any) -> None:
-    def setup():
-        file_path = PACKAGE_ROOT / "bench_data" / "quotes_0005.parquet"
-        session = DataBackendSession()
-        session.add_file(
-            NautilusDataType.QuoteTick,
-            "quote_ticks",
-            str(file_path),
-        )
-        return (session.to_query_result(),), {}
+def test_load_single_stream(benchmark) -> None:
+    file_path = PACKAGE_ROOT / "bench_data" / "quotes_0005.parquet"
+    session = DataBackendSession()
+    session.add_file(
+        NautilusDataType.QuoteTick,
+        "quote_ticks",
+        str(file_path),
+    )
 
     def run(result):
         count = 0
@@ -90,28 +95,25 @@ def test_load_single_stream(benchmark: Any) -> None:
 
         assert count == 9_689_614
 
-    benchmark.pedantic(run, setup=setup, rounds=1, iterations=1, warmup_rounds=1)
+    benchmark(run)
 
 
 @pytest.mark.skip(reason="development_only")
-def test_load_multi_stream_catalog_v2(benchmark: Any) -> None:
-    def setup():
-        dir_path = PACKAGE_ROOT / "bench_data" / "multi_stream_data/"
+def test_load_multi_stream_catalog_v2(benchmark) -> None:
+    dir_path = PACKAGE_ROOT / "bench_data" / "multi_stream_data/"
 
-        session = DataBackendSession()
+    session = DataBackendSession()
 
-        for dirpath, _, filenames in os.walk(dir_path):
-            for filename in filenames:
-                if filename.endswith("parquet"):
-                    file_stem = os.path.splitext(filename)[0]
-                    if "quotes" in filename:
-                        full_path = os.path.join(dirpath, filename)
-                        session.add_file(NautilusDataType.QuoteTick, file_stem, full_path)
-                    elif "trades" in filename:
-                        full_path = os.path.join(dirpath, filename)
-                        session.add_file(NautilusDataType.TradeTick, file_stem, full_path)
-
-        return (session.to_query_result(),), {}
+    for dirpath, _, filenames in os.walk(dir_path):
+        for filename in filenames:
+            if filename.endswith("parquet"):
+                file_stem = os.path.splitext(filename)[0]
+                if "quotes" in filename:
+                    full_path = os.path.join(dirpath, filename)
+                    session.add_file(NautilusDataType.QuoteTick, file_stem, full_path)
+                elif "trades" in filename:
+                    full_path = os.path.join(dirpath, filename)
+                    session.add_file(NautilusDataType.TradeTick, file_stem, full_path)
 
     def run(result):
         count = 0
@@ -122,4 +124,4 @@ def test_load_multi_stream_catalog_v2(benchmark: Any) -> None:
         # Check total count is correct
         assert count == 72_536_038
 
-    benchmark.pedantic(run, setup=setup, rounds=1, iterations=1, warmup_rounds=1)
+    benchmark(run)

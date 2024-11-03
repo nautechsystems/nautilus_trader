@@ -31,6 +31,7 @@ use crate::{
 impl OrderCancelRejected {
     #[allow(clippy::too_many_arguments)]
     #[new]
+    #[pyo3(signature = (trader_id, strategy_id, instrument_id, client_order_id, reason, event_id, ts_event, ts_init, reconciliation, venue_order_id=None, account_id=None))]
     fn py_new(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -84,8 +85,8 @@ impl OrderCancelRejected {
 
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let dict = PyDict::new(py);
-        dict.set_item("type", stringify!(OrderCancelRejected));
+        let dict = PyDict::new_bound(py);
+        dict.set_item("type", stringify!(OrderCancelRejected))?;
         dict.set_item("trader_id", self.trader_id.to_string())?;
         dict.set_item("strategy_id", self.strategy_id.to_string())?;
         dict.set_item("instrument_id", self.instrument_id.to_string())?;

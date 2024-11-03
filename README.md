@@ -1,6 +1,7 @@
 # <img src="https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/_images/nautilus-trader-logo.png" width="500">
 
 [![codecov](https://codecov.io/gh/nautechsystems/nautilus_trader/branch/master/graph/badge.svg?token=DXO9QQI40H)](https://codecov.io/gh/nautechsystems/nautilus_trader)
+[![codspeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://codspeed.io/nautechsystems/nautilus_trader)
 ![pythons](https://img.shields.io/pypi/pyversions/nautilus_trader)
 ![pypi-version](https://img.shields.io/pypi/v/nautilus_trader)
 ![pypi-format](https://img.shields.io/pypi/format/nautilus_trader?color=blue)
@@ -38,7 +39,7 @@ NautilusTraders design, architecture and implementation philosophy holds softwar
 highest level, with the aim of supporting Python native, mission-critical, trading system backtesting
 and live deployment workloads.
 
-The platform is also univ2rsal and asset class agnostic - with any REST, WebSocket or FIX API able to be integrated via modular
+The platform is also universal and asset class agnostic - with any REST, WebSocket or FIX API able to be integrated via modular
 adapters. Thus, it can handle high-frequency trading operations for any asset classes
 including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across multiple venues simultaneously.
 
@@ -136,7 +137,7 @@ The following integrations are currently supported:
 | [Interactive Brokers](https://www.interactivebrokers.com) | `INTERACTIVE_BROKERS` | Brokerage (multi-venue) | ![status](https://img.shields.io/badge/stable-green)    | [Guide](https://nautilustrader.io/docs/latest/integrations/ib.html)         |
 | [OKX](https://okx.com)                                    | `OKX`                 | Crypto Exchange (CEX)   | ![status](https://img.shields.io/badge/building-orange) | [Guide](https://nautilustrader.io/docs/latest/integrations/okx.html)        |
 | [Polymarket](https://polymarket.com)                      | `POLYMARKET`          | Prediction Market (DEX) | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://nautilustrader.io/docs/latest/integrations/polymarket.html) |
-| [Tardis](https://tardis.dev)                              | `TARDIS`              | Data Provider           | ![status](https://img.shields.io/badge/building-orange) | [Guide](https://nautilustrader.io/docs/latest/integrations/tardis.html)     |
+| [Tardis](https://tardis.dev)                              | `TARDIS`              | Data Provider           | ![status](https://img.shields.io/badge/beta-yellow)     | [Guide](https://nautilustrader.io/docs/latest/integrations/tardis.html)     |
 
 - **ID**: The default client ID for the integrations adapter clients.
 - **Type**: The type of integration (often the venue type).

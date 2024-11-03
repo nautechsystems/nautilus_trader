@@ -23,12 +23,8 @@ use std::{
     time::Duration,
 };
 
-use nautilus_core::python::to_pyruntime_err;
+use nautilus_cryptography::providers::install_cryptographic_provider;
 use pyo3::prelude::*;
-use rustls::{
-    crypto::{aws_lc_rs, ring, CryptoProvider},
-    ClientConfig, RootCertStore,
-};
 use tokio::{
     io::{split, AsyncReadExt, AsyncWriteExt, ReadHalf, WriteHalf},
     net::TcpStream,
@@ -61,7 +57,7 @@ pub struct SocketConfig {
     /// The sequence of bytes which separates lines.
     pub suffix: Vec<u8>,
     /// The Python function to handle incoming messages.
-    pub handler: PyObject,
+    pub handler: Arc<PyObject>,
     /// The optional heartbeat with period and beat message.
     pub heartbeat: Option<(u64, Vec<u8>)>,
 }
@@ -94,14 +90,7 @@ struct SocketClientInner {
 
 impl SocketClientInner {
     pub async fn connect_url(config: SocketConfig) -> Result<Self, Error> {
-        if CryptoProvider::get_default().is_none() {
-            tracing::debug!("Installing `ring` cryptographic provider");
-            // An error can occur on install if there is a race condition with another component
-            match ring::default_provider().install_default() {
-                Ok(_) => tracing::debug!("Cryptographic provider installed successfully"),
-                Err(e) => tracing::debug!("Error installing cryptographic provider: {e:?}"),
-            }
-        }
+        install_cryptographic_provider();
 
         let SocketConfig {
             url,
@@ -113,8 +102,9 @@ impl SocketClientInner {
         let (reader, writer) = Self::tls_connect_with_server(url, *mode).await?;
         let shared_writer = Arc::new(Mutex::new(writer));
 
+        let handler1 = Python::with_gil(|py| handler.clone_ref(py));
         // Keep receiving messages from socket pass them as arguments to handler
-        let read_task = Self::spawn_read_task(reader, handler.clone(), suffix.clone());
+        let read_task = Self::spawn_read_task(reader, handler1, suffix.clone());
 
         // Optionally create heartbeat task
         let heartbeat_task =
@@ -162,7 +152,7 @@ impl SocketClientInner {
                     }
                     // Received bytes of data
                     Ok(bytes) => {
-                        tracing::debug!("Received {bytes} bytes of data");
+                        tracing::trace!("Received <binary> {bytes} bytes");
 
                         // While received data has a line break
                         // drain it and pass it to the handler
@@ -257,8 +247,9 @@ impl SocketClientInner {
         *guard = new_writer;
         drop(guard);
 
+        let handler1 = Python::with_gil(|py| handler.clone_ref(py));
         tracing::debug!("Recreate reader and heartbeat task");
-        self.read_task = Self::spawn_read_task(reader, handler.clone(), suffix.clone());
+        self.read_task = Self::spawn_read_task(reader, handler1, suffix.clone());
         self.heartbeat_task =
             Self::spawn_heartbeat_task(heartbeat.clone(), self.writer.clone(), suffix.clone());
         Ok(())
@@ -351,7 +342,7 @@ impl SocketClient {
         })
         .await
         {
-            Ok(_) => {
+            Ok(()) => {
                 tracing::debug!("Controller task finished");
             }
             Err(_) => {

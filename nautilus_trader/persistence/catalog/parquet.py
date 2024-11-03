@@ -333,7 +333,7 @@ class ParquetDataCatalog(BaseDataCatalog):
             - "append": Appends the data to the existing data.
             - "prepend": Prepends the data to the existing data.
             - "overwrite": Overwrites the existing data.
-            If not specified, it defaults to "overwrite".
+            If not specified, it defaults to 'overwrite'.
         kwargs : Any
             Additional keyword arguments to be passed to the `write_chunk` method.
 
@@ -346,11 +346,11 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         Notes
         -----
-         - All data of the same type is expected to be monotonically increasing, or non-decreasing
-         - The data is sorted and grouped based on its class name and instrument ID (if applicable) before writing
-         - Instrument-specific data should have either an `instrument_id` attribute or be an instance of `Instrument`
-         - The `Bar` class is treated as a special case, being grouped based on its `bar_type` attribute
-         - The input data list must be non-empty, and all data items must be of the appropriate class type
+         - All data of the same type is expected to be monotonically increasing, or non-decreasing.
+         - The data is sorted and grouped based on its class name and instrument ID (if applicable) before writing.
+         - Instrument-specific data should have either an `instrument_id` attribute or be an instance of `Instrument`.
+         - The `Bar` class is treated as a special case, being grouped based on its `bar_type` attribute.
+         - The input data list must be non-empty, and all data items must be of the appropriate class type.
 
         Raises
         ------

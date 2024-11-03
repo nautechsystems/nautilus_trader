@@ -19,7 +19,8 @@ import pandas as pd
 import pyarrow as pa
 import pytest
 
-from nautilus_trader.core.nautilus_pyo3 import DataTransformer
+from nautilus_trader import TEST_DATA_DIR
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import QuoteTick
@@ -28,7 +29,6 @@ from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
 from nautilus_trader.persistence.wranglers_v2 import QuoteTickDataWranglerV2
 from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
-from tests import TEST_DATA_DIR
 
 
 def test_pyo3_quote_ticks_to_record_batch_reader() -> None:
@@ -42,7 +42,7 @@ def test_pyo3_quote_ticks_to_record_batch_reader() -> None:
     quotes = wrangler.from_pandas(df)
 
     # Act
-    batch_bytes = DataTransformer.pyo3_quote_ticks_to_record_batch_bytes(quotes)
+    batch_bytes = nautilus_pyo3.quote_ticks_to_arrow_record_batch_bytes(quotes)
     reader = pa.ipc.open_stream(BytesIO(batch_bytes))
 
     # Assert
@@ -58,7 +58,7 @@ def test_legacy_trade_ticks_to_record_batch_reader() -> None:
     trades = wrangler.process(TestDataProvider().read_csv_ticks("binance/ethusdt-trades.csv"))
 
     # Act
-    batch_bytes = DataTransformer.pyobjects_to_record_batch_bytes(trades)
+    batch_bytes = nautilus_pyo3.pyobjects_to_arrow_record_batch_bytes(trades)
     reader = pa.ipc.open_stream(BytesIO(batch_bytes))
 
     # Assert
@@ -90,7 +90,7 @@ def test_legacy_deltas_to_record_batch_reader() -> None:
     ]
 
     # Act
-    batch_bytes = DataTransformer.pyobjects_to_record_batch_bytes(deltas)
+    batch_bytes = nautilus_pyo3.pyobjects_to_arrow_record_batch_bytes(deltas)
     reader = pa.ipc.open_stream(BytesIO(batch_bytes))
 
     # Assert
@@ -102,7 +102,7 @@ def test_legacy_deltas_to_record_batch_reader() -> None:
 def test_get_schema_map_with_unsupported_type() -> None:
     # Arrange, Act, Assert
     with pytest.raises(TypeError):
-        DataTransformer.get_schema_map(str)
+        nautilus_pyo3.get_arrow_schema_map(str)
 
 
 @pytest.mark.parametrize(
@@ -163,7 +163,7 @@ def test_get_schema_map_for_all_implemented_types(
     expected_map: dict[str, str],
 ) -> None:
     # Arrange, Act
-    schema_map = DataTransformer.get_schema_map(data_type)
+    schema_map = nautilus_pyo3.get_arrow_schema_map(data_type)
 
     # Assert
     assert schema_map == expected_map

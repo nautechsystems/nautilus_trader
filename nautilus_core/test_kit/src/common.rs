@@ -15,34 +15,9 @@
 
 use std::path::PathBuf;
 
+use nautilus_core::paths::get_test_data_path;
+
 use crate::files::ensure_file_exists_or_download_http;
-
-#[must_use]
-pub fn get_workspace_root_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("Failed to get project root")
-        .to_path_buf()
-}
-
-#[must_use]
-pub fn get_project_root_path() -> PathBuf {
-    get_workspace_root_path()
-        .parent()
-        .expect("Failed to get workspace root")
-        .to_path_buf()
-}
-
-#[must_use]
-pub fn get_test_data_path() -> PathBuf {
-    if let Ok(test_data_root_path) = std::env::var("TEST_DATA_ROOT_PATH") {
-        get_project_root_path()
-            .join(test_data_root_path)
-            .join("test_data")
-    } else {
-        get_project_root_path().join("tests").join("test_data")
-    }
-}
 
 #[must_use]
 pub fn get_test_data_file_path(path: &str) -> String {

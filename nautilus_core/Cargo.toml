@@ -7,6 +7,7 @@ members = [
     "cli",
     "common",
     "core",
+    "cryptography",
     "data",
     "execution",
     "indicators",
@@ -15,19 +16,22 @@ members = [
     "network",
     "persistence",
     "pyo3",
+    "risk",
+    "serialization",
     "test_kit",
 ]
 
 [workspace.package]
 rust-version = "1.82.0"
-version = "0.34.0"
+version = "0.35.0"
 edition = "2021"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 description = "A high-performance algorithmic trading platform and event-driven backtester"
 documentation = "https://nautilustrader.io/docs"
 
 [workspace.dependencies]
-anyhow = "1.0.90"
+anyhow = "1.0.92"
+arrow = "53.2.0"  # Keep in line with datafusion
 async-stream = "0.3.6"
 base64 = "0.22.1"
 bytes = { version = "1.8.0", features = ["serde"] }
@@ -35,32 +39,35 @@ chrono = { version = "0.4.38", features = ["serde"] }
 derive_builder = "0.20.2"
 futures = "0.3.31"
 futures-util = "0.3.31"
+heck = "0.5.0"
 hex = "0.4.3"
 indexmap = { version = "2.6.0", features = ["serde"] }
-itertools = "0.12.1"
+itertools = "0.13.0"
 itoa = "1.0.11"
 once_cell = "1.20.2"
 log = { version = "0.4.22", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
-pyo3 = { version = "0.21.2", features = ["rust_decimal", "indexmap"] }
-pyo3-asyncio-0-21 = { version = "0.21.0", features = ["tokio-runtime", "tokio", "attributes"] }
+parquet = "53.2.0"  # Keep in line with datafusion
+pyo3 = { version = "0.22.5", features = ["rust_decimal", "indexmap"] }
+pyo3-async-runtimes = { version = "0.22.0", features = ["tokio-runtime", "tokio", "attributes"] }
 rand = "0.8.5"
-reqwest = { version = "0.12.8", features = ["blocking"] }
+reqwest = { version = "0.12.9", features = ["blocking"] }
 ring = "0.17.8"
 rmp-serde = "1.3.0"
 rust_decimal = "1.36.0"
 rust_decimal_macros = "1.36.0"
 semver = "1.0.23"
-serde = { version = "1.0.210", features = ["derive"] }
+serde = { version = "1.0.214", features = ["derive"] }
 serde_json = "1.0.132"
 strum = { version = "0.26.3", features = ["derive"] }
-thiserror = "1.0.64"
+thiserror = "1.0.66"
 thousands = "0.2.0"
+toml = "0.8.19"
 tracing = "0.1.40"
 # Disable default feature "tracing-log" since it interferes with custom logging
 tracing-subscriber = { version = "0.3.18", default-features = false, features = ["smallvec", "fmt", "ansi", "std", "env-filter"] }
-tokio = { version = "1.40.0", features = ["full"] }
+tokio = { version = "1.41.0", features = ["full"] }
 tokio-tungstenite = { version = "0.24.0", features = ["rustls-tls-native-roots"] }
-ustr = { version = "1.0.0", features = ["serde"] }
+ustr = { version = "1.1.0", features = ["serde"] }
 uuid = { version = "1.11.0", features = ["v4"] }
 
 # dev-dependencies
@@ -68,7 +75,6 @@ axum = "0.7.7"
 criterion = "0.5.1"
 float-cmp = "0.10.0"
 iai = "0.1.1"
-pretty_assertions = "1.4.1"
 proptest = "1.5.0"
 rstest = "0.23.0"
 tempfile = "3.13.0"

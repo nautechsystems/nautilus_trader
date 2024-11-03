@@ -109,7 +109,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         """
         if not (subscription := self._subscriptions.get(name=name)):
             self._log.info(
-                f"Creating and registering a new Subscription instance for {subscription}",
+                f"Creating and registering a new Subscription instance for {name}",
             )
             req_id = self._next_req_id()
             if subscription_method == self.subscribe_historical_bars:

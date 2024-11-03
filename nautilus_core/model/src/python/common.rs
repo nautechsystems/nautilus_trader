@@ -64,8 +64,8 @@ impl EnumIterator {
     }
 }
 
-pub fn value_to_pydict(py: Python<'_>, val: &Value) -> PyResult<Py<PyDict>> {
-    let dict = PyDict::new(py);
+pub fn value_to_pydict(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
+    let dict = PyDict::new_bound(py);
 
     match val {
         Value::Object(map) => {
@@ -96,7 +96,7 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<PyObject> {
             }
         }
         Value::Array(arr) => {
-            let py_list = PyList::new(py, &[] as &[PyObject]);
+            let py_list = PyList::new_bound(py, &[] as &[PyObject]);
             for item in arr {
                 let py_item = value_to_pyobject(py, item)?;
                 py_list.append(py_item)?;
@@ -105,12 +105,12 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<PyObject> {
         }
         Value::Object(_) => {
             let py_dict = value_to_pydict(py, val)?;
-            Ok(py_dict.into())
+            Ok(py_dict)
         }
     }
 }
 
-pub fn commissions_from_vec<'py>(py: Python<'py>, commissions: Vec<Money>) -> PyResult<&'py PyAny> {
+pub fn commissions_from_vec(py: Python<'_>, commissions: Vec<Money>) -> PyResult<Bound<'_, PyAny>> {
     let mut values = Vec::new();
 
     for value in commissions {
@@ -118,17 +118,17 @@ pub fn commissions_from_vec<'py>(py: Python<'py>, commissions: Vec<Money>) -> Py
     }
 
     if values.is_empty() {
-        Ok(PyNone::get(py))
+        Ok(PyNone::get_bound(py).to_owned().into_any())
     } else {
         values.sort();
-        Ok(PyList::new(py, &values))
+        Ok(PyList::new_bound(py, &values).to_owned().into_any())
     }
 }
 
-pub fn commissions_from_hashmap<'py>(
-    py: Python<'py>,
+pub fn commissions_from_hashmap(
+    py: Python<'_>,
     commissions: HashMap<Currency, Money>,
-) -> PyResult<&'py PyAny> {
+) -> PyResult<Bound<'_, PyAny>> {
     commissions_from_vec(py, commissions.values().cloned().collect())
 }
 
@@ -137,7 +137,7 @@ mod tests {
     use pyo3::{
         prelude::*,
         prepare_freethreaded_python,
-        types::{PyBool, PyInt, PyList, PyString},
+        types::{PyBool, PyInt, PyString},
     };
     use rstest::rstest;
     use serde_json::Value;
@@ -158,12 +158,11 @@ mod tests {
 
             let val: Value = serde_json::from_str(json_str).unwrap();
             let py_dict_ref = value_to_pydict(py, &val).unwrap();
-            let py_dict = py_dict_ref.as_ref(py);
+            let py_dict = py_dict_ref.bind(py);
 
             assert_eq!(
                 py_dict
                     .get_item("type")
-                    .unwrap()
                     .unwrap()
                     .downcast::<PyString>()
                     .unwrap()
@@ -175,7 +174,6 @@ mod tests {
                 py_dict
                     .get_item("ts_event")
                     .unwrap()
-                    .unwrap()
                     .downcast::<PyInt>()
                     .unwrap()
                     .extract::<i64>()
@@ -184,7 +182,6 @@ mod tests {
             );
             assert!(!py_dict
                 .get_item("is_reconciliation")
-                .unwrap()
                 .unwrap()
                 .downcast::<PyBool>()
                 .unwrap()
@@ -223,7 +220,7 @@ mod tests {
                 Value::String("item2".to_string()),
             ]);
             let binding = value_to_pyobject(py, &val).unwrap();
-            let py_list = binding.downcast::<PyList>(py).unwrap();
+            let py_list: &Bound<'_, PyList> = binding.bind(py).downcast::<PyList>().unwrap();
 
             assert_eq!(py_list.len(), 2);
             assert_eq!(

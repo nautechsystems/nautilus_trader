@@ -59,8 +59,8 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         The order emulator configuration.
     streaming : StreamingConfig, optional
         The configuration for streaming to feather files.
-    catalog : DataCatalogConfig, optional
-        The data catalog config.
+    catalogs : list[DataCatalogConfig], optional
+        The list of data catalog configs.
     actors : list[ImportableActorConfig]
         The actor configurations for the kernel.
     strategies : list[ImportableStrategyConfig]
@@ -77,16 +77,16 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
         If the asyncio event loop should be in debug mode.
     logging : LoggingConfig, optional
         The logging config for the kernel.
-    timeout_connection : PositiveFloat (seconds)
-        The timeout for all clients to connect and initialize.
-    timeout_reconciliation : PositiveFloat (seconds)
-        The timeout for execution state to reconcile.
-    timeout_portfolio : PositiveFloat (seconds)
-        The timeout for portfolio to initialize margins and unrealized PnLs.
-    timeout_disconnection : PositiveFloat (seconds)
-        The timeout for all engine clients to disconnect.
-    timeout_post_stop : PositiveFloat (seconds)
-        The timeout after stopping the node to await residual events before final shutdown.
+    timeout_connection : PositiveFloat
+        The timeout (seconds) for all clients to connect and initialize.
+    timeout_reconciliation : PositiveFloat
+        The timeout (seconds) for execution state to reconcile.
+    timeout_portfolio : PositiveFloat
+        The timeout (seconds) for portfolio to initialize margins and unrealized PnLs.
+    timeout_disconnection : PositiveFloat
+        The timeout (seconds) for all engine clients to disconnect.
+    timeout_post_stop : PositiveFloat
+        The timeout (seconds) after stopping the node to await residual events before final shutdown.
 
     """
 
@@ -100,7 +100,7 @@ class NautilusKernelConfig(NautilusConfig, frozen=True):
     exec_engine: ExecEngineConfig | None = None
     emulator: OrderEmulatorConfig | None = None
     streaming: StreamingConfig | None = None
-    catalog: DataCatalogConfig | None = None
+    catalogs: list[DataCatalogConfig] = []
     actors: list[ImportableActorConfig] = []
     strategies: list[ImportableStrategyConfig] = []
     exec_algorithms: list[ImportableExecAlgorithmConfig] = []

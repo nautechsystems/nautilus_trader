@@ -17,12 +17,10 @@ use std::{
     collections::hash_map::DefaultHasher,
     ffi::CString,
     hash::{Hash, Hasher},
-    str::FromStr,
 };
 
-use nautilus_core::{correctness::check_in_range_inclusive_usize, python::to_pyvalue_err};
+use nautilus_core::python::to_pyvalue_err;
 use pyo3::{
-    exceptions::PyValueError,
     prelude::*,
     pyclass::CompareOp,
     types::{PyString, PyTuple},
@@ -37,9 +35,10 @@ impl TradeId {
         Self::new_checked(value).map_err(to_pyvalue_err)
     }
 
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        let value: (&PyString,) = state.extract(py)?;
-        let value_str: String = value.0.extract()?;
+    fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
+        let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
+        let binding = py_tuple.get_item(0)?;
+        let value_str = binding.downcast::<PyString>()?.extract::<&str>()?;
 
         // TODO: Extract this to single function
         let c_string = CString::new(value_str).expect("`CString` conversion failed");
@@ -56,9 +55,9 @@ impl TradeId {
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
-        let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
+        let safe_constructor = py.get_type_bound::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+        Ok((safe_constructor, PyTuple::empty_bound(py), state).to_object(py))
     }
 
     #[staticmethod]

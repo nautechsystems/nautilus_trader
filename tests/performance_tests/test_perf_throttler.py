@@ -33,10 +33,8 @@ def fixture_buffering_throttler(clock):
 
 
 def test_send_unlimited(benchmark, buffering_throttler):
-    benchmark.pedantic(buffering_throttler.send, args=("MESSAGE",), iterations=100_000, rounds=1)
-    # ~0.0ms / ~0.3μs / 301ns minimum of 10,000 runs @ 1 iteration each run.
+    benchmark(buffering_throttler.send, "MESSAGE")
 
 
 def test_send_when_limited(benchmark, buffering_throttler):
-    benchmark.pedantic(buffering_throttler.send, args=("MESSAGE",), iterations=100_000, rounds=1)
-    # ~0.0ms / ~0.2μs / 232ns minimum of 100,000 runs @ 1 iteration each run.
+    benchmark(buffering_throttler.send, "MESSAGE")

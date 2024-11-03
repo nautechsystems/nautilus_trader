@@ -61,7 +61,8 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_general_object_adds_to_cache() {
-        let pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+
         let test_id_value = Bytes::from("test_value");
         pg_cache
             .add(String::from("test_id"), test_id_value.clone())
@@ -80,12 +81,15 @@ mod serial_tests {
             vec![String::from("test_id")]
         );
         assert_eq!(result.get("test_id").unwrap().to_owned(), test_id_value);
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_currency_and_instruments() {
-        // 1. first define and add currencies as they are contain foreign keys for instruments
         let mut pg_cache = get_pg_cache_database().await.unwrap();
+
         // Define currencies
         let btc = Currency::new("BTC", 8, 0, "BTC", CurrencyType::Crypto);
         let eth = Currency::new("ETH", 2, 0, "ETH", CurrencyType::Crypto);
@@ -254,14 +258,18 @@ mod serial_tests {
             .into_iter()
             .collect::<HashSet<InstrumentId>>()
         );
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_postgres_cache_database_add_order_and_load_indexes() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+
         let client_order_id_1 = ClientOrderId::new("O-19700101-000000-001-001-1");
         let client_order_id_2 = ClientOrderId::new("O-19700101-000000-001-001-2");
         let instrument = currency_pair_ethusdt();
-        let pg_cache = get_pg_cache_database().await.unwrap();
 
         let market_order = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(instrument.id())
@@ -328,14 +336,18 @@ mod serial_tests {
                 .collect::<HashSet<ClientId>>(),
             vec![client_id].into_iter().collect::<HashSet<ClientId>>()
         );
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_update_order_for_open_order() {
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+
         let client_order_id_1 = ClientOrderId::new("O-19700101-000000-001-002-1");
         let instrument = InstrumentAny::CurrencyPair(currency_pair_ethusdt());
         let account = account_id();
-        let pg_cache = get_pg_cache_database().await.unwrap();
         // add foreign key dependencies: instrument and currencies
         pg_cache
             .add_currency(&instrument.base_currency().unwrap())
@@ -387,11 +399,15 @@ mod serial_tests {
             .load_order(&market_order.client_order_id())
             .unwrap();
         entirely_equal(market_order_result.unwrap(), market_order);
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_add_and_update_account() {
         let pg_cache = get_pg_cache_database().await.unwrap();
+
         let mut account = AccountAny::Cash(CashAccount::new(
             cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD"),
             false,
@@ -427,7 +443,7 @@ mod serial_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_postgres_cache_database_add_trade_tick() {
-        let pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
         // add target instrument and currencies
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         pg_cache
@@ -451,11 +467,15 @@ mod serial_tests {
         let trades = pg_cache.load_trades(&instrument.id()).unwrap();
         assert_eq!(trades.len(), 1);
         assert_eq!(trades[0], trade_tick);
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_postgres_cache_database_add_quote_tick() {
-        let pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+
         // add target instrument and currencies
         let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
         pg_cache
@@ -479,11 +499,15 @@ mod serial_tests {
         let quotes = pg_cache.load_quotes(&instrument.id()).unwrap();
         assert_eq!(quotes.len(), 1);
         assert_eq!(quotes[0], quote_tick);
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_postgres_cache_database_add_bar() {
-        let pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+
         // add target instrument and currencies
         let instrument = InstrumentAny::CurrencyPair(audusd_sim());
         pg_cache
@@ -507,11 +531,15 @@ mod serial_tests {
         let bars = pg_cache.load_bars(&instrument.id()).unwrap();
         assert_eq!(bars.len(), 1);
         assert_eq!(bars[0], bar);
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_truncate() {
         let mut pg_cache = get_pg_cache_database().await.unwrap();
+
         // add items in currency and instrument table
         let instrument = InstrumentAny::CurrencyPair(audusd_sim());
         pg_cache
@@ -535,11 +563,15 @@ mod serial_tests {
         assert_eq!(currencies.len(), 0);
         let instruments = pg_cache.load_instruments().unwrap();
         assert_eq!(instruments.len(), 0);
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_postgres_cache_database_add_signal() {
-        let pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+
         // Add signal
         let name = Ustr::from("SignalExample");
         let value = "0.0".to_string();
@@ -554,11 +586,15 @@ mod serial_tests {
         let signals = pg_cache.load_signals(name.as_str()).unwrap();
         assert_eq!(signals.len(), 1);
         assert_eq!(signals[0], signal);
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread")]
     async fn test_postgres_cache_database_add_custom_data() {
-        let pg_cache = get_pg_cache_database().await.unwrap();
+        let mut pg_cache = get_pg_cache_database().await.unwrap();
+
         // Add custom data
         let metadata =
             indexmap! {"a".to_string() => "1".to_string(), "b".to_string() => "2".to_string()};
@@ -584,5 +620,8 @@ mod serial_tests {
         let datas = pg_cache.load_custom_data(&data_type).unwrap();
         assert_eq!(datas.len(), 1);
         assert_eq!(datas[0], data);
+
+        pg_cache.flush().unwrap();
+        pg_cache.close().unwrap();
     }
 }

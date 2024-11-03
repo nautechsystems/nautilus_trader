@@ -29,52 +29,29 @@ from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
 def test_create_symbol(benchmark):
-    benchmark.pedantic(
-        target=Symbol,
-        args=("AUD/USD",),
-        iterations=100_000,
-        rounds=1,
-    )
-    # ~0.0ms / ~0.4μs / 400ns minimum of 100,000 runs @ 1 iteration each run.
+    benchmark(Symbol, "AUD/USD")
 
 
 def test_create_instrument_id(benchmark):
-    benchmark.pedantic(
-        target=InstrumentId,
-        args=(Symbol("AUD/USD"), Venue("IDEALPRO")),
-        iterations=100_000,
-        rounds=1,
-    )
-    # ~0.0ms / ~1.3μs / 1251ns minimum of 100,000 runs @ 1 iteration each run.
+    benchmark(InstrumentId, Symbol("AUD/USD"), Venue("IDEALPRO"))
 
 
 def test_instrument_id_to_str(benchmark):
-    benchmark.pedantic(
-        target=str,
-        args=(TestIdStubs.audusd_id(),),
-        iterations=100_000,
-        rounds=1,
-    )
-    # ~0.0ms / ~0.2μs / 198ns minimum of 100,000 runs @ 1 iteration each run.
+    benchmark(str, TestIdStubs.audusd_id())
 
 
 def test_create_bar(benchmark):
-    benchmark.pedantic(
-        target=Bar,
-        args=(
-            TestDataStubs.bartype_audusd_1min_bid(),
-            Price.from_str("1.00001"),
-            Price.from_str("1.00004"),
-            Price.from_str("1.00000"),
-            Price.from_str("1.00003"),
-            Quantity.from_str("100000"),
-            0,
-            0,
-        ),
-        iterations=100_000,
-        rounds=1,
+    benchmark(
+        Bar,
+        TestDataStubs.bartype_audusd_1min_bid(),
+        Price.from_str("1.00001"),
+        Price.from_str("1.00004"),
+        Price.from_str("1.00000"),
+        Price.from_str("1.00003"),
+        Quantity.from_str("100000"),
+        0,
+        0,
     )
-    # ~0.0ms / ~2.7μs / 2717ns minimum of 100,000 runs @ 1 iteration each run.
 
 
 def test_create_quote_tick(benchmark):
@@ -91,12 +68,7 @@ def test_create_quote_tick(benchmark):
             ts_init=0,
         )
 
-    benchmark.pedantic(
-        target=create_quote_tick,
-        rounds=100000,
-        iterations=1,
-    )
-    # ~0.0ms / ~2.8μs / 2798ns minimum of 100,000 runs @ 1 iteration each run.
+    benchmark(create_quote_tick)
 
 
 def test_create_quote_tick_raw(benchmark):
@@ -117,12 +89,7 @@ def test_create_quote_tick_raw(benchmark):
             0,
         )
 
-    benchmark.pedantic(
-        target=create_quote_tick,
-        rounds=100000,
-        iterations=1,
-    )
-    # ~0.0ms / ~0.2μs / 218ns minimum of 100,000 runs @ 1 iteration each run.
+    benchmark(create_quote_tick)
 
 
 def test_create_trade_tick(benchmark):
@@ -139,12 +106,7 @@ def test_create_trade_tick(benchmark):
             ts_init=0,
         )
 
-    benchmark.pedantic(
-        target=create_trade_tick,
-        rounds=100000,
-        iterations=1,
-    )
-    # ~0.0ms / ~2.5μs / 2492ns minimum of 100,000 runs @ 1 iteration each run.
+    benchmark(create_trade_tick)
 
 
 def test_create_trade_tick_from_raw(benchmark):
@@ -163,9 +125,4 @@ def test_create_trade_tick_from_raw(benchmark):
             0,
         )
 
-    benchmark.pedantic(
-        target=create_trade_tick,
-        rounds=100000,
-        iterations=1,
-    )
-    # ~0.0ms / ~0.7μs / 718ns minimum of 100,000 runs @ 1 iteration each run.
+    benchmark(create_trade_tick)

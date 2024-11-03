@@ -13,18 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, ops::Deref};
-
 use bytes::Bytes;
-use nautilus_core::{nanos::UnixNanos, time::AtomicTime};
+use nautilus_core::nanos::UnixNanos;
 use nautilus_model::data::DataType;
-use pyo3::{
-    prelude::*,
-    types::{PyString, PyTuple},
-};
-use ustr::Ustr;
+use pyo3::prelude::*;
 
-use super::timer::TimeEventHandler_Py;
 use crate::custom::CustomData;
 
 #[pymethods]
@@ -53,13 +46,13 @@ impl CustomData {
 
     #[getter]
     #[pyo3(name = "ts_event")]
-    fn py_ts_event(&self) -> u64 {
+    const fn py_ts_event(&self) -> u64 {
         self.ts_event.as_u64()
     }
 
     #[getter]
     #[pyo3(name = "ts_init")]
-    fn py_ts_init(&self) -> u64 {
+    const fn py_ts_init(&self) -> u64 {
         self.ts_init.as_u64()
     }
 }

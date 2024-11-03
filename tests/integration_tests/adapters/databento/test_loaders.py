@@ -15,6 +15,7 @@
 
 import pytest
 
+from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.model.currencies import USD
@@ -40,7 +41,6 @@ from nautilus_trader.model.instruments import FuturesContract
 from nautilus_trader.model.instruments import OptionsContract
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-from tests import TEST_DATA_DIR
 
 
 DATABENTO_TEST_DATA_DIR = TEST_DATA_DIR / "databento"

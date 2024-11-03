@@ -15,8 +15,6 @@
 
 //! Identifiers for the trading domain model.
 
-use std::str::FromStr;
-
 use nautilus_core::python::to_pyvalue_err;
 use pyo3::{
     prelude::*,

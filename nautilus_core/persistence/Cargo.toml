@@ -13,6 +13,8 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 [dependencies]
 nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model", features = ["stubs"] }
+nautilus-serialization = { path = "../serialization" }
+
 anyhow = { workspace = true }
 futures = { workspace = true }
 log = { workspace = true }
@@ -22,8 +24,7 @@ tokio = { workspace = true }
 thiserror = { workspace = true }
 binary-heap-plus = "0.5.0"
 compare = "0.1.0"
-datafusion = { version = "41.0.0", default-features = false, features = ["compression", "regex_expressions", "unicode_expressions", "pyarrow"] }
-dotenv = "0.15.0"
+datafusion = { version = "42.1.0", default-features = false, features = ["compression", "regex_expressions", "unicode_expressions", "pyarrow"] }
 
 [dev-dependencies]
 nautilus-test-kit = { path = "../test_kit" }
@@ -32,7 +33,7 @@ rstest = { workspace = true }
 quickcheck = "1"
 quickcheck_macros = "1"
 [target.'cfg(target_os = "linux")'.dependencies]
-procfs = "0.16.0"
+procfs = "0.17.0"
 
 [features]
 default = ["ffi", "python"]
@@ -40,9 +41,10 @@ extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
+  "nautilus-serialization/extension-module",
 ]
 ffi = ["nautilus-core/ffi", "nautilus-model/ffi"]
-python = ["pyo3", "nautilus-core/python", "nautilus-model/python"]
+python = ["pyo3", "nautilus-core/python", "nautilus-model/python", "nautilus-serialization/python"]
 
 [[bench]]
 name = "bench_persistence"

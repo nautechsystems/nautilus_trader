@@ -31,9 +31,7 @@
 //! - `databento`: Includes the Databento integration adapter.
 //! - `ffi`: Enables the C foreign function interface (FFI) from `cbindgen`.
 //! - `python`: Enables Python bindings from `pyo3`.
-//! - `tardis`: Includes the Tardis data loader.
-
-pub mod crypto;
+//! - `tardis`: Includes the Tardis integration adapter.
 
 #[cfg(feature = "databento")]
 pub mod databento;

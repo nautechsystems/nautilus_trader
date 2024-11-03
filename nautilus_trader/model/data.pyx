@@ -867,7 +867,7 @@ cdef class BarType:
 
     cpdef bint is_standard(self):
         """
-        Return a value indicating whether the bar type corresponds to BarType::Standard in rust.
+        Return a value indicating whether the bar type corresponds to `BarType::Standard` in Rust.
 
         Returns
         -------
@@ -878,7 +878,7 @@ cdef class BarType:
 
     cpdef bint is_composite(self):
         """
-        Return a value indicating whether the bar type corresponds to BarType::Composite in rust.
+        Return a value indicating whether the bar type corresponds to `BarType::Composite` in Rust.
 
         Returns
         -------

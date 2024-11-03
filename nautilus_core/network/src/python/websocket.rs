@@ -13,25 +13,20 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::{hash_map::DefaultHasher, HashMap},
-    hash::{Hash, Hasher},
-    sync::{atomic::Ordering, Arc},
-};
+use std::sync::{atomic::Ordering, Arc};
 
 use futures::SinkExt;
 use futures_util::{stream, StreamExt};
-use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
-use pyo3::{create_exception, exceptions::PyException, prelude::*, types::PyBytes};
+use nautilus_core::python::to_pyvalue_err;
+use pyo3::{create_exception, exceptions::PyException, prelude::*};
 use tokio_tungstenite::tungstenite::Message;
 
 use crate::{
-    http::{HttpClient, HttpMethod, HttpResponse, InnerHttpClient},
-    ratelimiter::{quota::Quota, RateLimiter},
+    ratelimiter::quota::Quota,
     websocket::{WebSocketClient, WebSocketConfig},
 };
 
-/// Python exception class for websocket errors.
+// Python exception class for websocket errors
 create_exception!(network, WebSocketClientError, PyException);
 
 fn to_websocket_pyerr(e: tokio_tungstenite::tungstenite::Error) -> PyErr {
@@ -41,6 +36,7 @@ fn to_websocket_pyerr(e: tokio_tungstenite::tungstenite::Error) -> PyErr {
 #[pymethods]
 impl WebSocketConfig {
     #[new]
+    #[pyo3(signature = (url, handler, headers, heartbeat=None, heartbeat_msg=None, ping_handler=None))]
     fn py_new(
         url: String,
         handler: PyObject,
@@ -51,11 +47,11 @@ impl WebSocketConfig {
     ) -> Self {
         Self {
             url,
-            handler,
+            handler: Arc::new(handler),
             headers,
             heartbeat,
             heartbeat_msg,
-            ping_handler,
+            ping_handler: ping_handler.map(Arc::new),
         }
     }
 }
@@ -66,7 +62,7 @@ impl WebSocketClient {
     ///
     /// # Safety
     ///
-    /// - Throws an Exception if it is unable to make websocket connection
+    /// - Throws an Exception if it is unable to make websocket connection.
     #[staticmethod]
     #[pyo3(name = "connect", signature = (config, post_connection= None, post_reconnection= None, post_disconnection= None, keyed_quotas = Vec::new(),default_quota = None))]
     fn py_connect(
@@ -78,7 +74,7 @@ impl WebSocketClient {
         default_quota: Option<Quota>,
         py: Python<'_>,
     ) -> PyResult<Bound<PyAny>> {
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             Self::connect(
                 config,
                 post_connection,
@@ -99,12 +95,12 @@ impl WebSocketClient {
     ///
     /// # Safety
     ///
-    /// - The client should not be used after closing it
-    /// - Any auto-reconnect job should be aborted before closing the client
+    /// - The client should not be used after closing it.
+    /// - Any auto-reconnect job should be aborted before closing the client.
     #[pyo3(name = "disconnect")]
     fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let disconnect_mode = slf.disconnect_mode.clone();
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             disconnect_mode.store(true, Ordering::SeqCst);
             Ok(())
         })
@@ -131,6 +127,7 @@ impl WebSocketClient {
     ///
     /// - Raises PyRuntimeError if not able to send data.
     #[pyo3(name = "send")]
+    #[pyo3(signature = (data, keys=None))]
     fn py_send<'py>(
         slf: PyRef<'_, Self>,
         data: Vec<u8>,
@@ -140,7 +137,7 @@ impl WebSocketClient {
         let keys = keys.unwrap_or_default();
         let writer = slf.writer.clone();
         let rate_limiter = slf.rate_limiter.clone();
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let tasks = keys.iter().map(|key| rate_limiter.until_key_ready(key));
             stream::iter(tasks)
                 .for_each(|key| async move {
@@ -173,6 +170,7 @@ impl WebSocketClient {
     ///
     /// For request /foo/bar, should pass keys ["foo/bar", "foo"] for rate limiting.
     #[pyo3(name = "send_text")]
+    #[pyo3(signature = (data, keys=None))]
     fn py_send_text<'py>(
         slf: PyRef<'_, Self>,
         data: Vec<u8>,
@@ -183,7 +181,7 @@ impl WebSocketClient {
         let keys = keys.unwrap_or_default();
         let writer = slf.writer.clone();
         let rate_limiter = slf.rate_limiter.clone();
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let tasks = keys.iter().map(|key| rate_limiter.until_key_ready(key));
             stream::iter(tasks)
                 .for_each(|key| async move {
@@ -216,7 +214,7 @@ impl WebSocketClient {
         let data_str = String::from_utf8(data.clone()).map_err(to_pyvalue_err)?;
         tracing::trace!("Sending pong: {data_str}");
         let writer = slf.writer.clone();
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut guard = writer.lock().await;
             guard
                 .send(Message::Pong(data))
@@ -339,7 +337,7 @@ mod tests {
 
         // Create counter class and handler that increments it
         let (counter, handler) = Python::with_gil(|py| {
-            let pymod = PyModule::from_code(
+            let pymod = PyModule::from_code_bound(
                 py,
                 r"
 class Counter:
@@ -367,7 +365,7 @@ counter = Counter()",
 
         let config = WebSocketConfig::py_new(
             format!("ws://127.0.0.1:{}", server.port),
-            handler.clone(),
+            Python::with_gil(|py| handler.clone_ref(py)),
             vec![(header_key, header_value)],
             None,
             None,
@@ -441,7 +439,7 @@ counter = Counter()",
         let header_value = "hello-custom-value".to_string();
 
         let (checker, handler) = Python::with_gil(|py| {
-            let pymod = PyModule::from_code(
+            let pymod = PyModule::from_code_bound(
                 py,
                 r"
 class Checker:
@@ -471,7 +469,7 @@ checker = Checker()",
         let server = TestServer::setup(header_key.clone(), header_value.clone()).await;
         let config = WebSocketConfig::py_new(
             format!("ws://127.0.0.1:{}", server.port),
-            handler.clone(),
+            Python::with_gil(|py| handler.clone_ref(py)),
             vec![(header_key, header_value)],
             Some(1),
             Some("heartbeat message".to_string()),

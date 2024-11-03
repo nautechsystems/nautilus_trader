@@ -104,6 +104,7 @@ impl CashAccount {
     }
 
     #[pyo3(name = "balance_total")]
+    #[pyo3(signature = (currency=None))]
     fn py_balance_total(&self, currency: Option<Currency>) -> Option<Money> {
         self.balance_total(currency)
     }
@@ -114,6 +115,7 @@ impl CashAccount {
     }
 
     #[pyo3(name = "balance_free")]
+    #[pyo3(signature = (currency=None))]
     fn py_balance_free(&self, currency: Option<Currency>) -> Option<Money> {
         self.balance_free(currency)
     }
@@ -124,6 +126,7 @@ impl CashAccount {
     }
 
     #[pyo3(name = "balance_locked")]
+    #[pyo3(signature = (currency=None))]
     fn py_balance_locked(&self, currency: Option<Currency>) -> Option<Money> {
         self.balance_locked(currency)
     }
@@ -138,6 +141,7 @@ impl CashAccount {
     }
 
     #[pyo3(name = "calculate_balance_locked")]
+    #[pyo3(signature = (instrument, side, quantity, price, use_quote_for_inverse=None))]
     fn py_calculate_balance_locked(
         &mut self,
         instrument: PyObject,
@@ -153,6 +157,7 @@ impl CashAccount {
     }
 
     #[pyo3(name = "calculate_commission")]
+    #[pyo3(signature = (instrument, last_qty, last_px, liquidity_side, use_quote_for_inverse=None))]
     fn py_calculate_commission(
         &self,
         instrument: PyObject,
@@ -177,6 +182,7 @@ impl CashAccount {
     }
 
     #[pyo3(name = "calculate_pnls")]
+    #[pyo3(signature = (instrument, fill, position=None))]
     fn py_calculate_pnls(
         &self,
         instrument: PyObject,
@@ -191,7 +197,7 @@ impl CashAccount {
 
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let dict = PyDict::new(py);
+        let dict = PyDict::new_bound(py);
         dict.set_item("calculate_account_state", self.calculate_account_state)?;
         let events_list: PyResult<Vec<PyObject>> =
             self.events.iter().map(|item| item.py_to_dict(py)).collect();

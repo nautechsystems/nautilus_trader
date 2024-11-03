@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
 use pyo3::prelude::*;
 
@@ -22,6 +21,8 @@ use crate::{average::MovingAverageType, indicator::Indicator, volatility::vr::Vo
 #[pymethods]
 impl VolatilityRatio {
     #[new]
+    #[pyo3(signature = (fast_period, slow_period, use_previous=None, value_floor=None, ma_type=None))]
+    #[must_use]
     pub fn py_new(
         fast_period: usize,
         slow_period: usize,
@@ -44,13 +45,13 @@ impl VolatilityRatio {
 
     #[getter]
     #[pyo3(name = "fast_period")]
-    fn py_fast_period(&self) -> usize {
+    const fn py_fast_period(&self) -> usize {
         self.fast_period
     }
 
     #[getter]
     #[pyo3(name = "slow_period")]
-    fn py_slow_period(&self) -> usize {
+    const fn py_slow_period(&self) -> usize {
         self.slow_period
     }
 
@@ -62,25 +63,25 @@ impl VolatilityRatio {
 
     #[getter]
     #[pyo3(name = "use_previous")]
-    fn py_use_previous(&self) -> bool {
+    const fn py_use_previous(&self) -> bool {
         self.use_previous
     }
 
     #[getter]
     #[pyo3(name = "value_floor")]
-    fn py_value_floor(&self) -> f64 {
+    const fn py_value_floor(&self) -> f64 {
         self.value_floor
     }
 
     #[getter]
     #[pyo3(name = "value")]
-    fn py_value(&self) -> f64 {
+    const fn py_value(&self) -> f64 {
         self.value
     }
 
     #[getter]
     #[pyo3(name = "initialized")]
-    fn py_initialized(&self) -> bool {
+    const fn py_initialized(&self) -> bool {
         self.initialized
     }
 
@@ -90,12 +91,12 @@ impl VolatilityRatio {
     }
 
     #[pyo3(name = "handle_quote_tick")]
-    fn py_handle_quote_tick(&mut self, quote: &QuoteTick) {
+    fn py_handle_quote_tick(&mut self, _quote: &QuoteTick) {
         // Function body intentionally left blank.
     }
 
     #[pyo3(name = "handle_trade_tick")]
-    fn py_handle_trade_tick(&mut self, trade: &TradeTick) {
+    fn py_handle_trade_tick(&mut self, _trade: &TradeTick) {
         // Function body intentionally left blank.
     }
 

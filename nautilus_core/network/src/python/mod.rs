@@ -19,7 +19,7 @@ pub mod http;
 pub mod socket;
 pub mod websocket;
 
-use pyo3::{prelude::*, PyTypeCheck, PyTypeInfo};
+use pyo3::{prelude::*, PyTypeCheck};
 
 use crate::python::{
     http::{HttpError, HttpTimeoutError},
@@ -28,7 +28,7 @@ use crate::python::{
 
 /// Loaded as nautilus_pyo3.network
 #[pymodule]
-pub fn network(_: Python<'_>, m: &PyModule) -> PyResult<()> {
+pub fn network(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::http::HttpClient>()?;
     m.add_class::<crate::http::HttpMethod>()?;
     m.add_class::<crate::http::HttpResponse>()?;

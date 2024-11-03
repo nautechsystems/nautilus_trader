@@ -64,9 +64,9 @@ def register_serializable_type(
     ...
 ```
 
-- `cls`: The type to register
-- `to_dict`: The delegate to instantiate a dict of primitive types from the object
-- `from_dict`: The delegate to instantiate the object from a dict of primitive types
+- `cls`: The type to register.
+- `to_dict`: The delegate to instantiate a dict of primitive types from the object.
+- `from_dict`: The delegate to instantiate the object from a dict of primitive types.
 
 ## Configuration
 

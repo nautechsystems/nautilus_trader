@@ -95,12 +95,12 @@ impl DatabentoHistoricalClient {
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.inner.clone();
 
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut client = client.lock().await; // TODO: Use a client pool
             let response = client.metadata().get_dataset_range(&dataset).await;
             match response {
                 Ok(res) => Python::with_gil(|py| {
-                    let dict = PyDict::new(py);
+                    let dict = PyDict::new_bound(py);
                     dict.set_item("start", res.start.to_string())?;
                     dict.set_item("end", res.end.to_string())?;
                     Ok(dict.to_object(py))
@@ -113,6 +113,7 @@ impl DatabentoHistoricalClient {
     }
 
     #[pyo3(name = "get_range_instruments")]
+    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None))]
     fn py_get_range_instruments<'py>(
         &self,
         py: Python<'py>,
@@ -125,7 +126,7 @@ impl DatabentoHistoricalClient {
         let client = self.inner.clone();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
-        let symbols: Vec<&str> = symbols.iter().map(|s| s.as_str()).collect();
+        let symbols: Vec<&str> = symbols.iter().map(std::string::String::as_str).collect();
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
         let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
@@ -141,7 +142,7 @@ impl DatabentoHistoricalClient {
         let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut client = client.lock().await; // TODO: Use a client pool
             let mut decoder = client
                 .timeseries()
@@ -176,12 +177,13 @@ impl DatabentoHistoricalClient {
                     .map(|result| instrument_any_to_pyobject(py, result))
                     .collect();
 
-                py_results.map(|objs| PyList::new(py, &objs).to_object(py))
+                py_results.map(|objs| PyList::new_bound(py, &objs).to_object(py))
             })
         })
     }
 
     #[pyo3(name = "get_range_quotes")]
+    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None))]
     fn py_get_range_quotes<'py>(
         &self,
         py: Python<'py>,
@@ -194,7 +196,7 @@ impl DatabentoHistoricalClient {
         let client = self.inner.clone();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
-        let symbols: Vec<&str> = symbols.iter().map(|s| s.as_str()).collect();
+        let symbols: Vec<&str> = symbols.iter().map(std::string::String::as_str).collect();
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
         let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
@@ -211,7 +213,7 @@ impl DatabentoHistoricalClient {
         let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut client = client.lock().await; // TODO: Use a client pool
             let mut decoder = client
                 .timeseries()
@@ -250,6 +252,7 @@ impl DatabentoHistoricalClient {
     }
 
     #[pyo3(name = "get_range_trades")]
+    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None))]
     fn py_get_range_trades<'py>(
         &self,
         py: Python<'py>,
@@ -262,7 +265,7 @@ impl DatabentoHistoricalClient {
         let client = self.inner.clone();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
-        let symbols: Vec<&str> = symbols.iter().map(|s| s.as_str()).collect();
+        let symbols: Vec<&str> = symbols.iter().map(std::string::String::as_str).collect();
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
         let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
@@ -279,7 +282,7 @@ impl DatabentoHistoricalClient {
         let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut client = client.lock().await; // TODO: Use a client pool
             let mut decoder = client
                 .timeseries()
@@ -319,6 +322,7 @@ impl DatabentoHistoricalClient {
 
     #[pyo3(name = "get_range_bars")]
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (dataset, symbols, aggregation, start, end=None, limit=None))]
     fn py_get_range_bars<'py>(
         &self,
         py: Python<'py>,
@@ -332,7 +336,7 @@ impl DatabentoHistoricalClient {
         let client = self.inner.clone();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
-        let symbols: Vec<&str> = symbols.iter().map(|s| s.as_str()).collect();
+        let symbols: Vec<&str> = symbols.iter().map(std::string::String::as_str).collect();
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let schema = match aggregation {
             BarAggregation::Second => dbn::Schema::Ohlcv1S,
@@ -356,7 +360,7 @@ impl DatabentoHistoricalClient {
         let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut client = client.lock().await; // TODO: Use a client pool
             let mut decoder = client
                 .timeseries()
@@ -396,6 +400,7 @@ impl DatabentoHistoricalClient {
 
     #[pyo3(name = "get_range_imbalance")]
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None))]
     fn py_get_range_imbalance<'py>(
         &self,
         py: Python<'py>,
@@ -408,7 +413,7 @@ impl DatabentoHistoricalClient {
         let client = self.inner.clone();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
-        let symbols: Vec<&str> = symbols.iter().map(|s| s.as_str()).collect();
+        let symbols: Vec<&str> = symbols.iter().map(std::string::String::as_str).collect();
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
         let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
@@ -425,7 +430,7 @@ impl DatabentoHistoricalClient {
         let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut client = client.lock().await; // TODO: Use a client pool
             let mut decoder = client
                 .timeseries()
@@ -454,6 +459,7 @@ impl DatabentoHistoricalClient {
 
     #[pyo3(name = "get_range_statistics")]
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None))]
     fn py_get_range_statistics<'py>(
         &self,
         py: Python<'py>,
@@ -466,7 +472,7 @@ impl DatabentoHistoricalClient {
         let client = self.inner.clone();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
-        let symbols: Vec<&str> = symbols.iter().map(|s| s.as_str()).collect();
+        let symbols: Vec<&str> = symbols.iter().map(std::string::String::as_str).collect();
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
         let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
@@ -483,7 +489,7 @@ impl DatabentoHistoricalClient {
         let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut client = client.lock().await; // TODO: Use a client pool
             let mut decoder = client
                 .timeseries()
@@ -513,6 +519,7 @@ impl DatabentoHistoricalClient {
 
     #[pyo3(name = "get_range_status")]
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None))]
     fn py_get_range_status<'py>(
         &self,
         py: Python<'py>,
@@ -525,7 +532,7 @@ impl DatabentoHistoricalClient {
         let client = self.inner.clone();
 
         let stype_in = infer_symbology_type(symbols.first().unwrap());
-        let symbols: Vec<&str> = symbols.iter().map(|s| s.as_str()).collect();
+        let symbols: Vec<&str> = symbols.iter().map(std::string::String::as_str).collect();
         check_consistent_symbology(symbols.as_slice()).map_err(to_pyvalue_err)?;
         let end = end.unwrap_or(self.clock.get_time_ns().as_u64());
         let time_range = get_date_time_range(start.into(), end.into()).map_err(to_pyvalue_err)?;
@@ -541,7 +548,7 @@ impl DatabentoHistoricalClient {
         let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
-        pyo3_asyncio_0_21::tokio::future_into_py(py, async move {
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut client = client.lock().await; // TODO: Use a client pool
             let mut decoder = client
                 .timeseries()

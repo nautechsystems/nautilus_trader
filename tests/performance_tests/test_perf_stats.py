@@ -20,40 +20,19 @@ from nautilus_trader.core.stats import fast_std
 
 
 def test_np_mean(benchmark):
-    benchmark.pedantic(
-        target=np.mean,
-        args=(np.random.default_rng(10).random(100),),
-        iterations=10_000,
-        rounds=1,
+    benchmark(
+        np.mean,
+        np.random.default_rng(10).random(100),
     )
-    # ~0ms / ~9μs / 8464ns minimum of 10000 runs @ 1 iterations each run.
 
 
 def test_np_std(benchmark):
-    benchmark.pedantic(
-        target=np.std,
-        args=(np.random.default_rng(10).random(100),),
-        iterations=10_000,
-        rounds=1,
-    )
-    # ~0ms / ~20μs / 19517ns minimum of 10000 runs @ 1 iterations each run.
+    benchmark(np.std, np.random.default_rng(10).random(100))
 
 
 def test_fast_mean(benchmark):
-    benchmark.pedantic(
-        target=fast_mean,
-        args=(np.random.default_rng(10).random(100),),
-        iterations=100_000,
-        rounds=1,
-    )
-    # ~0.0ms / ~0.4μs / 440ns minimum of 100,000 runs @ 1 iteration each run.
+    benchmark(fast_mean, np.random.default_rng(10).random(100))
 
 
 def test_fast_std(benchmark):
-    benchmark.pedantic(
-        target=fast_std,
-        args=(np.random.default_rng(10).random(100),),
-        iterations=100_000,
-        rounds=1,
-    )
-    # ~0.0ms / ~1.0μs / 968ns minimum of 100,000 runs @ 1 iteration each run.
+    benchmark(fast_std, np.random.default_rng(10).random(100))

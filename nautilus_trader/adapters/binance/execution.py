@@ -447,7 +447,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         end: pd.Timestamp | None = None,
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
-        self._log.info("Requesting OrderStatusReports...")
+        self._log.debug("Requesting OrderStatusReports...")
 
         try:
             # Check Binance for all order active symbols
@@ -459,13 +459,16 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 active_symbols.add(order.symbol)
             # Get all orders for those active symbols
             binance_orders: list[BinanceOrder] = []
-            for symbol in active_symbols:
-                # Here we don't pass a `start_time` or `end_time` as order reports appear to go
-                # randomly missing when these are specified. We filter on the Nautilus side below.
-                # Explicitly setting limit to the max lookback of 1000, in the future we should
-                # add pagination.
-                response = await self._http_account.query_all_orders(symbol=symbol, limit=1_000)
-                binance_orders.extend(response)
+            if open_only:
+                binance_orders = binance_open_orders
+            else:
+                for symbol in active_symbols:
+                    # Here we don't pass a `start_time` or `end_time` as order reports appear to go
+                    # randomly missing when these are specified. We filter on the Nautilus side below.
+                    # Explicitly setting limit to the max lookback of 1000, in the future we should
+                    # add pagination.
+                    response = await self._http_account.query_all_orders(symbol=symbol, limit=1_000)
+                    binance_orders.extend(response)
         except BinanceError as e:
             self._log.exception(f"Cannot generate OrderStatusReport: {e.message}", e)
             return []
@@ -505,7 +508,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> list[FillReport]:
-        self._log.info("Requesting FillReports...")
+        self._log.debug("Requesting FillReports...")
 
         try:
             # Check Binance for all trades on active symbols
@@ -573,7 +576,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                     )
                     reports = [report]
             else:
-                self._log.info("Requesting PositionStatusReports...")
+                self._log.debug("Requesting PositionStatusReports...")
                 reports = await self._get_binance_position_status_reports()
         except BinanceError as e:
             self._log.exception(f"Cannot generate PositionStatusReport: {e.message}", e)

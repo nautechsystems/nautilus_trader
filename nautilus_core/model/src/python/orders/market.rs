@@ -22,7 +22,7 @@ use nautilus_core::{
 use pyo3::{
     basic::CompareOp,
     pymethods,
-    types::{PyDict, PyList},
+    types::{PyAnyMethods, PyDict, PyList},
     IntoPy, Py, PyAny, PyObject, PyResult, Python,
 };
 use rust_decimal::Decimal;
@@ -49,6 +49,7 @@ use crate::{
 impl MarketOrder {
     #[new]
     #[allow(clippy::too_many_arguments)]
+    #[pyo3(signature = (trader_id, strategy_id, instrument_id, client_order_id, order_side, quantity, init_id, ts_init, time_in_force, reduce_only, quote_quantity, contingency_type=None, order_list_id=None, linked_order_ids=None, parent_order_id=None, exec_algorithm_id=None, exec_algorithm_params=None, exec_spawn_id=None, tags=None))]
     fn py_new(
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -206,11 +207,9 @@ impl MarketOrder {
     #[getter]
     #[pyo3(name = "exec_algorithm_params")]
     fn py_exec_algorithm_params(&self) -> Option<HashMap<&str, &str>> {
-        self.exec_algorithm_params.as_ref().map(|x| {
-            x.into_iter()
-                .map(|(k, v)| (k.as_str(), v.as_str()))
-                .collect()
-        })
+        self.exec_algorithm_params
+            .as_ref()
+            .map(|x| x.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect())
     }
 
     #[getter]
@@ -298,7 +297,7 @@ impl MarketOrder {
 
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let dict = PyDict::new(py);
+        let dict = PyDict::new_bound(py);
         dict.set_item("trader_id", self.trader_id.to_string())?;
         dict.set_item("strategy_id", self.strategy_id.to_string())?;
         dict.set_item("instrument_id", self.instrument_id.to_string())?;
@@ -337,7 +336,7 @@ impl MarketOrder {
         self.linked_order_ids.clone().map_or_else(
             || dict.set_item("linked_order_ids", py.None()),
             |linked_order_ids| {
-                let linked_order_ids_list = PyList::new(
+                let linked_order_ids_list = PyList::new_bound(
                     py,
                     linked_order_ids
                         .iter()
@@ -356,7 +355,7 @@ impl MarketOrder {
         )?;
         match &self.exec_algorithm_params {
             Some(exec_algorithm_params) => {
-                let py_exec_algorithm_params = PyDict::new(py);
+                let py_exec_algorithm_params = PyDict::new_bound(py);
                 for (key, value) in exec_algorithm_params {
                     py_exec_algorithm_params.set_item(key.to_string(), value.to_string())?;
                 }
@@ -407,118 +406,85 @@ impl MarketOrder {
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-        let dict = values.as_ref(py);
-        let trader_id = TraderId::from(dict.get_item("trader_id")?.unwrap().extract::<&str>()?);
-        let strategy_id =
-            StrategyId::from(dict.get_item("strategy_id")?.unwrap().extract::<&str>()?);
-        let instrument_id =
-            InstrumentId::from(dict.get_item("instrument_id")?.unwrap().extract::<&str>()?);
-        let client_order_id = ClientOrderId::from(
-            dict.get_item("client_order_id")?
-                .unwrap()
-                .extract::<&str>()?,
-        );
+        let dict = values.bind(py);
+        let trader_id = TraderId::from(dict.get_item("trader_id")?.extract::<&str>()?);
+        let strategy_id = StrategyId::from(dict.get_item("strategy_id")?.extract::<&str>()?);
+        let instrument_id = InstrumentId::from(dict.get_item("instrument_id")?.extract::<&str>()?);
+        let client_order_id =
+            ClientOrderId::from(dict.get_item("client_order_id")?.extract::<&str>()?);
         let order_side = dict
             .get_item("side")?
-            .unwrap()
             .extract::<&str>()?
             .parse::<OrderSide>()
             .unwrap();
-        let quantity = Quantity::from(dict.get_item("quantity")?.unwrap().extract::<&str>()?);
+        let quantity = Quantity::from(dict.get_item("quantity")?.extract::<&str>()?);
         let time_in_force = dict
             .get_item("time_in_force")?
-            .unwrap()
             .extract::<&str>()?
             .parse::<TimeInForce>()
             .unwrap();
         let init_id = dict
             .get_item("init_id")
-            .map(|x| x.and_then(|inner| inner.extract::<&str>().unwrap().parse::<UUID4>().ok()))?
+            .map(|x| x.extract::<&str>().unwrap().parse::<UUID4>().ok())?
             .unwrap();
-        let ts_init = dict.get_item("ts_init")?.unwrap().extract::<u64>()?;
-        let is_reduce_only = dict
-            .get_item("is_reduce_only")?
-            .unwrap()
-            .extract::<bool>()?;
-        let is_quote_quantity = dict
-            .get_item("is_quote_quantity")?
-            .unwrap()
-            .extract::<bool>()?;
-        let contingency_type = dict.get_item("contingency_type").map(|x| {
-            x.and_then(|inner| {
-                inner
-                    .extract::<&str>()
-                    .unwrap()
-                    .parse::<ContingencyType>()
-                    .ok()
-            })
-        })?;
+        let ts_init = dict.get_item("ts_init")?.extract::<u64>()?;
+        let is_reduce_only = dict.get_item("is_reduce_only")?.extract::<bool>()?;
+        let is_quote_quantity = dict.get_item("is_quote_quantity")?.extract::<bool>()?;
+        let contingency_type = dict
+            .get_item("contingency_type")
+            .map(|x| x.extract::<&str>().unwrap().parse::<ContingencyType>().ok())?;
         let order_list_id = dict.get_item("order_list_id").map(|x| {
-            x.and_then(|inner| {
-                let extracted_str = inner.extract::<&str>();
-                match extracted_str {
-                    Ok(item) => Some(OrderListId::from(item)),
-                    Err(_) => None,
-                }
-            })
+            let extracted_str = x.extract::<&str>();
+            match extracted_str {
+                Ok(item) => Some(OrderListId::from(item)),
+                Err(_) => None,
+            }
         })?;
         let linked_order_ids = dict.get_item("linked_order_ids").map(|x| {
-            x.and_then(|inner| {
-                let extracted_str = inner.extract::<Vec<String>>();
-                match extracted_str {
-                    Ok(item) => Some(
-                        item.iter()
-                            .map(|x| ClientOrderId::from(x.as_str()))
-                            .collect(),
-                    ),
-                    Err(_) => None,
-                }
-            })
+            let extracted_str = x.extract::<Vec<String>>();
+            match extracted_str {
+                Ok(item) => Some(
+                    item.iter()
+                        .map(|x| ClientOrderId::from(x.as_str()))
+                        .collect(),
+                ),
+                Err(_) => None,
+            }
         })?;
         let parent_order_id = dict.get_item("parent_order_id").map(|x| {
-            x.and_then(|inner| {
-                let extracted_str = inner.extract::<&str>();
-                match extracted_str {
-                    Ok(item) => Some(ClientOrderId::from(item)),
-                    Err(_) => None,
-                }
-            })
+            let extracted_str = x.extract::<&str>();
+            match extracted_str {
+                Ok(item) => Some(ClientOrderId::from(item)),
+                Err(_) => None,
+            }
         })?;
         let exec_algorithm_id = dict.get_item("exec_algorithm_id").map(|x| {
-            x.and_then(|inner| {
-                let extracted_str = inner.extract::<&str>();
-                match extracted_str {
-                    Ok(item) => Some(ExecAlgorithmId::from(item)),
-                    Err(_) => None,
-                }
-            })
+            let extracted_str = x.extract::<&str>();
+            match extracted_str {
+                Ok(item) => Some(ExecAlgorithmId::from(item)),
+                Err(_) => None,
+            }
         })?;
         let exec_algorithm_params = dict.get_item("exec_algorithm_params").map(|x| {
-            x.and_then(|inner| {
-                let extracted_str = inner.extract::<HashMap<String, String>>();
-                match extracted_str {
-                    Ok(item) => Some(str_hashmap_to_ustr(item)),
-                    Err(_) => None,
-                }
-            })
+            let extracted_str = x.extract::<HashMap<String, String>>();
+            match extracted_str {
+                Ok(item) => Some(str_hashmap_to_ustr(item)),
+                Err(_) => None,
+            }
         })?;
         let exec_spawn_id = dict.get_item("exec_spawn_id").map(|x| {
-            x.and_then(|inner| {
-                let extracted_str = inner.extract::<&str>();
-                match extracted_str {
-                    Ok(item) => Some(ClientOrderId::from(item)),
-                    Err(_) => None,
-                }
-            })
+            let extracted_str = x.extract::<&str>();
+            match extracted_str {
+                Ok(item) => Some(ClientOrderId::from(item)),
+                Err(_) => None,
+            }
         })?;
         let tags = dict.get_item("tags").map(|x| {
-            x.and_then(|inner| {
-                let extracted_str = inner.extract::<Vec<String>>();
-                match extracted_str {
-                    Ok(item) => Some(item.iter().map(|s| Ustr::from(&s)).collect()),
-                    Err(_) => None,
-                }
-            })
+            let extracted_str = x.extract::<Vec<String>>();
+            match extracted_str {
+                Ok(item) => Some(item.iter().map(|s| Ustr::from(s)).collect()),
+                Err(_) => None,
+            }
         })?;
         Self::new_checked(
             trader_id,

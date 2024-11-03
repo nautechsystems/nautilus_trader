@@ -41,26 +41,27 @@ use crate::{
 
 impl TradeTick {
     /// Create a new [`TradeTick`] extracted from the given [`PyAny`].
-    pub fn from_pyobject(obj: &Bound<PyAny>) -> PyResult<Self> {
-        let instrument_id_obj: &PyAny = obj.getattr("instrument_id")?.extract()?;
-        let instrument_id_str = instrument_id_obj.getattr("value")?.extract()?;
-        let instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
+    pub fn from_pyobject(obj: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let instrument_id_obj: Bound<'_, PyAny> = obj.getattr("instrument_id")?.extract()?;
+        let instrument_id_str: String = instrument_id_obj.getattr("value")?.extract()?;
+        let instrument_id =
+            InstrumentId::from_str(instrument_id_str.as_str()).map_err(to_pyvalue_err)?;
 
-        let price_py: &PyAny = obj.getattr("price")?.extract()?;
+        let price_py: Bound<'_, PyAny> = obj.getattr("price")?.extract()?;
         let price_raw: i64 = price_py.getattr("raw")?.extract()?;
         let price_prec: u8 = price_py.getattr("precision")?.extract()?;
         let price = Price::from_raw(price_raw, price_prec);
 
-        let size_py: &PyAny = obj.getattr("size")?.extract()?;
+        let size_py: Bound<'_, PyAny> = obj.getattr("size")?.extract()?;
         let size_raw: u64 = size_py.getattr("raw")?.extract()?;
         let size_prec: u8 = size_py.getattr("precision")?.extract()?;
         let size = Quantity::from_raw(size_raw, size_prec);
 
-        let aggressor_side_obj: &PyAny = obj.getattr("aggressor_side")?.extract()?;
+        let aggressor_side_obj: Bound<'_, PyAny> = obj.getattr("aggressor_side")?.extract()?;
         let aggressor_side_u8 = aggressor_side_obj.getattr("value")?.extract()?;
         let aggressor_side = AggressorSide::from_u8(aggressor_side_u8).unwrap();
 
-        let trade_id_obj: &PyAny = obj.getattr("trade_id")?.extract()?;
+        let trade_id_obj: Bound<'_, PyAny> = obj.getattr("trade_id")?.extract()?;
         let trade_id_str: String = trade_id_obj.getattr("value")?.extract()?;
         let trade_id = TradeId::from(trade_id_str.as_str());
 
@@ -102,33 +103,47 @@ impl TradeTick {
         )
     }
 
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        let tuple: (
-            &PyString,
-            &PyLong,
-            &PyLong,
-            &PyLong,
-            &PyLong,
-            &PyLong,
-            &PyString,
-            &PyLong,
-            &PyLong,
-        ) = state.extract(py)?;
-        let instrument_id_str: &str = tuple.0.extract()?;
-        let price_raw = tuple.1.extract()?;
-        let price_prec = tuple.2.extract()?;
-        let size_raw = tuple.3.extract()?;
-        let size_prec = tuple.4.extract()?;
-        let aggressor_side_u8 = tuple.5.extract()?;
-        let trade_id_str: String = tuple.6.extract()?;
-        let ts_event: u64 = tuple.7.extract()?;
-        let ts_init: u64 = tuple.8.extract()?;
+    fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
+        let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
+        let binding = py_tuple.get_item(0)?;
+        let instrument_id_str = binding.downcast::<PyString>()?.extract::<&str>()?;
+        let price_raw = py_tuple
+            .get_item(1)?
+            .downcast::<PyLong>()?
+            .extract::<i64>()?;
+        let price_prec = py_tuple
+            .get_item(2)?
+            .downcast::<PyLong>()?
+            .extract::<u8>()?;
+        let size_raw = py_tuple
+            .get_item(3)?
+            .downcast::<PyLong>()?
+            .extract::<u64>()?;
+        let size_prec = py_tuple
+            .get_item(4)?
+            .downcast::<PyLong>()?
+            .extract::<u8>()?;
+
+        let aggressor_side_u8 = py_tuple
+            .get_item(5)?
+            .downcast::<PyLong>()?
+            .extract::<u8>()?;
+        let binding = py_tuple.get_item(6)?;
+        let trade_id_str = binding.downcast::<PyString>()?.extract::<&str>()?;
+        let ts_event = py_tuple
+            .get_item(7)?
+            .downcast::<PyLong>()?
+            .extract::<u64>()?;
+        let ts_init = py_tuple
+            .get_item(8)?
+            .downcast::<PyLong>()?
+            .extract::<u64>()?;
 
         self.instrument_id = InstrumentId::from_str(instrument_id_str).map_err(to_pyvalue_err)?;
         self.price = Price::from_raw(price_raw, price_prec);
         self.size = Quantity::from_raw(size_raw, size_prec);
         self.aggressor_side = AggressorSide::from_u8(aggressor_side_u8).unwrap();
-        self.trade_id = TradeId::from(trade_id_str.as_str());
+        self.trade_id = TradeId::from(trade_id_str);
         self.ts_event = ts_event.into();
         self.ts_init = ts_init.into();
 
@@ -151,9 +166,9 @@ impl TradeTick {
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
-        let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
+        let safe_constructor = py.get_type_bound::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+        Ok((safe_constructor, PyTuple::empty_bound(py), state).to_object(py))
     }
 
     #[staticmethod]
@@ -255,8 +270,8 @@ impl TradeTick {
 
     #[staticmethod]
     #[pyo3(name = "get_fields")]
-    fn py_get_fields(py: Python<'_>) -> PyResult<&PyDict> {
-        let py_dict = PyDict::new(py);
+    fn py_get_fields(py: Python<'_>) -> PyResult<Bound<'_, PyDict>> {
+        let py_dict = PyDict::new_bound(py);
         for (k, v) in Self::get_fields() {
             py_dict.set_item(k, v)?;
         }
@@ -309,7 +324,7 @@ impl TradeTick {
         // Serialize object to JSON bytes
         let json_str = serde_json::to_string(self).map_err(to_pyvalue_err)?;
         // Parse JSON into a Python dictionary
-        let py_dict: Py<PyDict> = PyModule::import(py, "json")?
+        let py_dict: Py<PyDict> = PyModule::import_bound(py, "json")?
             .call_method("loads", (json_str,), None)?
             .extract()?;
         Ok(py_dict)

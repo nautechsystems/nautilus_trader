@@ -20,6 +20,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
+from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.backtest.engine import BacktestEngine
 from nautilus_trader.backtest.engine import BacktestEngineConfig
 from nautilus_trader.backtest.models import FillModel
@@ -70,7 +71,6 @@ from nautilus_trader.test_kit.stubs.config import TestConfigStubs
 from nautilus_trader.test_kit.stubs.data import MyData
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.trading.strategy import Strategy
-from tests import TEST_DATA_DIR
 
 
 ETHUSDT_BINANCE = TestInstrumentProvider.ethusdt_binance()

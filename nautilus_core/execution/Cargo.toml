@@ -19,11 +19,10 @@ derive_builder = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
-pyo3-asyncio-0-21 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
 rust_decimal_macros = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
 strum = { workspace = true }
 thiserror = { workspace = true }
 ustr = { workspace = true }
@@ -47,7 +46,7 @@ ffi = [
 ]
 python = [
   "pyo3",
-  "pyo3-asyncio-0-21",
+  "pyo3-async-runtimes",
   "nautilus-common/python",
   "nautilus-core/python",
   "nautilus-model/python",

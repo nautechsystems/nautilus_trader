@@ -13,10 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::{
-    python::{serialization::from_dict_pyo3, to_pyvalue_err},
-    uuid::UUID4,
-};
+use nautilus_core::{python::serialization::from_dict_pyo3, uuid::UUID4};
 use pyo3::{basic::CompareOp, prelude::*, types::PyDict};
 
 use crate::{
@@ -72,8 +69,8 @@ impl OrderEmulated {
 
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let dict = PyDict::new(py);
-        dict.set_item("type", stringify!(OrderEmulated));
+        let dict = PyDict::new_bound(py);
+        dict.set_item("type", stringify!(OrderEmulated))?;
         dict.set_item("trader_id", self.trader_id.to_string())?;
         dict.set_item("strategy_id", self.strategy_id.to_string())?;
         dict.set_item("instrument_id", self.instrument_id.to_string())?;

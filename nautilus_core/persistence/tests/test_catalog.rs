@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#![allow(deprecated)] // TODO: Temporary for pyo3 upgrade
-
 use nautilus_core::ffi::cvec::CVec;
 use nautilus_model::data::{
     bar::Bar, delta::OrderBookDelta, is_monotonically_increasing_by_init, quote::QuoteTick,
@@ -27,7 +25,7 @@ use nautilus_persistence::{
 use nautilus_test_kit::common::get_test_data_file_path;
 #[cfg(target_os = "linux")]
 use procfs::{self, process::Process};
-use pyo3::{types::PyCapsule, IntoPy, Py, PyAny, Python};
+use pyo3::{prelude::*, types::PyCapsule};
 use rstest::rstest;
 
 /// Memory leak test
@@ -88,7 +86,7 @@ fn catalog_query_mem_leak_test() {
                 let result = pycatalog.call_method0(py, "to_query_result").unwrap();
                 let mut count = 0;
                 while let Ok(chunk) = result.call_method0(py, "__next__") {
-                    let capsule: &PyCapsule = chunk.downcast(py).unwrap();
+                    let capsule: &Bound<'_, _> = chunk.downcast_bound(py).unwrap();
                     let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
                     if cvec.len == 0 {
                         break;
@@ -162,7 +160,7 @@ fn test_quote_tick_python_control_flow() {
         let result = pycatalog.call_method0(py, "to_query_result").unwrap();
         let mut count = 0;
         while let Ok(chunk) = result.call_method0(py, "__next__") {
-            let capsule: &PyCapsule = chunk.downcast(py).unwrap();
+            let capsule: &Bound<'_, PyCapsule> = chunk.downcast_bound::<PyCapsule>(py).unwrap();
             let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
             if cvec.len == 0 {
                 break;
@@ -219,7 +217,7 @@ fn test_order_book_delta_query_py() {
             .unwrap();
         let result = pycatalog.call_method0(py, "to_query_result").unwrap();
         let chunk = result.call_method0(py, "__next__").unwrap();
-        let capsule: &PyCapsule = chunk.downcast(py).unwrap();
+        let capsule: &Bound<'_, PyCapsule> = chunk.downcast_bound(py).unwrap();
         let cvec: &CVec = unsafe { &*(capsule.pointer() as *const CVec) };
         assert_eq!(cvec.len, 1077);
     });

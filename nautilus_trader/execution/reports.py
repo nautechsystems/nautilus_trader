@@ -229,6 +229,24 @@ class OrderStatusReport(ExecutionReport):
         self.ts_triggered = ts_triggered or 0
         self.ts_last = ts_last
 
+    @property
+    def is_open(self) -> bool:
+        """
+        Return whether the reported order status is 'open'.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.order_status in (
+            OrderStatus.ACCEPTED,
+            OrderStatus.TRIGGERED,
+            OrderStatus.PENDING_CANCEL,
+            OrderStatus.PENDING_UPDATE,
+            OrderStatus.PARTIALLY_FILLED,
+        )
+
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, OrderStatusReport):
             return False

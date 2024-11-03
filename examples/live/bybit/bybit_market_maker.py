@@ -56,7 +56,7 @@ config_node = TradingNodeConfig(
     logging=LoggingConfig(log_level="INFO", use_pyo3=True),
     exec_engine=LiveExecEngineConfig(
         reconciliation=True,
-        reconciliation_lookback_mins=1440,
+        open_check_interval_secs=5.0,
         # snapshot_orders=True,
         # snapshot_positions=True,
         # snapshot_positions_interval_secs=5.0,

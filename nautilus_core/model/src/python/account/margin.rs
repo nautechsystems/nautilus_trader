@@ -77,7 +77,7 @@ impl MarginAccount {
 
     #[pyo3(name = "leverages")]
     fn py_leverages(&self, py: Python) -> PyResult<PyObject> {
-        let leverages = PyDict::new(py);
+        let leverages = PyDict::new_bound(py);
         for (key, &value) in &self.leverages {
             leverages.set_item(key.to_object(py), value).unwrap();
         }
@@ -102,7 +102,7 @@ impl MarginAccount {
 
     #[pyo3(name = "initial_margins")]
     fn py_initial_margins(&self, py: Python) -> PyResult<PyObject> {
-        let initial_margins = PyDict::new(py);
+        let initial_margins = PyDict::new_bound(py);
         for (key, &value) in &self.initial_margins() {
             initial_margins
                 .set_item(key.to_object(py), value.to_object(py))
@@ -113,7 +113,7 @@ impl MarginAccount {
 
     #[pyo3(name = "maintenance_margins")]
     fn py_maintenance_margins(&self, py: Python) -> PyResult<PyObject> {
-        let maintenance_margins = PyDict::new(py);
+        let maintenance_margins = PyDict::new_bound(py);
         for (key, &value) in &self.maintenance_margins() {
             maintenance_margins
                 .set_item(key.to_object(py), value.to_object(py))
@@ -153,6 +153,7 @@ impl MarginAccount {
     }
 
     #[pyo3(name = "calculate_initial_margin")]
+    #[pyo3(signature = (instrument, quantity, price, use_quote_for_inverse=None))]
     pub fn py_calculate_initial_margin(
         &mut self,
         instrument: PyObject,
@@ -186,6 +187,7 @@ impl MarginAccount {
     }
 
     #[pyo3(name = "calculate_maintenance_margin")]
+    #[pyo3(signature = (instrument, quantity, price, use_quote_for_inverse=None))]
     pub fn py_calculate_maintenance_margin(
         &mut self,
         instrument: PyObject,
@@ -220,7 +222,7 @@ impl MarginAccount {
 
     #[pyo3(name = "to_dict")]
     fn py_to_dict(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let dict = PyDict::new(py);
+        let dict = PyDict::new_bound(py);
         dict.set_item("calculate_account_state", self.calculate_account_state)?;
         let events_list: PyResult<Vec<PyObject>> =
             self.events.iter().map(|item| item.py_to_dict(py)).collect();

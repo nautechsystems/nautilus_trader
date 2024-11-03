@@ -21,7 +21,6 @@ use std::{
 
 use nautilus_core::python::to_pyvalue_err;
 use pyo3::{
-    exceptions::PyValueError,
     prelude::*,
     pyclass::CompareOp,
     types::{PyString, PyTuple},
@@ -36,10 +35,22 @@ impl InstrumentId {
         Self::new(symbol, venue)
     }
 
-    fn __setstate__(&mut self, py: Python, state: PyObject) -> PyResult<()> {
-        let tuple: (&PyString, &PyString) = state.extract(py)?;
-        self.symbol = Symbol::new_checked(tuple.0.extract()?).map_err(to_pyvalue_err)?;
-        self.venue = Venue::new_checked(tuple.1.extract()?).map_err(to_pyvalue_err)?;
+    fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
+        let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
+        self.symbol = Symbol::new_checked(
+            py_tuple
+                .get_item(0)?
+                .downcast::<PyString>()?
+                .extract::<&str>()?,
+        )
+        .map_err(to_pyvalue_err)?;
+        self.venue = Venue::new_checked(
+            py_tuple
+                .get_item(1)?
+                .downcast::<PyString>()?
+                .extract::<&str>()?,
+        )
+        .map_err(to_pyvalue_err)?;
         Ok(())
     }
 
@@ -48,9 +59,9 @@ impl InstrumentId {
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
-        let safe_constructor = py.get_type::<Self>().getattr("_safe_constructor")?;
+        let safe_constructor = py.get_type_bound::<Self>().getattr("_safe_constructor")?;
         let state = self.__getstate__(py)?;
-        Ok((safe_constructor, PyTuple::empty(py), state).to_object(py))
+        Ok((safe_constructor, PyTuple::empty_bound(py), state).to_object(py))
     }
 
     #[staticmethod]

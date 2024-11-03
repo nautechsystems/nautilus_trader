@@ -36,6 +36,7 @@ from betfair_parser.spec.streaming import OrderMarketChange
 from betfair_parser.spec.streaming import OrderRunnerChange
 from betfair_parser.spec.streaming import stream_decode
 
+from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.adapters.betfair.client import BetfairHttpClient
 from nautilus_trader.adapters.betfair.common import BETFAIR_TICK_SCHEME
 from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
@@ -63,7 +64,6 @@ from nautilus_trader.model.identifiers import TraderId
 from nautilus_trader.model.instruments.betting import BettingInstrument
 from nautilus_trader.model.instruments.betting import null_handicap
 from nautilus_trader.persistence.catalog import ParquetDataCatalog
-from tests import TEST_DATA_DIR
 
 
 RESOURCES_PATH = pathlib.Path(__file__).parent.joinpath("resources")

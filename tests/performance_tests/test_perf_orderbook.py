@@ -13,21 +13,19 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-from typing import Any
-
 import pytest
 
+from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.objects import Price
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.data import TestDataStubs
-from tests import TEST_DATA_DIR
 
 
 @pytest.mark.skip(reason="development_only")
-def test_orderbook_spy_xnas_itch_mbo_l3(benchmark: Any) -> None:
+def test_orderbook_spy_xnas_itch_mbo_l3(benchmark) -> None:
     loader = DatabentoDataLoader()
     path = TEST_DATA_DIR / "databento" / "temp" / "spy-xnas-itch-20231127.mbo.dbn.zst"
     instrument = TestInstrumentProvider.equity(symbol="SPY", venue="XNAS")
@@ -44,11 +42,7 @@ def test_orderbook_spy_xnas_itch_mbo_l3(benchmark: Any) -> None:
                 continue
             book.apply_delta(delta)
 
-    benchmark.pedantic(
-        target=_apply_deltas,
-        iterations=1,
-        rounds=1,
-    )
+    benchmark(_apply_deltas)
 
     # Assert
     assert book.ts_last == 1701129555644234540

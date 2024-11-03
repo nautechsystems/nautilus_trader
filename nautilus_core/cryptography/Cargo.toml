@@ -1,0 +1,40 @@
+[package]
+name = "nautilus-cryptography"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description.workspace = true
+documentation.workspace = true
+
+[lib]
+name = "nautilus_cryptography"
+crate-type = ["rlib", "staticlib", "cdylib"]
+
+[dependencies]
+nautilus-core = { path = "../core" }
+anyhow = { workspace = true }
+base64 = { workspace = true }
+hex = { workspace = true }
+pyo3 = { workspace = true, optional = true }
+rand = { workspace = true }
+ring = { workspace = true }
+tracing = { workspace = true }
+rustls = { version = "0.23.16", features = ["ring"] }
+rustls-native-certs = "0.8.0"
+tokio-rustls = "0.26.0"
+pem = "3.0.4"
+
+[dev-dependencies]
+criterion = { workspace = true }
+rstest = { workspace = true }
+
+[features]
+default = ["python"]
+extension-module = [
+  "pyo3/extension-module",
+  "nautilus-core/extension-module",
+]
+python = [
+  "pyo3",
+  "nautilus-core/python",
+]

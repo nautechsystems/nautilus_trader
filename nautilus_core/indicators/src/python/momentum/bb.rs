@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_core::python::to_pyvalue_err;
 use nautilus_model::data::{bar::Bar, quote::QuoteTick, trade::TradeTick};
 use pyo3::prelude::*;
 
@@ -22,6 +21,8 @@ use crate::{average::MovingAverageType, indicator::Indicator, momentum::bb::Boll
 #[pymethods]
 impl BollingerBands {
     #[new]
+    #[pyo3(signature = (period, k, ma_type=None))]
+    #[must_use]
     pub fn py_new(period: usize, k: f64, ma_type: Option<MovingAverageType>) -> Self {
         Self::new(period, k, ma_type)
     }
@@ -38,7 +39,7 @@ impl BollingerBands {
 
     #[getter]
     #[pyo3(name = "period")]
-    fn py_period(&self) -> usize {
+    const fn py_period(&self) -> usize {
         self.period
     }
 
@@ -50,31 +51,31 @@ impl BollingerBands {
 
     #[getter]
     #[pyo3(name = "k")]
-    fn py_k(&self) -> f64 {
+    const fn py_k(&self) -> f64 {
         self.k
     }
 
     #[getter]
     #[pyo3(name = "upper")]
-    fn py_upper(&self) -> f64 {
+    const fn py_upper(&self) -> f64 {
         self.upper
     }
 
     #[getter]
     #[pyo3(name = "middle")]
-    fn py_middle(&self) -> f64 {
+    const fn py_middle(&self) -> f64 {
         self.middle
     }
 
     #[getter]
     #[pyo3(name = "lower")]
-    fn py_lower(&self) -> f64 {
+    const fn py_lower(&self) -> f64 {
         self.lower
     }
 
     #[getter]
     #[pyo3(name = "initialized")]
-    fn py_initialized(&self) -> bool {
+    const fn py_initialized(&self) -> bool {
         self.initialized
     }
 

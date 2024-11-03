@@ -18,9 +18,11 @@ use std::str::FromStr;
 use nautilus_core::{datetime::NANOSECONDS_IN_MICROSECOND, nanos::UnixNanos};
 use nautilus_model::{
     data::bar::BarSpecification,
-    enums::{AggressorSide, BarAggregation, BookAction, OrderSide, PriceType},
-    identifiers::InstrumentId,
+    enums::{AggressorSide, BarAggregation, BookAction, OptionKind, OrderSide, PriceType},
+    identifiers::{InstrumentId, Symbol, Venue},
 };
+
+use super::enums::{Exchange, OptionType};
 
 /// Parse an instrument ID from the given venue and symbol values.
 #[must_use]
@@ -28,6 +30,12 @@ pub fn parse_instrument_id(exchange: &str, symbol: &str) -> InstrumentId {
     let venue = exchange.split('-').next().unwrap_or(exchange);
     InstrumentId::from_str(&format!("{symbol}.{venue}").to_uppercase())
         .expect("Failed to parse `instrument_id`")
+}
+
+/// Parse an instrument ID from the given `symbol` and Tardis `exchange` values.
+#[must_use]
+pub fn parse_instrument_id_with_enum(symbol: &str, exchange: &Exchange) -> InstrumentId {
+    InstrumentId::new(Symbol::from(symbol), Venue::from(exchange.as_venue_str()))
 }
 
 /// Parse an order side from the given string.
@@ -47,6 +55,15 @@ pub fn parse_aggressor_side(value: &str) -> AggressorSide {
         "buy" => AggressorSide::Buyer,
         "sell" => AggressorSide::Seller,
         _ => AggressorSide::NoAggressor,
+    }
+}
+
+/// Parse an `option_kind` from the Tardis enum value.
+#[must_use]
+pub const fn parse_option_kind(value: OptionType) -> OptionKind {
+    match value {
+        OptionType::Call => OptionKind::Call,
+        OptionType::Put => OptionKind::Put,
     }
 }
 
@@ -70,12 +87,14 @@ pub fn parse_book_action(is_snapshot: bool, amount: f64) -> BookAction {
 
 #[must_use]
 pub fn parse_bar_spec(value: &str) -> BarSpecification {
-    // The last part contains both the step and the suffix (e.g., "10000ms")
     let parts: Vec<&str> = value.split('_').collect();
     let last_part = parts.last().expect("Invalid bar spec");
+    let split_idx = last_part
+        .chars()
+        .position(|c| !c.is_ascii_digit())
+        .expect("Invalid bar spec");
 
-    // Extract the number and suffix
-    let (step_str, suffix) = last_part.split_at(last_part.len() - 2);
+    let (step_str, suffix) = last_part.split_at(split_idx);
     let step: usize = step_str.parse().expect("Invalid step");
 
     let aggregation = match suffix {
@@ -158,5 +177,42 @@ mod tests {
         #[case] expected: BookAction,
     ) {
         assert_eq!(parse_book_action(is_snapshot, amount), expected);
+    }
+
+    #[rstest]
+    #[case("trade_bar_10ms", 10, BarAggregation::Millisecond)]
+    #[case("trade_bar_5m", 5, BarAggregation::Minute)]
+    #[case("trade_bar_100ticks", 100, BarAggregation::Tick)]
+    #[case("trade_bar_100000vol", 100000, BarAggregation::Volume)]
+    fn test_parse_bar_spec(
+        #[case] value: &str,
+        #[case] expected_step: usize,
+        #[case] expected_aggregation: BarAggregation,
+    ) {
+        let spec = parse_bar_spec(value);
+        assert_eq!(spec.step, expected_step);
+        assert_eq!(spec.aggregation, expected_aggregation);
+        assert_eq!(spec.price_type, PriceType::Last);
+    }
+
+    #[rstest]
+    #[case("trade_bar_10unknown")]
+    #[should_panic(expected = "Unsupported bar aggregation type")]
+    fn test_parse_bar_spec_invalid_suffix(#[case] value: &str) {
+        let _ = parse_bar_spec(value);
+    }
+
+    #[rstest]
+    #[case("")]
+    #[should_panic(expected = "Invalid bar spec")]
+    fn test_parse_bar_spec_empty(#[case] value: &str) {
+        let _ = parse_bar_spec(value);
+    }
+
+    #[rstest]
+    #[case("trade_bar_notanumberms")]
+    #[should_panic(expected = "Invalid step")]
+    fn test_parse_bar_spec_invalid_step(#[case] value: &str) {
+        let _ = parse_bar_spec(value);
     }
 }

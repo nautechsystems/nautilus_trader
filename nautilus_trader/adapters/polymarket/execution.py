@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from collections import defaultdict
 from collections.abc import Coroutine
 from typing import Any
 
@@ -32,8 +33,8 @@ from nautilus_trader.adapters.polymarket.common.cache import get_polymarket_trad
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MAX_PRICE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MIN_PRICE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
-from nautilus_trader.adapters.polymarket.common.constants import USDC_POS
 from nautilus_trader.adapters.polymarket.common.constants import VALID_POLYMARKET_TIME_IN_FORCE
+from nautilus_trader.adapters.polymarket.common.conversion import usdce_from_units
 from nautilus_trader.adapters.polymarket.common.credentials import PolymarketWebSocketAuth
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketEventType
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketLiquiditySide
@@ -70,11 +71,16 @@ from nautilus_trader.execution.reports import OrderStatusReport
 from nautilus_trader.execution.reports import PositionStatusReport
 from nautilus_trader.live.execution_client import LiveExecutionClient
 from nautilus_trader.live.retry import RetryManagerPool
+from nautilus_trader.model.currencies import USDC_POS
 from nautilus_trader.model.enums import AccountType
+from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OmsType
 from nautilus_trader.model.enums import OrderSide
+from nautilus_trader.model.enums import OrderStatus
 from nautilus_trader.model.enums import OrderType
+from nautilus_trader.model.enums import PositionSide
+from nautilus_trader.model.enums import TimeInForce
 from nautilus_trader.model.enums import order_side_to_str
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientId
@@ -84,6 +90,7 @@ from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Money
+from nautilus_trader.model.objects import Quantity
 from nautilus_trader.model.orders import Order
 
 
@@ -150,6 +157,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         if wallet_address is None:
             raise RuntimeError("Auth error: could not determine `wallet_address`")
         self._wallet_address = wallet_address
+        self._api_key = http_client.creds.api_key
         self._log.info(f"{wallet_address=}", LogColor.BLUE)
 
         # HTTP API
@@ -293,8 +301,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             self._http_client.get_balance_allowance,
             params,
         )
-        usdc_raw = int(response["balance"]) * 1_000
-        total = Money.from_raw(usdc_raw, currency=USDC_POS)
+        total = usdce_from_units(int(response["balance"]))
         account_balance = AccountBalance(
             total=total,
             locked=Money.from_raw(0, USDC_POS),
@@ -309,14 +316,14 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
     # -- EXECUTION REPORTS ------------------------------------------------------------------------
 
-    async def generate_order_status_reports(
+    async def generate_order_status_reports(  # noqa: C901 (too complex)
         self,
         instrument_id: InstrumentId | None = None,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
-        self._log.info("Requesting OrderStatusReports...")
+        self._log.debug("Requesting OrderStatusReports...")
         reports: list[OrderStatusReport] = []
 
         if instrument_id is not None:
@@ -378,6 +385,84 @@ class PolymarketExecutionClient(LiveExecutionClient):
             )
             if maybe_report:
                 reports.append(maybe_report)
+
+        known_venue_order_ids: set[VenueOrderId] = {o.venue_order_id for o in self._cache.orders()}
+        known_venue_order_ids.update({r.venue_order_id for r in reports})
+
+        # Check fills to generate order reports
+        fill_reports = await self.generate_fill_reports(instrument_id)
+        if fill_reports and not known_venue_order_ids:
+            self._log.warning(
+                "No previously known venue order IDs found in cache or from active orders",
+            )
+
+        venue_order_id_fill_reports: dict[VenueOrderId, list[FillReport]] = defaultdict(list)
+        for fill in fill_reports:
+            venue_order_id_fill_reports[fill.venue_order_id].append(fill)
+
+        for venue_order_id, fill_reports in venue_order_id_fill_reports.items():
+            first_fill = fill_reports[0]
+            instrument = self._cache.instrument(first_fill.instrument_id)
+            if instrument is None:
+                self._log.error(
+                    f"Cannot handle order report: instrument {first_fill.instrument_id} not found",
+                )
+
+            order_type = (
+                OrderType.MARKET
+                if first_fill.liquidity_side == LiquiditySide.TAKER
+                else OrderType.LIMIT
+            )
+
+            if order_type == OrderType.LIMIT:
+                price = first_fill.last_px
+                order_side = (
+                    OrderSide.BUY if first_fill.order_side == OrderSide.SELL else OrderSide.SELL
+                )
+            else:
+                price = None
+                order_side = first_fill.order_side
+
+            avg_px: float = 0.0
+            filled_qty: float = 0.0
+            ts_last: int = first_fill.ts_event
+
+            for fill_report in fill_reports:
+                avg_px += float(fill_report.last_px) * float(fill_report.last_qty)
+                filled_qty += float(fill_report.last_qty)
+                ts_last = fill_report.ts_event
+
+            if filled_qty > 0:
+                avg_px /= filled_qty
+            else:
+                avg_px = 0.0
+
+            self._log.warning(f"{venue_order_id=}")
+            self._log.warning(f"{avg_px=}")
+            self._log.warning(f"{filled_qty=}")
+
+            report = OrderStatusReport(
+                account_id=first_fill.account_id,
+                instrument_id=first_fill.instrument_id,
+                client_order_id=ClientOrderId(str(UUID4())),
+                order_list_id=None,
+                venue_order_id=venue_order_id,
+                order_side=order_side,
+                order_type=order_type,
+                contingency_type=ContingencyType.NO_CONTINGENCY,
+                time_in_force=TimeInForce.GTC,
+                order_status=OrderStatus.FILLED,
+                price=price,
+                avg_px=instrument.make_price(avg_px),
+                quantity=instrument.make_qty(filled_qty),
+                filled_qty=instrument.make_qty(filled_qty),
+                ts_accepted=ts_last,
+                ts_last=ts_last,
+                report_id=UUID4(),
+                ts_init=self._clock.timestamp_ns(),
+            )
+            self._log.warning(f"Generated from fill report: {report}")
+            reports.append(report)
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
@@ -444,7 +529,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> list[FillReport]:
-        self._log.info("Requesting FillReports...")
+        self._log.debug("Requesting FillReports...")
         reports: list[FillReport] = []
 
         params = TradeParams(maker_address=self._wallet_address)
@@ -472,6 +557,9 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 for json_obj in response:
                     raw = msgspec.json.encode(json_obj)
                     polymarket_trade = self._decoder_trade_report.decode(raw)
+
+                    if polymarket_trade.owner != self._api_key:
+                        continue  # Not own trade
 
                     instrument_id = get_polymarket_instrument_id(
                         polymarket_trade.market,
@@ -511,7 +599,37 @@ class PolymarketExecutionClient(LiveExecutionClient):
     ) -> list[PositionStatusReport]:
         reports: list[PositionStatusReport] = []
 
-        # Not applicable on Polymarket
+        if instrument_id is not None:
+            instrument_ids = [instrument_id]
+        else:
+            instrument_ids = [inst.id for inst in self._cache.instruments(venue=POLYMARKET_VENUE)]
+
+        for instrument_id in instrument_ids:
+            self._log.debug(f"Requesting PositionStatusReport for {instrument_id}")
+            token_id = get_polymarket_token_id(instrument_id)
+            params = BalanceAllowanceParams(
+                asset_type=AssetType.CONDITIONAL,
+                token_id=token_id,
+                signature_type=self._signature_type,
+            )
+            response: dict[str, Any] = await asyncio.to_thread(
+                self._http_client.get_balance_allowance,
+                params,
+            )
+            usdce_balance = usdce_from_units(int(response["balance"]))
+            position_side = PositionSide.LONG if usdce_balance.raw > 0 else PositionSide.FLAT
+            now = self._clock.timestamp_ns()
+
+            report = PositionStatusReport(
+                account_id=self.account_id,
+                instrument_id=instrument_id,
+                position_side=position_side,
+                quantity=Quantity.from_raw(usdce_balance.raw, precision=USDC_POS.precision),
+                report_id=UUID4(),
+                ts_last=now,
+                ts_init=now,
+            )
+            reports.append(report)
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
@@ -735,14 +853,14 @@ class PolymarketExecutionClient(LiveExecutionClient):
         # self._log.info(str(json.dumps(msgspec.json.decode(raw), indent=4)), color=LogColor.MAGENTA)
         try:
             ws_message = self._decoder_user_msg.decode(raw)
-
-            if isinstance(ws_message, PolymarketUserOrder):
-                self._handle_ws_order_msg(ws_message, wait_for_ack=True)
-            elif isinstance(ws_message, PolymarketUserTrade):
-                self._add_trade_to_cache(ws_message, raw)
-                self._handle_ws_trade_msg(ws_message, wait_for_ack=True)
-            else:
-                self._log.error(f"Unrecognized websocket message {ws_message}")
+            for msg in ws_message:
+                if isinstance(msg, PolymarketUserOrder):
+                    self._handle_ws_order_msg(msg, wait_for_ack=True)
+                elif isinstance(msg, PolymarketUserTrade):
+                    self._add_trade_to_cache(msg, raw)
+                    self._handle_ws_trade_msg(msg, wait_for_ack=True)
+                else:
+                    self._log.error(f"Unrecognized websocket message {msg}")
         except Exception as e:
             self._log.error(f"Error handling websocket message: {e} {raw.decode()}")
 

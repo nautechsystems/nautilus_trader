@@ -46,6 +46,7 @@ mod serial_tests {
     async fn test_cache_instruments() {
         let mut database = get_pg_cache_database().await.unwrap();
         let mut cache = get_cache(Some(Box::new(get_pg_cache_database().await.unwrap())));
+
         let eth = Currency::new("ETH", 2, 0, "ETH", CurrencyType::Crypto);
         let usdt = Currency::new("USDT", 2, 0, "USDT", CurrencyType::Crypto);
         let crypto_perpetual = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
@@ -70,6 +71,8 @@ mod serial_tests {
         assert_eq!(cached_instrument_ids, vec![&crypto_perpetual.id()]);
         let target_instrument = cache.instrument(&crypto_perpetual.id());
         assert_eq!(target_instrument.unwrap(), &crypto_perpetual);
+
+        database.flush().unwrap();
         database.close().unwrap();
     }
 
@@ -77,6 +80,7 @@ mod serial_tests {
     async fn test_cache_orders() {
         let mut database = get_pg_cache_database().await.unwrap();
         let mut cache = get_cache(Some(Box::new(get_pg_cache_database().await.unwrap())));
+
         let instrument = currency_pair_ethusdt();
         let market_order = OrderTestBuilder::new(OrderType::Market)
             .instrument_id(instrument.id())
@@ -111,6 +115,8 @@ mod serial_tests {
         assert_eq!(cached_order_ids.len(), 1);
         let target_order = cache.order(&market_order.client_order_id());
         assert_eq!(target_order.unwrap(), &market_order);
+
+        database.flush().unwrap();
         database.close().unwrap();
     }
 
@@ -118,6 +124,7 @@ mod serial_tests {
     async fn test_cache_accounts() {
         let mut database = get_pg_cache_database().await.unwrap();
         let mut cache = get_cache(Some(Box::new(get_pg_cache_database().await.unwrap())));
+
         let account = AccountAny::default();
         let last_event = account.last_event().unwrap();
         if last_event.base_currency.is_some() {
@@ -142,6 +149,8 @@ mod serial_tests {
         assert_eq!(cached_accounts.len(), 1);
         let target_account_for_venue = cache.account_for_venue(&account.id().get_issuer());
         assert_eq!(*target_account_for_venue.unwrap(), account);
+
+        database.flush().unwrap();
         database.close().unwrap();
     }
 }

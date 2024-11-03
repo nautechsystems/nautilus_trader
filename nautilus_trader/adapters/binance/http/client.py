@@ -136,7 +136,7 @@ class BinanceHttpClient:
     def _get_sign(self, data: str) -> str:
         match self._key_type:
             case BinanceKeyType.HMAC:
-                return nautilus_pyo3.hmac_sign(self._secret, data)
+                return nautilus_pyo3.hmac_signature(self._secret, data)
             case BinanceKeyType.RSA:
                 if not self._rsa_private_key:
                     raise ValueError("`rsa_private_key` was None")

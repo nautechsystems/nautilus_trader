@@ -134,7 +134,7 @@ fn bytes_to_gib(b: u64) -> f64 {
 
 #[cfg(feature = "python")]
 fn python_package_version(package: &str) -> String {
-    use crate::python::versioning::get_python_package_version;
+    use nautilus_core::python::version::get_python_package_version;
 
     get_python_package_version(package)
 }
@@ -146,7 +146,7 @@ fn python_package_version(_package: &str) -> &str {
 
 #[cfg(feature = "python")]
 fn python_version() -> String {
-    use crate::python::versioning::get_python_version;
+    use nautilus_core::python::version::get_python_version;
 
     get_python_version()
 }

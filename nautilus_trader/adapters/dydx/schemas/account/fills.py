@@ -62,6 +62,7 @@ class DYDXFillResponse(msgspec.Struct, forbid_unknown_fields=True):
     subaccountNumber: int
     orderId: str | None = None
     clientMetadata: str | None = None
+    affiliateRevShare: str | None = None
 
     def parse_to_fill_report(
         self,
