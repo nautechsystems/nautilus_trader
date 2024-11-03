@@ -487,7 +487,9 @@ class DYDXExecutionClient(LiveExecutionClient):
             address=self._wallet_address,
             subaccount_number=self._subaccount,
             symbol=symbol,
-            order_status=[DYDXOrderStatus.OPEN] if open_only else None,
+            order_status=(
+                [DYDXOrderStatus.OPEN, DYDXOrderStatus.BEST_EFFORT_OPENED] if open_only else None
+            ),
         )
 
         if dydx_orders is not None:
@@ -626,7 +628,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         dydx_positions = await self._http_account.get_perpetual_positions(
             address=self._wallet_address,
             subaccount_number=self._subaccount,
-            status=DYDXPerpetualPositionStatus.OPEN,
+            status=[DYDXPerpetualPositionStatus.OPEN],
         )
 
         if dydx_positions is not None:
