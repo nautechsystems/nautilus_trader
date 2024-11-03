@@ -23,7 +23,7 @@ use pyo3::{
     basic::CompareOp,
     pymethods,
     types::{PyAnyMethods, PyDict, PyList},
-    IntoPy, Py, PyAny, PyObject, PyResult, Python,
+    Bound, IntoPy, Py, PyAny, PyObject, PyResult, Python,
 };
 use rust_decimal::Decimal;
 use ustr::Ustr;
@@ -405,8 +405,8 @@ impl MarketOrder {
 
     #[staticmethod]
     #[pyo3(name = "from_dict")]
-    fn py_from_dict(py: Python<'_>, values: Py<PyDict>) -> PyResult<Self> {
-        let dict = values.bind(py);
+    fn py_from_dict(values: &Bound<'_, PyDict>) -> PyResult<Self> {
+        let dict = values.as_ref();
         let trader_id = TraderId::from(dict.get_item("trader_id")?.extract::<&str>()?);
         let strategy_id = StrategyId::from(dict.get_item("strategy_id")?.extract::<&str>()?);
         let instrument_id = InstrumentId::from(dict.get_item("instrument_id")?.extract::<&str>()?);
