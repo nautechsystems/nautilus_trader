@@ -1,3 +1,21 @@
+# NautilusTrader 1.206.0 Beta
+
+Released on TBD (UTC).
+
+### Enhancements
+None
+
+### Internal Improvements
+None
+
+### Breaking Changes
+None
+
+### Fixes
+- Fixed reconcile open orders and account websocket message for dYdX (#2039), thanks @davidsblom
+
+---
+
 # NautilusTrader 1.205.0 Beta
 
 Released on 3rd November 2024 (UTC).
@@ -42,7 +60,7 @@ Released on 3rd November 2024 (UTC).
 - Fixed catalog query mem leak test (#2031), thanks @Pushkarm029
 - Fixed `OrderInitialized.to_dict()` `tags` value type to `list[str]` (was a concatenated `str`)
 - Fixed `OrderInitialized.to_dict()` `linked_order_ids` value type to `list[str]` (was a concatenated `str`)
-- Fix Betfair clients shutdown (#2037), thanks @limx0
+- Fixed Betfair clients shutdown (#2037), thanks @limx0
 
 ---
 
