@@ -264,7 +264,7 @@ cdef class Portfolio(PortfolioFacade):
                 initialized = False
                 break
 
-            if account.type == AccountType.CASH:
+            if account.type != AccountType.MARGIN:
                 continue
 
             instrument = self._cache.instrument(instrument_id)
