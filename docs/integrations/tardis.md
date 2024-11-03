@@ -70,6 +70,16 @@ This includes the following:
 | [ticks](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix) - number of ticks | `TICK`                      |
 | [vol](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix) - volume size       | `VOLUME`                    |
 
+## Environment variables
+
+The following environment variables are used by Tardis and NautilusTrader.
+
+- `TM_API_KEY`: API key for the Tardis Machine.
+- `TARDIS_API_KEY`: API key for NautilusTrader Tardis clients.
+- `TARDIS_WS_URL` (optional): WebSocket URL for the `TardisMachineClient` in NautilusTrader.
+- `TARDIS_BASE_URL` (optional): Base URL for the `TardisHttpClient` in NautilusTrader.
+- `NAUTILUS_CATALOG_PATH` (optional): Root directory for writing replay data in the Nautilus catalog.
+
 ## Running Tardis Machine historical replays
 
 The [Tardis Machine Server](https://docs.tardis.dev/api/tardis-machine) is a locally runnable server
@@ -81,11 +91,11 @@ performance is consistent whether run from Python or Rust, letting you choose ba
 
 The end-to-end `run_tardis_machine_replay` data pipeline function utilizes a specified [configuration](#configuration) to execute the following steps:
 
-- (1) Connect to the Tardis Machine server.
-- (2) Request and parse all necessary instrument definitions from the [Tardis instruments metadata](https://docs.tardis.dev/api/instruments-metadata-api) HTTP API.
-- (3) Stream all requested instruments and data types for the specified time ranges from the Tardis Machine server.
-- (4) For each instrument, data type and date (UTC), generate a `.parquet` file in the Nautilus format.
-- (5) Disconnect from the Tardis Marchine server, and terminate the program.
+- Connect to the Tardis Machine server.
+- Request and parse all necessary instrument definitions from the [Tardis instruments metadata](https://docs.tardis.dev/api/instruments-metadata-api) HTTP API.
+- Stream all requested instruments and data types for the specified time ranges from the Tardis Machine server.
+- For each instrument, data type and date (UTC), generate a `.parquet` file in the Nautilus format.
+- Disconnect from the Tardis Marchine server, and terminate the program.
 
 :::note
 You can request data for the first day of each month without an API key. For all other dates, a Tardis Machine API key is required.
@@ -96,16 +106,6 @@ Ensure that the `NAUTILUS_CATALOG_PATH` environment variable is set to the root 
 Parquet files will then be organized under `/catalog/data/` in the expected subdirectories corresponding to data type and instrument.
 
 If no `output_path` is specified in the configuration file and the `NAUTILUS_CATALOG_PATH` environment variable is unset, the system will default to the current working directory.
-
-### Environment variables
-
-The following environment variables are used by Tardis and NautilusTrader.
-
-- `TM_API_KEY`: API key for the Tardis Machine.
-- `TARDIS_API_KEY`: API key for NautilusTrader Tardis clients.
-- `TARDIS_WS_URL` (optional): WebSocket URL for the `TardisMachineClient` in NautilusTrader.
-- `TARDIS_BASE_URL` (optional): Base URL for the `TardisHttpClient` in NautilusTrader.
-- `NAUTILUS_CATALOG_PATH` (optional): Root directory for writing replay data in the Nautilus catalog.
 
 ### Procedure
 
@@ -220,7 +220,8 @@ Loading mixed-instrument CSV files is challenging due to precision requirements 
 
 ### Loading CSV data in Python
 
-When loading Tardis-format CSV data in Python, you can optionally specify the instrument ID but must specify both the price precision, and size precision.
+You can load Tardis-format CSV data in Python using the `TardisCSVDataLoader`.
+When loading data, you can optionally specify the instrument ID but must specify both the price precision, and size precision.
 Providing the instrument ID improves loading performance, while specifying the precisions is required, as they cannot be inferred from the text data alone.
 
 To load the data, create a script similar to the following:
@@ -245,7 +246,8 @@ deltas = loader.load_deltas(filepath, limit)
 
 ### Loading CSV data in Rust
 
-When loading Tardis-format CSV data in Rust, you can optionally specify the instrument ID but must specify both the price precision and size precision.
+You can load Tardis-format CSV data in Rust using the loading functions found [here](https://github.com/nautechsystems/nautilus_trader/blob/develop/nautilus_core/adapters/src/tardis/csv/mod.rs).
+When loading data, you can optionally specify the instrument ID but must specify both the price precision and size precision.
 Providing the instrument ID improves loading performance, while specifying the precisions is required, as they cannot be inferred from the text data alone.
 
 For a complete example, see the [example binary here](https://github.com/nautechsystems/nautilus_trader/blob/develop/nautilus_core/adapters/src/tardis/bin/example_csv.rs).
@@ -288,8 +290,8 @@ This client interacts with the [Tardis instruments metadata API](https://docs.ta
 
 The `TardisHttpClient` constructor accepts optional parameters for `api_key`, `base_url`, and `timeout_secs` (default is 60 seconds).
 
-The client provides methods to retrieve either a specific instrument or all instruments available on a particular exchange.
-Ensure that you use Tardis’s lower-kebab casing when referring to a [Tardis-supported exchange](https://api.tardis.dev/v1/exchanges).
+The client provides methods to retrieve either a specific `instrument`, or all `instruments` available on a particular exchange.
+Ensure that you use Tardis’s lower-kebab casing convention when referring to a [Tardis-supported exchange](https://api.tardis.dev/v1/exchanges).
 
 :::note
 A Tardis API key is required to access the instruments metadata API.
