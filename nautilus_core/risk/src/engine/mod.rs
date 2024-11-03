@@ -44,7 +44,9 @@ use nautilus_model::{
 };
 use rust_decimal::{prelude::ToPrimitive, Decimal};
 use ustr::Ustr;
+
 pub mod config;
+pub mod tests;
 
 pub struct RiskEngine<C>
 where
@@ -54,10 +56,10 @@ where
     cache: Rc<RefCell<Cache>>,
     msgbus: Rc<RefCell<MessageBus>>,
     // Counters
-    command_count: u64,
-    event_count: u64,
-    order_submit_throttler: Throttler<SubmitOrder, Box<dyn Fn(SubmitOrder)>>,
-    order_modify_throttler: Throttler<ModifyOrder, Box<dyn Fn(ModifyOrder)>>,
+    // command_count: u64,
+    // event_count: u64,
+    pub order_submit_throttler: Throttler<SubmitOrder, Box<dyn Fn(SubmitOrder)>>,
+    pub order_modify_throttler: Throttler<ModifyOrder, Box<dyn Fn(ModifyOrder)>>,
     max_notional_per_order: HashMap<InstrumentId, Decimal>,
     trading_state: TradingState,
     config: RiskEngineConfig,
@@ -65,8 +67,57 @@ where
 
 impl<C> RiskEngine<C>
 where
-    C: Clock,
+    C: Clock + 'static + Clone, // TODO: Fix this
 {
+    // pub fn new(
+    //     config: RiskEngineConfig,
+    //     // portfolio: PortfolioFacade TODO: fix after portfolio implementation
+    //     clock: C,
+    //     cache: Cache,
+    //     msgbus: MessageBus,
+    // ) -> Self {
+    //     let submit_empty: Box<dyn Fn(SubmitOrder) + 'static> = Box::new(|_: SubmitOrder| {});
+    //     let modify_empty: Box<dyn Fn(ModifyOrder) + 'static> = Box::new(|_: ModifyOrder| {});
+
+    //     let order_submit_throttler = Throttler::new(
+    //         config.max_order_submit.clone(),
+    //         Rc::new(RefCell::new(clock.clone())),
+    //         "ORDER_SUBMIT_THROTTLER".to_string(),
+    //         submit_empty,
+    //         None, // TODO: Fix this
+    //     );
+    //     let order_modify_throttler = Throttler::new(
+    //         config.max_order_modify.clone(),
+    //         Rc::new(RefCell::new(clock.clone())),
+    //         "ORDER_MODIFY_THROTTLER".to_string(),
+    //         modify_empty,
+    //         None, // TODO: Fix this
+    //     );
+
+    //     let ss = Throttler::new(
+    //         config.max_order_modify.clone(),
+    //         Rc::new(RefCell::new(clock.clone())),
+    //         "ORDER_MODIFY_THROTTLER".to_string(),
+    //         modify_empty,
+    //         None, // TODO: Fix this
+    //     );
+
+    //     let mut risk_engine = Self {
+    //         clock,
+    //         cache: Rc::new(RefCell::new(cache)),
+    //         msgbus: Rc::new(RefCell::new(msgbus)),
+    //         order_submit_throttler,
+    //         order_modify_throttler,
+    //         max_notional_per_order: HashMap::new(),
+    //         trading_state: TradingState::Active,
+    //         config,
+    //     };
+
+    //     risk_engine.order_modify_throttler = ss;
+
+    //     risk_engine
+    // }
+
     // -- COMMANDS --------------------------------------------------------------------------------
 
     pub fn execute(&mut self, command: TradingCommand) {
@@ -131,7 +182,7 @@ where
             TradingCommand::SubmitOrderList(submit_order_list) => {
                 self.handle_submit_order_list(submit_order_list);
             }
-            // TradingCommand::ModifyOrder(modify_order) => self.handle_modify_order(modify_order),
+            TradingCommand::ModifyOrder(modify_order) => self.handle_modify_order(modify_order),
             _ => {
                 log::error!("Cannot handle command: {command}");
             }
@@ -153,14 +204,14 @@ where
                             TradingCommand::SubmitOrder(command),
                             &format!("Reduce only order would increase position {position_id}"),
                         );
-                        return;
+                        return; // Denied
                     }
                 } else {
                     self.deny_command(
                         TradingCommand::SubmitOrder(command),
                         &format!("Position {position_id} not found for reduce-only order"),
                     );
-                    return;
+                    return; // Denied
                 };
             }
         }
@@ -244,9 +295,25 @@ where
             return;
         };
 
-        // if order.is_closed() {
-        // } else if order.status() == OrderStatus::PendingCancel {
-        // }
+        if order.is_closed() {
+            self.reject_modify_order(
+                order.clone(),
+                &format!(
+                    "Order with command.client_order_id: {} already closed",
+                    command.client_order_id
+                ),
+            );
+            return;
+        } else if order.status() == OrderStatus::PendingCancel {
+            self.reject_modify_order(
+                order.clone(),
+                &format!(
+                    "Order with command.client_order_id: {} is already pending cancel",
+                    command.client_order_id
+                ),
+            );
+            return;
+        }
 
         // Get instrument for orders
         let instrument = if let Some(instrument) = burrowed_cache.instrument(&order.instrument_id())
@@ -658,26 +725,22 @@ where
         }
 
         // Check maximum quantity
-        // if let Some(max_quantity) = instrument.max_quantity() {
-        //     if quantity_val > max_quantity {
-        //         return Some(format!(
-        //             "quantity {} invalid (> maximum trade size of {})",
-        //             quantity_val,
-        //             max_quantity
-        //         ));
-        //     }
-        // }
+        if let Some(max_quantity) = instrument.max_quantity() {
+            if quantity_val > max_quantity {
+                return Some(format!(
+                    "quantity {quantity_val} invalid (> maximum trade size of {max_quantity})"
+                ));
+            }
+        }
 
         // // Check minimum quantity
-        // if let Some(min_quantity) = instrument.min_quantity() {
-        //     if quantity_val < min_quantity {
-        //         return Some(format!(
-        //             "quantity {} invalid (< minimum trade size of {})",
-        //             quantity_val,
-        //             min_quantity
-        //         ));
-        //     }
-        // }
+        if let Some(min_quantity) = instrument.min_quantity() {
+            if quantity_val < min_quantity {
+                return Some(format!(
+                    "quantity {quantity_val} invalid (< minimum trade size of {min_quantity})"
+                ));
+            }
+        }
 
         None
     }

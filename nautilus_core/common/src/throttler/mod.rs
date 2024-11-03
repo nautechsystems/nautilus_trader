@@ -24,6 +24,7 @@ use inner::InnerThrottler;
 use crate::clock::Clock;
 
 /// Represents a throttling limit per interval.
+#[derive(Debug, Clone)]
 pub struct RateLimit {
     pub limit: usize,
     pub interval_ns: u64,
