@@ -19,6 +19,10 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+pub mod config;
+#[cfg(test)]
+mod tests;
+
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
@@ -47,8 +51,6 @@ use crate::{
         TradingCommand,
     },
 };
-
-pub mod config;
 
 pub struct ExecutionEngine<C>
 where

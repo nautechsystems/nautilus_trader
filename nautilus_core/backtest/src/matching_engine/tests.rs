@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Private tests module for `OrderMatchingEngine`.
+
 use std::{cell::RefCell, rc::Rc, sync::LazyLock};
 
 use chrono::{TimeZone, Utc};
