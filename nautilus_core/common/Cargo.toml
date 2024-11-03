@@ -49,4 +49,4 @@ extension-module = [
     "nautilus-model/extension-module",
 ]
 ffi = ["cbindgen", "nautilus-core/ffi", "nautilus-model/ffi"]
-python = ["pyo3", "pyo3/py-clone", "pyo3-async-runtimes", "nautilus-core/python", "nautilus-model/python"]
+python = ["pyo3", "pyo3-async-runtimes", "nautilus-core/python", "nautilus-model/python"]

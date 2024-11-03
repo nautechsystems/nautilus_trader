@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::atomic::Ordering;
+use std::sync::{atomic::Ordering, Arc};
 
 use futures::SinkExt;
 use futures_util::{stream, StreamExt};
@@ -26,7 +26,7 @@ use crate::{
     websocket::{WebSocketClient, WebSocketConfig},
 };
 
-// Python exception class for websocket errors.
+// Python exception class for websocket errors
 create_exception!(network, WebSocketClientError, PyException);
 
 fn to_websocket_pyerr(e: tokio_tungstenite::tungstenite::Error) -> PyErr {
@@ -37,7 +37,7 @@ fn to_websocket_pyerr(e: tokio_tungstenite::tungstenite::Error) -> PyErr {
 impl WebSocketConfig {
     #[new]
     #[pyo3(signature = (url, handler, headers, heartbeat=None, heartbeat_msg=None, ping_handler=None))]
-    const fn py_new(
+    fn py_new(
         url: String,
         handler: PyObject,
         headers: Vec<(String, String)>,
@@ -47,11 +47,11 @@ impl WebSocketConfig {
     ) -> Self {
         Self {
             url,
-            handler,
+            handler: Arc::new(handler),
             headers,
             heartbeat,
             heartbeat_msg,
-            ping_handler,
+            ping_handler: ping_handler.map(Arc::new),
         }
     }
 }
@@ -62,7 +62,7 @@ impl WebSocketClient {
     ///
     /// # Safety
     ///
-    /// - Throws an Exception if it is unable to make websocket connection
+    /// - Throws an Exception if it is unable to make websocket connection.
     #[staticmethod]
     #[pyo3(name = "connect", signature = (config, post_connection= None, post_reconnection= None, post_disconnection= None, keyed_quotas = Vec::new(),default_quota = None))]
     fn py_connect(
@@ -95,8 +95,8 @@ impl WebSocketClient {
     ///
     /// # Safety
     ///
-    /// - The client should not be used after closing it
-    /// - Any auto-reconnect job should be aborted before closing the client
+    /// - The client should not be used after closing it.
+    /// - Any auto-reconnect job should be aborted before closing the client.
     #[pyo3(name = "disconnect")]
     fn py_disconnect<'py>(slf: PyRef<'_, Self>, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let disconnect_mode = slf.disconnect_mode.clone();

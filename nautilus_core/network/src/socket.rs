@@ -57,7 +57,7 @@ pub struct SocketConfig {
     /// The sequence of bytes which separates lines.
     pub suffix: Vec<u8>,
     /// The Python function to handle incoming messages.
-    pub handler: PyObject,
+    pub handler: Arc<PyObject>,
     /// The optional heartbeat with period and beat message.
     pub heartbeat: Option<(u64, Vec<u8>)>,
 }

@@ -42,5 +42,5 @@ extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",
 ]
-python = ["pyo3", "pyo3/py-clone", "pyo3-async-runtimes"]
+python = ["pyo3", "pyo3-async-runtimes"]
 std = []

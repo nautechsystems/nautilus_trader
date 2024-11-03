@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::str::FromStr;
+use std::{str::FromStr, sync::Arc};
 
 use nautilus_core::{nanos::UnixNanos, python::to_pyvalue_err, uuid::UUID4};
 use pyo3::{
@@ -41,7 +41,7 @@ pub struct TimeEventHandler_Py {
     /// The time event.
     pub event: TimeEvent,
     /// The callable python object.
-    pub callback: PyObject,
+    pub callback: Arc<PyObject>,
 }
 
 impl From<TimeEventHandlerV2> for TimeEventHandler_Py {
