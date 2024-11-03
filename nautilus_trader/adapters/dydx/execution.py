@@ -628,7 +628,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         dydx_positions = await self._http_account.get_perpetual_positions(
             address=self._wallet_address,
             subaccount_number=self._subaccount,
-            status=DYDXPerpetualPositionStatus.OPEN,
+            status=[DYDXPerpetualPositionStatus.OPEN],
         )
 
         if dydx_positions is not None:
