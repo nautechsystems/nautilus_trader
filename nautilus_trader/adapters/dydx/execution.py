@@ -384,7 +384,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         """
         Create an order status report for a specific order.
         """
-        self._log.info("Requesting OrderStatusReport...")
+        self._log.debug("Requesting OrderStatusReport...")
         PyCondition.is_false(
             client_order_id is None and venue_order_id is None,
             "both `client_order_id` and `venue_order_id` were `None`",
@@ -473,7 +473,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         """
         Create an order status report.
         """
-        self._log.info("Requesting OrderStatusReports...")
+        self._log.debug("Requesting OrderStatusReports...")
         reports: list[OrderStatusReport] = []
 
         symbol = None
@@ -487,6 +487,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             address=self._wallet_address,
             subaccount_number=self._subaccount,
             symbol=symbol,
+            order_status=[DYDXOrderStatus.OPEN] if open_only else None,
         )
 
         if dydx_orders is not None:
@@ -548,7 +549,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         """
         Create an order fill report.
         """
-        self._log.info("Requesting FillReports...")
+        self._log.debug("Requesting FillReports...")
         reports: list[FillReport] = []
 
         symbol = None
@@ -619,7 +620,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         """
         Generate position status reports.
         """
-        self._log.info("Requesting PositionStatusReports...")
+        self._log.debug("Requesting PositionStatusReports...")
         reports: list[PositionStatusReport] = []
 
         dydx_positions = await self._http_account.get_perpetual_positions(
