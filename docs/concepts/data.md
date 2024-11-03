@@ -108,6 +108,7 @@ Bar types can also be classified as either *standard* or *composite*:
 ### Defining standard bars
 
 You can define bar types from strings using the following convention:
+
 `{instrument_id}-{step}-{aggregation}-{price_type}-{INTERNAL | EXTERNAL}`
 
 For example, to define a `BarType` for AAPL trades (last price) on Nasdaq (XNAS) using a 5-minute interval, aggregated from trades locally by Nautilus:
@@ -119,6 +120,7 @@ bar_type = BarType.from_str("AAPL.XNAS-5-MINUTE-LAST-INTERNAL")
 
 Composite bars are derived by aggregating higher-granularity bars into the desired bar type.
 To define a composite bar, use a similar convention to standard bars:
+
 `{instrument_id}-{step}-{aggregation}-{price_type}-INTERNAL@{step}-{aggregation}-{INTERNAL | EXTERNAL}`
 
 **Notes**:
