@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides a `SimulatedExchange` venue for backtesting on historical data.
+
 // Under development
 #![allow(dead_code)]
 #![allow(unused_variables)]
