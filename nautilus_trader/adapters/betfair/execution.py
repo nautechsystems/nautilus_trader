@@ -156,7 +156,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         self._strategy_hashes: dict[str, str] = {}
         self._set_account_id(AccountId(f"{BETFAIR_VENUE}-001"))
         AccountFactory.register_calculated_account(BETFAIR_VENUE.value)
-
+        self._is_closing = False
         self._reconnect_in_progress = False
 
     @property
@@ -185,6 +185,8 @@ class BetfairExecutionClient(LiveExecutionClient):
         self.account_state_task = self.create_task(self.account_state_updates())
 
     async def _disconnect(self) -> None:
+        self._is_closing = True
+
         # Shutdown account updates
         if self.account_state_task:
             self._log.debug("Canceling task 'account_state'")
@@ -231,7 +233,7 @@ class BetfairExecutionClient(LiveExecutionClient):
             self._send_account_state(account_state)
             self._log.debug("Sent account state")
 
-        while True:
+        while not self._is_closing:
             try:
                 await update_account_state()
                 await asyncio.sleep(self.request_account_state_period)
