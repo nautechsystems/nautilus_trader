@@ -1,6 +1,6 @@
 # NautilusTrader 1.205.0 Beta
 
-Released on TBD (UTC).
+Released on 3rd November 2024 (UTC).
 
 ### Enhancements
 - Added Tardis Machine and HTTP API integration in Python and Rust
@@ -42,6 +42,7 @@ Released on TBD (UTC).
 - Fixed catalog query mem leak test (#2031), thanks @Pushkarm029
 - Fixed `OrderInitialized.to_dict()` `tags` value type to `list[str]` (was a concatenated `str`)
 - Fixed `OrderInitialized.to_dict()` `linked_order_ids` value type to `list[str]` (was a concatenated `str`)
+- Fix Betfair clients shutdown (#2037), thanks @limx0
 
 ---
 
