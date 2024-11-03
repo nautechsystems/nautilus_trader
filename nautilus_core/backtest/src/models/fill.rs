@@ -16,8 +16,7 @@
 use std::fmt::Display;
 
 use nautilus_core::correctness::{check_in_range_inclusive_f64, FAILED};
-use rand::{Rng, SeedableRng};
-use rand_chacha::ChaChaRng;
+use rand::{rngs::StdRng, Rng, SeedableRng};
 
 #[derive(Debug, Clone)]
 pub struct FillModel {
@@ -28,7 +27,7 @@ pub struct FillModel {
     /// The probability of order fill prices slipping by one tick.
     prob_slippage: f64,
     /// Random number generator
-    rng: ChaChaRng,
+    rng: StdRng,
 }
 
 impl FillModel {
@@ -44,8 +43,8 @@ impl FillModel {
             .expect(FAILED);
         check_in_range_inclusive_f64(prob_slippage, 0.0, 1.0, "prob_slippage").expect(FAILED);
         let rng = match random_seed {
-            Some(seed) => ChaChaRng::seed_from_u64(seed),
-            None => ChaChaRng::from_entropy(),
+            Some(seed) => StdRng::seed_from_u64(seed),
+            None => StdRng::from_entropy(),
         };
         Ok(Self {
             prob_fill_on_limit,

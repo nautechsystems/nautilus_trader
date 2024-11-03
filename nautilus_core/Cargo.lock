@@ -2778,7 +2778,6 @@ dependencies = [
  "nautilus-model",
  "pyo3",
  "rand",
- "rand_chacha",
  "rstest",
  "rust_decimal",
  "tempfile",

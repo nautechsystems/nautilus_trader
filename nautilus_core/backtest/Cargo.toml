@@ -24,7 +24,6 @@ ustr = { workspace = true }
 rust_decimal = { workspace = true }
 rand = { workspace = true }
 uuid = { workspace = true }
-rand_chacha = { version = "0.3.1"}
 
 [dev-dependencies]
 tempfile = { workspace = true }
