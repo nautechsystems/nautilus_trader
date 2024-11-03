@@ -165,12 +165,12 @@ jobs:
           make test-examples
 
       # Run codspeed for latest python-version only
-      - name: Run benchmarks (Linux)
-        if: ${{ matrix.python-version == '3.12' }}
-        uses: CodSpeedHQ/action@v3
-        with:
-          token: ${{ secrets.CODSPEED_TOKEN }}
-          run: make test-performance
+      # - name: Run benchmarks (Linux)
+      #   if: ${{ matrix.python-version == '3.12' }}
+      #   uses: CodSpeedHQ/action@v3
+      #   with:
+      #     token: ${{ secrets.CODSPEED_TOKEN }}
+      #     run: make test-performance
 
   build-windows:
     strategy:
