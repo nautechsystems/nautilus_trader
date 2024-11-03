@@ -268,6 +268,36 @@ impl InstrumentAny {
         }
     }
 
+    pub fn max_quantity(&self) -> Option<Quantity> {
+        match self {
+            Self::Betting(inst) => inst.max_quantity(),
+            Self::BinaryOption(inst) => inst.max_quantity(),
+            Self::CryptoFuture(inst) => inst.max_quantity(),
+            Self::CryptoPerpetual(inst) => inst.max_quantity(),
+            Self::CurrencyPair(inst) => inst.max_quantity(),
+            Self::Equity(inst) => inst.max_quantity(),
+            Self::FuturesContract(inst) => inst.max_quantity(),
+            Self::FuturesSpread(inst) => inst.max_quantity(),
+            Self::OptionsContract(inst) => inst.max_quantity(),
+            Self::OptionsSpread(inst) => inst.max_quantity(),
+        }
+    }
+
+    pub fn min_quantity(&self) -> Option<Quantity> {
+        match self {
+            Self::Betting(inst) => inst.min_quantity(),
+            Self::BinaryOption(inst) => inst.min_quantity(),
+            Self::CryptoFuture(inst) => inst.min_quantity(),
+            Self::CryptoPerpetual(inst) => inst.min_quantity(),
+            Self::CurrencyPair(inst) => inst.min_quantity(),
+            Self::Equity(inst) => inst.min_quantity(),
+            Self::FuturesContract(inst) => inst.min_quantity(),
+            Self::FuturesSpread(inst) => inst.min_quantity(),
+            Self::OptionsContract(inst) => inst.min_quantity(),
+            Self::OptionsSpread(inst) => inst.min_quantity(),
+        }
+    }
+
     pub fn make_price(&self, value: f64) -> Price {
         match self {
             Self::Betting(inst) => inst.make_price(value),
