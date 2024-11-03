@@ -125,6 +125,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._cmd_queue_task: asyncio.Task | None = None
         self._evt_queue_task: asyncio.Task | None = None
         self._inflight_check_task: asyncio.Task | None = None
+        self._open_check_task: asyncio.Task | None = None
         self._kill: bool = False
 
         # Settings
@@ -135,6 +136,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self.generate_missing_orders: bool = config.generate_missing_orders
         self.inflight_check_interval_ms: int = config.inflight_check_interval_ms
         self.inflight_check_threshold_ms: int = config.inflight_check_threshold_ms
+        self.open_check_interval_secs: float | None = config.open_check_interval_secs
         self._inflight_check_threshold_ns: int = millis_to_nanos(self.inflight_check_threshold_ms)
 
         self._log.info(f"{config.reconciliation=}", LogColor.BLUE)
@@ -144,6 +146,7 @@ class LiveExecutionEngine(ExecutionEngine):
         self._log.info(f"{config.inflight_check_interval_ms=}", LogColor.BLUE)
         self._log.info(f"{config.inflight_check_threshold_ms=}", LogColor.BLUE)
         self._log.info(f"{config.inflight_check_retries=}", LogColor.BLUE)
+        self._log.info(f"{config.open_check_interval_secs=}", LogColor.BLUE)
 
         # Register endpoints
         self._msgbus.register(endpoint="ExecEngine.reconcile_report", handler=self.reconcile_report)
@@ -222,6 +225,17 @@ class LiveExecutionEngine(ExecutionEngine):
 
         """
         return self._inflight_check_task
+
+    def get_open_check_task(self) -> asyncio.Task | None:
+        """
+        Return the open check task for the engine.
+
+        Returns
+        -------
+        asyncio.Task or ``None``
+
+        """
+        return self._open_check_task
 
     def cmd_qsize(self) -> int:
         """
@@ -348,11 +362,22 @@ class LiveExecutionEngine(ExecutionEngine):
                 )
                 self._log.debug(f"Scheduled task '{self._inflight_check_task.get_name()}'")
 
+        if self.open_check_interval_secs and not self._open_check_task:
+            self._open_check_task = self._loop.create_task(
+                self._open_check_loop(self.open_check_interval_secs),
+                name="open_check",
+            )
+
     def _on_stop(self) -> None:
         if self._inflight_check_task:
             self._log.debug(f"Canceling task '{self._inflight_check_task.get_name()}'")
             self._inflight_check_task.cancel()
             self._inflight_check_task = None
+
+        if self._open_check_task:
+            self._log.debug(f"Canceling task '{self._open_check_task.get_name()}'")
+            self._open_check_task.cancel()
+            self._open_check_task = None
 
         if self._kill:
             return  # Avoids enqueuing unnecessary sentinel messages when termination already signaled
@@ -411,7 +436,7 @@ class LiveExecutionEngine(ExecutionEngine):
             self._log.debug("In-flight check loop task canceled")
 
     async def _check_inflight_orders(self) -> None:
-        self._log.debug("Checking in-flight orders status...")
+        self._log.debug("Checking in-flight orders status")
 
         inflight_orders: list[Order] = self._cache.orders_inflight()
         inflight_len = len(inflight_orders)
@@ -436,6 +461,32 @@ class LiveExecutionEngine(ExecutionEngine):
                 )
                 self._execute_command(query)
                 self._inflight_check_retries[order.client_order_id] += 1
+
+    async def _open_check_loop(self, interval_secs: float) -> None:
+        try:
+            while True:
+                await asyncio.sleep(interval_secs)
+                await self._check_open_orders()
+        except asyncio.CancelledError:
+            self._log.debug("Open check loop task canceled")
+
+    async def _check_open_orders(self) -> None:
+        self._log.debug("Checking open orders status")
+
+        open_order_ids: list[ClientOrderId] = self._cache.client_order_ids_open()
+        open_len = len(open_order_ids)
+        self._log.debug(f"Found {open_len} order{'' if open_len == 1 else 's'} open")
+
+        if not open_order_ids:
+            return  # Nothing further to check
+
+        tasks = [c.generate_order_status_reports(open_only=True) for c in self._clients.values()]
+        order_reports_all = await asyncio.gather(*tasks)
+        all_order_reports = [r for reports in order_reports_all for r in reports]
+
+        for report in all_order_reports:
+            if not report.is_open and report.client_order_id in open_order_ids:
+                self._reconcile_order_report(report, trades=[])
 
     # -- RECONCILIATION -------------------------------------------------------------------------------
 

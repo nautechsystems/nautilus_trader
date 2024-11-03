@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 - Added Tardis Machine and HTTP API integration in Python and Rust
+- Added `LiveExecEngineConfig.open_check_interval_secs` config option to actively reconcile open orders with the venue
 - Added aggregation of bars from historical data (#2002), thanks @faysou
 - Added monthly and weekly bar aggregations (#2025), thanks @faysou
 - Added `raise_exception` optional parameter to `TradingNode.run` (#2021), thanks @faysou

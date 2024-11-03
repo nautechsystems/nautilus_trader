@@ -111,7 +111,7 @@ class InteractiveBrokersClientAccountMixin(BaseMixin):
         list[Position] | ``None``
 
         """
-        self._log.debug(f"Requesting Open Positions for {account_id}")
+        self._log.debug(f"Requesting open positions for {account_id}")
         name = "OpenPositions"
         if not (request := self._requests.get(name=name)):
             request = self._requests.add(

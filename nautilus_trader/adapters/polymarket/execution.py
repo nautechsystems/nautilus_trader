@@ -323,7 +323,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         end: pd.Timestamp | None = None,
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
-        self._log.info("Requesting OrderStatusReports...")
+        self._log.debug("Requesting OrderStatusReports...")
         reports: list[OrderStatusReport] = []
 
         if instrument_id is not None:
@@ -529,7 +529,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> list[FillReport]:
-        self._log.info("Requesting FillReports...")
+        self._log.debug("Requesting FillReports...")
         reports: list[FillReport] = []
 
         params = TradeParams(maker_address=self._wallet_address)
@@ -605,7 +605,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             instrument_ids = [inst.id for inst in self._cache.instruments(venue=POLYMARKET_VENUE)]
 
         for instrument_id in instrument_ids:
-            self._log.info(f"Requesting PositionStatusReport for {instrument_id}")
+            self._log.debug(f"Requesting PositionStatusReport for {instrument_id}")
             token_id = get_polymarket_token_id(instrument_id)
             params = BalanceAllowanceParams(
                 asset_type=AssetType.CONDITIONAL,
