@@ -67,6 +67,8 @@ volume information over a specific period, including the opening price, highest 
 and traded volume (or ticks as a volume proxy). These values are generated using an *aggregation method*,
 which groups data based on specific criteria to create the bar.
 
+The implemented aggregation methods are:
+
 | Name               | Description                                                                | Category     |
 |:-------------------|:---------------------------------------------------------------------------|:-------------|
 | `TICK`             | Aggregation of a number of ticks.                                          | Threshold    |
