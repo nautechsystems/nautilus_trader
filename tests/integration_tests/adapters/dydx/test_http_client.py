@@ -16,32 +16,41 @@
 Unit tests for the HTTP client.
 """
 
+from typing import Any
+
+import pytest
+
 from nautilus_trader.adapters.dydx.http.client import DYDXHttpClient
 
 
-def test_payload_urlencode(http_client: DYDXHttpClient) -> None:
+@pytest.mark.parametrize(
+    ("payload", "expected_result"),
+    [
+        (
+            {"returnLatestOrders": True, "subaccountNumber": 0},
+            "returnLatestOrders=true&subaccountNumber=0",
+        ),
+        ({"status": ["BEST_EFFORT_OPENED", "OPEN"]}, "status=BEST_EFFORT_OPENED%2COPEN"),
+        ({"status": ["BEST_EFFORT_OPENED"]}, "status=BEST_EFFORT_OPENED"),
+        ({"limit": 100}, "limit=100"),
+        (
+            {
+                "status": ["BEST_EFFORT_OPENED", "OPEN"],
+                "returnLatestOrders": True,
+                "subaccountNumber": 0,
+            },
+            "status=BEST_EFFORT_OPENED%2COPEN&returnLatestOrders=true&subaccountNumber=0",
+        ),
+    ],
+)
+def test_payload_urlencode(
+    http_client: DYDXHttpClient,
+    payload: dict[str, Any],
+    expected_result: str,
+) -> None:
     """
     Test encoding the payload sent by the client.
     """
-    # Prepare
-    payload = {"returnLatestOrders": True, "subaccountNumber": 0}
-    expected_result = "returnLatestOrders=true&subaccountNumber=0"
-
-    # Act
-    result = http_client._urlencode(payload)
-
-    # Assert
-    assert result == expected_result
-
-
-def test_payload_urlencode_with_list(http_client: DYDXHttpClient) -> None:
-    """
-    Test encoding the payload sent by the client when sending a list.
-    """
-    # Prepare
-    payload = {"status": ["BEST_EFFORT_OPENED", "OPEN"]}
-    expected_result = "status=BEST_EFFORT_OPENED%2COPEN"
-
     # Act
     result = http_client._urlencode(payload)
 
