@@ -16,6 +16,7 @@
 Unit tests for the HTTP client.
 """
 
+from nautilus_trader.adapters.dydx.common.enums import DYDXOrderStatus
 from nautilus_trader.adapters.dydx.http.client import DYDXHttpClient
 
 
@@ -26,6 +27,21 @@ def test_payload_urlencode(http_client: DYDXHttpClient) -> None:
     # Prepare
     payload = {"returnLatestOrders": True, "subaccountNumber": 0}
     expected_result = "returnLatestOrders=true&subaccountNumber=0"
+
+    # Act
+    result = http_client._urlencode(payload)
+
+    # Assert
+    assert result == expected_result
+
+
+def test_payload_urlencode_with_list(http_client: DYDXHttpClient) -> None:
+    """
+    Test encoding the payload sent by the client when sending a list.
+    """
+    # Prepare
+    payload = {"status": [DYDXOrderStatus.BEST_EFFORT_OPENED, DYDXOrderStatus.OPEN]}
+    expected_result = "status=DYDXOrderStatus.BEST_EFFORT_OPENED%2CDYDXOrderStatus.OPEN"
 
     # Act
     result = http_client._urlencode(payload)
