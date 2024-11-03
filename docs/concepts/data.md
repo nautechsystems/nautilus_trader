@@ -86,10 +86,7 @@ which groups data based on specific criteria to create the bar.
 | `WEEK`             | Aggregation of time intervals with week granularity.                       | Time         |
 | `MONTH`            | Aggregation of time intervals with month granularity.                      | Time         |
 
-Bar data can be aggregated either internally or externally:
-
-- `INTERNAL`: The bar is aggregated inside the local Nautilus system boundary.
-- `EXTERNAL`: The bar is aggregated outside the local Nautilus system boundary (typically by a trading venue or data provider).
+### Bar types
 
 NautilusTrader defines a unique *bar type* (`BarType`) based on the following components:
 
@@ -99,6 +96,11 @@ NautilusTrader defines a unique *bar type* (`BarType`) based on the following co
   - `aggregation`: Specifies the method used for data aggregation (see the list above).
   - `price_type`: Indicates the price basis of the bar (e.g., bid, ask, mid, last).
 - **Aggregation Source** (`AggregationSource`): Indicates whether the bar was aggregated internally (within Nautilus) or externally (by a trading venue or data provider).
+
+Bar data can be aggregated either internally or externally:
+
+- `INTERNAL`: The bar is aggregated inside the local Nautilus system boundary.
+- `EXTERNAL`: The bar is aggregated outside the local Nautilus system boundary (typically by a trading venue or data provider).
 
 Bar types can also be classified as either *standard* or *composite*:
 
