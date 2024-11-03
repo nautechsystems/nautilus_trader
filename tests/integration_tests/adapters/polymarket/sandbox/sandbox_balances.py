@@ -16,36 +16,37 @@
 from py_clob_client.client import BalanceAllowanceParams
 from py_clob_client.clob_types import AssetType
 
+from nautilus_trader.adapters.polymarket.common.conversion import usdce_from_units
 from nautilus_trader.adapters.polymarket.factories import get_polymarket_http_client
 
 
 def test_get_allowances() -> None:
     http_client = get_polymarket_http_client()
 
+    # Check USDC wallet balance
     params = BalanceAllowanceParams(
         asset_type=AssetType.COLLATERAL,
     )
-
-    print(f"Updating {params}")
-    response = http_client.update_balance_allowance(params)
-    print(f"Response: {response}")
-
-    print(f"Get {params}")
     response = http_client.get_balance_allowance(params)
-    print(f"Response: {response}")
+    balance_usdc = usdce_from_units(int(response["balance"]))
+    print(f"Wallet: {balance_usdc}")
 
+    # Check Trump 'Yes' position
+    token_id = "21742633143463906290569050155826241533067272736897614950488156847949938836455"
     params = BalanceAllowanceParams(
         asset_type=AssetType.CONDITIONAL,
-        token_id="21742633143463906290569050155826241533067272736897614950488156847949938836455",
+        token_id=token_id,
     )
-    print(f"Updating {params}")
-    response = http_client.update_balance_allowance(params)
-    print(f"Response: {response}")
+    response = http_client.get_balance_allowance(params)
+    balance_usdc = usdce_from_units(int(response["balance"]))
+    print(f"Balance {token_id}: {balance_usdc}")
 
+    # Check Trump 'No' position
+    token_id = "48331043336612883890938759509493159234755048973500640148014422747788308965732"
     params = BalanceAllowanceParams(
         asset_type=AssetType.CONDITIONAL,
-        token_id="21742633143463906290569050155826241533067272736897614950488156847949938836455",
+        token_id=token_id,
     )
-    print(f"Updating {params}")
     response = http_client.get_balance_allowance(params)
-    print(f"Response: {response}")
+    balance_usdc = usdce_from_units(int(response["balance"]))
+    print(f"Balance {token_id}: {balance_usdc}")

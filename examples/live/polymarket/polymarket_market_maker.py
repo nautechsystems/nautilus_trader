@@ -137,6 +137,8 @@ class TOBQuoterConfig(StrategyConfig, frozen=True):
         The instrument ID for the strategy.
     trade_size : Decimal
         The position size per trade.
+    dry_run : bool
+        If the strategy should run without issuing order commands.
     order_id_tag : str
         The unique order ID tag for the strategy. Must be unique
         amongst all running strategies for a particular trader ID.
@@ -145,6 +147,7 @@ class TOBQuoterConfig(StrategyConfig, frozen=True):
 
     instrument_id: InstrumentId
     trade_size: Decimal
+    dry_run: bool = False
 
 
 class TOBQuoter(Strategy):
@@ -166,6 +169,7 @@ class TOBQuoter(Strategy):
         # Configuration
         self.instrument_id = config.instrument_id
         self.trade_size = Decimal(config.trade_size)
+        self.dry_run = config.dry_run
         self.instrument: Instrument | None = None  # Initialized in on_start
 
         # Users order management variables
@@ -279,6 +283,9 @@ class TOBQuoter(Strategy):
         self.log.info(repr(tick), LogColor.CYAN)
 
     def maintain_orders(self, best_bid: Price, best_ask: Price) -> None:
+        if self.dry_run:
+            return
+
         if self.buy_order and (self.buy_order.is_emulated or self.buy_order.is_open):
             # TODO: Optionally cancel-replace
             # self.cancel_order(self.buy_order)
@@ -336,8 +343,11 @@ class TOBQuoter(Strategy):
         """
         Actions to be performed when the strategy is stopped.
         """
+        if self.dry_run:
+            return
+
         self.cancel_all_orders(self.instrument_id)
-        # self.close_all_positions(self.instrument_id, reduce_only=False)
+        self.close_all_positions(self.instrument_id, reduce_only=False)
 
     def on_reset(self) -> None:
         """
@@ -355,6 +365,7 @@ strat_config1 = TOBQuoterConfig(
     instrument_id=instrument_id1,
     external_order_claims=[instrument_id1],
     trade_size=trade_size,
+    dry_run=False,
 )
 # strat_config2 = TOBQuoterConfig(
 #     instrument_id=instrument_id2,
