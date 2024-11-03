@@ -95,11 +95,11 @@ NautilusTrader defines a unique *bar type* (`BarType`) based on the following co
 - **Instrument ID** (`InstrumentId`): Specifies the particular instrument for the bar.
 - **Bar Specification** (`BarSpecification`):
   - `step`: Defines the interval or frequency of each bar.
-  - `aggregation`: Specifies the method used for data aggregation (see the list above).
+  - `aggregation`: Specifies the method used for data aggregation (see the above table).
   - `price_type`: Indicates the price basis of the bar (e.g., bid, ask, mid, last).
 - **Aggregation Source** (`AggregationSource`): Indicates whether the bar was aggregated internally (within Nautilus) or externally (by a trading venue or data provider).
 
-Bar data can be aggregated either internally or externally:
+Bar data aggregation can be either *internal* or *external*:
 
 - `INTERNAL`: The bar is aggregated inside the local Nautilus system boundary.
 - `EXTERNAL`: The bar is aggregated outside the local Nautilus system boundary (typically by a trading venue or data provider).
