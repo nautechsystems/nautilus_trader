@@ -34,6 +34,7 @@ from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MAX_
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_MIN_PRICE
 from nautilus_trader.adapters.polymarket.common.constants import POLYMARKET_VENUE
 from nautilus_trader.adapters.polymarket.common.constants import VALID_POLYMARKET_TIME_IN_FORCE
+from nautilus_trader.adapters.polymarket.common.conversion import usdce_from_units
 from nautilus_trader.adapters.polymarket.common.credentials import PolymarketWebSocketAuth
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketEventType
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketLiquiditySide
@@ -300,8 +301,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             self._http_client.get_balance_allowance,
             params,
         )
-        usdc_raw = int(response["balance"]) * 1_000
-        total = Money.from_raw(usdc_raw, currency=USDC_POS)
+        total = usdce_from_units(int(response["balance"]))
         account_balance = AccountBalance(
             total=total,
             locked=Money.from_raw(0, USDC_POS),
@@ -616,15 +616,15 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 self._http_client.get_balance_allowance,
                 params,
             )
-            usdc_raw = int(response["balance"]) * 1_000
-            position_side = PositionSide.LONG if usdc_raw > 0 else PositionSide.FLAT
+            usdce_balance = usdce_from_units(int(response["balance"]))
+            position_side = PositionSide.LONG if usdce_balance.raw > 0 else PositionSide.FLAT
             now = self._clock.timestamp_ns()
 
             report = PositionStatusReport(
                 account_id=self.account_id,
                 instrument_id=instrument_id,
                 position_side=position_side,
-                quantity=Quantity.from_raw(usdc_raw, precision=USDC_POS.precision),
+                quantity=Quantity.from_raw(usdce_balance.raw, precision=USDC_POS.precision),
                 report_id=UUID4(),
                 ts_last=now,
                 ts_init=now,
