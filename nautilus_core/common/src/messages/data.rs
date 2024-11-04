@@ -101,15 +101,14 @@ impl SubscriptionCommand {
     }
 }
 
-// TODO: Deprecated?
-pub enum DataEngineRequest {
+pub enum DataCommand {
     Request(DataRequest),
-    SubscriptionCommand(SubscriptionCommand),
+    Subscribe(SubscriptionCommand),
 }
 
 // TODO: Refine this to reduce disparity between enum sizes
 #[allow(clippy::large_enum_variant)]
-pub enum DataClientResponse {
+pub enum DataEvent {
     Response(DataResponse),
     Data(Data),
 }
