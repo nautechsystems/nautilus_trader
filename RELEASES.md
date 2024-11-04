@@ -13,6 +13,7 @@ None
 
 ### Fixes
 - Fixed reconcile open orders and account websocket message for dYdX (#2039), thanks @davidsblom
+- Fixed market order `avg_px` for Polymarket trade reports
 
 ---
 
