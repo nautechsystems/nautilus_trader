@@ -501,18 +501,24 @@ impl Clock for LiveClock {
     }
 
     fn get_handler(&self, event: TimeEvent) -> TimeEventHandlerV2 {
-        // Get the callback from either the event-specific callbacks or default callback
-        let callback = self
-            .callbacks
-            .get(&event.name)
-            .cloned()
-            .or_else(|| self.default_callback.clone())
-            .expect(&format!(
-                "Event '{}' should have associated handler",
-                event.name
-            ));
+        #[cfg(not(feature = "clock_v2"))]
+        panic!("Cannot get live clock handler without 'clock_v2' feature");
 
-        TimeEventHandlerV2::new(event, callback)
+        // Get the callback from either the event-specific callbacks or default callback
+        #[cfg(feature = "clock_v2")]
+        {
+            let callback = self
+                .callbacks
+                .get(&event.name)
+                .cloned()
+                .or_else(|| self.default_callback.clone())
+                .expect(&format!(
+                    "Event '{}' should have associated handler",
+                    event.name
+                ));
+
+            TimeEventHandlerV2::new(event, callback)
+        }
     }
 
     fn set_time_alert_ns(

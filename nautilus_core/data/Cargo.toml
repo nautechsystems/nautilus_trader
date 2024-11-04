@@ -35,7 +35,7 @@ criterion = { workspace = true }
 rstest = { workspace = true }
 
 [features]
-default = ["ffi", "python", "clock_v2"]
+default = ["ffi", "python"]
 extension-module = [
   "pyo3/extension-module",
   "nautilus-common/extension-module",

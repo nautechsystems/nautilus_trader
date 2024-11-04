@@ -197,8 +197,10 @@ mod tests {
         let clock = get_atomic_clock_realtime();
         let start_time = clock.get_time_ns();
         let interval_ns = 100 * NANOSECONDS_IN_MILLISECOND;
+
         #[cfg(not(feature = "clock_v2"))]
         let mut timer = LiveTimer::new("TEST_TIMER", interval_ns, start_time, None, callback);
+
         #[cfg(feature = "clock_v2")]
         let (_heap, mut timer) = {
             let heap = Arc::new(Mutex::new(BinaryHeap::new()));
@@ -240,6 +242,15 @@ mod tests {
         let interval_ns = 100 * NANOSECONDS_IN_MILLISECOND;
         let stop_time = start_time + 500 * NANOSECONDS_IN_MILLISECOND;
 
+        #[cfg(not(feature = "clock_v2"))]
+        let mut timer = LiveTimer::new(
+            "TEST_TIMER",
+            interval_ns,
+            start_time,
+            Some(stop_time),
+            callback,
+        );
+
         #[cfg(feature = "clock_v2")]
         let (_heap, mut timer) = {
             let heap = Arc::new(Mutex::new(BinaryHeap::new()));
@@ -280,6 +291,15 @@ mod tests {
         let start_time = UnixNanos::default();
         let interval_ns = 0;
         let stop_time = clock.get_time_ns();
+
+        #[cfg(not(feature = "clock_v2"))]
+        let mut timer = LiveTimer::new(
+            "TEST_TIMER",
+            interval_ns,
+            start_time,
+            Some(stop_time),
+            callback,
+        );
 
         #[cfg(feature = "clock_v2")]
         let (_heap, mut timer) = {

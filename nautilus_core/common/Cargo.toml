@@ -43,7 +43,7 @@ tempfile = { workspace = true }
 cbindgen = { workspace = true, optional = true }
 
 [features]
-default = ["rstest", "clock_v2"]
+default = ["rstest"]
 extension-module = [
     "pyo3/extension-module",
     "nautilus-core/extension-module",
