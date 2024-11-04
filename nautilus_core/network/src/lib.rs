@@ -27,11 +27,12 @@
 //! - `python`: Enables Python bindings from `pyo3`.
 
 pub mod http;
+pub mod socket;
+pub mod websocket;
+
 #[allow(dead_code)]
 mod ratelimiter;
-pub mod socket;
 mod tls;
-pub mod websocket;
 
 #[cfg(feature = "python")]
 pub mod python;

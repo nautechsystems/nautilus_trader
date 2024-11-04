@@ -12,23 +12,3 @@
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
-
-//! Python bindings from `pyo3`.
-
-pub mod backend;
-pub mod wranglers;
-
-use pyo3::prelude::*;
-
-/// Loaded as nautilus_pyo3.persistence
-#[pymodule]
-pub fn persistence(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<crate::backend::session::DataBackendSession>()?;
-    m.add_class::<crate::backend::session::DataQueryResult>()?;
-    m.add_class::<backend::session::NautilusDataType>()?;
-    m.add_class::<wranglers::bar::BarDataWrangler>()?;
-    m.add_class::<wranglers::delta::OrderBookDeltaDataWrangler>()?;
-    m.add_class::<wranglers::quote::QuoteTickDataWrangler>()?;
-    m.add_class::<wranglers::trade::TradeTickDataWrangler>()?;
-    Ok(())
-}
