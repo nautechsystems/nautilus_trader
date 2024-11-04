@@ -83,6 +83,7 @@ pub struct SimulatedExchange {
 }
 
 impl SimulatedExchange {
+    /// Creates a new [`SimulatedExchange`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         venue: Venue,

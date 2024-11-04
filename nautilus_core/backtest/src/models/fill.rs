@@ -31,6 +31,7 @@ pub struct FillModel {
 }
 
 impl FillModel {
+    /// Creates a new [`FillModel`] instance.
     pub fn new(
         prob_fill_on_limit: f64,
         prob_fill_on_stop: f64,
@@ -86,6 +87,7 @@ impl Display for FillModel {
 }
 
 impl Default for FillModel {
+    /// Creates a new default [`FillModel`] instance.
     fn default() -> Self {
         Self::new(0.5, 0.5, 0.1, None).unwrap()
     }

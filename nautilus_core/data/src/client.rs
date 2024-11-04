@@ -181,6 +181,7 @@ impl DerefMut for DataClientAdapter {
 }
 
 impl DataClientAdapter {
+    /// Creates a new [`DataClientAdapter`] instance.
     #[must_use]
     pub fn new(
         client_id: ClientId,

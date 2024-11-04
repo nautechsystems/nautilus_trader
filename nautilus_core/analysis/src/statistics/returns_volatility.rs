@@ -26,6 +26,7 @@ pub struct ReturnsVolatility {
 }
 
 impl ReturnsVolatility {
+    /// Creates a new [`ReturnsVolatility`] instance.
     #[must_use]
     pub fn new(period: Option<usize>) -> Self {
         Self {

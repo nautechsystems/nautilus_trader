@@ -24,6 +24,7 @@ pub struct ThrottlerResume<T, F> {
 }
 
 impl<T, F> ThrottlerResume<T, F> {
+    /// Creates a new [`ThrottlerResume`] instance.
     pub const fn new(inner: Rc<RefCell<InnerThrottler<T, F>>>) -> Self {
         Self { inner }
     }
@@ -44,6 +45,7 @@ pub struct ThrottlerProcess<T, F> {
 }
 
 impl<T, F> ThrottlerProcess<T, F> {
+    /// Creates a new [`ThrottlerProcess`] instance.
     pub const fn new(inner: Rc<RefCell<InnerThrottler<T, F>>>) -> Self {
         Self { inner }
     }

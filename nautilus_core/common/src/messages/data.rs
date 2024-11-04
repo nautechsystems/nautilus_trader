@@ -80,6 +80,7 @@ pub struct SubscriptionCommand {
 }
 
 impl SubscriptionCommand {
+    /// Creates a new [`SubscriptionCommand`] instance.
     #[must_use]
     pub const fn new(
         client_id: ClientId,

@@ -28,6 +28,7 @@ pub struct LongRatio {
 }
 
 impl LongRatio {
+    /// Creates a new [`LongRatio`] instance.
     #[must_use]
     pub fn new(precision: Option<usize>) -> Self {
         Self {

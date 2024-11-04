@@ -221,6 +221,7 @@ impl Display for CashAccount {
 }
 
 impl Default for CashAccount {
+    /// Creates a new default [`CashAccount`] instance.
     fn default() -> Self {
         // million dollar account
         let init_event = AccountState::new(

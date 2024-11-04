@@ -118,6 +118,7 @@ pub struct MarginBalance {
 }
 
 impl MarginBalance {
+    /// Creates a new [`MarginBalance`] instance.
     pub fn new(initial: Money, maintenance: Money, instrument_id: InstrumentId) -> Self {
         Self {
             initial,

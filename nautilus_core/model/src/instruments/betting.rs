@@ -168,6 +168,7 @@ impl BettingInstrument {
         })
     }
 
+    /// Creates a new [`BettingInstrument`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,

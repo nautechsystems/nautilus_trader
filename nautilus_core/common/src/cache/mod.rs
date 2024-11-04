@@ -83,6 +83,7 @@ pub struct CacheConfig {
 }
 
 impl Default for CacheConfig {
+    /// Creates a new default [`CacheConfig`] instance.
     fn default() -> Self {
         Self {
             database: None,

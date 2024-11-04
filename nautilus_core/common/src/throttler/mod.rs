@@ -30,6 +30,7 @@ pub struct RateLimit {
 }
 
 impl RateLimit {
+    /// Creates a new [`RateLimit`] instance.
     #[must_use]
     pub const fn new(limit: usize, interval_ns: u64) -> Self {
         Self { limit, interval_ns }
@@ -57,6 +58,7 @@ where
 }
 
 impl<T, F> Throttler<T, F> {
+    /// Creates a new [`Throttler`] instance.
     pub fn new(
         rate_limit: RateLimit,
         clock: Rc<RefCell<dyn Clock>>,

@@ -39,6 +39,7 @@ pub struct MessagingSwitchboard {
 }
 
 impl Default for MessagingSwitchboard {
+    /// Creates a new default [`MessagingSwitchboard`] instance.
     fn default() -> Self {
         Self {
             data_engine_execute: Ustr::from("DataEngine.execute"),

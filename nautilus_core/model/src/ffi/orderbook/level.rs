@@ -38,6 +38,7 @@ use crate::{
 pub struct Level_API(Box<Level>);
 
 impl Level_API {
+    /// Creates a new [`Level_API`] instance.
     #[must_use]
     pub fn new(level: Level) -> Self {
         Self(Box::new(level))
