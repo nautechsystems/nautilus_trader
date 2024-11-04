@@ -15,6 +15,7 @@
 
 use nautilus_model::identifiers::ClientId;
 
+/// Configuration for `DataEngine` instances.
 pub struct DataEngineConfig {
     pub time_bars_build_with_no_updates: bool,
     pub time_bars_timestamp_on_close: bool,
@@ -26,6 +27,7 @@ pub struct DataEngineConfig {
 }
 
 impl Default for DataEngineConfig {
+    /// Creates a new default [`DataEngineConfig`] instance.
     fn default() -> Self {
         Self {
             time_bars_build_with_no_updates: true,

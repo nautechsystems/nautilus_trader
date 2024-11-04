@@ -42,6 +42,7 @@ pub struct BookPrice {
 }
 
 impl BookPrice {
+    /// Creates a new [`BookPrice`] instance.
     #[must_use]
     pub fn new(value: Price, side: OrderSide) -> Self {
         Self { value, side }
@@ -84,6 +85,7 @@ pub struct Ladder {
 }
 
 impl Ladder {
+    /// Creates a new [`Ladder`] instance.
     #[must_use]
     pub fn new(side: OrderSide) -> Self {
         Self {

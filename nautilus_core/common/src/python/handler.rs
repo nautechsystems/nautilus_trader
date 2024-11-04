@@ -33,6 +33,7 @@ pub struct PythonMessageHandler {
 
 #[pymethods]
 impl PythonMessageHandler {
+    /// Creates a new [`PythonMessageHandler`] instance.
     #[new]
     #[must_use]
     pub fn new(id: &str, handler: PyObject) -> Self {

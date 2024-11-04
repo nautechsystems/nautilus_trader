@@ -53,13 +53,16 @@ pub struct PortfolioAnalyzer {
 }
 
 impl Default for PortfolioAnalyzer {
+    /// Creates a new default [`PortfolioAnalyzer`] instance.
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl PortfolioAnalyzer {
-    /// Creates a new empty portfolio analyzer.
+    /// Creates a new [`PortfolioAnalyzer`] instance.
+    ///
+    /// Starts with empty state.
     pub fn new() -> Self {
         Self {
             statistics: HashMap::new(),

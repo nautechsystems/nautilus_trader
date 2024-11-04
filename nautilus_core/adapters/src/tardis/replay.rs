@@ -65,6 +65,7 @@ struct DateCursor {
 }
 
 impl DateCursor {
+    /// Creates a new [`DateCursor`] instance.
     fn new(current_ns: UnixNanos) -> Self {
         let current_utc = DateTime::from_timestamp_nanos(current_ns.as_i64());
         let date_utc = current_utc.date_naive();

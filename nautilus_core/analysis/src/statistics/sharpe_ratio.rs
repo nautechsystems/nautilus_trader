@@ -26,6 +26,7 @@ pub struct SharpeRatio {
 }
 
 impl SharpeRatio {
+    /// Creates a new [`SharpeRatio`] instance.
     #[must_use]
     pub fn new(period: Option<usize>) -> Self {
         Self {

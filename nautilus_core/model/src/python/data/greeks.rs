@@ -22,8 +22,9 @@ use crate::data::greeks::{
 
 #[pymethods]
 impl ImplyVolAndGreeksResult {
+    /// Creates a new [`ImplyVolAndGreeksResult`] instance.
     #[new]
-    fn new(vol: f64, price: f64, delta: f64, gamma: f64, theta: f64, vega: f64) -> Self {
+    fn py_new(vol: f64, price: f64, delta: f64, gamma: f64, theta: f64, vega: f64) -> Self {
         Self {
             vol,
             price,
@@ -77,8 +78,9 @@ impl ImplyVolAndGreeksResult {
 
 #[pymethods]
 impl BlackScholesGreeksResult {
+    /// Creates a new [`BlackScholesGreeksResult`] instance.
     #[new]
-    fn new(price: f64, delta: f64, gamma: f64, theta: f64, vega: f64) -> Self {
+    fn py_new(price: f64, delta: f64, gamma: f64, theta: f64, vega: f64) -> Self {
         Self {
             price,
             delta,

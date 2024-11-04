@@ -72,6 +72,7 @@ pub struct DatabaseConfig {
 }
 
 impl Default for DatabaseConfig {
+    /// Creates a new default [`DatabaseConfig`] instance.
     fn default() -> Self {
         Self {
             database_type: "redis".to_string(),
@@ -124,6 +125,7 @@ pub struct MessageBusConfig {
 }
 
 impl Default for MessageBusConfig {
+    /// Creates a new default [`MessageBusConfig`] instance.
     fn default() -> Self {
         Self {
             database: None,

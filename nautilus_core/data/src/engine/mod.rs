@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides a generic `DataEngine` for all environments.
+//! Provides a high-performance `DataEngine` for all environments.
 //!
 //! The `DataEngine` is the central component of the entire data stack.
 //! The data engines primary responsibility is to orchestrate interactions between
@@ -81,6 +81,7 @@ use ustr::Ustr;
 
 use crate::{aggregation::BarAggregator, client::DataClientAdapter};
 
+/// Provides a high-performance `DataEngine` for all environments.
 pub struct DataEngine {
     clock: Box<dyn Clock>,
     cache: Rc<RefCell<Cache>>,
@@ -100,6 +101,7 @@ pub struct DataEngine {
 }
 
 impl DataEngine {
+    /// Creates a new [`DataEngine`] instance.
     #[must_use]
     pub fn new(
         clock: Box<dyn Clock>,

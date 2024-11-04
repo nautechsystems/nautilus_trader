@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+/// Configuration for `ExecutionEngine` instances.
 pub struct ExecutionEngineConfig {
     pub debug: bool,
 }

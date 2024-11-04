@@ -26,6 +26,7 @@ pub struct SortinoRatio {
 }
 
 impl SortinoRatio {
+    /// Creates a new [`SortinoRatio`] instance.
     #[must_use]
     pub fn new(period: Option<usize>) -> Self {
         Self {

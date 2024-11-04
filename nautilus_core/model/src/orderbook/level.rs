@@ -41,6 +41,7 @@ pub struct Level {
 }
 
 impl Level {
+    /// Creates a new [`Level`] instance.
     #[must_use]
     pub fn new(price: BookPrice) -> Self {
         Self {
