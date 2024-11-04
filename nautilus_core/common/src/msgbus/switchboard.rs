@@ -30,8 +30,8 @@ pub struct MessagingSwitchboard {
     pub exec_engine_process: Ustr,
     custom_topics: HashMap<DataType, Ustr>,
     instrument_topics: HashMap<InstrumentId, Ustr>,
-    delta_topics: HashMap<InstrumentId, Ustr>,
     deltas_topics: HashMap<InstrumentId, Ustr>,
+    snapshots_topics: HashMap<InstrumentId, Ustr>,
     depth_topics: HashMap<InstrumentId, Ustr>,
     quote_topics: HashMap<InstrumentId, Ustr>,
     trade_topics: HashMap<InstrumentId, Ustr>,
@@ -48,8 +48,8 @@ impl Default for MessagingSwitchboard {
             exec_engine_process: Ustr::from("ExecEngine.process"),
             custom_topics: HashMap::new(),
             instrument_topics: HashMap::new(),
-            delta_topics: HashMap::new(),
             deltas_topics: HashMap::new(),
+            snapshots_topics: HashMap::new(),
             depth_topics: HashMap::new(),
             quote_topics: HashMap::new(),
             trade_topics: HashMap::new(),
@@ -81,20 +81,10 @@ impl MessagingSwitchboard {
     }
 
     #[must_use]
-    pub fn get_delta_topic(&mut self, instrument_id: InstrumentId) -> Ustr {
-        *self.delta_topics.entry(instrument_id).or_insert_with(|| {
-            Ustr::from(&format!(
-                "data.book.delta.{}.{}",
-                instrument_id.venue, instrument_id.symbol
-            ))
-        })
-    }
-
-    #[must_use]
     pub fn get_deltas_topic(&mut self, instrument_id: InstrumentId) -> Ustr {
         *self.deltas_topics.entry(instrument_id).or_insert_with(|| {
             Ustr::from(&format!(
-                "data.book.snapshots.{}.{}",
+                "data.book.deltas.{}.{}",
                 instrument_id.venue, instrument_id.symbol
             ))
         })
@@ -108,6 +98,19 @@ impl MessagingSwitchboard {
                 instrument_id.venue, instrument_id.symbol
             ))
         })
+    }
+
+    #[must_use]
+    pub fn get_snapshots_topic(&mut self, instrument_id: InstrumentId) -> Ustr {
+        *self
+            .snapshots_topics
+            .entry(instrument_id)
+            .or_insert_with(|| {
+                Ustr::from(&format!(
+                    "data.book.snapshots.{}.{}",
+                    instrument_id.venue, instrument_id.symbol
+                ))
+            })
     }
 
     #[must_use]
@@ -183,19 +186,22 @@ mod tests {
     }
 
     #[rstest]
-    fn test_get_delta_topic(mut switchboard: MessagingSwitchboard, instrument_id: InstrumentId) {
-        let expected_topic = Ustr::from("data.book.delta.XCME.ESZ24");
-        let result = switchboard.get_delta_topic(instrument_id);
-        assert_eq!(result, expected_topic);
-        assert!(switchboard.delta_topics.contains_key(&instrument_id));
-    }
-
-    #[rstest]
     fn test_get_deltas_topic(mut switchboard: MessagingSwitchboard, instrument_id: InstrumentId) {
-        let expected_topic = Ustr::from("data.book.snapshots.XCME.ESZ24");
+        let expected_topic = Ustr::from("data.book.deltas.XCME.ESZ24");
         let result = switchboard.get_deltas_topic(instrument_id);
         assert_eq!(result, expected_topic);
         assert!(switchboard.deltas_topics.contains_key(&instrument_id));
+    }
+
+    #[rstest]
+    fn test_get_snapshots_topic(
+        mut switchboard: MessagingSwitchboard,
+        instrument_id: InstrumentId,
+    ) {
+        let expected_topic = Ustr::from("data.book.snapshots.XCME.ESZ24");
+        let result = switchboard.get_snapshots_topic(instrument_id);
+        assert_eq!(result, expected_topic);
+        assert!(switchboard.snapshots_topics.contains_key(&instrument_id));
     }
 
     #[rstest]

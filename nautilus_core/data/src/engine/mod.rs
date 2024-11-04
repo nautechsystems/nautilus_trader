@@ -61,7 +61,6 @@ use nautilus_common::{
         handler::{MessageHandler, ShareableMessageHandler},
         MessageBus,
     },
-    timer::TimeEvent,
 };
 use nautilus_core::{
     correctness::{check_key_in_index_map, check_key_not_in_index_map, FAILED},
@@ -101,6 +100,7 @@ pub struct DataEngine {
     synthetic_quote_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     synthetic_trade_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     buffered_deltas_map: HashMap<InstrumentId, Vec<OrderBookDelta>>,
+    snapshot_info: HashMap<Ustr, BookSnapshotInfo>,
     msgbus_priority: u8,
     command_queue: VecDeque<SubscriptionCommand>,
     config: DataEngineConfig,
@@ -128,6 +128,7 @@ impl DataEngine {
             synthetic_quote_feeds: HashMap::new(),
             synthetic_trade_feeds: HashMap::new(),
             buffered_deltas_map: HashMap::new(),
+            snapshot_info: HashMap::new(),
             msgbus_priority: 10, // High-priority for built-in component
             command_queue: VecDeque::new(),
             config: config.unwrap_or_default(),
@@ -568,53 +569,76 @@ impl DataEngine {
         &mut self,
         command: &SubscriptionCommand,
     ) -> anyhow::Result<()> {
+        let instrument_id = command.data_type.instrument_id().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Invalid order book deltas subscription: did not contain an `instrument_id`, {}",
+                command.data_type
+            )
+        })?;
+
+        if instrument_id.is_synthetic() {
+            anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDelta` data");
+        }
+
+        if !self.subscribed_order_book_deltas().contains(&instrument_id) {
+            return Ok(());
+        }
+
         let data_type = command.data_type.clone();
-        let instrument_id = data_type.instrument_id();
         let book_type = data_type.book_type();
         let depth = data_type.depth();
         let managed = data_type.managed();
 
-        if let Some(instrument_id) = instrument_id {
-            if instrument_id.is_synthetic() {
-                anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDelta` data");
-            }
+        self.setup_order_book(&instrument_id, book_type, depth, true, managed)?;
 
-            if self.subscribed_order_book_deltas().contains(&instrument_id) {
-                return Ok(());
-            }
-
-            self.setup_order_book(&instrument_id, book_type, depth, true, managed)?;
-
-            Ok(())
-        } else {
-            anyhow::bail!("Invalid order book deltas subscription: did not contain an `instrument_id`, {data_type}");
-        }
+        Ok(())
     }
 
     fn handle_subscribe_book_snapshots(
         &mut self,
         command: &SubscriptionCommand,
     ) -> anyhow::Result<()> {
+        let instrument_id = command.data_type.instrument_id().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Invalid order book snapshots subscription: did not contain an `instrument_id`, {}",
+                command.data_type
+            )
+        })?;
+
+        if self.subscribed_order_book_deltas().contains(&instrument_id) {
+            return Ok(());
+        }
+
+        if instrument_id.is_synthetic() {
+            anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDelta` data");
+        }
+
         let data_type = command.data_type.clone();
-        let instrument_id = data_type.instrument_id();
         let book_type = data_type.book_type();
         let depth = data_type.depth();
         let interval_ms = data_type.interval_ms();
         let managed = data_type.managed();
 
-        if let Some(instrument_id) = instrument_id {
-            if instrument_id.is_synthetic() {
-                anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDelta` data");
-            }
-
-            if self.subscribed_order_book_deltas().contains(&instrument_id) {
-                return Ok(());
-            }
-
+        {
             // TODO: Set up timer at interval
             if !self.order_book_intervals.contains_key(&interval_ms) {
-                let timer_name = format!("OrderBook|{interval_ms}");
+                let timer_name = format!("OrderBook|{instrument_id}|{interval_ms}");
                 let interval_ns = millis_to_nanos(interval_ms.get() as f64);
+                let mut msgbus = self.msgbus.borrow_mut();
+                let topic = msgbus.switchboard.get_snapshots_topic(instrument_id);
+
+                let snap_info = BookSnapshotInfo {
+                    instrument_id,
+                    venue: instrument_id.venue,
+                    is_composite: instrument_id.symbol.is_composite(),
+                    root: Ustr::from(instrument_id.symbol.root()),
+                    topic,
+                    interval_ms,
+                };
+
+                self.snapshot_info
+                    .insert(Ustr::from(&timer_name), snap_info);
+
                 let now_ns = self.clock.timestamp_ns().as_u64();
                 let mut start_time_ns = now_ns - (now_ns % interval_ns);
 
@@ -622,25 +646,92 @@ impl DataEngine {
                     start_time_ns += NANOSECONDS_IN_SECOND; // Add one second
                 }
 
-                // let callback = SafeTimeEventCallback {
+                // TODO: BookSnapshotter?
+                // let callback = TimeEventCallback::Rust(RustTimeEventCallback {
                 //     callback: Box::new(move |event| self.snapshot_order_book(event)),
-                // };
-                //
-                // self.clock.set_timer_ns(
-                //     timer_name.as_str(),
-                //     interval_ns,
-                //     start_time_ns,
-                //     None,
-                //     handler,
-                // )
+                // });
+
+                self.clock.set_timer_ns(
+                    &timer_name,
+                    interval_ns,
+                    start_time_ns.into(),
+                    None,
+                    None, // TODO : Add BookSnapshotter?
+                )
             }
-
-            self.setup_order_book(&instrument_id, book_type, depth, true, managed)?;
-
-            Ok(())
-        } else {
-            anyhow::bail!("Invalid order book deltas subscription: did not contain an `instrument_id`, {data_type}");
         }
+
+        self.setup_order_book(&instrument_id, book_type, depth, true, managed)?;
+
+        Ok(())
+    }
+
+    fn handle_unsubscribe_order_book_deltas(
+        &mut self,
+        command: &SubscriptionCommand,
+    ) -> anyhow::Result<()> {
+        let instrument_id = command.data_type.instrument_id().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Invalid order book snapshots subscription: did not contain an `instrument_id`, {}",
+                command.data_type
+            )
+        })?;
+
+        if !self.subscribed_order_book_deltas().contains(&instrument_id) {
+            log::warn!("Cannot unsubscribe from `OrderBookDeltas` data: not subscribed");
+            return Ok(());
+        }
+
+        let mut msgbus = self.msgbus.borrow_mut();
+
+        let deltas_topic = msgbus.switchboard.get_deltas_topic(instrument_id);
+        let depth_topic = msgbus.switchboard.get_depth_topic(instrument_id);
+        let snapshots_topic = msgbus.switchboard.get_snapshots_topic(instrument_id);
+
+        let topics = vec![deltas_topic, depth_topic];
+
+        for topic in topics {
+            let num_subscribers = msgbus.subscriptions_count(&topic);
+            // TODO: Check if internal book subscriber
+            // TODO: Remove the subscription for the internal order book if it is the last subscription
+        }
+
+        Ok(())
+    }
+
+    fn handle_unsubscribe_order_book_snapshots(
+        &mut self,
+        command: &SubscriptionCommand,
+    ) -> anyhow::Result<()> {
+        let instrument_id = command.data_type.instrument_id().ok_or_else(|| {
+            anyhow::anyhow!(
+                "Invalid order book snapshots subscription: did not contain an `instrument_id`, {}",
+                command.data_type
+            )
+        })?;
+
+        if !self.subscribed_order_book_deltas().contains(&instrument_id) {
+            log::warn!("Cannot unsubscribe from `OrderBook` snapshots: not subscribed");
+            return Ok(());
+        }
+
+        let mut msgbus = self.msgbus.borrow_mut();
+
+        let deltas_topic = msgbus.switchboard.get_deltas_topic(instrument_id);
+        let depth_topic = msgbus.switchboard.get_depth_topic(instrument_id);
+        let snapshots_topic = msgbus.switchboard.get_snapshots_topic(instrument_id);
+
+        let topics = vec![deltas_topic, depth_topic];
+
+        for topic in topics {
+            let num_subscribers = msgbus.subscriptions_count(&topic);
+            // TODO: Check if internal book subscriber
+            // TODO: Remove the subscription for the internal order book if it is the last subscription
+        }
+
+        // TODO: WIP
+
+        Ok(())
     }
 
     // -- RESPONSE HANDLERS -----------------------------------------------------------------------
@@ -684,38 +775,30 @@ impl DataEngine {
         only_deltas: bool,
         managed: bool,
     ) -> anyhow::Result<()> {
-        {
-            let mut cache = self.cache.borrow_mut();
-            if managed && !cache.has_order_book(instrument_id) {
-                let book = OrderBook::new(*instrument_id, book_type);
-                log::debug!("Created {book}");
-                cache.add_order_book(book)?;
-            }
+        let mut cache = self.cache.borrow_mut();
+        if managed && !cache.has_order_book(instrument_id) {
+            let book = OrderBook::new(*instrument_id, book_type);
+            log::debug!("Created {book}");
+            cache.add_order_book(book)?;
         }
 
-        {
-            let mut msgbus = self.msgbus.borrow_mut();
+        let mut msgbus = self.msgbus.borrow_mut();
 
-            // Set up subscriptions
-            let updater = BookUpdater::new(instrument_id, self.cache.clone());
-            let handler = ShareableMessageHandler(Rc::new(updater));
+        // Set up subscriptions
+        let updater = BookUpdater::new(instrument_id, self.cache.clone());
+        let handler = ShareableMessageHandler(Rc::new(updater));
 
-            let topic = msgbus.switchboard.get_deltas_topic(*instrument_id);
-            if !msgbus.is_subscribed(topic.as_str(), handler.clone()) {
-                msgbus.subscribe(topic, handler.clone(), Some(self.msgbus_priority));
-            }
+        let topic = msgbus.switchboard.get_deltas_topic(*instrument_id);
+        if !msgbus.is_subscribed(topic.as_str(), handler.clone()) {
+            msgbus.subscribe(topic, handler.clone(), Some(self.msgbus_priority));
+        }
 
-            let topic = msgbus.switchboard.get_depth_topic(*instrument_id);
-            if !only_deltas && !msgbus.is_subscribed(topic.as_str(), handler.clone()) {
-                msgbus.subscribe(topic, handler, Some(self.msgbus_priority));
-            }
+        let topic = msgbus.switchboard.get_depth_topic(*instrument_id);
+        if !only_deltas && !msgbus.is_subscribed(topic.as_str(), handler.clone()) {
+            msgbus.subscribe(topic, handler, Some(self.msgbus_priority));
         }
 
         Ok(())
-    }
-
-    fn snapshot_order_book(&self, event: TimeEvent) {
-        todo!()
     }
 }
 
@@ -737,4 +820,13 @@ impl MessageHandler for SubscriptionCommandHandler {
     fn as_any(&self) -> &dyn Any {
         self
     }
+}
+
+struct BookSnapshotInfo {
+    pub instrument_id: InstrumentId,
+    pub venue: Venue,
+    pub is_composite: bool,
+    pub root: Ustr,
+    pub topic: Ustr,
+    pub interval_ms: NonZeroU64,
 }

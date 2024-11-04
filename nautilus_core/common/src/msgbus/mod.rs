@@ -218,6 +218,12 @@ impl MessageBus {
             .is_some()
     }
 
+    /// Returns the count of subscribers for the given `pattern`.
+    #[must_use]
+    pub fn subscriptions_count(&self, pattern: &Ustr) -> usize {
+        self.matching_subscriptions(pattern).len()
+    }
+
     /// Returns whether there are subscribers for the given `pattern`.
     #[must_use]
     pub fn subscriptions(&self) -> Vec<&Subscription> {
@@ -233,7 +239,7 @@ impl MessageBus {
             .collect()
     }
 
-    /// Returns whether there are subscribers for the given `pattern`.
+    /// Returns whether there is a registered endpoint for the given `pattern`.
     #[must_use]
     pub fn is_registered(&self, endpoint: &str) -> bool {
         self.endpoints.contains_key(&Ustr::from(endpoint))
