@@ -165,8 +165,6 @@ impl TimeEvent {
 
 #[cfg(test)]
 mod tests {
-
-
     use nautilus_core::{
         datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos, time::get_atomic_clock_realtime,
     };
