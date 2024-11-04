@@ -15,11 +15,11 @@
 
 //! Python bindings from `pyo3`.
 
+pub mod signing;
+
 use pyo3::prelude::*;
 
 use crate::python;
-
-pub mod signing;
 
 /// Loaded as nautilus_pyo3.cryptography
 #[pymodule]

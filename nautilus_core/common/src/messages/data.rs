@@ -101,6 +101,7 @@ impl SubscriptionCommand {
     }
 }
 
+// TODO: Deprecated?
 pub enum DataEngineRequest {
     Request(DataRequest),
     SubscriptionCommand(SubscriptionCommand),

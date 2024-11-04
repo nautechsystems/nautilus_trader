@@ -17,6 +17,11 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+pub mod config;
+
+#[cfg(test)]
+mod tests;
+
 use std::{any::Any, cell::RefCell, collections::HashMap, rc::Rc};
 
 use chrono::TimeDelta;
@@ -58,10 +63,6 @@ use ustr::Ustr;
 use uuid::Uuid;
 
 use crate::{matching_engine::config::OrderMatchingEngineConfig, models::fill::FillModel};
-
-pub mod config;
-#[cfg(test)]
-mod tests;
 
 /// An order matching engine for a single market.
 pub struct OrderMatchingEngine {

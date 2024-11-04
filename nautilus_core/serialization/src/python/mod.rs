@@ -15,9 +15,9 @@
 
 //! Python bindings from `pyo3`.
 
-use pyo3::prelude::*;
-
 pub mod arrow;
+
+use pyo3::prelude::*;
 
 /// Loaded as nautilus_pyo3.serialization
 #[pymodule]

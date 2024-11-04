@@ -35,6 +35,8 @@
 
 pub mod config;
 pub mod runner;
+pub mod updaters;
+
 #[cfg(test)]
 mod tests;
 
@@ -134,7 +136,7 @@ impl DataEngine {
 
     // pub fn register_catalog(&mut self, catalog: ParquetDataCatalog) {}  TODO: Implement catalog
 
-    /// Register the given data `client` with the engine as the default routing client.
+    /// Registers the given data `client` with the engine as the default routing client.
     ///
     /// When a specific venue routing cannot be found, this client will receive messages.
     ///
@@ -351,7 +353,7 @@ impl DataEngine {
         }
     }
 
-    /// Send a [`DataRequest`] to an endpoint that must be a data client implementation.
+    /// Sends a [`DataRequest`] to an endpoint that must be a data client implementation.
     pub fn request(&self, req: DataRequest) {
         if let Some(client) = self.get_client(&req.client_id, &req.venue) {
             client.through_request(req);

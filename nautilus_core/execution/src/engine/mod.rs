@@ -20,6 +20,7 @@
 #![allow(unused_variables)]
 
 pub mod config;
+
 #[cfg(test)]
 mod tests;
 
