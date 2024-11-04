@@ -17,7 +17,6 @@
 
 use std::{
     cmp::Ordering,
-    collections::BinaryHeap,
     fmt::{Debug, Display},
     num::NonZeroU64,
     rc::Rc,
@@ -37,7 +36,7 @@ use nautilus_core::{
 #[cfg(feature = "python")]
 use pyo3::{PyObject, Python};
 use tokio::{
-    sync::{oneshot, Mutex},
+    sync::oneshot,
     time::{Duration, Instant},
 };
 use ustr::Ustr;
@@ -69,7 +68,7 @@ pub struct TimeEvent {
 /// Reverse order for TimeEvent comparison to be used in max heap
 impl PartialOrd for TimeEvent {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        other.ts_event.partial_cmp(&self.ts_event)
+        Some(self.cmp(other))
     }
 }
 

@@ -165,13 +165,13 @@ impl TimeEvent {
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::BinaryHeap, sync::Arc};
+
 
     use nautilus_core::{
         datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos, time::get_atomic_clock_realtime,
     };
     use pyo3::prelude::*;
-    use tokio::{sync::Mutex, time::Duration};
+    use tokio::time::Duration;
 
     use crate::{
         testing::wait_until,

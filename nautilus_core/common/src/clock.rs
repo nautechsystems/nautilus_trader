@@ -57,7 +57,7 @@ pub fn get_clock() -> Rc<RefCell<dyn Clock>> {
 pub fn set_clock(c: Rc<RefCell<dyn Clock>>) {
     CLOCK
         .try_with(|clock| {
-            if let Err(_) = clock.set(c) {
+            if clock.set(c).is_err() {
                 panic!("Global clock already set")
             }
         })
@@ -141,7 +141,6 @@ pub struct TestClock {
     timers: BTreeMap<Ustr, TestTimer>,
     default_callback: Option<TimeEventCallback>,
     callbacks: HashMap<Ustr, TimeEventCallback>,
-    #[cfg(feature = "clock_v2")]
     heap: BinaryHeap<TimeEvent>,
 }
 
@@ -154,7 +153,6 @@ impl TestClock {
             timers: BTreeMap::new(),
             default_callback: None,
             callbacks: HashMap::new(),
-            #[cfg(feature = "clock_v2")]
             heap: BinaryHeap::new(),
         }
     }
@@ -202,8 +200,7 @@ impl TestClock {
     /// Pushes the [`TimeEvent`]s on the heap to ensure ordering
     ///
     /// Note: `set_time` is not used but present to keep backward compatible api call
-    #[cfg(feature = "clock_v2")]
-    pub fn advance_to_time(&mut self, to_time_ns: UnixNanos) {
+    pub fn advance_to_time_on_heap(&mut self, to_time_ns: UnixNanos) {
         // Time should be non-decreasing
         assert!(
             to_time_ns >= self.time.get_time_ns(),
@@ -246,7 +243,6 @@ impl TestClock {
     }
 }
 
-#[cfg(feature = "clock_v2")]
 impl Iterator for TestClock {
     type Item = TimeEventHandlerV2;
 
@@ -313,10 +309,7 @@ impl Clock for TestClock {
             .get(&event.name)
             .cloned()
             .or_else(|| self.default_callback.clone())
-            .expect(&format!(
-                "Event '{}' should have associated handler",
-                event.name
-            ));
+            .unwrap_or_else(|| panic!("Event '{}' should have associated handler", event.name));
 
         TimeEventHandlerV2::new(event, callback)
     }
@@ -407,9 +400,8 @@ pub struct LiveClock {
     time: &'static AtomicTime,
     timers: HashMap<Ustr, LiveTimer>,
     default_callback: Option<TimeEventCallback>,
-    #[cfg(feature = "clock_v2")]
     pub heap: Arc<Mutex<BinaryHeap<TimeEvent>>>,
-    #[cfg(feature = "clock_v2")]
+    #[allow(dead_code)]
     callbacks: HashMap<Ustr, TimeEventCallback>,
 }
 
@@ -417,28 +409,15 @@ impl LiveClock {
     /// Creates a new [`LiveClock`] instance.
     #[must_use]
     pub fn new() -> Self {
-        #[cfg(not(feature = "clock_v2"))]
-        {
-            Self {
-                time: get_atomic_clock_realtime(),
-                timers: HashMap::new(),
-                default_callback: None,
-            }
-        }
-        #[cfg(feature = "clock_v2")]
-        {
-            let heap = Arc::new(Mutex::new(BinaryHeap::new()));
-            Self {
-                time: get_atomic_clock_realtime(),
-                timers: HashMap::new(),
-                default_callback: None,
-                heap,
-                callbacks: HashMap::new(),
-            }
+        Self {
+            time: get_atomic_clock_realtime(),
+            timers: HashMap::new(),
+            default_callback: None,
+            heap: Arc::new(Mutex::new(BinaryHeap::new())),
+            callbacks: HashMap::new(),
         }
     }
 
-    #[cfg(feature = "clock_v2")]
     pub fn get_event_stream(&self) -> TimeEventStream {
         TimeEventStream::new(self.heap.clone())
     }
@@ -500,6 +479,7 @@ impl Clock for LiveClock {
         self.default_callback = Some(handler);
     }
 
+    #[allow(unused_variables)]
     fn get_handler(&self, event: TimeEvent) -> TimeEventHandlerV2 {
         #[cfg(not(feature = "clock_v2"))]
         panic!("Cannot get live clock handler without 'clock_v2' feature");

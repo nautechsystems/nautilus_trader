@@ -67,8 +67,9 @@ impl Runner for BacktestRunner {
                     // Advance clock time and collect all triggered events and handlers
                     let handlers: Vec<TimeEventHandlerV2> = {
                         let mut guard = self.clock.borrow_mut();
-                        guard.advance_time(data.ts_init(), true);
+                        guard.advance_to_time_on_heap(data.ts_init());
                         guard.by_ref().collect()
+                        // drop guard
                     };
 
                     // Execute all handlers before processing the data
@@ -137,6 +138,7 @@ impl Runner for LiveRunner {
 }
 
 // Helper enum to represent different event types
+#[allow(clippy::large_enum_variant)]
 enum RunnerEvent {
     Data(DataEvent),
     Timer(TimeEvent),
