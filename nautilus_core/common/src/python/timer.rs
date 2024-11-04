@@ -176,6 +176,13 @@ mod tests {
         timer::{LiveTimer, TimeEvent, TimeEventCallback},
     };
 
+    #[cfg(feature = "clock_v2")]
+    use std::collections::BinaryHeap;
+    #[cfg(feature = "clock_v2")]
+    use std::sync::Arc;
+    #[cfg(feature = "clock_v2")]
+    use tokio::sync::Mutex;
+
     #[pyfunction]
     const fn receive_event(_py: Python, _event: TimeEvent) -> PyResult<()> {
         // TODO: Assert the length of a handler vec

@@ -42,6 +42,10 @@ use tokio::{
 use ustr::Ustr;
 
 use crate::runtime::get_runtime;
+#[cfg(feature = "clock_v2")]
+use std::collections::BinaryHeap;
+#[cfg(feature = "clock_v2")]
+use tokio::sync::Mutex;
 
 #[repr(C)]
 #[derive(Clone, Debug)]
