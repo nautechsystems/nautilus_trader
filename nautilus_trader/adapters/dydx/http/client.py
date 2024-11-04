@@ -101,10 +101,23 @@ class DYDXHttpClient:
 
     def _urlencode(self, payload: dict[str, Any]) -> str:
         # Booleans are capitalized (True/False) when directly passed to `urlencode`
-        payload_list = [
-            (key, str(values).lower() if isinstance(values, bool) else values)
-            for key, values in payload.items()
-        ]
+        payload_list = []
+
+        for key, values in payload.items():
+            if isinstance(values, bool):
+                payload_list.append((key, str(values).lower()))
+            elif isinstance(values, list):
+                value = ""
+                num_values = len(values)
+                for item_id, list_item in enumerate(values):
+                    if item_id < num_values - 1:
+                        value += f"{list_item},"
+                    else:
+                        value += str(list_item)
+
+                payload_list.append((key, value))
+            else:
+                payload_list.append((key, values))
 
         return urllib.parse.urlencode(payload_list)
 

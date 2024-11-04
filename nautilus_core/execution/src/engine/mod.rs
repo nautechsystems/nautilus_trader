@@ -19,12 +19,18 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+pub mod config;
+
+#[cfg(test)]
+mod tests;
+
 use std::{
     cell::RefCell,
     collections::{HashMap, HashSet},
     rc::Rc,
 };
 
+use config::ExecutionEngineConfig;
 use nautilus_common::{
     cache::Cache, clock::Clock, generators::position_id::PositionIdGenerator, msgbus::MessageBus,
 };
@@ -46,10 +52,6 @@ use crate::{
         TradingCommand,
     },
 };
-
-pub struct ExecutionEngineConfig {
-    pub debug: bool,
-}
 
 pub struct ExecutionEngine<C>
 where

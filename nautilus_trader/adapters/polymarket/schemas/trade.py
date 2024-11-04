@@ -13,9 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
+
 import msgspec
 
-from nautilus_trader.adapters.polymarket.common.constants import USDC_POS
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketLiquiditySide
 from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderSide
 from nautilus_trader.adapters.polymarket.common.parsing import parse_order_side
@@ -23,7 +24,9 @@ from nautilus_trader.adapters.polymarket.schemas.user import PolymarketMakerOrde
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import FillReport
+from nautilus_trader.model.currencies import USDC_POS
 from nautilus_trader.model.enums import LiquiditySide
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.identifiers import AccountId
 from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import TradeId
@@ -61,20 +64,38 @@ class PolymarketTradeReport(msgspec.Struct, frozen=True):
     maker_orders: list[PolymarketMakerOrder]
     trader_side: PolymarketLiquiditySide
 
-    def liqudity_side(self) -> LiquiditySide:
-        if self.trader_side == PolymarketLiquiditySide.MAKER:
-            return LiquiditySide.MAKER
-        else:
+    def liquidity_side(self) -> LiquiditySide:
+        if self.trader_side == PolymarketLiquiditySide.TAKER:
             return LiquiditySide.TAKER
+        else:
+            return LiquiditySide.MAKER
+
+    def order_side(self) -> OrderSide:
+        order_side = parse_order_side(self.side)
+        if self.trader_side == PolymarketLiquiditySide.TAKER:
+            return order_side
+        else:
+            return OrderSide.BUY if order_side == OrderSide.SELL else OrderSide.SELL
 
     def venue_order_id(self, maker_address: str) -> VenueOrderId:
-        if self.trader_side == PolymarketLiquiditySide.MAKER:
+        if self.liquidity_side() == LiquiditySide.MAKER:
             for order in reversed(self.maker_orders):
                 if order.maker_address == maker_address:
                     return VenueOrderId(order.order_id)
             raise ValueError("Invalid array of maker orders (`maker_address` not found)")
         else:
             return VenueOrderId(self.taker_order_id)
+
+    def avg_px(self) -> Decimal:
+        # We assume there should be at least some filled quantity for a trade report
+        total_qty = Decimal(0)
+        avg_px = Decimal(0)
+        for order in self.maker_orders:
+            matched_amount = Decimal(order.matched_amount)
+            avg_px += Decimal(order.price) * matched_amount
+            total_qty += matched_amount
+
+        return avg_px / total_qty
 
     def parse_to_fill_report(
         self,
@@ -84,16 +105,21 @@ class PolymarketTradeReport(msgspec.Struct, frozen=True):
         maker_address: str,
         ts_init: int,
     ) -> FillReport:
+        price = (
+            float(self.price)
+            if self.liquidity_side() == LiquiditySide.MAKER
+            else float(self.avg_px())
+        )
         return FillReport(
             account_id=account_id,
             instrument_id=instrument.id,
             client_order_id=client_order_id,
             venue_order_id=self.venue_order_id(maker_address),
             trade_id=TradeId(self.id),
-            order_side=parse_order_side(self.side),
+            order_side=self.order_side(),
             last_qty=instrument.make_qty(float(self.size)),
-            last_px=instrument.make_price(float(self.price)),
-            liquidity_side=self.liqudity_side(),
+            last_px=instrument.make_price(price),
+            liquidity_side=self.liquidity_side(),
             commission=Money(0, USDC_POS),  # TBC: Hard coded for now
             report_id=UUID4(),
             ts_event=millis_to_nanos(int(self.match_time)),

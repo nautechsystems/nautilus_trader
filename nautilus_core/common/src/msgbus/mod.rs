@@ -458,6 +458,7 @@ pub fn is_matching(topic: &Ustr, pattern: &Ustr) -> bool {
 }
 
 impl Default for MessageBus {
+    /// Creates a new default [`MessageBus`] instance.
     fn default() -> Self {
         Self::new(TraderId::from("TRADER-001"), UUID4::new(), None, None)
     }

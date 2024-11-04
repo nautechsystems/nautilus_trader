@@ -1,9 +1,5 @@
 # Polymarket
 
-:::info
-We are currently working on this integration guide.
-:::
-
 Founded in 2020, Polymarket is the world’s largest decentralized prediction market platform,
 enabling traders to speculate on the outcomes of world events by buying and selling binary option contracts using cryptocurrency.
 
@@ -28,6 +24,10 @@ To install from source using poetry:
 ```
 poetry install --extras polymarket
 ```
+
+## Examples
+
+You can find working live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/polymarket/).
 
 ## Binary options
 

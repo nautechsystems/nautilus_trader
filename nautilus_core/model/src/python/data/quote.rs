@@ -107,7 +107,7 @@ impl QuoteTick {
         .map_err(to_pyvalue_err)
     }
 
-    fn __setstate__(&mut self, _py: Python, state: &Bound<'_, PyAny>) -> PyResult<()> {
+    fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
         let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
         let binding = py_tuple.get_item(0)?;
         let instrument_id_str: &str = binding.downcast::<PyString>()?.extract()?;
@@ -134,7 +134,7 @@ impl QuoteTick {
         Ok(())
     }
 
-    fn __getstate__(&self, _py: Python) -> PyResult<PyObject> {
+    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         Ok((
             self.instrument_id.to_string(),
             self.bid_price.raw,
@@ -148,7 +148,7 @@ impl QuoteTick {
             self.ts_event.as_u64(),
             self.ts_init.as_u64(),
         )
-            .to_object(_py))
+            .to_object(py))
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<PyObject> {
@@ -270,7 +270,6 @@ impl QuoteTick {
     #[pyo3(name = "from_raw")]
     #[allow(clippy::too_many_arguments)]
     fn py_from_raw(
-        _py: Python<'_>,
         instrument_id: InstrumentId,
         bid_price_raw: i64,
         ask_price_raw: i64,

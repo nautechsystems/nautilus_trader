@@ -521,11 +521,18 @@ cdef class OrderInitialized(OrderEvent):
         Condition.not_none(values, "values")
         cdef str trigger_instrument_id = values["trigger_instrument_id"]
         cdef str order_list_id_str = values["order_list_id"]
-        cdef str linked_order_ids_str = values["linked_order_ids"]
         cdef str parent_order_id_str = values["parent_order_id"]
         cdef str exec_algorithm_id_str = values["exec_algorithm_id"]
         cdef str exec_spawn_id_str = values["exec_spawn_id"]
-        cdef str tags = values["tags"]
+
+        linked_order_ids = values["linked_order_ids"]
+        tags = values["tags"]
+
+        if isinstance(linked_order_ids, str):
+            linked_order_ids = linked_order_ids.split(",")
+        if isinstance(tags, str):
+            tags = tags.split(",")
+
         return OrderInitialized(
             trader_id=TraderId(values["trader_id"]),
             strategy_id=StrategyId(values["strategy_id"]),
@@ -543,12 +550,12 @@ cdef class OrderInitialized(OrderEvent):
             trigger_instrument_id=InstrumentId.from_str_c(trigger_instrument_id) if trigger_instrument_id is not None else None,
             contingency_type=contingency_type_from_str(values["contingency_type"]),
             order_list_id=OrderListId(order_list_id_str) if order_list_id_str is not None else None,
-            linked_order_ids=[ClientOrderId(o_str) for o_str in linked_order_ids_str.split(",")] if linked_order_ids_str is not None else None,
+            linked_order_ids=[ClientOrderId(o_str) for o_str in linked_order_ids] if linked_order_ids is not None else None,
             parent_order_id=ClientOrderId(parent_order_id_str) if parent_order_id_str is not None else None,
             exec_algorithm_id=ExecAlgorithmId(exec_algorithm_id_str) if exec_algorithm_id_str is not None else None,
             exec_algorithm_params=values["exec_algorithm_params"],
             exec_spawn_id=ClientOrderId(exec_spawn_id_str) if exec_spawn_id_str is not None else None,
-            tags=tags.split(",") if tags is not None else None,
+            tags=tags,
             event_id=UUID4(values["event_id"]),
             ts_init=values["ts_init"],
             reconciliation=values.get("reconciliation", False),
@@ -576,12 +583,12 @@ cdef class OrderInitialized(OrderEvent):
             "trigger_instrument_id": obj.trigger_instrument_id.value if obj.trigger_instrument_id is not None else None,
             "contingency_type": contingency_type_to_str(obj.contingency_type),
             "order_list_id": obj.order_list_id.value if obj.order_list_id is not None else None,
-            "linked_order_ids": ",".join([o.value for o in obj.linked_order_ids]) if obj.linked_order_ids is not None else None,  # noqa
+            "linked_order_ids": [o.value for o in obj.linked_order_ids] if obj.linked_order_ids is not None else None,
             "parent_order_id": obj.parent_order_id.value if obj.parent_order_id is not None else None,
             "exec_algorithm_id": obj.exec_algorithm_id.value if obj.exec_algorithm_id is not None else None,
             "exec_algorithm_params": obj.exec_algorithm_params,
             "exec_spawn_id": obj.exec_spawn_id.value if obj.exec_spawn_id is not None else None,
-            "tags": ",".join(obj.tags) if obj.tags is not None else None,
+            "tags": obj.tags if obj.tags is not None else None,
             "event_id": obj.id.value,
             "ts_init": obj.ts_init,
             "ts_event": obj.ts_init,

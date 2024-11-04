@@ -15,13 +15,13 @@
 
 //! Python bindings from `pyo3`.
 
-use pyo3::{prelude::*, pymodule};
-
 pub mod average;
 pub mod book;
 pub mod momentum;
 pub mod ratio;
 pub mod volatility;
+
+use pyo3::{prelude::*, pymodule};
 
 #[pymodule]
 pub fn indicators(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {

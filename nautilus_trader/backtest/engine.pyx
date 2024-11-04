@@ -557,7 +557,7 @@ cdef class BacktestEngine:
 
         if (
             isinstance(instrument, CurrencyPair)
-            and venue.account_type == AccountType.CASH
+            and venue.account_type != AccountType.MARGIN
             and venue.base_currency is not None  # Single-currency account
         ):
             raise InvalidConfiguration(

@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-/// Configuration for [`OrderMatchingEngine`] instances.
+/// Configuration for `OrderMatchingEngine` instances.
 #[derive(Debug, Clone)]
 pub struct OrderMatchingEngineConfig {
     pub bar_execution: bool,
@@ -26,6 +26,7 @@ pub struct OrderMatchingEngineConfig {
 }
 
 impl OrderMatchingEngineConfig {
+    /// Creates a new default [`OrderMatchingEngineConfig`] instance.
     #[must_use]
     pub const fn new(
         bar_execution: bool,
@@ -50,6 +51,7 @@ impl OrderMatchingEngineConfig {
 
 #[allow(clippy::derivable_impls)]
 impl Default for OrderMatchingEngineConfig {
+    /// Creates a new default [`OrderMatchingEngineConfig`] instance.
     fn default() -> Self {
         Self {
             bar_execution: false,

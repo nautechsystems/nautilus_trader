@@ -13,7 +13,6 @@ crate-type = ["rlib", "staticlib", "cdylib"]
 [dependencies]
 nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model", features = ["stubs"] }
-anyhow = { workspace = true }
 arrow = { workspace = true }
 parquet = { workspace = true }
 pyo3 = { workspace = true, optional = true }

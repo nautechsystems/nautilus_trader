@@ -387,7 +387,7 @@ impl LimitOrder {
 
     #[staticmethod]
     #[pyo3(name = "from_dict")]
-    fn py_from_dict(_py: Python<'_>, values: &Bound<'_, PyDict>) -> PyResult<Self> {
+    fn py_from_dict(values: &Bound<'_, PyDict>) -> PyResult<Self> {
         let dict = values.as_ref();
         let trader_id = TraderId::from(dict.get_item("trader_id")?.extract::<&str>()?);
         let strategy_id = StrategyId::from(dict.get_item("strategy_id")?.extract::<&str>()?);

@@ -45,6 +45,7 @@ pub struct FixedFeeModel {
 }
 
 impl FixedFeeModel {
+    /// Creates a new [`FixedFeeModel`] instance.
     pub fn new(commission: Money, change_commission_once: Option<bool>) -> anyhow::Result<Self> {
         if commission.as_f64() < 0.0 {
             anyhow::bail!("Commission must be greater than or equal to zero.")

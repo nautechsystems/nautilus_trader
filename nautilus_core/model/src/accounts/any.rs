@@ -83,6 +83,7 @@ impl From<AccountState> for AccountAny {
 }
 
 impl Default for AccountAny {
+    /// Creates a new default [`AccountAny`] instance.
     fn default() -> Self {
         AccountAny::Cash(CashAccount::default())
     }

@@ -25,9 +25,9 @@
 
 //! Nautilus core test kit from `pyo3`.
 
-use pyo3::{prelude::*, wrap_pyfunction};
-
 pub mod files;
+
+use pyo3::{prelude::*, wrap_pyfunction};
 
 /// Loaded as nautilus_pyo3.test_kit
 #[pymodule]

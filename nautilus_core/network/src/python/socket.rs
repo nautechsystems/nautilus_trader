@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::sync::atomic::Ordering;
+use std::sync::{atomic::Ordering, Arc};
 
 use nautilus_core::python::to_pyruntime_err;
 use pyo3::prelude::*;
@@ -26,7 +26,7 @@ use crate::socket::{SocketClient, SocketConfig};
 impl SocketConfig {
     #[new]
     #[pyo3(signature = (url, ssl, suffix, handler, heartbeat=None))]
-    const fn py_new(
+    fn py_new(
         url: String,
         ssl: bool,
         suffix: Vec<u8>,
@@ -38,7 +38,7 @@ impl SocketConfig {
             url,
             mode,
             suffix,
-            handler,
+            handler: Arc::new(handler),
             heartbeat,
         }
     }
@@ -133,6 +133,8 @@ impl SocketClient {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+
+    use std::sync::Arc;
 
     use pyo3::{prelude::*, prepare_freethreaded_python};
     use tokio::{
@@ -250,7 +252,7 @@ counter = Counter()",
 
         let config = SocketConfig {
             url: format!("127.0.0.1:{}", server.port),
-            handler: Python::with_gil(|py| handler.clone_ref(py)),
+            handler: Arc::new(handler),
             mode: Mode::Plain,
             suffix: b"\r\n".to_vec(),
             heartbeat: None,

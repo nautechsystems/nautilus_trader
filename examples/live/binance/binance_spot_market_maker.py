@@ -52,6 +52,7 @@ config_node = TradingNodeConfig(
         # snapshot_orders=True,
         # snapshot_positions=True,
         # snapshot_positions_interval_secs=5.0,
+        open_check_interval_secs=5.0,
     ),
     cache=CacheConfig(
         # database=DatabaseConfig(),

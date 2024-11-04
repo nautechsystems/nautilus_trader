@@ -655,6 +655,7 @@ class DYDXWsFillSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields=
     orderId: str | None = None
     clientMetadata: str | None = None
     fee: str | None = None
+    affiliateRevShare: str | None = None
 
 
 class DYDXWsOrderSubaccountMessageContents(msgspec.Struct, forbid_unknown_fields=True):

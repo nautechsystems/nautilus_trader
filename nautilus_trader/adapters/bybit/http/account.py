@@ -171,6 +171,7 @@ class BybitAccountHttpAPI:
         self,
         product_type: BybitProductType,
         symbol: str | None = None,
+        open_only: bool | None = None,
     ) -> list[BybitOrder]:
         match product_type:
             case BybitProductType.INVERSE:
@@ -178,10 +179,12 @@ class BybitAccountHttpAPI:
             case _:
                 settle_coin = self.default_settle_coin if symbol is None else None
 
+        # openOnly is unintuitively 0 for true (see docs https://bybit-exchange.github.io/docs/v5/order/open-order)
         response = await self._endpoint_order_history.get(
             BybitOrderHistoryGetParams(
                 category=product_type,
                 symbol=symbol,
+                openOnly=0 if open_only is not None else None,
                 settleCoin=settle_coin,
             ),
         )

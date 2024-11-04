@@ -29,7 +29,7 @@ async fn main() {
         .init();
 
     // let base_url = "ws://localhost:8001";
-    let mut client = TardisMachineClient::new(None);
+    let mut client = TardisMachineClient::new(None).unwrap();
     // TODO: Add instrument info constructor
     let instrument_info1 = InstrumentMiniInfo {
         instrument_id: InstrumentId::from("XBTUSD.BITMEX"),

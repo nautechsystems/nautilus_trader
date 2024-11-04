@@ -16,9 +16,9 @@
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
 use futures::StreamExt;
+use nautilus_common::messages::data::{DataEvent, DataResponse};
 use nautilus_common::{
     clock::{set_clock, Clock, LiveClock, TestClock},
-    messages::data::{DataClientResponse, DataResponse},
     runtime::get_runtime,
     timer::{TimeEvent, TimeEventHandlerV2},
 };
@@ -39,7 +39,7 @@ pub trait SendResponse {
     fn send(&self, resp: DataResponse);
 }
 
-pub type DataResponseQueue = Rc<RefCell<VecDeque<DataClientResponse>>>;
+pub type DataResponseQueue = Rc<RefCell<VecDeque<DataEvent>>>;
 
 pub struct BacktestRunner {
     queue: DataResponseQueue,
@@ -62,8 +62,8 @@ impl Runner for BacktestRunner {
     fn run(&mut self, engine: &mut DataEngine) {
         while let Some(resp) = self.queue.as_ref().borrow_mut().pop_front() {
             match resp {
-                DataClientResponse::Response(resp) => engine.response(resp),
-                DataClientResponse::Data(data) => {
+                DataEvent::Response(resp) => engine.response(resp),
+                DataEvent::Data(data) => {
                     // Advance clock time and collect all triggered events and handlers
                     let handlers: Vec<TimeEventHandlerV2> = {
                         let mut guard = self.clock.borrow_mut();
@@ -86,16 +86,16 @@ impl Runner for BacktestRunner {
 }
 
 pub struct LiveRunner {
-    resp_tx: UnboundedSender<DataClientResponse>,
-    resp_rx: UnboundedReceiver<DataClientResponse>,
+    resp_tx: UnboundedSender<DataEvent>,
+    resp_rx: UnboundedReceiver<DataEvent>,
     pub clock: Rc<RefCell<LiveClock>>,
 }
 
 impl Runner for LiveRunner {
-    type Sender = UnboundedSender<DataClientResponse>;
+    type Sender = UnboundedSender<DataEvent>;
 
     fn new() -> Self {
-        let (resp_tx, resp_rx) = tokio::sync::mpsc::unbounded_channel::<DataClientResponse>();
+        let (resp_tx, resp_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
 
         let clock = Rc::new(RefCell::new(LiveClock::new()));
         set_clock(clock.clone());
@@ -122,8 +122,8 @@ impl Runner for LiveRunner {
             // Process the event outside of the async context
             match next_event {
                 Some(RunnerEvent::Data(resp)) => match resp {
-                    DataClientResponse::Response(resp) => engine.response(resp),
-                    DataClientResponse::Data(data) => engine.process_data(data),
+                    DataEvent::Response(resp) => engine.response(resp),
+                    DataEvent::Data(data) => engine.process_data(data),
                 },
                 Some(RunnerEvent::Timer(event)) => self.clock.borrow().get_handler(event).run(),
                 None => break,
@@ -138,6 +138,6 @@ impl Runner for LiveRunner {
 
 // Helper enum to represent different event types
 enum RunnerEvent {
-    Data(DataClientResponse),
+    Data(DataEvent),
     Timer(TimeEvent),
 }
