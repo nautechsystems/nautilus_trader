@@ -43,7 +43,7 @@ mod tests;
 use std::{
     any::Any,
     cell::{Ref, RefCell},
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     num::NonZeroU64,
     ops::Deref,
     rc::Rc,
@@ -57,7 +57,10 @@ use nautilus_common::{
     clock::Clock,
     logging::{RECV, RES},
     messages::data::{DataRequest, DataResponse, SubscriptionCommand},
-    msgbus::{handler::MessageHandler, MessageBus},
+    msgbus::{
+        handler::{MessageHandler, ShareableMessageHandler},
+        MessageBus,
+    },
     timer::TimeEvent,
 };
 use nautilus_core::{
@@ -79,6 +82,7 @@ use nautilus_model::{
     instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
     orderbook::book::OrderBook,
 };
+use updaters::BookUpdater;
 use ustr::Ustr;
 
 use crate::{aggregation::BarAggregator, client::DataClientAdapter};
@@ -97,8 +101,8 @@ pub struct DataEngine {
     synthetic_quote_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     synthetic_trade_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     buffered_deltas_map: HashMap<InstrumentId, Vec<OrderBookDelta>>,
-    handler_ref: Option<Rc<RefCell<Self>>>,
     msgbus_priority: u8,
+    command_queue: VecDeque<SubscriptionCommand>,
     config: DataEngineConfig,
 }
 
@@ -124,13 +128,14 @@ impl DataEngine {
             synthetic_quote_feeds: HashMap::new(),
             synthetic_trade_feeds: HashMap::new(),
             buffered_deltas_map: HashMap::new(),
-            handler_ref: None,   // Assigned at system initialization
             msgbus_priority: 10, // High-priority for built-in component
+            command_queue: VecDeque::new(),
             config: config.unwrap_or_default(),
         }
     }
 
-    pub fn borrow_cache(&self) -> Ref<'_, Cache> {
+    /// Provides read-only access to the cache.
+    pub fn get_cache(&self) -> Ref<'_, Cache> {
         self.cache.borrow()
     }
 
@@ -316,40 +321,51 @@ impl DataEngine {
         log::info!("Deregistered client {client_id}");
     }
 
-    pub fn execute(&mut self, msg: &dyn Any) {
-        if let Some(cmd) = msg.downcast_ref::<SubscriptionCommand>() {
-            match cmd.data_type.type_name() {
-                stringify!(OrderBookDelta) => self.handle_subscribe_book_deltas(cmd),
-                stringify!(OrderBook) => self.handle_subscribe_book_snapshots(cmd),
-                // stringify!(QuoteTick) => self.handle_subscribe_quote_ticks(cmd),
-                // stringify!(TradeTick) => self.handle_subscribe_trade_ticks(cmd),
-                // stringify!(Bar) => self.handle_subscribe_bars(cmd),
-                type_name => Err(anyhow::anyhow!(
-                    "Cannot handle subscription, type `{type_name}` is unrecognized"
-                )),
-            }
-            .unwrap_or_else(|e| log::error!("{e}"));
+    pub fn run(&mut self) {
+        let commands: Vec<_> = self.command_queue.drain(..).collect();
+        for cmd in commands {
+            self.execute(cmd)
+        }
+    }
 
-            if let Some(client) = self.get_client_mut(&cmd.client_id, &cmd.venue) {
-                client.execute(cmd.clone());
-
-                // TBD if we want to do the below instead
-                // if client.handles_order_book_deltas {
-                //     client.subscribe_order_book_deltas(instrument_id, book_type, depth)?;
-                // } else if client.handles_order_book_snapshots {
-                //     client.subscribe_order_book_snapshots(instrument_id, book_type, depth)?;
-                // } else {
-                //     anyhow::bail!("Cannot subscribe order book for {instrument_id}: client does not handle book subscriptions");
-                // }
-                // client.execute(command);
-            } else {
-                log::error!(
-                    "Cannot handle command: no client found for {}",
-                    cmd.client_id
-                );
-            };
+    pub fn enqueue(&mut self, cmd: &dyn Any) {
+        if let Some(cmd) = cmd.downcast_ref::<SubscriptionCommand>() {
+            self.command_queue.push_back(cmd.clone());
         } else {
-            log::error!("Invalid message type received: {msg:?}");
+            log::error!("Invalid message type received: {cmd:?}")
+        }
+    }
+
+    pub fn execute(&mut self, cmd: SubscriptionCommand) {
+        match cmd.data_type.type_name() {
+            stringify!(OrderBookDelta) => self.handle_subscribe_book_deltas(&cmd),
+            stringify!(OrderBook) => self.handle_subscribe_book_snapshots(&cmd),
+            // stringify!(QuoteTick) => self.handle_subscribe_quote_ticks(cmd),
+            // stringify!(TradeTick) => self.handle_subscribe_trade_ticks(cmd),
+            // stringify!(Bar) => self.handle_subscribe_bars(cmd),
+            type_name => Err(anyhow::anyhow!(
+                "Cannot handle subscription, type `{type_name}` is unrecognized"
+            )),
+        }
+        .unwrap_or_else(|e| log::error!("{e}"));
+
+        if let Some(client) = self.get_client_mut(&cmd.client_id, &cmd.venue) {
+            client.execute(cmd.clone());
+
+            // TBD if we want to do the below instead
+            // if client.handles_order_book_deltas {
+            //     client.subscribe_order_book_deltas(instrument_id, book_type, depth)?;
+            // } else if client.handles_order_book_snapshots {
+            //     client.subscribe_order_book_snapshots(instrument_id, book_type, depth)?;
+            // } else {
+            //     anyhow::bail!("Cannot subscribe order book for {instrument_id}: client does not handle book subscriptions");
+            // }
+            // client.execute(command);
+        } else {
+            log::error!(
+                "Cannot handle command: no client found for {}",
+                cmd.client_id
+            );
         }
     }
 
@@ -524,14 +540,14 @@ impl DataEngine {
                         "Bar {bar} was prior to last bar `ts_event` {}",
                         last_bar.ts_event
                     );
-                    return; // `bar` is out of sequence
+                    return; // Bar is out of sequence
                 }
                 if bar.ts_init < last_bar.ts_init {
                     log::warn!(
                         "Bar {bar} was prior to last bar `ts_init` {}",
                         last_bar.ts_init
                     );
-                    return; // `bar` is out of sequence
+                    return; // Bar is out of sequence
                 }
                 // TODO: Implement `bar.is_revision` logic
             }
@@ -677,49 +693,25 @@ impl DataEngine {
             }
         }
 
-        // TODO: TBD based on ShareableMessageHandler
-        // let handler_ref = self.handler_ref.clone().expect(UNINITIALIZED);
-        //
-        // {
-        //     let mut msgbus = self.msgbus.borrow_mut();
-        //
-        //     // Set up subscriptions
-        //     let topic = msgbus.switchboard.get_deltas_topic(*instrument_id);
-        //     let handler = ShareableMessageHandler(Rc::new(BookDataHandler {
-        //         id: Ustr::from(stringify!(update_order_book)),
-        //         engine_ref: handler_ref,
-        //     }));
-        //
-        //     if !msgbus.is_subscribed(topic.as_str(), handler.clone()) {
-        //         msgbus.subscribe(topic, handler.clone(), Some(self.msgbus_priority));
-        //     }
-        //
-        //     let topic = msgbus.switchboard.get_depth_topic(*instrument_id);
-        //
-        //     if !only_deltas && !msgbus.is_subscribed(topic.as_str(), handler.clone()) {
-        //         msgbus.subscribe(topic, handler, Some(self.msgbus_priority));
-        //     }
-        // }
-
-        Ok(())
-    }
-
-    fn update_order_book(&self, data: &Data) {
-        // Only apply data if there is a book being managed,
-        // as it may be being managed manually.
-        if let Some(book) = self
-            .cache
-            .as_ref()
-            .borrow_mut()
-            .order_book(&data.instrument_id())
         {
-            match data {
-                Data::Delta(delta) => book.apply_delta(delta),
-                Data::Deltas(deltas) => book.apply_deltas(deltas),
-                Data::Depth10(depth) => book.apply_depth(depth),
-                _ => log::error!("Invalid data type for book update, was {data:?}"),
+            let mut msgbus = self.msgbus.borrow_mut();
+
+            // Set up subscriptions
+            let updater = BookUpdater::new(instrument_id, self.cache.clone());
+            let handler = ShareableMessageHandler(Rc::new(updater));
+
+            let topic = msgbus.switchboard.get_deltas_topic(*instrument_id);
+            if !msgbus.is_subscribed(topic.as_str(), handler.clone()) {
+                msgbus.subscribe(topic, handler.clone(), Some(self.msgbus_priority));
+            }
+
+            let topic = msgbus.switchboard.get_depth_topic(*instrument_id);
+            if !only_deltas && !msgbus.is_subscribed(topic.as_str(), handler.clone()) {
+                msgbus.subscribe(topic, handler, Some(self.msgbus_priority));
             }
         }
+
+        Ok(())
     }
 
     fn snapshot_order_book(&self, event: TimeEvent) {
@@ -727,7 +719,6 @@ impl DataEngine {
     }
 }
 
-// TODO: Deprecated
 pub struct SubscriptionCommandHandler {
     pub id: Ustr,
     pub engine_ref: Rc<RefCell<DataEngine>>,
@@ -738,31 +729,11 @@ impl MessageHandler for SubscriptionCommandHandler {
         self.id
     }
 
-    fn handle(&self, message: &dyn Any) {
-        self.engine_ref.borrow_mut().execute(message);
+    fn handle(&self, msg: &dyn Any) {
+        self.engine_ref.borrow_mut().enqueue(msg);
     }
     fn handle_response(&self, _resp: DataResponse) {}
     fn handle_data(&self, _data: Data) {}
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
-pub struct BookDataHandler {
-    id: Ustr,
-    engine_ref: Rc<RefCell<DataEngine>>,
-}
-
-impl MessageHandler for BookDataHandler {
-    fn id(&self) -> Ustr {
-        self.id
-    }
-
-    fn handle(&self, message: &dyn Any) {}
-    fn handle_response(&self, _resp: DataResponse) {}
-    fn handle_data(&self, data: Data) {
-        self.engine_ref.borrow_mut().update_order_book(&data);
-    }
     fn as_any(&self) -> &dyn Any {
         self
     }

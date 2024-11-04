@@ -172,6 +172,7 @@ fn test_execute_subscribe_custom_data(
     }));
     msgbus.borrow_mut().register(endpoint, handler);
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    data_engine.borrow_mut().run();
 
     assert!(data_engine
         .borrow()
@@ -213,6 +214,7 @@ fn test_execute_subscribe_order_book_deltas(
     }));
     msgbus.borrow_mut().register(endpoint, handler);
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    data_engine.borrow_mut().run();
 
     assert!(data_engine
         .borrow()
@@ -254,6 +256,7 @@ fn test_execute_subscribe_order_book_snapshots(
     }));
     msgbus.borrow_mut().register(endpoint, handler);
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    data_engine.borrow_mut().run();
 
     assert!(data_engine
         .borrow()
@@ -293,6 +296,7 @@ fn test_execute_subscribe_instrument(
     }));
     msgbus.borrow_mut().register(endpoint, handler);
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    data_engine.borrow_mut().run();
 
     assert!(data_engine
         .borrow()
@@ -332,6 +336,7 @@ fn test_execute_subscribe_quote_ticks(
     }));
     msgbus.borrow_mut().register(endpoint, handler);
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    data_engine.borrow_mut().run();
 
     assert!(data_engine
         .borrow()
@@ -371,6 +376,7 @@ fn test_execute_subscribe_trade_ticks(
     }));
     msgbus.borrow_mut().register(endpoint, handler);
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    data_engine.borrow_mut().run();
 
     assert!(data_engine
         .borrow()
@@ -410,6 +416,7 @@ fn test_execute_subscribe_bars(
     }));
     msgbus.borrow_mut().register(endpoint, handler);
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    data_engine.borrow_mut().run();
 
     assert!(data_engine.borrow().subscribed_bars().contains(&bar_type));
 }
@@ -457,7 +464,7 @@ fn test_process_instrument(
 
     let mut data_engine = data_engine.borrow_mut();
     data_engine.process(&audusd_sim as &dyn Any);
-    let cache = &data_engine.borrow_cache();
+    let cache = &data_engine.get_cache();
     let messages = get_saved_messages::<InstrumentAny>(handler);
 
     assert_eq!(
@@ -513,7 +520,7 @@ fn test_process_order_book_delta(
 
     let mut data_engine = data_engine.borrow_mut();
     data_engine.process_data(Data::Delta(delta));
-    let _cache = &data_engine.borrow_cache();
+    let _cache = &data_engine.get_cache();
     let messages = get_saved_messages::<OrderBookDeltas>(handler);
 
     assert_eq!(messages.len(), 1);
@@ -565,7 +572,7 @@ fn test_process_order_book_deltas(
 
     let mut data_engine = data_engine.borrow_mut();
     data_engine.process_data(Data::Deltas(deltas.clone()));
-    let _cache = &data_engine.borrow_cache();
+    let _cache = &data_engine.get_cache();
     let messages = get_saved_messages::<OrderBookDeltas>(handler);
 
     assert_eq!(messages.len(), 1);
@@ -617,7 +624,7 @@ fn test_process_order_book_depth10(
 
     let mut data_engine = data_engine.borrow_mut();
     data_engine.process_data(Data::Depth10(depth));
-    let _cache = &data_engine.borrow_cache();
+    let _cache = &data_engine.get_cache();
     let messages = get_saved_messages::<OrderBookDepth10>(handler);
 
     assert_eq!(messages.len(), 1);
@@ -667,7 +674,7 @@ fn test_process_quote_tick(
 
     let mut data_engine = data_engine.borrow_mut();
     data_engine.process_data(Data::Quote(quote));
-    let cache = &data_engine.borrow_cache();
+    let cache = &data_engine.get_cache();
     let messages = get_saved_messages::<QuoteTick>(handler);
 
     assert_eq!(cache.quote(&quote.instrument_id), Some(quote).as_ref());
@@ -718,7 +725,7 @@ fn test_process_trade_tick(
 
     let mut data_engine = data_engine.borrow_mut();
     data_engine.process_data(Data::Trade(trade));
-    let cache = &data_engine.borrow_cache();
+    let cache = &data_engine.get_cache();
     let messages = get_saved_messages::<TradeTick>(handler);
 
     assert_eq!(cache.trade(&trade.instrument_id), Some(trade).as_ref());
@@ -768,7 +775,7 @@ fn test_process_bar(
 
     let mut data_engine = data_engine.borrow_mut();
     data_engine.process_data(Data::Bar(bar));
-    let cache = &data_engine.borrow_cache();
+    let cache = &data_engine.get_cache();
     let messages = get_saved_messages::<Bar>(handler);
 
     assert_eq!(cache.bar(&bar.bar_type), Some(bar).as_ref());
