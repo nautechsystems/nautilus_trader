@@ -21,7 +21,7 @@ use std::{
     ops::Deref,
     pin::Pin,
     rc::Rc,
-    sync::{Arc, OnceLock},
+    sync::Arc,
     task::{Context, Poll},
 };
 
@@ -32,16 +32,15 @@ use nautilus_core::{
     nanos::UnixNanos,
     time::{get_atomic_clock_realtime, AtomicTime},
 };
-use tokio::{runtime::Runtime, sync::Mutex};
+use tokio::sync::Mutex;
 use ustr::Ustr;
 
-use crate::{
-    runtime::get_runtime,
-    timer::{LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandlerV2},
-};
+use crate::timer::{LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandlerV2};
+
+pub type GlobalClock = Rc<RefCell<dyn Clock>>;
 
 thread_local! {
-    static CLOCK: OnceCell<Rc<RefCell<dyn Clock>>> = OnceCell::new();
+    static CLOCK: OnceCell<GlobalClock> = OnceCell::new();
 }
 
 pub fn get_clock() -> Rc<RefCell<dyn Clock>> {
@@ -204,7 +203,7 @@ impl TestClock {
     ///
     /// Note: `set_time` is not used but present to keep backward compatible api call
     #[cfg(feature = "clock_v2")]
-    pub fn advance_to_time(&mut self, to_time_ns: UnixNanos, set_time: bool) {
+    pub fn advance_to_time(&mut self, to_time_ns: UnixNanos) {
         // Time should be non-decreasing
         assert!(
             to_time_ns >= self.time.get_time_ns(),
@@ -412,8 +411,6 @@ pub struct LiveClock {
     pub heap: Arc<Mutex<BinaryHeap<TimeEvent>>>,
     #[cfg(feature = "clock_v2")]
     callbacks: HashMap<Ustr, TimeEventCallback>,
-    #[cfg(feature = "clock_v2")]
-    runtime: &'static Runtime,
 }
 
 impl LiveClock {
@@ -431,14 +428,12 @@ impl LiveClock {
         #[cfg(feature = "clock_v2")]
         {
             let heap = Arc::new(Mutex::new(BinaryHeap::new()));
-            let runtime = get_runtime();
             Self {
                 time: get_atomic_clock_realtime(),
                 timers: HashMap::new(),
                 default_callback: None,
                 heap,
                 callbacks: HashMap::new(),
-                runtime,
             }
         }
     }
@@ -635,7 +630,6 @@ impl Clock for LiveClock {
     }
 }
 
-#[cfg(feature = "clock_v2")]
 // Helper struct to stream events from the heap
 pub struct TimeEventStream {
     heap: Arc<Mutex<BinaryHeap<TimeEvent>>>,

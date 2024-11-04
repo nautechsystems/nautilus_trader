@@ -43,7 +43,6 @@ pub type DataResponseQueue = Rc<RefCell<VecDeque<DataClientResponse>>>;
 
 pub struct BacktestRunner {
     queue: DataResponseQueue,
-    #[cfg(feature = "clock_v2")]
     pub clock: Rc<RefCell<TestClock>>,
 }
 
@@ -51,16 +50,11 @@ impl Runner for BacktestRunner {
     type Sender = DataResponseQueue;
 
     fn new() -> Self {
-        #[cfg(feature = "clock_v2")]
-        let clock = {
-            let clock = Rc::new(RefCell::new(TestClock::new()));
-            set_clock(clock.clone());
-            clock
-        };
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        set_clock(clock.clone());
 
         Self {
             queue: Rc::new(RefCell::new(VecDeque::new())),
-            #[cfg(feature = "clock_v2")]
             clock,
         }
     }
@@ -70,19 +64,15 @@ impl Runner for BacktestRunner {
             match resp {
                 DataClientResponse::Response(resp) => engine.response(resp),
                 DataClientResponse::Data(data) => {
-                    #[cfg(feature = "clock_v2")]
-                    {
-                        // Advance clock time and collect all triggered events
-                        // and there handlers
-                        let handlers: Vec<TimeEventHandlerV2> = {
-                            let mut guard = self.clock.borrow_mut();
-                            guard.advance_time(data.ts_init(), true);
-                            guard.by_ref().collect()
-                        };
+                    // Advance clock time and collect all triggered events and handlers
+                    let handlers: Vec<TimeEventHandlerV2> = {
+                        let mut guard = self.clock.borrow_mut();
+                        guard.advance_time(data.ts_init(), true);
+                        guard.by_ref().collect()
+                    };
 
-                        // Execut all handlers before processing the data
-                        handlers.into_iter().for_each(TimeEventHandlerV2::run);
-                    }
+                    // Execute all handlers before processing the data
+                    handlers.into_iter().for_each(TimeEventHandlerV2::run);
 
                     engine.process_data(data);
                 }
@@ -98,7 +88,6 @@ impl Runner for BacktestRunner {
 pub struct LiveRunner {
     resp_tx: UnboundedSender<DataClientResponse>,
     resp_rx: UnboundedReceiver<DataClientResponse>,
-    #[cfg(feature = "clock_v2")]
     pub clock: Rc<RefCell<LiveClock>>,
 }
 
@@ -108,53 +97,36 @@ impl Runner for LiveRunner {
     fn new() -> Self {
         let (resp_tx, resp_rx) = tokio::sync::mpsc::unbounded_channel::<DataClientResponse>();
 
-        #[cfg(feature = "clock_v2")]
-        let clock = {
-            let clock = Rc::new(RefCell::new(LiveClock::new()));
-            set_clock(clock.clone());
-            clock
-        };
+        let clock = Rc::new(RefCell::new(LiveClock::new()));
+        set_clock(clock.clone());
 
         Self {
             resp_tx,
             resp_rx,
-            #[cfg(feature = "clock_v2")]
             clock,
         }
     }
 
     fn run(&mut self, engine: &mut DataEngine) {
-        #[cfg(not(feature = "clock_v2"))]
-        while let Some(resp) = self.resp_rx.blocking_recv() {
-            match resp {
-                DataClientResponse::Response(resp) => engine.response(resp),
-                DataClientResponse::Data(data) => engine.process_data(data),
-            }
-        }
-
-        // Clone the heap for event streaming
-        #[cfg(feature = "clock_v2")]
-        {
-            let mut time_event_stream = self.clock.borrow().get_event_stream();
-            loop {
-                // Collect the next event to process
-                let next_event = get_runtime().block_on(async {
-                    tokio::select! {
-                        Some(resp) = self.resp_rx.recv() => Some(RunnerEvent::Data(resp)),
-                        Some(event) = time_event_stream.next() => Some(RunnerEvent::Timer(event)),
-                        else => None,
-                    }
-                });
-
-                // Process the event outside of the async context
-                match next_event {
-                    Some(RunnerEvent::Data(resp)) => match resp {
-                        DataClientResponse::Response(resp) => engine.response(resp),
-                        DataClientResponse::Data(data) => engine.process_data(data),
-                    },
-                    Some(RunnerEvent::Timer(event)) => self.clock.borrow().get_handler(event).run(),
-                    None => break,
+        let mut time_event_stream = self.clock.borrow().get_event_stream();
+        loop {
+            // Collect the next event to process
+            let next_event = get_runtime().block_on(async {
+                tokio::select! {
+                    Some(resp) = self.resp_rx.recv() => Some(RunnerEvent::Data(resp)),
+                    Some(event) = time_event_stream.next() => Some(RunnerEvent::Timer(event)),
+                    else => None,
                 }
+            });
+
+            // Process the event outside of the async context
+            match next_event {
+                Some(RunnerEvent::Data(resp)) => match resp {
+                    DataClientResponse::Response(resp) => engine.response(resp),
+                    DataClientResponse::Data(data) => engine.process_data(data),
+                },
+                Some(RunnerEvent::Timer(event)) => self.clock.borrow().get_handler(event).run(),
+                None => break,
             }
         }
     }
