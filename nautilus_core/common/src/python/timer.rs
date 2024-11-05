@@ -165,6 +165,18 @@ impl TimeEvent {
 
 #[cfg(test)]
 mod tests {
+    #[rustfmt::skip]
+    #[cfg(feature = "clock_v2")]
+    use std::collections::BinaryHeap;
+
+    #[rustfmt::skip]
+    #[cfg(feature = "clock_v2")]
+    use std::sync::Arc;
+
+    #[rustfmt::skip]
+    #[cfg(feature = "clock_v2")]
+    use tokio::sync::Mutex;
+
     use nautilus_core::{
         datetime::NANOSECONDS_IN_MILLISECOND, nanos::UnixNanos, time::get_atomic_clock_realtime,
     };
@@ -175,13 +187,6 @@ mod tests {
         testing::wait_until,
         timer::{LiveTimer, TimeEvent, TimeEventCallback},
     };
-
-    #[cfg(feature = "clock_v2")]
-    use std::collections::BinaryHeap;
-    #[cfg(feature = "clock_v2")]
-    use std::sync::Arc;
-    #[cfg(feature = "clock_v2")]
-    use tokio::sync::Mutex;
 
     #[pyfunction]
     const fn receive_event(_py: Python, _event: TimeEvent) -> PyResult<()> {
@@ -211,14 +216,7 @@ mod tests {
             let heap = Arc::new(Mutex::new(BinaryHeap::new()));
             (
                 heap.clone(),
-                LiveTimer::new(
-                    "TEST_TIMER",
-                    interval_ns,
-                    start_time,
-                    None,
-                    callback,
-                    heap.clone(),
-                ),
+                LiveTimer::new("TEST_TIMER", interval_ns, start_time, None, callback, heap),
             )
         };
         let next_time_ns = timer.next_time_ns();
@@ -267,7 +265,7 @@ mod tests {
                     start_time,
                     Some(stop_time),
                     callback,
-                    heap.clone(),
+                    heap,
                 ),
             )
         };
@@ -317,7 +315,7 @@ mod tests {
                     start_time,
                     Some(stop_time),
                     callback,
-                    heap.clone(),
+                    heap,
                 ),
             )
         };

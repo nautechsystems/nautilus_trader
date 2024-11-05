@@ -135,6 +135,7 @@ impl DataEngine {
     }
 
     /// Provides read-only access to the cache.
+    #[must_use]
     pub fn get_cache(&self) -> Ref<'_, Cache> {
         self.cache.borrow()
     }
@@ -324,7 +325,7 @@ impl DataEngine {
     pub fn run(&mut self) {
         let commands: Vec<_> = self.command_queue.drain(..).collect();
         for cmd in commands {
-            self.execute(cmd)
+            self.execute(cmd);
         }
     }
 
@@ -332,7 +333,7 @@ impl DataEngine {
         if let Some(cmd) = cmd.downcast_ref::<SubscriptionCommand>() {
             self.command_queue.push_back(cmd.clone());
         } else {
-            log::error!("Invalid message type received: {cmd:?}")
+            log::error!("Invalid message type received: {cmd:?}");
         }
     }
 
@@ -652,7 +653,7 @@ impl DataEngine {
                     start_time_ns.into(),
                     None,
                     Some(callback),
-                )
+                );
             }
         }
 
