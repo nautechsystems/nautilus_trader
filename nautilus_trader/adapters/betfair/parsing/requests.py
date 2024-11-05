@@ -351,12 +351,10 @@ def bet_to_fill_report(
     instrument_id: InstrumentId,
     venue_order_id: VenueOrderId,
     client_order_id: ClientOrderId,
+    base_currency: Currency,
     ts_init,
     report_id,
-) -> FillReport | None:
-    if order.size_matched == 0.0:
-        # No executions, skip
-        return None
+) -> FillReport:
     ts_event = pd.Timestamp(order.matched_date).value
     trade_id = current_order_summary_to_trade_id(order)
     return FillReport(
@@ -369,7 +367,7 @@ def bet_to_fill_report(
         trade_id=trade_id,
         last_qty=Quantity(order.size_matched, BETFAIR_QUANTITY_PRECISION),
         last_px=Price(order.price_size.price, BETFAIR_PRICE_PRECISION),
-        commission=None,  # Can be None
+        commission=Money(0.0, base_currency),
         liquidity_side=LiquiditySide.NO_LIQUIDITY_SIDE,
         report_id=report_id,
         ts_event=ts_event,
