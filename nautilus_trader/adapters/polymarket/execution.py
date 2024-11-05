@@ -965,11 +965,16 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     else LiquiditySide.TAKER
                 )
 
+                # Commissions TBD (currently zero fees for Polymarket) cannot determine
+                # from order status message?
+                commissions = Money(0.0, USDC_POS)
+
                 if strategy_id is None:
                     report = msg.parse_to_fill_report(
                         account_id=self.account_id,
                         instrument=instrument,
                         client_order_id=client_order_id,
+                        commission=commissions,
                         liquidity_side=liquidity_side,
                         ts_init=self._clock.timestamp_ns(),
                     )
@@ -994,7 +999,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     last_qty=last_qty,
                     last_px=instrument.make_price(msg.price),
                     quote_currency=USDC_POS,
-                    commission=Money(0.0, USDC_POS),  # TBD: maker commissions
+                    commission=commissions,
                     liquidity_side=liquidity_side,
                     ts_event=millis_to_nanos(int(msg.timestamp)),
                     info=msgspec.structs.asdict(msg),

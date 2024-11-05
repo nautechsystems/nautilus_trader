@@ -1349,6 +1349,7 @@ class OKXExecutionClient(LiveExecutionClient):
                 enum_parser=self._enum_parser,
                 ts_init=self._clock.timestamp_ns(),
                 client_order_id=client_order_id,
+                commission=Money(0, instrument.quote_currency),
             )
             self.generate_order_filled(
                 strategy_id=strategy_id,

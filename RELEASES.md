@@ -15,6 +15,7 @@ None
 - Fixed reconcile open orders and account websocket message for dYdX (#2039), thanks @davidsblom
 - Fixed market order `avg_px` for Polymarket trade reports
 - Fixed Betfair clients keepalive (#2040), thanks @limx0
+- Fixed Betfair reconciliation (#2041), thanks @limx0
 
 ---
 

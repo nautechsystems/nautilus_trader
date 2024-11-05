@@ -22,6 +22,7 @@ from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderSide
 from nautilus_trader.adapters.polymarket.common.parsing import parse_order_side
 from nautilus_trader.adapters.polymarket.schemas.user import PolymarketMakerOrder
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.core.stats import basis_points_as_percentage
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.model.currencies import USDC_POS
@@ -110,6 +111,11 @@ class PolymarketTradeReport(msgspec.Struct, frozen=True):
             if self.liquidity_side() == LiquiditySide.MAKER
             else float(self.avg_px())
         )
+        last_qty = instrument.make_qty(float(self.size))
+        last_px = instrument.make_price(price)
+        commission = float(last_qty * last_px) * basis_points_as_percentage(
+            float(self.fee_rate_bps),
+        )
         return FillReport(
             account_id=account_id,
             instrument_id=instrument.id,
@@ -117,10 +123,10 @@ class PolymarketTradeReport(msgspec.Struct, frozen=True):
             venue_order_id=self.venue_order_id(maker_address),
             trade_id=TradeId(self.id),
             order_side=self.order_side(),
-            last_qty=instrument.make_qty(float(self.size)),
-            last_px=instrument.make_price(price),
+            last_qty=last_qty,
+            last_px=last_px,
+            commission=Money(commission, USDC_POS),
             liquidity_side=self.liquidity_side(),
-            commission=Money(0, USDC_POS),  # TBC: Hard coded for now
             report_id=UUID4(),
             ts_event=millis_to_nanos(int(self.match_time)),
             ts_init=ts_init,
