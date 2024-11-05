@@ -176,6 +176,13 @@ mod tests {
         timer::{LiveTimer, TimeEvent, TimeEventCallback},
     };
 
+    #[cfg(feature = "clock_v2")]
+    use std::collections::BinaryHeap;
+    #[cfg(feature = "clock_v2")]
+    use std::sync::Arc;
+    #[cfg(feature = "clock_v2")]
+    use tokio::sync::Mutex;
+
     #[pyfunction]
     const fn receive_event(_py: Python, _event: TimeEvent) -> PyResult<()> {
         // TODO: Assert the length of a handler vec
@@ -195,7 +202,25 @@ mod tests {
         let clock = get_atomic_clock_realtime();
         let start_time = clock.get_time_ns();
         let interval_ns = 100 * NANOSECONDS_IN_MILLISECOND;
+
+        #[cfg(not(feature = "clock_v2"))]
         let mut timer = LiveTimer::new("TEST_TIMER", interval_ns, start_time, None, callback);
+
+        #[cfg(feature = "clock_v2")]
+        let (_heap, mut timer) = {
+            let heap = Arc::new(Mutex::new(BinaryHeap::new()));
+            (
+                heap.clone(),
+                LiveTimer::new(
+                    "TEST_TIMER",
+                    interval_ns,
+                    start_time,
+                    None,
+                    callback,
+                    heap.clone(),
+                ),
+            )
+        };
         let next_time_ns = timer.next_time_ns();
         timer.start();
 
@@ -221,6 +246,8 @@ mod tests {
         let start_time = clock.get_time_ns();
         let interval_ns = 100 * NANOSECONDS_IN_MILLISECOND;
         let stop_time = start_time + 500 * NANOSECONDS_IN_MILLISECOND;
+
+        #[cfg(not(feature = "clock_v2"))]
         let mut timer = LiveTimer::new(
             "TEST_TIMER",
             interval_ns,
@@ -228,6 +255,23 @@ mod tests {
             Some(stop_time),
             callback,
         );
+
+        #[cfg(feature = "clock_v2")]
+        let (_heap, mut timer) = {
+            let heap = Arc::new(Mutex::new(BinaryHeap::new()));
+            (
+                heap.clone(),
+                LiveTimer::new(
+                    "TEST_TIMER",
+                    interval_ns,
+                    start_time,
+                    Some(stop_time),
+                    callback,
+                    heap.clone(),
+                ),
+            )
+        };
+
         let next_time_ns = timer.next_time_ns();
         timer.start();
 
@@ -252,6 +296,8 @@ mod tests {
         let start_time = UnixNanos::default();
         let interval_ns = 0;
         let stop_time = clock.get_time_ns();
+
+        #[cfg(not(feature = "clock_v2"))]
         let mut timer = LiveTimer::new(
             "TEST_TIMER",
             interval_ns,
@@ -259,6 +305,23 @@ mod tests {
             Some(stop_time),
             callback,
         );
+
+        #[cfg(feature = "clock_v2")]
+        let (_heap, mut timer) = {
+            let heap = Arc::new(Mutex::new(BinaryHeap::new()));
+            (
+                heap.clone(),
+                LiveTimer::new(
+                    "TEST_TIMER",
+                    interval_ns,
+                    start_time,
+                    Some(stop_time),
+                    callback,
+                    heap.clone(),
+                ),
+            )
+        };
+
         timer.start();
 
         wait_until(|| timer.is_expired(), Duration::from_secs(2));
