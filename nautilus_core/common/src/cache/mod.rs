@@ -2385,7 +2385,13 @@ impl Cache {
 
     /// Gets a reference to the order book for the given `instrument_id`.
     #[must_use]
-    pub fn order_book(&mut self, instrument_id: &InstrumentId) -> Option<&mut OrderBook> {
+    pub fn order_book(&self, instrument_id: &InstrumentId) -> Option<&OrderBook> {
+        self.books.get(instrument_id)
+    }
+
+    /// Gets a reference to the order book for the given `instrument_id`.
+    #[must_use]
+    pub fn order_book_mut(&mut self, instrument_id: &InstrumentId) -> Option<&mut OrderBook> {
         self.books.get_mut(instrument_id)
     }
 
@@ -3017,16 +3023,30 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_book_when_empty(mut cache: Cache, audusd_sim: CurrencyPair) {
+    fn test_order_book_when_empty(cache: Cache, audusd_sim: CurrencyPair) {
         let result = cache.order_book(&audusd_sim.id);
         assert!(result.is_none());
     }
 
     #[rstest]
     fn test_order_book_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
-        let mut book = OrderBook::new(audusd_sim.id, BookType::L2_MBP);
+        let book = OrderBook::new(audusd_sim.id, BookType::L2_MBP);
         cache.add_order_book(book.clone()).unwrap();
         let result = cache.order_book(&audusd_sim.id);
+        assert_eq!(result, Some(&book));
+    }
+
+    #[rstest]
+    fn test_order_book_mut_when_empty(mut cache: Cache, audusd_sim: CurrencyPair) {
+        let result = cache.order_book_mut(&audusd_sim.id);
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_order_book_mut_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
+        let mut book = OrderBook::new(audusd_sim.id, BookType::L2_MBP);
+        cache.add_order_book(book.clone()).unwrap();
+        let result = cache.order_book_mut(&audusd_sim.id);
         assert_eq!(result, Some(&mut book));
     }
 

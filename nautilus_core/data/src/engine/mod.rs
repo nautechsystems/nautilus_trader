@@ -33,9 +33,9 @@
 #![allow(unused_variables)]
 #![allow(unused_assignments)]
 
+pub mod book;
 pub mod config;
 pub mod runner;
-pub mod updaters;
 
 #[cfg(test)]
 mod tests;
@@ -50,6 +50,7 @@ use std::{
     sync::Arc,
 };
 
+use book::{BookSnapshotter, BookUpdater};
 use config::DataEngineConfig;
 use indexmap::IndexMap;
 use nautilus_common::{
@@ -61,6 +62,7 @@ use nautilus_common::{
         handler::{MessageHandler, ShareableMessageHandler},
         MessageBus,
     },
+    timer::TimeEventCallback,
 };
 use nautilus_core::{
     correctness::{check_key_in_index_map, check_key_not_in_index_map, FAILED},
@@ -81,7 +83,6 @@ use nautilus_model::{
     instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
     orderbook::book::OrderBook,
 };
-use updaters::BookUpdater;
 use ustr::Ustr;
 
 use crate::{aggregation::BarAggregator, client::DataClientAdapter};
@@ -100,7 +101,6 @@ pub struct DataEngine {
     synthetic_quote_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     synthetic_trade_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     buffered_deltas_map: HashMap<InstrumentId, Vec<OrderBookDelta>>,
-    snapshot_info: HashMap<Ustr, BookSnapshotInfo>,
     msgbus_priority: u8,
     command_queue: VecDeque<SubscriptionCommand>,
     config: DataEngineConfig,
@@ -128,7 +128,6 @@ impl DataEngine {
             synthetic_quote_feeds: HashMap::new(),
             synthetic_trade_feeds: HashMap::new(),
             buffered_deltas_map: HashMap::new(),
-            snapshot_info: HashMap::new(),
             msgbus_priority: 10, // High-priority for built-in component
             command_queue: VecDeque::new(),
             config: config.unwrap_or_default(),
@@ -620,7 +619,6 @@ impl DataEngine {
         let managed = data_type.managed();
 
         {
-            // TODO: Set up timer at interval
             if !self.order_book_intervals.contains_key(&interval_ms) {
                 let timer_name = format!("OrderBook|{instrument_id}|{interval_ms}");
                 let interval_ns = millis_to_nanos(interval_ms.get() as f64);
@@ -636,9 +634,6 @@ impl DataEngine {
                     interval_ms,
                 };
 
-                self.snapshot_info
-                    .insert(Ustr::from(&timer_name), snap_info);
-
                 let now_ns = self.clock.timestamp_ns().as_u64();
                 let mut start_time_ns = now_ns - (now_ns % interval_ns);
 
@@ -646,22 +641,22 @@ impl DataEngine {
                     start_time_ns += NANOSECONDS_IN_SECOND; // Add one second
                 }
 
-                // TODO: BookSnapshotter?
-                // let callback = TimeEventCallback::Rust(RustTimeEventCallback {
-                //     callback: Box::new(move |event| self.snapshot_order_book(event)),
-                // });
+                let snapshotter =
+                    BookSnapshotter::new(snap_info, self.cache.clone(), self.msgbus.clone());
+                let callback =
+                    TimeEventCallback::Rust(Rc::new(move |event| snapshotter.snapshot(event)));
 
                 self.clock.set_timer_ns(
                     &timer_name,
                     interval_ns,
                     start_time_ns.into(),
                     None,
-                    None, // TODO : Add BookSnapshotter?
+                    Some(callback),
                 )
             }
         }
 
-        self.setup_order_book(&instrument_id, book_type, depth, true, managed)?;
+        self.setup_order_book(&instrument_id, book_type, depth, false, managed)?;
 
         Ok(())
     }
@@ -822,7 +817,8 @@ impl MessageHandler for SubscriptionCommandHandler {
     }
 }
 
-struct BookSnapshotInfo {
+#[derive(Debug, Clone)]
+pub struct BookSnapshotInfo {
     pub instrument_id: InstrumentId,
     pub venue: Venue,
     pub is_composite: bool,
