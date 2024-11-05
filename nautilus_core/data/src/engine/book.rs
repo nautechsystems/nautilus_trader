@@ -106,7 +106,7 @@ impl BookSnapshotter {
                 self.publish_order_book(&instrument.id(), &topic, &cache);
             }
         } else {
-            self.publish_order_book(&self.snap_info.instrument_id, &self.snap_info.topic, &cache)
+            self.publish_order_book(&self.snap_info.instrument_id, &self.snap_info.topic, &cache);
         }
     }
 

@@ -43,6 +43,7 @@ thread_local! {
     static CLOCK: OnceCell<GlobalClock> = OnceCell::new();
 }
 
+#[must_use]
 pub fn get_clock() -> Rc<RefCell<dyn Clock>> {
     CLOCK
         .try_with(|clock| {
@@ -57,11 +58,9 @@ pub fn get_clock() -> Rc<RefCell<dyn Clock>> {
 pub fn set_clock(c: Rc<RefCell<dyn Clock>>) {
     CLOCK
         .try_with(|clock| {
-            if clock.set(c).is_err() {
-                panic!("Global clock already set")
-            }
+            assert!(clock.set(c).is_ok(), "Global clock already set");
         })
-        .expect("Should be able to access thread local clock")
+        .expect("Should be able to access thread local clock");
 }
 
 /// Represents a type of clock.
@@ -418,6 +417,7 @@ impl LiveClock {
         }
     }
 
+    #[must_use]
     pub fn get_event_stream(&self) -> TimeEventStream {
         TimeEventStream::new(self.heap.clone())
     }
@@ -492,10 +492,7 @@ impl Clock for LiveClock {
                 .get(&event.name)
                 .cloned()
                 .or_else(|| self.default_callback.clone())
-                .expect(&format!(
-                    "Event '{}' should have associated handler",
-                    event.name
-                ));
+                .unwrap_or_else(|| panic!("Event '{}' should have associated handler", event.name));
 
             TimeEventHandlerV2::new(event, callback)
         }
@@ -622,7 +619,7 @@ pub struct TimeEventStream {
 }
 
 impl TimeEventStream {
-    pub fn new(heap: Arc<Mutex<BinaryHeap<TimeEvent>>>) -> Self {
+    pub const fn new(heap: Arc<Mutex<BinaryHeap<TimeEvent>>>) -> Self {
         Self { heap }
     }
 }
@@ -640,12 +637,11 @@ impl Stream for TimeEventStream {
             }
         };
 
-        match heap.pop() {
-            Some(event) => Poll::Ready(Some(event)),
-            None => {
-                cx.waker().wake_by_ref();
-                Poll::Pending
-            }
+        if let Some(event) = heap.pop() {
+            Poll::Ready(Some(event))
+        } else {
+            cx.waker().wake_by_ref();
+            Poll::Pending
         }
     }
 }

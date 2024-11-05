@@ -15,6 +15,14 @@
 
 //! Real-time and test timers for use with `Clock` implementations.
 
+#[rustfmt::skip]
+#[cfg(feature = "clock_v2")]
+use std::collections::BinaryHeap;
+
+#[rustfmt::skip]
+#[cfg(feature = "clock_v2")]
+use tokio::sync::Mutex;
+
 use std::{
     cmp::Ordering,
     fmt::{Debug, Display},
@@ -42,10 +50,6 @@ use tokio::{
 use ustr::Ustr;
 
 use crate::runtime::get_runtime;
-#[cfg(feature = "clock_v2")]
-use std::collections::BinaryHeap;
-#[cfg(feature = "clock_v2")]
-use tokio::sync::Mutex;
 
 #[repr(C)]
 #[derive(Clone, Debug)]
@@ -69,14 +73,14 @@ pub struct TimeEvent {
     pub ts_init: UnixNanos,
 }
 
-/// Reverse order for TimeEvent comparison to be used in max heap
+/// Reverse order for `TimeEvent` comparison to be used in max heap.
 impl PartialOrd for TimeEvent {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
 
-/// Reverse order for TimeEvent comparison to be used in max heap
+/// Reverse order for `TimeEvent` comparison to be used in max heap.
 impl Ord for TimeEvent {
     fn cmp(&self, other: &Self) -> Ordering {
         other.ts_event.cmp(&self.ts_event)

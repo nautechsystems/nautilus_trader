@@ -16,9 +16,9 @@
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
 use futures::StreamExt;
-use nautilus_common::messages::data::{DataEvent, DataResponse};
 use nautilus_common::{
     clock::{set_clock, Clock, LiveClock, TestClock},
+    messages::data::{DataEvent, DataResponse},
     runtime::get_runtime,
     timer::{TimeEvent, TimeEventHandlerV2},
 };
