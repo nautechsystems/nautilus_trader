@@ -13,4 +13,4 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Private tests module for `ExecutionEngine`.
+//! Tests module for `ExecutionEngine`.
