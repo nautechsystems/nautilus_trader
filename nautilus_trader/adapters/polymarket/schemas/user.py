@@ -28,9 +28,11 @@ from nautilus_trader.adapters.polymarket.common.parsing import parse_order_statu
 from nautilus_trader.adapters.polymarket.common.parsing import parse_time_in_force
 from nautilus_trader.adapters.polymarket.schemas.order import PolymarketMakerOrder
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.core.stats import basis_points_as_percentage
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.execution.reports import OrderStatusReport
+from nautilus_trader.model.currencies import USDC_POS
 from nautilus_trader.model.enums import ContingencyType
 from nautilus_trader.model.enums import LiquiditySide
 from nautilus_trader.model.enums import OrderType
@@ -39,6 +41,7 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
 from nautilus_trader.model.instruments import BinaryOption
+from nautilus_trader.model.objects import Money
 
 
 class PolymarketUserOrder(msgspec.Struct, tag="order", tag_field="event_type", frozen=True):
@@ -107,6 +110,7 @@ class PolymarketUserOrder(msgspec.Struct, tag="order", tag_field="event_type", f
         account_id: AccountId,
         instrument: BinaryOption,
         client_order_id: ClientOrderId | None,
+        commission: Money,
         liquidity_side: LiquiditySide,
         ts_init: int,
     ) -> FillReport:
@@ -119,6 +123,7 @@ class PolymarketUserOrder(msgspec.Struct, tag="order", tag_field="event_type", f
             order_side=parse_order_side(self.side),
             last_qty=instrument.make_qty(float(self.size_matched)),
             last_px=instrument.make_price(float(self.price)),
+            commission=commission,
             liquidity_side=liquidity_side,
             report_id=UUID4(),
             ts_event=millis_to_nanos(int(self.timestamp)),
@@ -183,6 +188,11 @@ class PolymarketUserTrade(msgspec.Struct, tag="trade", tag_field="event_type", f
         maker_address: str,
         ts_init: int,
     ) -> FillReport:
+        last_qty = instrument.make_qty(float(self.size))
+        last_px = instrument.make_price(float(self.price))
+        commission = float(last_qty * last_px) * basis_points_as_percentage(
+            float(self.fee_rate_bps),
+        )
         return FillReport(
             account_id=account_id,
             instrument_id=instrument.id,
@@ -190,8 +200,9 @@ class PolymarketUserTrade(msgspec.Struct, tag="trade", tag_field="event_type", f
             venue_order_id=self.venue_order_id(maker_address),
             trade_id=TradeId(self.id),
             order_side=parse_order_side(self.side),
-            last_qty=instrument.make_qty(float(self.size)),
-            last_px=instrument.make_price(float(self.price)),
+            last_qty=last_qty,
+            last_px=last_px,
+            commission=Money(commission, USDC_POS),
             liquidity_side=self.liqudity_side(),
             report_id=UUID4(),
             ts_event=millis_to_nanos(int(self.match_time)),

@@ -109,9 +109,9 @@ class BinanceUserTrade(msgspec.Struct, frozen=True):
             order_side=order_side,
             last_qty=Quantity.from_str(self.qty),
             last_px=Price.from_str(self.price),
+            commission=Money(self.commission, Currency.from_str(self.commissionAsset)),
             liquidity_side=liquidity_side,
             ts_event=millis_to_nanos(self.time),
-            commission=Money(self.commission, Currency.from_str(self.commissionAsset)),
             report_id=report_id,
             ts_init=ts_init,
         )
