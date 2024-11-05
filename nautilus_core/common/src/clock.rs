@@ -16,19 +16,53 @@
 //! Real-time and static test `Clock` implementations.
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    cell::{OnceCell, RefCell},
+    collections::{BTreeMap, BinaryHeap, HashMap},
     ops::Deref,
+    pin::Pin,
+    rc::Rc,
+    sync::Arc,
+    task::{Context, Poll},
 };
 
 use chrono::{DateTime, Utc};
+use futures::Stream;
 use nautilus_core::{
     correctness::{check_positive_u64, check_predicate_true, check_valid_string, FAILED},
     nanos::UnixNanos,
     time::{get_atomic_clock_realtime, AtomicTime},
 };
+use tokio::sync::Mutex;
 use ustr::Ustr;
 
 use crate::timer::{LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandlerV2};
+
+pub type GlobalClock = Rc<RefCell<dyn Clock>>;
+
+thread_local! {
+    static CLOCK: OnceCell<GlobalClock> = OnceCell::new();
+}
+
+pub fn get_clock() -> Rc<RefCell<dyn Clock>> {
+    CLOCK
+        .try_with(|clock| {
+            clock
+                .get()
+                .expect("Clock should be initialized by runner")
+                .clone()
+        })
+        .expect("Should be able to access thread local storage")
+}
+
+pub fn set_clock(c: Rc<RefCell<dyn Clock>>) {
+    CLOCK
+        .try_with(|clock| {
+            if clock.set(c).is_err() {
+                panic!("Global clock already set")
+            }
+        })
+        .expect("Should be able to access thread local clock")
+}
 
 /// Represents a type of clock.
 ///
@@ -62,6 +96,11 @@ pub trait Clock {
     /// Register a default event handler for the clock. If a `Timer`
     /// does not have an event handler, then this handler is used.
     fn register_default_handler(&mut self, callback: TimeEventCallback);
+
+    /// Get handler for [`TimeEvent`]
+    ///
+    /// Note: Panics if the event does not have an associated handler
+    fn get_handler(&self, event: TimeEvent) -> TimeEventHandlerV2;
 
     /// Set a `Timer` to alert at a particular time. Optional
     /// callback gets used to handle generated events.
@@ -102,6 +141,7 @@ pub struct TestClock {
     timers: BTreeMap<Ustr, TestTimer>,
     default_callback: Option<TimeEventCallback>,
     callbacks: HashMap<Ustr, TimeEventCallback>,
+    heap: BinaryHeap<TimeEvent>,
 }
 
 impl TestClock {
@@ -113,6 +153,7 @@ impl TestClock {
             timers: BTreeMap::new(),
             default_callback: None,
             callbacks: HashMap::new(),
+            heap: BinaryHeap::new(),
         }
     }
 
@@ -143,15 +184,40 @@ impl TestClock {
             self.time.set_time(to_time_ns);
         }
 
-        let mut timers: Vec<TimeEvent> = self
+        let mut events: Vec<TimeEvent> = self
             .timers
             .iter_mut()
             .filter(|(_, timer)| !timer.is_expired())
             .flat_map(|(_, timer)| timer.advance(to_time_ns))
             .collect();
 
-        timers.sort_by(|a, b| a.ts_event.cmp(&b.ts_event));
-        timers
+        events.sort_by(|a, b| a.ts_event.cmp(&b.ts_event));
+        events
+    }
+
+    /// Advances the internal clock to the specified `to_time_ns` and optionally sets the clock to that time.
+    ///
+    /// Pushes the [`TimeEvent`]s on the heap to ensure ordering
+    ///
+    /// Note: `set_time` is not used but present to keep backward compatible api call
+    pub fn advance_to_time_on_heap(&mut self, to_time_ns: UnixNanos) {
+        // Time should be non-decreasing
+        assert!(
+            to_time_ns >= self.time.get_time_ns(),
+            "`to_time_ns` {} was < `self.time.get_time_ns()` {}",
+            to_time_ns,
+            self.time.get_time_ns()
+        );
+
+        self.time.set_time(to_time_ns);
+
+        self.timers
+            .iter_mut()
+            .filter(|(_, timer)| !timer.is_expired())
+            .flat_map(|(_, timer)| timer.advance(to_time_ns))
+            .for_each(|event| {
+                self.heap.push(event);
+            });
     }
 
     /// Matches `TimeEvent` objects with their corresponding event handlers.
@@ -174,6 +240,14 @@ impl TestClock {
                 TimeEventHandlerV2::new(event, callback)
             })
             .collect()
+    }
+}
+
+impl Iterator for TestClock {
+    type Item = TimeEventHandlerV2;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.heap.pop().map(|event| self.get_handler(event))
     }
 }
 
@@ -226,6 +300,18 @@ impl Clock for TestClock {
 
     fn register_default_handler(&mut self, callback: TimeEventCallback) {
         self.default_callback = Some(callback);
+    }
+
+    fn get_handler(&self, event: TimeEvent) -> TimeEventHandlerV2 {
+        // Get the callback from either the event-specific callbacks or default callback
+        let callback = self
+            .callbacks
+            .get(&event.name)
+            .cloned()
+            .or_else(|| self.default_callback.clone())
+            .unwrap_or_else(|| panic!("Event '{}' should have associated handler", event.name));
+
+        TimeEventHandlerV2::new(event, callback)
     }
 
     fn set_time_alert_ns(
@@ -314,6 +400,9 @@ pub struct LiveClock {
     time: &'static AtomicTime,
     timers: HashMap<Ustr, LiveTimer>,
     default_callback: Option<TimeEventCallback>,
+    pub heap: Arc<Mutex<BinaryHeap<TimeEvent>>>,
+    #[allow(dead_code)]
+    callbacks: HashMap<Ustr, TimeEventCallback>,
 }
 
 impl LiveClock {
@@ -324,7 +413,13 @@ impl LiveClock {
             time: get_atomic_clock_realtime(),
             timers: HashMap::new(),
             default_callback: None,
+            heap: Arc::new(Mutex::new(BinaryHeap::new())),
+            callbacks: HashMap::new(),
         }
+    }
+
+    pub fn get_event_stream(&self) -> TimeEventStream {
+        TimeEventStream::new(self.heap.clone())
     }
 
     #[must_use]
@@ -384,6 +479,28 @@ impl Clock for LiveClock {
         self.default_callback = Some(handler);
     }
 
+    #[allow(unused_variables)]
+    fn get_handler(&self, event: TimeEvent) -> TimeEventHandlerV2 {
+        #[cfg(not(feature = "clock_v2"))]
+        panic!("Cannot get live clock handler without 'clock_v2' feature");
+
+        // Get the callback from either the event-specific callbacks or default callback
+        #[cfg(feature = "clock_v2")]
+        {
+            let callback = self
+                .callbacks
+                .get(&event.name)
+                .cloned()
+                .or_else(|| self.default_callback.clone())
+                .expect(&format!(
+                    "Event '{}' should have associated handler",
+                    event.name
+                ));
+
+            TimeEventHandlerV2::new(event, callback)
+        }
+    }
+
     fn set_time_alert_ns(
         &mut self,
         name: &str,
@@ -401,10 +518,27 @@ impl Clock for LiveClock {
             None => self.default_callback.clone().unwrap(),
         };
 
+        #[cfg(feature = "clock_v2")]
+        {
+            let name = Ustr::from(name);
+            self.callbacks.insert(name, callback.clone());
+        }
+
         let ts_now = self.get_time_ns();
         alert_time_ns = std::cmp::max(alert_time_ns, ts_now);
         let interval_ns = (alert_time_ns - ts_now).into();
+
+        #[cfg(not(feature = "clock_v2"))]
         let mut timer = LiveTimer::new(name, interval_ns, ts_now, Some(alert_time_ns), callback);
+        #[cfg(feature = "clock_v2")]
+        let mut timer = LiveTimer::new(
+            name,
+            interval_ns,
+            ts_now,
+            Some(alert_time_ns),
+            callback,
+            self.heap.clone(),
+        );
 
         timer.start();
         self.timers.insert(Ustr::from(name), timer);
@@ -431,7 +565,23 @@ impl Clock for LiveClock {
             None => self.default_callback.clone().unwrap(),
         };
 
+        #[cfg(feature = "clock_v2")]
+        {
+            let name = Ustr::from(name);
+            self.callbacks.insert(name, callback.clone());
+        }
+
+        #[cfg(not(feature = "clock_v2"))]
         let mut timer = LiveTimer::new(name, interval_ns, start_time_ns, stop_time_ns, callback);
+        #[cfg(feature = "clock_v2")]
+        let mut timer = LiveTimer::new(
+            name,
+            interval_ns,
+            start_time_ns,
+            stop_time_ns,
+            callback,
+            self.heap.clone(),
+        );
         timer.start();
         self.timers.insert(Ustr::from(name), timer);
     }
@@ -463,6 +613,40 @@ impl Clock for LiveClock {
             }
         }
         self.timers.clear();
+    }
+}
+
+// Helper struct to stream events from the heap
+pub struct TimeEventStream {
+    heap: Arc<Mutex<BinaryHeap<TimeEvent>>>,
+}
+
+impl TimeEventStream {
+    pub fn new(heap: Arc<Mutex<BinaryHeap<TimeEvent>>>) -> Self {
+        Self { heap }
+    }
+}
+
+impl Stream for TimeEventStream {
+    type Item = TimeEvent;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        let mut heap = match self.heap.try_lock() {
+            Ok(guard) => guard,
+            Err(e) => {
+                tracing::error!("Unable to get LiveClock heap lock: {e}");
+                cx.waker().wake_by_ref();
+                return Poll::Pending;
+            }
+        };
+
+        match heap.pop() {
+            Some(event) => Poll::Ready(Some(event)),
+            None => {
+                cx.waker().wake_by_ref();
+                Poll::Pending
+            }
+        }
     }
 }
 

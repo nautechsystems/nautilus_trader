@@ -16,6 +16,8 @@ nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model", features = ["stubs"] }
 anyhow = { workspace = true }
 chrono = { workspace = true }
+derive_builder = { workspace = true }
+futures = { workspace = true }
 indexmap = { workspace = true }
 log = { workspace = true }
 pyo3 = { workspace = true, optional = true }
@@ -52,3 +54,4 @@ python = [
   "nautilus-core/python",
   "nautilus-model/python",
 ]
+clock_v2 = ["nautilus-common/clock_v2"]

@@ -15,7 +15,14 @@
 
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
+use futures::StreamExt;
 use nautilus_common::messages::data::{DataEvent, DataResponse};
+use nautilus_common::{
+    clock::{set_clock, Clock, LiveClock, TestClock},
+    runtime::get_runtime,
+    timer::{TimeEvent, TimeEventHandlerV2},
+};
+use nautilus_model::data::GetTsInit;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 
 use super::DataEngine;
@@ -36,14 +43,19 @@ pub type DataResponseQueue = Rc<RefCell<VecDeque<DataEvent>>>;
 
 pub struct BacktestRunner {
     queue: DataResponseQueue,
+    pub clock: Rc<RefCell<TestClock>>,
 }
 
 impl Runner for BacktestRunner {
     type Sender = DataResponseQueue;
 
     fn new() -> Self {
+        let clock = Rc::new(RefCell::new(TestClock::new()));
+        set_clock(clock.clone());
+
         Self {
             queue: Rc::new(RefCell::new(VecDeque::new())),
+            clock,
         }
     }
 
@@ -51,7 +63,20 @@ impl Runner for BacktestRunner {
         while let Some(resp) = self.queue.as_ref().borrow_mut().pop_front() {
             match resp {
                 DataEvent::Response(resp) => engine.response(resp),
-                DataEvent::Data(data) => engine.process_data(data),
+                DataEvent::Data(data) => {
+                    // Advance clock time and collect all triggered events and handlers
+                    let handlers: Vec<TimeEventHandlerV2> = {
+                        let mut guard = self.clock.borrow_mut();
+                        guard.advance_to_time_on_heap(data.ts_init());
+                        guard.by_ref().collect()
+                        // drop guard
+                    };
+
+                    // Execute all handlers before processing the data
+                    handlers.into_iter().for_each(TimeEventHandlerV2::run);
+
+                    engine.process_data(data);
+                }
             }
         }
     }
@@ -64,6 +89,7 @@ impl Runner for BacktestRunner {
 pub struct LiveRunner {
     resp_tx: UnboundedSender<DataEvent>,
     resp_rx: UnboundedReceiver<DataEvent>,
+    pub clock: Rc<RefCell<LiveClock>>,
 }
 
 impl Runner for LiveRunner {
@@ -71,14 +97,37 @@ impl Runner for LiveRunner {
 
     fn new() -> Self {
         let (resp_tx, resp_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
-        Self { resp_tx, resp_rx }
+
+        let clock = Rc::new(RefCell::new(LiveClock::new()));
+        set_clock(clock.clone());
+
+        Self {
+            resp_tx,
+            resp_rx,
+            clock,
+        }
     }
 
     fn run(&mut self, engine: &mut DataEngine) {
-        while let Some(resp) = self.resp_rx.blocking_recv() {
-            match resp {
-                DataEvent::Response(resp) => engine.response(resp),
-                DataEvent::Data(data) => engine.process_data(data),
+        let mut time_event_stream = self.clock.borrow().get_event_stream();
+        loop {
+            // Collect the next event to process
+            let next_event = get_runtime().block_on(async {
+                tokio::select! {
+                    Some(resp) = self.resp_rx.recv() => Some(RunnerEvent::Data(resp)),
+                    Some(event) = time_event_stream.next() => Some(RunnerEvent::Timer(event)),
+                    else => None,
+                }
+            });
+
+            // Process the event outside of the async context
+            match next_event {
+                Some(RunnerEvent::Data(resp)) => match resp {
+                    DataEvent::Response(resp) => engine.response(resp),
+                    DataEvent::Data(data) => engine.process_data(data),
+                },
+                Some(RunnerEvent::Timer(event)) => self.clock.borrow().get_handler(event).run(),
+                None => break,
             }
         }
     }
@@ -86,4 +135,11 @@ impl Runner for LiveRunner {
     fn get_sender(&self) -> Self::Sender {
         self.resp_tx.clone()
     }
+}
+
+// Helper enum to represent different event types
+#[allow(clippy::large_enum_variant)]
+enum RunnerEvent {
+    Data(DataEvent),
+    Timer(TimeEvent),
 }
