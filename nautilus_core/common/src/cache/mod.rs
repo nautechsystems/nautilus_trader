@@ -2493,10 +2493,11 @@ impl Cache {
 
     /// Returns references to all instruments for the given `venue`.
     #[must_use]
-    pub fn instruments(&self, venue: &Venue) -> Vec<&InstrumentAny> {
+    pub fn instruments(&self, venue: &Venue, underlying: Option<&Ustr>) -> Vec<&InstrumentAny> {
         self.instruments
             .values()
             .filter(|i| &i.id().venue == venue)
+            .filter(|i| underlying.map_or(true, |u| i.underlying() == Some(u)))
             .collect()
     }
 

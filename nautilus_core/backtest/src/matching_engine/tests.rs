@@ -245,7 +245,7 @@ fn test_process_order_when_instrument_already_expired(
     assert_eq!(first_message.event_type(), OrderEventType::Rejected);
     assert_eq!(
         first_message.message().unwrap(),
-        Ustr::from("Contract ESZ1.GLBX has expired, expiration 1625702400000000000")
+        Ustr::from("Contract ESZ21.GLBX has expired, expiration 1639699200000000000")
     );
 }
 
@@ -291,7 +291,7 @@ fn test_process_order_when_instrument_not_active(
     assert_eq!(first_message.event_type(), OrderEventType::Rejected);
     assert_eq!(
         first_message.message().unwrap(),
-        Ustr::from("Contract ESZ1.GLBX is not yet active, activation 7960723200000000000")
+        Ustr::from("Contract ESZ21.GLBX is not yet active, activation 7960723200000000000")
     );
 }
 
@@ -371,7 +371,7 @@ fn test_process_order_when_invalid_price_precision(
     assert_eq!(first_message.event_type(), OrderEventType::Rejected);
     assert_eq!(
         first_message.message().unwrap(),
-        Ustr::from("Invalid order price precision for order O-19700101-000000-001-001-1, was 5 when ESZ1.GLBX price precision is 2")
+        Ustr::from("Invalid order price precision for order O-19700101-000000-001-001-1, was 5 when ESZ21.GLBX price precision is 2")
     );
 }
 
@@ -413,7 +413,7 @@ fn test_process_order_when_invalid_trigger_price_precision(
     assert_eq!(first_message.event_type(), OrderEventType::Rejected);
     assert_eq!(
         first_message.message().unwrap(),
-        Ustr::from("Invalid order trigger price precision for order O-19700101-000000-001-001-1, was 5 when ESZ1.GLBX price precision is 2")
+        Ustr::from("Invalid order trigger price precision for order O-19700101-000000-001-001-1, was 5 when ESZ21.GLBX price precision is 2")
     );
 }
 

@@ -99,11 +99,10 @@ impl BookSnapshotter {
         let cache = self.cache.borrow();
 
         if self.snap_info.is_composite {
-            // Add underlying
             let msgbus = self.msgbus.borrow_mut();
             let topic = self.snap_info.topic;
-            let instruments = cache.instruments(&self.snap_info.venue);
-            for instrument in instruments {
+            let underlying = self.snap_info.root;
+            for instrument in cache.instruments(&self.snap_info.venue, Some(&underlying)) {
                 self.publish_order_book(&instrument.id(), &topic, &cache);
             }
         } else {

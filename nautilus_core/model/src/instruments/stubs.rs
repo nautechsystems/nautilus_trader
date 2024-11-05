@@ -326,20 +326,20 @@ pub fn futures_contract_es(
     expiration: Option<UnixNanos>,
 ) -> FuturesContract {
     let activation = activation.unwrap_or(UnixNanos::from(
-        Utc.with_ymd_and_hms(2021, 4, 8, 0, 0, 0)
+        Utc.with_ymd_and_hms(2021, 9, 10, 0, 0, 0)
             .unwrap()
             .timestamp_nanos_opt()
             .unwrap() as u64,
     ));
     let expiration = expiration.unwrap_or(UnixNanos::from(
-        Utc.with_ymd_and_hms(2021, 7, 8, 0, 0, 0)
+        Utc.with_ymd_and_hms(2021, 12, 17, 0, 0, 0)
             .unwrap()
             .timestamp_nanos_opt()
             .unwrap() as u64,
     ));
     FuturesContract::new(
-        InstrumentId::from("ESZ1.GLBX"),
-        Symbol::from("ESZ1"),
+        InstrumentId::from("ESZ21.GLBX"),
+        Symbol::from("ESZ21"),
         AssetClass::Index,
         Some(Ustr::from("XCME")),
         Ustr::from("ES"),
