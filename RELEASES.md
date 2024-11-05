@@ -16,6 +16,7 @@ None
 - Fixed market order `avg_px` for Polymarket trade reports
 - Fixed Betfair clients keepalive (#2040), thanks @limx0
 - Fixed Betfair reconciliation (#2041), thanks @limx0
+- Fixed Betfair customer order ref limit to 32 chars
 
 ---
 
