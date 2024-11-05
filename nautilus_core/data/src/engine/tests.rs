@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Private tests module for `DataEngine`.
+//! Tests module for `DataEngine`.
 
 use std::{
     any::Any,
