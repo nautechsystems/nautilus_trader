@@ -88,7 +88,7 @@ def make_customer_order_ref(client_order_id: ClientOrderId) -> CustomerOrderRef:
     string is limited to 32 characters. If an empty string is provided it will be treated as null.
 
     """
-    return client_order_id.value
+    return client_order_id.value[:32]
 
 
 def nautilus_limit_to_place_instructions(
