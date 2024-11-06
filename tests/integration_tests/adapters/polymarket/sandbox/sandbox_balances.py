@@ -20,7 +20,7 @@ from nautilus_trader.adapters.polymarket.common.conversion import usdce_from_uni
 from nautilus_trader.adapters.polymarket.factories import get_polymarket_http_client
 
 
-def test_get_allowances() -> None:
+def get_allowances() -> None:
     http_client = get_polymarket_http_client()
 
     # Check USDC wallet balance
@@ -50,3 +50,27 @@ def test_get_allowances() -> None:
     response = http_client.get_balance_allowance(params)
     balance_usdc = usdce_from_units(int(response["balance"]))
     print(f"Balance {token_id}: {balance_usdc}")
+
+    # Check Kamala 'Yes' position
+    token_id = "69236923620077691027083946871148646972011131466059644796654161903044970987404"
+    params = BalanceAllowanceParams(
+        asset_type=AssetType.CONDITIONAL,
+        token_id=token_id,
+    )
+    response = http_client.get_balance_allowance(params)
+    balance_usdc = usdce_from_units(int(response["balance"]))
+    print(f"Balance {token_id}: {balance_usdc}")
+
+    # Check Kamala 'No' position
+    token_id = "87584955359245246404952128082451897287778571240979823316620093987046202296181"
+    params = BalanceAllowanceParams(
+        asset_type=AssetType.CONDITIONAL,
+        token_id=token_id,
+    )
+    response = http_client.get_balance_allowance(params)
+    balance_usdc = usdce_from_units(int(response["balance"]))
+    print(f"Balance {token_id}: {balance_usdc}")
+
+
+if __name__ == "__main__":
+    get_allowances()

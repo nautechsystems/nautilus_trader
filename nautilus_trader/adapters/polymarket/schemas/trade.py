@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
+from typing import Any
 
 import msgspec
 
@@ -22,6 +23,7 @@ from nautilus_trader.adapters.polymarket.common.enums import PolymarketOrderSide
 from nautilus_trader.adapters.polymarket.common.parsing import parse_order_side
 from nautilus_trader.adapters.polymarket.schemas.user import PolymarketMakerOrder
 from nautilus_trader.core.datetime import millis_to_nanos
+from nautilus_trader.core.stats import basis_points_as_percentage
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import FillReport
 from nautilus_trader.model.currencies import USDC_POS
@@ -64,6 +66,16 @@ class PolymarketTradeReport(msgspec.Struct, frozen=True):
     maker_orders: list[PolymarketMakerOrder]
     trader_side: PolymarketLiquiditySide
 
+    def to_dict(self) -> dict[str, Any]:
+        return msgspec.json.decode(msgspec.json.encode(self))
+
+    def get_maker_order(self, maker_address: str) -> PolymarketMakerOrder:
+        for order in self.maker_orders:
+            if order.maker_address == maker_address:
+                return order
+
+        raise ValueError("Invalid trade with no maker order owned my `maker_address`")
+
     def liquidity_side(self) -> LiquiditySide:
         if self.trader_side == PolymarketLiquiditySide.TAKER:
             return LiquiditySide.TAKER
@@ -78,24 +90,32 @@ class PolymarketTradeReport(msgspec.Struct, frozen=True):
             return OrderSide.BUY if order_side == OrderSide.SELL else OrderSide.SELL
 
     def venue_order_id(self, maker_address: str) -> VenueOrderId:
-        if self.liquidity_side() == LiquiditySide.MAKER:
-            for order in reversed(self.maker_orders):
-                if order.maker_address == maker_address:
-                    return VenueOrderId(order.order_id)
-            raise ValueError("Invalid array of maker orders (`maker_address` not found)")
-        else:
+        if self.trader_side == PolymarketLiquiditySide.TAKER:
             return VenueOrderId(self.taker_order_id)
+        else:
+            order = self.get_maker_order(maker_address)
+            return VenueOrderId(order.order_id)
 
-    def avg_px(self) -> Decimal:
-        # We assume there should be at least some filled quantity for a trade report
-        total_qty = Decimal(0)
-        avg_px = Decimal(0)
-        for order in self.maker_orders:
-            matched_amount = Decimal(order.matched_amount)
-            avg_px += Decimal(order.price) * matched_amount
-            total_qty += matched_amount
+    def last_px(self, maker_address: str) -> Decimal:
+        if self.liquidity_side() == LiquiditySide.TAKER:
+            return Decimal(self.price)
+        else:
+            order = self.get_maker_order(maker_address)
+            return Decimal(order.price)
 
-        return avg_px / total_qty
+    def last_qty(self, maker_address: str) -> Decimal:
+        if self.liquidity_side() == LiquiditySide.TAKER:
+            return Decimal(self.size)
+        else:
+            order = self.get_maker_order(maker_address)
+            return Decimal(order.matched_amount)
+
+    def get_fee_rate_bps(self, maker_address: str) -> Decimal:
+        if self.liquidity_side() == LiquiditySide.TAKER:
+            return Decimal(self.fee_rate_bps)
+        else:
+            order = self.get_maker_order(maker_address)
+            return Decimal(order.fee_rate_bps)
 
     def parse_to_fill_report(
         self,
@@ -105,11 +125,11 @@ class PolymarketTradeReport(msgspec.Struct, frozen=True):
         maker_address: str,
         ts_init: int,
     ) -> FillReport:
-        price = (
-            float(self.price)
-            if self.liquidity_side() == LiquiditySide.MAKER
-            else float(self.avg_px())
-        )
+        last_qty = instrument.make_qty(self.last_qty(maker_address))
+        last_px = instrument.make_price(self.last_px(maker_address))
+        fee_rate_bps = self.get_fee_rate_bps(maker_address)
+        commission = float(last_qty * last_px) * basis_points_as_percentage(fee_rate_bps)
+
         return FillReport(
             account_id=account_id,
             instrument_id=instrument.id,
@@ -117,10 +137,10 @@ class PolymarketTradeReport(msgspec.Struct, frozen=True):
             venue_order_id=self.venue_order_id(maker_address),
             trade_id=TradeId(self.id),
             order_side=self.order_side(),
-            last_qty=instrument.make_qty(float(self.size)),
-            last_px=instrument.make_price(price),
+            last_qty=last_qty,
+            last_px=last_px,
+            commission=Money(commission, USDC_POS),
             liquidity_side=self.liquidity_side(),
-            commission=Money(0, USDC_POS),  # TBC: Hard coded for now
             report_id=UUID4(),
             ts_event=millis_to_nanos(int(self.match_time)),
             ts_init=ts_init,

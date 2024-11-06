@@ -19,7 +19,7 @@ from py_clob_client.clob_types import AssetType
 from nautilus_trader.adapters.polymarket.factories import get_polymarket_http_client
 
 
-def test_place_order() -> None:
+def place_order() -> None:
     client = get_polymarket_http_client()
 
     params = BalanceAllowanceParams(
@@ -48,3 +48,7 @@ def test_place_order() -> None:
     #
     # response = client.post_order(signed_order)
     # print(response)
+
+
+if __name__ == "__main__":
+    place_order()

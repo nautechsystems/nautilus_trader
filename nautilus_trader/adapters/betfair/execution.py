@@ -323,17 +323,21 @@ class BetfairExecutionClient(LiveExecutionClient):
         open_only: bool = False,
     ) -> list[OrderStatusReport]:
         ts_init = self._clock.timestamp_ns()
-        current_orders: list[CurrentOrderSummary] = await self._client.list_current_orders(
+        current_live_orders: list[CurrentOrderSummary] = await self._client.list_current_orders(
             order_projection=OrderProjection.EXECUTABLE,
             date_range=TimeRange(from_=start, to=end),
         )
-
+        current_filled_orders: list[CurrentOrderSummary] = await self._client.list_current_orders(
+            order_projection=OrderProjection.EXECUTION_COMPLETE,
+            date_range=TimeRange(from_=start, to=end),
+        )
+        orders = current_live_orders + current_filled_orders
         order_status_reports = []
-        for order in current_orders:
+        for order in orders:
             instrument_id = betfair_instrument_id(
                 market_id=order.market_id,
                 selection_id=order.selection_id,
-                selection_handicap=order.handicap,
+                selection_handicap=order.handicap or None,
             )
             venue_order_id = VenueOrderId(str(order.bet_id))
             client_order_id = self.venue_order_id_to_client_order_id.get(venue_order_id)
@@ -365,10 +369,13 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         fill_reports = []
         for order in cleared_orders:
+            if order.size_matched == 0.0:
+                # No executions, skip
+                continue
             instrument_id = betfair_instrument_id(
                 market_id=order.market_id,
                 selection_id=order.selection_id,
-                selection_handicap=order.handicap,
+                selection_handicap=order.handicap or None,
             )
             venue_order_id = VenueOrderId(str(order.bet_id))
             client_order_id = self.venue_order_id_to_client_order_id.get(venue_order_id)
@@ -378,11 +385,11 @@ class BetfairExecutionClient(LiveExecutionClient):
                 instrument_id=instrument_id,
                 venue_order_id=venue_order_id,
                 client_order_id=client_order_id,
+                base_currency=self.base_currency,
                 ts_init=ts_init,
                 report_id=UUID4(),
             )
-            if report is not None:
-                fill_reports.append(report)
+            fill_reports.append(report)
 
         return fill_reports
 

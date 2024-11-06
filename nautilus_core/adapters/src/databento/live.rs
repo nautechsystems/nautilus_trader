@@ -261,12 +261,10 @@ impl DatabentoFeedHandler {
                 };
 
                 if let Some(msg) = record.get::<dbn::MboMsg>() {
-                    // SAFETY: An MBO message will always produce a delta
-                    if let Data::Delta(delta) = data1.clone().unwrap() {
+                    if let Data::Delta(delta) = data1.clone().expect("MBO should decode a delta") {
                         let buffer = buffered_deltas.entry(delta.instrument_id).or_default();
                         buffer.push(delta);
 
-                        // TODO: Temporary for debugging
                         deltas_count += 1;
                         tracing::trace!(
                             "Buffering delta: {deltas_count} {} {buffering_start:?} flags={}",

@@ -156,7 +156,7 @@ class DataSubscriber(Strategy):
 
             self.subscribe_quote_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
             self.subscribe_trade_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
-            self.subscribe_instrument_status(instrument_id, client_id=DATABENTO_CLIENT_ID)
+            # self.subscribe_instrument_status(instrument_id, client_id=DATABENTO_CLIENT_ID)
             # self.request_quote_ticks(instrument_id)
             # self.request_trade_ticks(instrument_id)
 

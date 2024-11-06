@@ -389,6 +389,7 @@ impl LiveClock {
         }
     }
 
+    #[must_use]
     pub fn get_event_stream(&self) -> TimeEventStream {
         TimeEventStream::new(self.heap.clone())
     }
@@ -463,10 +464,7 @@ impl Clock for LiveClock {
                 .get(&event.name)
                 .cloned()
                 .or_else(|| self.default_callback.clone())
-                .expect(&format!(
-                    "Event '{}' should have associated handler",
-                    event.name
-                ));
+                .unwrap_or_else(|| panic!("Event '{}' should have associated handler", event.name));
 
             TimeEventHandlerV2::new(event, callback)
         }
@@ -593,7 +591,7 @@ pub struct TimeEventStream {
 }
 
 impl TimeEventStream {
-    pub fn new(heap: Arc<Mutex<BinaryHeap<TimeEvent>>>) -> Self {
+    pub const fn new(heap: Arc<Mutex<BinaryHeap<TimeEvent>>>) -> Self {
         Self { heap }
     }
 }
@@ -611,12 +609,11 @@ impl Stream for TimeEventStream {
             }
         };
 
-        match heap.pop() {
-            Some(event) => Poll::Ready(Some(event)),
-            None => {
-                cx.waker().wake_by_ref();
-                Poll::Pending
-            }
+        if let Some(event) = heap.pop() {
+            Poll::Ready(Some(event))
+        } else {
+            cx.waker().wake_by_ref();
+            Poll::Pending
         }
     }
 }

@@ -436,6 +436,26 @@ fn test_instrument_when_some(mut cache: Cache, audusd_sim: CurrencyPair) {
 }
 
 #[rstest]
+fn test_instruments_when_empty(cache: Cache) {
+    let esz1 = futures_contract_es(None, None);
+    let result = cache.instruments(&esz1.id.venue, None);
+    assert!(result.is_empty());
+}
+
+#[rstest]
+fn test_instruments_when_some(mut cache: Cache) {
+    let esz1 = futures_contract_es(None, None);
+    cache
+        .add_instrument(InstrumentAny::FuturesContract(esz1))
+        .unwrap();
+
+    let result1 = cache.instruments(&esz1.id.venue, None);
+    let result2 = cache.instruments(&esz1.id.venue, Some(&esz1.underlying));
+    assert_eq!(result1, vec![&InstrumentAny::FuturesContract(esz1)]);
+    assert_eq!(result2, vec![&InstrumentAny::FuturesContract(esz1)]);
+}
+
+#[rstest]
 fn test_cache_synthetics_when_no_database(mut cache: Cache) {
     assert!(cache.cache_synthetics().is_ok());
 }
