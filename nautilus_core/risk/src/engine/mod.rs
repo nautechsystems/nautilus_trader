@@ -790,6 +790,7 @@ where
         }
     }
 
+    // TODO: TEMP: remove this if not needed
     fn layer_deny_modify_order(&self, command: TradingCommand) {
         if let TradingCommand::ModifyOrder(modify_order) = command {
             self.deny_modify_order(modify_order);
@@ -933,12 +934,14 @@ where
         }
     }
 
+    // TODO: TEMP: remove this if not needed
     fn send_to_execution(&self, command: TradingCommand) {
         self.msgbus
             .borrow_mut()
             .send(&Ustr::from("ExecEngine.execute"), &command);
     }
 
+    // TODO: TEMP: remove this if not needed
     fn modify_send_to_execution(&self, command: ModifyOrder) {
         self.msgbus
             .borrow_mut()
