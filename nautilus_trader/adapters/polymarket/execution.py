@@ -196,9 +196,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
         if self._ws_client.is_disconnected():
             await self._ws_client.connect()
 
-        instrument_ids = [i.id for i in instruments]
+        # Updating allowances potentially redundant now?
+        # instrument_ids = [i.id for i in instruments]
+        # await self._update_allowances(instrument_ids)
 
-        await self._update_allowances(instrument_ids)
         await self._update_account_state()
 
         # Wait for account to initialize
@@ -239,14 +240,15 @@ class PolymarketExecutionClient(LiveExecutionClient):
         if condition_id in self._active_markets:
             return  # Already active
 
-        token_id = get_polymarket_token_id(instrument_id)
-        params = BalanceAllowanceParams(
-            asset_type=AssetType.CONDITIONAL,
-            token_id=token_id,
-            signature_type=self._signature_type,
-        )
-        self._log.info(f"Updating {params}")
-        await asyncio.to_thread(self._http_client.update_balance_allowance, params)
+        # Updating allowances potentially redundant now?
+        # token_id = get_polymarket_token_id(instrument_id)
+        # params = BalanceAllowanceParams(
+        #     asset_type=AssetType.CONDITIONAL,
+        #     token_id=token_id,
+        #     signature_type=self._signature_type,
+        # )
+        # self._log.info(f"Updating {params}")
+        # await asyncio.to_thread(self._http_client.update_balance_allowance, params)
 
         if not self._ws_client.is_connected():
             ws_client = self._ws_client
@@ -293,6 +295,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
             self._log.info(str(response))
 
     async def _update_account_state(self) -> None:
+        self._log.info("Checking account balance")
+
         params = BalanceAllowanceParams(
             asset_type=AssetType.COLLATERAL,
             signature_type=self._signature_type,
@@ -307,6 +311,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             locked=Money.from_raw(0, USDC_POS),
             free=total,
         )
+
         self.generate_account_state(
             balances=[account_balance],
             margins=[],  # N/A
@@ -1045,7 +1050,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             return  # Already closed (only status update)
 
         last_qty = instrument.make_qty(msg.size)
-        last_px = instrument.make_price(msg.price)
+        last_px = instrument.make_price(msg.last_px())
         commission = float(last_qty * last_px) * basis_points_as_percentage(float(msg.fee_rate_bps))
 
         self.generate_order_filled(
@@ -1057,11 +1062,11 @@ class PolymarketExecutionClient(LiveExecutionClient):
             trade_id=TradeId(msg.id),
             order_side=parse_order_side(msg.side),
             order_type=order.order_type,
-            last_qty=instrument.make_qty(msg.size),
-            last_px=instrument.make_price(msg.price),
+            last_qty=last_qty,
+            last_px=last_px,
             quote_currency=USDC_POS,
             commission=Money(commission, USDC_POS),
-            liquidity_side=msg.liqudity_side(),
+            liquidity_side=msg.liquidity_side(),
             ts_event=millis_to_nanos(int(msg.match_time)),
             info=msg.to_dict(),
         )
