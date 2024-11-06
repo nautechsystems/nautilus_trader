@@ -87,16 +87,19 @@ class PolymarketTradeReport(msgspec.Struct, frozen=True):
         else:
             return VenueOrderId(self.taker_order_id)
 
-    def avg_px(self) -> Decimal:
-        # We assume there should be at least some filled quantity for a trade report
-        total_qty = Decimal(0)
-        avg_px = Decimal(0)
-        for order in self.maker_orders:
-            matched_amount = Decimal(order.matched_amount)
-            avg_px += Decimal(order.price) * matched_amount
-            total_qty += matched_amount
+    def last_px(self) -> Decimal:
+        if self.liquidity_side() == LiquiditySide.MAKER:
+            return Decimal(self.price)
+        else:
+            # We assume there should be at least some filled quantity for a trade report
+            total_qty = Decimal(0)
+            avg_px = Decimal(0)
+            for order in self.maker_orders:
+                matched_amount = Decimal(order.matched_amount)
+                avg_px += Decimal(order.price) * matched_amount
+                total_qty += matched_amount
 
-        return avg_px / total_qty
+            return avg_px / total_qty
 
     def parse_to_fill_report(
         self,
@@ -106,13 +109,8 @@ class PolymarketTradeReport(msgspec.Struct, frozen=True):
         maker_address: str,
         ts_init: int,
     ) -> FillReport:
-        price = (
-            float(self.price)
-            if self.liquidity_side() == LiquiditySide.MAKER
-            else float(self.avg_px())
-        )
         last_qty = instrument.make_qty(float(self.size))
-        last_px = instrument.make_price(price)
+        last_px = instrument.make_price(self.last_px())
         commission = float(last_qty * last_px) * basis_points_as_percentage(
             float(self.fee_rate_bps),
         )

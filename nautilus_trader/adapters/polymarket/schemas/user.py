@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from decimal import Decimal
 from typing import Any
 
 import msgspec
@@ -165,7 +166,7 @@ class PolymarketUserTrade(msgspec.Struct, tag="trade", tag_field="event_type", f
     def to_dict(self) -> dict[str, Any]:
         return msgspec.json.decode(msgspec.json.encode(self))
 
-    def liqudity_side(self) -> LiquiditySide:
+    def liquidity_side(self) -> LiquiditySide:
         if self.trader_side == PolymarketLiquiditySide.MAKER:
             return LiquiditySide.MAKER
         else:
@@ -180,6 +181,20 @@ class PolymarketUserTrade(msgspec.Struct, tag="trade", tag_field="event_type", f
         else:
             return VenueOrderId(self.taker_order_id)
 
+    def last_px(self) -> Decimal:
+        if self.liquidity_side() == LiquiditySide.MAKER:
+            return Decimal(self.price)
+        else:
+            # We assume there should be at least some filled quantity for a trade report
+            total_qty = Decimal(0)
+            avg_px = Decimal(0)
+            for order in self.maker_orders:
+                matched_amount = Decimal(order.matched_amount)
+                avg_px += Decimal(order.price) * matched_amount
+                total_qty += matched_amount
+
+            return avg_px / total_qty
+
     def parse_to_fill_report(
         self,
         account_id: AccountId,
@@ -189,7 +204,7 @@ class PolymarketUserTrade(msgspec.Struct, tag="trade", tag_field="event_type", f
         ts_init: int,
     ) -> FillReport:
         last_qty = instrument.make_qty(float(self.size))
-        last_px = instrument.make_price(float(self.price))
+        last_px = instrument.make_price(float(self.last_px()))
         commission = float(last_qty * last_px) * basis_points_as_percentage(
             float(self.fee_rate_bps),
         )
@@ -203,7 +218,7 @@ class PolymarketUserTrade(msgspec.Struct, tag="trade", tag_field="event_type", f
             last_qty=last_qty,
             last_px=last_px,
             commission=Money(commission, USDC_POS),
-            liquidity_side=self.liqudity_side(),
+            liquidity_side=self.liquidity_side(),
             report_id=UUID4(),
             ts_event=millis_to_nanos(int(self.match_time)),
             ts_init=ts_init,
