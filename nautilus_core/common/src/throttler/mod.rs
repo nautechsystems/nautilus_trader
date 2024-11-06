@@ -43,11 +43,11 @@ impl RateLimit {
 /// Throttler takes messages of type T and callback of type F for dropping
 /// or processing messages.
 #[derive(Clone)]
-pub struct Throttler<T, F> {
-    inner: Rc<RefCell<InnerThrottler<T, F>>>,
+pub struct Throttler<T, S, D> {
+    inner: Rc<RefCell<InnerThrottler<T, S, D>>>,
 }
 
-impl<T, F> Debug for Throttler<T, F>
+impl<T, S, D> Debug for Throttler<T, S, D>
 where
     T: Debug,
 {
@@ -58,14 +58,14 @@ where
     }
 }
 
-impl<T, F> Throttler<T, F> {
+impl<T, S, D> Throttler<T, S, D> {
     /// Creates a new [`Throttler`] instance.
     pub fn new(
         rate_limit: RateLimit,
         clock: Rc<RefCell<dyn Clock>>,
         timer_name: String,
-        output_send: F,
-        output_drop: Option<F>,
+        output_send: S,
+        output_drop: Option<D>,
     ) -> Self {
         let inner = InnerThrottler::new(
             rate_limit.limit,
@@ -99,10 +99,11 @@ impl<T, F> Throttler<T, F> {
     }
 }
 
-impl<T, F> Throttler<T, F>
+impl<T, S, D> Throttler<T, S, D>
 where
-    F: Fn(T) + 'static,
     T: 'static,
+    S: Fn(T) + 'static,
+    D: Fn(T) + 'static,
 {
     pub fn send(&self, msg: T) {
         let throttler_clone = Self {
@@ -118,11 +119,11 @@ where
         }
     }
 
-    fn get_process_callback(&self) -> ThrottlerProcess<T, F> {
+    fn get_process_callback(&self) -> ThrottlerProcess<T, S, D> {
         ThrottlerProcess::new(self.inner.clone())
     }
 
-    fn get_resume_callback(&self) -> ThrottlerResume<T, F> {
+    fn get_resume_callback(&self) -> ThrottlerResume<T, S, D> {
         ThrottlerResume::new(self.inner.clone())
     }
 }
@@ -144,7 +145,7 @@ mod tests {
     /// - Rate limit is 5 messages in 10 intervals.
     /// - Message handling is decided by specific fixture
     struct TestThrottler {
-        throttler: Throttler<u64, Box<dyn Fn(u64)>>,
+        throttler: Throttler<u64, Box<dyn Fn(u64)>, Box<dyn Fn(u64)>>,
         clock: Rc<RefCell<TestClock>>,
         interval: u64,
     }

@@ -19,19 +19,24 @@ use super::inner::InnerThrottler;
 use crate::timer::{TimeEvent, TimeEventCallback};
 
 /// Stop rate limiting messages
-pub struct ThrottlerResume<T, F> {
-    inner: Rc<RefCell<InnerThrottler<T, F>>>,
+pub struct ThrottlerResume<T, S, D> {
+    inner: Rc<RefCell<InnerThrottler<T, S, D>>>,
 }
 
-impl<T, F> ThrottlerResume<T, F> {
+impl<T, S, D> ThrottlerResume<T, S, D> {
     /// Creates a new [`ThrottlerResume`] instance.
-    pub const fn new(inner: Rc<RefCell<InnerThrottler<T, F>>>) -> Self {
+    pub const fn new(inner: Rc<RefCell<InnerThrottler<T, S, D>>>) -> Self {
         Self { inner }
     }
 }
 
-impl<T: 'static, F: Fn(T) + 'static> From<ThrottlerResume<T, F>> for TimeEventCallback {
-    fn from(value: ThrottlerResume<T, F>) -> Self {
+impl<T, S, D> From<ThrottlerResume<T, S, D>> for TimeEventCallback
+where
+    T: 'static,
+    S: Fn(T) + 'static,
+    D: Fn(T) + 'static,
+{
+    fn from(value: ThrottlerResume<T, S, D>) -> Self {
         Self::Rust(Rc::new(move |_event: TimeEvent| {
             value.inner.borrow_mut().is_limiting = false;
         }))
@@ -40,19 +45,24 @@ impl<T: 'static, F: Fn(T) + 'static> From<ThrottlerResume<T, F>> for TimeEventCa
 
 /// Process buffered messages.
 #[derive(Clone)]
-pub struct ThrottlerProcess<T, F> {
-    inner: Rc<RefCell<InnerThrottler<T, F>>>,
+pub struct ThrottlerProcess<T, S, D> {
+    inner: Rc<RefCell<InnerThrottler<T, S, D>>>,
 }
 
-impl<T, F> ThrottlerProcess<T, F> {
+impl<T, S, D> ThrottlerProcess<T, S, D> {
     /// Creates a new [`ThrottlerProcess`] instance.
-    pub const fn new(inner: Rc<RefCell<InnerThrottler<T, F>>>) -> Self {
+    pub const fn new(inner: Rc<RefCell<InnerThrottler<T, S, D>>>) -> Self {
         Self { inner }
     }
 }
 
-impl<T: 'static, F: Fn(T) + 'static> From<ThrottlerProcess<T, F>> for TimeEventCallback {
-    fn from(value: ThrottlerProcess<T, F>) -> Self {
+impl<T, S, D> From<ThrottlerProcess<T, S, D>> for TimeEventCallback
+where
+    T: 'static,
+    S: Fn(T) + 'static,
+    D: Fn(T) + 'static,
+{
+    fn from(value: ThrottlerProcess<T, S, D>) -> Self {
         Self::Rust(Rc::new(move |_event: TimeEvent| {
             let process_clone = ThrottlerProcess {
                 inner: value.inner.clone(),

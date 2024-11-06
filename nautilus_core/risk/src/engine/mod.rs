@@ -48,6 +48,9 @@ use ustr::Ustr;
 pub mod config;
 pub mod tests;
 
+type SubmitOrderFn = Box<dyn Fn(SubmitOrder)>;
+type ModifyOrderFn = Box<dyn Fn(ModifyOrder)>;
+
 pub struct RiskEngine<C>
 where
     C: Clock,
@@ -58,8 +61,8 @@ where
     // Counters
     // command_count: u64,
     // event_count: u64,
-    pub order_submit_throttler: Throttler<SubmitOrder, Box<dyn Fn(SubmitOrder)>>,
-    pub order_modify_throttler: Throttler<ModifyOrder, Box<dyn Fn(ModifyOrder)>>,
+    pub order_submit_throttler: Throttler<SubmitOrder, SubmitOrderFn, SubmitOrderFn>,
+    pub order_modify_throttler: Throttler<ModifyOrder, ModifyOrderFn, ModifyOrderFn>,
     max_notional_per_order: HashMap<InstrumentId, Decimal>,
     trading_state: TradingState,
     config: RiskEngineConfig,
@@ -79,30 +82,47 @@ where
     //     let submit_empty: Box<dyn Fn(SubmitOrder) + 'static> = Box::new(|_: SubmitOrder| {});
     //     let modify_empty: Box<dyn Fn(ModifyOrder) + 'static> = Box::new(|_: ModifyOrder| {});
 
+    //     let fns = Self::submit_send_to_execution;
+    //     let mut risk_engine = Self {
+    //         clock: clock.clone(),
+    //         cache: Rc::new(RefCell::new(cache)),
+    //         msgbus: Rc::new(RefCell::new(msgbus)),
+    //         max_notional_per_order: HashMap::new(),
+    //         trading_state: TradingState::Active,
+    //         order_submit_throttler: Throttler::new(
+    //             config.max_order_submit.clone(),
+    //             Rc::new(RefCell::new(clock.clone())),
+    //             "ORDER_SUBMIT_THROTTLER".to_string(),
+    //             submit_empty,
+    //             None,
+    //         ),
+    //         order_modify_throttler: Throttler::new(
+    //             config.max_order_modify.clone(),
+    //             Rc::new(RefCell::new(clock.clone())),
+    //             "ORDER_MODIFY_THROTTLER".to_string(),
+    //             modify_empty,
+    //             None,
+    //         ),
+    //         config: config,
+    //     };
+
     //     let order_submit_throttler = Throttler::new(
     //         config.max_order_submit.clone(),
     //         Rc::new(RefCell::new(clock.clone())),
     //         "ORDER_SUBMIT_THROTTLER".to_string(),
-    //         submit_empty,
-    //         None, // TODO: Fix this
+    //         Box::new(|order: SubmitOrder| risk_engine.submit_send_to_execution(order)) as Box<dyn Fn(SubmitOrder) +'static>,
+    //         None,
     //     );
-    //     let order_modify_throttler = Throttler::new(
+
+    //     let order_modify_throttler = Throttler::<ModifyOrder, _, _>::new(
     //         config.max_order_modify.clone(),
     //         Rc::new(RefCell::new(clock.clone())),
     //         "ORDER_MODIFY_THROTTLER".to_string(),
     //         modify_empty,
-    //         None, // TODO: Fix this
+    //         None,
     //     );
 
-    //     let ss = Throttler::new(
-    //         config.max_order_modify.clone(),
-    //         Rc::new(RefCell::new(clock.clone())),
-    //         "ORDER_MODIFY_THROTTLER".to_string(),
-    //         modify_empty,
-    //         None, // TODO: Fix this
-    //     );
-
-    //     let mut risk_engine = Self {
+    //     Self {
     //         clock,
     //         cache: Rc::new(RefCell::new(cache)),
     //         msgbus: Rc::new(RefCell::new(msgbus)),
@@ -111,11 +131,7 @@ where
     //         max_notional_per_order: HashMap::new(),
     //         trading_state: TradingState::Active,
     //         config,
-    //     };
-
-    //     risk_engine.order_modify_throttler = ss;
-
-    //     risk_engine
+    //     }
     // }
 
     // -- COMMANDS --------------------------------------------------------------------------------
@@ -774,6 +790,12 @@ where
         }
     }
 
+    fn layer_deny_modify_order(&self, command: TradingCommand) {
+        if let TradingCommand::ModifyOrder(modify_order) = command {
+            self.deny_modify_order(modify_order);
+        }
+    }
+
     fn deny_modify_order(&self, command: ModifyOrder) {
         let burrowed_cache = self.cache.borrow();
         let order = if let Some(order) = burrowed_cache.order(&command.client_order_id) {
@@ -912,6 +934,18 @@ where
     }
 
     fn send_to_execution(&self, command: TradingCommand) {
+        self.msgbus
+            .borrow_mut()
+            .send(&Ustr::from("ExecEngine.execute"), &command);
+    }
+
+    fn modify_send_to_execution(&self, command: ModifyOrder) {
+        self.msgbus
+            .borrow_mut()
+            .send(&Ustr::from("ExecEngine.execute"), &command);
+    }
+
+    fn submit_send_to_execution(&self, command: SubmitOrder) {
         self.msgbus
             .borrow_mut()
             .send(&Ustr::from("ExecEngine.execute"), &command);
