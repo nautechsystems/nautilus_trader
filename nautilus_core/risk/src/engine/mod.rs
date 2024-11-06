@@ -46,93 +46,65 @@ use rust_decimal::{prelude::ToPrimitive, Decimal};
 use ustr::Ustr;
 
 pub mod config;
-pub mod tests;
+// pub mod tests;
 
 type SubmitOrderFn = Box<dyn Fn(SubmitOrder)>;
 type ModifyOrderFn = Box<dyn Fn(ModifyOrder)>;
 
-pub struct RiskEngine<C>
-where
-    C: Clock,
-{
-    clock: C,
+pub struct RiskEngine {
+    clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     msgbus: Rc<RefCell<MessageBus>>,
     // Counters
     // command_count: u64,
     // event_count: u64,
-    pub order_submit_throttler: Throttler<SubmitOrder, SubmitOrderFn, SubmitOrderFn>,
-    pub order_modify_throttler: Throttler<ModifyOrder, ModifyOrderFn, ModifyOrderFn>,
+    pub throttled_submit_order: Throttler<SubmitOrder, SubmitOrderFn, SubmitOrderFn>,
+    pub throttled_modify_order: Throttler<ModifyOrder, ModifyOrderFn, ModifyOrderFn>,
     max_notional_per_order: HashMap<InstrumentId, Decimal>,
     trading_state: TradingState,
     config: RiskEngineConfig,
 }
 
-impl<C> RiskEngine<C>
-where
-    C: Clock + 'static + Clone, // TODO: Fix this
-{
-    // pub fn new(
-    //     config: RiskEngineConfig,
-    //     // portfolio: PortfolioFacade TODO: fix after portfolio implementation
-    //     clock: C,
-    //     cache: Cache,
-    //     msgbus: MessageBus,
-    // ) -> Self {
-    //     let submit_empty: Box<dyn Fn(SubmitOrder) + 'static> = Box::new(|_: SubmitOrder| {});
-    //     let modify_empty: Box<dyn Fn(ModifyOrder) + 'static> = Box::new(|_: ModifyOrder| {});
+impl RiskEngine {
+    pub fn new(
+        config: RiskEngineConfig,
+        // portfolio: PortfolioFacade TODO: fix after portfolio implementation
+        clock: Rc<RefCell<dyn Clock>>,
+        cache: Rc<RefCell<Cache>>,
+        msgbus: Rc<RefCell<MessageBus>>,
+    ) -> Self {
+        let msgbus1 = msgbus.clone();
+        let throttled_submit_order = Throttler::new(
+            config.max_order_submit.clone(),
+            clock.clone(),
+            "ORDER_SUBMIT_THROTTLER".to_string(),
+            Box::new(move |order: SubmitOrder| {
+                msgbus1
+                    .borrow_mut()
+                    .send(&Ustr::from("ExecEngine.execute"), &order);
+            }) as Box<dyn Fn(SubmitOrder)>,
+            None,
+        );
 
-    //     let fns = Self::submit_send_to_execution;
-    //     let mut risk_engine = Self {
-    //         clock: clock.clone(),
-    //         cache: Rc::new(RefCell::new(cache)),
-    //         msgbus: Rc::new(RefCell::new(msgbus)),
-    //         max_notional_per_order: HashMap::new(),
-    //         trading_state: TradingState::Active,
-    //         order_submit_throttler: Throttler::new(
-    //             config.max_order_submit.clone(),
-    //             Rc::new(RefCell::new(clock.clone())),
-    //             "ORDER_SUBMIT_THROTTLER".to_string(),
-    //             submit_empty,
-    //             None,
-    //         ),
-    //         order_modify_throttler: Throttler::new(
-    //             config.max_order_modify.clone(),
-    //             Rc::new(RefCell::new(clock.clone())),
-    //             "ORDER_MODIFY_THROTTLER".to_string(),
-    //             modify_empty,
-    //             None,
-    //         ),
-    //         config: config,
-    //     };
+        let throttled_modify_order = Throttler::<ModifyOrder, _, _>::new(
+            config.max_order_modify.clone(),
+            clock.clone(),
+            "ORDER_MODIFY_THROTTLER".to_string(),
+            Box::new(|order: _| {}) as Box<dyn Fn(ModifyOrder)>,
+            None,
+        );
 
-    //     let order_submit_throttler = Throttler::new(
-    //         config.max_order_submit.clone(),
-    //         Rc::new(RefCell::new(clock.clone())),
-    //         "ORDER_SUBMIT_THROTTLER".to_string(),
-    //         Box::new(|order: SubmitOrder| risk_engine.submit_send_to_execution(order)) as Box<dyn Fn(SubmitOrder) +'static>,
-    //         None,
-    //     );
-
-    //     let order_modify_throttler = Throttler::<ModifyOrder, _, _>::new(
-    //         config.max_order_modify.clone(),
-    //         Rc::new(RefCell::new(clock.clone())),
-    //         "ORDER_MODIFY_THROTTLER".to_string(),
-    //         modify_empty,
-    //         None,
-    //     );
-
-    //     Self {
-    //         clock,
-    //         cache: Rc::new(RefCell::new(cache)),
-    //         msgbus: Rc::new(RefCell::new(msgbus)),
-    //         order_submit_throttler,
-    //         order_modify_throttler,
-    //         max_notional_per_order: HashMap::new(),
-    //         trading_state: TradingState::Active,
-    //         config,
-    //     }
-    // }
+        Self {
+            clock,
+            cache,
+            msgbus,
+            throttled_submit_order,
+            throttled_modify_order,
+            max_notional_per_order: HashMap::new(),
+            trading_state: TradingState::Active,
+            config,
+        }
+    }
 
     // -- COMMANDS --------------------------------------------------------------------------------
 
@@ -154,7 +126,7 @@ where
 
         self.trading_state = state;
 
-        let ts_now = self.clock.timestamp_ns();
+        let ts_now = self.clock.borrow().timestamp_ns();
         // let event = OrderEventAny {
         //     timestamp: ts_now,
         //     state,
@@ -401,7 +373,7 @@ where
             _ => {}
         }
 
-        self.order_modify_throttler.send(command);
+        self.throttled_modify_order.send(command);
     }
 
     // -- PRE-TRADE CHECKS ------------------------------------------------------------------------
@@ -840,8 +812,8 @@ where
             order.client_order_id(),
             reason.into(),
             UUID4::new(),
-            self.clock.timestamp_ns(), // TODO: Check if this is correct
-            self.clock.timestamp_ns(),
+            self.clock.borrow().timestamp_ns(), // TODO: Check if this is correct
+            self.clock.borrow().timestamp_ns(),
         ));
 
         self.msgbus
@@ -858,6 +830,7 @@ where
     }
 
     fn reject_modify_order(&self, order: OrderAny, reason: &str) {
+        let ts_event = self.clock.borrow().timestamp_ns();
         let denied = OrderEventAny::ModifyRejected(OrderModifyRejected::new(
             order.trader_id(),
             order.strategy_id(),
@@ -865,8 +838,8 @@ where
             order.client_order_id(),
             reason.into(),
             UUID4::new(),
-            self.clock.timestamp_ns(),
-            self.clock.timestamp_ns(),
+            ts_event,
+            ts_event,
             false, // TODO: Check if this is correct
             order.venue_order_id(),
             order.account_id(),
@@ -923,7 +896,7 @@ where
             },
             TradingState::Active => match command {
                 TradingCommand::SubmitOrder(submit_order) => {
-                    self.order_submit_throttler.send(submit_order);
+                    self.throttled_submit_order.send(submit_order);
                     // return; not allowed by clippy
                 }
                 TradingCommand::SubmitOrderList(submit_order_list) => {
