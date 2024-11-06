@@ -11,18 +11,11 @@ name = "nautilus_analysis"
 crate-type = ["rlib", "staticlib", "cdylib"]
 
 [dependencies]
-nautilus-common = { path = "../common" }
 nautilus-core = { path = "../core" }
 nautilus-model = { path = "../model", features = ["stubs"] }
 anyhow = { workspace = true }
-chrono = { workspace = true }
-indexmap = { workspace = true }
 pyo3 = { workspace = true, optional = true }
 rust_decimal = { workspace = true }
-rust_decimal_macros = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-thiserror = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
@@ -32,18 +25,15 @@ rstest = { workspace = true }
 default = ["ffi", "python"]
 extension-module = [
   "pyo3/extension-module",
-  "nautilus-common/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
 ]
 ffi = [
-  "nautilus-common/ffi",
   "nautilus-core/ffi",
   "nautilus-model/ffi",
 ]
 python = [
   "pyo3",
-  "nautilus-common/python",
   "nautilus-core/python",
   "nautilus-model/python",
 ]

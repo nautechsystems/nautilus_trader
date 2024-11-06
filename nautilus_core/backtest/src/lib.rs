@@ -33,3 +33,6 @@ pub mod exchange;
 pub mod matching_engine;
 pub mod models;
 pub mod modules;
+
+#[cfg(feature = "ffi")]
+pub mod ffi;

@@ -36,8 +36,8 @@ def test_to_dict():
     assert nautilus_pyo3.FuturesContract.from_dict(result) == _ES_FUTURE
     assert result == {
         "type": "FuturesContract",
-        "id": "ESZ1.GLBX",
-        "raw_symbol": "ESZ1",
+        "id": "ESZ21.GLBX",
+        "raw_symbol": "ESZ21",
         "asset_class": "INDEX",
         "underlying": "ES",
         "activation_ns": 1631836800000000000,
@@ -65,7 +65,7 @@ def test_to_dict():
 def test_legacy_futures_contract_from_pyo3():
     future = FuturesContract.from_pyo3(_ES_FUTURE)
 
-    assert future.id.value == "ESZ1.GLBX"
+    assert future.id.value == "ESZ21.GLBX"
 
 
 def test_pyo3_cython_conversion():

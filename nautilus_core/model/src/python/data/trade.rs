@@ -150,7 +150,7 @@ impl TradeTick {
         Ok(())
     }
 
-    fn __getstate__(&self, _py: Python) -> PyResult<PyObject> {
+    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
         Ok((
             self.instrument_id.to_string(),
             self.price.raw,
@@ -162,7 +162,7 @@ impl TradeTick {
             self.ts_event.as_u64(),
             self.ts_init.as_u64(),
         )
-            .to_object(_py))
+            .to_object(py))
     }
 
     fn __reduce__(&self, py: Python) -> PyResult<PyObject> {

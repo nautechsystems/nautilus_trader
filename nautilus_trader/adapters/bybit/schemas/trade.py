@@ -87,11 +87,11 @@ class BybitExecution(msgspec.Struct, omit_defaults=True, kw_only=True):
             order_side=enum_parser.parse_bybit_order_side(self.side),
             last_qty=Quantity.from_str(self.execQty),
             last_px=Price.from_str(self.execPrice),
-            liquidity_side=LiquiditySide.MAKER if self.isMaker else LiquiditySide.TAKER,
             commission=Money(
                 Decimal(self.execFee or 0),
                 Currency.from_str(self.feeCurrency or "USDT"),
             ),
+            liquidity_side=LiquiditySide.MAKER if self.isMaker else LiquiditySide.TAKER,
             report_id=report_id,
             ts_event=millis_to_nanos(Decimal(self.execTime)),
             ts_init=ts_init,

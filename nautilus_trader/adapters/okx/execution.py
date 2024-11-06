@@ -566,7 +566,7 @@ class OKXExecutionClient(LiveExecutionClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> list[FillReport]:
-        self._log.info("Requesting FillReports...")
+        self._log.debug("Requesting FillReports...")
         reports: list[FillReport] = []
         billIds: list[str] = []  # for possible pagination
 
@@ -713,7 +713,7 @@ class OKXExecutionClient(LiveExecutionClient):
 
         try:
             if instrument_id:
-                self._log.info(f"Requesting PositionStatusReport for {instrument_id}")
+                self._log.debug(f"Requesting PositionStatusReport for {instrument_id}")
                 okx_symbol = OKXSymbol(instrument_id.symbol.value)
                 positions_response = await self._http_account.fetch_positions(
                     instType=okx_symbol.instrument_type,
@@ -729,7 +729,7 @@ class OKXExecutionClient(LiveExecutionClient):
                     self._log.debug(f"Received {position_report}")
                     reports.append(position_report)
             else:
-                self._log.info("Requesting PositionStatusReports...")
+                self._log.debug("Requesting PositionStatusReports...")
                 for instrument_type, contract_type in self._inst_type_contr_type_combos:
                     positions_response = await self._http_account.fetch_positions(
                         instType=instrument_type,
@@ -1349,6 +1349,7 @@ class OKXExecutionClient(LiveExecutionClient):
                 enum_parser=self._enum_parser,
                 ts_init=self._clock.timestamp_ns(),
                 client_order_id=client_order_id,
+                commission=Money(0, instrument.quote_currency),
             )
             self.generate_order_filled(
                 strategy_id=strategy_id,

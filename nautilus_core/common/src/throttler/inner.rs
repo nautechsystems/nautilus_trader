@@ -68,6 +68,7 @@ where
 }
 
 impl<T, F> InnerThrottler<T, F> {
+    /// Creates a new [`InnerThrottler`] instance.
     #[inline]
     pub fn new(
         limit: usize,

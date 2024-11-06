@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides a `BacktestDataClient` implementation for backtesting.
+
 // Under development
 #![allow(dead_code)]
 #![allow(unused_variables)]

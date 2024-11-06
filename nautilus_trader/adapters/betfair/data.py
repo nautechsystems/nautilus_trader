@@ -76,6 +76,7 @@ class BetfairDataClient(LiveMarketDataClient):
         clock: LiveClock,
         instrument_provider: BetfairInstrumentProvider,
         account_currency: Currency,
+        keep_alive_period: int = 3600 * 10,  # 10 hours
     ) -> None:
         super().__init__(
             loop=loop,
@@ -95,6 +96,7 @@ class BetfairDataClient(LiveMarketDataClient):
         )
         self.parser = BetfairParser(currency=account_currency.code)
         self.subscription_status = SubscriptionStatus.UNSUBSCRIBED
+        self.keep_alive_period = keep_alive_period
 
         # Subscriptions
         self._subscribed_instrument_ids: set[InstrumentId] = set()
@@ -127,6 +129,7 @@ class BetfairDataClient(LiveMarketDataClient):
         # Schedule a heartbeat in 10s to give us a little more time to load instruments
         self._log.debug("scheduling heartbeat")
         self.create_task(self._post_connect_heartbeat())
+        self.create_task(self._keep_alive())
 
         # Check for any global filters in instrument provider to subscribe
         if self.instrument_provider._config.event_type_ids:
@@ -139,8 +142,19 @@ class BetfairDataClient(LiveMarketDataClient):
 
     async def _post_connect_heartbeat(self) -> None:
         for _ in range(3):
-            await self._stream.send(msgspec.json.encode({"op": "heartbeat"}))
-            await asyncio.sleep(5)
+            try:
+                await self._stream.send(msgspec.json.encode({"op": "heartbeat"}))
+                await asyncio.sleep(5)
+            except BrokenPipeError:
+                self._log.warning("Heartbeat failed, reconnecting")
+                await self._reconnect()
+
+    async def _keep_alive(self) -> None:
+        self._log.info(f"Starting keep-alive every {self.keep_alive_period}s")
+        while True:
+            await asyncio.sleep(self.keep_alive_period)
+            self._log.info("Sending keep-alive")
+            await self._client.keep_alive()
 
     async def _disconnect(self) -> None:
         # Close socket
@@ -150,6 +164,13 @@ class BetfairDataClient(LiveMarketDataClient):
         # Ensure client closed
         self._log.info("Closing BetfairClient")
         await self._client.disconnect()
+
+    async def _reconnect(self) -> None:
+        self._log.info("Attempting reconnect")
+        if self._stream.is_connected:
+            self._log.info("Stream connected, disconnecting")
+            await self._stream.disconnect()
+        await self._stream.connect()
 
     def _reset(self) -> None:
         if self.is_connected:
@@ -293,8 +314,5 @@ class BetfairDataClient(LiveMarketDataClient):
             elif update.error_code == "SUBSCRIPTION_LIMIT_EXCEEDED":
                 raise RuntimeError("Subscription request limit exceeded")
             else:
-                self._log.info("Attempting reconnect")
-                if self._stream.is_connected:
-                    self._log.info("Stream connected, disconnecting")
-                    self.create_task(self._stream.disconnect())
-                self.create_task(self._connect())
+                self._log.info("Unknown failure message, scheduling restart")
+                self.create_task(self._reconnect())

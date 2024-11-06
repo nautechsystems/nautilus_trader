@@ -23,6 +23,7 @@ use nautilus_model::{
         delta::OrderBookDelta,
         deltas::{OrderBookDeltas, OrderBookDeltas_API},
         order::BookOrder,
+        quote::QuoteTick,
         trade::TradeTick,
         Data,
     },
@@ -41,18 +42,26 @@ use crate::tardis::parse::{parse_aggressor_side, parse_bar_spec, parse_book_acti
 #[must_use]
 pub fn parse_tardis_ws_message(msg: WsMessage, info: Arc<InstrumentMiniInfo>) -> Option<Data> {
     match msg {
-        WsMessage::BookChange(msg) => Some(Data::Deltas(parse_book_change_msg(
+        WsMessage::BookChange(msg) => Some(Data::Deltas(parse_book_change_msg_as_deltas(
             msg,
             info.price_precision,
             info.size_precision,
             info.instrument_id,
         ))),
-        WsMessage::BookSnapshot(msg) => Some(Data::Deltas(parse_book_snapshot_msg(
-            msg,
-            info.price_precision,
-            info.size_precision,
-            info.instrument_id,
-        ))),
+        WsMessage::BookSnapshot(msg) => match msg.bids.len() {
+            1 => Some(Data::Quote(parse_book_snapshot_msg_as_quote(
+                msg,
+                info.price_precision,
+                info.size_precision,
+                info.instrument_id,
+            ))),
+            _ => Some(Data::Deltas(parse_book_snapshot_msg_as_deltas(
+                msg,
+                info.price_precision,
+                info.size_precision,
+                info.instrument_id,
+            ))),
+        },
         WsMessage::Trade(msg) => Some(Data::Trade(parse_trade_msg(
             msg,
             info.price_precision,
@@ -71,13 +80,13 @@ pub fn parse_tardis_ws_message(msg: WsMessage, info: Arc<InstrumentMiniInfo>) ->
 }
 
 #[must_use]
-pub fn parse_book_change_msg(
+pub fn parse_book_change_msg_as_deltas(
     msg: BookChangeMsg,
     price_precision: u8,
     size_precision: u8,
     instrument_id: InstrumentId,
 ) -> OrderBookDeltas_API {
-    parse_book_msg(
+    parse_book_msg_as_deltas(
         msg.bids,
         msg.asks,
         msg.is_snapshot,
@@ -90,13 +99,13 @@ pub fn parse_book_change_msg(
 }
 
 #[must_use]
-pub fn parse_book_snapshot_msg(
+pub fn parse_book_snapshot_msg_as_deltas(
     msg: BookSnapshotMsg,
     price_precision: u8,
     size_precision: u8,
     instrument_id: InstrumentId,
 ) -> OrderBookDeltas_API {
-    parse_book_msg(
+    parse_book_msg_as_deltas(
         msg.bids,
         msg.asks,
         true,
@@ -110,7 +119,7 @@ pub fn parse_book_snapshot_msg(
 
 #[allow(clippy::too_many_arguments)]
 #[must_use]
-pub fn parse_book_msg(
+pub fn parse_book_msg_as_deltas(
     bids: Vec<BookLevel>,
     asks: Vec<BookLevel>,
     is_snapshot: bool,
@@ -195,6 +204,35 @@ pub fn parse_book_level(
 }
 
 #[must_use]
+pub fn parse_book_snapshot_msg_as_quote(
+    msg: BookSnapshotMsg,
+    price_precision: u8,
+    size_precision: u8,
+    instrument_id: InstrumentId,
+) -> QuoteTick {
+    let ts_event = UnixNanos::from(msg.timestamp.timestamp_nanos_opt().unwrap() as u64);
+    let ts_init = UnixNanos::from(msg.local_timestamp.timestamp_nanos_opt().unwrap() as u64);
+
+    let best_bid = &msg.bids[0];
+    let bid_price = Price::new(best_bid.price, price_precision);
+    let bid_size = Quantity::new(best_bid.amount, size_precision);
+
+    let best_ask = &msg.asks[0];
+    let ask_price = Price::new(best_ask.price, price_precision);
+    let ask_size = Quantity::new(best_ask.amount, size_precision);
+
+    QuoteTick::new(
+        instrument_id,
+        bid_price,
+        ask_price,
+        bid_size,
+        ask_size,
+        ts_event,
+        ts_init,
+    )
+}
+
+#[must_use]
 pub fn parse_trade_msg(
     msg: TradeMsg,
     price_precision: u8,
@@ -259,7 +297,8 @@ mod tests {
         let price_precision = 0;
         let size_precision = 0;
         let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
-        let deltas = parse_book_change_msg(msg, price_precision, size_precision, instrument_id);
+        let deltas =
+            parse_book_change_msg_as_deltas(msg, price_precision, size_precision, instrument_id);
 
         assert_eq!(deltas.deltas.len(), 1);
         assert_eq!(deltas.instrument_id, instrument_id);
@@ -288,16 +327,17 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_book_snapshot_message() {
+    fn test_parse_book_snapshot_message_as_deltas() {
         let json_data = load_test_json("book_snapshot.json");
         let msg: BookSnapshotMsg = serde_json::from_str(&json_data).unwrap();
 
         let price_precision = 1;
         let size_precision = 0;
         let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
-        let deltas = parse_book_snapshot_msg(msg, price_precision, size_precision, instrument_id);
+        let deltas =
+            parse_book_snapshot_msg_as_deltas(msg, price_precision, size_precision, instrument_id);
         let delta_0 = deltas.deltas[0];
-        let _delta_2 = deltas.deltas[2];
+        let delta_2 = deltas.deltas[2];
 
         assert_eq!(deltas.deltas.len(), 4);
         assert_eq!(deltas.instrument_id, instrument_id);
@@ -310,6 +350,7 @@ mod tests {
         assert_eq!(deltas.ts_init, UnixNanos::from(1572010786961000000));
         assert_eq!(delta_0.instrument_id, instrument_id);
         assert_eq!(delta_0.action, BookAction::Add);
+        assert_eq!(delta_0.order.side, OrderSide::Buy);
         assert_eq!(delta_0.order.price, Price::from("7633.5"));
         assert_eq!(delta_0.order.size, Quantity::from(1906067));
         assert_eq!(delta_0.order.order_id, 0);
@@ -317,7 +358,36 @@ mod tests {
         assert_eq!(delta_0.sequence, 0);
         assert_eq!(delta_0.ts_event, UnixNanos::from(1572010786950000000));
         assert_eq!(delta_0.ts_init, UnixNanos::from(1572010786961000000));
-        // TODO: Assert fields for delta_2 (top ask)
+        assert_eq!(delta_2.instrument_id, instrument_id);
+        assert_eq!(delta_2.action, BookAction::Add);
+        assert_eq!(delta_2.order.side, OrderSide::Sell);
+        assert_eq!(delta_2.order.price, Price::from("7634.0"));
+        assert_eq!(delta_2.order.size, Quantity::from(1467849));
+        assert_eq!(delta_2.order.order_id, 0);
+        assert_eq!(delta_2.flags, RecordFlag::F_SNAPSHOT.value());
+        assert_eq!(delta_2.sequence, 0);
+        assert_eq!(delta_2.ts_event, UnixNanos::from(1572010786950000000));
+        assert_eq!(delta_2.ts_init, UnixNanos::from(1572010786961000000));
+    }
+
+    #[rstest]
+    fn test_parse_book_snapshot_message_as_quote() {
+        let json_data = load_test_json("book_snapshot.json");
+        let msg: BookSnapshotMsg = serde_json::from_str(&json_data).unwrap();
+
+        let price_precision = 1;
+        let size_precision = 0;
+        let instrument_id = InstrumentId::from("XBTUSD.BITMEX");
+        let quote =
+            parse_book_snapshot_msg_as_quote(msg, price_precision, size_precision, instrument_id);
+
+        assert_eq!(quote.instrument_id, instrument_id);
+        assert_eq!(quote.bid_price, Price::from("7633.5"));
+        assert_eq!(quote.bid_size, Quantity::from(1906067));
+        assert_eq!(quote.ask_price, Price::from("7634.0"));
+        assert_eq!(quote.ask_size, Quantity::from(1467849));
+        assert_eq!(quote.ts_event, UnixNanos::from(1572010786950000000));
+        assert_eq!(quote.ts_init, UnixNanos::from(1572010786961000000));
     }
 
     #[rstest]

@@ -15,18 +15,8 @@
 
 //! The core `BacktestEngine` for backtesting on historical data.
 
-use std::ops::{Deref, DerefMut};
-
-use nautilus_common::{
-    clock::TestClock,
-    ffi::{clock::TestClock_API, timer::TimeEventHandler},
-    timer::TimeEventHandlerV2,
-};
-// use nautilus_common::ffi::clock::TestClock_API;
-use nautilus_core::{
-    ffi::{cvec::CVec, parsing::u8_as_bool},
-    nanos::UnixNanos,
-};
+use nautilus_common::{clock::TestClock, timer::TimeEventHandlerV2};
+use nautilus_core::nanos::UnixNanos;
 
 /// Provides a means of accumulating and draining time event handlers.
 pub struct TimeEventAccumulator {
@@ -64,52 +54,6 @@ impl Default for TimeEventAccumulator {
     fn default() -> Self {
         Self::new()
     }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// C API
-////////////////////////////////////////////////////////////////////////////////
-#[repr(C)]
-pub struct TimeEventAccumulatorAPI(Box<TimeEventAccumulator>);
-
-impl Deref for TimeEventAccumulatorAPI {
-    type Target = TimeEventAccumulator;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for TimeEventAccumulatorAPI {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-#[no_mangle]
-pub extern "C" fn time_event_accumulator_new() -> TimeEventAccumulatorAPI {
-    TimeEventAccumulatorAPI(Box::new(TimeEventAccumulator::new()))
-}
-
-#[no_mangle]
-pub extern "C" fn time_event_accumulator_drop(accumulator: TimeEventAccumulatorAPI) {
-    drop(accumulator); // Memory freed here
-}
-
-#[no_mangle]
-pub extern "C" fn time_event_accumulator_advance_clock(
-    accumulator: &mut TimeEventAccumulatorAPI,
-    clock: &mut TestClock_API,
-    to_time_ns: UnixNanos,
-    set_time: u8,
-) {
-    accumulator.advance_clock(clock, to_time_ns, u8_as_bool(set_time));
-}
-
-#[no_mangle]
-pub extern "C" fn time_event_accumulator_drain(accumulator: &mut TimeEventAccumulatorAPI) -> CVec {
-    let handlers: Vec<TimeEventHandler> = accumulator.drain().into_iter().map(Into::into).collect();
-    handlers.into()
 }
 
 ////////////////////////////////////////////////////////////////////////////////

@@ -15,6 +15,7 @@
 
 use nautilus_core::nanos::UnixNanos;
 use rust_decimal::Decimal;
+use ustr::Ustr;
 
 use super::{
     betting::BettingInstrument, binary_option::BinaryOption, crypto_future::CryptoFuture,
@@ -73,6 +74,22 @@ impl InstrumentAny {
             Self::FuturesSpread(inst) => inst.id,
             Self::OptionsContract(inst) => inst.id,
             Self::OptionsSpread(inst) => inst.id,
+        }
+    }
+
+    #[must_use]
+    pub fn underlying(&self) -> Option<&Ustr> {
+        match self {
+            Self::Betting(_) => None,
+            Self::BinaryOption(_) => None,
+            Self::CryptoFuture(inst) => Some(&inst.underlying.code),
+            Self::CryptoPerpetual(_) => None,
+            Self::CurrencyPair(_) => None,
+            Self::Equity(_) => None,
+            Self::FuturesContract(inst) => Some(&inst.underlying),
+            Self::FuturesSpread(inst) => Some(&inst.underlying),
+            Self::OptionsContract(inst) => Some(&inst.underlying),
+            Self::OptionsSpread(inst) => Some(&inst.underlying),
         }
     }
 

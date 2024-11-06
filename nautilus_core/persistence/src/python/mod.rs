@@ -15,10 +15,10 @@
 
 //! Python bindings from `pyo3`.
 
-use pyo3::prelude::*;
-
 pub mod backend;
 pub mod wranglers;
+
+use pyo3::prelude::*;
 
 /// Loaded as nautilus_pyo3.persistence
 #[pymodule]

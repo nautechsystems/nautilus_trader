@@ -141,6 +141,7 @@ impl BinaryOption {
         })
     }
 
+    /// Creates a new [`BinaryOption`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,

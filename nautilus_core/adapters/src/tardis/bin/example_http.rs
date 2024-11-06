@@ -21,23 +21,19 @@ async fn main() {
         .with_max_level(tracing::Level::DEBUG)
         .init();
 
-    let client = TardisHttpClient::new(None, None, None);
+    let client = TardisHttpClient::new(None, None, None).unwrap();
 
     // Tardis instrument definitions
     let resp = client.instruments_info(Exchange::Bitmex).await;
     println!("Received: {resp:?}");
 
-    let resp = client
-        .instrument_info(Exchange::Bitmex, "ETHUSDT".to_string())
-        .await;
+    let resp = client.instrument_info(Exchange::Bitmex, "ETHUSDT").await;
     println!("Received: {resp:?}");
 
     // Nautilus instrument definitions
     let resp = client.instruments(Exchange::Bitmex).await;
     println!("Received: {resp:?}");
 
-    let resp = client
-        .instrument(Exchange::Bitmex, "ETHUSDT".to_string())
-        .await;
+    let resp = client.instrument(Exchange::Bitmex, "ETHUSDT").await;
     println!("Received: {resp:?}");
 }

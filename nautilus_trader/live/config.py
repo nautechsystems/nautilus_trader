@@ -22,6 +22,7 @@ from nautilus_trader.common.config import ActorConfig
 from nautilus_trader.common.config import InstrumentProviderConfig
 from nautilus_trader.common.config import NautilusConfig
 from nautilus_trader.common.config import NonNegativeInt
+from nautilus_trader.common.config import PositiveFloat
 from nautilus_trader.common.config import PositiveInt
 from nautilus_trader.common.config import resolve_config_path
 from nautilus_trader.common.config import resolve_path
@@ -98,6 +99,10 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     inflight_check_retries : NonNegativeInt, default 5
         The number of retry attempts the engine will make to verify the status of an
         in-flight order with the venue, should the initial attempt fail.
+    open_check_interval_secs : PositiveFloat, optional
+        The interval (seconds) between checks to confirm if Nautilus open orders remain open on the venue.
+        A recommended setting is between 5-10 seconds, consider API rate limits and the additional request
+        weights imposed by the necessary order status requests.
     qsize : PositiveInt, default 100_000
         The queue size for the engines internal queue buffers.
 
@@ -111,6 +116,7 @@ class LiveExecEngineConfig(ExecEngineConfig, frozen=True):
     inflight_check_interval_ms: NonNegativeInt = 2_000
     inflight_check_threshold_ms: NonNegativeInt = 5_000
     inflight_check_retries: NonNegativeInt = 5
+    open_check_interval_secs: PositiveFloat | None = None
     qsize: PositiveInt = 100_000
 
 

@@ -80,6 +80,7 @@ pub struct SubscriptionCommand {
 }
 
 impl SubscriptionCommand {
+    /// Creates a new [`SubscriptionCommand`] instance.
     #[must_use]
     pub const fn new(
         client_id: ClientId,
@@ -100,14 +101,14 @@ impl SubscriptionCommand {
     }
 }
 
-pub enum DataEngineRequest {
+pub enum DataCommand {
     Request(DataRequest),
-    SubscriptionCommand(SubscriptionCommand),
+    Subscribe(SubscriptionCommand),
 }
 
 // TODO: Refine this to reduce disparity between enum sizes
 #[allow(clippy::large_enum_variant)]
-pub enum DataClientResponse {
+pub enum DataEvent {
     Response(DataResponse),
     Data(Data),
 }

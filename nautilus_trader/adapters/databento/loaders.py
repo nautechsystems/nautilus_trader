@@ -106,6 +106,10 @@ class DatabentoDataLoader:
         if dataset is None:
             raise ValueError(f"No Databento dataset for venue '{venue}'")
 
+        # TODO: Temporary workaround
+        if dataset == "XNAS.BASIC":
+            return "XNAS.ITCH"
+
         return dataset
 
     def from_dbn_file(  # noqa: C901 (too complex)

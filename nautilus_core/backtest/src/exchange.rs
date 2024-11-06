@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+//! Provides a `SimulatedExchange` venue for backtesting on historical data.
+
 // Under development
 #![allow(dead_code)]
 #![allow(unused_variables)]
@@ -81,6 +83,7 @@ pub struct SimulatedExchange {
 }
 
 impl SimulatedExchange {
+    /// Creates a new [`SimulatedExchange`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         venue: Venue,

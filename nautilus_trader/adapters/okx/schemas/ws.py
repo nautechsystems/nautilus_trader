@@ -1032,7 +1032,7 @@ class OKXWsFillsData(msgspec.Struct):
         enum_parser: OKXEnumParser,
         ts_init: int,
         client_order_id: ClientOrderId,
-        # commission: Money,  TODO no fee info & can't make order filled event with None commission
+        commission: Money,
     ) -> FillReport:
         return FillReport(
             client_order_id=client_order_id,
@@ -1043,8 +1043,8 @@ class OKXWsFillsData(msgspec.Struct):
             order_side=enum_parser.parse_okx_order_side(self.side),
             last_qty=Quantity.from_str(self.fillSz),
             last_px=Price.from_str(self.fillPx),
+            commission=commission,
             liquidity_side=self.execType.parse_to_liquidity_side(),
-            commission=None,
             report_id=report_id,
             ts_event=millis_to_nanos(Decimal(self.ts)),
             ts_init=ts_init,

@@ -15,6 +15,14 @@
 
 //! Real-time and test timers for use with `Clock` implementations.
 
+#[rustfmt::skip]
+#[cfg(feature = "clock_v2")]
+use std::collections::BinaryHeap;
+
+#[rustfmt::skip]
+#[cfg(feature = "clock_v2")]
+use tokio::sync::Mutex;
+
 use std::{
     cmp::Ordering,
     fmt::{Debug, Display},
@@ -53,6 +61,7 @@ use crate::runtime::get_runtime;
 ///
 /// A `TimeEvent` carries metadata such as the event's name, a unique event ID,
 /// and timestamps indicating when the event was scheduled to occur and when it was initialized.
+#[derive(Eq)]
 pub struct TimeEvent {
     /// The event name, identifying the nature or purpose of the event.
     pub name: Ustr,
@@ -62,6 +71,20 @@ pub struct TimeEvent {
     pub ts_event: UnixNanos,
     /// UNIX timestamp (nanoseconds) when the instance was initialized.
     pub ts_init: UnixNanos,
+}
+
+/// Reverse order for `TimeEvent` comparison to be used in max heap.
+impl PartialOrd for TimeEvent {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Reverse order for `TimeEvent` comparison to be used in max heap.
+impl Ord for TimeEvent {
+    fn cmp(&self, other: &Self) -> Ordering {
+        other.ts_event.cmp(&self.ts_event)
+    }
 }
 
 impl TimeEvent {
@@ -99,22 +122,11 @@ impl PartialEq for TimeEvent {
 
 pub type RustTimeEventCallback = dyn Fn(TimeEvent);
 
+#[derive(Clone)]
 pub enum TimeEventCallback {
     #[cfg(feature = "python")]
-    // TODO: Cloning activated with pyo3/py-clone feature flag
-    // It will panic if cloned without holding GIL
-    // Test to see such logic exists then adapt accordingly
-    Python(PyObject),
+    Python(Arc<PyObject>),
     Rust(Rc<RustTimeEventCallback>),
-}
-
-impl Clone for TimeEventCallback {
-    fn clone(&self) -> Self {
-        match self {
-            Self::Python(arg0) => Python::with_gil(|py| Self::Python(arg0.clone_ref(py))),
-            Self::Rust(arg0) => Self::Rust(arg0.clone()),
-        }
-    }
 }
 
 impl Debug for TimeEventCallback {
@@ -150,7 +162,7 @@ impl From<Rc<RustTimeEventCallback>> for TimeEventCallback {
 #[cfg(feature = "python")]
 impl From<PyObject> for TimeEventCallback {
     fn from(value: PyObject) -> Self {
-        Self::Python(value)
+        Self::Python(Arc::new(value))
     }
 }
 
@@ -176,6 +188,11 @@ impl TimeEventHandlerV2 {
     #[must_use]
     pub const fn new(event: TimeEvent, callback: TimeEventCallback) -> Self {
         Self { event, callback }
+    }
+
+    pub fn run(self) {
+        let Self { event, callback } = self;
+        callback.call(event);
     }
 }
 
@@ -335,6 +352,8 @@ pub struct LiveTimer {
     is_expired: Arc<AtomicBool>,
     callback: TimeEventCallback,
     canceler: Option<oneshot::Sender<()>>,
+    #[cfg(feature = "clock_v2")]
+    heap: Arc<Mutex<BinaryHeap<TimeEvent>>>,
 }
 
 impl LiveTimer {
@@ -346,6 +365,7 @@ impl LiveTimer {
     /// - If `name` is not a valid string.
     /// - If `interval_ns` is zero.
     #[must_use]
+    #[cfg(not(feature = "clock_v2"))]
     pub fn new(
         name: &str,
         interval_ns: u64,
@@ -367,6 +387,41 @@ impl LiveTimer {
             is_expired: Arc::new(AtomicBool::new(false)),
             callback,
             canceler: None,
+        }
+    }
+
+    /// Creates a new [`LiveTimer`] instance.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If `name` is not a valid string.
+    /// - If `interval_ns` is zero.
+    #[must_use]
+    #[cfg(feature = "clock_v2")]
+    pub fn new(
+        name: &str,
+        interval_ns: u64,
+        start_time_ns: UnixNanos,
+        stop_time_ns: Option<UnixNanos>,
+        callback: TimeEventCallback,
+        heap: Arc<Mutex<BinaryHeap<TimeEvent>>>,
+    ) -> Self {
+        check_valid_string(name, stringify!(name)).expect(FAILED);
+        // SAFETY: Guaranteed to be non-zero
+        let interval_ns = NonZeroU64::new(std::cmp::max(interval_ns, 1)).unwrap();
+
+        log::debug!("Creating timer '{name}'");
+        Self {
+            name: Ustr::from(name),
+            interval_ns,
+            start_time_ns,
+            stop_time_ns,
+            next_time_ns: Arc::new(AtomicU64::new(start_time_ns.as_u64() + interval_ns.get())),
+            is_expired: Arc::new(AtomicBool::new(false)),
+            callback,
+            canceler: None,
+            heap,
         }
     }
 
@@ -415,6 +470,9 @@ impl LiveTimer {
         let (cancel_tx, mut cancel_rx) = oneshot::channel();
         self.canceler = Some(cancel_tx);
 
+        #[cfg(feature = "clock_v2")]
+        let heap = self.heap.clone();
+
         let rt = get_runtime();
         rt.spawn(async move {
             let clock = get_atomic_clock_realtime();
@@ -439,6 +497,12 @@ impl LiveTimer {
                         let now_ns = clock.get_time_ns();
                         #[cfg(feature = "python")]
                         call_python_with_time_event(event_name, next_time_ns, now_ns, &callback);
+
+                        #[cfg(feature = "clock_v2")]
+                        {
+                            let event = TimeEvent::new(event_name, UUID4::new(), next_time_ns, now_ns);
+                            heap.lock().await.push(event);
+                        }
 
                         // Prepare next time interval
                         next_time_ns += interval_ns;

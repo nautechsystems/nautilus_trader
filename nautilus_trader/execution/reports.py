@@ -229,6 +229,24 @@ class OrderStatusReport(ExecutionReport):
         self.ts_triggered = ts_triggered or 0
         self.ts_last = ts_last
 
+    @property
+    def is_open(self) -> bool:
+        """
+        Return whether the reported order status is 'open'.
+
+        Returns
+        -------
+        bool
+
+        """
+        return self.order_status in (
+            OrderStatus.ACCEPTED,
+            OrderStatus.TRIGGERED,
+            OrderStatus.PENDING_CANCEL,
+            OrderStatus.PENDING_UPDATE,
+            OrderStatus.PARTIALLY_FILLED,
+        )
+
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, OrderStatusReport):
             return False
@@ -295,6 +313,9 @@ class FillReport(ExecutionReport):
         The reported quantity of the trade.
     last_px : Price
         The reported price of the trade.
+    commission : Money
+        The reported commission for the trade.
+        If no commission then use a zero `Money` amount of the commission currency.
     liquidity_side : LiquiditySide {``NO_LIQUIDITY_SIDE``, ``MAKER``, ``TAKER``}
         The reported liquidity side for the trade.
     report_id : UUID4
@@ -310,8 +331,6 @@ class FillReport(ExecutionReport):
         assigned a position ID / ticket for the trade then pass that here,
         otherwise pass ``None`` and the execution engine OMS will handle
         position ID resolution.
-    commission : Money, optional
-        The reported commission for the trade (can be ``None``).
 
     Raises
     ------
@@ -329,13 +348,13 @@ class FillReport(ExecutionReport):
         order_side: OrderSide,
         last_qty: Quantity,
         last_px: Price,
+        commission: Money,
         liquidity_side: LiquiditySide,
         report_id: UUID4,
         ts_event: int,
         ts_init: int,
         client_order_id: ClientOrderId | None = None,  # (None if external order)
         venue_position_id: PositionId | None = None,
-        commission: Money | None = None,
     ) -> None:
         PyCondition.positive(last_qty, "last_qty")
 

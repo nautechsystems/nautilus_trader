@@ -23,6 +23,7 @@ use rust_decimal::{
     Decimal,
 };
 
+#[must_use]
 #[allow(clippy::too_many_arguments)]
 pub fn calculate_fixed_risk_position_size(
     instrument: InstrumentAny,

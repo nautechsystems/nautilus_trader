@@ -20,6 +20,10 @@ To install from source using poetry:
 poetry install --extras betfair
 ```
 
+## Examples
+
+You can find working live example scripts [here](https://github.com/nautechsystems/nautilus_trader/tree/develop/examples/live/betfair/).
+
 ## Betfair documentation
 
 Betfair provides extensive [documentation](https://developer.betfair.com/en/get-started/) for developers integrating with their exchange APIs.
