@@ -196,10 +196,6 @@ class PolymarketExecutionClient(LiveExecutionClient):
         if self._ws_client.is_disconnected():
             await self._ws_client.connect()
 
-        # Updating allowances potentially redundant now?
-        # instrument_ids = [i.id for i in instruments]
-        # await self._update_allowances(instrument_ids)
-
         await self._update_account_state()
 
         # Wait for account to initialize
@@ -240,15 +236,15 @@ class PolymarketExecutionClient(LiveExecutionClient):
         if condition_id in self._active_markets:
             return  # Already active
 
-        # Updating allowances potentially redundant now?
-        # token_id = get_polymarket_token_id(instrument_id)
-        # params = BalanceAllowanceParams(
-        #     asset_type=AssetType.CONDITIONAL,
-        #     token_id=token_id,
-        #     signature_type=self._signature_type,
-        # )
-        # self._log.info(f"Updating {params}")
-        # await asyncio.to_thread(self._http_client.update_balance_allowance, params)
+        # Update balance and allowances
+        token_id = get_polymarket_token_id(instrument_id)
+        params = BalanceAllowanceParams(
+            asset_type=AssetType.CONDITIONAL,
+            token_id=token_id,
+            signature_type=self._signature_type,
+        )
+        self._log.info(f"Updating {params}")
+        await asyncio.to_thread(self._http_client.update_balance_allowance, params)
 
         if not self._ws_client.is_connected():
             ws_client = self._ws_client
@@ -378,104 +374,101 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     )
                     reports.append(report)
 
-        # Check residual open orders
-        reported_client_order_ids: set[ClientOrderId] = {r.client_order_id for r in reports}
-        for order in self._cache.orders_open(venue=POLYMARKET_VENUE):
-            if order.client_order_id in reported_client_order_ids:
-                continue  # Already reported
-            maybe_report = await self.generate_order_status_report(
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                venue_order_id=order.venue_order_id,
-            )
-            if maybe_report:
-                reports.append(maybe_report)
-
-        known_venue_order_ids: set[VenueOrderId] = {o.venue_order_id for o in self._cache.orders()}
-        known_venue_order_ids.update({r.venue_order_id for r in reports})
-
-        # Check fills to generate order reports
-        fill_reports = await self.generate_fill_reports(instrument_id)
-        if fill_reports and not known_venue_order_ids:
+        if self._config.generate_order_history_from_trades:
             self._log.warning(
-                "No previously known venue order IDs found in cache or from active orders",
+                "Experimental feature not currently recommended: generating order history from trades",
             )
+            reported_client_order_ids: set[ClientOrderId] = {r.client_order_id for r in reports}
+            for order in self._cache.orders_open(venue=POLYMARKET_VENUE):
+                if order.client_order_id in reported_client_order_ids:
+                    continue  # Already reported
+                maybe_report = await self.generate_order_status_report(
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                )
+                if maybe_report:
+                    reports.append(maybe_report)
 
-        venue_order_id_fill_reports: dict[VenueOrderId, list[FillReport]] = defaultdict(list)
-        for fill in fill_reports:
-            if fill.venue_order_id in known_venue_order_ids:
-                continue  # Already reported
-            # TODO: Temporarily disable inferred orders from trades
-            # venue_order_id_fill_reports[fill.venue_order_id].append(fill)
+            known_venue_order_ids: set[VenueOrderId] = {
+                o.venue_order_id for o in self._cache.orders()
+            }
+            known_venue_order_ids.update({r.venue_order_id for r in reports})
 
-        for venue_order_id, fill_reports in venue_order_id_fill_reports.items():
-            first_fill = fill_reports[0]
-            instrument = self._cache.instrument(first_fill.instrument_id)
-            if instrument is None:
-                self._log.error(
-                    f"Cannot handle order report: instrument {first_fill.instrument_id} not found",
+            # Check fills to generate order reports
+            fill_reports = await self.generate_fill_reports(instrument_id)
+            if fill_reports and not known_venue_order_ids:
+                self._log.warning(
+                    "No previously known venue order IDs found in cache or from active orders",
                 )
 
-            order_type = (
-                OrderType.MARKET
-                if first_fill.liquidity_side == LiquiditySide.TAKER
-                else OrderType.LIMIT
-            )
+            venue_order_id_fill_reports: dict[VenueOrderId, list[FillReport]] = defaultdict(list)
+            for fill in fill_reports:
+                if fill.venue_order_id in known_venue_order_ids:
+                    continue  # Already reported
+                venue_order_id_fill_reports[fill.venue_order_id].append(fill)
 
-            if order_type == OrderType.LIMIT:
-                price = first_fill.last_px
-            else:
-                price = None
+            for venue_order_id, fill_reports in venue_order_id_fill_reports.items():
+                first_fill = fill_reports[0]
+                instrument = self._cache.instrument(first_fill.instrument_id)
+                if instrument is None:
+                    self._log.error(
+                        f"Cannot handle order report: instrument {first_fill.instrument_id} not found",
+                    )
 
-            order_side = first_fill.order_side
+                order_type = (
+                    OrderType.MARKET
+                    if first_fill.liquidity_side == LiquiditySide.TAKER
+                    else OrderType.LIMIT
+                )
 
-            avg_px: float = 0.0
-            filled_qty: float = 0.0
-            ts_last: int = first_fill.ts_event
+                if order_type == OrderType.LIMIT:
+                    price = first_fill.last_px
+                else:
+                    price = None
 
-            for fill_report in fill_reports:
-                avg_px += float(fill_report.last_px) * float(fill_report.last_qty)
-                filled_qty += float(fill_report.last_qty)
-                ts_last = fill_report.ts_event
+                order_side = first_fill.order_side
 
-            if filled_qty > 0:
-                avg_px /= filled_qty
-            else:
-                avg_px = 0.0
+                avg_px: float = 0.0
+                filled_qty: float = 0.0
+                ts_last: int = first_fill.ts_event
 
-            # assert (
-            #     instrument.make_price(avg_px) == first_fill.last_px
-            # ), f"{avg_px} {first_fill.last_px}"
-            # assert (
-            #     instrument.make_qty(filled_qty) == first_fill.last_qty
-            # ), f"{filled_qty} {first_fill.last_qty}"
+                for fill_report in fill_reports:
+                    avg_px += float(fill_report.last_px) * float(fill_report.last_qty)
+                    filled_qty += float(fill_report.last_qty)
+                    ts_last = fill_report.ts_event
 
-            self._log.warning(f"{venue_order_id=}")
-            self._log.warning(f"{avg_px=}")
-            self._log.warning(f"{filled_qty=}")
+                if filled_qty > 0:
+                    avg_px /= filled_qty
+                else:
+                    avg_px = 0.0
 
-            report = OrderStatusReport(
-                account_id=first_fill.account_id,
-                instrument_id=first_fill.instrument_id,
-                client_order_id=ClientOrderId(str(UUID4())),
-                order_list_id=None,
-                venue_order_id=venue_order_id,
-                order_side=order_side,
-                order_type=order_type,
-                contingency_type=ContingencyType.NO_CONTINGENCY,
-                time_in_force=TimeInForce.GTC,
-                order_status=OrderStatus.FILLED,
-                price=price,
-                avg_px=instrument.make_price(avg_px),
-                quantity=instrument.make_qty(first_fill.last_qty),
-                filled_qty=instrument.make_qty(first_fill.last_qty),
-                ts_accepted=ts_last,
-                ts_last=ts_last,
-                report_id=UUID4(),
-                ts_init=self._clock.timestamp_ns(),
-            )
-            self._log.warning(f"Generated from fill report: {report}")
-            reports.append(report)
+                self._log.warning(f"{venue_order_id=}")
+                self._log.warning(f"{avg_px=}")
+                self._log.warning(f"{filled_qty=}")
+
+                report = OrderStatusReport(
+                    account_id=first_fill.account_id,
+                    instrument_id=first_fill.instrument_id,
+                    client_order_id=ClientOrderId(str(UUID4())),
+                    order_list_id=None,
+                    venue_order_id=venue_order_id,
+                    order_side=order_side,
+                    order_type=order_type,
+                    contingency_type=ContingencyType.NO_CONTINGENCY,
+                    time_in_force=TimeInForce.GTC,
+                    order_status=OrderStatus.FILLED,
+                    price=price,
+                    avg_px=instrument.make_price(avg_px),
+                    quantity=instrument.make_qty(first_fill.last_qty),
+                    filled_qty=instrument.make_qty(first_fill.last_qty),
+                    ts_accepted=ts_last,
+                    ts_last=ts_last,
+                    report_id=UUID4(),
+                    ts_init=self._clock.timestamp_ns(),
+                )
+                self._log.warning(f"Generated from fill report: {report}")
+                reports.append(report)
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
