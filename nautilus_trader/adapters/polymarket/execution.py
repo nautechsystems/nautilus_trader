@@ -403,6 +403,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
         venue_order_id_fill_reports: dict[VenueOrderId, list[FillReport]] = defaultdict(list)
         for fill in fill_reports:
+            if fill.venue_order_id in known_venue_order_ids:
+                continue  # Already reported
             venue_order_id_fill_reports[fill.venue_order_id].append(fill)
 
         for venue_order_id, fill_reports in venue_order_id_fill_reports.items():
@@ -421,12 +423,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
 
             if order_type == OrderType.LIMIT:
                 price = first_fill.last_px
-                order_side = (
-                    OrderSide.BUY if first_fill.order_side == OrderSide.SELL else OrderSide.SELL
-                )
             else:
                 price = None
-                order_side = first_fill.order_side
+
+            order_side = first_fill.order_side
 
             avg_px: float = 0.0
             filled_qty: float = 0.0
@@ -441,6 +441,9 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 avg_px /= filled_qty
             else:
                 avg_px = 0.0
+
+            # assert avg_px == first_fill.last_px, f"{avg_px} {first_fill.last_px}"
+            # assert filled_qty == first_fill.last_qty
 
             self._log.warning(f"{venue_order_id=}")
             self._log.warning(f"{avg_px=}")
@@ -559,12 +562,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
             if response:
                 # Uncomment for development
                 # self._log.info(str(response), LogColor.MAGENTA)
+                trade_ids: set[TradeId] = set()
                 for json_obj in response:
                     raw = msgspec.json.encode(json_obj)
                     polymarket_trade = self._decoder_trade_report.decode(raw)
-
-                    if polymarket_trade.owner != self._api_key:
-                        continue  # Not own trade
 
                     instrument_id = get_polymarket_instrument_id(
                         polymarket_trade.market,
@@ -588,6 +589,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
                         maker_address=self._wallet_address,
                         ts_init=self._clock.timestamp_ns(),
                     )
+                    assert report.trade_id not in trade_ids, "trade IDs should be unique"
+                    trade_ids.add(report.trade_id)
                     reports.append(report)
 
         len_reports = len(reports)
@@ -1049,8 +1052,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
         if order.is_closed:
             return  # Already closed (only status update)
 
-        last_qty = instrument.make_qty(msg.size)
-        last_px = instrument.make_price(msg.last_px())
+        last_qty = instrument.make_qty(msg.last_qty(self._maker_address))
+        last_px = instrument.make_price(msg.last_px(self._maker_address))
         commission = float(last_qty * last_px) * basis_points_as_percentage(float(msg.fee_rate_bps))
 
         self.generate_order_filled(
