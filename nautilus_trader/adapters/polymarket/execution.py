@@ -405,7 +405,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
         for fill in fill_reports:
             if fill.venue_order_id in known_venue_order_ids:
                 continue  # Already reported
-            venue_order_id_fill_reports[fill.venue_order_id].append(fill)
+            # TODO: Temporarily disable inferred orders from trades
+            # venue_order_id_fill_reports[fill.venue_order_id].append(fill)
 
         for venue_order_id, fill_reports in venue_order_id_fill_reports.items():
             first_fill = fill_reports[0]
@@ -442,8 +443,12 @@ class PolymarketExecutionClient(LiveExecutionClient):
             else:
                 avg_px = 0.0
 
-            # assert avg_px == first_fill.last_px, f"{avg_px} {first_fill.last_px}"
-            # assert filled_qty == first_fill.last_qty
+            # assert (
+            #     instrument.make_price(avg_px) == first_fill.last_px
+            # ), f"{avg_px} {first_fill.last_px}"
+            # assert (
+            #     instrument.make_qty(filled_qty) == first_fill.last_qty
+            # ), f"{filled_qty} {first_fill.last_qty}"
 
             self._log.warning(f"{venue_order_id=}")
             self._log.warning(f"{avg_px=}")
@@ -462,8 +467,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
                 order_status=OrderStatus.FILLED,
                 price=price,
                 avg_px=instrument.make_price(avg_px),
-                quantity=instrument.make_qty(filled_qty),
-                filled_qty=instrument.make_qty(filled_qty),
+                quantity=instrument.make_qty(first_fill.last_qty),
+                filled_qty=instrument.make_qty(first_fill.last_qty),
                 ts_accepted=ts_last,
                 ts_last=ts_last,
                 report_id=UUID4(),
@@ -540,7 +545,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         self._log.debug("Requesting FillReports...")
         reports: list[FillReport] = []
 
-        params = TradeParams(maker_address=self._wallet_address)
+        params = TradeParams()
         if instrument_id:
             condition_id = get_polymarket_condition_id(instrument_id)
             asset_id = get_polymarket_token_id(instrument_id)
@@ -1052,8 +1057,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
         if order.is_closed:
             return  # Already closed (only status update)
 
-        last_qty = instrument.make_qty(msg.last_qty(self._maker_address))
-        last_px = instrument.make_price(msg.last_px(self._maker_address))
+        last_qty = instrument.make_qty(msg.last_qty(self._wallet_address))
+        last_px = instrument.make_price(msg.last_px(self._wallet_address))
         commission = float(last_qty * last_px) * basis_points_as_percentage(float(msg.fee_rate_bps))
 
         self.generate_order_filled(
