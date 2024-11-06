@@ -218,3 +218,55 @@ enum RunnerEvent {
     Data(DataEvent),
     Timer(TimeEvent),
 }
+
+#[cfg(test)]
+mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use futures::StreamExt;
+    use nautilus_common::{
+        clock::{LiveClock, TestClock},
+        timer::{TimeEvent, TimeEventCallback},
+    };
+
+    use super::{get_clock, set_clock};
+
+    #[test]
+    fn test_global_test_clock() {
+        let test_clock = Rc::new(RefCell::new(TestClock::new()));
+        set_clock(test_clock.clone());
+
+        // component/actor adding an alert
+        get_clock().borrow_mut().set_time_alert_ns(
+            "hola",
+            2.into(),
+            Some(TimeEventCallback::Rust(Rc::new(|event: TimeEvent| {}))),
+        );
+
+        // runner pulling advancing and pulling from event stream
+        test_clock.borrow_mut().advance_to_time_on_heap(3.into());
+        assert!(test_clock.borrow_mut().next().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_global_live_clock() {
+        let live_clock = Rc::new(RefCell::new(LiveClock::new()));
+        set_clock(live_clock.clone());
+        let alert_time = (live_clock.borrow().get_time_ns() + 100).into();
+
+        // component/actor adding an alert
+        get_clock().borrow_mut().set_time_alert_ns(
+            "hola",
+            alert_time,
+            Some(TimeEventCallback::Rust(Rc::new(|event: TimeEvent| {}))),
+        );
+
+        // runner pulling from event
+        assert!(live_clock
+            .borrow()
+            .get_event_stream()
+            .next()
+            .await
+            .is_some());
+    }
+}
