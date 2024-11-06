@@ -92,7 +92,8 @@ def parse_instrument(
     price_increment = Price.from_str(str(market_info["minimum_tick_size"]))
     min_quantity = Quantity.from_int(market_info["minimum_order_size"])
     # size_increment can be 0.01 or 0.001 (precision 2 or 3). Need to determine a reliable solution
-    size_increment = Quantity.from_str("0.001")
+    # trades are reported with USDC.e increments though - so we use that here
+    size_increment = Quantity.from_str("0.000001")
     end_date_iso = market_info["end_date_iso"]
 
     if end_date_iso:

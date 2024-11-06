@@ -124,6 +124,7 @@ config_node = TradingNodeConfig(
             api_secret=None,  # 'POLYMARKET_API_SECRET' env var
             passphrase=None,  # 'POLYMARKET_PASSPHRASE' env var
             instrument_provider=instrument_provider_config,
+            generate_order_history_from_trades=False,
         ),
     },
     timeout_connection=60.0,
@@ -375,7 +376,7 @@ strat_config1 = TOBQuoterConfig(
     instrument_id=instrument_id1,
     external_order_claims=[instrument_id1],
     trade_size=trade_size,
-    dry_run=False,
+    dry_run=True,  # This event has now ended and should not be traded
 )
 # strat_config2 = TOBQuoterConfig(
 #     instrument_id=instrument_id2,

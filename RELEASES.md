@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added `PolymarketExecClientConfig.generate_order_history_from_trades` config setting (default False and not currently recommended)
 
 ### Internal Improvements
 None
@@ -17,6 +17,7 @@ None
 - Fixed Betfair clients keepalive (#2040), thanks @limx0
 - Fixed Betfair reconciliation (#2041), thanks @limx0
 - Fixed Betfair customer order ref limit to 32 chars
+- Fixed Polymarket size precision for `BinaryOption` instruments (precision 6 to match USDC.e)
 
 ---
 
