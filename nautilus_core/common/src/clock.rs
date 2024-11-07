@@ -16,11 +16,9 @@
 //! Real-time and static test `Clock` implementations.
 
 use std::{
-    cell::{OnceCell, RefCell},
     collections::{BTreeMap, BinaryHeap, HashMap},
     ops::Deref,
     pin::Pin,
-    rc::Rc,
     sync::Arc,
     task::{Context, Poll},
 };
@@ -36,32 +34,6 @@ use tokio::sync::Mutex;
 use ustr::Ustr;
 
 use crate::timer::{LiveTimer, TestTimer, TimeEvent, TimeEventCallback, TimeEventHandlerV2};
-
-pub type GlobalClock = Rc<RefCell<dyn Clock>>;
-
-thread_local! {
-    static CLOCK: OnceCell<GlobalClock> = OnceCell::new();
-}
-
-#[must_use]
-pub fn get_clock() -> Rc<RefCell<dyn Clock>> {
-    CLOCK
-        .try_with(|clock| {
-            clock
-                .get()
-                .expect("Clock should be initialized by runner")
-                .clone()
-        })
-        .expect("Should be able to access thread local storage")
-}
-
-pub fn set_clock(c: Rc<RefCell<dyn Clock>>) {
-    CLOCK
-        .try_with(|clock| {
-            assert!(clock.set(c).is_ok(), "Global clock already set");
-        })
-        .expect("Should be able to access thread local clock");
-}
 
 /// Represents a type of clock.
 ///
