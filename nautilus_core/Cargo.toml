@@ -65,7 +65,7 @@ toml = "0.8.19"
 tracing = "0.1.40"
 # Disable default feature "tracing-log" since it interferes with custom logging
 tracing-subscriber = { version = "0.3.18", default-features = false, features = ["smallvec", "fmt", "ansi", "std", "env-filter"] }
-tokio = { version = "1.41.0", features = ["full"] }
+tokio = { version = "1.41.1", features = ["full"] }
 tokio-tungstenite = { version = "0.24.0", features = ["rustls-tls-native-roots"] }
 ustr = { version = "1.1.0", features = ["serde"] }
 uuid = { version = "1.11.0", features = ["v4"] }
