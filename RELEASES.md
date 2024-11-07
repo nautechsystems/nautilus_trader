@@ -18,6 +18,7 @@ None
 - Fixed Betfair clients keepalive (#2040), thanks @limx0
 - Fixed Betfair reconciliation (#2041), thanks @limx0
 - Fixed Betfair customer order ref limit to 32 chars
+- Fixed Bybit handling of `PARTIALLY_FILLED_CANCELED` status orders
 - Fixed Polymarket size precision for `BinaryOption` instruments (precision 6 to match USDC.e)
 
 ---
