@@ -118,8 +118,8 @@ Ensure that your private key and public key are correctly stored in the environm
 Here's an example of how to set the variables in your terminal session:
 
 ```bash
-export POLYGON_PRIVATE_KEY="your_private_key"
-export POLYGON_PUBLIC_KEY="your_public_key"
+export POLYGON_PRIVATE_KEY="YOUR_PRIVATE_KEY"
+export POLYGON_PUBLIC_KEY="YOUR_PUBLIC_KEY"
 ```
 
 Run the script using:
@@ -214,13 +214,20 @@ The following limitations and considerations are currently known:
 
 ## Reconciliation
 
-The Polymarket API returns either all active (open) orders or specific orders when queried by the
-Polymarket order ID (`venue_order_id`). During reconciliation, order reports are obtained for:
+The Polymarket API returns either all **active** (open) orders or specific orders when queried by the
+Polymarket order ID (`venue_order_id`). The execution reconciliation procedure for Polymarkert is as follows:
 
-- All instruments with active (open) orders, as reported by Polymarket.
-- All open orders according to Nautilus execution state.
+- Generate order reports for all instruments with active (open) orders, as reported by Polymarket.
+- Generate position reports from contract balances reported by Polymarket, *per instruments available in the cache*.
+- Compare these reports with Nautilus execution state.
+- Generate missing orders to bring Nautilus execution state in line with positions reported by Polymarket.
 
-Since the Polymarket API does not natively support positions, they are inferred from user trades.
+**Note**: Polymarket does not directly provide date for orders which are no longer active.
+
+:::warning
+An optional execution client configuration, `generate_order_history_from_trades`, is currently under development.
+It is not recommended for production use at this time.
+:::
 
 ## WebSockets
 
