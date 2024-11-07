@@ -6,7 +6,7 @@ Released on TBD (UTC).
 - Added `PolymarketExecClientConfig.generate_order_history_from_trades` config setting (default False and not currently recommended)
 
 ### Internal Improvements
-None
+= Added globally shared data channels to send events from engines to Runner in Rust (#2042), thanks @twitu
 
 ### Breaking Changes
 None
