@@ -220,6 +220,7 @@ enum RunnerEvent {
 }
 
 #[cfg(test)]
+#[cfg(feature = "clock_v2")]
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
