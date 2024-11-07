@@ -128,7 +128,7 @@ class BybitInstrumentProvider(InstrumentProvider):
         filters: dict | None = None,
     ) -> None:
         if not instrument_ids:
-            self._log.info("No instrument IDs given for loading")
+            self._log.warning("No instrument IDs given for loading")
             return
 
         await self._load_coins()
@@ -148,10 +148,7 @@ class BybitInstrumentProvider(InstrumentProvider):
                 product_type,
             )
 
-            filters_str = "..." if not filters else f" with filters {filters}..."
-            self._log.info(f"Loading instruments {instrument_ids}{filters_str}")
-
-            # extract symbol strings and product types
+            # Extract symbol strings and product types
             for instrument_id in instrument_ids:
                 bybit_symbol = BybitSymbol(instrument_id.symbol.value)
                 instrument = await self._http_market.fetch_instrument(
