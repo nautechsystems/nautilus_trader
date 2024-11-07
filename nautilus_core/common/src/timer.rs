@@ -453,16 +453,6 @@ impl LiveTimer {
         let interval_ns = self.interval_ns.get();
         let is_expired = self.is_expired.clone();
 
-        // TODO: Live timer is currently multi-threaded
-        // and only supports the python event handler
-        #[cfg(feature = "python")]
-        let callback = match self.callback.clone() {
-            TimeEventCallback::Python(callback) => callback,
-            TimeEventCallback::Rust(_) => {
-                panic!("Live timer does not support Rust callbacks right now")
-            }
-        };
-
         // Floor the next time to the nearest microsecond which is within the timers accuracy
         let mut next_time_ns = UnixNanos::from(floor_to_nearest_microsecond(next_time_ns));
 
@@ -473,6 +463,7 @@ impl LiveTimer {
         #[cfg(feature = "clock_v2")]
         let heap = self.heap.clone();
 
+        let callback = self.callback.clone();
         let rt = get_runtime();
         rt.spawn(async move {
             let clock = get_atomic_clock_realtime();
@@ -495,8 +486,17 @@ impl LiveTimer {
                 tokio::select! {
                     _ = timer.tick() => {
                         let now_ns = clock.get_time_ns();
+
                         #[cfg(feature = "python")]
-                        call_python_with_time_event(event_name, next_time_ns, now_ns, &callback);
+                        {
+                            match callback {
+                                TimeEventCallback::Python(ref callback) => {
+                                    call_python_with_time_event(event_name, next_time_ns, now_ns, callback);
+                                }
+                                // Note: Clock v1 style path should not be called with Rust callback
+                                TimeEventCallback::Rust(_) => { }
+                            };
+                        }
 
                         #[cfg(feature = "clock_v2")]
                         {
