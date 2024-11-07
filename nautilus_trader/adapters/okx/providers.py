@@ -137,10 +137,7 @@ class OKXInstrumentProvider(InstrumentProvider):
                 instrument_type,
             )
 
-            # filters_str = "..." if not filters else f" with filters {filters}..."
-            # self._log.info(f"Loading instruments {instrument_ids}{filters_str}")
-
-            # extract symbol strings and product types
+            # Extract symbol strings and product types
             for instrument_id in instrument_ids:
                 okx_symbol = OKXSymbol(instrument_id.symbol.value)
                 instrument = await self._http_public.fetch_instrument(
