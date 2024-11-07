@@ -222,7 +222,7 @@ Polymarket order ID (`venue_order_id`). The execution reconciliation procedure f
 - Compare these reports with Nautilus execution state.
 - Generate missing orders to bring Nautilus execution state in line with positions reported by Polymarket.
 
-**Note**: Polymarket does not directly provide date for orders which are no longer active.
+**Note**: Polymarket does not directly provide data for orders which are no longer active.
 
 :::warning
 An optional execution client configuration, `generate_order_history_from_trades`, is currently under development.

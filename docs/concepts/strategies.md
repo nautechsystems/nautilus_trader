@@ -21,7 +21,7 @@ There are two main parts of a Nautilus trading strategy:
 - The _optional_ strategy configuration, defined by inheriting the `StrategyConfig` class
 
 :::tip
-Once a strategy is defined, the same source can be used for backtesting and live trading.
+Once a strategy is defined, the same source code can be used for backtesting and live trading.
 :::
 
 The main capabilities of a strategy include:
