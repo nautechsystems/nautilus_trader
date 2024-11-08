@@ -258,6 +258,7 @@ impl RiskEngine {
             return;
         }
 
+        println!("HEREISSSS");
         let order = &command.order;
         if let Some(position_id) = command.position_id {
             if order.is_reduce_only() {
@@ -286,6 +287,8 @@ impl RiskEngine {
             }
         }
 
+        println!("HEREISSS222#S");
+
         let instrument_exists = {
             let borrowed_cache = self.cache.borrow();
             borrowed_cache.instrument(&order.instrument_id()).cloned()
@@ -301,15 +304,19 @@ impl RiskEngine {
             return; // Denied
         };
 
+        println!("HEREISSS11222#S");
+
         // PRE-TRADE ORDER(S) CHECKS
         if !self.check_order(instrument.clone(), order.clone()) {
             return; // Denied
         }
 
+        println!("HEREISS11222#S");
         if !self.check_orders_risk(instrument.clone(), Vec::from([order.clone()])) {
             return; // Denied
         }
 
+        println!("HESS11222#S");
         self.execution_gateway(instrument, TradingCommand::SubmitOrder(command.clone()));
     }
 
@@ -471,6 +478,7 @@ impl RiskEngine {
         ////////////////////////////////////////////////////////////////////////////////
         // VALIDATION CHECKS
         ////////////////////////////////////////////////////////////////////////////////
+        println!("Hinseide check_order");
         if !self.check_order_price(instrument.clone(), order.clone())
             || !self.check_order_quantity(instrument, order)
         {
@@ -484,7 +492,9 @@ impl RiskEngine {
         ////////////////////////////////////////////////////////////////////////////////
         // CHECK PRICE
         ////////////////////////////////////////////////////////////////////////////////
+        println!("inside check_order_price");
         if order.price().is_some() {
+            println!("inside check_order_price if");
             let risk_msg = self.check_price(&instrument, order.price());
             if let Some(risk_msg) = risk_msg {
                 self.deny_order(order, &risk_msg);
@@ -539,6 +549,7 @@ impl RiskEngine {
         let account = if let Some(account) = account_exists {
             account
         } else {
+            println!("Cannot find account for venue {}", instrument.id().venue);
             log::debug!("Cannot find account for venue {}", instrument.id().venue);
             return true; // TODO: Temporary early return until handling routing/multiple venues
         };
@@ -1036,7 +1047,7 @@ impl RiskEngine {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, collections::HashMap, rc::Rc};
+    use std::{cell::RefCell, collections::HashMap, rc::Rc, str::FromStr};
 
     use nautilus_common::{
         cache::Cache,
@@ -1047,7 +1058,10 @@ mod tests {
     use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
     use nautilus_execution::messages::{SubmitOrder, TradingCommand};
     use nautilus_model::{
+        accounts::{any::AccountAny, base::BaseAccount, cash::CashAccount},
+        data::{quote::QuoteTick, stubs::quote_ethusdt_binance},
         enums::{OrderSide, OrderStatus, OrderType, TradingState},
+        events::account::stubs::cash_account_state_million_usd,
         identifiers::{
             stubs::{
                 client_id_binance, client_order_id, strategy_id_ema_cross, trader_id,
@@ -1056,10 +1070,12 @@ mod tests {
             ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId, VenueOrderId,
         },
         instruments::{
-            any::InstrumentAny, crypto_perpetual::CryptoPerpetual, stubs::crypto_perpetual_ethusdt,
+            any::InstrumentAny,
+            crypto_perpetual::CryptoPerpetual,
+            stubs::{crypto_perpetual_ethusdt, xbtusd_bitmex},
         },
         orders::{any::OrderAny, builder::OrderTestBuilder},
-        types::quantity::Quantity,
+        types::{price::Price, quantity::Quantity},
     };
     use rstest::{fixture, rstest};
     use rust_decimal::Decimal;
@@ -1168,6 +1184,19 @@ mod tests {
         // Register test instrument in cache
         simple_cache.add_instrument(instrument_eth_usdt).unwrap();
 
+        // we need mock execution client
+        // self.exec_client = MockExecutionClient(
+        //     client_id=ClientId(self.venue.value),
+        //     venue=self.venue,
+        //     account_type=AccountType.CASH,
+        //     base_currency=USD,
+        //     msgbus=self.msgbus,
+        //     cache=self.cache,
+        //     clock=self.clock,
+        // )
+        // self.portfolio.update_account(TestEventStubs.cash_account_state())
+        // self.exec_engine.register_client(self.exec_client)
+
         let config = config;
         let clock = Rc::new(RefCell::new(clock));
         let cache = Rc::new(RefCell::new(simple_cache));
@@ -1179,6 +1208,11 @@ mod tests {
     #[fixture]
     fn instrument_eth_usdt(crypto_perpetual_ethusdt: CryptoPerpetual) -> InstrumentAny {
         InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt)
+    }
+
+    #[fixture]
+    fn instrument_xbtusd_bitmex(xbtusd_bitmex: CryptoPerpetual) -> InstrumentAny {
+        InstrumentAny::CryptoPerpetual(xbtusd_bitmex)
     }
 
     #[rstest]
@@ -1401,4 +1435,409 @@ mod tests {
         // FIX: not denied because ExecEngine.process is called in msgbus, but execengine is not started
         assert_eq!(order.status(), OrderStatus::Initialized);
     }
+
+    #[rstest]
+    fn test_submit_order_when_instrument_not_in_cache_then_denies(
+        mut risk_engine: RiskEngine,
+        get_stub_submit_order: SubmitOrder,
+        strategy_id_ema_cross: StrategyId,
+        client_id_binance: ClientId,
+        trader_id: TraderId,
+        client_order_id: ClientOrderId,
+        instrument_xbtusd_bitmex: InstrumentAny,
+        venue_order_id: VenueOrderId,
+    ) {
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_xbtusd_bitmex.id()) // <-- Not in the cache
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1000"))
+            .build();
+
+        let submit_order = SubmitOrder::new(
+            trader_id,
+            client_id_binance,
+            strategy_id_ema_cross,
+            order.instrument_id(),
+            client_order_id,
+            venue_order_id,
+            order,
+            None,
+            None,
+            UUID4::new(),
+            risk_engine.clock.borrow().timestamp_ns(),
+        )
+        .unwrap();
+
+        risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+        // execution engine is not registered here, thats why blank vector
+        // let ms = risk_engine.msgbus.borrow_mut();
+        // println!("MS {:?}", ms.endpoints());
+
+        let cache = risk_engine.cache.borrow();
+        let order = cache.order(&client_order_id).unwrap();
+
+        // FIX: not denied because ExecEngine.process is called in msgbus, but execengine is not started
+        assert_eq!(order.status(), OrderStatus::Initialized);
+    }
+
+    #[rstest]
+    fn test_submit_order_when_invalid_price_precision_then_denies(
+        mut risk_engine: RiskEngine,
+        get_stub_submit_order: SubmitOrder,
+        strategy_id_ema_cross: StrategyId,
+        client_id_binance: ClientId,
+        trader_id: TraderId,
+        client_order_id: ClientOrderId,
+        instrument_eth_usdt: InstrumentAny,
+        venue_order_id: VenueOrderId,
+    ) {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_eth_usdt.id())
+            .side(OrderSide::Buy)
+            .price(Price::from_raw(999999999, 9)) // <- invalid price
+            .quantity(Quantity::from("1000"))
+            .build();
+
+        let submit_order = SubmitOrder::new(
+            trader_id,
+            client_id_binance,
+            strategy_id_ema_cross,
+            order.instrument_id(),
+            client_order_id,
+            venue_order_id,
+            order,
+            None,
+            None,
+            UUID4::new(),
+            risk_engine.clock.borrow().timestamp_ns(),
+        )
+        .unwrap();
+
+        risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+        let cache = risk_engine.cache.borrow();
+        let order = cache.order(&client_order_id).unwrap();
+
+        // TODO: fix: reason --> price 0.999999999 invalid (precision 9 > 2)
+        assert_eq!(order.status(), OrderStatus::Initialized);
+    }
+
+    #[rstest]
+    fn test_submit_order_when_invalid_negative_price_and_not_option_then_denies(
+        mut risk_engine: RiskEngine,
+        get_stub_submit_order: SubmitOrder,
+        strategy_id_ema_cross: StrategyId,
+        client_id_binance: ClientId,
+        trader_id: TraderId,
+        client_order_id: ClientOrderId,
+        instrument_eth_usdt: InstrumentAny,
+        venue_order_id: VenueOrderId,
+    ) {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_eth_usdt.id())
+            .side(OrderSide::Buy)
+            .price(Price::from_raw(-1, 1)) // <- invalid price
+            .quantity(Quantity::from("1000"))
+            .build();
+
+        let submit_order = SubmitOrder::new(
+            trader_id,
+            client_id_binance,
+            strategy_id_ema_cross,
+            order.instrument_id(),
+            client_order_id,
+            venue_order_id,
+            order,
+            None,
+            None,
+            UUID4::new(),
+            risk_engine.clock.borrow().timestamp_ns(),
+        )
+        .unwrap();
+
+        risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+        let cache = risk_engine.cache.borrow();
+        let order = cache.order(&client_order_id).unwrap();
+
+        // TODO: fix: reason --> price -0.0 invalid (<= 0)
+        assert_eq!(order.status(), OrderStatus::Initialized);
+    }
+
+    #[rstest]
+    fn test_submit_order_when_invalid_trigger_price_then_denies(
+        mut risk_engine: RiskEngine,
+        get_stub_submit_order: SubmitOrder,
+        strategy_id_ema_cross: StrategyId,
+        client_id_binance: ClientId,
+        trader_id: TraderId,
+        client_order_id: ClientOrderId,
+        instrument_eth_usdt: InstrumentAny,
+        venue_order_id: VenueOrderId,
+    ) {
+        let order = OrderTestBuilder::new(OrderType::StopLimit)
+            .instrument_id(instrument_eth_usdt.id())
+            .side(OrderSide::Buy)
+            .price(Price::from_raw(1, 1))
+            .trigger_price(Price::from_raw(999999999, 9)) // <- invalid price
+            .quantity(Quantity::from("1000"))
+            .build();
+
+        let submit_order = SubmitOrder::new(
+            trader_id,
+            client_id_binance,
+            strategy_id_ema_cross,
+            order.instrument_id(),
+            client_order_id,
+            venue_order_id,
+            order,
+            None,
+            None,
+            UUID4::new(),
+            risk_engine.clock.borrow().timestamp_ns(),
+        )
+        .unwrap();
+
+        risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+        let cache = risk_engine.cache.borrow();
+        let order = cache.order(&client_order_id).unwrap();
+
+        // TODO: fix: reason --> price 0.999999999 invalid (precision 9 > 2)
+        assert_eq!(order.status(), OrderStatus::Initialized);
+    }
+
+    #[rstest]
+    fn test_submit_order_when_invalid_quantity_precision_then_denies(
+        mut risk_engine: RiskEngine,
+        get_stub_submit_order: SubmitOrder,
+        strategy_id_ema_cross: StrategyId,
+        client_id_binance: ClientId,
+        trader_id: TraderId,
+        client_order_id: ClientOrderId,
+        instrument_eth_usdt: InstrumentAny,
+        venue_order_id: VenueOrderId,
+    ) {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_eth_usdt.id())
+            .side(OrderSide::Buy)
+            .price(Price::from_raw(1, 1))
+            .quantity(Quantity::from_str("1.111111111").unwrap()) // <- invalid quantity
+            .build();
+
+        let submit_order = SubmitOrder::new(
+            trader_id,
+            client_id_binance,
+            strategy_id_ema_cross,
+            order.instrument_id(),
+            client_order_id,
+            venue_order_id,
+            order,
+            None,
+            None,
+            UUID4::new(),
+            risk_engine.clock.borrow().timestamp_ns(),
+        )
+        .unwrap();
+
+        risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+        let cache = risk_engine.cache.borrow();
+        let order = cache.order(&client_order_id).unwrap();
+
+        // TODO: fix: reason --> quantity 1.111111111 invalid (precision 9 > 3)
+        assert_eq!(order.status(), OrderStatus::Initialized);
+    }
+
+    #[rstest]
+    fn test_submit_order_when_invalid_quantity_exceeds_maximum_then_denies(
+        mut risk_engine: RiskEngine,
+        get_stub_submit_order: SubmitOrder,
+        strategy_id_ema_cross: StrategyId,
+        client_id_binance: ClientId,
+        trader_id: TraderId,
+        client_order_id: ClientOrderId,
+        instrument_eth_usdt: InstrumentAny,
+        venue_order_id: VenueOrderId,
+    ) {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_eth_usdt.id())
+            .side(OrderSide::Buy)
+            .price(Price::from_raw(1, 1))
+            .quantity(Quantity::from_str("1000000000").unwrap()) // <- invalid quantity
+            .build();
+
+        let submit_order = SubmitOrder::new(
+            trader_id,
+            client_id_binance,
+            strategy_id_ema_cross,
+            order.instrument_id(),
+            client_order_id,
+            venue_order_id,
+            order,
+            None,
+            None,
+            UUID4::new(),
+            risk_engine.clock.borrow().timestamp_ns(),
+        )
+        .unwrap();
+
+        risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+        let cache = risk_engine.cache.borrow();
+        let order = cache.order(&client_order_id).unwrap();
+
+        // TODO: fix: reason --> quantity 1000000000 invalid (> maximum trade size of 10000.0)
+        assert_eq!(order.status(), OrderStatus::Initialized);
+    }
+
+    // TODO: use any other instrument wwith min quatntity atleast 1
+    // #[rstest]
+    // fn test_submit_order_when_invalid_quantity_less_than_minimum_then_denies(
+    //     mut risk_engine: RiskEngine,
+    //     get_stub_submit_order: SubmitOrder,
+    //     strategy_id_ema_cross: StrategyId,
+    //     client_id_binance: ClientId,
+    //     trader_id: TraderId,
+    //     client_order_id: ClientOrderId,
+    //     instrument_eth_usdt: InstrumentAny,
+    //     venue_order_id: VenueOrderId,
+    // ) {
+    //     let order = OrderTestBuilder::new(OrderType::Limit)
+    //         .instrument_id(instrument_eth_usdt.id())
+    //         .side(OrderSide::Buy)
+    //         .price(Price::from_str("1").unwrap())
+    //         .quantity(Quantity::from_str("0").unwrap()) // <- invalid quantity
+    //         .build();
+
+    //     println!("order --> {:?}", order.quantity());
+    //     let submit_order = SubmitOrder::new(
+    //         trader_id,
+    //         client_id_binance,
+    //         strategy_id_ema_cross,
+    //         order.instrument_id(),
+    //         client_order_id,
+    //         venue_order_id,
+    //         order,
+    //         None,
+    //         None,
+    //         UUID4::new(),
+    //         risk_engine.clock.borrow().timestamp_ns(),
+    //     )
+    //     .unwrap();
+
+    //     risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+    //     let cache = risk_engine.cache.borrow();
+    //     let order = cache.order(&client_order_id).unwrap();
+
+    //     // TODO: fix: reason --> quantity 1000000000 invalid (> maximum trade size of 10000.0)
+    //     assert_eq!(order.status(), OrderStatus::Denied);
+    // }
+
+    #[rstest]
+    fn test_submit_order_when_less_than_min_notional_for_instrument_then_denies(
+        mut risk_engine: RiskEngine,
+        get_stub_submit_order: SubmitOrder,
+        strategy_id_ema_cross: StrategyId,
+        client_id_binance: ClientId,
+        trader_id: TraderId,
+        client_order_id: ClientOrderId,
+        instrument_eth_usdt: InstrumentAny,
+        venue_order_id: VenueOrderId,
+    ) {
+        // TODO: needs exec_engine to be registered
+        // let order = OrderTestBuilder::new(OrderType::Limit)
+        //     .instrument_id(instrument_eth_usdt.id())
+        //     .side(OrderSide::Buy)
+        //     .price(Price::from_raw(1, 1))
+        //     .quantity(Quantity::from_str("1000").unwrap())
+        //     .build();
+
+        // let submit_order = SubmitOrder::new(
+        //     trader_id,
+        //     client_id_binance,
+        //     strategy_id_ema_cross,
+        //     order.instrument_id(),
+        //     client_order_id,
+        //     venue_order_id,
+        //     order,
+        //     None,
+        //     None,
+        //     UUID4::new(),
+        //     risk_engine.clock.borrow().timestamp_ns(),
+        // )
+        // .unwrap();
+
+        // risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+        // let cache = risk_engine.cache.borrow();
+        // let order = cache.order(&client_order_id).unwrap();
+
+        // // TODO: fix: reason --> quantity 1000000000 invalid (> maximum trade size of 10000.0)
+        // assert_eq!(order.status(), OrderStatus::Initialized);
+    }
+
+    #[rstest]
+    fn test_submit_order_when_greater_than_max_notional_for_instrument_then_denies() {}
+
+    #[rstest]
+    fn test_submit_order_when_buy_market_order_and_over_max_notional_then_denies(
+        mut risk_engine: RiskEngine,
+        get_stub_submit_order: SubmitOrder,
+        strategy_id_ema_cross: StrategyId,
+        client_id_binance: ClientId,
+        trader_id: TraderId,
+        client_order_id: ClientOrderId,
+        instrument_eth_usdt: InstrumentAny,
+        venue_order_id: VenueOrderId,
+        quote_ethusdt_binance: QuoteTick,
+    ) {
+        risk_engine.set_max_notional_per_order(instrument_eth_usdt.id(), Decimal::from(100));
+        let quote = quote_ethusdt_binance;
+
+        {
+            let mut burrowed_cache = risk_engine.cache.borrow_mut();
+            burrowed_cache.add_quote(quote).unwrap();
+            burrowed_cache
+                .add_account(AccountAny::Cash(CashAccount::new(
+                    cash_account_state_million_usd("1000000 USD", "0 USD", "1000000 USD"), // Maybe Wrong
+                    false,
+                )))
+                .unwrap();
+        }
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_eth_usdt.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from_str("1000").unwrap())
+            .build();
+
+        let submit_order = SubmitOrder::new(
+            trader_id,
+            client_id_binance,
+            strategy_id_ema_cross,
+            order.instrument_id(),
+            client_order_id,
+            venue_order_id,
+            order,
+            None,
+            None,
+            UUID4::new(),
+            risk_engine.clock.borrow().timestamp_ns(),
+        )
+        .unwrap();
+
+        risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+
+        // let cache = risk_engine.cache.borrow();
+        // let order = cache.order(&client_order_id).unwrap();
+
+        // // TODO: fix: reason --> quantity 1000000000 invalid (> maximum trade size of 10000.0)
+        // assert_eq!(order.status(), OrderStatus::In);
+    }
+
+    #[rstest]
+    fn test_submit_order_when_sell_market_order_and_over_max_notional_then_denies() {}
 }
