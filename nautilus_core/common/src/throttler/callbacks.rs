@@ -19,24 +19,23 @@ use super::inner::InnerThrottler;
 use crate::timer::{TimeEvent, TimeEventCallback};
 
 /// Stop rate limiting messages
-pub struct ThrottlerResume<T, S, D> {
-    inner: Rc<RefCell<InnerThrottler<T, S, D>>>,
+pub struct ThrottlerResume<T, F> {
+    inner: Rc<RefCell<InnerThrottler<T, F>>>,
 }
 
-impl<T, S, D> ThrottlerResume<T, S, D> {
+impl<T, F> ThrottlerResume<T, F> {
     /// Creates a new [`ThrottlerResume`] instance.
-    pub const fn new(inner: Rc<RefCell<InnerThrottler<T, S, D>>>) -> Self {
+    pub const fn new(inner: Rc<RefCell<InnerThrottler<T, F>>>) -> Self {
         Self { inner }
     }
 }
 
-impl<T, S, D> From<ThrottlerResume<T, S, D>> for TimeEventCallback
+impl<T, F> From<ThrottlerResume<T, F>> for TimeEventCallback
 where
     T: 'static,
-    S: Fn(T) + 'static,
-    D: Fn(T) + 'static,
+    F: Fn(T) + 'static,
 {
-    fn from(value: ThrottlerResume<T, S, D>) -> Self {
+    fn from(value: ThrottlerResume<T, F>) -> Self {
         Self::Rust(Rc::new(move |_event: TimeEvent| {
             value.inner.borrow_mut().is_limiting = false;
         }))
@@ -45,24 +44,23 @@ where
 
 /// Process buffered messages.
 #[derive(Clone)]
-pub struct ThrottlerProcess<T, S, D> {
-    inner: Rc<RefCell<InnerThrottler<T, S, D>>>,
+pub struct ThrottlerProcess<T, F> {
+    inner: Rc<RefCell<InnerThrottler<T, F>>>,
 }
 
-impl<T, S, D> ThrottlerProcess<T, S, D> {
+impl<T, F> ThrottlerProcess<T, F> {
     /// Creates a new [`ThrottlerProcess`] instance.
-    pub const fn new(inner: Rc<RefCell<InnerThrottler<T, S, D>>>) -> Self {
+    pub const fn new(inner: Rc<RefCell<InnerThrottler<T, F>>>) -> Self {
         Self { inner }
     }
 }
 
-impl<T, S, D> From<ThrottlerProcess<T, S, D>> for TimeEventCallback
+impl<T, F> From<ThrottlerProcess<T, F>> for TimeEventCallback
 where
     T: 'static,
-    S: Fn(T) + 'static,
-    D: Fn(T) + 'static,
+    F: Fn(T) + 'static,
 {
-    fn from(value: ThrottlerProcess<T, S, D>) -> Self {
+    fn from(value: ThrottlerProcess<T, F>) -> Self {
         Self::Rust(Rc::new(move |_event: TimeEvent| {
             let process_clone = ThrottlerProcess {
                 inner: value.inner.clone(),

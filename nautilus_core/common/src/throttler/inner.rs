@@ -24,7 +24,7 @@ use crate::{clock::Clock, timer::TimeEventCallback};
 ///
 /// Throttler takes messages of type T and callback of type F for dropping
 /// or processing messages.
-pub struct InnerThrottler<T, S, D> {
+pub struct InnerThrottler<T, F> {
     /// The number of messages received.
     pub recv_count: usize,
     /// The number of messages sent.
@@ -44,12 +44,12 @@ pub struct InnerThrottler<T, S, D> {
     /// The name of the timer.
     timer_name: String,
     /// The callback to send a message.
-    output_send: S,
+    output_send: F,
     /// The callback to drop a message.
-    output_drop: Option<D>,
+    output_drop: Option<F>,
 }
 
-impl<T, S, D> Debug for InnerThrottler<T, S, D>
+impl<T, F> Debug for InnerThrottler<T, F>
 where
     T: Debug,
 {
@@ -67,7 +67,7 @@ where
     }
 }
 
-impl<T, S, D> InnerThrottler<T, S, D> {
+impl<T, F> InnerThrottler<T, F> {
     /// Creates a new [`InnerThrottler`] instance.
     #[inline]
     pub fn new(
@@ -75,8 +75,8 @@ impl<T, S, D> InnerThrottler<T, S, D> {
         interval: u64,
         clock: Rc<RefCell<dyn Clock>>,
         timer_name: String,
-        output_send: S,
-        output_drop: Option<D>,
+        output_send: F,
+        output_drop: Option<F>,
     ) -> Self {
         Self {
             recv_count: 0,
@@ -158,11 +158,10 @@ impl<T, S, D> InnerThrottler<T, S, D> {
     }
 }
 
-impl<T, S, D> InnerThrottler<T, S, D>
+impl<T, F> InnerThrottler<T, F>
 where
     T: 'static,
-    S: Fn(T) + 'static,
-    D: Fn(T) + 'static,
+    F: Fn(T) + 'static,
 {
     #[inline]
     pub fn send_msg(&mut self, msg: T) {
@@ -178,7 +177,7 @@ where
     }
 
     #[inline]
-    pub fn limit_msg(&mut self, msg: T, throttler: Throttler<T, S, D>) {
+    pub fn limit_msg(&mut self, msg: T, throttler: Throttler<T, F>) {
         let callback = if self.output_drop.is_none() {
             self.buffer.push_front(msg);
             log::debug!("Buffering {}", self.buffer.len());

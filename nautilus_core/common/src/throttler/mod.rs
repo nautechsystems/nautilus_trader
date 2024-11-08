@@ -24,7 +24,7 @@ use inner::InnerThrottler;
 use crate::clock::Clock;
 
 /// Represents a throttling limit per interval.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RateLimit {
     pub limit: usize,
     pub interval_ns: u64,
@@ -43,11 +43,11 @@ impl RateLimit {
 /// Throttler takes messages of type T and callback of type F for dropping
 /// or processing messages.
 #[derive(Clone)]
-pub struct Throttler<T, S, D> {
-    inner: Rc<RefCell<InnerThrottler<T, S, D>>>,
+pub struct Throttler<T, F> {
+    inner: Rc<RefCell<InnerThrottler<T, F>>>,
 }
 
-impl<T, S, D> Debug for Throttler<T, S, D>
+impl<T, F> Debug for Throttler<T, F>
 where
     T: Debug,
 {
@@ -58,14 +58,14 @@ where
     }
 }
 
-impl<T, S, D> Throttler<T, S, D> {
+impl<T, F> Throttler<T, F> {
     /// Creates a new [`Throttler`] instance.
     pub fn new(
         rate_limit: RateLimit,
         clock: Rc<RefCell<dyn Clock>>,
         timer_name: String,
-        output_send: S,
-        output_drop: Option<D>,
+        output_send: F,
+        output_drop: Option<F>,
     ) -> Self {
         let inner = InnerThrottler::new(
             rate_limit.limit,
@@ -99,11 +99,10 @@ impl<T, S, D> Throttler<T, S, D> {
     }
 }
 
-impl<T, S, D> Throttler<T, S, D>
+impl<T, F> Throttler<T, F>
 where
     T: 'static,
-    S: Fn(T) + 'static,
-    D: Fn(T) + 'static,
+    F: Fn(T) + 'static,
 {
     pub fn send(&self, msg: T) {
         let throttler_clone = Self {
@@ -119,11 +118,11 @@ where
         }
     }
 
-    fn get_process_callback(&self) -> ThrottlerProcess<T, S, D> {
+    fn get_process_callback(&self) -> ThrottlerProcess<T, F> {
         ThrottlerProcess::new(self.inner.clone())
     }
 
-    fn get_resume_callback(&self) -> ThrottlerResume<T, S, D> {
+    fn get_resume_callback(&self) -> ThrottlerResume<T, F> {
         ThrottlerResume::new(self.inner.clone())
     }
 }
@@ -145,7 +144,7 @@ mod tests {
     /// - Rate limit is 5 messages in 10 intervals.
     /// - Message handling is decided by specific fixture
     struct TestThrottler {
-        throttler: Throttler<u64, Box<dyn Fn(u64)>, Box<dyn Fn(u64)>>,
+        throttler: Throttler<u64, Box<dyn Fn(u64)>>,
         clock: Rc<RefCell<TestClock>>,
         interval: u64,
     }
