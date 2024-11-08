@@ -43,6 +43,7 @@ def parse_order_side(order_side: PolymarketOrderSide) -> OrderSide:
         case PolymarketOrderSide.SELL:
             return OrderSide.SELL
         case _:
+            # Theoretically unreachable but retained to keep the match exhaustive
             raise ValueError(f"invalid order side, was {order_side}")
 
 
@@ -53,6 +54,7 @@ def parse_liquidity_side(liquidity_side: PolymarketLiquiditySide) -> OrderSide:
         case PolymarketLiquiditySide.TAKER:
             return LiquiditySide.TAKER
         case _:
+            # Theoretically unreachable but retained to keep the match exhaustive
             raise ValueError(f"invalid liquidity side, was {liquidity_side}")
 
 
@@ -65,6 +67,7 @@ def parse_time_in_force(order_type: PolymarketOrderType) -> OrderSide:
         case PolymarketOrderType.FOK:
             return TimeInForce.FOK
         case _:
+            # Theoretically unreachable but retained to keep the match exhaustive
             raise ValueError(f"invalid order type, was {order_type}")
 
 

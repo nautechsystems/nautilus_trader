@@ -138,6 +138,7 @@ def get_ws_url(base_url_ws: str, ws_base_url_type: OKXWsBaseUrlType) -> str:
         case OKXWsBaseUrlType.BUSINESS:
             return f"{base_url_ws}/business"
         case _:
+            # Theoretically unreachable but retained to keep the match exhaustive
             raise ValueError(
                 f"unknown websocket base url type {ws_base_url_type} - must be one of "
                 f"{list(OKXWsBaseUrlType)}",

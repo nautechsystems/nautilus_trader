@@ -104,6 +104,7 @@ def get_cached_binance_http_client(
             rsa_private_key = None
             ed25519_private_key = get_ed25519_private_key(account_type, is_testnet)
         case _:
+            # Theoretically unreachable but retained to keep the match exhaustive
             raise ValueError(f"invalid `key_type`, was {key_type}")
 
     # Set up rate limit quotas
