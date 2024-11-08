@@ -22,11 +22,11 @@ import nautilus_trader
 from nautilus_trader.adapters.bybit.http.errors import BybitError
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
-from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 from nautilus_trader.core.nautilus_pyo3 import HttpResponse
 from nautilus_trader.core.nautilus_pyo3 import Quota
+from nautilus_trader.core.nautilus_pyo3 import hmac_signature
 
 
 class BybitResponse(msgspec.Struct, frozen=True):
@@ -164,12 +164,12 @@ class BybitHttpClient:
         timestamp = str(self._clock.timestamp_ms())
         payload_str = msgspec.json.encode(payload).decode()
         result = timestamp + self._api_key + str(self._recv_window) + payload_str
-        signature = nautilus_pyo3.hmac_signature(self._api_secret, result)
+        signature = hmac_signature(self._api_secret, result)
         return [timestamp, signature]
 
     def _sign_get_request(self, payload: dict[str, Any]) -> list[str]:
         timestamp = str(self._clock.timestamp_ms())
         payload_str = parse.urlencode(payload)
         result = timestamp + self._api_key + str(self._recv_window) + payload_str
-        signature = nautilus_pyo3.hmac_signature(self._api_secret, result)
+        signature = hmac_signature(self._api_secret, result)
         return [timestamp, signature]
