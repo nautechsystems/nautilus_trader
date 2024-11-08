@@ -155,6 +155,14 @@ class TestPortfolio:
         # Arrange, Act, Assert
         assert self.portfolio.unrealized_pnls(SIM) == {}
 
+    def test_realized_pnl_for_instrument_when_no_instrument_returns_none(self):
+        # Arrange, Act, Assert
+        assert self.portfolio.realized_pnl(USDJPY_SIM.id) is None
+
+    def test_realized_pnl_for_venue_when_no_account_returns_empty_dict(self):
+        # Arrange, Act, Assert
+        assert self.portfolio.realized_pnls(SIM) == {}
+
     def test_net_position_when_no_positions_returns_zero(self):
         # Arrange, Act, Assert
         assert self.portfolio.net_position(AUDUSD_SIM.id) == Decimal(0)
@@ -675,11 +683,13 @@ class TestPortfolio:
         # Assert
         assert self.portfolio.net_exposures(BINANCE) == {USDT: Money(105100.00000000, USDT)}
         assert self.portfolio.unrealized_pnls(BINANCE) == {USDT: Money(100.00000000, USDT)}
+        assert self.portfolio.realized_pnls(BINANCE) == {USDT: Money(-105.00000000, USDT)}
         assert self.portfolio.margins_maint(BINANCE) == {
             BTCUSDT_BINANCE.id: Money(105.00000000, USDT),
         }
         assert self.portfolio.net_exposure(BTCUSDT_BINANCE.id) == Money(105100.00000000, USDT)
         assert self.portfolio.unrealized_pnl(BTCUSDT_BINANCE.id) == Money(100.00000000, USDT)
+        assert self.portfolio.realized_pnl(BTCUSDT_BINANCE.id) == Money(-105.00000000, USDT)
         assert self.portfolio.net_position(order.instrument_id) == Decimal("10.00000000")
         assert self.portfolio.is_net_long(order.instrument_id)
         assert not self.portfolio.is_net_short(order.instrument_id)
@@ -759,6 +769,7 @@ class TestPortfolio:
         # Assert
         assert self.portfolio.net_exposures(BINANCE) == {USDT: Money(7987.77875000, USDT)}
         assert self.portfolio.unrealized_pnls(BINANCE) == {USDT: Money(-262.77875000, USDT)}
+        assert self.portfolio.realized_pnls(BINANCE) == {USDT: Money(-7.72500000, USDT)}
         assert self.portfolio.margins_maint(BINANCE) == {
             BTCUSDT_BINANCE.id: Money(7.72500000, USDT),
         }
@@ -1090,6 +1101,7 @@ class TestPortfolio:
         # Assert
         assert self.portfolio.net_exposures(SIM) == {USD: Money(210816.00, USD)}
         assert self.portfolio.unrealized_pnls(SIM) == {USD: Money(10816.00, USD)}
+        assert self.portfolio.realized_pnls(SIM) == {USD: Money(-4.00, USD)}
         assert self.portfolio.margins_maint(SIM) == {
             AUDUSD_SIM.id: Money(3002.00, USD),
             GBPUSD_SIM.id: Money(3002.00, USD),
@@ -1098,6 +1110,8 @@ class TestPortfolio:
         assert self.portfolio.net_exposure(GBPUSD_SIM.id) == Money(130315.00, USD)
         assert self.portfolio.unrealized_pnl(AUDUSD_SIM.id) == Money(-19499.00, USD)
         assert self.portfolio.unrealized_pnl(GBPUSD_SIM.id) == Money(30315.00, USD)
+        assert self.portfolio.realized_pnl(AUDUSD_SIM.id) == Money(-2.00, USD)
+        assert self.portfolio.realized_pnl(GBPUSD_SIM.id) == Money(-2.00, USD)
         assert self.portfolio.net_position(AUDUSD_SIM.id) == Decimal(100000)
         assert self.portfolio.net_position(GBPUSD_SIM.id) == Decimal(100000)
         assert self.portfolio.is_net_long(AUDUSD_SIM.id)
@@ -1186,6 +1200,7 @@ class TestPortfolio:
         # Assert
         assert self.portfolio.net_exposures(SIM) == {USD: Money(40250.50, USD)}
         assert self.portfolio.unrealized_pnls(SIM) == {USD: Money(-9749.50, USD)}
+        assert self.portfolio.realized_pnls(SIM) == {USD: Money(-3.00, USD)}
         assert self.portfolio.margins_maint(SIM) == {AUDUSD_SIM.id: Money(1501.00, USD)}
         assert self.portfolio.net_exposure(AUDUSD_SIM.id) == Money(40250.50, USD)
         assert self.portfolio.unrealized_pnl(AUDUSD_SIM.id) == Money(-9749.50, USD)
@@ -1195,6 +1210,7 @@ class TestPortfolio:
         assert not self.portfolio.is_flat(AUDUSD_SIM.id)
         assert not self.portfolio.is_completely_flat()
         assert self.portfolio.unrealized_pnls(BINANCE) == {}
+        assert self.portfolio.realized_pnls(BINANCE) == {}
         assert self.portfolio.net_exposures(BINANCE) is None
 
     def test_closing_position_updates_portfolio(self):
@@ -1266,9 +1282,11 @@ class TestPortfolio:
         # Assert
         assert self.portfolio.net_exposures(SIM) == {}
         assert self.portfolio.unrealized_pnls(SIM) == {}
+        assert self.portfolio.realized_pnls(SIM) == {USD: Money(0, USD)}
         assert self.portfolio.margins_maint(SIM) == {}
         assert self.portfolio.net_exposure(AUDUSD_SIM.id) == Money(0, USD)
         assert self.portfolio.unrealized_pnl(AUDUSD_SIM.id) == Money(0, USD)
+        assert self.portfolio.realized_pnl(AUDUSD_SIM.id) == Money(0, USD)
         assert self.portfolio.net_position(AUDUSD_SIM.id) == Decimal(0)
         assert not self.portfolio.is_net_long(AUDUSD_SIM.id)
         assert not self.portfolio.is_net_short(AUDUSD_SIM.id)
@@ -1402,10 +1420,12 @@ class TestPortfolio:
         self.portfolio.update_position(TestEventStubs.position_closed(position3))
 
         # Assert
-        assert {USD: Money(-38998.00, USD)} == self.portfolio.unrealized_pnls(SIM)
-        assert {USD: Money(161002.00, USD)} == self.portfolio.net_exposures(SIM)
-        assert Money(161002.00, USD) == self.portfolio.net_exposure(AUDUSD_SIM.id)
-        assert Money(-38998.00, USD) == self.portfolio.unrealized_pnl(AUDUSD_SIM.id)
+        assert self.portfolio.unrealized_pnls(SIM) == {USD: Money(-38998.00, USD)}
+        assert self.portfolio.realized_pnls(SIM) == {USD: Money(-4.00, USD)}
+        assert self.portfolio.net_exposures(SIM) == {USD: Money(161002.00, USD)}
+        assert self.portfolio.net_exposure(AUDUSD_SIM.id) == Money(161002.00, USD)
+        assert self.portfolio.unrealized_pnl(AUDUSD_SIM.id) == Money(-38998.00, USD)
+        assert self.portfolio.realized_pnl(AUDUSD_SIM.id) == Money(-4.00, USD)
         assert self.portfolio.unrealized_pnl(GBPUSD_SIM.id) == Money(0, USD)
         assert self.portfolio.net_position(AUDUSD_SIM.id) == Decimal(200000)
         assert self.portfolio.net_position(GBPUSD_SIM.id) == Decimal(0)

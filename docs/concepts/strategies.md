@@ -327,9 +327,11 @@ def balances_locked(self, venue: Venue) -> dict[Currency, Money]
 def margins_init(self, venue: Venue) -> dict[Currency, Money]
 def margins_maint(self, venue: Venue) -> dict[Currency, Money]
 def unrealized_pnls(self, venue: Venue) -> dict[Currency, Money]
+def realized_pnls(self, venue: Venue) -> dict[Currency, Money]
 def net_exposures(self, venue: Venue) -> dict[Currency, Money]
 
 def unrealized_pnl(self, instrument_id: InstrumentId) -> Money
+def realized_pnl(self, instrument_id: InstrumentId) -> Money
 def net_exposure(self, instrument_id: InstrumentId) -> Money
 def net_position(self, instrument_id: InstrumentId) -> decimal.Decimal
 
