@@ -41,9 +41,10 @@ cdef class Portfolio(PortfolioFacade):
     cdef AccountsManager _accounts
 
     cdef Venue _venue
-    cdef dict _unrealized_pnls
-    cdef dict _net_positions
-    cdef set _pending_calcs
+    cdef dict[InstrumentId, Money] _unrealized_pnls
+    cdef dict[InstrumentId, Money] _realized_pnls
+    cdef dict[InstrumentId, Decimal] _net_positions
+    cdef set[InstrumentId] _pending_calcs
 
 # -- COMMANDS -------------------------------------------------------------------------------------
 
@@ -60,5 +61,6 @@ cdef class Portfolio(PortfolioFacade):
     cdef object _net_position(self, InstrumentId instrument_id)
     cdef void _update_net_position(self, InstrumentId instrument_id, list positions_open)
     cdef Money _calculate_unrealized_pnl(self, InstrumentId instrument_id)
+    cdef Money _calculate_realized_pnl(self, InstrumentId instrument_id)
     cdef Price _get_last_price(self, Position position)
     cdef double _calculate_xrate_to_base(self, Account account, Instrument instrument, OrderSide side)
