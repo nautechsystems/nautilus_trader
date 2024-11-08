@@ -25,11 +25,13 @@ from nautilus_trader.adapters.binance.http.error import BinanceServerError
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.enums import LogColor
-from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 from nautilus_trader.core.nautilus_pyo3 import HttpResponse
 from nautilus_trader.core.nautilus_pyo3 import Quota
+from nautilus_trader.core.nautilus_pyo3 import ed25519_signature
+from nautilus_trader.core.nautilus_pyo3 import hmac_signature
+from nautilus_trader.core.nautilus_pyo3 import rsa_signature
 
 
 class BinanceHttpClient:
@@ -136,16 +138,17 @@ class BinanceHttpClient:
     def _get_sign(self, data: str) -> str:
         match self._key_type:
             case BinanceKeyType.HMAC:
-                return nautilus_pyo3.hmac_signature(self._secret, data)
+                return hmac_signature(self._secret, data)
             case BinanceKeyType.RSA:
                 if not self._rsa_private_key:
-                    raise ValueError("`rsa_private_key` was None")
-                return nautilus_pyo3.rsa_signature(self._rsa_private_key, data)
+                    raise ValueError("`rsa_private_key` was `None`")
+                return rsa_signature(self._rsa_private_key, data)
             case BinanceKeyType.ED25519:
                 if not self._ed25519_private_key:
-                    raise ValueError("`ed25519_private_key` was None")
-                return nautilus_pyo3.ed25519_signature(self._ed25519_private_key, data)
+                    raise ValueError("`ed25519_private_key` was `None`")
+                return ed25519_signature(self._ed25519_private_key, data)
             case _:
+                # Theoretically unreachable but added to keep the match exhaustive
                 raise ValueError(f"Unsupported key type, was '{self._key_type.value}'")
 
     async def sign_request(
