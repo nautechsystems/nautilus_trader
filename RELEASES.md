@@ -8,6 +8,7 @@ Released on TBD (UTC).
 ### Internal Improvements
 - Added globally shared data channels to send events from engines to Runner in Rust (#2042), thanks @twitu
 - Refined `LiveTimer` cancel and performance testing
+- Refined Bybit HMAC authentication signatures (now using Rust implemented function)
 
 ### Breaking Changes
 None
