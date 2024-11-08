@@ -148,7 +148,7 @@ class BinanceHttpClient:
                     raise ValueError("`ed25519_private_key` was `None`")
                 return ed25519_signature(self._ed25519_private_key, data)
             case _:
-                # Theoretically unreachable but added to keep the match exhaustive
+                # Theoretically unreachable but retained to keep the match exhaustive
                 raise ValueError(f"Unsupported key type, was '{self._key_type.value}'")
 
     async def sign_request(

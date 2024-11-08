@@ -279,6 +279,7 @@ class BybitDataClient(LiveMarketDataClient):
                 depths_available = BYBIT_OPTION_DEPTHS
                 depth = depth or BYBIT_OPTION_DEPTHS[-1]
             case _:
+                # Theoretically unreachable but retained to keep the match exhaustive
                 raise ValueError(
                     f"Invalit Bybit product type {product_type}",
                 )
