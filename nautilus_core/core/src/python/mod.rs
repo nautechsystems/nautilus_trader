@@ -15,6 +15,12 @@
 
 //! Python bindings from `pyo3`.
 
+pub mod casing;
+pub mod datetime;
+pub mod serialization;
+pub mod uuid;
+pub mod version;
+
 use pyo3::{
     exceptions::{PyRuntimeError, PyTypeError, PyValueError},
     prelude::*,
@@ -30,11 +36,6 @@ use crate::{
     uuid::UUID4,
     version::{NAUTILUS_VERSION, USER_AGENT},
 };
-pub mod casing;
-pub mod datetime;
-pub mod serialization;
-pub mod uuid;
-pub mod version;
 
 /// Gets the type name for the given Python `obj`.
 pub fn get_pytype_name<'py>(obj: &Bound<'py, PyAny>) -> PyResult<Bound<'py, PyString>> {

@@ -18,6 +18,6 @@ use pyo3::prelude::*;
 
 #[must_use]
 #[pyfunction(name = "convert_to_snake_case")]
-pub fn py_convert_to_snake_case(s: String) -> String {
-    s.to_snake_case()
+pub fn py_convert_to_snake_case(input: &str) -> String {
+    input.to_snake_case()
 }
