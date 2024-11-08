@@ -43,10 +43,7 @@ use nautilus_core::{
 };
 #[cfg(feature = "python")]
 use pyo3::{PyObject, Python};
-use tokio::{
-    sync::oneshot,
-    time::{Duration, Instant},
-};
+use tokio::time::{Duration, Instant};
 use ustr::Ustr;
 
 use crate::runtime::get_runtime;
@@ -351,7 +348,7 @@ pub struct LiveTimer {
     next_time_ns: Arc<AtomicU64>,
     is_expired: Arc<AtomicBool>,
     callback: TimeEventCallback,
-    canceler: Option<oneshot::Sender<()>>,
+    canceler: Option<tokio::sync::oneshot::Sender<()>>,
     #[cfg(feature = "clock_v2")]
     heap: Arc<Mutex<BinaryHeap<TimeEvent>>>,
 }
@@ -374,8 +371,8 @@ impl LiveTimer {
         callback: TimeEventCallback,
     ) -> Self {
         check_valid_string(name, stringify!(name)).expect(FAILED);
-        // SAFETY: Guaranteed to be non-zero
-        let interval_ns = NonZeroU64::new(std::cmp::max(interval_ns, 1)).unwrap();
+        let interval_ns =
+            NonZeroU64::new(std::cmp::max(interval_ns, 1)).expect("`interval_ns` must be non-zero");
 
         log::debug!("Creating timer '{name}'");
         Self {
@@ -457,7 +454,7 @@ impl LiveTimer {
         let mut next_time_ns = UnixNanos::from(floor_to_nearest_microsecond(next_time_ns));
 
         // Set up oneshot channel for canceling timer task
-        let (cancel_tx, mut cancel_rx) = oneshot::channel();
+        let (cancel_tx, mut cancel_rx) = tokio::sync::oneshot::channel();
         self.canceler = Some(cancel_tx);
 
         #[cfg(feature = "clock_v2")]
@@ -528,16 +525,19 @@ impl LiveTimer {
         });
     }
 
-    /// Cancels the timer (the timer will not generate a final event).
-    pub fn cancel(&mut self) -> anyhow::Result<()> {
+    /// Cancels the timer.
+    ///
+    /// The timer will not generate a final event.
+    pub fn cancel(&mut self) {
         log::debug!("Cancel timer '{}'", self.name);
         if !self.is_expired.load(atomic::Ordering::SeqCst) {
             if let Some(sender) = self.canceler.take() {
                 // Send cancellation signal
-                sender.send(()).map_err(|e| anyhow::anyhow!("{e:?}"))?;
+                if let Err(e) = sender.send(()) {
+                    log::error!("Error while canceling timer '{}': {e:?}", self.name);
+                }
             }
         }
-        Ok(())
     }
 }
 

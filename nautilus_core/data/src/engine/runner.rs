@@ -13,13 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::cell::OnceCell;
-use std::{cell::RefCell, collections::VecDeque, rc::Rc};
+use std::{
+    cell::{OnceCell, RefCell},
+    collections::VecDeque,
+    rc::Rc,
+};
 
 use futures::StreamExt;
-use nautilus_common::messages::data::{DataEvent, DataResponse, SubscriptionCommand};
 use nautilus_common::{
     clock::{Clock, LiveClock, TestClock},
+    messages::data::{DataEvent, DataResponse, SubscriptionCommand},
     runtime::get_runtime,
     timer::{TimeEvent, TimeEventHandlerV2},
 };
