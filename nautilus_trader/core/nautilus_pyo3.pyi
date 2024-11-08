@@ -181,16 +181,16 @@ def is_within_last_24_hours(timestamp_ns: int) -> bool:
 
     """
 
-def convert_to_snake_case(s: str) -> str:
+def convert_to_snake_case(input: str) -> str:
     """
     Convert the given string from any common case (PascalCase, camelCase, kebab-case, etc.)
     to *lower* snake_case.
 
-    This function uses the `heck` crate under the hood.
+    This function uses the `heck` Rust crate under the hood.
 
     Parameters
     ----------
-    s : str
+    input : str
         The input string to convert.
 
     Returns
