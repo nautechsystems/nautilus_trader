@@ -23,10 +23,10 @@ import msgspec
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Logger
 from nautilus_trader.common.enums import LogColor
-from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClient
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClientError
 from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
+from nautilus_trader.core.nautilus_pyo3 import hmac_signature
 
 
 MAX_ARGS_PER_SUBSCRIPTION_REQUEST = 10
@@ -256,7 +256,7 @@ class BybitWebsocketClient:
     def _get_signature(self):
         expires = self._clock.timestamp_ms() + 5_000
         sign = f"GET/realtime{expires}"
-        signature = nautilus_pyo3.hmac_signature(self._api_secret, sign)
+        signature = hmac_signature(self._api_secret, sign)
         return {
             "op": "auth",
             "args": [self._api_key, expires, signature],
