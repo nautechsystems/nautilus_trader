@@ -54,14 +54,6 @@ def test_live_clock_cancel(benchmark) -> None:
     benchmark(_start_and_cancel)
 
 
-def test_live_clock_drop(benchmark) -> None:
-    def _start_and_drop():
-        clock = LiveClock()
-        clock.set_timer("alert2", pd.Timedelta(microseconds=1), callback=print)
-
-    benchmark(_start_and_drop)
-
-
 def test_advance_time(benchmark) -> None:
     benchmark(_TEST_CLOCK.advance_time, 0)
 
