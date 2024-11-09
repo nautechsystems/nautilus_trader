@@ -14,27 +14,23 @@
 # -------------------------------------------------------------------------------------------------
 
 import pandas as pd
-import pytest
 
+from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import Throttler
 
 
-@pytest.fixture(name="buffering_throttler")
-def fixture_buffering_throttler(clock):
-    handler = []
+def buffering_throttler(name: str, limit: int) -> Throttler:
+    handler: list[str] = []
     return Throttler(
-        name="Throttler-1",
-        limit=10_000,
+        name=name,
+        limit=limit,
         interval=pd.Timedelta(seconds=1),
         output_send=handler.append,
         output_drop=None,
-        clock=clock,
+        clock=LiveClock(),
     )
 
 
-def test_send_unlimited(benchmark, buffering_throttler):
-    benchmark(buffering_throttler.send, "MESSAGE")
-
-
-def test_send_when_limited(benchmark, buffering_throttler):
-    benchmark(buffering_throttler.send, "MESSAGE")
+def test_send_unlimited(benchmark):
+    throttler = buffering_throttler("buffer-1", 10_000)
+    benchmark(throttler.send, "MESSAGE")
