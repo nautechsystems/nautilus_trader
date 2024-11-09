@@ -613,6 +613,9 @@ impl PartialEq for OrderAny {
     }
 }
 
+// TODO: fix equality
+impl Eq for OrderAny {}
+
 impl Display for OrderAny {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
