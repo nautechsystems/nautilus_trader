@@ -1,15 +1,19 @@
 # Installation
 
-NautilusTrader is tested and supported for Python 3.11 and 3.12 on the following 64-bit platforms:
+NautilusTrader is tested and officially supported for Python 3.11 and 3.12 for the following 64-bit platforms:
 
 | Operating System       | Supported Versions    | CPU Architecture  |
 |------------------------|-----------------------|-------------------|
-| Linux (Ubuntu)         | 20.04 or later        | x86_64            |
-| macOS                  | 14 or later           | ARM64             |
-| Windows Server         | 2022 or later         | x86_64            |
+| Linux (Ubuntu)         | 22.04 and later       | x86_64            |
+| macOS                  | 14.7 and later        | ARM64             |
+| Windows Server         | 2022 and later        | x86_64            |
+
+:::note
+NautilusTrader may work on other platforms, but only those listed above are regularly used by developers and tested in CI.
+:::
 
 :::tip
-We recommend running the platform with the latest stable version of Python, and in a virtual environment to isolate the dependencies.
+We recommend using the latest supported version of Python and setting up `nautilus_trader` in a virtual environment to isolate dependencies.
 :::
 
 ## From PyPI
@@ -97,3 +101,29 @@ Download the appropriate `.whl` for your operating system and Python version, th
 
     pip install <file-name>.whl
 
+## Redis
+
+Using Redis with NautilusTrader is **optional** and only required if configured as the backend for a cache database or [message bus](/docs/concepts/message_bus.md).
+
+:::info
+The minimum supported Redis version is 6.2 or higher (required for [streams](https://redis.io/docs/latest/develop/data-types/streams/) functionality).
+:::
+
+For a quick setup, we recommend using a [Redis Docker container](https://hub.docker.com/_/redis/). You can find an example setup in the `.docker` directory,
+or run the following command to start a container:
+
+```bash
+docker run -d --name redis -p 6379:6379 redis:latest
+```
+
+This command will:
+
+- Pull the latest version of Redis from Docker Hub if it's not already downloaded.
+- Run the container in detached mode (`-d`).
+- Name the container `redis` for easy reference.
+- Expose Redis on the default port 6379, making it accessible to NautilusTrader on your machine.
+
+To manage the Redis container:
+
+- Start it with `docker start redis`
+- Stop it with `docker stop redis`
