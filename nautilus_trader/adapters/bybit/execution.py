@@ -549,6 +549,15 @@ class BybitExecutionClient(LiveExecutionClient):
                 client_order_id=client_order_id,
                 venue_order_id=venue_order_id,
             )
+            if not retry_manager.result:
+                self.generate_order_cancel_rejected(
+                    order.strategy_id,
+                    order.instrument_id,
+                    order.client_order_id,
+                    order.venue_order_id,
+                    retry_manager.message,
+                    self._clock.timestamp_ns(),
+                )
 
     async def _batch_cancel_orders(self, command: BatchCancelOrders) -> None:
         # https://bybit-exchange.github.io/docs/v5/order/batch-cancel
@@ -593,6 +602,19 @@ class BybitExecutionClient(LiveExecutionClient):
                     product_type=product_type,
                     cancel_orders=cancel_orders,
                 )
+                if not retry_manager.result:
+                    for cancel in batch_cancels:
+                        order = self._cache.order(cancel.client_order_id)
+                        if order is None or order.is_closed:
+                            continue
+                        self.generate_order_cancel_rejected(
+                            order.strategy_id,
+                            order.instrument_id,
+                            order.client_order_id,
+                            order.venue_order_id,
+                            retry_manager.message,
+                            self._clock.timestamp_ns(),
+                        )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         bybit_symbol = BybitSymbol(command.instrument_id.symbol.value)
@@ -605,6 +627,19 @@ class BybitExecutionClient(LiveExecutionClient):
                 product_type=bybit_symbol.product_type,
                 symbol=bybit_symbol.raw_symbol,
             )
+            if not retry_manager.result:
+                orders_open = self._cache.orders_open(instrument_id=command.instrument_id)
+                for order in orders_open:
+                    if order.is_closed:
+                        continue
+                    self.generate_order_cancel_rejected(
+                        order.strategy_id,
+                        order.instrument_id,
+                        order.client_order_id,
+                        order.venue_order_id,
+                        retry_manager.message,
+                        self._clock.timestamp_ns(),
+                    )
 
     async def _modify_order(self, command: ModifyOrder) -> None:
         order: Order | None = self._cache.order(command.client_order_id)
@@ -639,6 +674,15 @@ class BybitExecutionClient(LiveExecutionClient):
                 quantity=quantity,
                 price=price,
             )
+            if not retry_manager.result:
+                self.generate_order_modify_rejected(
+                    order.strategy_id,
+                    order.instrument_id,
+                    order.client_order_id,
+                    order.venue_order_id,
+                    retry_manager.message,
+                    self._clock.timestamp_ns(),
+                )
 
     async def _submit_order(self, command: SubmitOrder) -> None:
         order = command.order
