@@ -391,7 +391,7 @@ mod tests {
 
     #[rstest]
     fn test_equality(betting: BettingInstrument) {
-        let cloned = betting.clone();
+        let cloned = betting;
         assert_eq!(betting, cloned);
     }
 }

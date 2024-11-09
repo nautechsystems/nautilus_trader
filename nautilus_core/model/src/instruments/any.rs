@@ -389,6 +389,21 @@ impl InstrumentAny {
             Self::OptionsSpread(inst) => inst.taker_fee(),
         }
     }
+
+    pub fn get_base_quantity(&self, quantity: Quantity, last_px: Price) -> Quantity {
+        match self {
+            Self::Betting(inst) => inst.calculate_base_quantity(quantity, last_px),
+            Self::BinaryOption(inst) => inst.calculate_base_quantity(quantity, last_px),
+            Self::CryptoFuture(inst) => inst.calculate_base_quantity(quantity, last_px),
+            Self::CryptoPerpetual(inst) => inst.calculate_base_quantity(quantity, last_px),
+            Self::CurrencyPair(inst) => inst.calculate_base_quantity(quantity, last_px),
+            Self::Equity(inst) => inst.calculate_base_quantity(quantity, last_px),
+            Self::FuturesContract(inst) => inst.calculate_base_quantity(quantity, last_px),
+            Self::FuturesSpread(inst) => inst.calculate_base_quantity(quantity, last_px),
+            Self::OptionsContract(inst) => inst.calculate_base_quantity(quantity, last_px),
+            Self::OptionsSpread(inst) => inst.calculate_base_quantity(quantity, last_px),
+        }
+    }
 }
 
 impl PartialEq for InstrumentAny {
