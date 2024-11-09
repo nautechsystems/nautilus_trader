@@ -210,8 +210,6 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         }
 
     async def _connect(self) -> None:
-        self._log.info("Initializing instruments...")
-
         await self._instrument_provider.initialize()
 
         self._send_all_instruments_to_data_engine()
@@ -227,7 +225,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                         f"{self._update_instrument_interval}s",
                     )
                     await asyncio.sleep(self._update_instrument_interval)
-                    await self._instrument_provider.load_all_async()
+                    await self._instrument_provider.initialize(reload=True)
                     self._send_all_instruments_to_data_engine()
                     break
                 except BinanceError as e:

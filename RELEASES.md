@@ -15,6 +15,7 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 - Added globally shared data channels to send events from engines to Runner in Rust (#2042), thanks @twitu
+- Refined `InstrumentProvider` initialization behavior and logging
 - Refined `LiveTimer` cancel and performance testing
 - Simplified `LiveTimer` cancellation model (#2046), thanks @twitu
 - Refined Bybit HMAC authentication signatures (now using Rust implemented function)
@@ -31,6 +32,7 @@ None
 - Fixed Betfair customer order ref limit to 32 chars
 - Fixed Bybit handling of `PARTIALLY_FILLED_CANCELED` status orders
 - Fixed Polymarket size precision for `BinaryOption` instruments (precision 6 to match USDC.e)
+- Fixed adapter instrument reloading (providers were not reloading instruments at the configured interval due to internal state flags)
 
 ---
 

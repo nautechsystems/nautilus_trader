@@ -73,8 +73,8 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         self.contract_details: dict[str, IBContractDetails] = {}
         self.contract_id_to_instrument_id: dict[int, InstrumentId] = {}
 
-    async def initialize(self) -> None:
-        await super().initialize()
+    async def initialize(self, reload: bool = False) -> None:
+        await super().initialize(reload)
         # Trigger contract loading only if `load_ids_on_start` is False and `load_contracts_on_start` is True
         if not self._load_ids_on_start and self._load_contracts_on_start:
             self._loaded = False
@@ -91,7 +91,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         instrument_ids: list[InstrumentId],
         filters: dict | None = None,
     ) -> None:
-        # Parse and load InstrumentIds
+        # Parse and load Instrument IDs
         if self._load_ids_on_start:
             for instrument_id in [
                 (InstrumentId.from_str(i) if isinstance(i, str) else i)
@@ -113,7 +113,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         try:
             details = await self._client.get_contract_details(contract=contract)
             if not details:
-                self._log.error(f"No contract details returned for {contract}.")
+                self._log.error(f"No contract details returned for {contract}")
                 return []
             [qualified] = details
             self._log.info(
