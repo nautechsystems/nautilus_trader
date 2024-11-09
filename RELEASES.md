@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Added `Portfolio.realized_pnls(...)` method for per venue realized PnL (based on positions)
 - Added `TardisInstrumentProvider`
 - Added `PolymarketExecClientConfig.generate_order_history_from_trades` config setting (default False and not currently recommended)
+- Implemented `WebSocketClient` reconnection retries (#2044), thanks @davidsblom
 - Implemented `OrderCancelRejected` event generation for Binance and Bybit
 - Implemented `OrderModifyRejected` event generation for Binance and Bybit
 - Improved `OrderRejected` handling of `reason` string (`None` is now allowed which will become the string `'None'`)
@@ -21,6 +22,7 @@ Released on TBD (UTC).
 - Refined `LiveTimer` cancel and performance testing
 - Simplified `LiveTimer` cancellation model (#2046), thanks @twitu
 - Refined Bybit HMAC authentication signatures (now using Rust implemented function)
+- Added LRU caching for dYdX HTTP client (#2049), thanks @davidsblom
 
 ### Breaking Changes
 None
