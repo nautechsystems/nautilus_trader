@@ -29,9 +29,7 @@ use super::{
     message::WsMessage, replay_normalized, stream_normalized, Error, InstrumentMiniInfo,
     ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions,
 };
-use crate::tardis::{
-    machine::parse::parse_tardis_ws_message, parse::parse_instrument_id_with_enum,
-};
+use crate::tardis::{machine::parse::parse_tardis_ws_message, parse::parse_instrument_id};
 
 /// Provides a client for connecting to a [Tardis Machine Server](https://docs.tardis.dev/api/tardis-machine).
 #[cfg_attr(
@@ -164,10 +162,10 @@ pub fn determine_instrument_info(
     instrument_map: &HashMap<InstrumentId, Arc<InstrumentMiniInfo>>,
 ) -> Option<Arc<InstrumentMiniInfo>> {
     let instrument_id = match msg {
-        WsMessage::BookChange(msg) => parse_instrument_id_with_enum(&msg.symbol, &msg.exchange),
-        WsMessage::BookSnapshot(msg) => parse_instrument_id_with_enum(&msg.symbol, &msg.exchange),
-        WsMessage::Trade(msg) => parse_instrument_id_with_enum(&msg.symbol, &msg.exchange),
-        WsMessage::TradeBar(msg) => parse_instrument_id_with_enum(&msg.symbol, &msg.exchange),
+        WsMessage::BookChange(msg) => parse_instrument_id(&msg.exchange, &msg.symbol),
+        WsMessage::BookSnapshot(msg) => parse_instrument_id(&msg.exchange, &msg.symbol),
+        WsMessage::Trade(msg) => parse_instrument_id(&msg.exchange, &msg.symbol),
+        WsMessage::TradeBar(msg) => parse_instrument_id(&msg.exchange, &msg.symbol),
         WsMessage::DerivativeTicker(_) => return None,
         WsMessage::Disconnect(_) => return None,
     };

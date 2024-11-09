@@ -18,11 +18,12 @@ Released on TBD (UTC).
 - Ported `RiskEngine` to Rust (#2035), thanks @Pushkarm029 and @twitu
 - Ported `ExecutionEngine` to Rust (#2048), thanks @twitu
 - Added globally shared data channels to send events from engines to Runner in Rust (#2042), thanks @twitu
+- Added LRU caching for dYdX HTTP client (#2049), thanks @davidsblom
 - Refined `InstrumentProvider` initialization behavior and logging
 - Refined `LiveTimer` cancel and performance testing
 - Simplified `LiveTimer` cancellation model (#2046), thanks @twitu
 - Refined Bybit HMAC authentication signatures (now using Rust implemented function)
-- Added LRU caching for dYdX HTTP client (#2049), thanks @davidsblom
+- Refined Tardis instrument ID parsing
 
 ### Breaking Changes
 None

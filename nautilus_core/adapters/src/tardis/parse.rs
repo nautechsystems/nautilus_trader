@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::str::FromStr;
-
 use nautilus_core::{datetime::NANOSECONDS_IN_MICROSECOND, nanos::UnixNanos};
 use nautilus_model::{
     data::bar::BarSpecification,
@@ -24,21 +22,19 @@ use nautilus_model::{
 
 use super::enums::{Exchange, OptionType};
 
-/// Parse an instrument ID from the given venue and symbol values.
-#[must_use]
-pub fn parse_instrument_id(exchange: &str, symbol: &str) -> InstrumentId {
-    let venue = exchange.split('-').next().unwrap_or(exchange);
-    InstrumentId::from_str(&format!("{symbol}.{venue}").to_uppercase())
-        .expect("Failed to parse `instrument_id`")
+pub fn parse_symbol_str(symbol: &str) -> String {
+    symbol.to_uppercase()
 }
 
-/// Parse an instrument ID from the given `symbol` and Tardis `exchange` values.
+/// Parses a Nautilus instrument ID from the given Tardis `exchange` and `symbol` values.
 #[must_use]
-pub fn parse_instrument_id_with_enum(symbol: &str, exchange: &Exchange) -> InstrumentId {
-    InstrumentId::new(Symbol::from(symbol), Venue::from(exchange.as_venue_str()))
+pub fn parse_instrument_id(exchange: &Exchange, symbol: &str) -> InstrumentId {
+    let symbol = Symbol::from(parse_symbol_str(symbol).as_str()); // TODO: implement AsRef
+    let venue = Venue::from(exchange.as_venue_str());
+    InstrumentId::new(symbol, venue)
 }
 
-/// Parse an order side from the given string.
+/// Parses a Nautilus order side from the given Tardis string `value`.
 #[must_use]
 pub fn parse_order_side(value: &str) -> OrderSide {
     match value {
@@ -48,7 +44,7 @@ pub fn parse_order_side(value: &str) -> OrderSide {
     }
 }
 
-/// Parse an aggressor side from the given string.
+/// Parses a Nautilus aggressor side from the given Tardis string `value`.
 #[must_use]
 pub fn parse_aggressor_side(value: &str) -> AggressorSide {
     match value {
@@ -58,7 +54,7 @@ pub fn parse_aggressor_side(value: &str) -> AggressorSide {
     }
 }
 
-/// Parse an `option_kind` from the Tardis enum value.
+/// Parses a Nautilus option kind from the given Tardis enum `value`.
 #[must_use]
 pub const fn parse_option_kind(value: OptionType) -> OptionKind {
     match value {
@@ -67,13 +63,13 @@ pub const fn parse_option_kind(value: OptionType) -> OptionKind {
     }
 }
 
-/// Parse a Tardis timestamp in UNIX microseconds to UNIX nanoseconds.
+/// Parses a UNIX nanoseconds timestamp from the given Tardis microseconds `value_us`.
 #[must_use]
-pub fn parse_timestamp(value: u64) -> UnixNanos {
-    UnixNanos::from(value * NANOSECONDS_IN_MICROSECOND)
+pub fn parse_timestamp(value_us: u64) -> UnixNanos {
+    UnixNanos::from(value_us * NANOSECONDS_IN_MICROSECOND)
 }
 
-/// Parse book action inferred from the given values.
+/// Parses a Nautilus book action inferred from the given Tardis values.
 #[must_use]
 pub fn parse_book_action(is_snapshot: bool, amount: f64) -> BookAction {
     if is_snapshot {
@@ -85,6 +81,9 @@ pub fn parse_book_action(is_snapshot: bool, amount: f64) -> BookAction {
     }
 }
 
+/// Parses a Nautilus bar specification from the given Tardis string `value`.
+///
+/// The [`PriceType`] is always `LAST` for Tardis trade bars.
 #[must_use]
 pub fn parse_bar_spec(value: &str) -> BarSpecification {
     let parts: Vec<&str> = value.split('_').collect();
@@ -109,7 +108,7 @@ pub fn parse_bar_spec(value: &str) -> BarSpecification {
     BarSpecification {
         step,
         aggregation,
-        price_type: PriceType::Last, // Always last trade price for Tardis bars
+        price_type: PriceType::Last,
     }
 }
 
@@ -118,22 +117,24 @@ pub fn parse_bar_spec(value: &str) -> BarSpecification {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use nautilus_model::enums::AggressorSide;
     use rstest::rstest;
 
     use super::*;
 
     #[rstest]
-    #[case("okex-futures", "BTC-USD-200313", "BTC-USD-200313.OKEX")]
-    #[case("binance", "ETH-USDT", "ETH-USDT.BINANCE")]
-    #[case("bitmex-perp", "XBTUSD", "XBTUSD.BITMEX")]
-    #[case("exchange-with-hyphen", "FOO-BAR", "FOO-BAR.EXCHANGE")]
+    #[case(Exchange::OkexFutures, "BTC-USD-200313", "BTC-USD-200313.OKEX")]
+    #[case(Exchange::Binance, "ETH-USDT", "ETH-USDT.BINANCE")]
+    #[case(Exchange::Bitmex, "XBTUSD", "XBTUSD.BITMEX")]
+    #[case(Exchange::HuobiDmLinearSwap, "FOO-BAR", "FOO-BAR.HUOBI")]
     fn test_parse_instrument_id(
-        #[case] exchange: &str,
+        #[case] exchange: Exchange,
         #[case] symbol: &str,
         #[case] expected: &str,
     ) {
-        let instrument_id = parse_instrument_id(exchange, symbol);
+        let instrument_id = parse_instrument_id(&exchange, symbol);
         let expected_instrument_id = InstrumentId::from_str(expected).unwrap();
         assert_eq!(instrument_id, expected_instrument_id);
     }
