@@ -11,20 +11,22 @@ can be categorized into three distinct types:
 
 ## Data and signal publishing
 
-While the message bus is considered a lower-level component, users typically interact with it indirectly.
-`Actor` and `Strategy` classes provide two convenience methods built on top of the underlying `MessageBus`, for
-easier custom data and signal publishing:
+The message bus is a lower-level component, which users typically interact with indirectly.
+`Actor` and `Strategy` classes provide two convenience methods built on top of the underlying `MessageBus`:
 
 ```python
 def publish_data(self, data_type: DataType, data: Data) -> None:
 def publish_signal(self, name: str, value, ts_event: int | None = None) -> None:
 ```
 
+These methods allow you to publish custom data and signals efficiently without needing to work directly with the `MessageBus` interface.
+
 ## Direct access
 
-For advanced users and specific use cases, direct access to the message bus is available from within `Actor` and `Strategy` 
-classes through the `self.msgbus` reference, which exposes the message bus interface directly.
-To publish a custom message, simply provide a topic as a `str` and any Python `object` as the message payload, for example:
+For advanced users or specialized use cases, direct access to the message bus is available within `Actor` and `Strategy`
+classes through the `self.msgbus` reference, which provides the full message bus interface.
+
+To publish a custom message directly, you can specify a topic as a `str` and any Python `object` as the message payload, for example:
 
 ```python
 
