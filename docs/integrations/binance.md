@@ -29,13 +29,13 @@ The following documentation assumes a trader is setting up for both live market
 data feeds, and trade execution. The full Binance integration consists of an assortment of components,
 which can be used together or separately depending on the user's needs.
 
-- `BinanceHttpClient`: Low-level HTTP API connectivity
-- `BinanceWebSocketClient`: Low-level WebSocket API connectivity
-- `BinanceInstrumentProvider`: Instrument parsing and loading functionality
-- `BinanceSpotDataClient`/`BinanceFuturesDataClient`: A market data feed manager
-- `BinanceSpotExecutionClient`/`BinanceFuturesExecutionClient`: An account management and trade execution gateway
-- `BinanceLiveDataClientFactory`: Factory for Binance data clients (used by the trading node builder)
-- `BinanceLiveExecClientFactory`: Factory for Binance execution clients (used by the trading node builder)
+- `BinanceHttpClient`: Low-level HTTP API connectivity.
+- `BinanceWebSocketClient`: Low-level WebSocket API connectivity.
+- `BinanceInstrumentProvider`: Instrument parsing and loading functionality.
+- `BinanceSpotDataClient`/`BinanceFuturesDataClient`: A market data feed manager.
+- `BinanceSpotExecutionClient`/`BinanceFuturesExecutionClient`: An account management and trade execution gateway.
+- `BinanceLiveDataClientFactory`: Factory for Binance data clients (used by the trading node builder).
+- `BinanceLiveExecClientFactory`: Factory for Binance execution clients (used by the trading node builder).
 
 :::note
 Most users will simply define a configuration for a live trading node (as below),
@@ -57,8 +57,10 @@ See the Binance [API Reference](../api_reference/adapters/binance.md) for full d
 As per the Nautilus unification policy for symbols, the native Binance symbols are used where possible including for
 spot assets and futures contracts. Because NautilusTrader is capable of multi-venue + multi-account
 trading, it's necessary to explicitly clarify the difference between `BTCUSDT` as the spot and margin traded
-pair, and the `BTCUSDT` perpetual futures contract (this symbol is used for _both_ natively by Binance). Therefore, NautilusTrader appends `-PERP` to all native perpetual symbols.
-E.g. for Binance Futures, the said instrument's symbol is `BTCUSDT-PERP` within the Nautilus system boundary.
+pair, and the `BTCUSDT` perpetual futures contract (this symbol is used for _both_ natively by Binance).
+
+Therefore, Nautilus appends the suffix `-PERP` to all perpetual symbols.
+E.g. for Binance Futures, the `BTCUSDT` perpetual futures contract symbol would be `BTCUSDT-PERP` within the Nautilus system boundary.
 
 ## Order types
 

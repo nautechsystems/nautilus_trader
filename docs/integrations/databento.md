@@ -6,9 +6,9 @@ It's also possible to match Databento data with Interactive Brokers execution, o
 
 The capabilities of this adapter include:
 
-- Loading historical data from DBN files and decoding into Nautilus objects for backtesting or writing to the data catalog
-- Requesting historical data which is decoded to Nautilus objects to support live trading and backtesting
-- Subscribing to real-time data feeds which are decoded to Nautilus objects to support live trading and sandbox environments
+- Loading historical data from DBN files and decoding into Nautilus objects for backtesting or writing to the data catalog.
+- Requesting historical data which is decoded to Nautilus objects to support live trading and backtesting.
+- Subscribing to real-time data feeds which are decoded to Nautilus objects to support live trading and sandbox environments.
 
 :::tip
 [Databento](https://databento.com/signup) currently offers 125 USD in free data credits (historical data only) for new account sign-ups.
@@ -28,11 +28,11 @@ adapter are compiled as static libraries and linked automatically during the bui
 :::
 
 The following adapter classes are available:
-- `DatabentoDataLoader`: Loads Databento Binary Encoding (DBN) data from files
-- `DatabentoInstrumentProvider`: Integrates with the Databento API (HTTP) to provide latest or historical instrument definitions
-- `DatabentoHistoricalClient`: Integrates with the Databento API (HTTP) for historical market data requests
-- `DatabentoLiveClient`: Integrates with the Databento API (raw TCP) for subscribing to real-time data feeds
-- `DatabentoDataClient`: Provides a `LiveMarketDataClient` implementation for running a trading node in real time
+- `DatabentoDataLoader`: Loads Databento Binary Encoding (DBN) data from files.
+- `DatabentoInstrumentProvider`: Integrates with the Databento API (HTTP) to provide latest or historical instrument definitions.
+- `DatabentoHistoricalClient`: Integrates with the Databento API (HTTP) for historical market data requests.
+- `DatabentoLiveClient`: Integrates with the Databento API (raw TCP) for subscribing to real-time data feeds.
+- `DatabentoDataClient`: Provides a `LiveMarketDataClient` implementation for running a trading node in real time.
 
 :::info
 As with the other integration adapters, most users will simply define a configuration for a live trading node (covered below),
@@ -119,10 +119,10 @@ Other venue MICs can be found in the `venue` field of responses from the [metada
 
 Databento data includes various timestamp fields including (but not limited to):
 
-- `ts_event`: The matching-engine-received timestamp expressed as the number of nanoseconds since the UNIX epoch
-- `ts_in_delta`: The matching-engine-sending timestamp expressed as the number of nanoseconds before `ts_recv`
-- `ts_recv`: The capture-server-received timestamp expressed as the number of nanoseconds since the UNIX epoch
-- `ts_out`: The Databento sending timestamp
+- `ts_event`: The matching-engine-received timestamp expressed as the number of nanoseconds since the UNIX epoch.
+- `ts_in_delta`: The matching-engine-sending timestamp expressed as the number of nanoseconds before `ts_recv`.
+- `ts_recv`: The capture-server-received timestamp expressed as the number of nanoseconds since the UNIX epoch.
+- `ts_out`: The Databento sending timestamp.
 
 Nautilus data includes at *least* two timestamps (required by the `Data` contract):
 
@@ -264,8 +264,8 @@ Performance benchmarks are currently under development.
 You can load DBN files and convert the records to Nautilus objects using the
 `DatabentoDataLoader` class. There are two main purposes for doing so:
 
-- Pass the converted data to `BacktestEngine.add_data` directly for backtesting
-- Pass the converted data to `ParquetDataCatalog.write_data` for later streaming use with a `BacktestNode`
+- Pass the converted data to `BacktestEngine.add_data` directly for backtesting.
+- Pass the converted data to `ParquetDataCatalog.write_data` for later streaming use with a `BacktestNode`.
 
 ### DBN data to a BacktestEngine
 
@@ -384,10 +384,10 @@ node.build()
 
 ### Configuration parameters
 
-- `api_key`: The Databento API secret key. If ``None`` then will source the `DATABENTO_API_KEY` environment variable
-- `http_gateway`: The historical HTTP client gateway override (useful for testing and typically not needed by most users)
-- `live_gateway`: The raw TCP real-time client gateway override (useful for testing and typically not needed by most users)
-- `parent_symbols`: The Databento parent symbols to subscribe to instrument definitions for on start. This is a map of Databento dataset keys -> to a sequence of the parent symbols, e.g. {'GLBX.MDP3', ['ES.FUT', 'ES.OPT']} (for all E-mini S&P 500 futures and options products)
-- `instrument_ids`: The instrument IDs to request instrument definitions for on start
+- `api_key`: The Databento API secret key. If ``None`` then will source the `DATABENTO_API_KEY` environment variable.
+- `http_gateway`: The historical HTTP client gateway override (useful for testing and typically not needed by most users).
+- `live_gateway`: The raw TCP real-time client gateway override (useful for testing and typically not needed by most users).
+- `parent_symbols`: The Databento parent symbols to subscribe to instrument definitions for on start. This is a map of Databento dataset keys -> to a sequence of the parent symbols, e.g. {'GLBX.MDP3', ['ES.FUT', 'ES.OPT']} (for all E-mini S&P 500 futures and options products).
+- `instrument_ids`: The instrument IDs to request instrument definitions for on start.
 - `timeout_initial_load`: The timeout (seconds) to wait for instruments to load (concurrently per dataset).
-- `mbo_subscriptions_delay`: The timeout (seconds) to wait for MBO/L3 subscriptions (concurrently per dataset). After the timeout the MBO order book feed will start and replay messages from the initial snapshot and then all deltas
+- `mbo_subscriptions_delay`: The timeout (seconds) to wait for MBO/L3 subscriptions (concurrently per dataset). After the timeout the MBO order book feed will start and replay messages from the initial snapshot and then all deltas.
