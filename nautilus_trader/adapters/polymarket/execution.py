@@ -185,7 +185,6 @@ class PolymarketExecutionClient(LiveExecutionClient):
         self._allowances: dict[InstrumentId, str] = {}
 
     async def _connect(self) -> None:
-        self._log.info("Initializing instruments...")
         await self._instrument_provider.initialize()
 
         # Set up initial active markets

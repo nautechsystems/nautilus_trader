@@ -135,18 +135,24 @@ class InstrumentProvider:
             "method `load_async` must be implemented in the subclass",
         )  # pragma: no cover
 
-    async def initialize(self) -> None:
+    async def initialize(self, reload: bool = False) -> None:
         """
         Initialize the instrument provider.
 
-        If already loaded then will immediately return.
+        Parameters
+        ----------
+        reload : bool, default False
+            If True, then will always reload instruments.
+            If False, then will immediately return if already loaded.
 
         """
-        if self._loaded:
+        if not reload and self._loaded:
             return  # Already loaded
 
         if not self._loading:
-            # Set async loading flag
+            self._log.info("Initializing instruments")
+
+            # Set loading state flags
             self._loading = True
             if self._load_all_on_start:
                 await self.load_all_async(self._filters)
@@ -167,9 +173,11 @@ class InstrumentProvider:
             while self._loading:
                 await asyncio.sleep(0.1)
 
-        # Set async loading flags
+        # Set loading state flags
         self._loading = False
         self._loaded = True
+
+        self._log.info("Initialized instruments")
 
     def load_all(self, filters: dict | None = None) -> None:
         """

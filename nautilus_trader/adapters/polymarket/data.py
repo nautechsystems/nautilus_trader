@@ -194,7 +194,7 @@ class PolymarketDataClient(LiveMarketDataClient):
                     f"{self._update_instrument_interval}s",
                 )
                 await asyncio.sleep(self._update_instrument_interval)
-                await self._instrument_provider.initialize()
+                await self._instrument_provider.initialize(reload=True)
                 self._send_all_instruments_to_data_engine()
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'update_instruments'")

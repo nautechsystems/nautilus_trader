@@ -259,16 +259,11 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
 
     async def _connect(self) -> None:
         try:
-            # Initialize instrument provider
             await self._instrument_provider.initialize()
 
-            # Authenticate API key and update account(s)
             await self._update_account_state()
-
-            # Set dual side position
             await self._init_dual_side_position()
 
-            # Get listen keys
             response: BinanceListenKey = await self._http_user.create_listen_key()
         except BinanceError as e:
             self._log.exception(f"Error on connect: {e.message}", e)
