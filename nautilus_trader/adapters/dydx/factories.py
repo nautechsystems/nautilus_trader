@@ -39,9 +39,6 @@ from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 
 
-HTTP_CLIENTS: dict[str, DYDXHttpClient] = {}
-
-
 def get_dydx_grcp_client(
     is_testnet: bool = False,
 ) -> DYDXAccountGRPCAPI:
@@ -65,6 +62,7 @@ def get_dydx_grcp_client(
     )
 
 
+@lru_cache(1)
 def get_dydx_http_client(
     clock: LiveClock,
     base_url: str | None = None,
@@ -90,15 +88,10 @@ def get_dydx_http_client(
 
     """
     http_base_url = base_url or get_http_base_url(is_testnet)
-
-    if http_base_url not in HTTP_CLIENTS:
-        client = DYDXHttpClient(
-            clock=clock,
-            base_url=http_base_url,
-        )
-        HTTP_CLIENTS[http_base_url] = client
-
-    return HTTP_CLIENTS[http_base_url]
+    return DYDXHttpClient(
+        clock=clock,
+        base_url=http_base_url,
+    )
 
 
 @lru_cache(1)
