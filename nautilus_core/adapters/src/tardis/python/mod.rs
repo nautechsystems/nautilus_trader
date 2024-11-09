@@ -16,6 +16,7 @@
 //! Python bindings from `pyo3`.
 
 pub mod csv;
+pub mod enums;
 pub mod http;
 pub mod machine;
 
@@ -28,6 +29,10 @@ pub fn tardis(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<super::machine::TardisMachineClient>()?;
     m.add_class::<super::machine::ReplayNormalizedRequestOptions>()?;
     m.add_class::<super::machine::StreamNormalizedRequestOptions>()?;
+    m.add_function(wrap_pyfunction!(
+        enums::py_tardis_exchange_from_venue_str,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(machine::py_run_tardis_machine_replay, m)?)?;
     m.add_function(wrap_pyfunction!(csv::py_load_tardis_deltas, m)?)?;
     m.add_function(wrap_pyfunction!(

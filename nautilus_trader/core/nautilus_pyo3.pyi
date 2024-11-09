@@ -4091,6 +4091,8 @@ class DatabentoLiveClient:
 
 # Tardis
 
+def tardis_exchange_from_venue_str(venue_str: str) -> list[str]: ...
+
 def load_tardis_deltas(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> list[OrderBookDelta]: ...  # noqa
 def load_tardis_depth10_from_snapshot5(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> list[OrderBookDepth10]: ...  # noqa
 def load_tardis_depth10_from_snapshot25(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> list[OrderBookDepth10]: ...  # noqa
@@ -4103,7 +4105,7 @@ def load_tardis_quotes_as_pycapsule(filepath: str, price_precision: int, size_pr
 def load_tardis_trades_as_pycapsule(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> object: ...  # noqa
 
 class TardisHttpClient:
-    def __init__(self, api_key: str | None = None, base_url: str | None = None, timeout_sec: int = 60) -> None: ...
+    def __init__(self, api_key: str | None = None, base_url: str | None = None, timeout_secs: int = 60) -> None: ...
     async def instrument(self, exchange: str, symbol: str) -> Instrument: ...
     async def instruments(self, exchange: str) -> list[Instrument]: ...
 
