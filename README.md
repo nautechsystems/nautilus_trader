@@ -153,9 +153,9 @@ See the [Integrations](https://nautilustrader.io/docs/latest/integrations/index.
 
 ### From PyPI
 
-We recommend running the platform with the latest stable version of Python, and in a virtual environment to isolate the dependencies.
+We recommend using the latest supported version of Python and setting up [nautilus_trader](https://pypi.org/project/nautilus_trader/) in a virtual environment to isolate dependencies
 
-To install the latest binary wheel from PyPI:
+To install the latest binary wheel (or sdist package) from PyPI using Pythons pip package manager:
 
     pip install -U nautilus_trader
 
@@ -170,7 +170,7 @@ For MacBook Pro M1/M2, make sure your Python installed using pyenv is configured
 
 See https://pyo3.rs/latest/getting_started#virtualenvs.
 
-It's possible to install from source using `pip` if you first install the build dependencies
+It's possible to install from source using pip if you first install the build dependencies
 as specified in the `pyproject.toml`. We highly recommend installing using [poetry](https://python-poetry.org/) as below.
 
 1. Install [rustup](https://rustup.rs/) (the Rust toolchain installer):
