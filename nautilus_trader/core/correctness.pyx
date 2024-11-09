@@ -116,7 +116,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=TypeError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' argument was not ``None``",
+            msg=f"\'{param}\' argument was not `None`",
         )
 
     @staticmethod
@@ -145,7 +145,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=TypeError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' argument was None",
+            msg=f"\'{param}\' argument was `None`",
         )
 
     @staticmethod
@@ -162,8 +162,8 @@ cdef class Condition:
         ----------
         argument : object
             The object to check.
-        expected : object or tuple of objects
-            The expected class type.
+        expected : type or tuple of types
+            The expected type(s).
         param : str
             The argument parameter name.
         ex_type : Exception, optional
@@ -181,7 +181,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=TypeError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' argument was not of type {expected}, was {type(argument)}",
+            msg=f"\'{param}\' argument not of type {expected}, was {type(argument)}",
         )
 
     @staticmethod
@@ -198,8 +198,8 @@ cdef class Condition:
         ----------
         argument : object
             The object to check.
-        expected : object
-            The expected class type (if not ``None``).
+        expected : type or tuple of types
+            The expected type(s) (if not ``None``).
         param : str
             The argument parameter name.
         ex_type : Exception, optional
@@ -242,7 +242,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=TypeError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' object was not callable",
+            msg=f"\'{param}\' object was not callable",
         )
 
     @staticmethod
@@ -306,9 +306,8 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=(f"The \'{param1}\' {type(argument1)} of {argument1} "
-                 f"was not equal to "
-                 f"the \'{param2}\' {type(argument2)} of {argument2}"),
+            msg=(f"\'{param1}\' {type(argument1)} of {argument1} "
+                 f"was not equal to \'{param2}\' {type(argument2)} of {argument2}"),
         )
 
     @staticmethod
@@ -347,8 +346,8 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=(f"The \'{param1}\' {type(object1)} of {object1} "
-                 f"was equal to the \'{param2}\' {type(object2)} of {object1}"),
+            msg=(f"\'{param1}\' {type(object1)} of {object1} "
+                 f"was equal to \'{param2}\' {type(object2)} of {object1}"),
         )
 
     @staticmethod
@@ -386,8 +385,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=TypeError,
             ex_type=ex_type,
-            msg=(f"The \'{param}\' collection contained an element with "
-                 f"a type other than {expected_type}"),
+            msg=f"\'{param}\' collection contained an element with type other than {expected_type}",
         )
 
     @staticmethod
@@ -463,8 +461,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=KeyError,
             ex_type=ex_type,
-            msg=(f"The \'{param1}\' {element} was not contained in "
-                 f"the \'{param2}\' collection"),
+            msg=f"\'{param1}\' {element} not contained in \'{param2}\' collection",
         )
 
     @staticmethod
@@ -505,8 +502,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=KeyError,
             ex_type=ex_type,
-            msg=(f"The \'{param1}\' {element} was already contained in "
-                 f"the \'{param2}\' collection"),
+            msg=f"\'{param1}\' {element} already contained in \'{param2}\' collection",
         )
 
     @staticmethod
@@ -537,7 +533,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' collection was empty",
+            msg=f"\'{param}\' collection was empty",
         )
 
     @staticmethod
@@ -568,7 +564,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' collection was not empty",
+            msg=f"\'{param}\' collection was not empty",
         )
 
     @staticmethod
@@ -597,7 +593,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' was not a positive real, was {value:_}",
+            msg=f"\'{param}\' not a positive real, was {value:_}",
         )
 
     @staticmethod
@@ -626,7 +622,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' was not a positive integer, was {value:_}",
+            msg=f"\'{param}\' not a positive integer, was {value:_}",
         )
 
     @staticmethod
@@ -655,7 +651,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' was not greater than or equal to zero (>= 0), was {value:_}",
+            msg=f"\'{param}\' not greater than or equal to zero (>= 0), was {value:_}",
         )
 
     @staticmethod
@@ -684,7 +680,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=f"The \'{param}\' was not greater than or equal to zero (>= 0), was {value:_}",
+            msg=f"\'{param}\' not greater than or equal to zero (>= 0), was {value:_}",
         )
 
     @staticmethod
@@ -727,8 +723,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=(f"The \'{param}\' was out of range [{start:_}, {end:_}]"
-                 f", was {value:_}"),
+            msg=f"\'{param}\' out of range [{start:_}, {end:_}], was {value:_}",
         )
 
     @staticmethod
@@ -767,8 +762,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=(f"The \'{param}\' was out of range [{start:_}, {end:_}]"
-                 f", was {value:_}"),
+            msg=f"\'{param}\' out of range [{start:_}, {end:_}], was {value:_}",
         )
 
     @staticmethod
@@ -799,8 +793,7 @@ cdef class Condition:
         raise make_exception(
             ex_default=ValueError,
             ex_type=ex_type,
-            msg=(f"The \'{param}\' string argument was invalid"
-                 f", was \'{argument}\'"),
+            msg=f"\'{param}\' string was invalid, was \'{argument}\'",
         )
 
 
