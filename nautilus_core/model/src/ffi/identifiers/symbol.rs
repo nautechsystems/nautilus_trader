@@ -15,7 +15,7 @@
 
 use std::ffi::c_char;
 
-use nautilus_core::ffi::string::{cstr_to_str, str_to_cstr};
+use nautilus_core::ffi::string::{cstr_as_str, str_to_cstr};
 
 use crate::identifiers::Symbol;
 
@@ -26,7 +26,7 @@ use crate::identifiers::Symbol;
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn symbol_new(ptr: *const c_char) -> Symbol {
-    Symbol::from(cstr_to_str(ptr))
+    Symbol::from(cstr_as_str(ptr))
 }
 
 #[no_mangle]

@@ -71,7 +71,7 @@ impl FromStr for InstrumentId {
             None => {
                 anyhow::bail!(err_message(
                     s,
-                    "Missing '.' separator between symbol and venue components".to_string()
+                    "missing '.' separator between symbol and venue components".to_string()
                 ))
             }
         }
@@ -79,22 +79,26 @@ impl FromStr for InstrumentId {
 }
 
 impl From<&str> for InstrumentId {
+    /// Creates a [`InstrumentId`] from a string slice.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If the `s` string is not valid.
     fn from(s: &str) -> Self {
-        match s.rsplit_once('.') {
-            Some((symbol_part, venue_part)) => Self {
-                symbol: Symbol::new(symbol_part),
-                venue: Venue::new(venue_part),
-            },
-            None => {
-                panic!(
-                    "{}",
-                    err_message(
-                        s,
-                        "Missing '.' separator between symbol and venue components".to_string()
-                    )
-                )
-            }
-        }
+        Self::from_str(s).unwrap()
+    }
+}
+
+impl From<String> for InstrumentId {
+    /// Creates a [`InstrumentId`] from a string.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If the `s` string is not valid.
+    fn from(s: String) -> Self {
+        Self::from(s.as_str())
     }
 }
 
@@ -152,7 +156,7 @@ mod tests {
 
     #[rstest]
     #[should_panic(
-        expected = "Error parsing `InstrumentId` from 'ETHUSDT-BINANCE': Missing '.' separator between symbol and venue components"
+        expected = "Error parsing `InstrumentId` from 'ETHUSDT-BINANCE': missing '.' separator between symbol and venue components"
     )]
     fn test_instrument_id_parse_failure_no_dot() {
         let _ = InstrumentId::from("ETHUSDT-BINANCE");

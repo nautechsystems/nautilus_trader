@@ -106,8 +106,14 @@ impl From<&str> for UnixNanos {
         Self(
             value
                 .parse()
-                .expect("Value is not a valid u64 string representation"),
+                .expect("`value` should be a valid integer string"),
         )
+    }
+}
+
+impl From<String> for UnixNanos {
+    fn from(value: String) -> Self {
+        Self::from(value.as_str())
     }
 }
 

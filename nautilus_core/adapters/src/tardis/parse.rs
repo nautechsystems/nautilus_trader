@@ -30,7 +30,7 @@ pub fn parse_symbol_str(symbol: &str) -> String {
 /// Parses a Nautilus instrument ID from the given Tardis `exchange` and `symbol` values.
 #[must_use]
 pub fn parse_instrument_id(exchange: &Exchange, symbol: &str) -> InstrumentId {
-    let symbol = Symbol::from(parse_symbol_str(symbol).as_str()); // TODO: implement AsRef
+    let symbol = Symbol::from(parse_symbol_str(symbol));
     let venue = Venue::from(exchange.as_venue_str());
     InstrumentId::new(symbol, venue)
 }

@@ -19,7 +19,7 @@ use std::{
 };
 
 use nautilus_core::{
-    ffi::{cvec::CVec, parsing::u8_as_bool, string::cstr_to_str},
+    ffi::{cvec::CVec, parsing::u8_as_bool, string::cstr_as_str},
     nanos::UnixNanos,
 };
 use pyo3::{
@@ -143,7 +143,7 @@ pub unsafe extern "C" fn test_clock_set_time_alert(
 ) {
     assert!(!callback_ptr.is_null());
 
-    let name = cstr_to_str(name_ptr);
+    let name = cstr_as_str(name_ptr);
     let callback = match callback_ptr == ffi::Py_None() {
         true => None,
         false => {
@@ -170,7 +170,7 @@ pub unsafe extern "C" fn test_clock_set_timer(
 ) {
     assert!(!callback_ptr.is_null());
 
-    let name = cstr_to_str(name_ptr);
+    let name = cstr_as_str(name_ptr);
     let stop_time_ns = match stop_time_ns.into() {
         0 => None,
         _ => Some(stop_time_ns),
@@ -223,7 +223,7 @@ pub unsafe extern "C" fn test_clock_next_time(
     clock: &mut TestClock_API,
     name_ptr: *const c_char,
 ) -> UnixNanos {
-    let name = cstr_to_str(name_ptr);
+    let name = cstr_as_str(name_ptr);
     clock.next_time_ns(name)
 }
 
@@ -235,7 +235,7 @@ pub unsafe extern "C" fn test_clock_cancel_timer(
     clock: &mut TestClock_API,
     name_ptr: *const c_char,
 ) {
-    let name = cstr_to_str(name_ptr);
+    let name = cstr_as_str(name_ptr);
     clock.cancel_timer(name);
 }
 
@@ -355,7 +355,7 @@ pub unsafe extern "C" fn live_clock_set_time_alert(
 ) {
     assert!(!callback_ptr.is_null());
 
-    let name = cstr_to_str(name_ptr);
+    let name = cstr_as_str(name_ptr);
     let callback = match callback_ptr == ffi::Py_None() {
         true => None,
         false => {
@@ -388,7 +388,7 @@ pub unsafe extern "C" fn live_clock_set_timer(
 ) {
     assert!(!callback_ptr.is_null());
 
-    let name = cstr_to_str(name_ptr);
+    let name = cstr_as_str(name_ptr);
     let stop_time_ns = match stop_time_ns.into() {
         0 => None,
         _ => Some(stop_time_ns),
@@ -413,7 +413,7 @@ pub unsafe extern "C" fn live_clock_next_time(
     clock: &mut LiveClock_API,
     name_ptr: *const c_char,
 ) -> UnixNanos {
-    let name = cstr_to_str(name_ptr);
+    let name = cstr_as_str(name_ptr);
     clock.next_time_ns(name)
 }
 
@@ -425,7 +425,7 @@ pub unsafe extern "C" fn live_clock_cancel_timer(
     clock: &mut LiveClock_API,
     name_ptr: *const c_char,
 ) {
-    let name = cstr_to_str(name_ptr);
+    let name = cstr_as_str(name_ptr);
     clock.cancel_timer(name);
 }
 

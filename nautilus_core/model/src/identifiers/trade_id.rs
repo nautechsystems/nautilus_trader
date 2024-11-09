@@ -75,35 +75,38 @@ impl TradeId {
         Self::new_checked(value).expect(FAILED)
     }
 
-    pub fn from_cstr(cstr: CString) -> Self {
-        let cstr_str = cstr
-            .to_str()
-            .expect("TradeId expected valid string as `CString`");
-        check_valid_string(cstr_str, stringify!(cstr)).expect(FAILED);
-        let bytes = cstr.as_bytes_with_nul();
-        // check that string is non-empty excluding '\0' and within the expected length
-        check_in_range_inclusive_usize(bytes.len(), 2, TRADE_ID_LEN, stringify!(cstr))
-            .expect(FAILED);
-        Self::from_valid_bytes(bytes)
-    }
-
     fn from_valid_bytes(bytes: &[u8]) -> Self {
+        // SAFETY: Assumes `bytes` has already been validated as non-empty and within max length.
         let mut value = [0; TRADE_ID_LEN];
         value[..bytes.len()].copy_from_slice(bytes);
         Self { value }
     }
 
     #[must_use]
-    pub fn to_cstr(&self) -> &CStr {
+    pub fn as_cstr(&self) -> &CStr {
         // SAFETY: Unwrap safe as we always store valid C strings
         // We use until nul because the values array may be padded with nul bytes
         CStr::from_bytes_until_nul(&self.value).unwrap()
     }
 }
 
+impl From<CString> for TradeId {
+    fn from(value: CString) -> Self {
+        let cstr_str = value
+            .to_str()
+            .expect("TradeId expected valid string as `CString`");
+        check_valid_string(cstr_str, stringify!(cstr)).expect(FAILED);
+        let bytes = value.as_bytes_with_nul();
+        // check that string is non-empty excluding '\0' and within the expected length
+        check_in_range_inclusive_usize(bytes.len(), 2, TRADE_ID_LEN, stringify!(cstr))
+            .expect(FAILED);
+        Self::from_valid_bytes(bytes)
+    }
+}
+
 impl Display for TradeId {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.to_cstr().to_str().unwrap())
+        write!(f, "{}", self.as_cstr().to_str().unwrap())
     }
 }
 

@@ -21,7 +21,7 @@ use std::{
 };
 
 use nautilus_core::{
-    ffi::string::{cstr_to_str, str_to_cstr},
+    ffi::string::{cstr_as_str, str_to_cstr},
     nanos::UnixNanos,
 };
 
@@ -164,7 +164,7 @@ pub extern "C" fn bar_type_aggregation_source(bar_type: &BarType) -> Aggregation
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn bar_type_check_parsing(ptr: *const c_char) -> *const c_char {
-    match BarType::from_str(cstr_to_str(ptr)) {
+    match BarType::from_str(cstr_as_str(ptr)) {
         Ok(_) => str_to_cstr(""),
         Err(e) => str_to_cstr(&e.to_string()),
     }
@@ -177,7 +177,7 @@ pub unsafe extern "C" fn bar_type_check_parsing(ptr: *const c_char) -> *const c_
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn bar_type_from_cstr(ptr: *const c_char) -> BarType {
-    BarType::from(cstr_to_str(ptr))
+    BarType::from(cstr_as_str(ptr))
 }
 
 #[no_mangle]

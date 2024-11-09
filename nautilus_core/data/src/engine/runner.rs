@@ -255,7 +255,7 @@ mod tests {
     async fn test_global_live_clock() {
         let live_clock = Rc::new(RefCell::new(LiveClock::new()));
         set_clock(live_clock.clone());
-        let alert_time = (live_clock.borrow().get_time_ns() + 100);
+        let alert_time = live_clock.borrow().get_time_ns() + 100;
 
         // component/actor adding an alert
         get_clock().borrow_mut().set_time_alert_ns(
