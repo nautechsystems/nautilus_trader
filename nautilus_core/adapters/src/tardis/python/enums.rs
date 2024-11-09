@@ -17,10 +17,11 @@ use pyo3::prelude::*;
 
 use crate::tardis::enums::Exchange;
 
+#[must_use]
 #[pyfunction(name = "tardis_exchange_from_venue_str")]
 pub fn py_tardis_exchange_from_venue_str(venue_str: &str) -> Vec<String> {
     Exchange::from_venue_str(venue_str)
         .iter()
-        .map(|exchange| exchange.to_string())
+        .map(ToString::to_string)
         .collect()
 }

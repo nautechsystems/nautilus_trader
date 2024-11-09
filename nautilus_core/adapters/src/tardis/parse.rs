@@ -22,6 +22,7 @@ use nautilus_model::{
 
 use super::enums::{Exchange, OptionType};
 
+#[must_use]
 pub fn parse_symbol_str(symbol: &str) -> String {
     symbol.to_uppercase()
 }

@@ -13,15 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use std::cell::RefCell;
-use std::rc::Rc;
-
-use crate::clock::Clock;
 use nautilus_model::identifiers::{PositionId, StrategyId, TraderId};
 
 use super::get_datetime_tag;
+use crate::clock::Clock;
 
 #[repr(C)]
 pub struct PositionIdGenerator {
@@ -72,14 +69,12 @@ impl PositionIdGenerator {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use crate::clock::TestClock;
+    use std::{cell::RefCell, rc::Rc};
+
     use nautilus_model::identifiers::{PositionId, StrategyId, TraderId};
     use rstest::rstest;
 
-    use std::cell::RefCell;
-    use std::rc::Rc;
-
-    use crate::generators::position_id::PositionIdGenerator;
+    use crate::{clock::TestClock, generators::position_id::PositionIdGenerator};
 
     fn get_position_id_generator() -> PositionIdGenerator {
         PositionIdGenerator::new(TraderId::default(), Rc::new(RefCell::new(TestClock::new())))
