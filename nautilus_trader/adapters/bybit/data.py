@@ -209,6 +209,7 @@ class BybitDataClient(LiveMarketDataClient):
         )
 
     async def _connect(self) -> None:
+        await self._instrument_provider.initialize()
 
         self._send_all_instruments_to_data_engine()
         self._update_instruments_task = self.create_task(self._update_instruments())

@@ -17,6 +17,7 @@ Provide factories to construct data and execution clients for dYdX.
 """
 
 import asyncio
+from functools import lru_cache
 
 from nautilus_trader.adapters.dydx.common.credentials import get_wallet_address
 from nautilus_trader.adapters.dydx.common.urls import get_grpc_base_url
@@ -72,8 +73,7 @@ def get_dydx_http_client(
     """
     Cache and return a dYdX HTTP client with the given key and secret.
 
-    If a cached client with matching key and secret already exists, then that cached
-    client will be returned.
+    If a cached client with matching parameters already exists, the cached client will be returned.
 
     Parameters
     ----------
@@ -101,6 +101,7 @@ def get_dydx_http_client(
     return HTTP_CLIENTS[http_base_url]
 
 
+@lru_cache(1)
 def get_dydx_instrument_provider(
     client: DYDXHttpClient,
     clock: LiveClock,
@@ -111,8 +112,7 @@ def get_dydx_instrument_provider(
     """
     Cache and return a dYdX instrument provider.
 
-    If a cached provider with matching key and secret already exists, then that
-    cached provider will be returned.
+    If a cached provider already exists, then that provider will be returned.
 
     Parameters
     ----------

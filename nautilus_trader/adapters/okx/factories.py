@@ -37,9 +37,6 @@ from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 
 
-HTTP_CLIENTS: dict[str, OKXHttpClient] = {}
-
-
 @lru_cache(1)
 def get_cached_okx_http_client(
     clock: LiveClock,
@@ -52,8 +49,7 @@ def get_cached_okx_http_client(
     """
     Cache and return a OKX HTTP client with the given key and secret.
 
-    If a cached client with matching key and secret already exists, then that cached
-    client will be returned.
+    If a cached client with matching parameters already exists, the cached client will be returned.
 
     Parameters
     ----------
@@ -75,12 +71,10 @@ def get_cached_okx_http_client(
     OKXHttpClient
 
     """
-    global HTTP_CLIENTS
     key = key or get_api_key(is_demo)
     secret = secret or get_api_secret(is_demo)
     passphrase = passphrase or get_passphrase(is_demo)
     base_url = base_url or get_http_base_url()
-    client_key: str = "|".join((key, secret, passphrase))
 
     # Setup rate limit quotas
     # OXX rate limits vary by endpoint, but rough average seems to be about 10 requests/second
@@ -105,20 +99,17 @@ def get_cached_okx_http_client(
     # ]
     ratelimiter_quotas = None
 
-    if client_key not in HTTP_CLIENTS:
-        client = OKXHttpClient(
-            clock=clock,
-            api_key=key,
-            api_secret=secret,
-            passphrase=passphrase,
-            base_url=base_url,
-            is_demo=is_demo,
-            default_timeout_secs=5,
-            ratelimiter_quotas=ratelimiter_quotas,
-            ratelimiter_default_quota=ratelimiter_default_quota,
-        )
-        HTTP_CLIENTS[client_key] = client
-    return HTTP_CLIENTS[client_key]
+    return OKXHttpClient(
+        clock=clock,
+        api_key=key,
+        api_secret=secret,
+        passphrase=passphrase,
+        base_url=base_url,
+        is_demo=is_demo,
+        default_timeout_secs=5,
+        ratelimiter_quotas=ratelimiter_quotas,
+        ratelimiter_default_quota=ratelimiter_default_quota,
+    )
 
 
 @lru_cache(1)
@@ -132,8 +123,7 @@ def get_cached_okx_instrument_provider(
     """
     Cache and return a OKX instrument provider.
 
-    If a cached provider with matching key and secret already exists, then that
-    cached provider will be returned.
+    If a cached provider already exists, then that provider will be returned.
 
     Parameters
     ----------

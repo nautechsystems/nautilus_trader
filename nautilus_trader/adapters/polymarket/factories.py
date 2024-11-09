@@ -53,6 +53,8 @@ def get_polymarket_http_client(
     """
     Cache and return a Polymarket CLOB client.
 
+    If a cached client with matching parameters already exists, the cached client will be returned.
+
     Parameters
     ----------
     api_key : str, optional
@@ -103,8 +105,7 @@ def get_polymarket_instrument_provider(
     """
     Cache and return a Polymarket instrument provider.
 
-    If a cached provider with matching key and secret already exists, then that
-    cached provider will be returned.
+    If a cached provider already exists, then that provider will be returned.
 
     Parameters
     ----------

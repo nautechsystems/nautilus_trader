@@ -230,6 +230,7 @@ class BybitExecutionClient(LiveExecutionClient):
         )
 
     async def _connect(self) -> None:
+        await self._instrument_provider.initialize()
         await self._update_account_state()
 
         await self._ws_client.connect()
