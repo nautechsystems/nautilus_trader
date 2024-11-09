@@ -42,7 +42,7 @@ pub struct ExecutionEngineConfig {
     pub debug: bool,
 }
 
-fn default_true() -> bool {
+const fn default_true() -> bool {
     true
 }
 

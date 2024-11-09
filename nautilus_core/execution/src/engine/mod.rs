@@ -34,15 +34,14 @@ use config::ExecutionEngineConfig;
 use nautilus_common::{
     cache::Cache, clock::Clock, generators::position_id::PositionIdGenerator, msgbus::MessageBus,
 };
-use nautilus_model::types::price::Price;
 use nautilus_model::{
     enums::{OmsType, OrderSide},
-    events::order::{filled::OrderFilled, OrderEventAny},
-    identifiers::{ClientId, InstrumentId, StrategyId, Venue},
+    events::order::{filled::OrderFilled, OrderEvent, OrderEventAny},
+    identifiers::{ClientId, InstrumentId, PositionId, StrategyId, Venue},
     instruments::any::InstrumentAny,
     orders::any::OrderAny,
     position::Position,
-    types::quantity::Quantity,
+    types::{price::Price, quantity::Quantity},
 };
 
 use crate::{
@@ -53,8 +52,6 @@ use crate::{
         TradingCommand,
     },
 };
-use nautilus_model::events::order::OrderEvent;
-use nautilus_model::identifiers::PositionId;
 
 pub struct ExecutionEngine {
     clock: Rc<RefCell<dyn Clock>>,
@@ -118,7 +115,7 @@ impl ExecutionEngine {
 
     #[must_use]
     pub fn get_external_order_claims_instruments(&self) -> HashSet<InstrumentId> {
-        self.external_order_claims.keys().cloned().collect()
+        self.external_order_claims.keys().copied().collect()
     }
 
     // -- REGISTRATION --------------------------------------------------------
@@ -233,17 +230,17 @@ impl ExecutionEngine {
             }
         }
 
-        let instrument = match self.cache.borrow().instrument(&order.instrument_id()) {
-            Some(instrument) => instrument,
-            None => {
+        let instrument =
+            if let Some(instrument) = self.cache.borrow().instrument(&order.instrument_id()) {
+                instrument
+            } else {
                 log::error!(
                     "Cannot handle submit order: no instrument found for {}, {}",
                     order.instrument_id(),
                     &command
                 );
                 return;
-            }
-        };
+            };
 
         // Handle quote quantity conversion
         // TODO: implemnent is_quote_quantity
@@ -268,7 +265,7 @@ impl ExecutionEngine {
     }
 
     pub fn handle_submit_order_list(&self, client: &ExecutionClient, command: SubmitOrderList) {
-        for order in command.order_list.orders.iter() {
+        for order in &command.order_list.orders {
             if !self.cache.borrow().order_exists(&order.client_order_id()) {
                 self.cache
                     .borrow_mut()
@@ -298,7 +295,11 @@ impl ExecutionEngine {
         todo!();
     }
 
-    pub fn handle_cancel_all_orders(&self, client: &ExecutionClient, command: CancelAllOrders) {
+    pub const fn handle_cancel_all_orders(
+        &self,
+        client: &ExecutionClient,
+        command: CancelAllOrders,
+    ) {
         // TODO
         // client.cancel_all_orders(command);
     }
@@ -403,7 +404,7 @@ impl ExecutionEngine {
 
     fn apply_event_to_order(&self, order: &mut OrderAny, event: OrderEventAny) {
         match order.apply(event.clone()) {
-            Ok(_) => {
+            Ok(()) => {
                 self.cache.borrow_mut().update_order(order).unwrap();
             }
             Err(e) => {

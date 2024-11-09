@@ -438,8 +438,7 @@ impl LiveTimer {
     pub fn is_expired(&self) -> bool {
         self.task_handle
             .as_ref()
-            .map(|handle| handle.is_finished())
-            .unwrap_or(false)
+            .is_some_and(tokio::task::JoinHandle::is_finished)
     }
 
     /// Starts the timer.

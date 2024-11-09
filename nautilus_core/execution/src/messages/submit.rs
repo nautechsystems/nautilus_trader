@@ -16,11 +16,13 @@
 use std::fmt::Display;
 
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
-use nautilus_model::identifiers::{
-    ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId, TraderId,
-    VenueOrderId,
+use nautilus_model::{
+    identifiers::{
+        ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId, TraderId,
+        VenueOrderId,
+    },
+    orders::any::OrderAny,
 };
-use nautilus_model::orders::any::OrderAny;
 use serde::{Deserialize, Serialize};
 
 // Fix: equality and default and builder
