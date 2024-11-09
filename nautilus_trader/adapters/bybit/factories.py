@@ -37,7 +37,7 @@ from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 
 
-HTTP_CLIENTS: dict[str, BybitHttpClient] = {}
+BYBIT_HTTP_CLIENTS: dict[str, BybitHttpClient] = {}
 
 
 def get_bybit_http_client(
@@ -71,10 +71,10 @@ def get_bybit_http_client(
 
     Returns
     -------
-    BinanceHttpClient
+    BybitHttpClient
 
     """
-    global HTTP_CLIENTS
+    global BYBIT_HTTP_CLIENTS
     key = key or get_api_key(is_demo, is_testnet)
     secret = secret or get_api_secret(is_demo, is_testnet)
     http_base_url = base_url or get_http_base_url(is_demo, is_testnet)
@@ -87,7 +87,7 @@ def get_bybit_http_client(
     ratelimiter_default_quota = Quota.rate_per_second(24)
     ratelimiter_quotas: list[tuple[str, Quota]] = []
 
-    if client_key not in HTTP_CLIENTS:
+    if client_key not in BYBIT_HTTP_CLIENTS:
         client = BybitHttpClient(
             clock=clock,
             api_key=key,
@@ -96,8 +96,8 @@ def get_bybit_http_client(
             ratelimiter_quotas=ratelimiter_quotas,
             ratelimiter_default_quota=ratelimiter_default_quota,
         )
-        HTTP_CLIENTS[client_key] = client
-    return HTTP_CLIENTS[client_key]
+        BYBIT_HTTP_CLIENTS[client_key] = client
+    return BYBIT_HTTP_CLIENTS[client_key]
 
 
 def get_bybit_instrument_provider(
