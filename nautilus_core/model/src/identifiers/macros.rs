@@ -46,5 +46,11 @@ macro_rules! impl_from_str_for_identifier {
                 Self::new(input)
             }
         }
+
+        impl From<String> for $ty {
+            fn from(input: String) -> Self {
+                Self::new(input.as_str())
+            }
+        }
     };
 }

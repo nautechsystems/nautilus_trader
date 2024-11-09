@@ -15,7 +15,7 @@
 
 use std::ffi::c_char;
 
-use nautilus_core::ffi::string::cstr_to_str;
+use nautilus_core::ffi::string::cstr_as_str;
 
 use crate::{identifiers::Venue, venues::VENUE_MAP};
 
@@ -26,7 +26,7 @@ use crate::{identifiers::Venue, venues::VENUE_MAP};
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn venue_new(ptr: *const c_char) -> Venue {
-    Venue::from(cstr_to_str(ptr))
+    Venue::from(cstr_as_str(ptr))
 }
 
 #[no_mangle]
@@ -44,7 +44,7 @@ pub extern "C" fn venue_is_synthetic(venue: &Venue) -> u8 {
 /// - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn venue_code_exists(code_ptr: *const c_char) -> u8 {
-    let code = cstr_to_str(code_ptr);
+    let code = cstr_as_str(code_ptr);
     u8::from(VENUE_MAP.lock().unwrap().contains_key(code))
 }
 
@@ -53,6 +53,6 @@ pub unsafe extern "C" fn venue_code_exists(code_ptr: *const c_char) -> u8 {
 /// - Assumes `code_ptr` is borrowed from a valid Python UTF-8 `str`.
 #[no_mangle]
 pub unsafe extern "C" fn venue_from_cstr_code(code_ptr: *const c_char) -> Venue {
-    let code = cstr_to_str(code_ptr);
+    let code = cstr_as_str(code_ptr);
     Venue::from_code(code).unwrap()
 }

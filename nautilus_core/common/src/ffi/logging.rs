@@ -21,7 +21,7 @@ use std::{
 use nautilus_core::{
     ffi::{
         parsing::{optional_bytes_to_json, u8_as_bool},
-        string::{cstr_to_str, cstr_to_ustr, optional_cstr_to_str},
+        string::{cstr_as_str, cstr_to_ustr, optional_cstr_to_str},
     },
     uuid::UUID4,
 };
@@ -138,7 +138,7 @@ pub unsafe extern "C" fn logger_log(
     message_ptr: *const c_char,
 ) {
     let component = cstr_to_ustr(component_ptr);
-    let message = cstr_to_str(message_ptr);
+    let message = cstr_as_str(message_ptr);
 
     logger::log(level, color, component, message);
 }
@@ -157,7 +157,7 @@ pub unsafe extern "C" fn logging_log_header(
     component_ptr: *const c_char,
 ) {
     let component = cstr_to_ustr(component_ptr);
-    let machine_id = cstr_to_str(machine_id_ptr);
+    let machine_id = cstr_as_str(machine_id_ptr);
     headers::log_header(trader_id, machine_id, instance_id, component);
 }
 

@@ -240,7 +240,7 @@ def test_instrument_id_from_str() -> None:
     [
         [
             "BTCUSDT",
-            "Error parsing `InstrumentId` from 'BTCUSDT': Missing '.' separator between symbol and venue components",
+            "Error parsing `InstrumentId` from 'BTCUSDT': missing '.' separator between symbol and venue components",
         ],
         [
             ".USDT",

@@ -86,7 +86,7 @@ impl FromStr for UUID4 {
 }
 
 impl From<&str> for UUID4 {
-    /// Creates a UUID4 from a string.
+    /// Creates a UUID4 from a string slice.
     ///
     /// # Panics
     ///
@@ -94,6 +94,18 @@ impl From<&str> for UUID4 {
     /// - If the `value` string is not a valid UUID.
     fn from(value: &str) -> Self {
         value.parse().expect("`value` should be a valid UUID")
+    }
+}
+
+impl From<String> for UUID4 {
+    /// Creates a UUID4 from a string.
+    ///
+    /// # Panics
+    ///
+    /// This function panics:
+    /// - If the `value` string is not a valid UUID.
+    fn from(value: String) -> Self {
+        Self::from(value.as_str())
     }
 }
 
