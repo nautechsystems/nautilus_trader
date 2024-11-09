@@ -14,6 +14,8 @@ Released on TBD (UTC).
 - Improved `OrderModifyRejected` handling of `reason` string (`None` is now allowed which will become the string `'None'`)
 
 ### Internal Improvements
+- Ported `RiskEngine` to Rust (#2035), thanks @Pushkarm029 and @twitu
+- Ported `ExecutionEngine` to Rust (#2048), thanks @twitu
 - Added globally shared data channels to send events from engines to Runner in Rust (#2042), thanks @twitu
 - Refined `InstrumentProvider` initialization behavior and logging
 - Refined `LiveTimer` cancel and performance testing
