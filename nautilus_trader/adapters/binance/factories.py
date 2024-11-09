@@ -43,9 +43,6 @@ from nautilus_trader.live.factories import LiveExecClientFactory
 from nautilus_trader.model.identifiers import Venue
 
 
-BINANCE_HTTP_CLIENTS: dict[str, BinanceHttpClient] = {}
-
-
 @lru_cache(1)
 def get_cached_binance_http_client(
     clock: LiveClock,
@@ -60,8 +57,7 @@ def get_cached_binance_http_client(
     """
     Cache and return a Binance HTTP client with the given key and secret.
 
-    If a cached client with matching key and secret already exists, then that
-    cached client will be returned.
+    If a cached client with matching parameters already exists, the cached client will be returned.
 
     Parameters
     ----------
@@ -87,8 +83,6 @@ def get_cached_binance_http_client(
     BinanceHttpClient
 
     """
-    global BINANCE_HTTP_CLIENTS
-
     api_key = api_key or get_api_key(account_type, is_testnet)
     api_secret = api_secret or get_api_secret(account_type, is_testnet)
     default_http_base_url = get_http_base_url(account_type, is_testnet, is_us)
@@ -123,21 +117,17 @@ def get_cached_binance_http_client(
             ("allOrders", Quota.rate_per_minute(int(1200 / 20))),
         ]
 
-    client_key: str = "|".join((account_type.value, api_key, api_secret))
-    if client_key not in BINANCE_HTTP_CLIENTS:
-        client = BinanceHttpClient(
-            clock=clock,
-            api_key=api_key,
-            api_secret=api_secret,
-            key_type=key_type,
-            rsa_private_key=rsa_private_key,
-            ed25519_private_key=ed25519_private_key,
-            base_url=base_url or default_http_base_url,
-            ratelimiter_quotas=ratelimiter_quotas,
-            ratelimiter_default_quota=ratelimiter_default_quota,
-        )
-        BINANCE_HTTP_CLIENTS[client_key] = client
-    return BINANCE_HTTP_CLIENTS[client_key]
+    return BinanceHttpClient(
+        clock=clock,
+        api_key=api_key,
+        api_secret=api_secret,
+        key_type=key_type,
+        rsa_private_key=rsa_private_key,
+        ed25519_private_key=ed25519_private_key,
+        base_url=base_url or default_http_base_url,
+        ratelimiter_quotas=ratelimiter_quotas,
+        ratelimiter_default_quota=ratelimiter_default_quota,
+    )
 
 
 @lru_cache(1)

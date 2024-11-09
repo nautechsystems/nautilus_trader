@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from functools import lru_cache
 
 from nautilus_trader.adapters.bybit.common.constants import BYBIT_ALL_PRODUCTS
 from nautilus_trader.adapters.bybit.common.credentials import get_api_key
@@ -37,9 +38,7 @@ from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
 
 
-BYBIT_HTTP_CLIENTS: dict[str, BybitHttpClient] = {}
-
-
+@lru_cache(1)
 def get_bybit_http_client(
     clock: LiveClock,
     key: str | None = None,
@@ -51,8 +50,7 @@ def get_bybit_http_client(
     """
     Cache and return a Bybit HTTP client with the given key and secret.
 
-    If a cached client with matching key and secret already exists, then that cached
-    client will be returned.
+    If a cached client with matching parameters already exists, the cached client will be returned.
 
     Parameters
     ----------
@@ -74,11 +72,9 @@ def get_bybit_http_client(
     BybitHttpClient
 
     """
-    global BYBIT_HTTP_CLIENTS
     key = key or get_api_key(is_demo, is_testnet)
     secret = secret or get_api_secret(is_demo, is_testnet)
     http_base_url = base_url or get_http_base_url(is_demo, is_testnet)
-    client_key: str = "|".join((key, secret))
 
     # Set up rate limit quotas
     # Current rate limit in bybit is 120 requests in any 5-second window,
@@ -87,30 +83,27 @@ def get_bybit_http_client(
     ratelimiter_default_quota = Quota.rate_per_second(24)
     ratelimiter_quotas: list[tuple[str, Quota]] = []
 
-    if client_key not in BYBIT_HTTP_CLIENTS:
-        client = BybitHttpClient(
-            clock=clock,
-            api_key=key,
-            api_secret=secret,
-            base_url=http_base_url,
-            ratelimiter_quotas=ratelimiter_quotas,
-            ratelimiter_default_quota=ratelimiter_default_quota,
-        )
-        BYBIT_HTTP_CLIENTS[client_key] = client
-    return BYBIT_HTTP_CLIENTS[client_key]
+    return BybitHttpClient(
+        clock=clock,
+        api_key=key,
+        api_secret=secret,
+        base_url=http_base_url,
+        ratelimiter_quotas=ratelimiter_quotas,
+        ratelimiter_default_quota=ratelimiter_default_quota,
+    )
 
 
+@lru_cache(1)
 def get_bybit_instrument_provider(
     client: BybitHttpClient,
     clock: LiveClock,
-    product_types: list[BybitProductType],
+    product_types: frozenset[BybitProductType],
     config: InstrumentProviderConfig,
 ) -> BybitInstrumentProvider:
     """
     Cache and return a Bybit instrument provider.
 
-    If a cached provider with matching key and secret already exists, then that
-    cached provider will be returned.
+    If a cached provider already exists, then that cached provider will be returned.
 
     Parameters
     ----------
@@ -134,7 +127,7 @@ def get_bybit_instrument_provider(
         client=client,
         config=config,
         clock=clock,
-        product_types=product_types,
+        product_types=list(product_types),
     )
 
 
@@ -187,7 +180,7 @@ class BybitLiveDataClientFactory(LiveDataClientFactory):
         provider = get_bybit_instrument_provider(
             client=client,
             clock=clock,
-            product_types=product_types,
+            product_types=frozenset(product_types),
             config=config.instrument_provider,
         )
         ws_base_urls: dict[BybitProductType, str] = {}
@@ -259,7 +252,7 @@ class BybitLiveExecClientFactory(LiveExecClientFactory):
         provider = get_bybit_instrument_provider(
             client=client,
             clock=clock,
-            product_types=config.product_types or BYBIT_ALL_PRODUCTS,
+            product_types=frozenset(config.product_types or BYBIT_ALL_PRODUCTS),
             config=config.instrument_provider,
         )
         base_url_ws: str = get_ws_base_url_private(config.testnet)
