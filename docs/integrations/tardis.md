@@ -75,9 +75,9 @@ This includes the following:
 The Tardis integration is designed to work seamlessly with other crypto exchange adapters provided by NautilusTrader.
 To ensure consistency, mappings between Nautilus symbology and native exchange symbols are provided.
 
-- **Binance**: Nautilus appends the suffix `-PERP` to all perpetual symbols. For more details refer to [Binance symbology](/docs/integrations/binance.md#symbology).
-- **Bybit**: Nautilus uses specific product category suffixes, including `-SPOT`, `-LINEAR`, `-INVERSE`, `-OPTION`. For more details refer to [Bybit symbology](/docs/integrations/bybit.md#symbology).
-- **dYdX**: Nautilus appends the suffix `-PERP` to all perpetual symbols. For more details refer to [dYdX symbology](/docs/integrations/dydx.md#symbology).
+- **Binance**: Nautilus appends the suffix `-PERP` to all perpetual symbols. For more details refer to [Binance symbology](./binance.md#symbology).
+- **Bybit**: Nautilus uses specific product category suffixes, including `-SPOT`, `-LINEAR`, `-INVERSE`, `-OPTION`. For more details refer to [Bybit symbology](./bybit.md#symbology).
+- **dYdX**: Nautilus appends the suffix `-PERP` to all perpetual symbols. For more details refer to [dYdX symbology](./dydx.md#symbology).
 
 Some exchanges on Tardis are partitioned into multiple venues. The table below outlines the mappings between Nautilus venues and corresponding Tardis exchanges:
 
