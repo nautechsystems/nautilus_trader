@@ -54,7 +54,7 @@ use crate::tardis::{
     config::TardisReplayConfig,
     http::TardisHttpClient,
     machine::{InstrumentMiniInfo, TardisMachineClient},
-    parse::parse_instrument_id_with_enum,
+    parse::parse_instrument_id,
 };
 
 struct DateCursor {
@@ -144,7 +144,7 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
 
     for (exchange, instruments) in &info_map {
         for inst in instruments {
-            let instrument_id = parse_instrument_id_with_enum(&inst.id, exchange);
+            let instrument_id = parse_instrument_id(exchange, &inst.id);
             let price_precision = precision_from_str(&inst.price_increment.to_string());
             let size_precision = precision_from_str(&inst.amount_increment.to_string());
             let info = InstrumentMiniInfo::new(instrument_id, price_precision, size_precision);

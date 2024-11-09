@@ -32,7 +32,7 @@ use ustr::Ustr;
 use super::types::InstrumentInfo;
 use crate::tardis::{
     enums::InstrumentType,
-    parse::{parse_instrument_id_with_enum, parse_option_kind},
+    parse::{parse_instrument_id, parse_option_kind},
 };
 
 #[must_use]
@@ -46,7 +46,7 @@ pub fn parse_instrument_any(info: InstrumentInfo, ts_init: UnixNanos) -> Instrum
 }
 
 fn parse_spot_instrument(info: InstrumentInfo, ts_init: UnixNanos) -> InstrumentAny {
-    let instrument_id = parse_instrument_id_with_enum(&info.id, &info.exchange);
+    let instrument_id = parse_instrument_id(&info.exchange, &info.id);
     let price_increment = get_price_increment(info.price_increment);
     let size_increment = get_size_increment(info.amount_increment);
 
@@ -78,7 +78,7 @@ fn parse_spot_instrument(info: InstrumentInfo, ts_init: UnixNanos) -> Instrument
 }
 
 fn parse_perp_instrument(info: InstrumentInfo, ts_init: UnixNanos) -> InstrumentAny {
-    let instrument_id = parse_instrument_id_with_enum(&info.id, &info.exchange);
+    let instrument_id = parse_instrument_id(&info.exchange, &info.id);
     let price_increment = get_price_increment(info.price_increment);
     let size_increment = get_size_increment(info.amount_increment);
 
@@ -118,7 +118,7 @@ fn parse_perp_instrument(info: InstrumentInfo, ts_init: UnixNanos) -> Instrument
 }
 
 fn parse_future_instrument(info: InstrumentInfo, ts_init: UnixNanos) -> InstrumentAny {
-    let instrument_id = parse_instrument_id_with_enum(&info.id, &info.exchange);
+    let instrument_id = parse_instrument_id(&info.exchange, &info.id);
     let price_increment = get_price_increment(info.price_increment);
     let size_increment = get_size_increment(info.amount_increment);
 
@@ -155,7 +155,7 @@ fn parse_future_instrument(info: InstrumentInfo, ts_init: UnixNanos) -> Instrume
 }
 
 fn parse_option_instrument(info: InstrumentInfo, ts_init: UnixNanos) -> InstrumentAny {
-    let instrument_id = parse_instrument_id_with_enum(&info.id, &info.exchange);
+    let instrument_id = parse_instrument_id(&info.exchange, &info.id);
     let price_increment = get_price_increment(info.price_increment);
 
     let instrument = OptionsContract::new(

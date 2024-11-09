@@ -15,11 +15,13 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::tardis::enums::Exchange;
+
 /// Represents a Tardis format order book update record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TardisBookUpdateRecord {
     /// The exchange ID.
-    pub exchange: String,
+    pub exchange: Exchange,
     /// The instrument symbol as provided by the exchange.
     pub symbol: String,
     // UNIX microseconds timestamp provided by the exchange.
@@ -40,7 +42,7 @@ pub struct TardisBookUpdateRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TardisOrderBookSnapshot5Record {
     /// The exchange ID.
-    pub exchange: String,
+    pub exchange: Exchange,
     /// The instrument symbol as provided by the exchange.
     pub symbol: String,
     // UNIX microseconds timestamp provided by the exchange.
@@ -93,7 +95,7 @@ pub struct TardisOrderBookSnapshot5Record {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TardisOrderBookSnapshot25Record {
     /// The exchange ID.
-    pub exchange: String,
+    pub exchange: Exchange,
     /// The instrument symbol as provided by the exchange.
     pub symbol: String,
     // UNIX microseconds timestamp provided by the exchange.
@@ -231,7 +233,7 @@ pub struct TardisOrderBookSnapshot25Record {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TardisQuoteRecord {
     /// The exchande ID.
-    pub exchange: String,
+    pub exchange: Exchange,
     /// The instrument symbol as provided by the exchange.
     pub symbol: String,
     // UNIX microseconds timestamp provided by the exchange.
@@ -252,7 +254,7 @@ pub struct TardisQuoteRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TardisTradeRecord {
     /// The exchande ID.
-    pub exchange: String,
+    pub exchange: Exchange,
     /// The instrument symbol as provided by the exchange.
     pub symbol: String,
     // UNIX microseconds timestamp provided by the exchange.
