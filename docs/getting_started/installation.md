@@ -127,3 +127,7 @@ To manage the Redis container:
 
 - Start it with `docker start redis`
 - Stop it with `docker stop redis`
+
+:::tip
+We recommend using [Redis Insight](https://redis.io/insight/) as a GUI to visualize and debug Redis data efficiently.
+:::
