@@ -32,6 +32,8 @@ pub use self::{
     modify::ModifyOrder, query::QueryOrder, submit::SubmitOrder, submit_list::SubmitOrderList,
 };
 
+// TODO
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Display)]
 pub enum TradingCommand {
     SubmitOrder(SubmitOrder),
