@@ -53,6 +53,7 @@ pub struct WebSocketConfig {
     pub heartbeat: Option<u64>,
     pub heartbeat_msg: Option<String>,
     pub ping_handler: Option<Arc<PyObject>>,
+    pub max_reconnection_tries: Option<u64>,
 }
 
 /// `WebSocketClient` connects to a websocket server to read and send messages.
@@ -82,6 +83,7 @@ impl WebSocketClientInner {
     pub async fn connect_url(config: WebSocketConfig) -> Result<Self, Error> {
         install_cryptographic_provider();
 
+        #[allow(unused_variables)]
         let WebSocketConfig {
             url,
             handler,
@@ -89,6 +91,7 @@ impl WebSocketClientInner {
             headers,
             heartbeat_msg,
             ping_handler,
+            max_reconnection_tries,
         } = &config;
         let (writer, reader) = Self::connect_with_server(url, headers.clone()).await?;
         let writer = Arc::new(Mutex::new(writer));
@@ -333,7 +336,7 @@ impl WebSocketClient {
         default_quota: Option<Quota>,
     ) -> Result<Self, Error> {
         tracing::debug!("Connecting");
-        let inner = WebSocketClientInner::connect_url(config).await?;
+        let inner = WebSocketClientInner::connect_url(config.clone()).await?;
         let writer = inner.writer.clone();
         let disconnect_mode = Arc::new(AtomicBool::new(false));
 
@@ -342,6 +345,7 @@ impl WebSocketClient {
             disconnect_mode.clone(),
             post_reconnection,
             post_disconnection,
+            config.max_reconnection_tries,
         );
         let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
 
@@ -408,8 +412,10 @@ impl WebSocketClient {
         disconnect_mode: Arc<AtomicBool>,
         post_reconnection: Option<PyObject>,
         post_disconnection: Option<PyObject>,
+        max_reconnection_tries: Option<u64>,
     ) -> task::JoinHandle<()> {
         task::spawn(async move {
+            let mut retry_counter: u64 = 0;
             loop {
                 sleep(Duration::from_millis(100)).await;
 
@@ -419,6 +425,8 @@ impl WebSocketClient {
                     (false, false) => match inner.reconnect().await {
                         Ok(()) => {
                             tracing::debug!("Reconnected successfully");
+                            retry_counter = 0;
+
                             if let Some(ref handler) = post_reconnection {
                                 Python::with_gil(|py| match handler.call0(py) {
                                     Ok(_) => tracing::debug!("Called `post_reconnection` handler"),
@@ -431,8 +439,19 @@ impl WebSocketClient {
                             }
                         }
                         Err(e) => {
-                            tracing::error!("Reconnect failed {e}");
-                            break;
+                            if let Some(max_reconnection_tries) = max_reconnection_tries {
+                                if retry_counter < max_reconnection_tries {
+                                    retry_counter += 1;
+                                    tracing::warn!("Reconnect failed {e}. Retry {retry_counter}/{max_reconnection_tries}");
+                                    sleep(Duration::from_millis(1000)).await;
+                                } else {
+                                    tracing::error!("Reconnect failed {e}");
+                                    break;
+                                }
+                            } else {
+                                tracing::error!("Reconnect failed {e}");
+                                break;
+                            }
                         }
                     },
                     (true, true) => {
