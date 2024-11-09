@@ -26,7 +26,9 @@ use crate::{
     logging::{
         self, headers,
         logger::{self, LogGuard, LoggerConfig},
-        logging_set_bypass, map_log_level_to_filter, parse_level_filter_str,
+        logging_clock_set_realtime_mode, logging_clock_set_static_mode,
+        logging_clock_set_static_time, logging_set_bypass, map_log_level_to_filter,
+        parse_level_filter_str,
         writer::FileWriterConfig,
     },
 };
@@ -154,4 +156,22 @@ pub fn py_log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, 
 #[pyo3(name = "log_sysinfo")]
 pub fn py_log_sysinfo(component: &str) {
     headers::log_sysinfo(Ustr::from(component));
+}
+
+#[pyfunction]
+#[pyo3(name = "logging_clock_set_static_mode")]
+pub fn py_logging_clock_set_static_mode() {
+    logging_clock_set_static_mode();
+}
+
+#[pyfunction]
+#[pyo3(name = "logging_clock_set_realtime_mode")]
+pub fn py_logging_clock_set_realtime_mode() {
+    logging_clock_set_realtime_mode();
+}
+
+#[pyfunction]
+#[pyo3(name = "logging_clock_set_static_time")]
+pub fn py_logging_clock_set_static_time(time_ns: u64) {
+    logging_clock_set_static_time(time_ns);
 }
