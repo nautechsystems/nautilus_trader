@@ -23,7 +23,6 @@ from nautilus_trader.adapters.binance.common.constants import BINANCE_MIN_CALLBA
 from nautilus_trader.adapters.binance.common.constants import BINANCE_VENUE
 from nautilus_trader.adapters.binance.common.enums import BinanceAccountType
 from nautilus_trader.adapters.binance.common.enums import BinanceEnumParser
-from nautilus_trader.adapters.binance.common.enums import BinanceErrorCode
 from nautilus_trader.adapters.binance.common.enums import BinanceFuturesPositionSide
 from nautilus_trader.adapters.binance.common.enums import BinanceTimeInForce
 from nautilus_trader.adapters.binance.common.schemas.account import BinanceOrder
@@ -906,7 +905,6 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         )
 
     def _get_cached_instrument_id(self, symbol: str) -> InstrumentId:
-        # Parse instrument ID
         nautilus_symbol: str = BinanceSymbol(symbol).parse_as_nautilus(
             self._binance_account_type,
         )
@@ -946,6 +944,15 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 quantity=str(command.quantity) if command.quantity else str(order.quantity),
                 price=str(command.price) if command.price else str(order.price),
             )
+            if not retry_manager.result:
+                self.generate_order_modify_reject(
+                    command.strategy_id,
+                    command.instrument_id,
+                    command.client_order_id,
+                    command.venue_order_id,
+                    retry_manager.message,
+                    self._clock.timestamp_ns(),
+                )
 
     async def _cancel_order(self, command: CancelOrder) -> None:
         async with self._retry_manager_pool as retry_manager:
@@ -957,6 +964,15 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
                 client_order_id=command.client_order_id,
                 venue_order_id=command.venue_order_id,
             )
+            if not retry_manager.result:
+                self.generate_order_cancel_rejected(
+                    command.strategy_id,
+                    command.instrument_id,
+                    command.client_order_id,
+                    command.venue_order_id,
+                    retry_manager.message,
+                    self._clock.timestamp_ns(),
+                )
 
     async def _cancel_all_orders(self, command: CancelAllOrders) -> None:
         open_orders_strategy: list[Order] = self._cache.orders_open(
@@ -969,26 +985,56 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             instrument_id=command.instrument_id,
         )
 
-        try:
-            if open_orders_total_count == len(open_orders_strategy):
-                await self._http_account.cancel_all_open_orders(
+        if open_orders_total_count == len(open_orders_strategy):
+            async with self._retry_manager_pool as retry_manager:
+                await retry_manager.run(
+                    "cancel_all_open_orders",
+                    [command.instrument_id],
+                    self._http_account.cancel_all_open_orders,
                     symbol=command.instrument_id.symbol.value,
                 )
-            else:
-                for order in open_orders_strategy:
-                    await self._cancel_order_single(
-                        instrument_id=order.instrument_id,
-                        client_order_id=order.client_order_id,
-                        venue_order_id=order.venue_order_id,
-                    )
-        except BinanceError as e:
-            if "Unknown order sent" in e.message:
-                self._log.info(
-                    "No open orders to cancel according to Binance",
-                    LogColor.GREEN,
+                if not retry_manager.result:
+                    if retry_manager.message is not None:
+                        if "Unknown order sent" in retry_manager.message:
+                            self._log.info(
+                                "No open orders to cancel according to Binance",
+                                LogColor.GREEN,
+                            )
+                            return
+                    for order in open_orders_strategy:
+                        if order.is_closed:
+                            continue
+                        self.generate_order_cancel_rejected(
+                            order.strategy_id,
+                            order.instrument_id,
+                            order.client_order_id,
+                            order.venue_order_id,
+                            retry_manager.message,
+                            self._clock.timestamp_ns(),
+                        )
+                return
+
+        # Not every strategy order is included in all orders - so must cancel individually
+        # TODO: A future improvement could be to asyncio.gather all cancel tasks
+        for order in open_orders_strategy:
+            async with self._retry_manager_pool as retry_manager:
+                await retry_manager.run(
+                    "cancel_order",
+                    [order.client_order_id, order.venue_order_id],
+                    self._cancel_order_single,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
                 )
-            else:
-                self._log.exception(f"Cannot cancel open orders: {e.message}", e)
+                if not retry_manager.result:
+                    self.generate_order_cancel_rejected(
+                        order.strategy_id,
+                        order.instrument_id,
+                        order.client_order_id,
+                        order.venue_order_id,
+                        retry_manager.message,
+                        self._clock.timestamp_ns(),
+                    )
 
     async def _cancel_order_single(
         self,
@@ -1008,24 +1054,11 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
             )
             return
 
-        try:
-            await self._http_account.cancel_order(
-                symbol=instrument_id.symbol.value,
-                order_id=int(venue_order_id.value) if venue_order_id else None,
-                orig_client_order_id=client_order_id.value if client_order_id else None,
-            )
-        except BinanceError as e:
-            error_code = BinanceErrorCode(e.message["code"])
-            if error_code == BinanceErrorCode.CANCEL_REJECTED:
-                self._log.warning(f"Cancel rejected: {e.message}")
-            else:
-                self._log.exception(
-                    f"Cannot cancel order "
-                    f"{client_order_id!r}, "
-                    f"{venue_order_id!r}: "
-                    f"{e.message}",
-                    e,
-                )
+        await self._http_account.cancel_order(
+            symbol=instrument_id.symbol.value,
+            order_id=int(venue_order_id.value) if venue_order_id else None,
+            orig_client_order_id=client_order_id.value if client_order_id else None,
+        )
 
     # -- WEBSOCKET EVENT HANDLERS -----------------------------------------------------------------
 
