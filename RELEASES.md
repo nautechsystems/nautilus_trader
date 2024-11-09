@@ -6,6 +6,9 @@ Released on TBD (UTC).
 - Added `Portfolio.realized_pnl(...)` method for per instrument realized PnL (based on positions)
 - Added `Portfolio.realized_pnls(...)` method for per venue realized PnL (based on positions)
 - Added `PolymarketExecClientConfig.generate_order_history_from_trades` config setting (default False and not currently recommended)
+- Improved `OrderRejected` handling of `reason` string (`None` is now allowed which will become the string `'None'`)
+- Improved `OrderCancelRejected` handling of `reason` string (`None` is now allowed which will become the string `'None'`)
+- Improved `OrderModifyRejected` handling of `reason` string (`None` is now allowed which will become the string `'None'`)
 
 ### Internal Improvements
 - Added globally shared data channels to send events from engines to Runner in Rust (#2042), thanks @twitu
