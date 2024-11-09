@@ -37,9 +37,7 @@ from nautilus_trader.model.identifiers import Venue
 
 class DYDXInstrumentProvider(InstrumentProvider):
     """
-    Instrument provider for the dYdX venue.
-
-    Provides a way to load instruments from dYdX.
+    Provides Nautilus instrument definitions from dYdX.
 
     Parameters
     ----------

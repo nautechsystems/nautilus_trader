@@ -33,7 +33,7 @@ from nautilus_trader.model.instruments import BinaryOption
 
 class PolymarketInstrumentProvider(InstrumentProvider):
     """
-    Provides a way to load instruments from Polymarket.
+    Provides Nautilus instrument definitions from Polymarket.
 
     Parameters
     ----------

@@ -39,7 +39,7 @@ from nautilus_trader.model.instruments import Instrument
 
 class OKXInstrumentProvider(InstrumentProvider):
     """
-    Provides a way to load instruments from OKX.
+    Provides Nautilus instrument definitions from OKX.
 
     Parameters
     ----------
