@@ -13,20 +13,22 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
+from pathlib import Path
 
-from nautilus_trader.core import nautilus_pyo3
+import msgspec
+
+from nautilus_trader.adapters.polymarket.factories import get_polymarket_http_client
 
 
-async def run():
-    http_client = nautilus_pyo3.TardisHttpClient()
+def save_historical_trades() -> None:
+    client = get_polymarket_http_client()
 
-    pyo3_instrument = await http_client.instrument("bitmex", "xbtusd")
-    print(f"Received: {pyo3_instrument}")
+    response = client.get_trades()
+    print(response)
 
-    pyo3_instruments = await http_client.instruments("bitmex")
-    print(f"Received: {len(pyo3_instruments)} instruments")
+    path = Path("trades_history.json")
+    path.write_bytes(msgspec.json.encode(response))
 
 
 if __name__ == "__main__":
-    asyncio.run(run())
+    save_historical_trades()

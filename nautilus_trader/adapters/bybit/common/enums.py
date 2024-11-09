@@ -129,7 +129,6 @@ class BybitOrderStatus(Enum):
     UNTRIGGERED = "Untriggered"
     TRIGGERED = "Triggered"
     DEACTIVATED = "Deactivated"
-    ACTIVE = "Active"
 
 
 @unique
@@ -375,6 +374,7 @@ class BybitEnumParser:
             (OrderType.MARKET, BybitOrderStatus.REJECTED): OrderStatus.REJECTED,
             (OrderType.MARKET, BybitOrderStatus.CANCELED): OrderStatus.CANCELED,
             (OrderType.MARKET, BybitOrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
+            (OrderType.MARKET, BybitOrderStatus.PARTIALLY_FILLED_CANCELED): OrderStatus.CANCELED,
             (OrderType.MARKET, BybitOrderStatus.FILLED): OrderStatus.FILLED,
 
             (OrderType.LIMIT, BybitOrderStatus.CREATED): OrderStatus.SUBMITTED,
@@ -382,6 +382,7 @@ class BybitEnumParser:
             (OrderType.LIMIT, BybitOrderStatus.REJECTED): OrderStatus.REJECTED,
             (OrderType.LIMIT, BybitOrderStatus.CANCELED): OrderStatus.CANCELED,
             (OrderType.LIMIT, BybitOrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
+            (OrderType.LIMIT, BybitOrderStatus.PARTIALLY_FILLED_CANCELED): OrderStatus.CANCELED,
             (OrderType.LIMIT, BybitOrderStatus.FILLED): OrderStatus.FILLED,
 
             (OrderType.MARKET_IF_TOUCHED, BybitOrderStatus.CREATED): OrderStatus.SUBMITTED,
@@ -391,6 +392,7 @@ class BybitEnumParser:
             (OrderType.MARKET_IF_TOUCHED, BybitOrderStatus.UNTRIGGERED): OrderStatus.ACCEPTED,
             (OrderType.MARKET_IF_TOUCHED, BybitOrderStatus.DEACTIVATED): OrderStatus.CANCELED,
             (OrderType.MARKET_IF_TOUCHED, BybitOrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
+            (OrderType.MARKET_IF_TOUCHED, BybitOrderStatus.PARTIALLY_FILLED_CANCELED): OrderStatus.CANCELED,
             (OrderType.MARKET_IF_TOUCHED, BybitOrderStatus.FILLED): OrderStatus.FILLED,
 
             (OrderType.LIMIT_IF_TOUCHED, BybitOrderStatus.CREATED): OrderStatus.SUBMITTED,
@@ -400,6 +402,7 @@ class BybitEnumParser:
             (OrderType.LIMIT_IF_TOUCHED, BybitOrderStatus.UNTRIGGERED): OrderStatus.ACCEPTED,
             (OrderType.LIMIT_IF_TOUCHED, BybitOrderStatus.DEACTIVATED): OrderStatus.CANCELED,
             (OrderType.LIMIT_IF_TOUCHED, BybitOrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
+            (OrderType.LIMIT_IF_TOUCHED, BybitOrderStatus.PARTIALLY_FILLED_CANCELED): OrderStatus.CANCELED,
             (OrderType.LIMIT_IF_TOUCHED, BybitOrderStatus.FILLED): OrderStatus.FILLED,
 
             (OrderType.STOP_MARKET, BybitOrderStatus.CREATED): OrderStatus.SUBMITTED,
@@ -410,6 +413,7 @@ class BybitEnumParser:
             (OrderType.STOP_MARKET, BybitOrderStatus.TRIGGERED): OrderStatus.TRIGGERED,
             (OrderType.STOP_MARKET, BybitOrderStatus.DEACTIVATED): OrderStatus.CANCELED,
             (OrderType.STOP_MARKET, BybitOrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
+            (OrderType.STOP_MARKET, BybitOrderStatus.PARTIALLY_FILLED_CANCELED): OrderStatus.CANCELED,
             (OrderType.STOP_MARKET, BybitOrderStatus.FILLED): OrderStatus.FILLED,
 
             (OrderType.STOP_LIMIT, BybitOrderStatus.CREATED): OrderStatus.SUBMITTED,
@@ -420,6 +424,7 @@ class BybitEnumParser:
             (OrderType.STOP_LIMIT, BybitOrderStatus.TRIGGERED): OrderStatus.TRIGGERED,
             (OrderType.STOP_LIMIT, BybitOrderStatus.DEACTIVATED): OrderStatus.CANCELED,
             (OrderType.STOP_LIMIT, BybitOrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
+            (OrderType.STOP_LIMIT, BybitOrderStatus.PARTIALLY_FILLED_CANCELED): OrderStatus.CANCELED,
             (OrderType.STOP_LIMIT, BybitOrderStatus.FILLED): OrderStatus.FILLED,
 
             (OrderType.TRAILING_STOP_MARKET, BybitOrderStatus.CREATED): OrderStatus.SUBMITTED,
@@ -430,6 +435,7 @@ class BybitEnumParser:
             (OrderType.TRAILING_STOP_MARKET, BybitOrderStatus.TRIGGERED): OrderStatus.TRIGGERED,
             (OrderType.TRAILING_STOP_MARKET, BybitOrderStatus.DEACTIVATED): OrderStatus.CANCELED,
             (OrderType.TRAILING_STOP_MARKET, BybitOrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
+            (OrderType.TRAILING_STOP_MARKET, BybitOrderStatus.PARTIALLY_FILLED_CANCELED): OrderStatus.CANCELED,
             (OrderType.TRAILING_STOP_MARKET, BybitOrderStatus.FILLED): OrderStatus.FILLED,
 
             (OrderType.TRAILING_STOP_LIMIT, BybitOrderStatus.CREATED): OrderStatus.SUBMITTED,
@@ -440,6 +446,7 @@ class BybitEnumParser:
             (OrderType.TRAILING_STOP_LIMIT, BybitOrderStatus.TRIGGERED): OrderStatus.TRIGGERED,
             (OrderType.TRAILING_STOP_LIMIT, BybitOrderStatus.DEACTIVATED): OrderStatus.CANCELED,
             (OrderType.TRAILING_STOP_LIMIT, BybitOrderStatus.PARTIALLY_FILLED): OrderStatus.PARTIALLY_FILLED,
+            (OrderType.TRAILING_STOP_LIMIT, BybitOrderStatus.PARTIALLY_FILLED_CANCELED): OrderStatus.CANCELED,
             (OrderType.TRAILING_STOP_LIMIT, BybitOrderStatus.FILLED): OrderStatus.FILLED,
         }
         # fmt: on

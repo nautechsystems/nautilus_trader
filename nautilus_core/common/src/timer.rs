@@ -29,7 +29,7 @@ use std::{
     num::NonZeroU64,
     rc::Rc,
     sync::{
-        atomic::{self, AtomicBool, AtomicU64},
+        atomic::{self, AtomicU64},
         Arc,
     },
 };
@@ -44,7 +44,7 @@ use nautilus_core::{
 #[cfg(feature = "python")]
 use pyo3::{PyObject, Python};
 use tokio::{
-    sync::oneshot,
+    task::JoinHandle,
     time::{Duration, Instant},
 };
 use ustr::Ustr;
@@ -349,9 +349,8 @@ pub struct LiveTimer {
     /// The optional stop time of the timer in UNIX nanoseconds.
     pub stop_time_ns: Option<UnixNanos>,
     next_time_ns: Arc<AtomicU64>,
-    is_expired: Arc<AtomicBool>,
     callback: TimeEventCallback,
-    canceler: Option<oneshot::Sender<()>>,
+    task_handle: Option<JoinHandle<()>>,
     #[cfg(feature = "clock_v2")]
     heap: Arc<Mutex<BinaryHeap<TimeEvent>>>,
 }
@@ -374,8 +373,8 @@ impl LiveTimer {
         callback: TimeEventCallback,
     ) -> Self {
         check_valid_string(name, stringify!(name)).expect(FAILED);
-        // SAFETY: Guaranteed to be non-zero
-        let interval_ns = NonZeroU64::new(std::cmp::max(interval_ns, 1)).unwrap();
+        let interval_ns =
+            NonZeroU64::new(std::cmp::max(interval_ns, 1)).expect("`interval_ns` must be non-zero");
 
         log::debug!("Creating timer '{name}'");
         Self {
@@ -384,9 +383,8 @@ impl LiveTimer {
             start_time_ns,
             stop_time_ns,
             next_time_ns: Arc::new(AtomicU64::new(start_time_ns.as_u64() + interval_ns.get())),
-            is_expired: Arc::new(AtomicBool::new(false)),
             callback,
-            canceler: None,
+            task_handle: None,
         }
     }
 
@@ -418,10 +416,9 @@ impl LiveTimer {
             start_time_ns,
             stop_time_ns,
             next_time_ns: Arc::new(AtomicU64::new(start_time_ns.as_u64() + interval_ns.get())),
-            is_expired: Arc::new(AtomicBool::new(false)),
             callback,
-            canceler: None,
             heap,
+            task_handle: None,
         }
     }
 
@@ -436,9 +433,13 @@ impl LiveTimer {
     /// Returns whether the timer is expired.
     ///
     /// An expired timer will not trigger any further events.
+    /// A timer that has not been started is not expired.
     #[must_use]
     pub fn is_expired(&self) -> bool {
-        self.is_expired.load(atomic::Ordering::SeqCst)
+        self.task_handle
+            .as_ref()
+            .map(|handle| handle.is_finished())
+            .unwrap_or(false)
     }
 
     /// Starts the timer.
@@ -451,30 +452,17 @@ impl LiveTimer {
         let next_time_ns = self.next_time_ns.load(atomic::Ordering::SeqCst);
         let next_time_atomic = self.next_time_ns.clone();
         let interval_ns = self.interval_ns.get();
-        let is_expired = self.is_expired.clone();
-
-        // TODO: Live timer is currently multi-threaded
-        // and only supports the python event handler
-        #[cfg(feature = "python")]
-        let callback = match self.callback.clone() {
-            TimeEventCallback::Python(callback) => callback,
-            TimeEventCallback::Rust(_) => {
-                panic!("Live timer does not support Rust callbacks right now")
-            }
-        };
 
         // Floor the next time to the nearest microsecond which is within the timers accuracy
         let mut next_time_ns = UnixNanos::from(floor_to_nearest_microsecond(next_time_ns));
 
-        // Set up oneshot channel for canceling timer task
-        let (cancel_tx, mut cancel_rx) = oneshot::channel();
-        self.canceler = Some(cancel_tx);
-
         #[cfg(feature = "clock_v2")]
         let heap = self.heap.clone();
 
+        let callback = self.callback.clone();
         let rt = get_runtime();
-        rt.spawn(async move {
+
+        let handle = rt.spawn(async move {
             let clock = get_atomic_clock_realtime();
             let now_ns = clock.get_time_ns();
 
@@ -492,52 +480,50 @@ impl LiveTimer {
             loop {
                 // SAFETY: `timer.tick` is cancellation safe, if the cancel branch completes
                 // first then no tick has been consumed (no event was ready).
-                tokio::select! {
-                    _ = timer.tick() => {
-                        let now_ns = clock.get_time_ns();
-                        #[cfg(feature = "python")]
-                        call_python_with_time_event(event_name, next_time_ns, now_ns, &callback);
+                timer.tick().await;
+                let now_ns = clock.get_time_ns();
 
-                        #[cfg(feature = "clock_v2")]
-                        {
-                            let event = TimeEvent::new(event_name, UUID4::new(), next_time_ns, now_ns);
-                            heap.lock().await.push(event);
+                #[cfg(feature = "python")]
+                {
+                    match callback {
+                        TimeEventCallback::Python(ref callback) => {
+                            call_python_with_time_event(event_name, next_time_ns, now_ns, callback);
                         }
+                        // Note: Clock v1 style path should not be called with Rust callback
+                        TimeEventCallback::Rust(_) => {}
+                    };
+                }
 
-                        // Prepare next time interval
-                        next_time_ns += interval_ns;
-                        next_time_atomic.store(next_time_ns.as_u64(), atomic::Ordering::SeqCst);
+                #[cfg(feature = "clock_v2")]
+                {
+                    let event = TimeEvent::new(event_name, UUID4::new(), next_time_ns, now_ns);
+                    heap.lock().await.push(event);
+                }
 
-                        // Check if expired
-                        if let Some(stop_time_ns) = stop_time_ns {
-                            if std::cmp::max(next_time_ns, now_ns) >= stop_time_ns {
-                                break; // Timer expired
-                            }
-                        }
-                    },
-                    _ = (&mut cancel_rx) => {
-                        tracing::trace!("Received timer cancel");
-                        break; // Timer canceled
-                    },
+                // Prepare next time interval
+                next_time_ns += interval_ns;
+                next_time_atomic.store(next_time_ns.as_u64(), atomic::Ordering::SeqCst);
+
+                // Check if expired
+                if let Some(stop_time_ns) = stop_time_ns {
+                    if std::cmp::max(next_time_ns, now_ns) >= stop_time_ns {
+                        break; // Timer expired
+                    }
                 }
             }
-
-            is_expired.store(true, atomic::Ordering::SeqCst);
-
-            Ok::<(), anyhow::Error>(())
         });
+
+        self.task_handle = Some(handle);
     }
 
-    /// Cancels the timer (the timer will not generate a final event).
-    pub fn cancel(&mut self) -> anyhow::Result<()> {
+    /// Cancels the timer.
+    ///
+    /// The timer will not generate a final event.
+    pub fn cancel(&mut self) {
         log::debug!("Cancel timer '{}'", self.name);
-        if !self.is_expired.load(atomic::Ordering::SeqCst) {
-            if let Some(sender) = self.canceler.take() {
-                // Send cancellation signal
-                sender.send(()).map_err(|e| anyhow::anyhow!("{e:?}"))?;
-            }
+        if let Some(ref handle) = self.task_handle {
+            handle.abort();
         }
-        Ok(())
     }
 }
 

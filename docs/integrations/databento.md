@@ -390,4 +390,4 @@ node.build()
 - `parent_symbols`: The Databento parent symbols to subscribe to instrument definitions for on start. This is a map of Databento dataset keys -> to a sequence of the parent symbols, e.g. {'GLBX.MDP3', ['ES.FUT', 'ES.OPT']} (for all E-mini S&P 500 futures and options products)
 - `instrument_ids`: The instrument IDs to request instrument definitions for on start
 - `timeout_initial_load`: The timeout (seconds) to wait for instruments to load (concurrently per dataset).
-- `mbo_subscriptions_delay`: The timeout (seconds) to wait for MBO/L3 subscriptions (concurrently per dataset). After the timeout the MBO order book feed will start and replay messages from the start of the week which encompasses the initial snapshot and then all deltas
+- `mbo_subscriptions_delay`: The timeout (seconds) to wait for MBO/L3 subscriptions (concurrently per dataset). After the timeout the MBO order book feed will start and replay messages from the initial snapshot and then all deltas

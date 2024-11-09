@@ -3,20 +3,36 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added `Portfolio.realized_pnl(...)` method for per instrument realized PnL (based on positions)
+- Added `Portfolio.realized_pnls(...)` method for per venue realized PnL (based on positions)
+- Added `TardisInstrumentProvider`
+- Added `PolymarketExecClientConfig.generate_order_history_from_trades` config setting (default False and not currently recommended)
+- Implemented `OrderCancelRejected` event generation for Binance and Bybit
+- Implemented `OrderModifyRejected` event generation for Binance and Bybit
+- Improved `OrderRejected` handling of `reason` string (`None` is now allowed which will become the string `'None'`)
+- Improved `OrderCancelRejected` handling of `reason` string (`None` is now allowed which will become the string `'None'`)
+- Improved `OrderModifyRejected` handling of `reason` string (`None` is now allowed which will become the string `'None'`)
 
 ### Internal Improvements
-None
+- Added globally shared data channels to send events from engines to Runner in Rust (#2042), thanks @twitu
+- Refined `InstrumentProvider` initialization behavior and logging
+- Refined `LiveTimer` cancel and performance testing
+- Simplified `LiveTimer` cancellation model (#2046), thanks @twitu
+- Refined Bybit HMAC authentication signatures (now using Rust implemented function)
 
 ### Breaking Changes
 None
 
 ### Fixes
+- Fixed loading specific instrument IDs for `InstrumentProviderConfig`
 - Fixed reconcile open orders and account websocket message for dYdX (#2039), thanks @davidsblom
 - Fixed market order `avg_px` for Polymarket trade reports
 - Fixed Betfair clients keepalive (#2040), thanks @limx0
 - Fixed Betfair reconciliation (#2041), thanks @limx0
 - Fixed Betfair customer order ref limit to 32 chars
+- Fixed Bybit handling of `PARTIALLY_FILLED_CANCELED` status orders
+- Fixed Polymarket size precision for `BinaryOption` instruments (precision 6 to match USDC.e)
+- Fixed adapter instrument reloading (providers were not reloading instruments at the configured interval due to internal state flags)
 
 ---
 

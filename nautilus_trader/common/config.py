@@ -260,7 +260,7 @@ class DatabaseConfig(NautilusConfig, frozen=True):
 
     Notes
     -----
-    If `type` is 'redis' then requires Redis version 6.2.0 and above for correct operation.
+    If `type` is 'redis' then requires Redis version 6.2 or higher for correct operation (required for streams functionality).
 
     """
 
@@ -312,7 +312,7 @@ class MessageBusConfig(NautilusConfig, frozen=True):
         The lookback window in minutes for automatic stream trimming.
         The actual window may extend up to one minute beyond the specified value since streams are
         trimmed at most once every minute.
-        Note that this feature requires Redis version 6.2.0 or higher; otherwise it will result
+        Note that this feature requires Redis version 6.2 or higher; otherwise it will result
         in a command syntax error.
     use_trader_prefix : bool, default True
         If a 'trader-' prefix is used for stream names.

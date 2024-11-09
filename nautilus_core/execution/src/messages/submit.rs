@@ -15,7 +15,6 @@
 
 use std::fmt::Display;
 
-use derive_builder::Builder;
 use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
 use nautilus_model::{
     identifiers::{
@@ -24,10 +23,12 @@ use nautilus_model::{
     },
     orders::any::OrderAny,
 };
+use nautilus_model::orders::any::OrderAny;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize, Builder)]
-#[builder(default)]
+// Fix: equality and default and builder
+#[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
+// #[builder(default)]
 #[serde(tag = "type")]
 pub struct SubmitOrder {
     pub trader_id: TraderId,
@@ -36,7 +37,7 @@ pub struct SubmitOrder {
     pub instrument_id: InstrumentId,
     pub client_order_id: ClientOrderId,
     pub venue_order_id: VenueOrderId,
-    pub order: OrderAny, // TODO: Implement Eq
+    pub order: OrderAny,
     pub exec_algorith_id: Option<ExecAlgorithmId>,
     pub position_id: Option<PositionId>,
     pub command_id: UUID4,

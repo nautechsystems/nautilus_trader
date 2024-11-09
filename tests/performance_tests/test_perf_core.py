@@ -13,20 +13,8 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
-
 from nautilus_trader.core import nautilus_pyo3
 
 
-async def run():
-    http_client = nautilus_pyo3.TardisHttpClient()
-
-    pyo3_instrument = await http_client.instrument("bitmex", "xbtusd")
-    print(f"Received: {pyo3_instrument}")
-
-    pyo3_instruments = await http_client.instruments("bitmex")
-    print(f"Received: {len(pyo3_instruments)} instruments")
-
-
-if __name__ == "__main__":
-    asyncio.run(run())
+def test_nautilus_convert_to_snake_case(benchmark) -> None:
+    benchmark(nautilus_pyo3.convert_to_snake_case, "PascalCase")

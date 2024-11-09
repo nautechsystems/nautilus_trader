@@ -128,6 +128,65 @@ pub enum Exchange {
 
 impl Exchange {
     #[must_use]
+    pub fn from_venue_str(s: &str) -> Vec<Self> {
+        let s = s.to_ascii_uppercase();
+        match s.as_str() {
+            "ASCENDEX" => vec![Self::Ascendex],
+            "BINANCE" => vec![
+                Self::Binance,
+                Self::BinanceDelivery,
+                Self::BinanceDex,
+                Self::BinanceFutures,
+                Self::BinanceJersey,
+                Self::BinanceOptions,
+                Self::BinanceUs,
+            ],
+            "BITFINEX" => vec![Self::Bitfinex, Self::BitfinexDerivatives],
+            "BITFLYER" => vec![Self::Bitflyer],
+            "BITMEX" => vec![Self::Bitmex],
+            "BITNOMIAL" => vec![Self::Bitnomial],
+            "BITSTAMP" => vec![Self::Bitstamp],
+            "BLOCKCHAIN_COM" => vec![Self::BlockchainCom],
+            "BYBIT" => vec![Self::Bybit, Self::BybitOptions, Self::BybitSpot],
+            "COINBASE" => vec![Self::Coinbase],
+            "COINFLEX" => vec![Self::Coinflex],
+            "CRYPTO_COM" => vec![Self::CryptoCom, Self::CryptoComDerivatives],
+            "CRYPTOFACILITIES" => vec![Self::Cryptofacilities],
+            "DELTA" => vec![Self::Delta],
+            "DERIBIT" => vec![Self::Deribit],
+            "DYDX" => vec![Self::Dydx],
+            "FTX" => vec![Self::Ftx, Self::FtxUs],
+            "GATEIO" => vec![Self::GateIo, Self::GateIoFutures],
+            "GEMINI" => vec![Self::Gemini],
+            "HITBTC" => vec![Self::Hitbtc],
+            "HUOBI" => vec![
+                Self::Huobi,
+                Self::HuobiDm,
+                Self::HuobiDmLinearSwap,
+                Self::HuobiDmOptions,
+                Self::HuobiDmSwap,
+            ],
+            "KRAKEN" => vec![Self::Kraken],
+            "KUCOIN" => vec![Self::Kucoin],
+            "MANGO" => vec![Self::Mango],
+            "OKCOIN" => vec![Self::Okcoin],
+            "OKEX" => vec![
+                Self::Okex,
+                Self::OkexFutures,
+                Self::OkexOptions,
+                Self::OkexSwap,
+            ],
+            "PHEMEX" => vec![Self::Phemex],
+            "POLONIEX" => vec![Self::Poloniex],
+            "SERUM" => vec![Self::Serum],
+            "STARATLAS" => vec![Self::StarAtlas],
+            "UPBIT" => vec![Self::Upbit],
+            "WOOX" => vec![Self::WooX],
+            _ => Vec::new(),
+        }
+    }
+
+    #[must_use]
     pub const fn as_venue_str(&self) -> &str {
         match self {
             Self::Ascendex => "ASCENDEX",

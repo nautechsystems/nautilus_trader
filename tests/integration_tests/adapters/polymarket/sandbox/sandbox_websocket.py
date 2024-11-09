@@ -15,14 +15,11 @@
 
 import asyncio
 
-import pytest
-
 from nautilus_trader.adapters.polymarket.websocket.client import PolymarketWebSocketClient
 from nautilus_trader.common.component import LiveClock
 
 
-@pytest.mark.asyncio()
-async def test_polymarket_websocket():
+async def run_polymarket_websocket():
     clock = LiveClock()
     loop = asyncio.get_running_loop()
 
@@ -44,3 +41,7 @@ async def test_polymarket_websocket():
     await client.connect()
 
     await asyncio.sleep(30)
+
+
+if __name__ == "__main__":
+    asyncio.run(run_polymarket_websocket())

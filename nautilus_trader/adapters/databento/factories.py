@@ -30,9 +30,6 @@ from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.live.factories import LiveDataClientFactory
 
 
-DATABENTO_HTTP_CLIENTS: dict[str, nautilus_pyo3.DatabentoHistoricalClient] = {}
-
-
 @lru_cache(1)
 def get_cached_databento_http_client(
     key: str | None = None,
@@ -41,8 +38,7 @@ def get_cached_databento_http_client(
     """
     Cache and return a Databento historical HTTP client with the given key and gateway.
 
-    If a cached client with matching key and gateway already exists, then that
-    cached client will be returned.
+    If a cached client with matching parameters already exists, the cached client will be returned.
 
     Parameters
     ----------
@@ -56,18 +52,10 @@ def get_cached_databento_http_client(
     nautilus_pyo3.DatabentoHistoricalClient
 
     """
-    global BINANCE_HTTP_CLIENTS
-
-    key = key or get_env_key("DATABENTO_API_KEY")
-
-    client_key: str = "|".join((key, gateway or ""))
-    if client_key not in DATABENTO_HTTP_CLIENTS:
-        client = nautilus_pyo3.DatabentoHistoricalClient(
-            key=key,
-            publishers_filepath=str(PUBLISHERS_FILEPATH),
-        )
-        DATABENTO_HTTP_CLIENTS[client_key] = client
-    return DATABENTO_HTTP_CLIENTS[client_key]
+    return nautilus_pyo3.DatabentoHistoricalClient(
+        key=key or get_env_key("DATABENTO_API_KEY"),
+        publishers_filepath=str(PUBLISHERS_FILEPATH),
+    )
 
 
 @lru_cache(1)

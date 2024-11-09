@@ -37,9 +37,7 @@ from nautilus_trader.model.identifiers import Venue
 
 class DYDXInstrumentProvider(InstrumentProvider):
     """
-    Instrument provider for the dYdX venue.
-
-    Provides a way to load instruments from dYdX.
+    Provides Nautilus instrument definitions from dYdX.
 
     Parameters
     ----------
@@ -103,9 +101,6 @@ class DYDXInstrumentProvider(InstrumentProvider):
         # Check all instrument IDs
         for instrument_id in instrument_ids:
             PyCondition.equal(instrument_id.venue, self._venue, "instrument_id.venue", "DYDX")
-
-        filters_str = "..." if not filters else f" with filters {filters}..."
-        self._log.info(f"Loading instruments {instrument_ids}{filters_str}.")
 
         fee_tier: fee_tier_query.QueryUserFeeTierResponse | None = None
 

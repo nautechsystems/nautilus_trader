@@ -34,6 +34,7 @@ use config::ExecutionEngineConfig;
 use nautilus_common::{
     cache::Cache, clock::Clock, generators::position_id::PositionIdGenerator, msgbus::MessageBus,
 };
+use nautilus_model::types::price::Price;
 use nautilus_model::{
     enums::{OmsType, OrderSide},
     events::order::{filled::OrderFilled, OrderEventAny},
@@ -52,12 +53,11 @@ use crate::{
         TradingCommand,
     },
 };
+use nautilus_model::events::order::OrderEvent;
+use nautilus_model::identifiers::PositionId;
 
-pub struct ExecutionEngine<C>
-where
-    C: Clock,
-{
-    clock: C,
+pub struct ExecutionEngine {
+    clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     msgbus: Rc<RefCell<MessageBus>>,
     clients: HashMap<ClientId, ExecutionClient>,
@@ -69,48 +69,76 @@ where
     config: ExecutionEngineConfig,
 }
 
-impl<C> ExecutionEngine<C>
-where
-    C: Clock,
-{
+impl ExecutionEngine {
+    pub fn new(
+        clock: Rc<RefCell<dyn Clock>>,
+        cache: Rc<RefCell<Cache>>,
+        msgbus: Rc<RefCell<MessageBus>>,
+        config: ExecutionEngineConfig,
+    ) -> Self {
+        let trader_id = msgbus.borrow().trader_id;
+        Self {
+            clock: clock.clone(),
+            cache,
+            msgbus,
+            clients: HashMap::new(),
+            default_client: None,
+            routing_map: HashMap::new(),
+            oms_overrides: HashMap::new(),
+            external_order_claims: HashMap::new(),
+            pos_id_generator: PositionIdGenerator::new(trader_id, clock),
+            config,
+        }
+    }
+
     #[must_use]
-    pub fn position_id_count(&self, strategy_id: StrategyId) -> u64 {
-        todo!();
+    pub fn position_id_count(&self, strategy_id: StrategyId) -> usize {
+        self.pos_id_generator.count(strategy_id)
     }
 
     #[must_use]
     pub fn check_integrity(&self) -> bool {
-        todo!();
+        self.cache.borrow_mut().check_integrity()
     }
 
     #[must_use]
     pub fn check_connected(&self) -> bool {
-        todo!();
+        self.clients.values().all(|c| c.is_connected)
     }
 
     #[must_use]
     pub fn check_disconnected(&self) -> bool {
-        todo!();
+        self.clients.values().all(|c| !c.is_connected)
     }
 
     #[must_use]
     pub fn check_residuals(&self) -> bool {
-        todo!();
+        self.cache.borrow().check_residuals()
     }
 
     #[must_use]
     pub fn get_external_order_claims_instruments(&self) -> HashSet<InstrumentId> {
-        todo!();
+        self.external_order_claims.keys().cloned().collect()
     }
 
     // -- REGISTRATION --------------------------------------------------------
 
     pub fn register_client(&mut self, client: ExecutionClient) -> anyhow::Result<()> {
-        todo!();
+        if self.clients.contains_key(&client.client_id) {
+            anyhow::bail!("Client already registered with ID {}", client.client_id);
+        }
+
+        // If client has venue, register routing
+        self.routing_map.insert(client.venue, client.client_id);
+
+        log::info!("Registered client {}", client.client_id);
+        self.clients.insert(client.client_id, client);
+        Ok(())
     }
 
-    pub fn register_default_client(&mut self, client: ExecutionClient) -> anyhow::Result<()> {
-        todo!();
+    pub fn register_default_client(&mut self, client: ExecutionClient) {
+        log::info!("Registered default client {}", client.client_id);
+        self.default_client = Some(client);
     }
 
     pub fn register_venue_routing(
@@ -118,7 +146,13 @@ where
         client_id: ClientId,
         venue: Venue,
     ) -> anyhow::Result<()> {
-        todo!();
+        if !self.clients.contains_key(&client_id) {
+            anyhow::bail!("No client registered with ID {client_id}");
+        }
+
+        self.routing_map.insert(venue, client_id);
+        log::info!("Set client {client_id} routing for {venue}");
+        Ok(())
     }
 
     // TODO: Implement `Strategy`
@@ -127,7 +161,15 @@ where
     // }
 
     pub fn deregister_client(&mut self, client_id: ClientId) -> anyhow::Result<()> {
-        todo!();
+        if self.clients.remove(&client_id).is_some() {
+            // Remove from routing map if present
+            self.routing_map
+                .retain(|_, mapped_id| mapped_id != &client_id);
+            log::info!("Deregistered client {client_id}");
+            Ok(())
+        } else {
+            anyhow::bail!("No client registered with ID {client_id}")
+        }
     }
 
     // -- COMMANDS ------------------------------------------------------------
@@ -140,12 +182,8 @@ where
         todo!();
     }
 
-    pub fn execute(&mut self, command: TradingCommand) {
-        self.execute_command(command);
-    }
-
     pub fn process(&self, event: &OrderEventAny) {
-        todo!();
+        todo!()
     }
 
     // -- COMMAND HANDLERS ----------------------------------------------------
@@ -176,11 +214,80 @@ where
     }
 
     fn handle_submit_order(&self, client: &ExecutionClient, command: SubmitOrder) {
-        todo!();
+        let order = &command.order;
+
+        if !self.cache.borrow().order_exists(&order.client_order_id()) {
+            // Cache order
+            self.cache
+                .borrow_mut()
+                .add_order(
+                    order.clone(),
+                    command.position_id,
+                    Some(command.client_id),
+                    true,
+                )
+                .unwrap();
+
+            if self.config.snapshot_orders {
+                self.create_order_state_snapshot(order);
+            }
+        }
+
+        let instrument = match self.cache.borrow().instrument(&order.instrument_id()) {
+            Some(instrument) => instrument,
+            None => {
+                log::error!(
+                    "Cannot handle submit order: no instrument found for {}, {}",
+                    order.instrument_id(),
+                    &command
+                );
+                return;
+            }
+        };
+
+        // Handle quote quantity conversion
+        // TODO: implemnent is_quote_quantity
+        // if !instrument.is_inverse() && order.is_quote_quantity() {
+        //     let last_px = self.last_px_for_conversion(&order.instrument_id(), order.order_side());
+
+        //     if last_px.is_none() {
+        //         self.deny_order(
+        //             &order,
+        //             &format!("no-price-to-convert-quote-qty {}", order.instrument_id()),
+        //         );
+        //         return;
+        //     }
+
+        //     // TODO: convert f64 to Price
+        //     let base_qty = instrument.get_base_quantity(order.quantity(), last_px.unwrap().into());
+        //     self.set_order_base_qty(&order, base_qty);
+        // }
+
+        // // Send to execution client
+        // client.submit_order(command);
     }
 
-    fn handle_submit_order_list(&self, client: &ExecutionClient, command: SubmitOrderList) {
-        todo!();
+    pub fn handle_submit_order_list(&self, client: &ExecutionClient, command: SubmitOrderList) {
+        for order in command.order_list.orders.iter() {
+            if !self.cache.borrow().order_exists(&order.client_order_id()) {
+                self.cache
+                    .borrow_mut()
+                    .add_order(
+                        order.clone(),
+                        command.position_id,
+                        Some(command.client_id),
+                        true,
+                    )
+                    .unwrap();
+
+                if self.config.snapshot_orders {
+                    self.create_order_state_snapshot(order);
+                }
+            }
+        }
+
+        // Send to execution client
+        client.submit_order_list(command).unwrap();
     }
 
     fn handle_modify_order(&self, client: &ExecutionClient, command: ModifyOrder) {
@@ -191,10 +298,10 @@ where
         todo!();
     }
 
-    fn handle_cancel_all_orders(&self, client: &ExecutionClient, command: CancelAllOrders) {
-        todo!();
+    pub fn handle_cancel_all_orders(&self, client: &ExecutionClient, command: CancelAllOrders) {
+        // TODO
+        // client.cancel_all_orders(command);
     }
-
     fn handle_batch_cancel_orders(&self, client: &ExecutionClient, command: BatchCancelOrders) {
         todo!();
     }
@@ -203,30 +310,106 @@ where
         todo!();
     }
 
+    // TODO
+    fn create_order_state_snapshot(&self, order: &OrderAny) {
+        todo!()
+        // let mut msgbus = self.msgbus.borrow_mut();
+        // let topic = msgbus
+        //     .switchboard
+        //     .get_order_snapshot_topic(order.client_order_id());
+        // msgbus.publish(&topic, order);
+    }
+
     // -- EVENT HANDLERS ----------------------------------------------------
 
     fn handle_event(&self, event: OrderEventAny) {
-        todo!();
+        todo!()
     }
 
-    fn determine_oms_type(&self, fill: OrderFilled) {
-        todo!();
+    fn determine_oms_type(&self, fill: &OrderFilled) -> OmsType {
+        // Check for strategy OMS override
+        if let Some(oms_type) = self.oms_overrides.get(&fill.strategy_id) {
+            return *oms_type;
+        }
+
+        // Use native venue OMS
+        if let Some(client_id) = self.routing_map.get(&fill.instrument_id.venue) {
+            if let Some(client) = self.clients.get(client_id) {
+                return client.oms_type;
+            }
+        }
+
+        if let Some(client) = &self.default_client {
+            return client.oms_type;
+        }
+
+        OmsType::Netting // Default fallback
     }
 
-    fn determine_position_id(&self, fill: OrderFilled, oms_type: OmsType) {
-        todo!();
+    fn determine_position_id(&mut self, fill: OrderFilled, oms_type: OmsType) -> PositionId {
+        match oms_type {
+            OmsType::Hedging => self.determine_hedging_position_id(fill),
+            OmsType::Netting => self.determine_netting_position_id(fill),
+            _ => self.determine_netting_position_id(fill), // Default to netting
+        }
     }
 
-    fn determine_hedging_position_id(&self, fill: OrderFilled) {
-        todo!();
+    fn determine_hedging_position_id(&mut self, fill: OrderFilled) -> PositionId {
+        // Check if position ID already exists
+        if let Some(position_id) = fill.position_id {
+            if self.config.debug {
+                log::debug!("Already had a position ID of: {}", position_id);
+            }
+            return position_id;
+        }
+
+        // Check for order
+        let cache = self.cache.borrow();
+        let order = match cache.order(&fill.client_order_id()) {
+            Some(o) => o,
+            None => {
+                panic!(
+                    "Order for {} not found to determine position ID",
+                    fill.client_order_id()
+                );
+            }
+        };
+
+        // Check execution spawn orders
+        if let Some(spawn_id) = order.exec_spawn_id() {
+            let cache = self.cache.borrow();
+            let spawn_orders = cache.orders_for_exec_spawn(&spawn_id);
+            for spawned_order in spawn_orders {
+                if let Some(pos_id) = spawned_order.position_id() {
+                    if self.config.debug {
+                        log::debug!("Found spawned {} for {}", pos_id, fill.client_order_id());
+                    }
+                    return pos_id;
+                }
+            }
+        }
+
+        // Generate new position ID
+        let position_id = self.pos_id_generator.generate(fill.strategy_id, false);
+        if self.config.debug {
+            log::debug!("Generated {} for {}", position_id, fill.client_order_id());
+        }
+        position_id
     }
 
-    fn determine_netting_position_id(&self, fill: OrderFilled) {
-        todo!();
+    fn determine_netting_position_id(&self, fill: OrderFilled) -> PositionId {
+        PositionId::new(&format!("{}-{}", fill.instrument_id, fill.strategy_id))
     }
 
-    fn apply_event_to_order(&self, order: &OrderAny, event: OrderEventAny) {
-        todo!();
+    fn apply_event_to_order(&self, order: &mut OrderAny, event: OrderEventAny) {
+        match order.apply(event.clone()) {
+            Ok(_) => {
+                self.cache.borrow_mut().update_order(order).unwrap();
+            }
+            Err(e) => {
+                log::error!("Error applying event: {}, did not apply {}", e, event);
+            }
+        }
     }
 
     fn handle_order_fill(&self, order: &OrderAny, fill: OrderFilled, oms_type: OmsType) {
@@ -236,21 +419,22 @@ where
     fn open_position(
         &self,
         instrument: InstrumentAny,
-        position: &Position,
+        position_id: PositionId,
         fill: OrderFilled,
         oms_type: OmsType,
-    ) {
-        todo!();
+    ) -> anyhow::Result<()> {
+        let position = Position::new(&instrument, fill);
+        self.cache.borrow_mut().add_position(position, oms_type)
     }
 
     fn update_position(
         &self,
         instrument: InstrumentAny,
-        position: &Position,
+        position: &mut Position,
         fill: OrderFilled,
         oms_type: OmsType,
     ) {
-        todo!();
+        position.apply(&fill);
     }
 
     fn will_flip_position(&self, position: &Position, fill: OrderFilled) {
@@ -260,7 +444,7 @@ where
     fn flip_position(
         &self,
         instrument: InstrumentAny,
-        position: &Position,
+        position: &mut Position,
         fill: OrderFilled,
         oms_type: OmsType,
     ) {
@@ -281,15 +465,45 @@ where
         todo!();
     }
 
-    fn last_px_for_conversion(&self, instrument_id: InstrumentId, side: OrderSide) {
-        todo!();
+    fn last_px_for_conversion(
+        &self,
+        instrument_id: &InstrumentId,
+        side: OrderSide,
+    ) -> Option<Price> {
+        let cache = self.cache.borrow();
+
+        // Try to get last trade price
+        if let Some(trade) = cache.trade(instrument_id) {
+            return Some(trade.price);
+        }
+
+        // Fall back to quote if available
+        if let Some(quote) = cache.quote(instrument_id) {
+            match side {
+                OrderSide::Buy => Some(quote.ask_price),
+                OrderSide::Sell => Some(quote.bid_price),
+                OrderSide::NoOrderSide => None,
+            }
+        } else {
+            None
+        }
     }
 
-    fn set_order_base_qty(&self, order: &OrderAny, base_qty: Quantity) {
-        todo!();
+    fn set_order_base_qty(&self, order: &OrderAny, quantity: Quantity) {
+        // Implementation depends on your order type system
+        // This is a placeholder for the actual implementation
+        log::debug!(
+            "Setting base quantity {} for order {}",
+            quantity,
+            order.client_order_id()
+        );
     }
 
     fn deny_order(&self, order: &OrderAny, reason: &str) {
-        todo!();
+        log::error!(
+            "Order denied: {reason}, order ID: {}",
+            order.client_order_id()
+        );
+        todo!()
     }
 }

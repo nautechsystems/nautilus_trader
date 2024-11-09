@@ -209,7 +209,6 @@ class BybitDataClient(LiveMarketDataClient):
         )
 
     async def _connect(self) -> None:
-        self._log.info("Initializing instruments...")
         await self._instrument_provider.initialize()
 
         self._send_all_instruments_to_data_engine()
@@ -241,7 +240,7 @@ class BybitDataClient(LiveMarketDataClient):
                     f"{self._update_instrument_interval}s",
                 )
                 await asyncio.sleep(self._update_instrument_interval)
-                await self._instrument_provider.load_all_async()
+                await self._instrument_provider.initialize(reload=True)
                 self._send_all_instruments_to_data_engine()
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'update_instruments'")
@@ -279,6 +278,7 @@ class BybitDataClient(LiveMarketDataClient):
                 depths_available = BYBIT_OPTION_DEPTHS
                 depth = depth or BYBIT_OPTION_DEPTHS[-1]
             case _:
+                # Theoretically unreachable but retained to keep the match exhaustive
                 raise ValueError(
                     f"Invalit Bybit product type {product_type}",
                 )

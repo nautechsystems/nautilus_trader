@@ -20,7 +20,7 @@ from nautilus_trader.adapters.polymarket.common.conversion import usdce_from_uni
 from nautilus_trader.adapters.polymarket.factories import get_polymarket_http_client
 
 
-def test_get_allowances() -> None:
+def get_allowances() -> None:
     http_client = get_polymarket_http_client()
 
     # Check USDC wallet balance
@@ -70,3 +70,7 @@ def test_get_allowances() -> None:
     response = http_client.get_balance_allowance(params)
     balance_usdc = usdce_from_units(int(response["balance"]))
     print(f"Balance {token_id}: {balance_usdc}")
+
+
+if __name__ == "__main__":
+    get_allowances()

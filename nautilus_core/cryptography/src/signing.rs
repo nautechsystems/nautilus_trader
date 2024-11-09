@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use base64::{engine::general_purpose, Engine};
+use base64::prelude::*;
 use hex;
 use ring::{
     hmac,
@@ -43,7 +43,7 @@ pub fn rsa_signature(private_key_pem: &str, data: &str) -> anyhow::Result<String
         .sign(&RSA_PKCS1_SHA256, &rng, data.as_bytes(), &mut signature)
         .map_err(|e| anyhow::anyhow!("{e:?}"))?;
 
-    Ok(general_purpose::STANDARD.encode(&signature))
+    Ok(BASE64_STANDARD.encode(&signature))
 }
 
 pub fn ed25519_signature(private_key: &[u8], data: &str) -> anyhow::Result<String> {

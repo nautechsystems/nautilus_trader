@@ -14,8 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
-import hashlib
-import hmac
 from collections.abc import Awaitable
 from collections.abc import Callable
 from typing import Any
@@ -28,6 +26,7 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClient
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClientError
 from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
+from nautilus_trader.core.nautilus_pyo3 import hmac_signature
 
 
 MAX_ARGS_PER_SUBSCRIPTION_REQUEST = 10
@@ -255,13 +254,9 @@ class BybitWebsocketClient:
         await self._send(msg)
 
     def _get_signature(self):
-        expires = self._clock.timestamp_ms() + 1_000
+        expires = self._clock.timestamp_ms() + 5_000
         sign = f"GET/realtime{expires}"
-        signature = hmac.new(
-            self._api_secret.encode(),
-            sign.encode(),
-            hashlib.sha256,
-        ).hexdigest()
+        signature = hmac_signature(self._api_secret, sign)
         return {
             "op": "auth",
             "args": [self._api_key, expires, signature],

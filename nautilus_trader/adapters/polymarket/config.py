@@ -107,6 +107,10 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
         The maximum number of times a submit or cancel order request will be retried.
     retry_delay : PositiveFloat, optional
         The delay (seconds) between retries.
+    generate_order_history_from_trades : bool, default False
+        If True, uses trades history to generate reports for orders which are no longer active.
+        The Polymarket API only returns active orders and trades.
+        This feature is experimental and is not currently recommended (leave set to False).
 
     """
 
@@ -121,3 +125,4 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_ws: str | None = None
     max_retries: PositiveInt | None = None
     retry_delay: PositiveFloat | None = None
+    generate_order_history_from_trades: bool = False

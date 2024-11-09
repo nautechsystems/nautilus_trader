@@ -219,7 +219,7 @@ pub struct Cache {
     accounts: HashMap<AccountId, AccountAny>,
     orders: HashMap<ClientOrderId, OrderAny>,
     order_lists: HashMap<OrderListId, OrderList>,
-    positions: HashMap<PositionId, Position>,
+    pub positions: HashMap<PositionId, Position>,
     position_snapshots: HashMap<PositionId, Bytes>,
 }
 
@@ -559,7 +559,7 @@ impl Cache {
     /// All data should be loaded from the database prior to this call.
     /// If an error is found then a log error message will also be produced.
     #[must_use]
-    fn check_integrity(&mut self) -> bool {
+    pub fn check_integrity(&mut self) -> bool {
         let mut error_count = 0;
         let failure = "Integrity failure";
 

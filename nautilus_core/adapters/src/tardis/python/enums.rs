@@ -13,11 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use heck::ToSnakeCase;
 use pyo3::prelude::*;
 
-#[must_use]
-#[pyfunction(name = "convert_to_snake_case")]
-pub fn py_convert_to_snake_case(input: &str) -> String {
-    input.to_snake_case()
+use crate::tardis::enums::Exchange;
+
+#[pyfunction(name = "tardis_exchange_from_venue_str")]
+pub fn py_tardis_exchange_from_venue_str(venue_str: &str) -> Vec<String> {
+    Exchange::from_venue_str(venue_str)
+        .iter()
+        .map(|exchange| exchange.to_string())
+        .collect()
 }

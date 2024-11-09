@@ -649,10 +649,6 @@ cdef class OrderDenied(OrderEvent):
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
 
-    Raises
-    ------
-    ValueError
-        If `denied_reason` is not a valid_string.
     """
 
     def __init__(
@@ -661,18 +657,16 @@ cdef class OrderDenied(OrderEvent):
         StrategyId strategy_id not None,
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
-        str reason not None,
+        str reason,
         UUID4 event_id not None,
         uint64_t ts_init,
     ):
-        Condition.valid_string(reason, "denied_reason")
-
         self._mem = order_denied_new(
             trader_id._mem,
             strategy_id._mem,
             instrument_id._mem,
             client_order_id._mem,
-            pystr_to_cstr(reason),
+            pystr_to_cstr(reason or str(None)),
             event_id._mem,
             ts_init,
             ts_init,
@@ -1952,7 +1946,7 @@ cdef class OrderRejected(OrderEvent):
         The client order ID.
     account_id : AccountId
         The account ID (with the venue).
-    reason : datetime
+    reason : str
         The order rejected reason.
     event_id : UUID4
         The event ID.
@@ -1963,10 +1957,6 @@ cdef class OrderRejected(OrderEvent):
     reconciliation : bool, default False
         If the event was generated during reconciliation.
 
-    Raises
-    ------
-    ValueError
-        If `reason` is not a valid string.
     """
 
     def __init__(
@@ -1976,21 +1966,19 @@ cdef class OrderRejected(OrderEvent):
         InstrumentId instrument_id not None,
         ClientOrderId client_order_id not None,
         AccountId account_id not None,
-        str reason not None,
+        str reason,
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
         bint reconciliation=False,
     ):
-        Condition.valid_string(reason, "reason")
-
         self._mem = order_rejected_new(
             trader_id._mem,
             strategy_id._mem,
             instrument_id._mem,
             client_order_id._mem,
             account_id._mem,
-            pystr_to_cstr(reason),
+            pystr_to_cstr(reason or "None"),
             event_id._mem,
             ts_event,
             ts_init,
@@ -3609,10 +3597,6 @@ cdef class OrderModifyRejected(OrderEvent):
     reconciliation : bool, default False
         If the event was generated during reconciliation.
 
-    Raises
-    ------
-    ValueError
-        If `reason` is not a valid string.
     """
 
     def __init__(
@@ -3623,21 +3607,19 @@ cdef class OrderModifyRejected(OrderEvent):
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id: VenueOrderId | None,
         AccountId account_id: AccountId | None,
-        str reason not None,
+        str reason,
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
         bint reconciliation=False,
     ):
-        Condition.valid_string(reason, "reason")
-
         self._strategy_id = strategy_id
         self._trader_id = trader_id
         self._instrument_id = instrument_id
         self._client_order_id = client_order_id
         self._venue_order_id = venue_order_id
         self._account_id = account_id
-        self._reason = reason
+        self._reason = reason or str(None)
         self._event_id = event_id
         self._ts_event = ts_event
         self._ts_init = ts_init
@@ -3907,10 +3889,6 @@ cdef class OrderCancelRejected(OrderEvent):
     reconciliation : bool, default False
         If the event was generated during reconciliation.
 
-    Raises
-    ------
-    ValueError
-        If `reason` is not a valid string.
     """
 
     def __init__(
@@ -3921,21 +3899,19 @@ cdef class OrderCancelRejected(OrderEvent):
         ClientOrderId client_order_id not None,
         VenueOrderId venue_order_id: VenueOrderId | None,
         AccountId account_id: AccountId | None,
-        str reason not None,
+        str reason,
         UUID4 event_id not None,
         uint64_t ts_event,
         uint64_t ts_init,
         bint reconciliation=False,
     ):
-        Condition.valid_string(reason, "reason")
-
         self._strategy_id = strategy_id
         self._trader_id = trader_id
         self._instrument_id = instrument_id
         self._client_order_id = client_order_id
         self._venue_order_id = venue_order_id
         self._account_id = account_id
-        self._reason = reason
+        self._reason = reason or str(None)
         self._event_id = event_id
         self._ts_event = ts_event
         self._ts_init = ts_init

@@ -225,7 +225,7 @@ mod tests {
         // Wait for timer to run
         tokio::time::sleep(Duration::from_millis(300)).await;
 
-        timer.cancel().unwrap();
+        timer.cancel();
         wait_until(|| timer.is_expired(), Duration::from_secs(2));
         assert!(timer.next_time_ns() > next_time_ns);
     }
