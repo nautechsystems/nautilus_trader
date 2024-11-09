@@ -46,7 +46,7 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 ## Features
 
 - **Fast**: Core is written in Rust with asynchronous networking using [tokio](https://crates.io/crates/tokio).
-- **Reliable**: Type safety and thread safety through Rust. Redis-backed performant state persistence.
+- **Reliable**: Type safety and thread safety through Rust. Redis-backed performant state persistence (optional).
 - **Portable**: OS independent, runs on Linux, macOS, and Windows. Deploy using Docker.
 - **Flexible**: Modular adapters mean any REST, WebSocket, or FIX API can be integrated.
 - **Advanced**: Time in force `IOC`, `FOK`, `GTD`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO`.
@@ -217,7 +217,12 @@ as specified in the `pyproject.toml`. We highly recommend installing using [poet
        cd nautilus_trader
        poetry install --only main --all-extras
 
-See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation.html) for other options and further details.
+See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation) for other options and further details.
+
+## Redis
+
+Using Redis with NautilusTrader is **optional** and only required if configured as the backend for a cache database or [message bus](https://nautilustrader.io/docs/latest/concepts/message_bus).
+See the Redis section of the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation#redis) for further details.
 
 ## Versioning and releases
 
