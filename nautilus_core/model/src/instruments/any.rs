@@ -315,6 +315,36 @@ impl InstrumentAny {
         }
     }
 
+    pub fn max_notional(&self) -> Option<Money> {
+        match self {
+            Self::Betting(inst) => inst.max_notional(),
+            Self::BinaryOption(inst) => inst.max_notional(),
+            Self::CryptoFuture(inst) => inst.max_notional(),
+            Self::CryptoPerpetual(inst) => inst.max_notional(),
+            Self::CurrencyPair(inst) => inst.max_notional(),
+            Self::Equity(inst) => inst.max_notional(),
+            Self::FuturesContract(inst) => inst.max_notional(),
+            Self::FuturesSpread(inst) => inst.max_notional(),
+            Self::OptionsContract(inst) => inst.max_notional(),
+            Self::OptionsSpread(inst) => inst.max_notional(),
+        }
+    }
+
+    pub fn min_notional(&self) -> Option<Money> {
+        match self {
+            Self::Betting(inst) => inst.min_notional(),
+            Self::BinaryOption(inst) => inst.min_notional(),
+            Self::CryptoFuture(inst) => inst.min_notional(),
+            Self::CryptoPerpetual(inst) => inst.min_notional(),
+            Self::CurrencyPair(inst) => inst.min_notional(),
+            Self::Equity(inst) => inst.min_notional(),
+            Self::FuturesContract(inst) => inst.min_notional(),
+            Self::FuturesSpread(inst) => inst.min_notional(),
+            Self::OptionsContract(inst) => inst.min_notional(),
+            Self::OptionsSpread(inst) => inst.min_notional(),
+        }
+    }
+
     pub fn make_price(&self, value: f64) -> Price {
         match self {
             Self::Betting(inst) => inst.make_price(value),

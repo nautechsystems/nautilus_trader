@@ -73,100 +73,18 @@ impl RiskEngine {
         cache: Rc<RefCell<Cache>>,
         msgbus: Rc<RefCell<MessageBus>>,
     ) -> Self {
-        let msgbus1 = msgbus.clone();
-        let msgbus2 = msgbus.clone();
-        let msgbus3 = msgbus.clone();
-        let msgbus4 = msgbus.clone();
-        let clock1 = clock.clone();
-        let clock2 = clock.clone();
-        // let cache1 = cache.clone();
-        // let cache2 = cache.clone();
-        let throttled_submit_order = Throttler::new(
-            config.max_order_submit.clone(),
-            clock1.clone(),
-            "ORDER_SUBMIT_THROTTLER".to_string(),
-            Box::new(move |order: SubmitOrder| {
-                msgbus1
-                    .borrow_mut()
-                    .send(&Ustr::from("ExecEngine.execute"), &order);
-            }) as Box<dyn Fn(SubmitOrder)>,
-            Some(Box::new(move |order: SubmitOrder| {
-                let reason = "REJECTED BY THROTTLER";
-                log::warn!(
-                    "SubmitOrder for {} DENIED: {}",
-                    order.client_order_id,
-                    reason
-                );
-                // let mut burrowed_cache = cache1.borrow_mut();
-
-                // if !burrowed_cache.order_exists(&order.client_order_id) {
-                //     burrowed_cache
-                //         .add_order(order.clone(), None, None, false)
-                //         .map_err(|e| {
-                //             log::error!("Cannot add order to cache: {e}");
-                //         })
-                //         .unwrap();
-                // }
-
-                let denied = OrderEventAny::Denied(OrderDenied::new(
-                    order.trader_id,
-                    order.strategy_id,
-                    order.instrument_id,
-                    order.client_order_id,
-                    reason.into(),
-                    UUID4::new(),
-                    clock1.borrow().timestamp_ns(),
-                    clock1.borrow().timestamp_ns(),
-                ));
-
-                msgbus2
-                    .borrow_mut()
-                    .send(&Ustr::from("ExecEngine.process"), &denied);
-            }) as Box<dyn Fn(SubmitOrder)>),
+        let throttled_submit_order = Self::create_submit_order_throttler(
+            &config,
+            clock.clone(),
+            cache.clone(),
+            msgbus.clone(),
         );
 
-        let throttled_modify_order = Throttler::new(
-            config.max_order_modify.clone(),
+        let throttled_modify_order = Self::create_modify_order_throttler(
+            &config,
             clock.clone(),
-            "ORDER_MODIFY_THROTTLER".to_string(),
-            Box::new(move |order: ModifyOrder| {
-                msgbus3
-                    .borrow_mut()
-                    .send(&Ustr::from("ExecEngine.execute"), &order);
-            }) as Box<dyn Fn(ModifyOrder)>,
-            Some(Box::new(move |order: ModifyOrder| {
-                let reason = "REJECTED BY THROTTLER";
-                log::warn!(
-                    "SubmitOrder for {} DENIED: {}",
-                    order.client_order_id,
-                    reason
-                );
-                // let mut burrowed_cache = cache2.borrow_mut();
-
-                // if !burrowed_cache.order_exists(&order.client_order_id) {
-                //     burrowed_cache
-                //         .add_order(order.clone(), None, None, false)
-                //         .map_err(|e| {
-                //             log::error!("Cannot add order to cache: {e}");
-                //         })
-                //         .unwrap();
-                // }
-
-                let denied = OrderEventAny::Denied(OrderDenied::new(
-                    order.trader_id,
-                    order.strategy_id,
-                    order.instrument_id,
-                    order.client_order_id,
-                    reason.into(),
-                    UUID4::new(),
-                    clock2.borrow().timestamp_ns(),
-                    clock2.borrow().timestamp_ns(),
-                ));
-
-                msgbus4
-                    .borrow_mut()
-                    .send(&Ustr::from("ExecEngine.process"), &denied);
-            }) as Box<dyn Fn(ModifyOrder)>),
+            cache.clone(),
+            msgbus.clone(),
         );
 
         Self {
@@ -179,6 +97,166 @@ impl RiskEngine {
             trading_state: TradingState::Active,
             config,
         }
+    }
+
+    fn create_submit_order_throttler(
+        config: &RiskEngineConfig,
+        clock: Rc<RefCell<dyn Clock>>,
+        cache: Rc<RefCell<Cache>>,
+        msgbus: Rc<RefCell<MessageBus>>,
+    ) -> Throttler<SubmitOrder, SubmitOrderFn> {
+        let success_handler = {
+            let msgbus = msgbus.clone();
+            Box::new(move |submit_order: SubmitOrder| {
+                msgbus
+                    .borrow_mut()
+                    .send(&Ustr::from("ExecEngine.execute"), &submit_order);
+            }) as Box<dyn Fn(SubmitOrder)>
+        };
+
+        let failure_handler = {
+            let msgbus = msgbus.clone();
+            let cache = cache.clone();
+            let clock = clock.clone();
+            Box::new(move |submit_order: SubmitOrder| {
+                let reason = "REJECTED BY THROTTLER";
+                log::warn!(
+                    "SubmitOrder for {} DENIED: {}",
+                    submit_order.client_order_id,
+                    reason
+                );
+
+                Self::handle_submit_order_cache(&cache, &submit_order);
+
+                let denied = Self::create_order_denied(&submit_order, reason, &clock);
+
+                msgbus
+                    .borrow_mut()
+                    .send(&Ustr::from("ExecEngine.process"), &denied);
+            }) as Box<dyn Fn(SubmitOrder)>
+        };
+
+        Throttler::new(
+            config.max_order_submit.clone(),
+            clock,
+            "ORDER_SUBMIT_THROTTLER".to_string(),
+            success_handler,
+            Some(failure_handler),
+        )
+    }
+
+    fn create_modify_order_throttler(
+        config: &RiskEngineConfig,
+        clock: Rc<RefCell<dyn Clock>>,
+        cache: Rc<RefCell<Cache>>,
+        msgbus: Rc<RefCell<MessageBus>>,
+    ) -> Throttler<ModifyOrder, ModifyOrderFn> {
+        let success_handler = {
+            let msgbus = msgbus.clone();
+            Box::new(move |order: ModifyOrder| {
+                msgbus
+                    .borrow_mut()
+                    .send(&Ustr::from("ExecEngine.execute"), &order);
+            }) as Box<dyn Fn(ModifyOrder)>
+        };
+
+        let failure_handler = {
+            let msgbus = msgbus.clone();
+            let cache = cache.clone();
+            let clock = clock.clone();
+            Box::new(move |order: ModifyOrder| {
+                let reason = "Exceeded MAX_ORDER_MODIFY_RATE";
+                log::warn!(
+                    "SubmitOrder for {} DENIED: {}",
+                    order.client_order_id,
+                    reason
+                );
+
+                let order = match Self::get_existing_order(&cache, &order) {
+                    Some(order) => order,
+                    None => return,
+                };
+
+                let rejected = Self::create_modify_rejected(&order, reason, &clock);
+
+                msgbus
+                    .borrow_mut()
+                    .send(&Ustr::from("ExecEngine.process"), &rejected);
+            }) as Box<dyn Fn(ModifyOrder)>
+        };
+
+        Throttler::new(
+            config.max_order_modify.clone(),
+            clock,
+            "ORDER_MODIFY_THROTTLER".to_string(),
+            success_handler,
+            Some(failure_handler),
+        )
+    }
+
+    fn handle_submit_order_cache(cache: &Rc<RefCell<Cache>>, submit_order: &SubmitOrder) {
+        let mut burrowed_cache = cache.borrow_mut();
+        if !burrowed_cache.order_exists(&submit_order.client_order_id) {
+            burrowed_cache
+                .add_order(submit_order.order.clone(), None, None, false)
+                .map_err(|e| {
+                    log::error!("Cannot add order to cache: {e}");
+                })
+                .unwrap();
+        }
+    }
+
+    fn get_existing_order(cache: &Rc<RefCell<Cache>>, order: &ModifyOrder) -> Option<OrderAny> {
+        let burrowed_cache = cache.borrow();
+        match burrowed_cache.order(&order.client_order_id) {
+            Some(order) => Some(order.clone()),
+            None => {
+                log::error!(
+                    "Order with command.client_order_id: {} not found",
+                    order.client_order_id
+                );
+                None
+            }
+        }
+    }
+
+    fn create_order_denied(
+        submit_order: &SubmitOrder,
+        reason: &str,
+        clock: &Rc<RefCell<dyn Clock>>,
+    ) -> OrderEventAny {
+        let timestamp = clock.borrow().timestamp_ns();
+        OrderEventAny::Denied(OrderDenied::new(
+            submit_order.trader_id,
+            submit_order.strategy_id,
+            submit_order.instrument_id,
+            submit_order.client_order_id,
+            reason.into(),
+            UUID4::new(),
+            timestamp,
+            timestamp,
+        ))
+    }
+
+    fn create_modify_rejected(
+        order: &OrderAny,
+        reason: &str,
+        clock: &Rc<RefCell<dyn Clock>>,
+    ) -> OrderEventAny {
+        let timestamp = clock.borrow().timestamp_ns();
+        OrderEventAny::ModifyRejected(OrderModifyRejected::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            reason.into(),
+            UUID4::new(),
+            timestamp,
+            timestamp,
+            false,
+            order.venue_order_id(),
+            None,
+        ))
     }
 
     // -- COMMANDS --------------------------------------------------------------------------------
@@ -202,24 +280,13 @@ impl RiskEngine {
         self.trading_state = state;
 
         let ts_now = self.clock.borrow().timestamp_ns();
-        // let event = OrderEventAny {
-        //     timestamp: ts_now,
-        //     state,
-        // };
 
-        // TODO: We need TradingStateChanged enum for OrderEventAny
-        // cdef TradingStateChanged event = TradingStateChanged(
-        //     trader_id=self.trader_id,
-        //     state=self.trading_state,
-        //     config=self._config,
-        //     event_id=UUID4(),
-        //     ts_event=ts_now,
-        //     ts_init=ts_now,
-        // )
+        // TODO: Create a new Event "TradingStateChanged" in OrderEventAny enum.
+        // let event = OrderEventAny::TradingStateChanged(TradingStateChanged::new(..,self.trading_state,..));
 
         self.msgbus
             .borrow_mut()
-            .publish(&Ustr::from("events.risk"), &"message"); // TODO: Fix this
+            .publish(&Ustr::from("events.risk"), &"message"); // TODO: Send the new Event here
 
         log::info!("Trading state set to {state:?}");
     }
@@ -258,7 +325,6 @@ impl RiskEngine {
             return;
         }
 
-        println!("HEREISSSS");
         let order = &command.order;
         if let Some(position_id) = command.position_id {
             if order.is_reduce_only() {
@@ -287,8 +353,6 @@ impl RiskEngine {
             }
         }
 
-        println!("HEREISSS222#S");
-
         let instrument_exists = {
             let borrowed_cache = self.cache.borrow();
             borrowed_cache.instrument(&order.instrument_id()).cloned()
@@ -304,19 +368,17 @@ impl RiskEngine {
             return; // Denied
         };
 
-        println!("HEREISSS11222#S");
-
+        ////////////////////////////////////////////////////////////////////////////////
         // PRE-TRADE ORDER(S) CHECKS
+        ////////////////////////////////////////////////////////////////////////////////
         if !self.check_order(instrument.clone(), order.clone()) {
             return; // Denied
         }
 
-        println!("HEREISS11222#S");
         if !self.check_orders_risk(instrument.clone(), Vec::from([order.clone()])) {
             return; // Denied
         }
 
-        println!("HESS11222#S");
         self.execution_gateway(instrument, TradingCommand::SubmitOrder(command.clone()));
     }
 
@@ -326,12 +388,12 @@ impl RiskEngine {
             return;
         }
 
-        let maybe_instrument = {
+        let instrument_exists = {
             let borrowed_cache = self.cache.borrow();
             borrowed_cache.instrument(&command.instrument_id).cloned()
         };
 
-        let instrument = if let Some(instrument) = maybe_instrument {
+        let instrument = if let Some(instrument) = instrument_exists {
             instrument
         } else {
             self.deny_command(
@@ -341,7 +403,6 @@ impl RiskEngine {
             return; // Denied
         };
 
-        // TODO: NEED this type of comment
         ////////////////////////////////////////////////////////////////////////////////
         // PRE-TRADE ORDER(S) CHECKS
         ////////////////////////////////////////////////////////////////////////////////
@@ -363,6 +424,9 @@ impl RiskEngine {
     }
 
     fn handle_modify_order(&self, command: ModifyOrder) {
+        ////////////////////////////////////////////////////////////////////////////////
+        // VALIDATE COMMAND
+        ////////////////////////////////////////////////////////////////////////////////
         let order_exists = {
             let burrowed_cache = self.cache.borrow();
             burrowed_cache.order(&command.client_order_id).cloned()
@@ -438,12 +502,13 @@ impl RiskEngine {
         // Check TradingState
         match self.trading_state {
             TradingState::Halted => {
-                self.reject_modify_order(order, "TradingState::HALTED: Cannot modify order");
+                self.reject_modify_order(order, "TradingState is HALTED: Cannot modify order");
                 return; // Denied
             }
             TradingState::Reducing => {
                 if let Some(quantity) = command.quantity {
                     if quantity > order.quantity() {
+                        // TODO: Complete this after implementing portfolio
                         // if order.is_buy() && self.portfolio.is_net_long(instrument.id()) {
                         //     self.reject_modify_order(
                         //         order.clone(),
@@ -478,7 +543,6 @@ impl RiskEngine {
         ////////////////////////////////////////////////////////////////////////////////
         // VALIDATION CHECKS
         ////////////////////////////////////////////////////////////////////////////////
-        println!("Hinseide check_order");
         if !self.check_order_price(instrument.clone(), order.clone())
             || !self.check_order_quantity(instrument, order)
         {
@@ -492,9 +556,7 @@ impl RiskEngine {
         ////////////////////////////////////////////////////////////////////////////////
         // CHECK PRICE
         ////////////////////////////////////////////////////////////////////////////////
-        println!("inside check_order_price");
         if order.price().is_some() {
-            println!("inside check_order_price if");
             let risk_msg = self.check_price(&instrument, order.price());
             if let Some(risk_msg) = risk_msg {
                 self.deny_order(order, &risk_msg);
@@ -527,6 +589,10 @@ impl RiskEngine {
     }
 
     fn check_orders_risk(&self, instrument: InstrumentAny, orders: Vec<OrderAny>) -> bool {
+        ////////////////////////////////////////////////////////////////////////////////
+        // CHECK TRIGGER
+        ////////////////////////////////////////////////////////////////////////////////
+
         // Determine max notional
         let mut max_notional: Option<Money> = None;
         let max_notional_setting = self.max_notional_per_order.get(&instrument.id());
@@ -539,6 +605,7 @@ impl RiskEngine {
             ));
         }
 
+        // Get account for risk checks
         let account_exists = {
             let borrowed_cache = self.cache.borrow();
             borrowed_cache
@@ -554,23 +621,20 @@ impl RiskEngine {
             return true; // TODO: Temporary early return until handling routing/multiple venues
         };
 
-        // Check for margin account
-        if matches!(account, AccountAny::Margin(_)) {
-            return true; // TODO: Determine risk controls for margin
-        }
-
-        let free = match account {
-            AccountAny::Cash(ref cash) => cash.balance_free(Some(instrument.quote_currency())),
-            _ => None,
+        let cash_account = match account {
+            AccountAny::Cash(cash_account) => cash_account,
+            AccountAny::Margin(_) => return true, // TODO: Determine risk controls for margin
         };
+
+        let free = cash_account.balance_free(Some(instrument.quote_currency()));
 
         if self.config.debug {
             log::debug!("Free cash: {:?}", free);
         }
 
         let mut last_px: Option<Price> = None;
-        let cum_notional_buy: Option<Money> = None;
-        let cum_notional_sell: Option<Money> = None;
+        let mut cum_notional_buy: Option<Money> = None;
+        let mut cum_notional_sell: Option<Money> = None;
         let mut base_currency: Option<Currency> = None;
 
         for order in &orders {
@@ -592,7 +656,7 @@ impl RiskEngine {
                             let burrowed_cache = self.cache.borrow();
                             burrowed_cache
                                 .trade(&instrument.id())
-                                .map(|trade| trade.price)
+                                .map(|lastest_trade| lastest_trade.price)
                         }
                     } else {
                         last_px
@@ -641,140 +705,158 @@ impl RiskEngine {
             }
 
             // Check MIN notional instrument limit
-            // if let Some(min_notional) = instrument.min_notional() {
-            //     if notional < min_notional {
-            //         self.deny_order(
-            //             order.clone(),
-            //             &format!(
-            //                 "NOTIONAL_BELOW_MIN: min_notional={:?}, notional={:?}",
-            //                 min_notional, notional
-            //             ),
-            //         );
-            //         return false; // Denied
-            //     }
-            // }
+            if let Some(min_notional) = instrument.min_notional() {
+                if notional.currency == min_notional.currency && notional < min_notional {
+                    self.deny_order(
+                        order.clone(),
+                        &format!(
+                            "NOTIONAL_BELOW_MIN: min_notional={:?}, notional={:?}",
+                            min_notional, notional
+                        ),
+                    );
+                    return false; // Denied
+                }
+            }
 
             // // Check MAX notional instrument limit
-            // if let Some(max_notional) = instrument.max_notional() {
-            //     if notional > max_notional {
-            //         self.deny_order(
-            //             order.clone(),
-            //             &format!(
-            //                 "NOTIONAL_EXCEEDS_MAX: max_notional={:?}, notional={:?}",
-            //                 max_notional, notional
-            //             ),
-            //         );
-            //         return false;
-            //     }
-            // }
+            if let Some(max_notional) = instrument.max_notional() {
+                if notional.currency == max_notional.currency && notional < max_notional {
+                    self.deny_order(
+                        order.clone(),
+                        &format!(
+                            "NOTIONAL_BELOW_MIN: max_notional={:?}, notional={:?}",
+                            max_notional, notional
+                        ),
+                    );
+                    return false; // Denied
+                }
+            }
 
-            // let order_balance_impact = match account {
-            //     AccountAny::Cash(ref cash) => {
-            //         cash.balance_impact(instrument, order.quantity(), last_px, order.order_side())
-            //     }
-            //     _ => None,
-            // };
-            // account
+            // Calculate OrderBalanceImpact (valid for CashAccount only)
+            let notional = instrument.calculate_notional_value(order.quantity(), last_px, None);
+            let order_balance_impact = match order.order_side() {
+                OrderSide::Buy => Money::from_raw(-notional.raw, notional.currency),
+                OrderSide::Sell => Money::from_raw(notional.raw, notional.currency),
+                OrderSide::NoOrderSide => {
+                    panic!("invalid `OrderSide`, was {}", order.order_side());
+                }
+            };
 
-            // if self.config.debug {
-            //     log::debug!("Balance impact: {:?}", order_balance_impact);
-            // }
+            if self.config.debug {
+                log::debug!("Balance impact: {}", order_balance_impact);
+            }
 
-            // if let (Some(free_val), Some(impact)) = (free, order_balance_impact) {
-            //     if (free_val.as_decimal() + impact.as_decimal()) < Decimal::ZERO {
-            //         self.deny_order(
-            //             order.clone(),
-            //             &format!(
-            //                 "INSUFFICIENT_BALANCE: free={:?}, notional={:?}",
-            //                 free_val, notional
-            //             ),
-            //         );
-            //         return false;
-            //     }
-            // }
+            if let Some(free_val) = free {
+                if (free_val.as_decimal() + order_balance_impact.as_decimal()) < Decimal::ZERO {
+                    self.deny_order(
+                        order.clone(),
+                        &format!(
+                            "NOTIONAL_EXCEEDS_FREE_BALANCE: free={:?}, notional={:?}",
+                            free_val, notional
+                        ),
+                    );
+                    return false;
+                }
+            }
 
             if base_currency.is_none() {
                 base_currency = instrument.base_currency();
             }
 
-            // if order.is_buy() {
-            //     match cum_notional_buy {
-            //         Some(ref mut cum_buy) => {
-            //             if let Some(impact) = order_balance_impact {
-            //                 *cum_buy = cum_buy.clone() - impact;
-            //             }
-            //         }
-            //         None => {
-            //             if let Some(impact) = order_balance_impact {
-            //                 cum_notional_buy = Some(-impact);
-            //             }
-            //         }
-            //     }
+            if order.is_buy() {
+                match cum_notional_buy {
+                    Some(mut cum_notional_buy) => {
+                        cum_notional_buy.raw += -order_balance_impact.raw;
+                    }
+                    None => {
+                        cum_notional_buy = Some(Money::from_raw(
+                            -order_balance_impact.raw,
+                            order_balance_impact.currency,
+                        ));
+                    }
+                }
 
-            //     if self.config.debug {
-            //         log::debug!("Cumulative notional BUY: {:?}", cum_notional_buy);
-            //     }
+                if self.config.debug {
+                    log::debug!("Cumulative notional BUY: {:?}", cum_notional_buy);
+                }
 
-            //     if let (Some(free_val), Some(cum_buy)) = (free.clone(), cum_notional_buy.clone()) {
-            //         if cum_buy > free_val {
-            //             self.deny_order(
-            //                 order.clone(),
-            //                 &format!(
-            //                     "CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={:?}, cum_notional={:?}",
-            //                     free_val, cum_buy
-            //                 ),
-            //             );
-            //             return false;
-            //         }
-            //     }
-            // } else if order.is_sell() {
-            //     match account {
-            //         AccountAny::Cash(ref cash) => {
-            //             if let Some(impact) = order_balance_impact {
-            //                 match cum_notional_sell {
-            //                     Some(ref mut cum_sell) => {
-            //                         *cum_sell = cum_sell.clone() + impact;
-            //                     }
-            //                     None => {
-            //                         cum_notional_sell = Some(impact);
-            //                     }
-            //                 }
+                if let (Some(free), Some(cum_notional_buy)) = (free, cum_notional_buy) {
+                    if cum_notional_buy.raw > free.raw {
+                        self.deny_order(order.clone(), &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_buy}"));
+                    }
+                }
 
-            //                 if self.config.debug {
-            //                     log::debug!("Cumulative notional SELL: {:?}", cum_notional_sell);
-            //                 }
+                return false; // Denied
+            } else if order.is_sell() {
+                if cash_account.base_currency.is_some() {
+                    match cum_notional_sell {
+                        Some(mut cum_notional_sell) => {
+                            cum_notional_sell.raw += order_balance_impact.raw;
+                        }
+                        None => {
+                            cum_notional_sell = Some(Money::from_raw(
+                                order_balance_impact.raw,
+                                order_balance_impact.currency,
+                            ));
+                        }
+                    }
 
-            //                 if let (Some(free_val), Some(cum_sell)) =
-            //                     (free.clone(), cum_notional_sell.clone())
-            //                 {
-            //                     if cum_sell > free_val {
-            //                         self.deny_order(
-            //                                 order.clone(),
-            //                                 &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={:?}, cum_notional={:?}",
-            //                                     free_val, cum_sell),
-            //                             );
-            //                         return false;
-            //                     }
-            //                 }
-            //             }
+                    if self.config.debug {
+                        log::debug!("Cumulative notional SELL: {:?}", cum_notional_sell);
+                    }
 
-            //             if let Some(base_curr) = base_currency {
-            //                 let cash_value = Money::new(order.quantity().as_f64(), base_curr);
+                    if let (Some(free), Some(cum_notional_sell)) = (free, cum_notional_sell) {
+                        if cum_notional_sell.raw > free.raw {
+                            self.deny_order(order.clone(), &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}"));
+                        }
+                    }
 
-            //                 if self.config.debug {
-            //                     let total = cash.balance_total(Some(base_curr));
-            //                     let locked = cash.balance_locked(Some(base_curr));
-            //                     let free = cash.balance_free(Some(base_curr));
-            //                     log::debug!("Cash value: {:?}", cash_value);
-            //                     log::debug!("Total: {:?}", total);
-            //                     log::debug!("Locked: {:?}", locked);
-            //                     log::debug!("Free: {:?}", free);
-            //                 }
-            //             }
-            //         }
-            //         _ => {}
-            //     }
-            // }
+                    return false; // Denied
+                }
+                // Account is already of type Cash, so no check
+                else if let Some(base_currency) = base_currency {
+                    // TODO: fix & check
+                    let cash_value = Money::from_raw(
+                        order
+                            .quantity()
+                            .raw
+                            .try_into()
+                            .map_err(|e| log::error!("UNABLE"))
+                            .unwrap(),
+                        base_currency,
+                    );
+
+                    if self.config.debug {
+                        log::debug!("Cash value: {:?}", cash_value);
+                        log::debug!(
+                            "Total: {:?}",
+                            cash_account.balance_total(Some(base_currency))
+                        );
+                        log::debug!(
+                            "Locked: {:?}",
+                            cash_account.balance_locked(Some(base_currency))
+                        );
+                        log::debug!("Free: {:?}", cash_account.balance_free(Some(base_currency)));
+                    }
+
+                    match cum_notional_sell {
+                        Some(mut cum_notional_sell) => {
+                            cum_notional_sell.raw += cash_value.raw;
+                        }
+                        None => cum_notional_sell = Some(cash_value),
+                    }
+
+                    if self.config.debug {
+                        log::debug!("Cumulative notional SELL: {:?}", cum_notional_sell)
+                    }
+                    if let (Some(free), Some(cum_notional_sell)) = (free, cum_notional_sell) {
+                        if cum_notional_sell.raw > free.raw {
+                            self.deny_order(order.clone(), &format!("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free={free}, cum_notional={cum_notional_sell}"));
+                        }
+                    }
+                    return false; // Denied
+                }
+            }
         }
 
         true // All checks passed
@@ -1058,7 +1140,7 @@ mod tests {
     use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
     use nautilus_execution::messages::{SubmitOrder, TradingCommand};
     use nautilus_model::{
-        accounts::{any::AccountAny, base::BaseAccount, cash::CashAccount},
+        accounts::{any::AccountAny, cash::CashAccount},
         data::{quote::QuoteTick, stubs::quote_ethusdt_binance},
         enums::{OrderSide, OrderStatus, OrderType, TradingState},
         events::account::stubs::cash_account_state_million_usd,
@@ -1738,7 +1820,7 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_less_than_min_notional_for_instrument_then_denies(
-        mut risk_engine: RiskEngine,
+        risk_engine: RiskEngine,
         get_stub_submit_order: SubmitOrder,
         strategy_id_ema_cross: StrategyId,
         client_id_binance: ClientId,
@@ -1840,4 +1922,53 @@ mod tests {
 
     #[rstest]
     fn test_submit_order_when_sell_market_order_and_over_max_notional_then_denies() {}
+
+    #[rstest]
+    fn test_submit_order_when_market_order_and_over_free_balance_then_denies(
+        mut risk_engine: RiskEngine,
+        get_stub_submit_order: SubmitOrder,
+        strategy_id_ema_cross: StrategyId,
+        client_id_binance: ClientId,
+        trader_id: TraderId,
+        client_order_id: ClientOrderId,
+        instrument_eth_usdt: InstrumentAny,
+        venue_order_id: VenueOrderId,
+        quote_ethusdt_binance: QuoteTick,
+    ) {
+        let quote = quote_ethusdt_binance;
+        {
+            let mut burrowed_cache = risk_engine.cache.borrow_mut();
+            burrowed_cache.add_quote(quote).unwrap();
+            burrowed_cache
+                .add_account(AccountAny::Cash(CashAccount::new(
+                    cash_account_state_million_usd("1 USD", "0 USD", "1 USD"), // Maybe Wrong
+                    false,
+                )))
+                .unwrap();
+        }
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_eth_usdt.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from_str("10000").unwrap())
+            .build();
+
+        let submit_order = SubmitOrder::new(
+            trader_id,
+            client_id_binance,
+            strategy_id_ema_cross,
+            order.instrument_id(),
+            client_order_id,
+            venue_order_id,
+            order,
+            None,
+            None,
+            UUID4::new(),
+            risk_engine.clock.borrow().timestamp_ns(),
+        )
+        .unwrap();
+
+        risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+        // TODO: complete check_order_risk
+    }
 }
