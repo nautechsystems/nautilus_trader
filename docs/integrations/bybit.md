@@ -33,13 +33,13 @@ The following documentation assumes a trader is setting up for both live market
 data feeds, and trade execution. The full Bybit integration consists of an assortment of components,
 which can be used together or separately depending on the user's needs.
 
-- `BybitHttpClient`: Low-level HTTP API connectivity
-- `BybitWebSocketClient`: Low-level WebSocket API connectivity
-- `BybitInstrumentProvider`: Instrument parsing and loading functionality
-- `BybitDataClient`: A market data feed manager
-- `BybitExecutionClient`: An account management and trade execution gateway
-- `BybitLiveDataClientFactory`: Factory for Bybit data clients (used by the trading node builder)
-- `BybitLiveExecClientFactory`: Factory for Bybit execution clients (used by the trading node builder)
+- `BybitHttpClient`: Low-level HTTP API connectivity.
+- `BybitWebSocketClient`: Low-level WebSocket API connectivity.
+- `BybitInstrumentProvider`: Instrument parsing and loading functionality.
+- `BybitDataClient`: A market data feed manager.
+- `BybitExecutionClient`: An account management and trade execution gateway.
+- `BybitLiveDataClientFactory`: Factory for Bybit data clients (used by the trading node builder).
+- `BybitLiveExecClientFactory`: Factory for Bybit execution clients (used by the trading node builder).
 
 :::note
 Most users will simply define a configuration for a live trading node (as below),
@@ -71,7 +71,7 @@ Options contracts are not currently supported (will be implemented in a future v
 
 ## Symbology
 
-To distinguish between different product types on Bybit, the following instrument ID suffixes are used:
+To distinguish between different product types on Bybit, Nautilus uses specific product category suffixes for symbols:
 
 - `-SPOT`: Spot cryptocurrencies
 - `-LINEAR`: Perpetual and futures contracts
@@ -81,9 +81,9 @@ To distinguish between different product types on Bybit, the following instrumen
 These suffixes must be appended to the Bybit raw symbol string to identify the specific product type 
 for the instrument ID. For example:
 
-- The Ether/Tether spot currency pair is identified with `-SPOT`, such as `ETHUSDT-SPOT`
-- The BTCUSDT perpetual futures contract is identified with `-LINEAR`, such as `BTCUSDT-LINEAR`
-- The BTCUSD inverse perpetual futures contract is identified with `-INVERSE`, such as `BTCUSD-INVERSE`
+- The Ether/Tether spot currency pair is identified with `-SPOT`, such as `ETHUSDT-SPOT`.
+- The BTCUSDT perpetual futures contract is identified with `-LINEAR`, such as `BTCUSDT-LINEAR`.
+- The BTCUSD inverse perpetual futures contract is identified with `-INVERSE`, such as `BTCUSD-INVERSE`.
 
 ## Order types
 
@@ -132,8 +132,8 @@ If no product types are specified then all product types will be loaded and avai
 Because Nautilus does not support a "unified" account, the account type must be either cash **or** margin.
 This means there is a limitation that you cannot specify SPOT with any of the other derivative product types.
 
-- `CASH` account type will be used for SPOT products
-- `MARGIN` account type will be used for all other derivative products
+- `CASH` account type will be used for SPOT products.
+- `MARGIN` account type will be used for all other derivative products.
 
 The most common use case is to configure a live `TradingNode` to include Bybit
 data and execution clients. To achieve this, add a `BYBIT` section to your client

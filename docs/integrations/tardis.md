@@ -70,6 +70,53 @@ This includes the following:
 | [ticks](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix) - number of ticks | `TICK`                      |
 | [vol](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix) - volume size       | `VOLUME`                    |
 
+## Venues and symbology
+
+The Tardis integration is designed to work seamlessly with other crypto exchange adapters provided by NautilusTrader.
+To ensure consistency, mappings between Nautilus symbology and native exchange symbols are provided.
+
+- **Binance**: Nautilus appends the suffix `-PERP` to all perpetual symbols. For more details refer to [Binance symbology](/docs/integrations/binance.md#symbology).
+- **Bybit**: Nautilus uses specific product category suffixes, including `-SPOT`, `-LINEAR`, `-INVERSE`, `-OPTION`. For more details refer to [Bybit symbology](/docs/integrations/bybit.md#symbology).
+- **dYdX**: Nautilus appends the suffix `-PERP` to all perpetual symbols. For more details refer to [dYdX symbology](/docs/integrations/dydx.md#symbology).
+
+Some exchanges on Tardis are partitioned into multiple venues. The table below outlines the mappings between Nautilus venues and corresponding Tardis exchanges:
+
+| Nautilus venue          | Tardis exchange(s)                                    |
+|:------------------------|:------------------------------------------------------|
+| `ASCENDEX`              | `ascendex`                                            |
+| `BINANCE`               | `binance`, `binance-delivery`, `binance-dex`, `binance-futures`, `binance-jersey`, `binance-options`, `binance-us` |
+| `BITFINEX`              | `bitfinex`, `bitfinex-derivatives`                    |
+| `BITFLYER`              | `bitflyer`                                            |
+| `BITMEX`                | `bitmex`                                              |
+| `BITNOMIAL`             | `bitnomial`                                           |
+| `BITSTAMP`              | `bitstamp`                                            |
+| `BLOCKCHAIN_COM`        | `blockchain-com`                                      |
+| `BYBIT`                 | `bybit`, `bybit-options`, `bybit-spot`                |
+| `COINBASE`              | `coinbase`                                            |
+| `COINFLEX`              | `coinflex` (*for historical research*)                |
+| `CRYPTO_COM`            | `crypto-com`, `crypto-com-derivatives`                |
+| `CRYPTOFACILITIES`      | `cryptofacilities`                                    |
+| `DELTA`                 | `delta`                                               |
+| `DERIBIT`               | `deribit`                                             |
+| `DYDX`                  | `dydx`                                                |
+| `FTX`                   | `ftx` (*for historical research*)                     |
+| `FTX_US`                | `ftx-us` (*for historical research*)                  |
+| `GATEIO`                | `gate-io`, `gate-io-futures`                          |
+| `GEMINI`                | `gemini`                                              |
+| `HITBTC`                | `hitbtc`                                              |
+| `HUOBI`                 | `huobi`, `huobi-dm`, `huobi-dm-linear-swap`, `huobi-dm-options`, `huobi-dm-swap` |
+| `KRAKEN`                | `kraken`                                              |
+| `KUCOIN`                | `kucoin`                                              |
+| `MANGO`                 | `mango`                                               |
+| `OKCOIN`                | `okcoin`                                              |
+| `OKEX`                  | `okex`, `okex-futures`, `okex-options`, `okex-swap`   |
+| `PHEMEX`                | `phemex`                                              |
+| `POLONIEX`              | `poloniex`                                            |
+| `SERUM`                 | `serum` (*for historical research*)                   |
+| `STARATLAS`             | `staratlas`                                           |
+| `UPBIT`                 | `upbit`                                               |
+| `WOOX`                  | `woo-x`                                               |
+
 ## Environment variables
 
 The following environment variables are used by Tardis and NautilusTrader.

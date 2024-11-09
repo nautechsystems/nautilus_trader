@@ -194,6 +194,7 @@ The following time in force options are available:
 ## Trades
 
 Trades on Polymarket can have the following statuses:
+
 - `MATCHED`: Trade has been matched and sent to the executor service by the operator, the executor service submits the trade as a transaction to the Exchange contract.
 - `MINED`: Trade is observed to be mined into the chain, and no finality threshold is established.
 - `CONFIRMED`: Trade has achieved strong probabilistic finality and was successful.
