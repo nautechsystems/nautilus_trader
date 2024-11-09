@@ -38,7 +38,7 @@ integration written for it, this then enables external publishing of messages.
 
 :::info
 Redis is currently supported for all serializable messages which are published externally.
-The minimum supported Redis version is 6.2.0.
+The minimum supported Redis version is 6.2.
 :::
 
 Under the hood, when a backing database (or any other compatible technology) is configured,
@@ -184,7 +184,7 @@ The current Redis implementation will maintain the `autotrim_mins` as a maximum 
 Rather than a maximum lookback window based on the current wall clock time.
 :::
 
-The minimum supported Redis version is 6.2.0.
+The minimum supported Redis version is 6.2.
 
 ## External streams
 
