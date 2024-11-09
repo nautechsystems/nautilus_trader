@@ -49,6 +49,7 @@ from nautilus_trader.backtest.models cimport MakerTakerFeeModel
 from nautilus_trader.backtest.modules cimport SimulationModule
 from nautilus_trader.cache.base cimport CacheFacade
 from nautilus_trader.common.actor cimport Actor
+from nautilus_trader.common.component cimport LOGGING_PYO3
 from nautilus_trader.common.component cimport LiveClock
 from nautilus_trader.common.component cimport Logger
 from nautilus_trader.common.component cimport TestClock
@@ -971,6 +972,8 @@ cdef class BacktestEngine:
 
         # Change logger clock back to real-time for consistent time stamping
         set_logging_clock_realtime_mode()
+        if LOGGING_PYO3:
+            nautilus_pyo3.logging_clock_set_realtime_mode()
 
         self._log_post_run()
 
@@ -1086,6 +1089,9 @@ cdef class BacktestEngine:
             self._kernel.clock.set_time(start_ns)
             set_logging_clock_static_mode()
             set_logging_clock_static_time(start_ns)
+            if LOGGING_PYO3:
+                nautilus_pyo3.logging_clock_set_static_mode()
+                nautilus_pyo3.logging_clock_set_static_time(start_ns)
             self._log_pre_run()
 
         self._log_run(start, end)
@@ -1210,6 +1216,9 @@ cdef class BacktestEngine:
 
         # Set all clocks to now
         set_logging_clock_static_time(ts_now)
+        if LOGGING_PYO3:
+            nautilus_pyo3.logging_clock_set_static_time(ts_now)
+
         for clock in clocks:
             clock.set_time(ts_now)
 
@@ -1241,6 +1250,9 @@ cdef class BacktestEngine:
 
             # Set all clocks to event timestamp
             set_logging_clock_static_time(ts_event_init)
+            if LOGGING_PYO3:
+                nautilus_pyo3.logging_clock_set_static_time(ts_event_init)
+
             for clock in get_component_clocks(self._instance_id):
                 clock.set_time(ts_event_init)
 

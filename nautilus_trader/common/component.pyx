@@ -1065,7 +1065,7 @@ cpdef LogGuard init_logging(
     """
     Initialize the logging system.
 
-    Acts as an interface into the logging system implemented in Rust with the `log` crate.
+    Provides an interface into the logging system implemented in Rust.
 
     This function should only be called once per process, at the beginning of the application
     run. Subsequent calls will raise a `RuntimeError`, as there can only be one `LogGuard`

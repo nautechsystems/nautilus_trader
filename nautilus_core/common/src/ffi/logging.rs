@@ -122,7 +122,6 @@ pub unsafe extern "C" fn logging_init(
         config,
         file_config,
     )))
-    // logging::init_logging(trader_id, instance_id, config, file_config);
 }
 
 /// Creates a new log event.

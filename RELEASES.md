@@ -38,6 +38,7 @@ None
 - Fixed Bybit handling of `PARTIALLY_FILLED_CANCELED` status orders
 - Fixed Polymarket size precision for `BinaryOption` instruments (precision 6 to match USDC.e)
 - Fixed adapter instrument reloading (providers were not reloading instruments at the configured interval due to internal state flags)
+- Fixed static time logging for `BacktestEngine` when running with `use_pyo3` logging config
 
 ---
 
