@@ -30,6 +30,11 @@ from nautilus_trader.model.functions cimport asset_class_to_str
 from nautilus_trader.model.functions cimport instrument_class_from_str
 from nautilus_trader.model.functions cimport instrument_class_to_str
 from nautilus_trader.model.identifiers cimport InstrumentId
+from nautilus_trader.model.instruments.betting cimport BettingInstrument
+from nautilus_trader.model.instruments.binary_option cimport BinaryOption
+from nautilus_trader.model.instruments.crypto_future cimport CryptoFuture
+from nautilus_trader.model.instruments.crypto_perpetual cimport CryptoPerpetual
+from nautilus_trader.model.instruments.currency_pair cimport CurrencyPair
 from nautilus_trader.model.instruments.equity cimport Equity
 from nautilus_trader.model.instruments.futures_contract cimport FuturesContract
 from nautilus_trader.model.instruments.futures_spread cimport FuturesSpread
@@ -598,7 +603,17 @@ cpdef list[Instrument] instruments_from_pyo3(list pyo3_instruments):
     cdef list[Instrument] instruments = []
 
     for pyo3_instrument in pyo3_instruments:
-        if isinstance(pyo3_instrument, nautilus_pyo3.Equity):
+        if isinstance(pyo3_instrument, nautilus_pyo3.BettingInstrument):
+            instruments.append(BettingInstrument.from_pyo3_c(pyo3_instrument))
+        elif isinstance(pyo3_instrument, nautilus_pyo3.BinaryOption):
+            instruments.append(BinaryOption.from_pyo3_c(pyo3_instrument))
+        elif isinstance(pyo3_instrument, nautilus_pyo3.CryptoFuture):
+            instruments.append(CryptoFuture.from_pyo3_c(pyo3_instrument))
+        elif isinstance(pyo3_instrument, nautilus_pyo3.CryptoPerpetual):
+            instruments.append(CryptoPerpetual.from_pyo3_c(pyo3_instrument))
+        elif isinstance(pyo3_instrument, nautilus_pyo3.CurrencyPair):
+            instruments.append(CurrencyPair.from_pyo3_c(pyo3_instrument))
+        elif isinstance(pyo3_instrument, nautilus_pyo3.Equity):
             instruments.append(Equity.from_pyo3_c(pyo3_instrument))
         elif isinstance(pyo3_instrument, nautilus_pyo3.FuturesContract):
             instruments.append(FuturesContract.from_pyo3_c(pyo3_instrument))

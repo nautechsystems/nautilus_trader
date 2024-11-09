@@ -139,7 +139,7 @@ class InstrumentProvider:
         """
         Initialize the instrument provider.
 
-        If `initialize()` then will immediately return.
+        If already loaded then will immediately return.
 
         """
         if self._loaded:
@@ -156,7 +156,7 @@ class InstrumentProvider:
                     for i in self._load_ids_on_start
                 ]
 
-                instruments_str = "".join([i.value for i in instrument_ids])
+                instruments_str = ", ".join([i.value for i in instrument_ids])
                 filters_str = "..." if not self._filters else f" with filters {self._filters}..."
                 self._log.info(f"Loading instruments {instruments_str}{filters_str}")
 

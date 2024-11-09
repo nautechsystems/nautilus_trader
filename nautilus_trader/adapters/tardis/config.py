@@ -13,20 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import asyncio
-
-from nautilus_trader.core import nautilus_pyo3
+from nautilus_trader.config import LiveDataClientConfig
 
 
-async def run():
-    http_client = nautilus_pyo3.TardisHttpClient()
+class TardisDataClientConfig(LiveDataClientConfig, frozen=True):
+    """
+    Configuration for ``TardisDataClient`` instances.
 
-    pyo3_instrument = await http_client.instrument("bitmex", "xbtusd")
-    print(f"Received: {pyo3_instrument}")
+    Parameters
+    ----------
+    api_key : str, optional
+        The Tardis API secret key.
+        If ``None`` then will source the `TARDIS_API_KEY` environment variable.
 
-    pyo3_instruments = await http_client.instruments("bitmex")
-    print(f"Received: {len(pyo3_instruments)} instruments")
+    References
+    ----------
+    See the list of Tardis-supported exchanges https://api.tardis.dev/v1/exchanges.
 
+    """
 
-if __name__ == "__main__":
-    asyncio.run(run())
+    api_key: str | None = None
