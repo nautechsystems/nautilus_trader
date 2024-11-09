@@ -38,7 +38,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 class BybitInstrumentProvider(InstrumentProvider):
     """
-    Provides a way to load instruments from Bybit.
+    Provides Nautilus instrument definitions from Bybit.
 
     Parameters
     ----------
