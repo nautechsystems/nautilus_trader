@@ -152,8 +152,14 @@ impl FromStr for Money {
 }
 
 impl From<&str> for Money {
-    fn from(input: &str) -> Self {
-        Self::from_str(input).unwrap()
+    fn from(value: &str) -> Self {
+        Self::from_str(value).unwrap()
+    }
+}
+
+impl From<String> for Money {
+    fn from(value: String) -> Self {
+        Self::from_str(value.as_str()).unwrap()
     }
 }
 
