@@ -1245,7 +1245,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "thiserror",
+ "thiserror 1.0.69",
  "time",
  "tokio",
  "tokio-util",
@@ -1629,7 +1629,7 @@ dependencies = [
  "json-writer",
  "num_enum",
  "serde",
- "thiserror",
+ "thiserror 1.0.69",
  "time",
  "tokio",
  "zstd",
@@ -2882,7 +2882,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strum",
- "thiserror",
+ "thiserror 2.0.2",
  "thousands",
  "time",
  "tokio",
@@ -3042,7 +3042,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "thiserror",
+ "thiserror 2.0.2",
  "tokio",
  "ustr",
 ]
@@ -3066,7 +3066,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "strum",
- "thiserror",
+ "thiserror 2.0.2",
  "ustr",
 ]
 
@@ -3140,7 +3140,7 @@ dependencies = [
  "serde_json",
  "strum",
  "tabled",
- "thiserror",
+ "thiserror 2.0.2",
  "thousands",
  "ustr",
 ]
@@ -3165,7 +3165,7 @@ dependencies = [
  "rstest",
  "rustls",
  "serde_json",
- "thiserror",
+ "thiserror 2.0.2",
  "tokio",
  "tokio-rustls",
  "tokio-tungstenite",
@@ -3194,7 +3194,7 @@ dependencies = [
  "quickcheck_macros",
  "rand",
  "rstest",
- "thiserror",
+ "thiserror 2.0.2",
  "tokio",
 ]
 
@@ -3237,7 +3237,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strum",
- "thiserror",
+ "thiserror 2.0.2",
  "ustr",
 ]
 
@@ -3253,7 +3253,7 @@ dependencies = [
  "parquet",
  "pyo3",
  "rstest",
- "thiserror",
+ "thiserror 2.0.2",
 ]
 
 [[package]]
@@ -4440,9 +4440,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "0.38.39"
+version = "0.38.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "375116bee2be9ed569afe2154ea6a99dfdffd257f533f187498c2a8f5feaf4ee"
+checksum = "99e4ea3e1cdc4b559b8e5650f9c8e5998e3e5c1343b4eaf034565f32318d63c0"
 dependencies = [
  "bitflags 2.6.0",
  "errno",
@@ -4908,7 +4908,7 @@ dependencies = [
  "sha2",
  "smallvec",
  "sqlformat",
- "thiserror",
+ "thiserror 1.0.69",
  "tokio",
  "tokio-stream",
  "tracing",
@@ -4991,7 +4991,7 @@ dependencies = [
  "smallvec",
  "sqlx-core",
  "stringprep",
- "thiserror",
+ "thiserror 1.0.69",
  "tracing",
  "whoami",
 ]
@@ -5029,7 +5029,7 @@ dependencies = [
  "smallvec",
  "sqlx-core",
  "stringprep",
- "thiserror",
+ "thiserror 1.0.69",
  "tracing",
  "whoami",
 ]
@@ -5247,18 +5247,38 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.68"
+version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "02dd99dc800bbb97186339685293e1cc5d9df1f8fae2d0aecd9ff1c77efea892"
+checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
 dependencies = [
- "thiserror-impl",
+ "thiserror-impl 1.0.69",
+]
+
+[[package]]
+name = "thiserror"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "037e29b009aa709f293b974da5cd33b15783c049e07f8435778ce8c4871525d8"
+dependencies = [
+ "thiserror-impl 2.0.2",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "1.0.68"
+version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7c61ec9a6f64d2793d8a45faba21efbe3ced62a886d44c36a009b2b519b4c7e"
+checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.87",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ea4778c7e8ff768bdb32a58a2349903859fe719a320300d7d4ce8636f19a1e69"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5637,7 +5657,7 @@ dependencies = [
  "rustls",
  "rustls-pki-types",
  "sha1",
- "thiserror",
+ "thiserror 1.0.69",
  "utf-8",
 ]
 
