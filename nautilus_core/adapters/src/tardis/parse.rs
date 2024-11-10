@@ -17,22 +17,23 @@ use nautilus_core::{datetime::NANOSECONDS_IN_MICROSECOND, nanos::UnixNanos};
 use nautilus_model::{
     data::bar::BarSpecification,
     enums::{AggressorSide, BarAggregation, BookAction, OptionKind, OrderSide, PriceType},
-    identifiers::{InstrumentId, Symbol, Venue},
+    identifiers::{InstrumentId, Symbol},
 };
 
 use super::enums::{Exchange, OptionType};
 
 #[must_use]
+#[inline]
 pub fn parse_symbol_str(symbol: &str) -> String {
+    // TODO: Implement symbol standardization for Binance, Bybit and dYdX
     symbol.to_uppercase()
 }
 
 /// Parses a Nautilus instrument ID from the given Tardis `exchange` and `symbol` values.
 #[must_use]
 pub fn parse_instrument_id(exchange: &Exchange, symbol: &str) -> InstrumentId {
-    let symbol = Symbol::from(parse_symbol_str(symbol));
-    let venue = Venue::from(exchange.as_venue_str());
-    InstrumentId::new(symbol, venue)
+    let symbol = Symbol::from_str_unchecked(parse_symbol_str(symbol));
+    InstrumentId::new(symbol, exchange.as_venue())
 }
 
 /// Parses a Nautilus order side from the given Tardis string `value`.
