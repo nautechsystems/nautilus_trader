@@ -149,11 +149,23 @@ class InstrumentProvider:
         if not reload and self._loaded:
             return  # Already loaded
 
-        if not self._loading:
+        if not self._load_all_on_start and not self._load_ids_on_start:
+            self._log.warning(
+                "No loading configured: ensure either `load_all=True` or there are `load_ids`",
+            )
+            return
+
+        if self._loading:
+            self._log.debug("Awaiting loading...")
+            while self._loading:
+                await asyncio.sleep(0.1)
+
+        if not self._loaded:
             self._log.info("Initializing instruments")
 
-            # Set loading state flags
+            # Set state flag
             self._loading = True
+
             if self._load_all_on_start:
                 await self.load_all_async(self._filters)
             elif self._load_ids_on_start:
@@ -167,13 +179,13 @@ class InstrumentProvider:
                 self._log.info(f"Loading instruments {instruments_str}{filters_str}")
 
                 await self.load_ids_async(instrument_ids, self._filters)
+
+        if self._instruments:
             self._log.info(f"Loaded {self.count} instruments")
         else:
-            self._log.debug("Awaiting loading...")
-            while self._loading:
-                await asyncio.sleep(0.1)
+            self._log.warning("No instruments were loaded, verify config if this is unexpected")
 
-        # Set loading state flags
+        # Set state flags
         self._loading = False
         self._loaded = True
 

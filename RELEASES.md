@@ -7,6 +7,7 @@ Released on TBD (UTC).
 - Added `Portfolio.realized_pnls(...)` method for per venue realized PnL (based on positions)
 - Added `TardisInstrumentProvider`
 - Added `PolymarketExecClientConfig.generate_order_history_from_trades` config setting (default False and not currently recommended)
+- Added configuration warning for `InstrumentProvider` (to warn when node starts with no instrument loading)
 - Implemented `WebSocketClient` reconnection retries (#2044), thanks @davidsblom
 - Implemented `OrderCancelRejected` event generation for Binance and Bybit
 - Implemented `OrderModifyRejected` event generation for Binance and Bybit
