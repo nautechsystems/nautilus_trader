@@ -22,7 +22,7 @@ use std::{
 };
 
 use nautilus_core::correctness::{
-    check_predicate_false, check_predicate_true, check_slice_not_empty, check_valid_string, FAILED,
+    check_predicate_false, check_predicate_true, check_slice_not_empty, FAILED,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -32,7 +32,7 @@ pub const TRADE_ID_LEN: usize = 37;
 /// Represents a valid trade match ID (assigned by a trading venue).
 ///
 /// The unique ID assigned to the trade entity once it is received or matched by
-/// the exchange or central counterparty.
+/// the venue or central counterparty.
 ///
 /// Can correspond to the `TradeID <1003> field` of the FIX protocol.
 ///
@@ -63,7 +63,6 @@ impl TradeId {
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     pub fn new_checked(value: &str) -> anyhow::Result<Self> {
-        check_valid_string(value, "value")?;
         Self::from_bytes(value.as_bytes())
     }
 
@@ -90,10 +89,18 @@ impl TradeId {
     /// - The byte slice is empty or consists only of a single null byte.
     /// - The byte slice exceeds 36 bytes and does not end with a null byte.
     /// - The byte slice is exactly 37 bytes but the last byte is not null.
+    /// - The byte slice contains non-ASCII characters.
     pub fn from_bytes(value: &[u8]) -> anyhow::Result<Self> {
         check_slice_not_empty(value, "value")?;
-        // SAFETY: Checked not empty above
-        let last_byte = *value.last().unwrap();
+
+        // Check for non-ASCII characters and capture last byte in single pass
+        let mut last_byte = 0;
+        let all_ascii = value
+            .iter()
+            .inspect(|&&b| last_byte = b)
+            .all(|&b| b.is_ascii());
+
+        check_predicate_true(all_ascii, "'value' contains non-ASCII characters")?;
         check_predicate_false(
             value.len() == 1 && last_byte == 0,
             "'value' was single null byte",
