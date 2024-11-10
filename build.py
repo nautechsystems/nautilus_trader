@@ -247,7 +247,7 @@ def _copy_build_dir_to_project(cmd: build_ext) -> None:
 
 
 def _copy_rust_dylibs_to_project() -> None:
-    # https://pyo3.rs/latest/building_and_distribution#manual-builds
+    # https://pyo3.rs/latest/building-and-distribution#manual-builds
     ext_suffix = sysconfig.get_config_var("EXT_SUFFIX")
     src = Path(TARGET_DIR) / f"{RUST_LIB_PFX}nautilus_pyo3.{RUST_DYLIB_EXT}"
     dst = Path("nautilus_trader/core") / f"nautilus_pyo3{ext_suffix}"
