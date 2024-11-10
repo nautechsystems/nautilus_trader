@@ -59,7 +59,7 @@ impl Venue {
     ///
     /// This function panics:
     /// - If `value` is not a valid string.
-    pub fn new(value: &str) -> Self {
+    pub fn new<T: AsRef<str>>(value: T) -> Self {
         Self::new_checked(value).expect(FAILED)
     }
 
@@ -81,8 +81,13 @@ impl Venue {
     }
 
     #[must_use]
-    pub fn from_str_unchecked(s: &str) -> Self {
-        Self(Ustr::from(s))
+    pub fn from_str_unchecked<T: AsRef<str>>(s: T) -> Self {
+        Self(Ustr::from(s.as_ref()))
+    }
+
+    #[must_use]
+    pub const fn from_ustr_unchecked(s: Ustr) -> Self {
+        Self(s)
     }
 
     pub fn from_code(code: &str) -> anyhow::Result<Self> {
