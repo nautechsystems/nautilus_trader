@@ -62,8 +62,8 @@ impl TradeId {
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
-    pub fn new_checked(value: &str) -> anyhow::Result<Self> {
-        Self::from_bytes(value.as_bytes())
+    pub fn new_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
+        Self::from_bytes(value.as_ref().as_bytes())
     }
 
     /// Creates a new [`TradeId`] instance.
@@ -75,7 +75,7 @@ impl TradeId {
     /// This function returns an error if:
     /// - `value` is an invalid string (e.g., is empty or contains non-ASCII characters).
     /// - `value` length exceeds 36 characters.
-    pub fn new(value: &str) -> Self {
+    pub fn new<T: AsRef<str>>(value: T) -> Self {
         Self::new_checked(value).expect(FAILED)
     }
 

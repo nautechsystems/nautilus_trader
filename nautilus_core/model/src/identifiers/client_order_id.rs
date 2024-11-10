@@ -43,7 +43,8 @@ impl ClientOrderId {
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
-    pub fn new_checked(value: &str) -> anyhow::Result<Self> {
+    pub fn new_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
+        let value = value.as_ref();
         check_valid_string(value, stringify!(value))?;
         Ok(Self(Ustr::from(value)))
     }
@@ -54,7 +55,7 @@ impl ClientOrderId {
     ///
     /// This function panics:
     /// - If `value` is not a valid string.
-    pub fn new(value: &str) -> Self {
+    pub fn new<T: AsRef<str>>(value: T) -> Self {
         Self::new_checked(value).expect(FAILED)
     }
 

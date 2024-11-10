@@ -55,6 +55,12 @@ impl InstrumentId {
     }
 }
 
+impl InstrumentId {
+    pub fn from_as_ref<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
+        Self::from_str(value.as_ref())
+    }
+}
+
 impl FromStr for InstrumentId {
     type Err = anyhow::Error;
 

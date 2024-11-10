@@ -19,6 +19,7 @@ Released on TBD (UTC).
 - Ported `ExecutionEngine` to Rust (#2048), thanks @twitu
 - Added globally shared data channels to send events from engines to Runner in Rust (#2042), thanks @twitu
 - Added LRU caching for dYdX HTTP client (#2049), thanks @davidsblom
+- Improved identifier constructors to take `AsRef<str>` for a cleaner more flexible API
 - Refined identifiers `From` trait impls
 - Refined `InstrumentProvider` initialization behavior and logging
 - Refined `LiveTimer` cancel and performance testing
