@@ -242,7 +242,7 @@ pub fn parse_trade_msg(
     let price = Price::new(msg.price, price_precision);
     let size = Quantity::new(msg.amount, size_precision);
     let aggressor_side = parse_aggressor_side(&msg.side);
-    let trade_id = TradeId::new(&msg.id.unwrap_or_else(|| Uuid::new_v4().to_string()));
+    let trade_id = TradeId::new(msg.id.unwrap_or_else(|| Uuid::new_v4().to_string()));
     let ts_event = UnixNanos::from(msg.timestamp.timestamp_nanos_opt().unwrap() as u64);
     let ts_init = UnixNanos::from(msg.local_timestamp.timestamp_nanos_opt().unwrap() as u64);
 

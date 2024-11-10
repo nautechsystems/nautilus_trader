@@ -900,7 +900,7 @@ impl OrderMatchingEngine {
 
         self.position_count += 1;
         if self.config.use_random_ids {
-            Some(PositionId::new(&Uuid::new_v4().to_string()))
+            Some(PositionId::new(Uuid::new_v4().to_string()))
         } else {
             Some(PositionId::new(
                 format!("{}-{}-{}", self.venue, self.raw_id, self.position_count).as_str(),

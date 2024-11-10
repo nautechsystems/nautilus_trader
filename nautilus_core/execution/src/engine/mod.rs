@@ -399,7 +399,7 @@ impl ExecutionEngine {
     }
 
     fn determine_netting_position_id(&self, fill: OrderFilled) -> PositionId {
-        PositionId::new(&format!("{}-{}", fill.instrument_id, fill.strategy_id))
+        PositionId::new(format!("{}-{}", fill.instrument_id, fill.strategy_id))
     }
 
     fn apply_event_to_order(&self, order: &mut OrderAny, event: OrderEventAny) {
