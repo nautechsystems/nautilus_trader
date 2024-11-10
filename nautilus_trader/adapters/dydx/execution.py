@@ -885,7 +885,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             return
 
         if fill_msg.orderId is None:
-            message = f"Cannot handle fill event: orderId is None of fill {fill_msg.type} event."
+            message = f"Cannot handle fill event: orderId is None for fill {fill_msg.type} event."
             self._log.error(message)
             return
 
