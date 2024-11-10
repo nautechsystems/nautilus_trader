@@ -16,12 +16,14 @@
 //! Represents a valid trade match ID (assigned by a trading venue).
 
 use std::{
-    ffi::{CStr, CString},
+    ffi::CStr,
     fmt::{Debug, Display, Formatter},
     hash::Hash,
 };
 
-use nautilus_core::correctness::{check_in_range_inclusive_usize, check_valid_string, FAILED};
+use nautilus_core::correctness::{
+    check_predicate_false, check_predicate_true, check_slice_not_empty, check_valid_string, FAILED,
+};
 use serde::{Deserialize, Deserializer, Serialize};
 
 /// The maximum length of ASCII characters for a `TradeId` string value (including null terminator).
@@ -29,7 +31,12 @@ pub const TRADE_ID_LEN: usize = 37;
 
 /// Represents a valid trade match ID (assigned by a trading venue).
 ///
+/// The unique ID assigned to the trade entity once it is received or matched by
+/// the exchange or central counterparty.
+///
 /// Can correspond to the `TradeID <1003> field` of the FIX protocol.
+///
+/// Maximum length is 36 characters.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
@@ -46,61 +53,68 @@ impl TradeId {
     ///
     /// Maximum length is 36 characters.
     ///
-    /// The unique ID assigned to the trade entity once it is received or matched by
-    /// the exchange or central counterparty.
-    ///
     /// # Errors
     ///
-    /// This function returns an error:
-    /// - If `value` is not a valid string.
-    /// - If `value` length is greater than 36.
+    /// This function returns an error if:
+    /// - `value` is an invalid string (e.g., is empty or contains non-ASCII characters).
+    /// - `value` length exceeds 36 characters.
+    ///
+    /// # Notes
+    ///
+    /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
     pub fn new_checked(value: &str) -> anyhow::Result<Self> {
-        // check that string is non-empty and within the expected length
-        check_in_range_inclusive_usize(value.len(), 1, TRADE_ID_LEN, stringify!(value))?;
-        Ok(Self::from_valid_bytes(value.as_bytes()))
+        check_valid_string(value, "value")?;
+        Self::from_bytes(value.as_bytes())
     }
 
     /// Creates a new [`TradeId`] instance.
     ///
     /// Maximum length is 36 characters.
     ///
-    /// The unique ID assigned to the trade entity once it is received or matched by
-    /// the exchange or central counterparty.
+    /// # Errors
     ///
-    /// # Panics
-    ///
-    /// This function panics:
-    /// - If `value` is not a valid string, or value length is greater than 36.
+    /// This function returns an error if:
+    /// - `value` is an invalid string (e.g., is empty or contains non-ASCII characters).
+    /// - `value` length exceeds 36 characters.
     pub fn new(value: &str) -> Self {
         Self::new_checked(value).expect(FAILED)
     }
 
-    fn from_valid_bytes(bytes: &[u8]) -> Self {
-        // SAFETY: Assumes `bytes` has already been validated as non-empty and within max length.
-        let mut value = [0; TRADE_ID_LEN];
-        value[..bytes.len()].copy_from_slice(bytes);
-        Self { value }
+    /// Creates a new [`TradeId`] instance.
+    ///
+    /// Maximum length is 36 characters plus a null terminator byte.
+    ///
+    /// # Panics
+    ///
+    /// This function panics if:
+    /// - The byte slice is empty or consists only of a single null byte.
+    /// - The byte slice exceeds 36 bytes and does not end with a null byte.
+    /// - The byte slice is exactly 37 bytes but the last byte is not null.
+    pub fn from_bytes(value: &[u8]) -> anyhow::Result<Self> {
+        check_slice_not_empty(value, "value")?;
+        // SAFETY: Checked not empty above
+        let last_byte = *value.last().unwrap();
+        check_predicate_false(
+            value.len() == 1 && last_byte == 0,
+            "'value' was single null byte",
+        )?;
+        check_predicate_true(
+            value.len() <= 36 || (value.len() == 37 && last_byte == 0),
+            "'value' exceeds max length or invalid format",
+        )?;
+
+        let mut buf = [0; TRADE_ID_LEN];
+        buf[..value.len()].copy_from_slice(value);
+
+        Ok(Self { value: buf })
     }
 
+    /// Returns a C string slice from the trade ID value.
     #[must_use]
     pub fn as_cstr(&self) -> &CStr {
         // SAFETY: Unwrap safe as we always store valid C strings
         // We use until nul because the values array may be padded with nul bytes
         CStr::from_bytes_until_nul(&self.value).unwrap()
-    }
-}
-
-impl From<CString> for TradeId {
-    fn from(value: CString) -> Self {
-        let cstr_str = value
-            .to_str()
-            .expect("TradeId expected valid string as `CString`");
-        check_valid_string(cstr_str, stringify!(cstr)).expect(FAILED);
-        let bytes = value.as_bytes_with_nul();
-        // check that string is non-empty excluding '\0' and within the expected length
-        check_in_range_inclusive_usize(bytes.len(), 2, TRADE_ID_LEN, stringify!(cstr))
-            .expect(FAILED);
-        Self::from_valid_bytes(bytes)
     }
 }
 
@@ -139,8 +153,93 @@ mod tests {
     use crate::identifiers::{stubs::*, trade_id::TradeId};
 
     #[rstest]
+    fn test_trade_id_new_valid() {
+        let trade_id = TradeId::new("TRADE12345");
+        assert_eq!(trade_id.to_string(), "TRADE12345");
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Condition failed: 'value' exceeds max length or invalid format")]
+    fn test_trade_id_new_invalid_length() {
+        let _ = TradeId::new("A".repeat(37).as_str());
+    }
+
+    #[rstest]
+    #[case(b"1234567890", "1234567890")]
+    #[case(
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZ123456",
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"
+    )]
+    #[case(b"1234567890\0", "1234567890")]
+    #[case(
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZ123456\0",
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ123456"
+    )]
+    fn test_trade_id_from_valid_bytes(#[case] input: &[u8], #[case] expected: &str) {
+        let trade_id = TradeId::from_bytes(input).unwrap();
+        assert_eq!(trade_id.to_string(), expected);
+    }
+
+    #[rstest]
+    #[should_panic(expected = "the 'value' slice `&[u8]` was empty")]
+    fn test_trade_id_from_bytes_empty() {
+        TradeId::from_bytes(&[] as &[u8]).unwrap();
+    }
+
+    #[rstest]
+    #[should_panic(expected = "'value' was single null byte")]
+    fn test_trade_id_single_null_byte() {
+        TradeId::from_bytes(&[0u8] as &[u8]).unwrap();
+    }
+
+    #[rstest]
+    #[case(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789012")] // 37 bytes, no null terminator
+    #[case(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ123456789012\0")] // 38 bytes, with null terminator
+    #[should_panic(expected = "'value' exceeds max length or invalid format")]
+    fn test_trade_id_exceeds_max_length(#[case] input: &[u8]) {
+        TradeId::from_bytes(input).unwrap();
+    }
+
+    #[rstest]
+    fn test_trade_id_with_null_terminator_at_max_length() {
+        let input = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ123456\0" as &[u8];
+        let trade_id = TradeId::from_bytes(input).unwrap();
+        assert_eq!(trade_id.to_string(), "ABCDEFGHIJKLMNOPQRSTUVWXYZ123456");
+    }
+
+    #[rstest]
+    fn test_trade_id_as_cstr() {
+        let trade_id = TradeId::new("TRADE12345");
+        assert_eq!(trade_id.as_cstr().to_str().unwrap(), "TRADE12345");
+    }
+
+    #[rstest]
+    fn test_trade_id_equality() {
+        let trade_id1 = TradeId::new("TRADE12345");
+        let trade_id2 = TradeId::new("TRADE12345");
+        assert_eq!(trade_id1, trade_id2);
+    }
+
+    #[rstest]
     fn test_string_reprs(trade_id: TradeId) {
         assert_eq!(trade_id.to_string(), "1234567890");
         assert_eq!(format!("{trade_id}"), "1234567890");
+    }
+
+    #[rstest]
+    fn test_trade_id_ordering() {
+        let trade_id1 = TradeId::new("TRADE12345");
+        let trade_id2 = TradeId::new("TRADE12346");
+        assert!(trade_id1 < trade_id2);
+    }
+
+    #[rstest]
+    fn test_trade_id_serialization() {
+        let trade_id = TradeId::new("TRADE12345");
+        let json = serde_json::to_string(&trade_id).unwrap();
+        assert_eq!(json, "\"TRADE12345\"");
+
+        let deserialized: TradeId = serde_json::from_str(&json).unwrap();
+        assert_eq!(trade_id, deserialized);
     }
 }
