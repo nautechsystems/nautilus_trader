@@ -15,7 +15,7 @@
 
 from typing import Any
 
-import msgspec as msgspec
+import msgspec
 
 from nautilus_trader.model.enums import CurrencyType
 from nautilus_trader.model.objects import Currency
