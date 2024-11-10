@@ -474,25 +474,25 @@ impl Logger {
     }
 }
 
-pub fn log(level: LogLevel, color: LogColor, component: Ustr, message: &str) {
+pub fn log<T: AsRef<str>>(level: LogLevel, color: LogColor, component: Ustr, message: T) {
     let color = Value::from(color as u8);
 
     match level {
         LogLevel::Off => {}
         LogLevel::Trace => {
-            log::trace!(component = component.to_value(), color = color; "{}", message);
+            log::trace!(component = component.to_value(), color = color; "{}", message.as_ref());
         }
         LogLevel::Debug => {
-            log::debug!(component = component.to_value(), color = color; "{}", message);
+            log::debug!(component = component.to_value(), color = color; "{}", message.as_ref());
         }
         LogLevel::Info => {
-            log::info!(component = component.to_value(), color = color; "{}", message);
+            log::info!(component = component.to_value(), color = color; "{}", message.as_ref());
         }
         LogLevel::Warning => {
-            log::warn!(component = component.to_value(), color = color; "{}", message);
+            log::warn!(component = component.to_value(), color = color; "{}", message.as_ref());
         }
         LogLevel::Error => {
-            log::error!(component = component.to_value(), color = color; "{}", message);
+            log::error!(component = component.to_value(), color = color; "{}", message.as_ref());
         }
     }
 }
