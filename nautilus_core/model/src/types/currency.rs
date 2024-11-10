@@ -65,13 +65,15 @@ impl Currency {
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
-    pub fn new_checked(
-        code: &str,
+    pub fn new_checked<T: AsRef<str>>(
+        code: T,
         precision: u8,
         iso4217: u16,
-        name: &str,
+        name: T,
         currency_type: CurrencyType,
     ) -> anyhow::Result<Self> {
+        let code = code.as_ref();
+        let name = name.as_ref();
         check_valid_string(code, "code")?;
         check_valid_string(name, "name")?;
         check_fixed_precision(precision)?;
@@ -90,11 +92,11 @@ impl Currency {
     ///
     /// This function panics:
     /// - If a correctness check fails. See [`Currency::new_checked`] for more details.
-    pub fn new(
-        code: &str,
+    pub fn new<T: AsRef<str>>(
+        code: T,
         precision: u8,
         iso4217: u16,
-        name: &str,
+        name: T,
         currency_type: CurrencyType,
     ) -> Self {
         Self::new_checked(code, precision, iso4217, name, currency_type).expect(FAILED)
@@ -210,10 +212,16 @@ impl FromStr for Currency {
 }
 
 impl From<&str> for Currency {
-    fn from(input: &str) -> Self {
-        input
+    fn from(value: &str) -> Self {
+        value
             .parse()
             .expect("Currency string representation should be valid")
+    }
+}
+
+impl From<String> for Currency {
+    fn from(value: String) -> Self {
+        Self::from(value.as_str())
     }
 }
 
