@@ -134,8 +134,8 @@ impl Display for Symbol {
 }
 
 impl From<Ustr> for Symbol {
-    fn from(input: Ustr) -> Self {
-        Self(input)
+    fn from(value: Ustr) -> Self {
+        Self(value)
     }
 }
 
