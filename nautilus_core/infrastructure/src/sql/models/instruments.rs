@@ -103,12 +103,8 @@ impl<'r> FromRow<'r, PgRow> for InstrumentAnyModel {
 // TODO: New/updated schema required to support betting instrument loading
 impl<'r> FromRow<'r, PgRow> for BettingInstrumentModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
-        let id = row
-            .try_get::<String, _>("id")
-            .map(|res| InstrumentId::from(res.as_str()))?;
-        let raw_symbol = row
-            .try_get::<String, _>("raw_symbol")
-            .map(|res| Symbol::from(res.as_str()))?;
+        let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
+        let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
         let event_type_id = row.try_get::<i64, _>("event_type_id")? as u64;
         let event_type_name = row
             .try_get::<String, _>("event_type_name")
@@ -126,7 +122,7 @@ impl<'r> FromRow<'r, PgRow> for BettingInstrumentModel {
             .map(|res| Ustr::from(res.as_str()))?;
         let event_open_date = row
             .try_get::<String, _>("event_open_date")
-            .map(|res| UnixNanos::from(res.as_str()))?;
+            .map(UnixNanos::from)?;
         let betting_type = row
             .try_get::<String, _>("betting_type")
             .map(|res| Ustr::from(res.as_str()))?;
@@ -141,7 +137,7 @@ impl<'r> FromRow<'r, PgRow> for BettingInstrumentModel {
             .map(|res| Ustr::from(res.as_str()))?;
         let market_start_time = row
             .try_get::<String, _>("market_start_time")
-            .map(|res| UnixNanos::from(res.as_str()))?;
+            .map(UnixNanos::from)?;
         let selection_id = row.try_get::<i64, _>("selection_id")? as u64;
         let selection_name = row
             .try_get::<String, _>("selection_name")
@@ -149,7 +145,7 @@ impl<'r> FromRow<'r, PgRow> for BettingInstrumentModel {
         let selection_handicap = row.try_get::<f64, _>("selection_handicap")?;
         let currency = row
             .try_get::<String, _>("quote_currency")
-            .map(|res| Currency::from(res.as_str()))?;
+            .map(Currency::from)?;
         let price_precision = row.try_get::<i32, _>("price_precision")? as u8;
         let size_precision = row.try_get::<i32, _>("size_precision")? as u8;
         let price_increment = row
@@ -188,12 +184,8 @@ impl<'r> FromRow<'r, PgRow> for BettingInstrumentModel {
             .try_get::<Option<String>, _>("min_price")
             .ok()
             .and_then(|res| res.map(|value| Price::from(value.as_str())));
-        let ts_event = row
-            .try_get::<String, _>("ts_event")
-            .map(|res| UnixNanos::from(res.as_str()))?;
-        let ts_init = row
-            .try_get::<String, _>("ts_init")
-            .map(|res| UnixNanos::from(res.as_str()))?;
+        let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
+        let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
         let inst = BettingInstrument::new(
             id,
@@ -236,24 +228,20 @@ impl<'r> FromRow<'r, PgRow> for BettingInstrumentModel {
 
 impl<'r> FromRow<'r, PgRow> for BinaryOptionModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
-        let id = row
-            .try_get::<String, _>("id")
-            .map(|res| InstrumentId::from(res.as_str()))?;
-        let raw_symbol = row
-            .try_get::<String, _>("raw_symbol")
-            .map(|res| Symbol::from(res.as_str()))?;
+        let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
+        let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
         let asset_class = row
             .try_get::<AssetClassModel, _>("asset_class")
             .map(|res| res.0)?;
         let currency = row
             .try_get::<String, _>("quote_currency")
-            .map(|res| Currency::from(res.as_str()))?;
+            .map(Currency::from)?;
         let activation_ns = row
             .try_get::<String, _>("activation_ns")
-            .map(|res| UnixNanos::from(res.as_str()))?;
+            .map(UnixNanos::from)?;
         let expiration_ns = row
             .try_get::<String, _>("expiration_ns")
-            .map(|res| UnixNanos::from(res.as_str()))?;
+            .map(UnixNanos::from)?;
         let price_precision = row.try_get::<i32, _>("price_precision")? as u8;
         let size_precision = row.try_get::<i32, _>("size_precision")? as u8;
         let price_increment = row
@@ -308,12 +296,8 @@ impl<'r> FromRow<'r, PgRow> for BinaryOptionModel {
             .try_get::<Option<String>, _>("min_price")
             .ok()
             .and_then(|res| res.map(|value| Price::from(value.as_str())));
-        let ts_event = row
-            .try_get::<String, _>("ts_event")
-            .map(|res| UnixNanos::from(res.as_str()))?;
-        let ts_init = row
-            .try_get::<String, _>("ts_init")
-            .map(|res| UnixNanos::from(res.as_str()))?;
+        let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
+        let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
         let inst = BinaryOption::new(
             id,
@@ -347,28 +331,22 @@ impl<'r> FromRow<'r, PgRow> for BinaryOptionModel {
 
 impl<'r> FromRow<'r, PgRow> for CryptoFutureModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
-        let id = row
-            .try_get::<String, _>("id")
-            .map(|res| InstrumentId::from(res.as_str()))?;
-        let raw_symbol = row
-            .try_get::<String, _>("raw_symbol")
-            .map(|res| Symbol::from(res.as_str()))?;
-        let underlying = row
-            .try_get::<String, _>("underlying")
-            .map(|res| Currency::from(res.as_str()))?;
+        let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
+        let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
+        let underlying = row.try_get::<String, _>("underlying").map(Currency::from)?;
         let quote_currency = row
             .try_get::<String, _>("quote_currency")
-            .map(|res| Currency::from(res.as_str()))?;
+            .map(Currency::from)?;
         let settlement_currency = row
             .try_get::<String, _>("settlement_currency")
-            .map(|res| Currency::from(res.as_str()))?;
+            .map(Currency::from)?;
         let is_inverse = row.try_get::<bool, _>("is_inverse")?;
         let activation_ns = row
             .try_get::<String, _>("activation_ns")
-            .map(|res| UnixNanos::from(res.as_str()))?;
+            .map(UnixNanos::from)?;
         let expiration_ns = row
             .try_get::<String, _>("expiration_ns")
-            .map(|res| UnixNanos::from(res.as_str()))?;
+            .map(UnixNanos::from)?;
         let price_precision = row.try_get::<i32, _>("price_precision")?;
         let size_precision = row.try_get::<i32, _>("size_precision")?;
         let price_increment = row
@@ -419,12 +397,8 @@ impl<'r> FromRow<'r, PgRow> for CryptoFutureModel {
             .try_get::<Option<String>, _>("min_price")
             .ok()
             .and_then(|res| res.map(|value| Price::from(value.as_str())));
-        let ts_event = row
-            .try_get::<String, _>("ts_event")
-            .map(|res| UnixNanos::from(res.as_str()))?;
-        let ts_init = row
-            .try_get::<String, _>("ts_init")
-            .map(|res| UnixNanos::from(res.as_str()))?;
+        let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
+        let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
         let inst = CryptoFuture::new(
             id,
@@ -460,21 +434,17 @@ impl<'r> FromRow<'r, PgRow> for CryptoFutureModel {
 
 impl<'r> FromRow<'r, PgRow> for CryptoPerpetualModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
-        let id = row
-            .try_get::<String, _>("id")
-            .map(|res| InstrumentId::from(res.as_str()))?;
-        let raw_symbol = row
-            .try_get::<String, _>("raw_symbol")
-            .map(|res| Symbol::from(res.as_str()))?;
+        let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
+        let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
         let base_currency = row
             .try_get::<String, _>("base_currency")
-            .map(|res| Currency::from(res.as_str()))?;
+            .map(Currency::from)?;
         let quote_currency = row
             .try_get::<String, _>("quote_currency")
-            .map(|res| Currency::from(res.as_str()))?;
+            .map(Currency::from)?;
         let settlement_currency = row
             .try_get::<String, _>("settlement_currency")
-            .map(|res| Currency::from(res.as_str()))?;
+            .map(Currency::from)?;
         let is_inverse = row.try_get::<bool, _>("is_inverse")?;
         let price_precision = row.try_get::<i32, _>("price_precision")?;
         let size_precision = row.try_get::<i32, _>("size_precision")?;
@@ -526,12 +496,8 @@ impl<'r> FromRow<'r, PgRow> for CryptoPerpetualModel {
             .try_get::<Option<String>, _>("min_price")
             .ok()
             .and_then(|res| res.map(|res| Price::from(res.as_str())));
-        let ts_event = row
-            .try_get::<String, _>("ts_event")
-            .map(|res| UnixNanos::from(res.as_str()))?;
-        let ts_init = row
-            .try_get::<String, _>("ts_init")
-            .map(|res| UnixNanos::from(res.as_str()))?;
+        let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
+        let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
         let inst = CryptoPerpetual::new(
             id,
@@ -565,18 +531,14 @@ impl<'r> FromRow<'r, PgRow> for CryptoPerpetualModel {
 
 impl<'r> FromRow<'r, PgRow> for CurrencyPairModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
-        let id = row
-            .try_get::<String, _>("id")
-            .map(|res| InstrumentId::from(res.as_str()))?;
-        let raw_symbol = row
-            .try_get::<String, _>("raw_symbol")
-            .map(|res| Symbol::from(res.as_str()))?;
+        let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
+        let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
         let base_currency = row
             .try_get::<String, _>("base_currency")
-            .map(|res| Currency::from(res.as_str()))?;
+            .map(Currency::from)?;
         let quote_currency = row
             .try_get::<String, _>("quote_currency")
-            .map(|res| Currency::from(res.as_str()))?;
+            .map(Currency::from)?;
         let price_precision = row.try_get::<i32, _>("price_precision")?;
         let size_precision = row.try_get::<i32, _>("size_precision")?;
         let price_increment = row
@@ -625,12 +587,8 @@ impl<'r> FromRow<'r, PgRow> for CurrencyPairModel {
             .try_get::<Option<String>, _>("min_price")
             .ok()
             .and_then(|res| res.map(|res| Price::from(res.as_str())));
-        let ts_event = row
-            .try_get::<String, _>("ts_event")
-            .map(|res| UnixNanos::from(res.as_str()))?;
-        let ts_init = row
-            .try_get::<String, _>("ts_init")
-            .map(|res| UnixNanos::from(res.as_str()))?;
+        let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
+        let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
         let inst = CurrencyPair::new(
             id,
@@ -661,18 +619,14 @@ impl<'r> FromRow<'r, PgRow> for CurrencyPairModel {
 
 impl<'r> FromRow<'r, PgRow> for EquityModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
-        let id = row
-            .try_get::<String, _>("id")
-            .map(|res| InstrumentId::from(res.as_str()))?;
-        let raw_symbol = row
-            .try_get::<String, _>("raw_symbol")
-            .map(|res| Symbol::from(res.as_str()))?;
+        let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
+        let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
         let isin = row
             .try_get::<Option<String>, _>("isin")
             .map(|res| res.map(|s| Ustr::from(s.as_str())))?;
         let currency = row
             .try_get::<String, _>("quote_currency")
-            .map(|res| Currency::from(res.as_str()))?;
+            .map(Currency::from)?;
         let price_precision = row.try_get::<i32, _>("price_precision")?;
         let price_increment = row
             .try_get::<String, _>("price_increment")
@@ -708,12 +662,8 @@ impl<'r> FromRow<'r, PgRow> for EquityModel {
             .try_get::<Option<String>, _>("min_price")
             .ok()
             .and_then(|res| res.map(|s| Price::from(s.as_str())));
-        let ts_event = row
-            .try_get::<String, _>("ts_event")
-            .map(|res| UnixNanos::from(res.as_str()))?;
-        let ts_init = row
-            .try_get::<String, _>("ts_init")
-            .map(|res| UnixNanos::from(res.as_str()))?;
+        let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
+        let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
         let inst = Equity::new(
             id,
@@ -740,12 +690,8 @@ impl<'r> FromRow<'r, PgRow> for EquityModel {
 
 impl<'r> FromRow<'r, PgRow> for FuturesContractModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
-        let id = row
-            .try_get::<String, _>("id")
-            .map(|res| InstrumentId::from(res.as_str()))?;
-        let raw_symbol = row
-            .try_get::<String, _>("raw_symbol")
-            .map(|res| Symbol::new(res.as_str()))?;
+        let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
+        let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::new)?;
         let asset_class = row
             .try_get::<AssetClassModel, _>("asset_class")
             .map(|res| res.0)?;
@@ -757,13 +703,13 @@ impl<'r> FromRow<'r, PgRow> for FuturesContractModel {
             .map(|res| Ustr::from(res.as_str()))?;
         let currency = row
             .try_get::<String, _>("quote_currency")
-            .map(|res| Currency::from_str(res.as_str()).unwrap())?;
+            .map(Currency::from)?;
         let activation_ns = row
             .try_get::<String, _>("activation_ns")
-            .map(|res| UnixNanos::from(res.as_str()))?;
+            .map(UnixNanos::from)?;
         let expiration_ns = row
             .try_get::<String, _>("expiration_ns")
-            .map(|res| UnixNanos::from(res.as_str()))?;
+            .map(UnixNanos::from)?;
         let price_precision = row.try_get::<i32, _>("price_precision")?;
         let price_increment = row
             .try_get::<String, _>("price_increment")
@@ -796,12 +742,8 @@ impl<'r> FromRow<'r, PgRow> for FuturesContractModel {
         let margin_maint = row
             .try_get::<String, _>("margin_maint")
             .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
-        let ts_event = row
-            .try_get::<String, _>("ts_event")
-            .map(|res| UnixNanos::from(res.as_str()))?;
-        let ts_init = row
-            .try_get::<String, _>("ts_init")
-            .map(|res| UnixNanos::from(res.as_str()))?;
+        let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
+        let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
         let inst = FuturesContract::new(
             id,
@@ -837,12 +779,8 @@ impl<'r> FromRow<'r, PgRow> for FuturesSpreadModel {
 
 impl<'r> FromRow<'r, PgRow> for OptionsContractModel {
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
-        let id = row
-            .try_get::<String, _>("id")
-            .map(|res| InstrumentId::from(res.as_str()))?;
-        let raw_symbol = row
-            .try_get::<String, _>("raw_symbol")
-            .map(|res| Symbol::new(res.as_str()))?;
+        let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
+        let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::new)?;
         let asset_class = row
             .try_get::<AssetClassModel, _>("asset_class")
             .map(|res| res.0)?;
@@ -857,16 +795,16 @@ impl<'r> FromRow<'r, PgRow> for OptionsContractModel {
             .map(|res| OptionKind::from_str(res.as_str()).unwrap())?;
         let activation_ns = row
             .try_get::<String, _>("activation_ns")
-            .map(|res| UnixNanos::from(res.as_str()))?;
+            .map(UnixNanos::from)?;
         let expiration_ns = row
             .try_get::<String, _>("expiration_ns")
-            .map(|res| UnixNanos::from(res.as_str()))?;
+            .map(UnixNanos::from)?;
         let strike_price = row
             .try_get::<String, _>("strike_price")
             .map(|res| Price::from_str(res.as_str()).unwrap())?;
         let currency = row
             .try_get::<String, _>("quote_currency")
-            .map(|res| Currency::from_str(res.as_str()).unwrap())?;
+            .map(Currency::from)?;
         let price_precision = row.try_get::<i32, _>("price_precision").unwrap();
         let price_increment = row
             .try_get::<String, _>("price_increment")
@@ -900,12 +838,8 @@ impl<'r> FromRow<'r, PgRow> for OptionsContractModel {
         let margin_maint = row
             .try_get::<String, _>("margin_maint")
             .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
-        let ts_event = row
-            .try_get::<String, _>("ts_event")
-            .map(|res| UnixNanos::from(res.as_str()))?;
-        let ts_init = row
-            .try_get::<String, _>("ts_init")
-            .map(|res| UnixNanos::from(res.as_str()))?;
+        let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
+        let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
         let inst = OptionsContract::new(
             id,

@@ -100,18 +100,12 @@ impl<'r> FromRow<'r, PgRow> for PositionSnapshotModel {
             .try_get::<Option<i64>, _>("duration_ns")?
             .map(|value| value as u64);
 
-        let ts_opened = row
-            .try_get::<String, _>("ts_opened")
-            .map(|res| UnixNanos::from(res.as_str()))?;
+        let ts_opened = row.try_get::<String, _>("ts_opened").map(UnixNanos::from)?;
         let ts_closed: Option<UnixNanos> = row
             .try_get::<Option<String>, _>("ts_closed")?
-            .map(|res| UnixNanos::from(res.as_str()));
-        let ts_last = row
-            .try_get::<String, _>("ts_last")
-            .map(|res| UnixNanos::from(res.as_str()))?;
-        let ts_init = row
-            .try_get::<String, _>("ts_init")
-            .map(|res| UnixNanos::from(res.as_str()))?;
+            .map(UnixNanos::from);
+        let ts_last = row.try_get::<String, _>("ts_last").map(UnixNanos::from)?;
+        let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
 
         let snapshot = PositionSnapshot {
             trader_id,
