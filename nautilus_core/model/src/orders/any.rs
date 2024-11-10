@@ -56,9 +56,6 @@ pub enum OrderAny {
     TrailingStopMarket(TrailingStopMarketOrder),
 }
 
-// TODO: Review later
-impl Eq for OrderAny {}
-
 impl Default for OrderAny {
     fn default() -> Self {
         Self::Limit(LimitOrder::default())

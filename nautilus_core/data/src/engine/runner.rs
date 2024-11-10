@@ -49,11 +49,12 @@ impl DataQueue for SyncDataQueue {
 impl DataQueue for AsyncDataQueue {
     fn push(&mut self, event: DataEvent) {
         if let Err(e) = self.0.send(event) {
-            log::error!("Unable to send data event to async data channel: {e}")
+            log::error!("Unable to send data event to async data channel: {e}");
         }
     }
 }
 
+#[must_use]
 pub fn get_data_queue() -> Rc<RefCell<dyn DataQueue>> {
     DATA_QUEUE
         .try_with(|dq| {
@@ -67,15 +68,14 @@ pub fn get_data_queue() -> Rc<RefCell<dyn DataQueue>> {
 pub fn set_data_queue(dq: Rc<RefCell<dyn DataQueue>>) {
     DATA_QUEUE
         .try_with(|deque| {
-            if deque.set(dq).is_err() {
-                panic!("Global data queue already set")
-            }
+            assert!(deque.set(dq).is_ok(), "Global data queue already set");
         })
-        .expect("Should be able to access thread local storage")
+        .expect("Should be able to access thread local storage");
 }
 
 pub type GlobalClock = Rc<RefCell<dyn Clock>>;
 
+#[must_use]
 pub fn get_clock() -> Rc<RefCell<dyn Clock>> {
     CLOCK
         .try_with(|clock| {
@@ -90,19 +90,18 @@ pub fn get_clock() -> Rc<RefCell<dyn Clock>> {
 pub fn set_clock(c: Rc<RefCell<dyn Clock>>) {
     CLOCK
         .try_with(|clock| {
-            if clock.set(c).is_err() {
-                panic!("Global clock already set")
-            }
+            assert!(clock.set(c).is_ok(), "Global clock already set");
         })
-        .expect("Should be able to access thread local clock")
+        .expect("Should be able to access thread local clock");
 }
 
 pub type MessageBusCommands = Rc<RefCell<VecDeque<SubscriptionCommand>>>;
 
 /// Get globally shared message bus command queue
+#[must_use]
 pub fn get_msgbus_cmd() -> MessageBusCommands {
     MSGBUS_CMD
-        .try_with(|mbus| mbus.clone())
+        .try_with(std::clone::Clone::clone)
         .expect("Should be able to access thread local storage")
 }
 
@@ -256,7 +255,7 @@ mod tests {
     async fn test_global_live_clock() {
         let live_clock = Rc::new(RefCell::new(LiveClock::new()));
         set_clock(live_clock.clone());
-        let alert_time = (live_clock.borrow().get_time_ns() + 100).into();
+        let alert_time = (live_clock.borrow().get_time_ns() + 100);
 
         // component/actor adding an alert
         get_clock().borrow_mut().set_time_alert_ns(

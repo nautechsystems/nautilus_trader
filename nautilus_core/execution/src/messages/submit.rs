@@ -23,7 +23,6 @@ use nautilus_model::{
     },
     orders::any::OrderAny,
 };
-use nautilus_model::orders::any::OrderAny;
 use serde::{Deserialize, Serialize};
 
 // Fix: equality and default and builder
