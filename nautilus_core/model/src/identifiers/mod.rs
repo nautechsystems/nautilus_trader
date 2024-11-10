@@ -73,6 +73,19 @@ impl_serialization_for_identifier!(trader_id::TraderId);
 impl_serialization_for_identifier!(venue::Venue);
 impl_serialization_for_identifier!(venue_order_id::VenueOrderId);
 
+impl_as_ref_for_identifier!(account_id::AccountId);
+impl_as_ref_for_identifier!(client_id::ClientId);
+impl_as_ref_for_identifier!(client_order_id::ClientOrderId);
+impl_as_ref_for_identifier!(component_id::ComponentId);
+impl_as_ref_for_identifier!(exec_algorithm_id::ExecAlgorithmId);
+impl_as_ref_for_identifier!(order_list_id::OrderListId);
+impl_as_ref_for_identifier!(position_id::PositionId);
+impl_as_ref_for_identifier!(strategy_id::StrategyId);
+impl_as_ref_for_identifier!(symbol::Symbol);
+impl_as_ref_for_identifier!(trader_id::TraderId);
+impl_as_ref_for_identifier!(venue::Venue);
+impl_as_ref_for_identifier!(venue_order_id::VenueOrderId);
+
 #[no_mangle]
 pub extern "C" fn interned_string_stats() {
     dbg!(ustr::total_allocated());
