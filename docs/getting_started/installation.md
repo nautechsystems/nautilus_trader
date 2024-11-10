@@ -45,7 +45,7 @@ For MacBook Pro M1/M2, make sure your Python installed using pyenv is configured
 
     PYTHON_CONFIGURE_OPTS="--enable-shared" pyenv install <python_version>
 
-See https://pyo3.rs/latest/getting_started#virtualenvs.
+See the [PyO3 user guide](https://pyo3.rs/latest/getting-started#virtualenvs) for more details.
 
 It's possible to install from source using pip if you first install the build dependencies
 as specified in the `pyproject.toml`. We highly recommend installing using [poetry](https://python-poetry.org/) as below.
