@@ -128,13 +128,13 @@ impl Money {
 impl FromStr for Money {
     type Err = String;
 
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        let parts: Vec<&str> = input.split_whitespace().collect();
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = value.split_whitespace().collect();
 
         // Ensure we have both the amount and currency
         if parts.len() != 2 {
             return Err(format!(
-                "Error invalid input format '{input}'. Expected '<amount> <currency>'"
+                "Error invalid input format '{value}'. Expected '<amount> <currency>'"
             ));
         }
 
