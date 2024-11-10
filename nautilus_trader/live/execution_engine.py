@@ -432,43 +432,43 @@ class LiveExecutionEngine(ExecutionEngine):
         try:
             while True:
                 await asyncio.sleep(self.inflight_check_interval_ms / 1000)
-                await self._check_inflight_orders()
+                try:
+                    await self._check_inflight_orders()
+                except Exception as e:
+                    self._log.error(f"Failed to check in-flight orders: {e}")
         except asyncio.CancelledError:
             self._log.debug("In-flight check loop task canceled")
 
     async def _check_inflight_orders(self) -> None:
-        try:
-            self._log.debug("Checking in-flight orders status")
+        self._log.debug("Checking in-flight orders status")
 
-            inflight_orders: list[Order] = self._cache.orders_inflight()
-            inflight_len = len(inflight_orders)
+        inflight_orders: list[Order] = self._cache.orders_inflight()
+        inflight_len = len(inflight_orders)
+        self._log.debug(
+            f"Found {inflight_len} order{'' if inflight_len == 1 else 's'} in-flight",
+        )
+        for order in inflight_orders:
+            retries = self._inflight_check_retries[order.client_order_id]
+            if retries >= self.inflight_check_max_retries:
+                continue
+            ts_now = self._clock.timestamp_ns()
+            ts_init_last = order.last_event.ts_event
             self._log.debug(
-                f"Found {inflight_len} order{'' if inflight_len == 1 else 's'} in-flight",
+                f"Checking in-flight order: {ts_now=}, {ts_init_last=}, {order=}...",
             )
-            for order in inflight_orders:
-                retries = self._inflight_check_retries[order.client_order_id]
-                if retries >= self.inflight_check_max_retries:
-                    continue
-                ts_now = self._clock.timestamp_ns()
-                ts_init_last = order.last_event.ts_event
-                self._log.debug(
-                    f"Checking in-flight order: {ts_now=}, {ts_init_last=}, {order=}...",
+            if ts_now > order.last_event.ts_event + self._inflight_check_threshold_ns:
+                self._log.debug(f"Querying {order} with exchange...")
+                query = QueryOrder(
+                    trader_id=order.trader_id,
+                    strategy_id=order.strategy_id,
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                    command_id=UUID4(),
+                    ts_init=self._clock.timestamp_ns(),
                 )
-                if ts_now > order.last_event.ts_event + self._inflight_check_threshold_ns:
-                    self._log.debug(f"Querying {order} with exchange...")
-                    query = QueryOrder(
-                        trader_id=order.trader_id,
-                        strategy_id=order.strategy_id,
-                        instrument_id=order.instrument_id,
-                        client_order_id=order.client_order_id,
-                        venue_order_id=order.venue_order_id,
-                        command_id=UUID4(),
-                        ts_init=self._clock.timestamp_ns(),
-                    )
-                    self._execute_command(query)
-                    self._inflight_check_retries[order.client_order_id] += 1
-        except Exception as e:
-            self._log.error(f"Failed to check in-flight orders: {e}")
+                self._execute_command(query)
+                self._inflight_check_retries[order.client_order_id] += 1
 
     async def _open_check_loop(self, interval_secs: float) -> None:
         try:
