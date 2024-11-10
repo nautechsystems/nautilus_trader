@@ -63,8 +63,13 @@ impl Symbol {
     }
 
     #[must_use]
-    pub fn from_str_unchecked(s: &str) -> Self {
-        Self(Ustr::from(s))
+    pub fn from_str_unchecked<T: AsRef<str>>(s: T) -> Self {
+        Self(Ustr::from(s.as_ref()))
+    }
+
+    #[must_use]
+    pub const fn from_ustr_unchecked(s: Ustr) -> Self {
+        Self(s)
     }
 
     /// Returns the inner identifier value.
