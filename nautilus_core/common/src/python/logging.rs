@@ -140,8 +140,8 @@ fn parse_component_levels(
 /// Create a new log event.
 #[pyfunction]
 #[pyo3(name = "logger_log")]
-pub fn py_logger_log(level: LogLevel, color: LogColor, component: String, message: String) {
-    logger::log(level, color, Ustr::from(&component), message.as_str());
+pub fn py_logger_log(level: LogLevel, color: LogColor, component: &str, message: &str) {
+    logger::log(level, color, Ustr::from(component), message);
 }
 
 /// Logs the standard Nautilus system header.
