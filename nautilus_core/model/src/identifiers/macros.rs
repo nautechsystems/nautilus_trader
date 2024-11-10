@@ -42,14 +42,14 @@ macro_rules! impl_serialization_for_identifier {
 macro_rules! impl_from_str_for_identifier {
     ($ty:ty) => {
         impl From<&str> for $ty {
-            fn from(input: &str) -> Self {
-                Self::new(input)
+            fn from(value: &str) -> Self {
+                Self::new(value)
             }
         }
 
         impl From<String> for $ty {
-            fn from(input: String) -> Self {
-                Self::new(input.as_str())
+            fn from(value: String) -> Self {
+                Self::new(value)
             }
         }
     };
