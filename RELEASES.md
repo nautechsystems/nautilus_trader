@@ -26,6 +26,7 @@ Released on TBD (UTC).
 - Simplified `LiveTimer` cancellation model (#2046), thanks @twitu
 - Refined Bybit HMAC authentication signatures (now using Rust implemented function)
 - Refined Tardis instrument ID parsing
+- Removed Bybit `msgspec` redundant import alias (#2050), thanks @sunlei
 
 ### Breaking Changes
 None
@@ -41,6 +42,9 @@ None
 - Fixed Polymarket size precision for `BinaryOption` instruments (precision 6 to match USDC.e)
 - Fixed adapter instrument reloading (providers were not reloading instruments at the configured interval due to internal state flags)
 - Fixed static time logging for `BacktestEngine` when running with `use_pyo3` logging config
+- Fixed in-flight orders check and improve error handling (#2053), thanks @davidsblom
+- Fixed dYdX handling for liquidated fills (#2052), thanks @davidsblom
+- Fixed `BybitResponse.time` field as optional `int` (#2051), thanks @sunlei
 
 ---
 
