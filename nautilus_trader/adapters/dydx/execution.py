@@ -884,6 +884,11 @@ class DYDXExecutionClient(LiveExecutionClient):
             self._log.error(message)
             return
 
+        if fill_msg.orderId is None:
+            message = f"Cannot handle fill event: orderId is None of fill {fill_msg.type} event."
+            self._log.error(message)
+            return
+
         venue_order_id = VenueOrderId(fill_msg.orderId)
         client_order_id = self._cache.client_order_id(venue_order_id)
 
