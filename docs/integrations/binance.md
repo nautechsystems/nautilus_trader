@@ -46,9 +46,10 @@ and won't need to necessarily work with these lower level components directly.
 
 To provide complete API functionality to traders, the integration includes several
 custom data types:
-- `BinanceTicker` returned when subscribing to Binance 24hr tickers (contains many prices and stats).
-- `BinanceBar` returned when requesting historical, or subscribing to, Binance bars (contains extra volume information).
-- `BinanceFuturesMarkPriceUpdate` returned when subscribing to Binance Futures mark price updates.
+
+- `BinanceTicker`: Represents data returned for Binance 24-hour ticker subscriptions, including comprehensive price and statistical information.
+- `BinanceBar`: Represents data for historical requests or real-time subscriptions to Binance bars, with additional volume metrics.
+- `BinanceFuturesMarkPriceUpdate`: Represents mark price updates for Binance Futures subscriptions.
 
 See the Binance [API Reference](../api_reference/adapters/binance.md) for full definitions.
 
@@ -89,9 +90,9 @@ When submitting trailing stop orders from your strategy, you have two options:
 
 You must also have at least *one* of the following:
 
-- The `trigger_price` for the order is set (this will act as the Binance *activation_price*)
-- (or) you have subscribed to quote ticks for the instrument you're submitting the order for (used to infer activation price)
-- (or) you have subscribed to trade ticks for the instrument you're submitting the order for (used to infer activation price)
+- The `trigger_price` for the order is set (this will act as the Binance *activation_price*).
+- (or) you have subscribed to quote ticks for the instrument you're submitting the order for (used to infer activation price).
+- (or) you have subscribed to trade ticks for the instrument you're submitting the order for (used to infer activation price).
 
 ## Configuration
 
@@ -174,9 +175,10 @@ credentials are valid and have trading permissions.
 
 All the Binance account types will be supported for live trading. Set the `account_type`
 using the `BinanceAccountType` enum. The account type options are:
+
 - `SPOT`
-- `MARGIN` (Margin shared between open positions.)
-- `ISOLATED_MARGIN` (Margin assigned to a single position.)
+- `MARGIN` (Margin shared between open positions)
+- `ISOLATED_MARGIN` (Margin assigned to a single position)
 - `USDT_FUTURE` (USDT or BUSD stablecoins as collateral)
 - `COIN_FUTURE` (other cryptocurrency as collateral)
 
@@ -321,25 +323,31 @@ Order books can be maintained at full or partial depths depending on the
 subscription. WebSocket stream throttling is different between Spot and Futures exchanges,
 Nautilus will use the highest streaming rate possible:
 
-- Spot 100ms
-- Futures 0ms (unthrottled)
+Order books can be maintained at full or partial depths based on the subscription settings.
+WebSocket stream update rates differ between Spot and Futures exchanges, with Nautilus using the
+highest available streaming rate:
+
+- **Spot**: 100ms
+- **Futures**: 0ms (*unthrottled*)
 
 There is a limitation of one order book per instrument per trader instance.
 As stream subscriptions may vary, the latest order book data (deltas or snapshots)
 subscription will be used by the Binance data client.
 
 Order book snapshot rebuilds will be triggered on:
+
 - Initial subscription of the order book data
 - Data websocket reconnects
 
 The sequence of events is as follows:
-- Deltas will start buffered
-- Snapshot is requested and awaited
-- Snapshot response is parsed to `OrderBookDeltas`
-- Snapshot deltas are sent to the `DataEngine`
-- Buffered deltas are iterated, dropping those where the sequence number is not greater than the last delta in the snapshot
-- Deltas will stop buffering
-- Remaining deltas are sent to the `DataEngine`
+
+- Deltas will start buffered.
+- Snapshot is requested and awaited.
+- Snapshot response is parsed to `OrderBookDeltas`.
+- Snapshot deltas are sent to the `DataEngine`.
+- Buffered deltas are iterated, dropping those where the sequence number is not greater than the last delta in the snapshot.
+- Deltas will stop buffering.
+- Remaining deltas are sent to the `DataEngine`.
 
 ## Binance data differences
 
