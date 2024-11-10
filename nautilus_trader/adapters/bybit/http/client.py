@@ -33,7 +33,7 @@ class BybitResponse(msgspec.Struct, frozen=True):
     retCode: int
     retMsg: str
     result: dict[str, Any]
-    time: int
+    time: int | None = None
     retExtInfo: dict[str, Any] | None = None
 
 
