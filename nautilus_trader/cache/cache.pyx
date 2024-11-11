@@ -2524,7 +2524,7 @@ cdef class Cache(CacheFacade):
         ----------
         instrument_id : InstrumentId, optional
             The instrument ID to filter the BarType objects. If None, no filtering is done based on instrument ID.
-        price_type : PriceType or None, optional
+        price_type : PriceType, optional
             The price type to filter the BarType objects. If None, no filtering is done based on price type.
         aggregation_source : AggregationSource, default AggregationSource.EXTERNAL
             The aggregation source to filter the BarType objects.

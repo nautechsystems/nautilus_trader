@@ -102,7 +102,7 @@ class RetryManager(Generic[T]):
         Returns
         -------
         T | None
-            The result of the executed function, or `None` if the retries fail.
+            The result of the executed function, or ``None`` if the retries fail.
 
         """
         self.name = name

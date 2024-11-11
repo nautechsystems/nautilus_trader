@@ -28,7 +28,7 @@ class DYDXDataClientConfig(LiveDataClientConfig, frozen=True):
 
     Parameters
     ----------
-    wallet_address : str or None
+    wallet_address : str, optional
         The dYdX wallet address.
         If ``None`` then will source `DYDX_WALLET_ADDRESS` or
         `DYDX_TESTNET_WALLET_ADDRESS` environment variables.
