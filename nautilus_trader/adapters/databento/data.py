@@ -56,7 +56,7 @@ from nautilus_trader.model.instruments import instruments_from_pyo3
 
 class DatabentoDataClient(LiveMarketDataClient):
     """
-    Provides a data client for the `Databento` API.
+    Provides a data client for the Databento API.
 
     Both Historical and Live APIs are leveraged to provide historical data
     for requests, and live data feeds based on subscriptions.
@@ -185,7 +185,6 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._buffer_mbo_subscriptions_task.cancel()
             self._buffer_mbo_subscriptions_task = None
 
-        # Cancel update dataset ranges task
         if self._update_dataset_ranges_task:
             self._log.debug("Canceling task 'update_dataset_ranges'")
             self._update_dataset_ranges_task.cancel()

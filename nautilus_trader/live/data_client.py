@@ -785,12 +785,12 @@ class LiveMarketDataClient(MarketDataClient):
     ############################################################################
     # Coroutines to implement
     ############################################################################
-    async def _connect(self):
+    async def _connect(self) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_connect` coroutine",  # pragma: no cover
         )
 
-    async def _disconnect(self):
+    async def _disconnect(self) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_disconnect` coroutine",  # pragma: no cover
         )

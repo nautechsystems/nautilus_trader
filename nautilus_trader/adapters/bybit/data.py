@@ -221,7 +221,6 @@ class BybitDataClient(LiveMarketDataClient):
                 self._update_instruments(self._update_instruments_interval_mins),
             )
 
-        self._log.info("Initializing websocket connections")
         for ws_client in self._ws_clients.values():
             await ws_client.connect()
 
@@ -230,6 +229,7 @@ class BybitDataClient(LiveMarketDataClient):
             self._log.debug("Canceling task 'update_instruments'")
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
+
         for ws_client in self._ws_clients.values():
             await ws_client.disconnect()
 
