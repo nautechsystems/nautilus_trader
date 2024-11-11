@@ -145,7 +145,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         # Tasks
         self._live_client_futures: set[asyncio.Future] = set()
-        self._update_dataset_ranges_interval_secs: int = 60 * 60  # Once per hour (hard coded)
+        self._update_dataset_ranges_interval_secs: int = 60 * 60  # Once per hour (hard-coded)
         self._update_dataset_ranges_task: asyncio.Task | None = None
 
     async def _connect(self) -> None:

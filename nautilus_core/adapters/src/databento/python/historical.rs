@@ -209,7 +209,7 @@ impl DatabentoHistoricalClient {
             .limit(limit.and_then(NonZeroU64::new))
             .build();
 
-        let price_precision = Currency::USD().precision; // TODO: Hard coded for now
+        let price_precision = Currency::USD().precision; // TODO: Hard-coded for now
         let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
@@ -278,7 +278,7 @@ impl DatabentoHistoricalClient {
             .limit(limit.and_then(NonZeroU64::new))
             .build();
 
-        let price_precision = Currency::USD().precision; // TODO: Hard coded for now
+        let price_precision = Currency::USD().precision; // TODO: Hard-coded for now
         let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
@@ -356,7 +356,7 @@ impl DatabentoHistoricalClient {
             .limit(limit.and_then(NonZeroU64::new))
             .build();
 
-        let price_precision = Currency::USD().precision; // TODO: Hard coded for now
+        let price_precision = Currency::USD().precision; // TODO: Hard-coded for now
         let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
@@ -426,7 +426,7 @@ impl DatabentoHistoricalClient {
             .limit(limit.and_then(NonZeroU64::new))
             .build();
 
-        let price_precision = Currency::USD().precision; // TODO: Hard coded for now
+        let price_precision = Currency::USD().precision; // TODO: Hard-coded for now
         let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
@@ -485,7 +485,7 @@ impl DatabentoHistoricalClient {
             .limit(limit.and_then(NonZeroU64::new))
             .build();
 
-        let price_precision = Currency::USD().precision; // TODO: Hard coded for now
+        let price_precision = Currency::USD().precision; // TODO: Hard-coded for now
         let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 

@@ -252,7 +252,7 @@ class TestBinanceFactories:
         data_client = BinanceLiveDataClientFactory.create(
             loop=self.loop,
             name="BINANCE",
-            config=BinanceDataClientConfig(  # (S106 Possible hardcoded password)
+            config=BinanceDataClientConfig(  # (S106 Possible hard-coded password)
                 api_key="SOME_BINANCE_API_KEY",  # Do not remove or will fail in CI
                 api_secret="SOME_BINANCE_API_SECRET",  # Do not remove or will fail in CI
                 account_type=BinanceAccountType.SPOT,
@@ -269,7 +269,7 @@ class TestBinanceFactories:
         data_client = BinanceLiveDataClientFactory.create(
             loop=self.loop,
             name="BINANCE",
-            config=BinanceDataClientConfig(  # (S106 Possible hardcoded password)
+            config=BinanceDataClientConfig(  # (S106 Possible hard-coded password)
                 api_key="SOME_BINANCE_API_KEY",  # Do not remove or will fail in CI
                 api_secret="SOME_BINANCE_API_SECRET",  # Do not remove or will fail in CI
                 account_type=BinanceAccountType.USDT_FUTURE,
@@ -286,7 +286,7 @@ class TestBinanceFactories:
         exec_client = BinanceLiveExecClientFactory.create(
             loop=self.loop,
             name="BINANCE",
-            config=BinanceExecClientConfig(  # (S106 Possible hardcoded password)
+            config=BinanceExecClientConfig(  # (S106 Possible hard-coded password)
                 api_key="SOME_BINANCE_API_KEY",  # Do not remove or will fail in CI
                 api_secret="SOME_BINANCE_API_SECRET",  # Do not remove or will fail in CI
                 account_type=BinanceAccountType.SPOT,
@@ -303,7 +303,7 @@ class TestBinanceFactories:
         exec_client = BinanceLiveExecClientFactory.create(
             loop=self.loop,
             name="BINANCE",
-            config=BinanceExecClientConfig(  # (S106 Possible hardcoded password)
+            config=BinanceExecClientConfig(  # (S106 Possible hard-coded password)
                 api_key="SOME_BINANCE_API_KEY",
                 api_secret="SOME_BINANCE_API_SECRET",
                 account_type=BinanceAccountType.USDT_FUTURE,

@@ -115,7 +115,7 @@ impl DatabentoFeedHandler {
         let mut deltas_count = 0_u64;
 
         let result = timeout(
-            Duration::from_secs(5), // Hard coded timeout for now
+            Duration::from_secs(5), // Hard-coded timeout for now
             databento::LiveClient::builder()
                 .key(self.key.clone())?
                 .dataset(self.dataset.clone())
@@ -419,7 +419,7 @@ fn handle_imbalance_msg(
     let instrument_id =
         update_instrument_id_map(record, symbol_map, publisher_venue_map, instrument_id_map);
 
-    let price_precision = 2; // Hard coded for now
+    let price_precision = 2; // Hard-coded for now
     let ts_init = clock.get_time_ns();
 
     decode_imbalance_msg(msg, instrument_id, price_precision, ts_init)
@@ -436,7 +436,7 @@ fn handle_statistics_msg(
     let instrument_id =
         update_instrument_id_map(record, symbol_map, publisher_venue_map, instrument_id_map);
 
-    let price_precision = 2; // Hard coded for now
+    let price_precision = 2; // Hard-coded for now
     let ts_init = clock.get_time_ns();
 
     decode_statistics_msg(msg, instrument_id, price_precision, ts_init)
@@ -452,7 +452,7 @@ fn handle_record(
     let instrument_id =
         update_instrument_id_map(&record, symbol_map, publisher_venue_map, instrument_id_map);
 
-    let price_precision = 2; // Hard coded for now
+    let price_precision = 2; // Hard-coded for now
     let ts_init = clock.get_time_ns();
 
     decode_record(

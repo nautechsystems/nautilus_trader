@@ -1126,7 +1126,7 @@ Released on 31st July 2023 (UTC).
 - Fixed Binance reconciliation which was requesting reports for the same symbol multiple times
 - Fixed Binance Futures native symbol parsing (was actually Nautilus symbol values)
 - Fixed Binance Futures `PositionStatusReport` parsing of position side
-- Fixed Binance Futures `TradeReport` assignment of position ID (was hardcoded to hedging mode)
+- Fixed Binance Futures `TradeReport` assignment of position ID (was hard-coded to hedging mode)
 - Fixed Binance execution submitting of order lists
 - Fixed Binance commission rates requests for `InstrumentProvider`
 - Fixed Binance `TriggerType` parsing #1154, thanks for reporting @davidblom603
