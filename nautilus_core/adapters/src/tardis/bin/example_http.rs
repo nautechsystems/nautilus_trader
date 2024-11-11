@@ -21,7 +21,7 @@ async fn main() {
         .with_max_level(tracing::Level::DEBUG)
         .init();
 
-    let client = TardisHttpClient::new(None, None, None).unwrap();
+    let client = TardisHttpClient::new(None, None, None, true).unwrap();
 
     // Tardis instrument definitions
     let resp = client.instruments_info(Exchange::Bitmex).await;

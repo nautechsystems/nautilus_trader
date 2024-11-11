@@ -29,26 +29,20 @@ async fn main() {
         .init();
 
     // let base_url = "ws://localhost:8001";
-    let mut client = TardisMachineClient::new(None).unwrap();
-    // TODO: Add instrument info constructor
-    let instrument_info1 = InstrumentMiniInfo {
-        instrument_id: InstrumentId::from("XBTUSD.BITMEX"),
-        price_precision: 1,
-        size_precision: 0,
-    };
-    let instrument_info2 = InstrumentMiniInfo {
-        instrument_id: InstrumentId::from("ETHUSD.BITMEX"),
-        price_precision: 1,
-        size_precision: 0,
-    };
-    client.add_instrument_info(instrument_info1.clone());
-    client.add_instrument_info(instrument_info2.clone());
+    let mut client = TardisMachineClient::new(None, true).unwrap();
+
+    let instrument_id1 = InstrumentId::from("XBTUSD.BITMEX");
+    let instrument_id2 = InstrumentId::from("ETHUSD.BITMEX");
+    let info1 = InstrumentMiniInfo::new(instrument_id1, 1, 0);
+    let info2 = InstrumentMiniInfo::new(instrument_id2, 1, 0);
+    client.add_instrument_info(instrument_id1, info1.clone());
+    client.add_instrument_info(instrument_id2, info2.clone());
 
     let options = vec![ReplayNormalizedRequestOptions {
         exchange: Exchange::Bitmex,
         symbols: Some(vec![
-            instrument_info1.instrument_id.symbol.to_string(),
-            instrument_info2.instrument_id.symbol.to_string(),
+            info1.instrument_id.symbol.to_string(),
+            info2.instrument_id.symbol.to_string(),
         ]),
         from: NaiveDate::from_ymd_opt(2019, 10, 1).unwrap(),
         to: NaiveDate::from_ymd_opt(2019, 10, 2).unwrap(),
@@ -77,5 +71,8 @@ async fn main() {
         }
     }
 
-    tracing::info!("Stopped after receiving {stop_count} messages.");
+    tracing::info!(
+        "Stopped after receiving {} messages",
+        stop_count.separate_with_commas()
+    );
 }

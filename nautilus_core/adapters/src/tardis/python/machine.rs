@@ -34,9 +34,9 @@ use crate::tardis::{
 #[pymethods]
 impl TardisMachineClient {
     #[new]
-    #[pyo3(signature = (base_url=None))]
-    fn py_new(base_url: Option<&str>) -> PyResult<Self> {
-        Self::new(base_url).map_err(to_pyruntime_err)
+    #[pyo3(signature = (base_url=None, normalize_symbols=true))]
+    fn py_new(base_url: Option<&str>, normalize_symbols: bool) -> PyResult<Self> {
+        Self::new(base_url, normalize_symbols).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "is_closed")]

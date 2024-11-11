@@ -54,7 +54,7 @@ use crate::tardis::{
     config::TardisReplayConfig,
     http::TardisHttpClient,
     machine::{InstrumentMiniInfo, TardisMachineClient},
-    parse::parse_instrument_id,
+    parse::{normalize_instrument_id, parse_instrument_id},
 };
 
 struct DateCursor {
@@ -137,18 +137,30 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
 
     tracing::info!("Output path: {}", path.display());
 
-    let http_client = TardisHttpClient::new(None, None, None)?;
-    let mut machine_client = TardisMachineClient::new(config.tardis_ws_url.as_deref())?;
+    let normalize_symbols = config.normalize_symbols.unwrap_or(true);
+    tracing::info!("normalize_symbols={normalize_symbols}");
+
+    let http_client = TardisHttpClient::new(None, None, None, normalize_symbols)?;
+    let mut machine_client =
+        TardisMachineClient::new(config.tardis_ws_url.as_deref(), normalize_symbols)?;
 
     let info_map = gather_instruments_info(&config, &http_client).await;
 
     for (exchange, instruments) in &info_map {
         for inst in instruments {
+            let instrument_type = inst.instrument_type.clone();
             let instrument_id = parse_instrument_id(exchange, &inst.id);
             let price_precision = precision_from_str(&inst.price_increment.to_string());
             let size_precision = precision_from_str(&inst.amount_increment.to_string());
-            let info = InstrumentMiniInfo::new(instrument_id, price_precision, size_precision);
-            machine_client.add_instrument_info(info);
+
+            let normalized_id = if normalize_symbols {
+                normalize_instrument_id(exchange, &inst.id, instrument_type, inst.inverse)
+            } else {
+                instrument_id
+            };
+
+            let info = InstrumentMiniInfo::new(normalized_id, price_precision, size_precision);
+            machine_client.add_instrument_info(instrument_id, info);
         }
     }
 
@@ -219,7 +231,10 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
         batch_and_write_bars(bars, &bar_type, cursor.date_utc, &path);
     }
 
-    tracing::info!("Replay completed");
+    tracing::info!(
+        "Replay completed after {} messages",
+        msg_count.separate_with_commas()
+    );
     Ok(())
 }
 

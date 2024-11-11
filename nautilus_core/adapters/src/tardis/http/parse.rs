@@ -32,21 +32,34 @@ use ustr::Ustr;
 use super::types::InstrumentInfo;
 use crate::tardis::{
     enums::InstrumentType,
-    parse::{parse_instrument_id, parse_option_kind},
+    parse::{normalize_instrument_id, parse_instrument_id, parse_option_kind},
 };
 
 #[must_use]
-pub fn parse_instrument_any(info: InstrumentInfo, ts_init: UnixNanos) -> InstrumentAny {
+pub fn parse_instrument_any(
+    info: InstrumentInfo,
+    ts_init: UnixNanos,
+    normalize_symbols: bool,
+) -> InstrumentAny {
     match info.instrument_type {
-        InstrumentType::Spot => parse_spot_instrument(info, ts_init),
-        InstrumentType::Perpetual => parse_perp_instrument(info, ts_init),
-        InstrumentType::Future => parse_future_instrument(info, ts_init),
-        InstrumentType::Option => parse_option_instrument(info, ts_init),
+        InstrumentType::Spot => parse_spot_instrument(info, ts_init, normalize_symbols),
+        InstrumentType::Perpetual => parse_perp_instrument(info, ts_init, normalize_symbols),
+        InstrumentType::Future => parse_future_instrument(info, ts_init, normalize_symbols),
+        InstrumentType::Option => parse_option_instrument(info, ts_init, normalize_symbols),
     }
 }
 
-fn parse_spot_instrument(info: InstrumentInfo, ts_init: UnixNanos) -> InstrumentAny {
-    let instrument_id = parse_instrument_id(&info.exchange, &info.id);
+fn parse_spot_instrument(
+    info: InstrumentInfo,
+    ts_init: UnixNanos,
+    normalize_symbols: bool,
+) -> InstrumentAny {
+    let instrument_id = if normalize_symbols {
+        normalize_instrument_id(&info.exchange, &info.id, info.instrument_type, info.inverse)
+    } else {
+        parse_instrument_id(&info.exchange, &info.id)
+    };
+
     let price_increment = get_price_increment(info.price_increment);
     let size_increment = get_size_increment(info.amount_increment);
 
@@ -77,8 +90,17 @@ fn parse_spot_instrument(info: InstrumentInfo, ts_init: UnixNanos) -> Instrument
     InstrumentAny::CurrencyPair(instrument)
 }
 
-fn parse_perp_instrument(info: InstrumentInfo, ts_init: UnixNanos) -> InstrumentAny {
-    let instrument_id = parse_instrument_id(&info.exchange, &info.id);
+fn parse_perp_instrument(
+    info: InstrumentInfo,
+    ts_init: UnixNanos,
+    normalize_symbols: bool,
+) -> InstrumentAny {
+    let instrument_id = if normalize_symbols {
+        normalize_instrument_id(&info.exchange, &info.id, info.instrument_type, info.inverse)
+    } else {
+        parse_instrument_id(&info.exchange, &info.id)
+    };
+
     let price_increment = get_price_increment(info.price_increment);
     let size_increment = get_size_increment(info.amount_increment);
 
@@ -117,8 +139,17 @@ fn parse_perp_instrument(info: InstrumentInfo, ts_init: UnixNanos) -> Instrument
     InstrumentAny::CryptoPerpetual(instrument)
 }
 
-fn parse_future_instrument(info: InstrumentInfo, ts_init: UnixNanos) -> InstrumentAny {
-    let instrument_id = parse_instrument_id(&info.exchange, &info.id);
+fn parse_future_instrument(
+    info: InstrumentInfo,
+    ts_init: UnixNanos,
+    normalize_symbols: bool,
+) -> InstrumentAny {
+    let instrument_id = if normalize_symbols {
+        normalize_instrument_id(&info.exchange, &info.id, info.instrument_type, info.inverse)
+    } else {
+        parse_instrument_id(&info.exchange, &info.id)
+    };
+
     let price_increment = get_price_increment(info.price_increment);
     let size_increment = get_size_increment(info.amount_increment);
 
@@ -154,8 +185,17 @@ fn parse_future_instrument(info: InstrumentInfo, ts_init: UnixNanos) -> Instrume
     InstrumentAny::CryptoFuture(instrument)
 }
 
-fn parse_option_instrument(info: InstrumentInfo, ts_init: UnixNanos) -> InstrumentAny {
-    let instrument_id = parse_instrument_id(&info.exchange, &info.id);
+fn parse_option_instrument(
+    info: InstrumentInfo,
+    ts_init: UnixNanos,
+    normalize_symbols: bool,
+) -> InstrumentAny {
+    let instrument_id = if normalize_symbols {
+        normalize_instrument_id(&info.exchange, &info.id, info.instrument_type, info.inverse)
+    } else {
+        parse_instrument_id(&info.exchange, &info.id)
+    };
+
     let price_increment = get_price_increment(info.price_increment);
 
     let instrument = OptionsContract::new(
@@ -239,7 +279,7 @@ mod tests {
         let json_data = load_test_json("instrument_perpetual.json");
         let info: InstrumentInfo = serde_json::from_str(&json_data).unwrap();
 
-        let instrument = parse_instrument_any(info, UnixNanos::default());
+        let instrument = parse_instrument_any(info, UnixNanos::default(), false);
 
         assert_eq!(instrument.id(), InstrumentId::from("XBTUSD.BITMEX"));
         // TODO: Assert remaining fields on InstrumentAny
