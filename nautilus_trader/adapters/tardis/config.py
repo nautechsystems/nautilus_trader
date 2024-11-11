@@ -13,6 +13,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from nautilus_trader.common.config import PositiveInt
 from nautilus_trader.config import LiveDataClientConfig
 
 
@@ -25,6 +26,14 @@ class TardisDataClientConfig(LiveDataClientConfig, frozen=True):
     api_key : str, optional
         The Tardis API secret key.
         If ``None`` then will source the `TARDIS_API_KEY` environment variable.
+    base_url_http : str, optional
+        The base url for the Tardis HTTP API.
+        If ``None`` then will default to https://api.tardis.dev/v1.
+    base_url_ws : str, optional
+        The base url for the locally running Tardis Machine server.
+        If ``None`` then will source the `TARDIS_MACHINE_WS_URL`.
+    update_instruments_interval_mins: PositiveInt or None, default 60
+        The interval (minutes) between reloading instruments from the venue.
 
     References
     ----------
@@ -33,3 +42,6 @@ class TardisDataClientConfig(LiveDataClientConfig, frozen=True):
     """
 
     api_key: str | None = None
+    base_url_http: str | None = None
+    base_url_ws: str | None = None
+    update_instruments_interval_mins: PositiveInt | None = 60
