@@ -285,7 +285,7 @@ class NautilusKernel:
                 instance_id=self._instance_id,
                 serializer=MsgSpecSerializer(
                     encoding=msgspec.msgpack if encoding == "msgpack" else msgspec.json,
-                    timestamps_as_str=True,  # Hardcoded for now
+                    timestamps_as_str=True,  # Hard-coded for now
                     timestamps_as_iso8601=config.cache.timestamps_as_iso8601,
                 ),
                 config=config.cache,
@@ -305,7 +305,7 @@ class NautilusKernel:
             encoding = config.message_bus.encoding.lower()
             self._msgbus_serializer = MsgSpecSerializer(
                 encoding=msgspec.msgpack if encoding == "msgpack" else msgspec.json,
-                timestamps_as_str=True,  # Hardcoded for now
+                timestamps_as_str=True,  # Hard-coded for now
                 timestamps_as_iso8601=config.message_bus.timestamps_as_iso8601,
             )
         self._msgbus = MessageBus(

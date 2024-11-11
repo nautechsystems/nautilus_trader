@@ -199,7 +199,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._decoder_candlestick_msg = msgspec.json.Decoder(BinanceCandlestickMsg)
         self._decoder_agg_trade_msg = msgspec.json.Decoder(BinanceAggregatedTradeMsg)
 
-        # Retry logic (hard coded for now)
+        # Retry logic (hard-coded for now)
         self._max_retries: int = 3
         self._retry_delay: float = 1.0
         self._retry_errors: set[BinanceErrorCode] = {
