@@ -159,15 +159,9 @@ class BybitExecutionClient(LiveExecutionClient):
         # Configuration
         self._product_types = product_types
         self._use_gtd = config.use_gtd
-        self._use_reduce_only = config.use_reduce_only
-        self._use_position_ids = config.use_position_ids
-        self._max_retries = config.max_retries or 0
-        self._retry_delay = config.retry_delay or 1.0
         self._log.info(f"Account type: {account_type_to_str(account_type)}", LogColor.BLUE)
         self._log.info(f"Product types: {[p.value for p in product_types]}", LogColor.BLUE)
         self._log.info(f"{config.use_gtd=}", LogColor.BLUE)
-        self._log.info(f"{config.use_reduce_only=}", LogColor.BLUE)
-        self._log.info(f"{config.use_position_ids=}", LogColor.BLUE)
         self._log.info(f"{config.max_retries=}", LogColor.BLUE)
         self._log.info(f"{config.retry_delay=}", LogColor.BLUE)
 

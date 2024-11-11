@@ -142,9 +142,10 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._use_agg_trade_ticks = config.use_agg_trade_ticks
         self._log.info(f"Key type: {config.key_type.value}", LogColor.BLUE)
         self._log.info(f"Account type: {self._binance_account_type.value}", LogColor.BLUE)
+        self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.use_agg_trade_ticks=}", LogColor.BLUE)
 
-        self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
+        self._update_instruments_interval_mins: int | None = config.update_instruments_interval_mins
         self._update_instruments_task: asyncio.Task | None = None
 
         self._connect_websockets_delay: float = 0.0  # Delay for bulk subscriptions to come in
@@ -211,20 +212,22 @@ class BinanceCommonDataClient(LiveMarketDataClient):
 
     async def _connect(self) -> None:
         await self._instrument_provider.initialize()
-
         self._send_all_instruments_to_data_engine()
-        self._update_instruments_task = self.create_task(self._update_instruments())
 
-    async def _update_instruments(self) -> None:
+        if self._update_instruments_interval_mins:
+            self._update_instruments_task = self.create_task(
+                self._update_instruments(self._update_instruments_interval_mins),
+            )
+
+    async def _update_instruments(self, interval_mins: int) -> None:
         while True:
             retries = 0
             while True:
                 try:
                     self._log.debug(
-                        f"Scheduled `update_instruments` to run in "
-                        f"{self._update_instrument_interval}s",
+                        f"Scheduled task 'update_instruments' to run in {interval_mins} minutes",
                     )
-                    await asyncio.sleep(self._update_instrument_interval)
+                    await asyncio.sleep(interval_mins * 60)
                     await self._instrument_provider.initialize(reload=True)
                     self._send_all_instruments_to_data_engine()
                     break

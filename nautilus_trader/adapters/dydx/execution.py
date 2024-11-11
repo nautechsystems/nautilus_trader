@@ -294,8 +294,6 @@ class DYDXExecutionClient(LiveExecutionClient):
             sequence=account.sequence,
         )
 
-        self._log.info("Execution client connected")
-
     async def _disconnect(self) -> None:
         await self._ws_client.unsubscribe_account_update(
             wallet_address=self._wallet_address,

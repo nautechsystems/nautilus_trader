@@ -26,19 +26,30 @@ class DYDXDataClientConfig(LiveDataClientConfig, frozen=True):
     """
     Configuration for ``DYDXDataClient`` instances.
 
+    Parameters
+    ----------
+    wallet_address : str or None
+        The dYdX wallet address.
+        If ``None`` then will source `DYDX_WALLET_ADDRESS` or
+        `DYDX_TESTNET_WALLET_ADDRESS` environment variables.
     testnet : bool, default False
         If the client is connecting to the dYdX testnet API.
+    update_instruments_interval_mins: PositiveInt or None, default 60
+        The interval (minutes) between reloading instruments from the venue.
 
     """
 
     wallet_address: str | None = None
     is_testnet: bool = False
+    update_instruments_interval_mins: PositiveInt | None = 60
 
 
 class DYDXExecClientConfig(LiveExecClientConfig, frozen=True):
     """
     Configuration for ``DYDXExecutionClient`` instances.
 
+    Parameters
+    ----------
     wallet_address : str, optional
         The dYdX wallet address.
         If ``None`` then will source `DYDX_WALLET_ADDRESS` or

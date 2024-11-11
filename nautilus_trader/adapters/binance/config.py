@@ -51,6 +51,8 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
         If client is connecting to Binance US.
     testnet : bool, default False
         If the client is connecting to a Binance testnet.
+    update_instruments_interval_mins: PositiveInt or None, default 60
+        The interval (minutes) between reloading instruments from the venue.
     use_agg_trade_ticks : bool, default False
         Whether to use aggregated trade tick endpoints instead of raw trade ticks.
         TradeId of ticks will be the Aggregate tradeId returned by Binance.
@@ -66,6 +68,7 @@ class BinanceDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_ws: str | None = None
     us: bool = False
     testnet: bool = False
+    update_instruments_interval_mins: PositiveInt | None = 60
     use_agg_trade_ticks: bool = False
 
 
