@@ -15,7 +15,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::tardis::enums::Exchange;
+use crate::tardis::{enums::Exchange, parse::deserialize_uppercase};
 
 /// Represents a Tardis format order book update record.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -23,6 +23,7 @@ pub struct TardisBookUpdateRecord {
     /// The exchange ID.
     pub exchange: Exchange,
     /// The instrument symbol as provided by the exchange.
+    #[serde(deserialize_with = "deserialize_uppercase")]
     pub symbol: String,
     // UNIX microseconds timestamp provided by the exchange.
     pub timestamp: u64,
@@ -44,6 +45,7 @@ pub struct TardisOrderBookSnapshot5Record {
     /// The exchange ID.
     pub exchange: Exchange,
     /// The instrument symbol as provided by the exchange.
+    #[serde(deserialize_with = "deserialize_uppercase")]
     pub symbol: String,
     // UNIX microseconds timestamp provided by the exchange.
     pub timestamp: u64,
@@ -97,6 +99,7 @@ pub struct TardisOrderBookSnapshot25Record {
     /// The exchange ID.
     pub exchange: Exchange,
     /// The instrument symbol as provided by the exchange.
+    #[serde(deserialize_with = "deserialize_uppercase")]
     pub symbol: String,
     // UNIX microseconds timestamp provided by the exchange.
     pub timestamp: u64,
@@ -235,6 +238,7 @@ pub struct TardisQuoteRecord {
     /// The exchande ID.
     pub exchange: Exchange,
     /// The instrument symbol as provided by the exchange.
+    #[serde(deserialize_with = "deserialize_uppercase")]
     pub symbol: String,
     // UNIX microseconds timestamp provided by the exchange.
     pub timestamp: u64,
@@ -256,6 +260,7 @@ pub struct TardisTradeRecord {
     /// The exchande ID.
     pub exchange: Exchange,
     /// The instrument symbol as provided by the exchange.
+    #[serde(deserialize_with = "deserialize_uppercase")]
     pub symbol: String,
     // UNIX microseconds timestamp provided by the exchange.
     pub timestamp: u64,

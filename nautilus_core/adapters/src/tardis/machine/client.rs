@@ -42,11 +42,12 @@ pub struct TardisMachineClient {
     pub replay_signal: Arc<AtomicBool>,
     pub stream_signals: HashMap<InstrumentMiniInfo, Arc<AtomicBool>>,
     pub instruments: HashMap<InstrumentId, Arc<InstrumentMiniInfo>>,
+    pub normalize_symbols: bool,
 }
 
 impl TardisMachineClient {
     /// Creates a new [`TardisMachineClient`] instance.
-    pub fn new(base_url: Option<&str>) -> anyhow::Result<Self> {
+    pub fn new(base_url: Option<&str>, normalize_symbols: bool) -> anyhow::Result<Self> {
         let base_url = base_url
             .map(ToString::to_string)
             .or_else(|| env::var("TARDIS_MACHINE_WS_URL").ok())
@@ -61,11 +62,12 @@ impl TardisMachineClient {
             replay_signal: Arc::new(AtomicBool::new(false)),
             stream_signals: HashMap::new(),
             instruments: HashMap::new(),
+            normalize_symbols,
         })
     }
 
-    pub fn add_instrument_info(&mut self, info: InstrumentMiniInfo) {
-        self.instruments.insert(info.instrument_id, Arc::new(info));
+    pub fn add_instrument_info(&mut self, instrument_id: InstrumentId, info: InstrumentMiniInfo) {
+        self.instruments.insert(instrument_id, Arc::new(info));
     }
 
     #[must_use]

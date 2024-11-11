@@ -24,13 +24,14 @@ use crate::tardis::{enums::Exchange, http::TardisHttpClient};
 #[pymethods]
 impl TardisHttpClient {
     #[new]
-    #[pyo3(signature = (api_key=None, base_url=None, timeout_secs=None))]
+    #[pyo3(signature = (api_key=None, base_url=None, timeout_secs=None, normalize_symbols=true))]
     fn py_new(
         api_key: Option<&str>,
         base_url: Option<&str>,
         timeout_secs: Option<u64>,
+        normalize_symbols: bool,
     ) -> PyResult<Self> {
-        Self::new(api_key, base_url, timeout_secs).map_err(to_pyruntime_err)
+        Self::new(api_key, base_url, timeout_secs, normalize_symbols).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "instrument")]

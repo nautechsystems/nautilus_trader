@@ -209,6 +209,8 @@ async fn stream_from_websocket(
         let (writer, mut reader) = ws_stream.split();
         tokio::spawn(heartbeat(writer));
 
+        tracing::info!("Streaming from websocket...");
+
         loop {
             if signal.load(Ordering::Relaxed) {
                 tracing::info!("Shutdown signal received");

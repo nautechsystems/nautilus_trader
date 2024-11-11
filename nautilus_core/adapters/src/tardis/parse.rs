@@ -19,21 +19,85 @@ use nautilus_model::{
     enums::{AggressorSide, BarAggregation, BookAction, OptionKind, OrderSide, PriceType},
     identifiers::{InstrumentId, Symbol},
 };
+use serde::{Deserialize, Deserializer};
 
-use super::enums::{Exchange, OptionType};
+use super::enums::{Exchange, InstrumentType, OptionType};
+
+pub fn deserialize_uppercase<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    String::deserialize(deserializer).map(|s| s.to_uppercase())
+}
 
 #[must_use]
 #[inline]
-pub fn parse_symbol_str(symbol: &str) -> String {
-    // TODO: Implement symbol standardization for Binance, Bybit and dYdX
-    symbol.to_uppercase()
+pub fn normalize_symbol_str(
+    symbol: &str,
+    exchange: &Exchange,
+    instrument_type: InstrumentType,
+    is_inverse: Option<bool>,
+) -> String {
+    let mut symbol = symbol.to_string();
+
+    match exchange {
+        Exchange::BinanceFutures
+        | Exchange::BinanceUs
+        | Exchange::BinanceDex
+        | Exchange::BinanceJersey
+            if instrument_type == InstrumentType::Perpetual =>
+        {
+            symbol.push_str("-PERP");
+        }
+
+        Exchange::Bybit => match instrument_type {
+            InstrumentType::Spot => {
+                symbol.push_str("-SPOT");
+            }
+            InstrumentType::Perpetual if !is_inverse.unwrap_or(false) => {
+                symbol.push_str("-LINEAR");
+            }
+            InstrumentType::Future if !is_inverse.unwrap_or(false) => {
+                symbol.push_str("-LINEAR");
+            }
+            InstrumentType::Perpetual if is_inverse == Some(true) => {
+                symbol.push_str("-INVERSE");
+            }
+            InstrumentType::Future if is_inverse == Some(true) => {
+                symbol.push_str("-INVERSE");
+            }
+            InstrumentType::Option => {
+                symbol.push_str("-OPTION");
+            }
+            _ => {}
+        },
+
+        Exchange::Dydx if instrument_type == InstrumentType::Perpetual => {
+            symbol.push_str("-PERP");
+        }
+
+        _ => {}
+    }
+
+    symbol
 }
 
 /// Parses a Nautilus instrument ID from the given Tardis `exchange` and `symbol` values.
 #[must_use]
 pub fn parse_instrument_id(exchange: &Exchange, symbol: &str) -> InstrumentId {
-    let symbol = Symbol::from_str_unchecked(parse_symbol_str(symbol));
-    InstrumentId::new(symbol, exchange.as_venue())
+    InstrumentId::new(Symbol::from_str_unchecked(symbol), exchange.as_venue())
+}
+
+/// Parses a Nautilus instrument ID with a normalized symbol from the given Tardis `exchange` and `symbol` values.
+#[must_use]
+pub fn normalize_instrument_id(
+    exchange: &Exchange,
+    symbol: &str,
+    instrument_type: InstrumentType,
+    is_inverse: Option<bool>,
+) -> InstrumentId {
+    let symbol = normalize_symbol_str(symbol, exchange, instrument_type, is_inverse);
+    parse_instrument_id(exchange, &symbol)
 }
 
 /// Parses a Nautilus order side from the given Tardis string `value`.
@@ -127,9 +191,10 @@ mod tests {
     use super::*;
 
     #[rstest]
-    #[case(Exchange::OkexFutures, "BTC-USD-200313", "BTC-USD-200313.OKEX")]
-    #[case(Exchange::Binance, "ETH-USDT", "ETH-USDT.BINANCE")]
+    #[case(Exchange::Binance, "ETHUSDT", "ETHUSDT.BINANCE")]
     #[case(Exchange::Bitmex, "XBTUSD", "XBTUSD.BITMEX")]
+    #[case(Exchange::Bybit, "BTCUSDT", "BTCUSDT.BYBIT")]
+    #[case(Exchange::OkexFutures, "BTC-USD-200313", "BTC-USD-200313.OKEX")]
     #[case(Exchange::HuobiDmLinearSwap, "FOO-BAR", "FOO-BAR.HUOBI")]
     fn test_parse_instrument_id(
         #[case] exchange: Exchange,
@@ -137,6 +202,61 @@ mod tests {
         #[case] expected: &str,
     ) {
         let instrument_id = parse_instrument_id(&exchange, symbol);
+        let expected_instrument_id = InstrumentId::from_str(expected).unwrap();
+        assert_eq!(instrument_id, expected_instrument_id);
+    }
+
+    #[rstest]
+    #[case(
+        Exchange::Binance,
+        "SOLUSDT",
+        InstrumentType::Spot,
+        None,
+        "SOLUSDT.BINANCE"
+    )]
+    #[case(
+        Exchange::BinanceFutures,
+        "SOLUSDT",
+        InstrumentType::Perpetual,
+        None,
+        "SOLUSDT-PERP.BINANCE"
+    )]
+    #[case(
+        Exchange::Bybit,
+        "BTCUSDT",
+        InstrumentType::Spot,
+        None,
+        "BTCUSDT-SPOT.BYBIT"
+    )]
+    #[case(
+        Exchange::Bybit,
+        "BTCUSDT",
+        InstrumentType::Perpetual,
+        None,
+        "BTCUSDT-LINEAR.BYBIT"
+    )]
+    #[case(
+        Exchange::Bybit,
+        "BTCUSDT",
+        InstrumentType::Perpetual,
+        Some(true),
+        "BTCUSDT-INVERSE.BYBIT"
+    )]
+    #[case(
+        Exchange::Dydx,
+        "BTC-USD",
+        InstrumentType::Perpetual,
+        None,
+        "BTC-USD-PERP.DYDX"
+    )]
+    fn test_normalize_instrument_id(
+        #[case] exchange: Exchange,
+        #[case] symbol: &str,
+        #[case] instrument_type: InstrumentType,
+        #[case] is_inverse: Option<bool>,
+        #[case] expected: &str,
+    ) {
+        let instrument_id = normalize_instrument_id(&exchange, symbol, instrument_type, is_inverse);
         let expected_instrument_id = InstrumentId::from_str(expected).unwrap();
         assert_eq!(instrument_id, expected_instrument_id);
     }
