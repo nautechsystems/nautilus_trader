@@ -192,14 +192,11 @@ class OKXDataClient(LiveMarketDataClient):
                 self._update_instruments(self._update_instruments_interval_mins),
             )
 
-        self._log.info("Initializing websocket connections")
         for ws_client in self._ws_clients.values():
             await ws_client.connect()
             await asyncio.sleep(0.5)
         await asyncio.sleep(0.5)
         await self._ws_client_tbt_books.connect()
-
-        self._log.info("Data client connected")
 
     async def _disconnect(self) -> None:
         if self._update_instruments_task:
