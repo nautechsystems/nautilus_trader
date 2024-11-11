@@ -102,14 +102,13 @@ class BinanceExecClientConfig(LiveExecClientConfig, frozen=True):
         If the client is connecting to a Binance testnet.
     use_gtd : bool, default True
         If GTD orders will use the Binance GTD TIF option.
-        If False then GTD time in force will be remapped to GTC (this is useful if managing GTD
-        orders locally).
+        If False, then GTD time in force will be remapped to GTC (this is useful if managing GTD orders locally).
     use_reduce_only : bool, default True
         If the `reduce_only` execution instruction on orders is sent through to the exchange.
-        If True then will assign the value on orders sent to the exchange, otherwise will always be False.
+        If True, then will assign the value on orders sent to the exchange, otherwise will always be False.
     use_position_ids: bool, default True
         If Binance Futures hedging position IDs should be used.
-        If False then order event `position_id`(s) from the execution client will be `None`, which
+        If False, then order event `position_id`(s) from the execution client will be `None`, which
         allows *virtual* positions with `OmsType.HEDGING`.
     treat_expired_as_canceled : bool, default False
         If the `EXPIRED` execution type is semantically treated as `CANCELED`.
