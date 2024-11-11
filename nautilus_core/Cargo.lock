@@ -68,9 +68,9 @@ dependencies = [
 
 [[package]]
 name = "allocator-api2"
-version = "0.2.19"
+version = "0.2.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "611cc2ae7d2e242c457e4be7f97036b8ad9ca152b499f53faf99b1ed8fc2553f"
+checksum = "45862d1c77f2228b9e10bc609d5bc203d86ebc9b87ad8d5d5167a6c9abf739d9"
 
 [[package]]
 name = "android-tzdata"
@@ -1039,9 +1039,9 @@ checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
 name = "cpufeatures"
-version = "0.2.14"
+version = "0.2.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "608697df725056feaccfa42cffdaeeec3fccc4ffc38358ecd19b243e716a78e0"
+checksum = "0ca741a962e1b0bff6d724a1a0958b686406e853bb14061f218562e1896f95e6"
 dependencies = [
  "libc",
 ]
@@ -2882,7 +2882,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strum",
- "thiserror 2.0.2",
+ "thiserror 2.0.3",
  "thousands",
  "time",
  "tokio",
@@ -3042,7 +3042,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
- "thiserror 2.0.2",
+ "thiserror 2.0.3",
  "tokio",
  "ustr",
 ]
@@ -3066,7 +3066,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "strum",
- "thiserror 2.0.2",
+ "thiserror 2.0.3",
  "ustr",
 ]
 
@@ -3140,7 +3140,7 @@ dependencies = [
  "serde_json",
  "strum",
  "tabled",
- "thiserror 2.0.2",
+ "thiserror 2.0.3",
  "thousands",
  "ustr",
 ]
@@ -3165,7 +3165,7 @@ dependencies = [
  "rstest",
  "rustls",
  "serde_json",
- "thiserror 2.0.2",
+ "thiserror 2.0.3",
  "tokio",
  "tokio-rustls",
  "tokio-tungstenite",
@@ -3194,7 +3194,7 @@ dependencies = [
  "quickcheck_macros",
  "rand",
  "rstest",
- "thiserror 2.0.2",
+ "thiserror 2.0.3",
  "tokio",
 ]
 
@@ -3237,7 +3237,7 @@ dependencies = [
  "serde",
  "serde_json",
  "strum",
- "thiserror 2.0.2",
+ "thiserror 2.0.3",
  "ustr",
 ]
 
@@ -3253,7 +3253,7 @@ dependencies = [
  "parquet",
  "pyo3",
  "rstest",
- "thiserror 2.0.2",
+ "thiserror 2.0.3",
 ]
 
 [[package]]
@@ -4178,7 +4178,7 @@ checksum = "b544ef1b4eac5dc2db33ea63606ae9ffcfac26c1416a2806ae0bf5f56b201191"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-automata 0.4.8",
+ "regex-automata 0.4.9",
  "regex-syntax 0.8.5",
 ]
 
@@ -4193,9 +4193,9 @@ dependencies = [
 
 [[package]]
 name = "regex-automata"
-version = "0.4.8"
+version = "0.4.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "368758f23274712b504848e9d5a6f010445cc8b87a7cdb4d7cbee666c1288da3"
+checksum = "809e8dc61f6de73b46c85f4c96486310fe304c434cfa43669d7b40f711150908"
 dependencies = [
  "aho-corasick",
  "memchr",
@@ -5256,11 +5256,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "2.0.2"
+version = "2.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "037e29b009aa709f293b974da5cd33b15783c049e07f8435778ce8c4871525d8"
+checksum = "c006c85c7651b3cf2ada4584faa36773bd07bac24acfb39f3c431b36d7e667aa"
 dependencies = [
- "thiserror-impl 2.0.2",
+ "thiserror-impl 2.0.3",
 ]
 
 [[package]]
@@ -5276,9 +5276,9 @@ dependencies = [
 
 [[package]]
 name = "thiserror-impl"
-version = "2.0.2"
+version = "2.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea4778c7e8ff768bdb32a58a2349903859fe719a320300d7d4ce8636f19a1e69"
+checksum = "f077553d607adc1caf65430528a576c757a71ed73944b66ebb58ef2bbd243568"
 dependencies = [
  "proc-macro2",
  "quote",
