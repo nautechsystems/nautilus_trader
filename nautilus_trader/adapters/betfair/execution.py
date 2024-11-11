@@ -181,7 +181,7 @@ class BetfairExecutionClient(LiveExecutionClient):
         ]
         await asyncio.gather(*aws)
 
-        self._log.debug("Starting account state update task")
+        self._log.debug("Starting 'account_state_updates' task")
         self.account_state_task = self.create_task(self.account_state_updates())
 
     async def _disconnect(self) -> None:
@@ -189,7 +189,7 @@ class BetfairExecutionClient(LiveExecutionClient):
 
         # Shutdown account updates
         if self.account_state_task:
-            self._log.debug("Canceling task 'account_state'")
+            self._log.debug("Canceling task 'account_state_updates'")
             self.account_state_task.cancel()
 
         # Close socket

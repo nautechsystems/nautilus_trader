@@ -16,6 +16,7 @@
 from nautilus_trader.adapters.okx.common.enums import OKXContractType
 from nautilus_trader.adapters.okx.common.enums import OKXInstrumentType
 from nautilus_trader.adapters.okx.common.enums import OKXMarginMode
+from nautilus_trader.common.config import PositiveInt
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 
@@ -24,6 +25,8 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
     """
     Configuration for ``OKXDataClient`` instances.
 
+    Parameters
+    ----------
     api_key : str, [default=None]
         The OKX API public key.
         If ``None`` then will source the `OKX_API_KEY` environment variable.
@@ -49,6 +52,8 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
         If ``None`` then will source the url from `get_ws_base_url()`.
     is_demo : bool, default False
         If the client is connecting to the OKX demo API.
+    update_instruments_interval_mins: PositiveInt or None, default 60
+        The interval (minutes) between reloading instruments from the venue.
 
     """
 
@@ -60,12 +65,15 @@ class OKXDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_http: str | None = None
     base_url_ws: str | None = None
     is_demo: bool = False
+    update_instruments_interval_mins: PositiveInt | None = 60
 
 
 class OKXExecClientConfig(LiveExecClientConfig, frozen=True):
     """
     Configuration for ``OKXExecutionClient`` instances.
 
+    Parameters
+    ----------
     api_key : str, [default=None]
         The OKX API public key.
         If ``None`` then will source the `OKX_API_KEY` environment variable.
