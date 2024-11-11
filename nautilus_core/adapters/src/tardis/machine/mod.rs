@@ -49,8 +49,11 @@ pub use crate::tardis::machine::client::TardisMachineClient;
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
 )]
 pub struct InstrumentMiniInfo {
+    /// The instrument ID with optionally Nautilus normalized symbol.
     pub instrument_id: InstrumentId,
+    /// The price precision for the instrument.
     pub price_precision: u8,
+    /// The size precision for the instrument.
     pub size_precision: u8,
 }
 
