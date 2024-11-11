@@ -26,6 +26,9 @@ logs/
 *.tar.gz*
 *.zip
 
+# Data
+*.parquet
+
 # IntelliJ and VSCode project
 *.iml
 .idea/
