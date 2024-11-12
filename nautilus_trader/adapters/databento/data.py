@@ -819,11 +819,12 @@ class DatabentoDataClient(LiveMarketDataClient):
         end = end or available_end
 
         self._log.info(
-            f"Requesting {instrument_id} instrument definitions: "
+            f"Requesting {instrument_id} instrument definition: "
             f"dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
 
+        # Request single instrument
         pyo3_instruments = await self._http_client.get_range_instruments(
             dataset=dataset,
             symbols=[instrument_id.symbol.value],
@@ -832,9 +833,14 @@ class DatabentoDataClient(LiveMarketDataClient):
         )
 
         instruments = instruments_from_pyo3(pyo3_instruments)
+        if not instruments:
+            self._log.warning(
+                f"No instrument found for request: {instrument_id=}, {correlation_id=}",
+            )
+            return
 
-        self._handle_instruments(
-            instruments=instruments,
+        self._handle_instrument(
+            instrument=instruments[0],
             correlation_id=correlation_id,
         )
 
