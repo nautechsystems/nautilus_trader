@@ -185,7 +185,7 @@ mod tests {
     use std::sync::Arc;
 
     use arrow::{
-        array::{Array, Int64Array, StringArray, UInt64Array, UInt8Array},
+        array::{Array, Int64Array, UInt64Array, UInt8Array},
         record_batch::RecordBatch,
     };
     use rstest::rstest;
@@ -256,7 +256,10 @@ mod tests {
         let price_values = columns[0].as_any().downcast_ref::<Int64Array>().unwrap();
         let size_values = columns[1].as_any().downcast_ref::<UInt64Array>().unwrap();
         let aggressor_side_values = columns[2].as_any().downcast_ref::<UInt8Array>().unwrap();
-        let trade_id_values = columns[3].as_any().downcast_ref::<StringArray>().unwrap();
+        let trade_id_values = columns[3]
+            .as_any()
+            .downcast_ref::<StringViewArray>()
+            .unwrap();
         let ts_event_values = columns[4].as_any().downcast_ref::<UInt64Array>().unwrap();
         let ts_init_values = columns[5].as_any().downcast_ref::<UInt64Array>().unwrap();
 
@@ -289,7 +292,7 @@ mod tests {
         let price = Int64Array::from(vec![1_000_000_000_000, 1_010_000_000_000]);
         let size = UInt64Array::from(vec![1000, 900]);
         let aggressor_side = UInt8Array::from(vec![0, 1]); // 0 for BUY, 1 for SELL
-        let trade_id = StringArray::from(vec!["1", "2"]);
+        let trade_id = StringViewArray::from(vec!["1", "2"]);
         let ts_event = UInt64Array::from(vec![1, 2]);
         let ts_init = UInt64Array::from(vec![3, 4]);
 
