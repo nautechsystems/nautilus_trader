@@ -47,6 +47,7 @@ None
 - Fixed in-flight orders check and improve error handling (#2053), thanks @davidsblom
 - Fixed dYdX handling for liquidated fills (#2052), thanks @davidsblom
 - Fixed `BybitResponse.time` field as optional `int` (#2051), thanks @sunlei
+- Fixed single instrument requests for `DatabentoDataClient` (was incorrectly calling `_handle_instruments` instead of `_handle_instrument`)
 
 ---
 
