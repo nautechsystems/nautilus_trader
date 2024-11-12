@@ -46,6 +46,7 @@ logs/
 *.pyd
 .history*
 .cache/
+.codspeed/
 .mypy_cache/
 .profile/
 .pytest_cache/
