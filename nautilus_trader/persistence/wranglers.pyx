@@ -428,8 +428,8 @@ cdef class QuoteTickDataWrangler:
             If the data is scaled to Nautilus fixed-point values.
         timestamp_is_close : bool, default True
             If bar timestamps are at the close.
-            If True then open, high, low timestamps are offset before the close timestamp.
-            If False then high, low, close timestamps are offset after the open timestamp.
+            If True, then open, high, low timestamps are offset before the close timestamp.
+            If False, then high, low, close timestamps are offset after the open timestamp.
         sort_data : bool, default True
             If the data should be sorted by timestamp.
 
@@ -665,8 +665,8 @@ cdef class TradeTickDataWrangler:
             If the data is scaled to Nautilus fixed-point.
         timestamp_is_close : bool, default True
             If bar timestamps are at the close.
-            If True then open, high, low timestamps are offset before the close timestamp.
-            If False then high, low, close timestamps are offset after the open timestamp.
+            If True, then open, high, low timestamps are offset before the close timestamp.
+            If False, then high, low, close timestamps are offset after the open timestamp.
         sort_data : bool, default True
             If the data should be sorted by timestamp.
 

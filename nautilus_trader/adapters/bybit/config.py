@@ -24,6 +24,8 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
     """
     Configuration for ``BybitDataClient`` instances.
 
+    Parameters
+    ----------
     api_key : str, optional
         The Bybit API public key.
         If ``None`` then will source the `BYBIT_API_KEY` or
@@ -39,6 +41,8 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
         If the client is connecting to the Bybit demo API.
     testnet : bool, default False
         If the client is connecting to the Bybit testnet API.
+    update_instruments_interval_mins: PositiveInt or None, default 60
+        The interval (minutes) between reloading instruments from the venue.
 
     """
 
@@ -48,12 +52,15 @@ class BybitDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_http: str | None = None
     demo: bool = False
     testnet: bool = False
+    update_instruments_interval_mins: PositiveInt | None = 60
 
 
 class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     """
     Configuration for ``BybitExecutionClient`` instances.
 
+    Parameters
+    ----------
     api_key : str, optional
         The Bybit API public key.
         If ``None`` then will source the `BYBIT_API_KEY` or
@@ -72,7 +79,7 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     testnet : bool, default False
         If the client is connecting to the Bybit testnet API.
     use_gtd : bool, default False
-        If False then GTD time in force will be remapped to GTC
+        If False, then GTD time in force will be remapped to GTC
         (this is useful if managing GTD orders locally).
     max_retries : PositiveInt, optional
         The maximum number of times a submit, cancel or modify order request will be retried.
@@ -93,8 +100,5 @@ class BybitExecClientConfig(LiveExecClientConfig, frozen=True):
     demo: bool = False
     testnet: bool = False
     use_gtd: bool = False  # Not supported on Bybit
-    use_reduce_only: bool = True
-    use_position_ids: bool = True
-    treat_expired_as_canceled: bool = False
     max_retries: PositiveInt | None = None
     retry_delay: PositiveFloat | None = None

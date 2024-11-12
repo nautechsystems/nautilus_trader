@@ -7,6 +7,9 @@ Released on TBD (UTC).
 - Added `Portfolio.realized_pnls(...)` method for per venue realized PnL (based on positions)
 - Added `TardisInstrumentProvider`
 - Added `PolymarketExecClientConfig.generate_order_history_from_trades` config setting (default False and not currently recommended)
+- Added configuration warning for `InstrumentProvider` (to warn when node starts with no instrument loading)
+- Implemented Tardis optional [symbol normalization](https://nautilustrader.io/docs/nightly/integrations/tardis/#symbology-and-normalization)
+- Implemented `WebSocketClient` reconnection retries (#2044), thanks @davidsblom
 - Implemented `OrderCancelRejected` event generation for Binance and Bybit
 - Implemented `OrderModifyRejected` event generation for Binance and Bybit
 - Improved `OrderRejected` handling of `reason` string (`None` is now allowed which will become the string `'None'`)
@@ -14,11 +17,18 @@ Released on TBD (UTC).
 - Improved `OrderModifyRejected` handling of `reason` string (`None` is now allowed which will become the string `'None'`)
 
 ### Internal Improvements
+- Ported `RiskEngine` to Rust (#2035), thanks @Pushkarm029 and @twitu
+- Ported `ExecutionEngine` to Rust (#2048), thanks @twitu
 - Added globally shared data channels to send events from engines to Runner in Rust (#2042), thanks @twitu
+- Added LRU caching for dYdX HTTP client (#2049), thanks @davidsblom
+- Improved identifier constructors to take `AsRef<str>` for a cleaner more flexible API
+- Refined identifiers `From` trait impls
 - Refined `InstrumentProvider` initialization behavior and logging
 - Refined `LiveTimer` cancel and performance testing
 - Simplified `LiveTimer` cancellation model (#2046), thanks @twitu
 - Refined Bybit HMAC authentication signatures (now using Rust implemented function)
+- Refined Tardis instrument ID parsing
+- Removed Bybit `msgspec` redundant import alias (#2050), thanks @sunlei
 
 ### Breaking Changes
 None
@@ -33,6 +43,11 @@ None
 - Fixed Bybit handling of `PARTIALLY_FILLED_CANCELED` status orders
 - Fixed Polymarket size precision for `BinaryOption` instruments (precision 6 to match USDC.e)
 - Fixed adapter instrument reloading (providers were not reloading instruments at the configured interval due to internal state flags)
+- Fixed static time logging for `BacktestEngine` when running with `use_pyo3` logging config
+- Fixed in-flight orders check and improve error handling (#2053), thanks @davidsblom
+- Fixed dYdX handling for liquidated fills (#2052), thanks @davidsblom
+- Fixed `BybitResponse.time` field as optional `int` (#2051), thanks @sunlei
+- Fixed single instrument requests for `DatabentoDataClient` (was incorrectly calling `_handle_instruments` instead of `_handle_instrument`), thanks for reporting @Emsu
 
 ---
 
@@ -1113,7 +1128,7 @@ Released on 31st July 2023 (UTC).
 - Fixed Binance reconciliation which was requesting reports for the same symbol multiple times
 - Fixed Binance Futures native symbol parsing (was actually Nautilus symbol values)
 - Fixed Binance Futures `PositionStatusReport` parsing of position side
-- Fixed Binance Futures `TradeReport` assignment of position ID (was hardcoded to hedging mode)
+- Fixed Binance Futures `TradeReport` assignment of position ID (was hard-coded to hedging mode)
 - Fixed Binance execution submitting of order lists
 - Fixed Binance commission rates requests for `InstrumentProvider`
 - Fixed Binance `TriggerType` parsing #1154, thanks for reporting @davidblom603

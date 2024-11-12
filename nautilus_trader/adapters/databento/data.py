@@ -56,7 +56,7 @@ from nautilus_trader.model.instruments import instruments_from_pyo3
 
 class DatabentoDataClient(LiveMarketDataClient):
     """
-    Provides a data client for the `Databento` API.
+    Provides a data client for the Databento API.
 
     Both Historical and Live APIs are leveraged to provide historical data
     for requests, and live data feeds based on subscriptions.
@@ -145,7 +145,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         # Tasks
         self._live_client_futures: set[asyncio.Future] = set()
-        self._update_dataset_ranges_interval_seconds: int = 60 * 60  # Once per hour (hard coded)
+        self._update_dataset_ranges_interval_secs: int = 60 * 60  # Once per hour (hard-coded)
         self._update_dataset_ranges_task: asyncio.Task | None = None
 
     async def _connect(self) -> None:
@@ -185,7 +185,6 @@ class DatabentoDataClient(LiveMarketDataClient):
             self._buffer_mbo_subscriptions_task.cancel()
             self._buffer_mbo_subscriptions_task = None
 
-        # Cancel update dataset ranges task
         if self._update_dataset_ranges_task:
             self._log.debug("Canceling task 'update_dataset_ranges'")
             self._update_dataset_ranges_task.cancel()
@@ -213,11 +212,11 @@ class DatabentoDataClient(LiveMarketDataClient):
         while True:
             try:
                 self._log.debug(
-                    f"Scheduled `update_instruments` to run in "
-                    f"{self._update_dataset_ranges_interval_seconds}s",
+                    f"Scheduled task 'update_instruments' to run in "
+                    f"{self._update_dataset_ranges_interval_secs}s",
                 )
 
-                await asyncio.sleep(self._update_dataset_ranges_interval_seconds)
+                await asyncio.sleep(self._update_dataset_ranges_interval_secs)
 
                 tasks = []
                 for dataset in self._dataset_ranges:
@@ -820,11 +819,12 @@ class DatabentoDataClient(LiveMarketDataClient):
         end = end or available_end
 
         self._log.info(
-            f"Requesting {instrument_id} instrument definitions: "
+            f"Requesting {instrument_id} instrument definition: "
             f"dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
 
+        # Request single instrument
         pyo3_instruments = await self._http_client.get_range_instruments(
             dataset=dataset,
             symbols=[instrument_id.symbol.value],
@@ -833,9 +833,14 @@ class DatabentoDataClient(LiveMarketDataClient):
         )
 
         instruments = instruments_from_pyo3(pyo3_instruments)
+        if not instruments:
+            self._log.warning(
+                f"No instrument found for request: {instrument_id=}, {correlation_id=}",
+            )
+            return
 
-        self._handle_instruments(
-            instruments=instruments,
+        self._handle_instrument(
+            instrument=instruments[0],
             correlation_id=correlation_id,
         )
 

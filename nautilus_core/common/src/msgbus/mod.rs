@@ -68,12 +68,16 @@ pub struct Subscription {
 impl Subscription {
     /// Creates a new [`Subscription`] instance.
     #[must_use]
-    pub fn new(topic: Ustr, handler: ShareableMessageHandler, priority: Option<u8>) -> Self {
+    pub fn new<T: AsRef<str>>(
+        topic: T,
+        handler: ShareableMessageHandler,
+        priority: Option<u8>,
+    ) -> Self {
         let handler_id = handler.0.id();
 
         Self {
             handler_id,
-            topic,
+            topic: Ustr::from(topic.as_ref()),
             handler,
             priority: priority.unwrap_or(0),
         }
@@ -212,16 +216,17 @@ impl MessageBus {
 
     /// Returns whether there are subscribers for the given `pattern`.
     #[must_use]
-    pub fn has_subscribers(&self, pattern: &str) -> bool {
-        self.matching_handlers(&Ustr::from(pattern))
+    pub fn has_subscribers<T: AsRef<str>>(&self, pattern: T) -> bool {
+        self.matching_handlers(&Ustr::from(pattern.as_ref()))
             .next()
             .is_some()
     }
 
     /// Returns the count of subscribers for the given `pattern`.
     #[must_use]
-    pub fn subscriptions_count(&self, pattern: &Ustr) -> usize {
-        self.matching_subscriptions(pattern).len()
+    pub fn subscriptions_count<T: AsRef<str>>(&self, pattern: T) -> usize {
+        self.matching_subscriptions(&Ustr::from(pattern.as_ref()))
+            .len()
     }
 
     /// Returns whether there are subscribers for the given `pattern`.
@@ -241,14 +246,14 @@ impl MessageBus {
 
     /// Returns whether there is a registered endpoint for the given `pattern`.
     #[must_use]
-    pub fn is_registered(&self, endpoint: &str) -> bool {
-        self.endpoints.contains_key(&Ustr::from(endpoint))
+    pub fn is_registered<T: AsRef<str>>(&self, endpoint: T) -> bool {
+        self.endpoints.contains_key(&Ustr::from(endpoint.as_ref()))
     }
 
     /// Returns whether there are subscribers for the given `pattern`.
     #[must_use]
-    pub fn is_subscribed(&self, topic: &str, handler: ShareableMessageHandler) -> bool {
-        let sub = Subscription::new(Ustr::from(topic), handler, None);
+    pub fn is_subscribed<T: AsRef<str>>(&self, topic: T, handler: ShareableMessageHandler) -> bool {
+        let sub = Subscription::new(topic, handler, None);
         self.subscriptions.contains_key(&sub)
     }
 
@@ -259,14 +264,16 @@ impl MessageBus {
     }
 
     /// Registers the given `handler` for the `endpoint` address.
-    pub fn register(&mut self, endpoint: Ustr, handler: ShareableMessageHandler) {
+    pub fn register<T: AsRef<str>>(&mut self, endpoint: T, handler: ShareableMessageHandler) {
         log::debug!(
-            "Registering endpoint '{endpoint}' with handler ID {} at {}",
+            "Registering endpoint '{}' with handler ID {} at {}",
+            endpoint.as_ref(),
             handler.0.id(),
             self.memory_address(),
         );
         // Updates value if key already exists
-        self.endpoints.insert(endpoint, handler);
+        self.endpoints
+            .insert(Ustr::from(endpoint.as_ref()), handler);
     }
 
     /// Deregisters the given `handler` for the `endpoint` address.
@@ -280,18 +287,18 @@ impl MessageBus {
     }
 
     /// Subscribes the given `handler` to the `topic`.
-    pub fn subscribe(
+    pub fn subscribe<T: AsRef<str>>(
         &mut self,
-        topic: Ustr,
+        topic: T,
         handler: ShareableMessageHandler,
         priority: Option<u8>,
     ) {
         log::debug!(
-            "Subscribing for topic '{topic}' at {}",
-            self.memory_address()
+            "Subscribing for topic '{}' at {}",
+            topic.as_ref(),
+            self.memory_address(),
         );
-        let sub = Subscription::new(topic, handler, priority);
-
+        let sub = Subscription::new(topic.as_ref(), handler, priority);
         if self.subscriptions.contains_key(&sub) {
             log::error!("{sub:?} already exists.");
             return;
@@ -300,7 +307,7 @@ impl MessageBus {
         // Find existing patterns which match this topic
         let mut matches = Vec::new();
         for (pattern, subs) in &mut self.patterns {
-            if is_matching(&topic, pattern) {
+            if is_matching(&Ustr::from(topic.as_ref()), pattern) {
                 subs.push(sub.clone());
                 subs.sort();
                 // subs.sort_by(|a, b| a.priority.cmp(&b.priority).then_with(|| a.cmp(b)));
@@ -314,9 +321,10 @@ impl MessageBus {
     }
 
     /// Unsubscribes the given `handler` from the `topic`.
-    pub fn unsubscribe(&mut self, topic: Ustr, handler: ShareableMessageHandler) {
+    pub fn unsubscribe<T: AsRef<str>>(&mut self, topic: T, handler: ShareableMessageHandler) {
         log::debug!(
-            "Unsubscribing for topic '{topic}' at {}",
+            "Unsubscribing for topic '{}' at {}",
+            topic.as_ref(),
             self.memory_address(),
         );
         let sub = Subscription::new(topic, handler, None);
@@ -325,8 +333,8 @@ impl MessageBus {
 
     /// Returns the handler for the given `endpoint`.
     #[must_use]
-    pub fn get_endpoint(&self, endpoint: &Ustr) -> Option<&ShareableMessageHandler> {
-        self.endpoints.get(&Ustr::from(endpoint))
+    pub fn get_endpoint<T: AsRef<str>>(&self, endpoint: T) -> Option<&ShareableMessageHandler> {
+        self.endpoints.get(&Ustr::from(endpoint.as_ref()))
     }
 
     #[must_use]
@@ -415,15 +423,14 @@ impl MessageBus {
 
     /// Send a [`DataResponse`] to an endpoint that must be an actor.
     pub fn send_response(&self, message: DataResponse) {
-        if let Some(handler) = self.get_endpoint(&message.client_id.inner()) {
+        if let Some(handler) = self.get_endpoint(message.client_id.inner()) {
             handler.0.handle_response(message);
         }
     }
 
     /// Publish [`Data`] to a topic.
-    pub fn publish_data(&self, topic: &str, message: Data) {
-        let topic = Ustr::from(topic);
-        let matching_subs = self.matching_subscriptions(&topic);
+    pub fn publish_data(&self, topic: &Ustr, message: Data) {
+        let matching_subs = self.matching_subscriptions(topic);
 
         for sub in matching_subs {
             sub.handler.0.handle_data(message.clone());
@@ -529,13 +536,13 @@ mod tests {
     #[rstest]
     fn test_regsiter_endpoint() {
         let mut msgbus = stub_msgbus();
-        let endpoint = Ustr::from("MyEndpoint");
+        let endpoint = "MyEndpoint";
         let handler = get_stub_shareable_handler(None);
 
         msgbus.register(endpoint, handler);
 
         assert_eq!(msgbus.endpoints(), vec![endpoint.to_string()]);
-        assert!(msgbus.get_endpoint(&endpoint).is_some());
+        assert!(msgbus.get_endpoint(endpoint).is_some());
     }
 
     #[rstest]
@@ -568,32 +575,32 @@ mod tests {
     #[rstest]
     fn test_subscribe() {
         let mut msgbus = stub_msgbus();
-        let topic = Ustr::from("my-topic");
+        let topic = "my-topic";
         let handler = get_stub_shareable_handler(None);
 
         msgbus.subscribe(topic, handler, Some(1));
 
-        assert!(msgbus.has_subscribers(topic.as_str()));
-        assert_eq!(msgbus.topics(), vec![topic.as_str()]);
+        assert!(msgbus.has_subscribers(topic));
+        assert_eq!(msgbus.topics(), vec![topic]);
     }
 
     #[rstest]
     fn test_unsubscribe() {
         let mut msgbus = stub_msgbus();
-        let topic = Ustr::from("my-topic");
+        let topic = "my-topic";
         let handler = get_stub_shareable_handler(None);
 
         msgbus.subscribe(topic, handler.clone(), None);
         msgbus.unsubscribe(topic, handler);
 
-        assert!(!msgbus.has_subscribers(topic.as_str()));
+        assert!(!msgbus.has_subscribers(topic));
         assert!(msgbus.topics().is_empty());
     }
 
     #[rstest]
     fn test_matching_subscriptions() {
         let mut msgbus = stub_msgbus();
-        let topic = Ustr::from("my-topic");
+        let topic = "my-topic";
 
         let handler_id1 = Ustr::from("1");
         let handler1 = get_stub_shareable_handler(Some(handler_id1));
@@ -611,6 +618,7 @@ mod tests {
         msgbus.subscribe(topic, handler2, None);
         msgbus.subscribe(topic, handler3, Some(1));
         msgbus.subscribe(topic, handler4, Some(2));
+        let topic = Ustr::from(topic);
         let subs = msgbus.matching_subscriptions(&topic);
 
         assert_eq!(subs.len(), 4);

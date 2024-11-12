@@ -15,7 +15,7 @@
 
 use std::ffi::c_char;
 
-use nautilus_core::ffi::string::cstr_to_str;
+use nautilus_core::ffi::string::cstr_as_str;
 
 use crate::identifiers::component_id::ComponentId;
 
@@ -26,7 +26,7 @@ use crate::identifiers::component_id::ComponentId;
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn component_id_new(ptr: *const c_char) -> ComponentId {
-    ComponentId::from(cstr_to_str(ptr))
+    ComponentId::from(cstr_as_str(ptr))
 }
 
 #[no_mangle]

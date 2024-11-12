@@ -214,7 +214,7 @@ impl DatabentoDataLoader {
         let metadata = decoder.metadata().clone();
         let mut dbn_stream = decoder.decode_stream::<T>();
 
-        let price_precision = Currency::USD().precision; // Hard coded for now
+        let price_precision = Currency::USD().precision; // Hard-coded for now
 
         Ok(std::iter::from_fn(move || {
             if let Err(e) = dbn_stream.advance() {
@@ -446,7 +446,7 @@ impl DatabentoDataLoader {
         let metadata = decoder.metadata().clone();
         let mut dbn_stream = decoder.decode_stream::<T>();
 
-        let price_precision = Currency::USD().precision; // Hard coded for now
+        let price_precision = Currency::USD().precision; // Hard-coded for now
 
         Ok(std::iter::from_fn(move || {
             if let Err(e) = dbn_stream.advance() {
@@ -495,7 +495,7 @@ impl DatabentoDataLoader {
         let metadata = decoder.metadata().clone();
         let mut dbn_stream = decoder.decode_stream::<T>();
 
-        let price_precision = Currency::USD().precision; // Hard coded for now
+        let price_precision = Currency::USD().precision; // Hard-coded for now
 
         Ok(std::iter::from_fn(move || {
             if let Err(e) = dbn_stream.advance() {

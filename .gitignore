@@ -26,6 +26,9 @@ logs/
 *.tar.gz*
 *.zip
 
+# Data
+*.parquet
+
 # IntelliJ and VSCode project
 *.iml
 .idea/
@@ -43,6 +46,7 @@ logs/
 *.pyd
 .history*
 .cache/
+.codspeed/
 .mypy_cache/
 .profile/
 .pytest_cache/

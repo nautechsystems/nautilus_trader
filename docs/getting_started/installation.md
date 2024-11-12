@@ -13,12 +13,12 @@ NautilusTrader may work on other platforms, but only those listed above are regu
 :::
 
 :::tip
-We recommend using the latest supported version of Python and setting up `nautilus_trader` in a virtual environment to isolate dependencies.
+We recommend using the latest supported version of Python and setting up [nautilus_trader](https://pypi.org/project/nautilus_trader/) in a virtual environment to isolate dependencies.
 :::
 
 ## From PyPI
 
-To install the latest binary wheel (or sdist package) from PyPI using Pythons _pip_ package manager:
+To install the latest [nautilus_trader]([nautilus_trader](https://pypi.org/project/nautilus_trader/)) binary wheel (or sdist package) from PyPI using Pythons pip package manager:
     
     pip install -U nautilus_trader
 
@@ -32,7 +32,7 @@ Install optional dependencies as 'extras' for specific integrations:
 - `ib`: Interactive Brokers adapter (integration) dependencies
 - `polymarket`: Polymarket adapter (integration) dependencies
 
-To install with specific extras using _pip_:
+To install with specific extras using pip:
 
     pip install -U "nautilus_trader[docker,ib]"
 
@@ -45,9 +45,9 @@ For MacBook Pro M1/M2, make sure your Python installed using pyenv is configured
 
     PYTHON_CONFIGURE_OPTS="--enable-shared" pyenv install <python_version>
 
-See https://pyo3.rs/latest/getting_started#virtualenvs.
+See the [PyO3 user guide](https://pyo3.rs/latest/getting-started#virtualenvs) for more details.
 
-It's possible to install from source using `pip` if you first install the build dependencies
+It's possible to install from source using pip if you first install the build dependencies
 as specified in the `pyproject.toml`. We highly recommend installing using [poetry](https://python-poetry.org/) as below.
 
 1. Install [rustup](https://rustup.rs/) (the Rust toolchain installer):
@@ -127,3 +127,7 @@ To manage the Redis container:
 
 - Start it with `docker start redis`
 - Stop it with `docker stop redis`
+
+:::tip
+We recommend using [Redis Insight](https://redis.io/insight/) as a GUI to visualize and debug Redis data efficiently.
+:::

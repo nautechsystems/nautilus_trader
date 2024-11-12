@@ -15,7 +15,7 @@
 
 from decimal import Decimal
 
-import msgspec as msgspec
+import msgspec
 
 from nautilus_trader.model.objects import AccountBalance
 from nautilus_trader.model.objects import Currency

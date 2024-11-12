@@ -22,7 +22,7 @@ use serde_json::{Result, Value};
 use ustr::Ustr;
 
 use crate::{
-    ffi::string::cstr_to_str,
+    ffi::string::cstr_as_str,
     parsing::{min_increment_precision_from_str, precision_from_str},
 };
 
@@ -144,7 +144,7 @@ pub unsafe fn optional_bytes_to_str_vec(ptr: *const c_char) -> Option<Vec<String
 #[no_mangle]
 pub unsafe extern "C" fn precision_from_cstr(ptr: *const c_char) -> u8 {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    precision_from_str(cstr_to_str(ptr))
+    precision_from_str(cstr_as_str(ptr))
 }
 
 /// Return the minimum price increment decimal precision inferred from the given C string.
@@ -160,7 +160,7 @@ pub unsafe extern "C" fn precision_from_cstr(ptr: *const c_char) -> u8 {
 #[no_mangle]
 pub unsafe extern "C" fn min_increment_precision_from_cstr(ptr: *const c_char) -> u8 {
     assert!(!ptr.is_null(), "`ptr` was NULL");
-    min_increment_precision_from_str(cstr_to_str(ptr))
+    min_increment_precision_from_str(cstr_as_str(ptr))
 }
 
 /// Return a `bool` value from the given `u8`.

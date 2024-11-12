@@ -232,23 +232,23 @@ cdef class OrderInitialized(OrderEvent):
         order parameters.
     emulation_trigger : EmulationTrigger
         The emulation trigger for the order.
-    trigger_instrument_id : InstrumentId, optional with no default so ``None`` must be passed explicitly
+    trigger_instrument_id : InstrumentId or ``None``
         The emulation trigger instrument ID for the order (if ``None`` then will be the `instrument_id`).
     contingency_type : ContingencyType
         The order contingency type.
-    order_list_id : OrderListId, optional with no default so ``None`` must be passed explicitly
+    order_list_id : OrderListId or ``None``
         The order list ID associated with the order.
-    linked_order_ids : list[ClientOrderId], optional with no default so ``None`` must be passed explicitly
+    linked_order_ids : list[ClientOrderId] or ``None``
         The order linked client order ID(s).
-    parent_order_id : ClientOrderId, optional with no default so ``None`` must be passed explicitly
+    parent_order_id : ClientOrderId or ``None``
         The orders parent client order ID.
-    exec_algorithm_id : ExecAlgorithmId, optional with no default so ``None`` must be passed explicitly
+    exec_algorithm_id : ExecAlgorithmId or ``None``
         The execution algorithm ID for the order.
     exec_algorithm_params : dict[str, Any], optional
         The execution algorithm parameters for the order.
-    exec_spawn_id : ClientOrderId, optional with no default so ``None`` must be passed explicitly
+    exec_spawn_id : ClientOrderId or ``None``
         The execution algorithm spawning primary client order ID.
-    tags : list[str], optional with no default so ``None`` must be passed explicitly
+    tags : list[str] or ``None``
         The custom user tags for the order.
     event_id : UUID4
         The event ID.
@@ -2227,9 +2227,9 @@ cdef class OrderCanceled(OrderEvent):
         The instrument ID.
     client_order_id : ClientOrderId
         The client order ID.
-    venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
+    venue_order_id : VenueOrderId or ``None``
         The venue order ID (assigned by the venue).
-    account_id : AccountId, optional with no default so ``None`` must be passed explicitly
+    account_id : AccountId or ``None``
         The account ID (with the venue).
     event_id : UUID4
         The event ID.
@@ -2497,9 +2497,9 @@ cdef class OrderExpired(OrderEvent):
         The instrument ID.
     client_order_id : ClientOrderId
         The client order ID.
-    venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
+    venue_order_id : VenueOrderId or ``None``
         The venue order ID (assigned by the venue).
-    account_id : AccountId, optional with no default so ``None`` must be passed explicitly
+    account_id : AccountId or ``None``
         The account ID (with the venue).
     event_id : UUID4
         The event ID.
@@ -2769,9 +2769,9 @@ cdef class OrderTriggered(OrderEvent):
         The instrument ID.
     client_order_id : ClientOrderId
         The client order ID.
-    venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
+    venue_order_id : VenueOrderId or ``None``
         The venue order ID (assigned by the venue).
-    account_id : AccountId, optional with no default so ``None`` must be passed explicitly
+    account_id : AccountId or ``None``
         The account ID (with the venue).
     event_id : UUID4
         The event ID.
@@ -3040,9 +3040,9 @@ cdef class OrderPendingUpdate(OrderEvent):
         The instrument ID.
     client_order_id : ClientOrderId
         The client order ID.
-    venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
+    venue_order_id : VenueOrderId or ``None``
         The venue order ID (assigned by the venue).
-    account_id : AccountId, optional with no default so ``None`` must be passed explicitly
+    account_id : AccountId or ``None``
         The account ID (with the venue).
     event_id : UUID4
         The event ID.
@@ -3311,9 +3311,9 @@ cdef class OrderPendingCancel(OrderEvent):
         The instrument ID.
     client_order_id : ClientOrderId
         The client order ID.
-    venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
+    venue_order_id : VenueOrderId or ``None``
         The venue order ID (assigned by the venue).
-    account_id : AccountId, optional with no default so ``None`` must be passed explicitly
+    account_id : AccountId or ``None``
         The account ID (with the venue).
     event_id : UUID4
         The event ID.
@@ -3582,9 +3582,9 @@ cdef class OrderModifyRejected(OrderEvent):
         The instrument ID.
     client_order_id : ClientOrderId
         The client order ID.
-    venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
+    venue_order_id : VenueOrderId or ``None``
         The venue order ID (assigned by the venue).
-    account_id : AccountId, optional with no default so ``None`` must be passed explicitly
+    account_id : AccountId or ``None``
         The account ID (with the venue).
     reason : str
         The order update rejected reason.
@@ -3874,9 +3874,9 @@ cdef class OrderCancelRejected(OrderEvent):
         The instrument ID.
     client_order_id : ClientOrderId
         The client order ID.
-    venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
+    venue_order_id : VenueOrderId or ``None``
         The venue order ID (assigned by the venue).
-    account_id : AccountId, optional with no default so ``None`` must be passed explicitly
+    account_id : AccountId or ``None``
         The account ID (with the venue).
     reason : str
         The order cancel rejected reason.
@@ -4165,15 +4165,15 @@ cdef class OrderUpdated(OrderEvent):
         The instrument ID.
     client_order_id : ClientOrderId
         The client order ID.
-    venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
+    venue_order_id : VenueOrderId or ``None``
         The venue order ID (assigned by the venue).
-    account_id : AccountId, optional with no default so ``None`` must be passed explicitly
+    account_id : AccountId or ``None``
         The account ID (with the venue).
     quantity : Quantity
         The orders current quantity.
-    price : Price, optional with no default so ``None`` must be passed explicitly
+    price : Price or ``None``
         The orders current price.
-    trigger_price : Price, optional with no default so ``None`` must be passed explicitly
+    trigger_price : Price or ``None``
         The orders current trigger.
     event_id : UUID4
         The event ID.
@@ -4475,7 +4475,7 @@ cdef class OrderFilled(OrderEvent):
         The account ID (with the venue).
     trade_id : TradeId
         The trade match ID (assigned by the venue).
-    position_id : PositionId, optional with no default so ``None`` must be passed explicitly
+    position_id : PositionId or ``None``
         The position ID associated with the order fill (assigned by the venue).
     order_side : OrderSide {``BUY``, ``SELL``}
         The execution order side.

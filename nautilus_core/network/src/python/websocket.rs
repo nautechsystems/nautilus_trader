@@ -36,7 +36,7 @@ fn to_websocket_pyerr(e: tokio_tungstenite::tungstenite::Error) -> PyErr {
 #[pymethods]
 impl WebSocketConfig {
     #[new]
-    #[pyo3(signature = (url, handler, headers, heartbeat=None, heartbeat_msg=None, ping_handler=None))]
+    #[pyo3(signature = (url, handler, headers, heartbeat=None, heartbeat_msg=None, ping_handler=None, max_reconnection_tries=3))]
     fn py_new(
         url: String,
         handler: PyObject,
@@ -44,6 +44,7 @@ impl WebSocketConfig {
         heartbeat: Option<u64>,
         heartbeat_msg: Option<String>,
         ping_handler: Option<PyObject>,
+        max_reconnection_tries: Option<u64>,
     ) -> Self {
         Self {
             url,
@@ -52,6 +53,7 @@ impl WebSocketConfig {
             heartbeat,
             heartbeat_msg,
             ping_handler: ping_handler.map(Arc::new),
+            max_reconnection_tries,
         }
     }
 }
@@ -64,7 +66,7 @@ impl WebSocketClient {
     ///
     /// - Throws an Exception if it is unable to make websocket connection.
     #[staticmethod]
-    #[pyo3(name = "connect", signature = (config, post_connection= None, post_reconnection= None, post_disconnection= None, keyed_quotas = Vec::new(),default_quota = None))]
+    #[pyo3(name = "connect", signature = (config, post_connection= None, post_reconnection= None, post_disconnection= None, keyed_quotas = Vec::new(), default_quota = None))]
     fn py_connect(
         config: WebSocketConfig,
         post_connection: Option<PyObject>,
@@ -370,6 +372,7 @@ counter = Counter()",
             None,
             None,
             None,
+            None,
         );
         let client = WebSocketClient::connect(config, None, None, None, Vec::new(), None)
             .await
@@ -473,6 +476,7 @@ checker = Checker()",
             vec![(header_key, header_value)],
             Some(1),
             Some("heartbeat message".to_string()),
+            None,
             None,
         );
         let client = WebSocketClient::connect(config, None, None, None, Vec::new(), None)

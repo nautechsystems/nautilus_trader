@@ -13,8 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_model::identifiers::Venue;
 use serde::{Deserialize, Serialize};
 use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
+use ustr::Ustr;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Display)]
 #[serde(rename_all = "lowercase")]
@@ -241,5 +243,10 @@ impl Exchange {
             Self::Upbit => "UPBIT",
             Self::WooX => "WOOX",
         }
+    }
+
+    #[must_use]
+    pub fn as_venue(&self) -> Venue {
+        Venue::from_ustr_unchecked(Ustr::from(self.as_venue_str()))
     }
 }

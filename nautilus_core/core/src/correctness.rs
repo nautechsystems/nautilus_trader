@@ -63,7 +63,9 @@ pub fn check_predicate_false(predicate: bool, fail_msg: &str) -> anyhow::Result<
 /// - If `s` is an empty string.
 /// - If `s` consists solely of whitespace characters.
 /// - If `s` contains one or more non-ASCII characters.
-pub fn check_valid_string(s: &str, param: &str) -> anyhow::Result<()> {
+pub fn check_valid_string<T: AsRef<str>>(s: T, param: &str) -> anyhow::Result<()> {
+    let s = s.as_ref();
+
     // Ensure string is only traversed once
     if s.is_empty() {
         anyhow::bail!("invalid string for '{param}', was empty");
@@ -94,7 +96,8 @@ pub fn check_valid_string(s: &str, param: &str) -> anyhow::Result<()> {
 /// - If `s` is an empty string.
 /// - If `s` consists solely of whitespace characters.
 /// - If `s` contains one or more non-ASCII characters.
-pub fn check_valid_string_optional(s: Option<&str>, param: &str) -> anyhow::Result<()> {
+pub fn check_valid_string_optional<T: AsRef<str>>(s: Option<T>, param: &str) -> anyhow::Result<()> {
+    let s = s.as_ref();
     if let Some(s) = s {
         check_valid_string(s, param)?;
     }
@@ -102,7 +105,8 @@ pub fn check_valid_string_optional(s: Option<&str>, param: &str) -> anyhow::Resu
 }
 
 /// Checks the string `s` contains the pattern `pat`.
-pub fn check_string_contains(s: &str, pat: &str, param: &str) -> anyhow::Result<()> {
+pub fn check_string_contains<T: AsRef<str>>(s: T, pat: &str, param: &str) -> anyhow::Result<()> {
+    let s = s.as_ref();
     if !s.contains(pat) {
         anyhow::bail!("invalid string for '{param}' did not contain '{pat}', was '{s}'")
     }

@@ -15,7 +15,7 @@
 
 from decimal import Decimal
 
-import msgspec as msgspec
+import msgspec
 
 from nautilus_trader.adapters.okx.common.enums import OKXInstrumentType
 from nautilus_trader.adapters.okx.common.enums import OKXMarginMode

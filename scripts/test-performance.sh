@@ -1,3 +1,3 @@
 #!/bin/bash
 
-poetry run pytest tests/performance_tests --benchmark-disable-gc
+poetry run pytest tests/performance_tests --benchmark-disable-gc --codspeed

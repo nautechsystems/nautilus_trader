@@ -180,28 +180,30 @@ class OKXDataClient(LiveMarketDataClient):
         self._decoder_ws_trade = decoder_ws_trade()
 
         # Instrument updates
-        self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
+        self._update_instruments_interval_mins: int | None = config.update_instruments_interval_mins
         self._update_instruments_task: asyncio.Task | None = None
 
     async def _connect(self) -> None:
         await self._instrument_provider.initialize()
-
         self._send_all_instruments_to_data_engine()
-        self._update_instruments_task = self.create_task(self._update_instruments())
-        self._log.info("Initializing websocket connections")
+
+        if self._update_instruments_interval_mins:
+            self._update_instruments_task = self.create_task(
+                self._update_instruments(self._update_instruments_interval_mins),
+            )
+
         for ws_client in self._ws_clients.values():
             await ws_client.connect()
             await asyncio.sleep(0.5)
         await asyncio.sleep(0.5)
         await self._ws_client_tbt_books.connect()
 
-        self._log.info("Data client connected")
-
     async def _disconnect(self) -> None:
         if self._update_instruments_task:
-            self._log.debug("Cancelling `update_instruments` task")
+            self._log.debug("Cancelling 'update_instruments' task")
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
+
         for ws_client in self._ws_clients.values():
             await ws_client.disconnect()
         await self._ws_client_tbt_books.disconnect()
@@ -213,18 +215,17 @@ class OKXDataClient(LiveMarketDataClient):
         for currency in self._instrument_provider.currencies().values():
             self._cache.add_currency(currency)
 
-    async def _update_instruments(self) -> None:
+    async def _update_instruments(self, interval_mins: int) -> None:
         try:
             while True:
                 self._log.debug(
-                    f"Scheduled `update_instruments` to run in "
-                    f"{self._update_instrument_interval}s",
+                    f"Scheduled task 'update_instruments' to run in {interval_mins} minutes",
                 )
-                await asyncio.sleep(self._update_instrument_interval)
+                await asyncio.sleep(interval_mins * 60)
                 await self._instrument_provider.initialize(reload=True)
                 self._send_all_instruments_to_data_engine()
         except asyncio.CancelledError:
-            self._log.debug("Canceled `update_instruments` task")
+            self._log.debug("Canceled 'update_instruments' task")
 
     async def _get_ws_client(
         self,

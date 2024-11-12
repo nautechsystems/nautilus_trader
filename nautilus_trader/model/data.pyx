@@ -1832,7 +1832,7 @@ cdef class OrderBookDelta(Data):
         The instrument ID for the book.
     action : BookAction {``ADD``, ``UPDATE``, ``DELETE``, ``CLEAR``}
         The order book delta action.
-    order : BookOrder, optional with no default so ``None`` must be passed explicitly
+    order : BookOrder or ``None``
         The book order for the delta.
     flags : uint8_t
         The record flags bit field, indicating event end and data information.
@@ -3292,7 +3292,7 @@ cdef class InstrumentStatus(Data):
 
         returns
         -------
-        bool or `None`
+        bool or ``None``
 
         """
         return self._is_trading
@@ -3304,7 +3304,7 @@ cdef class InstrumentStatus(Data):
 
         returns
         -------
-        bool or `None`
+        bool or ``None``
 
         """
         return self._is_quoting
@@ -3316,7 +3316,7 @@ cdef class InstrumentStatus(Data):
 
         returns
         -------
-        bool or `None`
+        bool or ``None``
 
         """
         return self._is_short_sell_restricted

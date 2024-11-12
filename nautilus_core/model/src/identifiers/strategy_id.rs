@@ -48,7 +48,8 @@ impl StrategyId {
     ///
     /// This function panics:
     /// - If `value` is not a valid string, or does not contain a hyphen '-' separator.
-    pub fn new_checked(value: &str) -> anyhow::Result<Self> {
+    pub fn new_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
+        let value = value.as_ref();
         check_valid_string(value, stringify!(value))?;
         if value != EXTERNAL_STRATEGY_ID {
             check_string_contains(value, "-", stringify!(value))?;
@@ -62,7 +63,7 @@ impl StrategyId {
     ///
     /// This function panics:
     /// - If `value` is not a valid string.
-    pub fn new(value: &str) -> Self {
+    pub fn new<T: AsRef<str>>(value: T) -> Self {
         Self::new_checked(value).expect(FAILED)
     }
 

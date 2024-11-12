@@ -47,7 +47,8 @@ impl Venue {
     /// # Notes
     ///
     /// PyO3 requires a `Result` type for proper error handling and stacktrace printing in Python.
-    pub fn new_checked(value: &str) -> anyhow::Result<Self> {
+    pub fn new_checked<T: AsRef<str>>(value: T) -> anyhow::Result<Self> {
+        let value = value.as_ref();
         check_valid_string(value, stringify!(value))?;
         Ok(Self(Ustr::from(value)))
     }
@@ -58,7 +59,7 @@ impl Venue {
     ///
     /// This function panics:
     /// - If `value` is not a valid string.
-    pub fn new(value: &str) -> Self {
+    pub fn new<T: AsRef<str>>(value: T) -> Self {
         Self::new_checked(value).expect(FAILED)
     }
 
@@ -80,8 +81,13 @@ impl Venue {
     }
 
     #[must_use]
-    pub fn from_str_unchecked(s: &str) -> Self {
-        Self(Ustr::from(s))
+    pub fn from_str_unchecked<T: AsRef<str>>(s: T) -> Self {
+        Self(Ustr::from(s.as_ref()))
+    }
+
+    #[must_use]
+    pub const fn from_ustr_unchecked(s: Ustr) -> Self {
+        Self(s)
     }
 
     pub fn from_code(code: &str) -> anyhow::Result<Self> {

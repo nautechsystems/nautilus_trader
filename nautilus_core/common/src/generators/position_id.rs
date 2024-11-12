@@ -59,8 +59,8 @@ impl PositionIdGenerator {
         let trader_tag = self.trader_id.get_tag();
         let strategy_tag = strategy.get_tag();
         let flipped = if flipped { "F" } else { "" };
-        let id = format!("P-{datetime_tag}-{trader_tag}-{strategy_tag}-{next_count}{flipped}");
-        PositionId::from(id.as_str())
+        let value = format!("P-{datetime_tag}-{trader_tag}-{strategy_tag}-{next_count}{flipped}");
+        PositionId::from(value)
     }
 }
 

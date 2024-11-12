@@ -70,6 +70,70 @@ This includes the following:
 | [ticks](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix) - number of ticks | `TICK`                      |
 | [vol](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix) - volume size       | `VOLUME`                    |
 
+### Symbology and normalization
+
+The Tardis integration seamlessly integrates with NautilusTrader's crypto exchange adapters through consistent symbol normalization.
+Each exchange's raw symbols are normalized to follow Nautilus symbology conventions as detailed below:
+
+#### Common rules
+
+- All symbols are converted to uppercase.
+- Market type suffixes are appended with a hyphen for some exchanges (see [exchange-specific normalizations](#exchange-specific-normalizations)).
+- Original exchange symbols are preserved in the Nautilus instrument definitions `raw_symbol` field.
+
+#### Exchange-specific normalizations
+
+- **Binance**: Nautilus appends the suffix `-PERP` to all perpetual symbols.
+- **Bybit**: Nautilus uses specific product category suffixes, including `-SPOT`, `-LINEAR`, `-INVERSE`, `-OPTION`.
+- **dYdX**: Nautilus appends the suffix `-PERP` to all perpetual symbols.
+
+For detailed symbology documentation per exchange:
+
+- [Binance symbology](./binance.md#symbology)
+- [Bybit symbology](./bybit.md#symbology)
+- [dYdX symbology](./dydx.md#symbology)
+
+## Venues
+
+Some exchanges on Tardis are partitioned into multiple venues.
+The table below outlines the mappings between Nautilus venues and corresponding Tardis exchanges, as well as the exchanges that Tardis supports:
+
+| Nautilus venue          | Tardis exchange(s)                                    |
+|:------------------------|:------------------------------------------------------|
+| `ASCENDEX`              | `ascendex`                                            |
+| `BINANCE`               | `binance`, `binance-delivery`, `binance-dex`, `binance-futures`, `binance-jersey`, `binance-options`, `binance-us` |
+| `BITFINEX`              | `bitfinex`, `bitfinex-derivatives`                    |
+| `BITFLYER`              | `bitflyer`                                            |
+| `BITMEX`                | `bitmex`                                              |
+| `BITNOMIAL`             | `bitnomial`                                           |
+| `BITSTAMP`              | `bitstamp`                                            |
+| `BLOCKCHAIN_COM`        | `blockchain-com`                                      |
+| `BYBIT`                 | `bybit`, `bybit-options`, `bybit-spot`                |
+| `COINBASE`              | `coinbase`                                            |
+| `COINFLEX`              | `coinflex` (*for historical research*)                |
+| `CRYPTO_COM`            | `crypto-com`, `crypto-com-derivatives`                |
+| `CRYPTOFACILITIES`      | `cryptofacilities`                                    |
+| `DELTA`                 | `delta`                                               |
+| `DERIBIT`               | `deribit`                                             |
+| `DYDX`                  | `dydx`                                                |
+| `FTX`                   | `ftx` (*for historical research*)                     |
+| `FTX_US`                | `ftx-us` (*for historical research*)                  |
+| `GATEIO`                | `gate-io`, `gate-io-futures`                          |
+| `GEMINI`                | `gemini`                                              |
+| `HITBTC`                | `hitbtc`                                              |
+| `HUOBI`                 | `huobi`, `huobi-dm`, `huobi-dm-linear-swap`, `huobi-dm-options`, `huobi-dm-swap` |
+| `KRAKEN`                | `kraken`                                              |
+| `KUCOIN`                | `kucoin`                                              |
+| `MANGO`                 | `mango`                                               |
+| `OKCOIN`                | `okcoin`                                              |
+| `OKEX`                  | `okex`, `okex-futures`, `okex-options`, `okex-swap`   |
+| `PHEMEX`                | `phemex`                                              |
+| `POLONIEX`              | `poloniex`                                            |
+| `SERUM`                 | `serum` (*for historical research*)                   |
+| `STARATLAS`             | `staratlas`                                           |
+| `UPBIT`                 | `upbit`                                               |
+| `WOOX`                  | `woo-x`                                               |
+
 ## Environment variables
 
 The following environment variables are used by Tardis and NautilusTrader.
@@ -124,11 +188,12 @@ Next, ensure you have a configuration JSON file available.
 
 **Configuration JSON format**
 
-| name            | type              | description                                                  | default                                                                                               |
-|:----------------|:------------------|:-------------------------------------------------------------|:------------------------------------------------------------------------------------------------------|
-| `tardis_ws_url` | string (optional) | The Tardis Machine WebSocket URL.                            | If `null` then will use the `TARDIS_WS_URL` env var.                                                  |
-| `output_path`   | string (optional) | The output directory path to write Nautilus Parquet data to. | If `null` then will use the `NAUTILUS_CATALOG_PATH` env var, otherwise the current working directory. |
-| `options`       | JSON[]            | An array of [ReplayNormalizedRequestOptions](https://docs.tardis.dev/api/tardis-machine#replay-normalized-options) objects.                                          |
+| name                | type              | description                                                                         | default                                                                                               |
+|:--------------------|:------------------|:------------------------------------------------------------------------------------|:------------------------------------------------------------------------------------------------------|
+| `tardis_ws_url`     | string (optional) | The Tardis Machine WebSocket URL.                                                   | If `null` then will use the `TARDIS_WS_URL` env var.                                                  |
+| `normalize_symbols` | bool (optional)   | If Nautilus [symbol normalization](#symbology-and-normalization) should be applied. | If `null` then will default to `true`.                                                                |
+| `output_path`       | string (optional) | The output directory path to write Nautilus Parquet data to.                        | If `null` then will use the `NAUTILUS_CATALOG_PATH` env var, otherwise the current working directory. |
+| `options`           | JSON[]            | An array of [ReplayNormalizedRequestOptions](https://docs.tardis.dev/api/tardis-machine#replay-normalized-options) objects.                                                                 |
 
 An example configuration file, `example_config.json`, is available [here](https://github.com/nautechsystems/nautilus_trader/blob/develop/nautilus_core/adapters/src/tardis/bin/example_config.json):
 

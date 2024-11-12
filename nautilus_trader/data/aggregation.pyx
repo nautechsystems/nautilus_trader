@@ -678,8 +678,8 @@ cdef class TimeBarAggregator(BarAggregator):
     build_with_no_updates : bool, default True
         If build and emit bars with no new market updates.
     timestamp_on_close : bool, default True
-        If True then timestamp will be the bar close's time.
-        If False then timestamp will be the bar open's time.
+        If True, then timestamp will be the bar close's time.
+        If False, then timestamp will be the bar open's time.
     interval_type : str, default 'left-open'
         Determines the type of interval used for time aggregation.
         - 'left-open': start time is excluded and end time is included (default).

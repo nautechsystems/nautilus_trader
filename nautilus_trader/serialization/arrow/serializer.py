@@ -76,13 +76,13 @@ def register_arrow(
     ----------
     data_cls : type
         The data type to register serialization for.
+    schema : pa.Schema or None
+        If the schema cannot be correctly inferred from a subset of the data
+        (i.e. if certain values may be missing in the first chunk).
     encoder : Callable, optional
         The callable to encode instances of type `cls_type` to Arrow record batches.
     decoder : Callable, optional
         The callable to decode rows from Arrow record batches into `cls_type`.
-    schema : pa.Schema, optional
-        If the schema cannot be correctly inferred from a subset of the data
-        (i.e. if certain values may be missing in the first chunk).
     table : type, optional
         An optional table override for `cls`. Used if `cls` is going to be
         transformed and stored in a table other than its own.

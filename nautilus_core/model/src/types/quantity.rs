@@ -169,8 +169,8 @@ impl From<&Quantity> for f64 {
 }
 
 impl From<i64> for Quantity {
-    fn from(input: i64) -> Self {
-        Self::new(input as f64, 0)
+    fn from(value: i64) -> Self {
+        Self::new(value as f64, 0)
     }
 }
 
@@ -317,19 +317,19 @@ impl From<&Quantity> for u64 {
 impl FromStr for Quantity {
     type Err = String;
 
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        let float_from_input = input
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let float_from_input = value
             .replace('_', "")
             .parse::<f64>()
-            .map_err(|e| format!("Error parsing `input` string '{input}' as f64: {e}"))?;
+            .map_err(|e| format!("Error parsing `input` string '{value}' as f64: {e}"))?;
 
-        Ok(Self::new(float_from_input, precision_from_str(input)))
+        Ok(Self::new(float_from_input, precision_from_str(value)))
     }
 }
 
 impl From<&str> for Quantity {
-    fn from(input: &str) -> Self {
-        Self::from_str(input).expect("Valid string input for `Quantity`")
+    fn from(value: &str) -> Self {
+        Self::from_str(value).expect("Valid string input for `Quantity`")
     }
 }
 

@@ -687,7 +687,7 @@ impl DataEngine {
         let topics = vec![deltas_topic, depth_topic];
 
         for topic in topics {
-            let num_subscribers = msgbus.subscriptions_count(&topic);
+            let num_subscribers = msgbus.subscriptions_count(topic);
             // TODO: Check if internal book subscriber
             // TODO: Remove the subscription for the internal order book if it is the last subscription
         }
@@ -720,7 +720,7 @@ impl DataEngine {
         let topics = vec![deltas_topic, depth_topic];
 
         for topic in topics {
-            let num_subscribers = msgbus.subscriptions_count(&topic);
+            let num_subscribers = msgbus.subscriptions_count(topic);
             // TODO: Check if internal book subscriber
             // TODO: Remove the subscription for the internal order book if it is the last subscription
         }
@@ -785,12 +785,12 @@ impl DataEngine {
         let handler = ShareableMessageHandler(Rc::new(updater));
 
         let topic = msgbus.switchboard.get_deltas_topic(*instrument_id);
-        if !msgbus.is_subscribed(topic.as_str(), handler.clone()) {
+        if !msgbus.is_subscribed(topic, handler.clone()) {
             msgbus.subscribe(topic, handler.clone(), Some(self.msgbus_priority));
         }
 
         let topic = msgbus.switchboard.get_depth_topic(*instrument_id);
-        if !only_deltas && !msgbus.is_subscribed(topic.as_str(), handler.clone()) {
+        if !only_deltas && !msgbus.is_subscribed(topic, handler.clone()) {
             msgbus.subscribe(topic, handler, Some(self.msgbus_priority));
         }
 

@@ -29,9 +29,7 @@ use super::{
     message::WsMessage, replay_normalized, stream_normalized, Error, InstrumentMiniInfo,
     ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions,
 };
-use crate::tardis::{
-    machine::parse::parse_tardis_ws_message, parse::parse_instrument_id_with_enum,
-};
+use crate::tardis::{machine::parse::parse_tardis_ws_message, parse::parse_instrument_id};
 
 /// Provides a client for connecting to a [Tardis Machine Server](https://docs.tardis.dev/api/tardis-machine).
 #[cfg_attr(
@@ -44,11 +42,12 @@ pub struct TardisMachineClient {
     pub replay_signal: Arc<AtomicBool>,
     pub stream_signals: HashMap<InstrumentMiniInfo, Arc<AtomicBool>>,
     pub instruments: HashMap<InstrumentId, Arc<InstrumentMiniInfo>>,
+    pub normalize_symbols: bool,
 }
 
 impl TardisMachineClient {
     /// Creates a new [`TardisMachineClient`] instance.
-    pub fn new(base_url: Option<&str>) -> anyhow::Result<Self> {
+    pub fn new(base_url: Option<&str>, normalize_symbols: bool) -> anyhow::Result<Self> {
         let base_url = base_url
             .map(ToString::to_string)
             .or_else(|| env::var("TARDIS_MACHINE_WS_URL").ok())
@@ -63,11 +62,12 @@ impl TardisMachineClient {
             replay_signal: Arc::new(AtomicBool::new(false)),
             stream_signals: HashMap::new(),
             instruments: HashMap::new(),
+            normalize_symbols,
         })
     }
 
-    pub fn add_instrument_info(&mut self, info: InstrumentMiniInfo) {
-        self.instruments.insert(info.instrument_id, Arc::new(info));
+    pub fn add_instrument_info(&mut self, instrument_id: InstrumentId, info: InstrumentMiniInfo) {
+        self.instruments.insert(instrument_id, Arc::new(info));
     }
 
     #[must_use]
@@ -164,10 +164,10 @@ pub fn determine_instrument_info(
     instrument_map: &HashMap<InstrumentId, Arc<InstrumentMiniInfo>>,
 ) -> Option<Arc<InstrumentMiniInfo>> {
     let instrument_id = match msg {
-        WsMessage::BookChange(msg) => parse_instrument_id_with_enum(&msg.symbol, &msg.exchange),
-        WsMessage::BookSnapshot(msg) => parse_instrument_id_with_enum(&msg.symbol, &msg.exchange),
-        WsMessage::Trade(msg) => parse_instrument_id_with_enum(&msg.symbol, &msg.exchange),
-        WsMessage::TradeBar(msg) => parse_instrument_id_with_enum(&msg.symbol, &msg.exchange),
+        WsMessage::BookChange(msg) => parse_instrument_id(&msg.exchange, &msg.symbol),
+        WsMessage::BookSnapshot(msg) => parse_instrument_id(&msg.exchange, &msg.symbol),
+        WsMessage::Trade(msg) => parse_instrument_id(&msg.exchange, &msg.symbol),
+        WsMessage::TradeBar(msg) => parse_instrument_id(&msg.exchange, &msg.symbol),
         WsMessage::DerivativeTicker(_) => return None,
         WsMessage::Disconnect(_) => return None,
     };

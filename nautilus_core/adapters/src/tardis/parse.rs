@@ -13,32 +13,94 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::str::FromStr;
-
 use nautilus_core::{datetime::NANOSECONDS_IN_MICROSECOND, nanos::UnixNanos};
 use nautilus_model::{
     data::bar::BarSpecification,
     enums::{AggressorSide, BarAggregation, BookAction, OptionKind, OrderSide, PriceType},
-    identifiers::{InstrumentId, Symbol, Venue},
+    identifiers::{InstrumentId, Symbol},
 };
+use serde::{Deserialize, Deserializer};
 
-use super::enums::{Exchange, OptionType};
+use super::enums::{Exchange, InstrumentType, OptionType};
 
-/// Parse an instrument ID from the given venue and symbol values.
-#[must_use]
-pub fn parse_instrument_id(exchange: &str, symbol: &str) -> InstrumentId {
-    let venue = exchange.split('-').next().unwrap_or(exchange);
-    InstrumentId::from_str(&format!("{symbol}.{venue}").to_uppercase())
-        .expect("Failed to parse `instrument_id`")
+pub fn deserialize_uppercase<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    String::deserialize(deserializer).map(|s| s.to_uppercase())
 }
 
-/// Parse an instrument ID from the given `symbol` and Tardis `exchange` values.
 #[must_use]
-pub fn parse_instrument_id_with_enum(symbol: &str, exchange: &Exchange) -> InstrumentId {
-    InstrumentId::new(Symbol::from(symbol), Venue::from(exchange.as_venue_str()))
+#[inline]
+pub fn normalize_symbol_str(
+    symbol: &str,
+    exchange: &Exchange,
+    instrument_type: InstrumentType,
+    is_inverse: Option<bool>,
+) -> String {
+    let mut symbol = symbol.to_string();
+
+    match exchange {
+        Exchange::BinanceFutures
+        | Exchange::BinanceUs
+        | Exchange::BinanceDex
+        | Exchange::BinanceJersey
+            if instrument_type == InstrumentType::Perpetual =>
+        {
+            symbol.push_str("-PERP");
+        }
+
+        Exchange::Bybit => match instrument_type {
+            InstrumentType::Spot => {
+                symbol.push_str("-SPOT");
+            }
+            InstrumentType::Perpetual if !is_inverse.unwrap_or(false) => {
+                symbol.push_str("-LINEAR");
+            }
+            InstrumentType::Future if !is_inverse.unwrap_or(false) => {
+                symbol.push_str("-LINEAR");
+            }
+            InstrumentType::Perpetual if is_inverse == Some(true) => {
+                symbol.push_str("-INVERSE");
+            }
+            InstrumentType::Future if is_inverse == Some(true) => {
+                symbol.push_str("-INVERSE");
+            }
+            InstrumentType::Option => {
+                symbol.push_str("-OPTION");
+            }
+            _ => {}
+        },
+
+        Exchange::Dydx if instrument_type == InstrumentType::Perpetual => {
+            symbol.push_str("-PERP");
+        }
+
+        _ => {}
+    }
+
+    symbol
 }
 
-/// Parse an order side from the given string.
+/// Parses a Nautilus instrument ID from the given Tardis `exchange` and `symbol` values.
+#[must_use]
+pub fn parse_instrument_id(exchange: &Exchange, symbol: &str) -> InstrumentId {
+    InstrumentId::new(Symbol::from_str_unchecked(symbol), exchange.as_venue())
+}
+
+/// Parses a Nautilus instrument ID with a normalized symbol from the given Tardis `exchange` and `symbol` values.
+#[must_use]
+pub fn normalize_instrument_id(
+    exchange: &Exchange,
+    symbol: &str,
+    instrument_type: InstrumentType,
+    is_inverse: Option<bool>,
+) -> InstrumentId {
+    let symbol = normalize_symbol_str(symbol, exchange, instrument_type, is_inverse);
+    parse_instrument_id(exchange, &symbol)
+}
+
+/// Parses a Nautilus order side from the given Tardis string `value`.
 #[must_use]
 pub fn parse_order_side(value: &str) -> OrderSide {
     match value {
@@ -48,7 +110,7 @@ pub fn parse_order_side(value: &str) -> OrderSide {
     }
 }
 
-/// Parse an aggressor side from the given string.
+/// Parses a Nautilus aggressor side from the given Tardis string `value`.
 #[must_use]
 pub fn parse_aggressor_side(value: &str) -> AggressorSide {
     match value {
@@ -58,7 +120,7 @@ pub fn parse_aggressor_side(value: &str) -> AggressorSide {
     }
 }
 
-/// Parse an `option_kind` from the Tardis enum value.
+/// Parses a Nautilus option kind from the given Tardis enum `value`.
 #[must_use]
 pub const fn parse_option_kind(value: OptionType) -> OptionKind {
     match value {
@@ -67,13 +129,13 @@ pub const fn parse_option_kind(value: OptionType) -> OptionKind {
     }
 }
 
-/// Parse a Tardis timestamp in UNIX microseconds to UNIX nanoseconds.
+/// Parses a UNIX nanoseconds timestamp from the given Tardis microseconds `value_us`.
 #[must_use]
-pub fn parse_timestamp(value: u64) -> UnixNanos {
-    UnixNanos::from(value * NANOSECONDS_IN_MICROSECOND)
+pub fn parse_timestamp(value_us: u64) -> UnixNanos {
+    UnixNanos::from(value_us * NANOSECONDS_IN_MICROSECOND)
 }
 
-/// Parse book action inferred from the given values.
+/// Parses a Nautilus book action inferred from the given Tardis values.
 #[must_use]
 pub fn parse_book_action(is_snapshot: bool, amount: f64) -> BookAction {
     if is_snapshot {
@@ -85,6 +147,9 @@ pub fn parse_book_action(is_snapshot: bool, amount: f64) -> BookAction {
     }
 }
 
+/// Parses a Nautilus bar specification from the given Tardis string `value`.
+///
+/// The [`PriceType`] is always `LAST` for Tardis trade bars.
 #[must_use]
 pub fn parse_bar_spec(value: &str) -> BarSpecification {
     let parts: Vec<&str> = value.split('_').collect();
@@ -109,7 +174,7 @@ pub fn parse_bar_spec(value: &str) -> BarSpecification {
     BarSpecification {
         step,
         aggregation,
-        price_type: PriceType::Last, // Always last trade price for Tardis bars
+        price_type: PriceType::Last,
     }
 }
 
@@ -118,22 +183,80 @@ pub fn parse_bar_spec(value: &str) -> BarSpecification {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use nautilus_model::enums::AggressorSide;
     use rstest::rstest;
 
     use super::*;
 
     #[rstest]
-    #[case("okex-futures", "BTC-USD-200313", "BTC-USD-200313.OKEX")]
-    #[case("binance", "ETH-USDT", "ETH-USDT.BINANCE")]
-    #[case("bitmex-perp", "XBTUSD", "XBTUSD.BITMEX")]
-    #[case("exchange-with-hyphen", "FOO-BAR", "FOO-BAR.EXCHANGE")]
+    #[case(Exchange::Binance, "ETHUSDT", "ETHUSDT.BINANCE")]
+    #[case(Exchange::Bitmex, "XBTUSD", "XBTUSD.BITMEX")]
+    #[case(Exchange::Bybit, "BTCUSDT", "BTCUSDT.BYBIT")]
+    #[case(Exchange::OkexFutures, "BTC-USD-200313", "BTC-USD-200313.OKEX")]
+    #[case(Exchange::HuobiDmLinearSwap, "FOO-BAR", "FOO-BAR.HUOBI")]
     fn test_parse_instrument_id(
-        #[case] exchange: &str,
+        #[case] exchange: Exchange,
         #[case] symbol: &str,
         #[case] expected: &str,
     ) {
-        let instrument_id = parse_instrument_id(exchange, symbol);
+        let instrument_id = parse_instrument_id(&exchange, symbol);
+        let expected_instrument_id = InstrumentId::from_str(expected).unwrap();
+        assert_eq!(instrument_id, expected_instrument_id);
+    }
+
+    #[rstest]
+    #[case(
+        Exchange::Binance,
+        "SOLUSDT",
+        InstrumentType::Spot,
+        None,
+        "SOLUSDT.BINANCE"
+    )]
+    #[case(
+        Exchange::BinanceFutures,
+        "SOLUSDT",
+        InstrumentType::Perpetual,
+        None,
+        "SOLUSDT-PERP.BINANCE"
+    )]
+    #[case(
+        Exchange::Bybit,
+        "BTCUSDT",
+        InstrumentType::Spot,
+        None,
+        "BTCUSDT-SPOT.BYBIT"
+    )]
+    #[case(
+        Exchange::Bybit,
+        "BTCUSDT",
+        InstrumentType::Perpetual,
+        None,
+        "BTCUSDT-LINEAR.BYBIT"
+    )]
+    #[case(
+        Exchange::Bybit,
+        "BTCUSDT",
+        InstrumentType::Perpetual,
+        Some(true),
+        "BTCUSDT-INVERSE.BYBIT"
+    )]
+    #[case(
+        Exchange::Dydx,
+        "BTC-USD",
+        InstrumentType::Perpetual,
+        None,
+        "BTC-USD-PERP.DYDX"
+    )]
+    fn test_normalize_instrument_id(
+        #[case] exchange: Exchange,
+        #[case] symbol: &str,
+        #[case] instrument_type: InstrumentType,
+        #[case] is_inverse: Option<bool>,
+        #[case] expected: &str,
+    ) {
+        let instrument_id = normalize_instrument_id(&exchange, symbol, instrument_type, is_inverse);
         let expected_instrument_id = InstrumentId::from_str(expected).unwrap();
         assert_eq!(instrument_id, expected_instrument_id);
     }

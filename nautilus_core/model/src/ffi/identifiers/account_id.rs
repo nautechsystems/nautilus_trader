@@ -15,7 +15,7 @@
 
 use std::ffi::c_char;
 
-use nautilus_core::ffi::string::cstr_to_str;
+use nautilus_core::ffi::string::cstr_as_str;
 
 use crate::identifiers::AccountId;
 
@@ -26,7 +26,7 @@ use crate::identifiers::AccountId;
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn account_id_new(ptr: *const c_char) -> AccountId {
-    AccountId::from(cstr_to_str(ptr))
+    AccountId::from(cstr_as_str(ptr))
 }
 
 #[no_mangle]

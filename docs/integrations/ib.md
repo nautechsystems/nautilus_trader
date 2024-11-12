@@ -75,6 +75,7 @@ print(gateway.container.logs())
 ## Overview
 
 The adapter includes several major components:
+
 - `InteractiveBrokersClient`: Executes TWS API requests using `ibapi`.
 - `HistoricInteractiveBrokersClient`: Provides methods for retrieving instruments and historical data, useful for backtesting.
 - `InteractiveBrokersInstrumentProvider`: Retrieves or queries instruments for trading.
@@ -86,11 +87,12 @@ The adapter includes several major components:
 The `InteractiveBrokersClient` serves as the central component of the IB adapter, overseeing a range of critical functions. These include establishing and maintaining connections, handling API errors, executing trades, and gathering various types of data such as market data, contract/instrument data, and account details.
 
 To ensure efficient management of these diverse responsibilities, the `InteractiveBrokersClient` is divided into several specialized mixin classes. This modular approach enhances manageability and clarity. The key subcomponents are:
+
 - `InteractiveBrokersClientConnectionMixin`: This class is dedicated to managing the connection with TWS/Gateway.
 - `InteractiveBrokersClientErrorMixin`: It focuses on addressing all encountered errors and warnings.
 - `InteractiveBrokersClientAccountMixin`: Responsible for handling requests related to account information and positions.
-- `InteractiveBrokersClientContractMixin`: Handles retrieving contracts (instruments) data
-- `InteractiveBrokersClientMarketDataMixin`: Handles market data requests, subscriptions and data processing
+- `InteractiveBrokersClientContractMixin`: Handles retrieving contracts (instruments) data.
+- `InteractiveBrokersClientMarketDataMixin`: Handles market data requests, subscriptions and data processing.
 - `InteractiveBrokersClientOrderMixin`: Oversees all aspects of order placement and management.
 
 :::tip
@@ -218,11 +220,15 @@ async def main():
 
 ## Live Trading
 
-Engaging in live or paper trading requires constructing and running a `TradingNode`. This node incorporates both `InteractiveBrokersDataClient` and `InteractiveBrokersExecutionClient`, which depend on the `InteractiveBrokersInstrumentProvider` to operate.
+Engaging in live or paper trading requires constructing and running a `TradingNode`.
+This node incorporates both `InteractiveBrokersDataClient` and `InteractiveBrokersExecutionClient`,
+which depend on the `InteractiveBrokersInstrumentProvider` to operate.
 
 ### InstrumentProvider
 
-The `InteractiveBrokersInstrumentProvider` class functions as a bridge for accessing financial instrument data from IB. Configurable through `InteractiveBrokersInstrumentProviderConfig`, it enables the customization of various instrument type parameters. Additionally, this provider offers specialized methods to build and retrieve the entire futures and options chains.
+The `InteractiveBrokersInstrumentProvider` class functions as a bridge for accessing financial instrument data from IB.
+Configurable through `InteractiveBrokersInstrumentProviderConfig`, it enables the customization of various instrument type parameters.
+Additionally, this provider offers specialized methods to build and retrieve the entire futures and options chains.
 
 ```python
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
@@ -255,9 +261,13 @@ instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
 
 ### Data Client
 
-`InteractiveBrokersDataClient` interfaces with IB for streaming and retrieving market data. Upon connection, it configures the [market data type](https://ibkrcampus.com/ibkr-api-page/trader-workstation-api/#delayed-market-data) and loads instruments based on the settings in `InteractiveBrokersInstrumentProviderConfig`. This client can subscribe to and unsubscribe from various market data types, including quote ticks, trade ticks, and bars.
+`InteractiveBrokersDataClient` interfaces with IB for streaming and retrieving market data. Upon
+connection, it configures the [market data type](https://ibkrcampus.com/ibkr-api-page/trader-workstation-api/#delayed-market-data)
+and loads instruments based on the settings in `InteractiveBrokersInstrumentProviderConfig`.
+This client can subscribe to and unsubscribe from various market data types, including quote ticks, trade ticks, and bars.
 
-Configurable through `InteractiveBrokersDataClientConfig`, it enables adjustments for handling revised bars, trading hours preferences, and market data types (e.g., `IBMarketDataTypeEnum.REALTIME` or `IBMarketDataTypeEnum.DELAYED_FROZEN`).
+Configurable through `InteractiveBrokersDataClientConfig`, it enables adjustments for handling revised bars,
+trading hours preferences, and market data types (e.g., `IBMarketDataTypeEnum.REALTIME` or `IBMarketDataTypeEnum.DELAYED_FROZEN`).
 
 ```python
 from nautilus_trader.adapters.interactive_brokers.config import IBMarketDataTypeEnum
@@ -276,7 +286,10 @@ data_client_config = InteractiveBrokersDataClientConfig(
 
 ### Execution Client
 
-The `InteractiveBrokersExecutionClient` facilitates executing trades, accessing account information, and processing order and trade-related details. It encompasses a range of methods for order management, including reporting order statuses, placing new orders, and modifying or canceling existing ones. Additionally, it generates position reports, although fill reports are not yet implemented.
+The `InteractiveBrokersExecutionClient` facilitates executing trades, accessing account information,
+and processing order and trade-related details. It encompasses a range of methods for order management,
+including reporting order statuses, placing new orders, and modifying or canceling existing ones.
+Additionally, it generates position reports, although fill reports are not yet implemented.
 
 ```python
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
@@ -296,7 +309,11 @@ exec_client_config = InteractiveBrokersExecClientConfig(
 
 ### Full Configuration
 
-Setting up a complete trading environment typically involves configuring a `TradingNodeConfig`, which includes data and execution client configurations. Additional configurations are specified in `LiveDataEngineConfig` to accommodate IB-specific requirements. A `TradingNode` is then instantiated from these configurations, and factories for creating `InteractiveBrokersDataClient` and `InteractiveBrokersExecutionClient` are added. Finally, the node is built and run.
+Setting up a complete trading environment typically involves configuring a `TradingNodeConfig`, which
+includes data and execution client configurations. Additional configurations are specified in `LiveDataEngineConfig`
+to accommodate IB-specific requirements. A `TradingNode` is then instantiated from these configurations,
+and factories for creating `InteractiveBrokersDataClient` and `InteractiveBrokersExecutionClient` are added.
+Finally, the node is built and run.
 
 For a comprehensive example, refer to this [script](https://github.com/nautechsystems/nautilus_trader/blob/master/examples/live/interactive_brokers/interactive_brokers_example.py).
 

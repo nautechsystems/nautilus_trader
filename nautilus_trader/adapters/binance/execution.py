@@ -189,7 +189,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         self._http_user = user
 
         # Listen keys
-        self._ping_listen_keys_interval: int = 60 * 5  # Once every 5 mins (hardcode)
+        self._ping_listen_keys_interval: int = 60 * 5  # Once every 5 mins (hard-coded)
         self._ping_listen_keys_task: asyncio.Task | None = None
         self._listen_key: str | None = None
 

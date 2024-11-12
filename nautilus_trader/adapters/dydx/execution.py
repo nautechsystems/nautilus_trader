@@ -294,8 +294,6 @@ class DYDXExecutionClient(LiveExecutionClient):
             sequence=account.sequence,
         )
 
-        self._log.info("Execution client connected")
-
     async def _disconnect(self) -> None:
         await self._ws_client.unsubscribe_account_update(
             wallet_address=self._wallet_address,
@@ -881,6 +879,11 @@ class DYDXExecutionClient(LiveExecutionClient):
 
         if instrument is None:
             message = f"Cannot handle fill event: instrument {instrument_id} not found"
+            self._log.error(message)
+            return
+
+        if fill_msg.orderId is None:
+            message = f"Cannot handle fill event: orderId is None for fill {fill_msg.type} event."
             self._log.error(message)
             return
 

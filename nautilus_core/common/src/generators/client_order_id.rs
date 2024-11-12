@@ -61,11 +61,11 @@ impl ClientOrderIdGenerator {
         let trader_tag = self.trader_id.get_tag();
         let strategy_tag = self.strategy_id.get_tag();
         self.count += 1;
-        let id = format!(
+        let value = format!(
             "O-{}-{}-{}-{}",
             datetime_tag, trader_tag, strategy_tag, self.count
         );
-        ClientOrderId::from(id.as_str())
+        ClientOrderId::from(value)
     }
 }
 
