@@ -15,10 +15,6 @@
 
 //! Provides a generic `ExecutionEngine` for all environments.
 
-// Under development
-#![allow(dead_code)]
-#![allow(unused_variables)]
-
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use config::RiskEngineConfig;
@@ -108,9 +104,10 @@ impl RiskEngine {
         let success_handler = {
             let msgbus = msgbus.clone();
             Box::new(move |submit_order: SubmitOrder| {
-                msgbus
-                    .borrow_mut()
-                    .send(&Ustr::from("ExecEngine.execute"), &submit_order);
+                msgbus.borrow_mut().send(
+                    &Ustr::from("ExecEngine.execute"),
+                    &TradingCommand::SubmitOrder(submit_order),
+                );
             }) as Box<dyn Fn(SubmitOrder)>
         };
 
@@ -154,9 +151,10 @@ impl RiskEngine {
         let success_handler = {
             let msgbus = msgbus.clone();
             Box::new(move |order: ModifyOrder| {
-                msgbus
-                    .borrow_mut()
-                    .send(&Ustr::from("ExecEngine.execute"), &order);
+                msgbus.borrow_mut().send(
+                    &Ustr::from("ExecEngine.execute"),
+                    &TradingCommand::ModifyOrder(order),
+                );
             }) as Box<dyn Fn(ModifyOrder)>
         };
 
@@ -1089,10 +1087,7 @@ mod tests {
             any::AccountAny,
             stubs::{cash_account, margin_account},
         },
-        data::{
-            quote::QuoteTick,
-            stubs::{quote_audusd, quote_ethusdt_binance},
-        },
+        data::{quote::QuoteTick, stubs::quote_audusd},
         enums::{AccountType, OrderSide, OrderType, TradingState},
         events::{
             account::{state::AccountState, stubs::cash_account_state_million_usd},
@@ -1453,6 +1448,7 @@ mod tests {
         instrument_audusd: InstrumentAny,
         venue_order_id: VenueOrderId,
         process_order_event_handler: ShareableMessageHandler,
+        execute_order_event_handler: ShareableMessageHandler,
         cash_account_state_million_usd: AccountState,
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
@@ -1460,6 +1456,11 @@ mod tests {
         msgbus.register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler,
+        );
+
+        msgbus.register(
+            msgbus.switchboard.exec_engine_execute,
+            execute_order_event_handler.clone(),
         );
 
         simple_cache
@@ -1504,7 +1505,13 @@ mod tests {
         .unwrap();
 
         risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
-        // TODO: verify
+        let saved_execute_messages =
+            get_execute_order_event_handler_messages(execute_order_event_handler);
+        assert_eq!(saved_execute_messages.len(), 1);
+        assert_eq!(
+            saved_execute_messages.first().unwrap().instrument_id(),
+            instrument_audusd.id()
+        );
     }
 
     #[rstest]
@@ -1517,10 +1524,16 @@ mod tests {
         instrument_audusd: InstrumentAny,
         venue_order_id: VenueOrderId,
         process_order_event_handler: ShareableMessageHandler,
+        execute_order_event_handler: ShareableMessageHandler,
     ) {
         msgbus.register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler,
+        );
+
+        msgbus.register(
+            msgbus.switchboard.exec_engine_execute,
+            execute_order_event_handler.clone(),
         );
 
         let mut risk_engine =
@@ -1549,114 +1562,21 @@ mod tests {
         .unwrap();
 
         risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
-        // TODO: verify
+
+        let saved_execute_messages =
+            get_execute_order_event_handler_messages(execute_order_event_handler);
+        assert_eq!(saved_execute_messages.len(), 1);
+        assert_eq!(
+            saved_execute_messages.first().unwrap().instrument_id(),
+            instrument_audusd.id()
+        );
     }
 
-    // // TODO: fix using OrderFilled?
     #[rstest]
     fn test_submit_reduce_only_order_when_position_already_closed_then_denies() {}
 
-    // #[rstest]
-    // fn test_submit_reduce_only_order_when_position_would_be_increased_then_denies(
-    //     mut msgbus: MessageBus,
-    //     strategy_id_ema_cross: StrategyId,
-    //     client_id_binance: ClientId,
-    //     trader_id: TraderId,
-    //     client_order_id: ClientOrderId,
-    //     instrument_audusd: InstrumentAny,
-    //     venue_order_id: VenueOrderId,
-    //     process_order_event_handler: ShareableMessageHandler,
-    //     execute_order_event_handler: ShareableMessageHandler,
-    //     cash_account_state_million_usd: AccountState,
-    //     quote_audusd: QuoteTick,
-    //     mut simple_cache: Cache,
-    // ) {
-    //     msgbus.register(
-    //         msgbus.switchboard.exec_engine_process,
-    //         process_order_event_handler.clone(),
-    //     );
-
-    //     simple_cache
-    //         .add_account(AccountAny::Cash(cash_account(
-    //             cash_account_state_million_usd,
-    //         )))
-    //         .unwrap();
-
-    //     simple_cache
-    //         .add_instrument(instrument_audusd.clone())
-    //         .unwrap();
-
-    //     simple_cache.add_quote(quote_audusd).unwrap();
-
-    //     let order1 = OrderTestBuilder::new(OrderType::Market)
-    //         .instrument_id(instrument_audusd.id())
-    //         .side(OrderSide::Buy)
-    //         .quantity(Quantity::from("1000"))
-    //         .build();
-
-    //         // simple_cache.add_position(Position::new(instrument, fill), oms_type);
-
-    //     let order2 = OrderTestBuilder::new(OrderType::Market)
-    //         .instrument_id(instrument_audusd.id())
-    //         .side(OrderSide::Sell)
-    //         .quantity(Quantity::from("2000"))
-    //         .reduce_only(true)
-    //         .build();
-
-    //     let mut risk_engine = get_risk_engine(
-    //         Rc::new(RefCell::new(msgbus)),
-    //         Some(Rc::new(RefCell::new(simple_cache))),
-    //         None,
-    //         None,
-    //     );
-
-    //     let submit_order1 = SubmitOrder::new(
-    //         trader_id,
-    //         client_id_binance,
-    //         strategy_id_ema_cross,
-    //         instrument_audusd.id(),
-    //         client_order_id,
-    //         venue_order_id,
-    //         order1.clone(),
-    //         None,
-    //         None,
-    //         UUID4::new(),
-    //         risk_engine.clock.borrow().timestamp_ns(),
-    //     )
-    //     .unwrap();
-
-    //     let submit_order2 = SubmitOrder::new(
-    //         trader_id,
-    //         client_id_binance,
-    //         strategy_id_ema_cross,
-    //         instrument_audusd.id(),
-    //         client_order_id,
-    //         venue_order_id,
-    //         order2,
-    //         None,
-    //         Some(PositionId::new("P-19700101-000000-000-None-1")),
-    //         UUID4::new(),
-    //         risk_engine.clock.borrow().timestamp_ns(),
-    //     )
-    //     .unwrap();
-
-    //     risk_engine.execute(TradingCommand::SubmitOrder(submit_order1));
-    //     // assert_eq!(order1.status(), OrderStatus::Accepted);
-    //     risk_engine.execute(TradingCommand::SubmitOrder(submit_order2));
-
-    //     let saved_process_messages =
-    //         get_process_order_event_handler_messages(process_order_event_handler);
-    //     assert_eq!(saved_process_messages.len(), 1);
-
-    //     assert_eq!(
-    //         saved_process_messages.first().unwrap().event_type(),
-    //         OrderEventType::Denied
-    //     );
-    //     assert_eq!(
-    //         saved_process_messages.first().unwrap().message().unwrap(),
-    //         Ustr::from("Position CUSTOM-001 not found for reduce-only order")
-    //     );
-    // }
+    #[rstest]
+    fn test_submit_reduce_only_order_when_position_would_be_increased_then_denies() {}
 
     #[rstest]
     fn test_submit_order_reduce_only_order_with_custom_position_id_not_open_then_denies(
@@ -1745,7 +1665,6 @@ mod tests {
         instrument_audusd: InstrumentAny,
         venue_order_id: VenueOrderId,
         process_order_event_handler: ShareableMessageHandler,
-        execute_order_event_handler: ShareableMessageHandler,
         cash_account_state_million_usd: AccountState,
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
@@ -1817,7 +1736,6 @@ mod tests {
         instrument_audusd: InstrumentAny,
         venue_order_id: VenueOrderId,
         process_order_event_handler: ShareableMessageHandler,
-        execute_order_event_handler: ShareableMessageHandler,
         cash_account_state_million_usd: AccountState,
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
@@ -1893,7 +1811,6 @@ mod tests {
         instrument_audusd: InstrumentAny,
         venue_order_id: VenueOrderId,
         process_order_event_handler: ShareableMessageHandler,
-        execute_order_event_handler: ShareableMessageHandler,
         cash_account_state_million_usd: AccountState,
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
@@ -1969,7 +1886,6 @@ mod tests {
         instrument_audusd: InstrumentAny,
         venue_order_id: VenueOrderId,
         process_order_event_handler: ShareableMessageHandler,
-        execute_order_event_handler: ShareableMessageHandler,
         cash_account_state_million_usd: AccountState,
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
@@ -2046,7 +1962,6 @@ mod tests {
         instrument_audusd: InstrumentAny,
         venue_order_id: VenueOrderId,
         process_order_event_handler: ShareableMessageHandler,
-        execute_order_event_handler: ShareableMessageHandler,
         cash_account_state_million_usd: AccountState,
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
@@ -2121,7 +2036,6 @@ mod tests {
         instrument_audusd: InstrumentAny,
         venue_order_id: VenueOrderId,
         process_order_event_handler: ShareableMessageHandler,
-        execute_order_event_handler: ShareableMessageHandler,
         cash_account_state_million_usd: AccountState,
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
@@ -2196,7 +2110,6 @@ mod tests {
         instrument_audusd: InstrumentAny,
         venue_order_id: VenueOrderId,
         process_order_event_handler: ShareableMessageHandler,
-        execute_order_event_handler: ShareableMessageHandler,
         cash_account_state_million_usd: AccountState,
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
@@ -2270,7 +2183,6 @@ mod tests {
         client_order_id: ClientOrderId,
         instrument_audusd: InstrumentAny,
         venue_order_id: VenueOrderId,
-        process_order_event_handler: ShareableMessageHandler,
         execute_order_event_handler: ShareableMessageHandler,
         cash_account_state_million_usd: AccountState,
         quote_audusd: QuoteTick,
@@ -2278,7 +2190,7 @@ mod tests {
     ) {
         msgbus.register(
             msgbus.switchboard.exec_engine_execute,
-            execute_order_event_handler,
+            execute_order_event_handler.clone(),
         );
 
         simple_cache
@@ -2326,11 +2238,15 @@ mod tests {
         )
         .unwrap();
 
-        // risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+        risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
 
-        // TODO: Fix MessageSavingHandler: message type mismatch Any { .. }
-        // let saved_execute_messages = get_execute_order_event_handler_messages(execute_order_event_handler);
-        // assert_eq!(saved_execute_messages.len(), 1);
+        let saved_execute_messages =
+            get_execute_order_event_handler_messages(execute_order_event_handler);
+        assert_eq!(saved_execute_messages.len(), 1);
+        assert_eq!(
+            saved_execute_messages.first().unwrap().instrument_id(),
+            instrument_audusd.id()
+        );
     }
 
     #[rstest]
@@ -2391,7 +2307,7 @@ mod tests {
             .quantity(Quantity::from_str("1").unwrap())
             .build();
 
-        let submit_order = SubmitOrder::new(
+        let _submit_order = SubmitOrder::new(
             trader_id,
             client_id_binance,
             strategy_id_ema_cross,
@@ -2766,7 +2682,6 @@ mod tests {
         instrument_audusd: InstrumentAny,
         venue_order_id: VenueOrderId,
         process_order_event_handler: ShareableMessageHandler,
-        execute_order_event_handler: ShareableMessageHandler,
         cash_account_state_million_usd: AccountState,
         quote_audusd: QuoteTick,
         mut simple_cache: Cache,
@@ -2840,7 +2755,7 @@ mod tests {
             assert_eq!(event.event_type(), OrderEventType::Denied);
         }
 
-        // Correct reason is in First deny, rest will show OrderList`ID` Denied.
+        // The actual reason is in the first denial; the rest will show `OrderListID` as Denied.
         assert_eq!(saved_process_messages.first().unwrap().message().unwrap(), Ustr::from("CUM_NOTIONAL_EXCEEDS_FREE_BALANCE: free=1000000.00 USD, cum_notional=1067873.00 USD"));
     }
 
@@ -3017,7 +2932,6 @@ mod tests {
         instrument_audusd: InstrumentAny,
         venue_order_id: VenueOrderId,
         process_order_event_handler: ShareableMessageHandler,
-        execute_order_event_handler: ShareableMessageHandler,
         cash_account_state_million_usd: AccountState,
         mut simple_cache: Cache,
     ) {
@@ -3043,7 +2957,7 @@ mod tests {
             None,
             false,
         );
-        for i in 0..11 {
+        for _i in 0..11 {
             let order = OrderTestBuilder::new(OrderType::Market)
                 .instrument_id(instrument_audusd.id())
                 .side(OrderSide::Buy)
@@ -3092,7 +3006,6 @@ mod tests {
         instrument_audusd: InstrumentAny,
         venue_order_id: VenueOrderId,
         process_order_event_handler: ShareableMessageHandler,
-        execute_order_event_handler: ShareableMessageHandler,
         cash_account_state_million_usd: AccountState,
         mut simple_cache: Cache,
     ) {
@@ -3194,7 +3107,6 @@ mod tests {
         instrument_audusd: InstrumentAny,
         venue_order_id: VenueOrderId,
         process_order_event_handler: ShareableMessageHandler,
-        execute_order_event_handler: ShareableMessageHandler,
         cash_account_state_million_usd: AccountState,
         mut simple_cache: Cache,
     ) {
@@ -3248,7 +3160,7 @@ mod tests {
             risk_engine.clock.borrow().timestamp_ns(),
         );
 
-        let submit_bracket = SubmitOrderList::new(
+        let _submit_bracket = SubmitOrderList::new(
             trader_id,
             client_id_binance,
             strategy_id_ema_cross,
@@ -3285,7 +3197,6 @@ mod tests {
         instrument_audusd: InstrumentAny,
         venue_order_id: VenueOrderId,
         process_order_event_handler: ShareableMessageHandler,
-        execute_order_event_handler: ShareableMessageHandler,
         cash_account_state_million_usd: AccountState,
         mut simple_cache: Cache,
     ) {
@@ -3380,7 +3291,6 @@ mod tests {
         instrument_audusd: InstrumentAny,
         venue_order_id: VenueOrderId,
         process_order_event_handler: ShareableMessageHandler,
-        execute_order_event_handler: ShareableMessageHandler,
         cash_account_state_million_usd: AccountState,
         mut simple_cache: Cache,
     ) {
@@ -3438,7 +3348,6 @@ mod tests {
         instrument_audusd: InstrumentAny,
         venue_order_id: VenueOrderId,
         process_order_event_handler: ShareableMessageHandler,
-        execute_order_event_handler: ShareableMessageHandler,
         cash_account_state_million_usd: AccountState,
         mut simple_cache: Cache,
     ) {
@@ -3527,6 +3436,11 @@ mod tests {
             process_order_event_handler,
         );
 
+        msgbus.register(
+            msgbus.switchboard.exec_engine_execute,
+            execute_order_event_handler.clone(),
+        );
+
         simple_cache
             .add_instrument(instrument_audusd.clone())
             .unwrap();
@@ -3587,7 +3501,14 @@ mod tests {
 
         risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
         risk_engine.execute(TradingCommand::ModifyOrder(modify_order));
-        // TODO: verify
+
+        let saved_execute_messages =
+            get_execute_order_event_handler_messages(execute_order_event_handler);
+        assert_eq!(saved_execute_messages.len(), 2);
+        assert_eq!(
+            saved_execute_messages.first().unwrap().instrument_id(),
+            instrument_audusd.id()
+        );
     }
 
     #[rstest]
@@ -3670,7 +3591,6 @@ mod tests {
         process_order_event_handler: ShareableMessageHandler,
         execute_order_event_handler: ShareableMessageHandler,
         bitmex_cash_account_state_multi: AccountState,
-        quote_ethusdt_binance: QuoteTick,
         mut simple_cache: Cache,
     ) {
         let quote = QuoteTick::new(
@@ -3688,10 +3608,10 @@ mod tests {
             process_order_event_handler.clone(),
         );
 
-        // msgbus.register(
-        //     msgbus.switchboard.exec_engine_execute,
-        //     execute_order_event_handler,
-        // );
+        msgbus.register(
+            msgbus.switchboard.exec_engine_execute,
+            execute_order_event_handler.clone(),
+        );
 
         simple_cache
             .add_instrument(instrument_xbtusd_bitmex.clone())
@@ -3703,7 +3623,7 @@ mod tests {
             )))
             .unwrap();
 
-        simple_cache.add_quote(quote_ethusdt_binance).unwrap();
+        simple_cache.add_quote(quote).unwrap();
 
         let mut risk_engine = get_risk_engine(
             Rc::new(RefCell::new(msgbus)),
@@ -3738,10 +3658,13 @@ mod tests {
             get_process_order_event_handler_messages(process_order_event_handler);
         assert_eq!(saved_process_messages.len(), 0);
 
-        // let saved_execute_messages =
-        // get_process_order_event_handler_messages(execute_order_event_handler);
-        // assert_eq!(saved_execute_messages.len(), 1);
-        // TODO: verify
+        let saved_execute_messages =
+            get_execute_order_event_handler_messages(execute_order_event_handler);
+        assert_eq!(saved_execute_messages.len(), 1);
+        assert_eq!(
+            saved_execute_messages.first().unwrap().instrument_id(),
+            instrument_xbtusd_bitmex.id()
+        );
     }
 
     #[rstest]
