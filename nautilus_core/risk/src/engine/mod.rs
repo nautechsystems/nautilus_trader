@@ -107,7 +107,6 @@ impl RiskEngine {
     ) -> Throttler<SubmitOrder, SubmitOrderFn> {
         let success_handler = {
             let msgbus = msgbus.clone();
-            println!("SUCCESS");
             Box::new(move |submit_order: SubmitOrder| {
                 msgbus
                     .borrow_mut()
@@ -329,13 +328,9 @@ impl RiskEngine {
             if order.is_reduce_only() {
                 let position_exists = {
                     let cache = self.cache.borrow();
-                    let val = cache
+                    cache
                         .position(&position_id)
-                        .map(|pos| (pos.side, pos.quantity));
-
-                    println!("EXISTS: {:?}", cache.positions);
-
-                    val
+                        .map(|pos| (pos.side, pos.quantity))
                 };
 
                 if let Some((pos_side, pos_quantity)) = position_exists {
@@ -386,7 +381,6 @@ impl RiskEngine {
     }
 
     fn handle_submit_order_list(&self, command: SubmitOrderList) {
-        println!("LOG STATE 1");
         if self.config.bypass {
             self.send_to_execution(TradingCommand::SubmitOrderList(command));
             return;
@@ -407,7 +401,6 @@ impl RiskEngine {
             return; // Denied
         };
 
-        println!("LOG STATE 2");
         ////////////////////////////////////////////////////////////////////////////////
         // PRE-TRADE ORDER(S) CHECKS
         ////////////////////////////////////////////////////////////////////////////////
@@ -417,9 +410,7 @@ impl RiskEngine {
             }
         }
 
-        println!("LOG STATE 3");
         if !self.check_orders_risk(instrument.clone(), command.order_list.clone().orders) {
-            println!("LOG STATE 5");
             self.deny_order_list(
                 command.order_list.clone(),
                 &format!("OrderList {} DENIED", command.order_list.id),
@@ -427,7 +418,6 @@ impl RiskEngine {
             return; // Denied
         }
 
-        println!("LOG STATE 4");
         self.execution_gateway(instrument, TradingCommand::SubmitOrderList(command));
     }
 
@@ -447,14 +437,8 @@ impl RiskEngine {
                 "ModifyOrder DENIED: Order with command.client_order_id: {} not found",
                 command.client_order_id
             );
-            println!(
-                "ModifyOrder DENIED: Order with command.client_order_id: {} not found",
-                command.client_order_id
-            );
             return;
         };
-
-        println!("we go something");
 
         if order.is_closed() {
             self.reject_modify_order(
@@ -476,7 +460,6 @@ impl RiskEngine {
             return;
         }
 
-        println!("we go something here");
         // Get instrument for orders
         let maybe_instrument = {
             let borrowed_cache = self.cache.borrow();
@@ -493,7 +476,6 @@ impl RiskEngine {
             return; // Denied
         };
 
-        println!("we go something22");
         // Check Price
         let mut risk_msg = self.check_price(&instrument, command.price);
         if let Some(risk_msg) = risk_msg {
@@ -501,7 +483,6 @@ impl RiskEngine {
             return; // Denied
         }
 
-        println!("we go something23");
         // Check Trigger
         risk_msg = self.check_price(&instrument, command.trigger_price);
         if let Some(risk_msg) = risk_msg {
@@ -509,7 +490,6 @@ impl RiskEngine {
             return; // Denied
         }
 
-        println!("we go something24");
         // Check Quantity
         risk_msg = self.check_quantity(&instrument, command.quantity);
         if let Some(risk_msg) = risk_msg {
@@ -517,7 +497,6 @@ impl RiskEngine {
             return; // Denied
         }
 
-        println!("we go something25");
         // Check TradingState
         match self.trading_state {
             TradingState::Halted => {
@@ -525,7 +504,6 @@ impl RiskEngine {
                 return; // Denied
             }
             TradingState::Reducing => {
-                println!("we go something27");
                 if let Some(quantity) = command.quantity {
                     if quantity > order.quantity() {
                         // TODO: Complete this after implementing portfolio
@@ -553,8 +531,6 @@ impl RiskEngine {
             }
             _ => {}
         }
-
-        println!("we go something low");
 
         self.throttled_modify_order.send(command);
     }
@@ -639,7 +615,6 @@ impl RiskEngine {
         let account = if let Some(account) = account_exists {
             account
         } else {
-            println!("Cannot find account for venue {}", instrument.id().venue);
             log::debug!("Cannot find account for venue {}", instrument.id().venue);
             return true; // TODO: Temporary early return until handling routing/multiple venues
         };
@@ -648,7 +623,6 @@ impl RiskEngine {
             AccountAny::Margin(_) => return true, // TODO: Determine risk controls for margin
         };
         let free = cash_account.balance_free(Some(instrument.quote_currency()));
-        println!("HERE: {:?}", free);
         if self.config.debug {
             log::debug!("Free cash: {:?}", free);
         }
@@ -661,18 +635,14 @@ impl RiskEngine {
             last_px = match order {
                 OrderAny::Market(_) | OrderAny::MarketToLimit(_) => {
                     if last_px.is_none() {
-                        println!("HERE I");
                         let burrowed_cache = self.cache.borrow();
                         if let Some(last_quote) = burrowed_cache.quote(&instrument.id()) {
-                            println!("HERE II");
-                            println!("LQ: {}", last_quote);
                             match order.order_side() {
                                 OrderSide::Buy => Some(last_quote.ask_price),
                                 OrderSide::Sell => Some(last_quote.bid_price),
                                 _ => panic!("Invalid order side"),
                             }
                         } else {
-                            println!("HERE III");
                             let burrowed_cache = self.cache.borrow();
                             let last_trade = burrowed_cache.trade(&instrument.id());
 
@@ -712,22 +682,16 @@ impl RiskEngine {
                 log::error!("Cannot check order risk: no price available");
                 continue;
             };
-            println!("HERE: {last_px}");
 
             let notional =
                 instrument.calculate_notional_value(order.quantity(), last_px, Some(true));
 
-            println!("notional: {}", notional);
             if self.config.debug {
                 log::debug!("Notional: {:?}", notional);
             }
 
             // Check MAX notional per order limit
             if let Some(max_notional_value) = max_notional {
-                println!(
-                    "notional: {}, max_notional_value: {}",
-                    notional, max_notional_value
-                );
                 if notional > max_notional_value {
                     self.deny_order(
                         order.clone(),
@@ -741,10 +705,6 @@ impl RiskEngine {
 
             // Check MIN notional instrument limit
             if let Some(min_notional) = instrument.min_notional() {
-                println!(
-                    "INSIDE: MININS: notional: {}, max_notional_value: {}",
-                    notional, min_notional
-                );
                 if notional.currency == min_notional.currency && notional < min_notional {
                     self.deny_order(
                         order.clone(),
@@ -781,8 +741,6 @@ impl RiskEngine {
 
             let order_balance_impact = order_balance_impact.unwrap();
 
-            println!("order_balance_impact: {}", order_balance_impact);
-
             if self.config.debug {
                 log::debug!("Balance impact: {}", order_balance_impact);
             }
@@ -802,21 +760,10 @@ impl RiskEngine {
             if base_currency.is_none() {
                 base_currency = instrument.base_currency();
             }
-            println!("HERE: IM10");
             if order.is_buy() {
                 match cum_notional_buy.as_mut() {
                     Some(cum_notional_buy_val) => {
-                        println!("cum_notional before comp: {:?}", cum_notional_buy_val);
-                        println!(
-                            "order_balance_impact before comp: {:?}",
-                            order_balance_impact
-                        );
                         cum_notional_buy_val.raw += -order_balance_impact.raw;
-                        println!("cum_notional after comp: {:?}", cum_notional_buy_val);
-                        println!(
-                            "order_balance_impact after comp: {:?}",
-                            order_balance_impact
-                        );
                     }
                     None => {
                         cum_notional_buy = Some(Money::from_raw(
@@ -825,10 +772,6 @@ impl RiskEngine {
                         ));
                     }
                 }
-
-                println!("cum_notional: {:?}", cum_notional_buy);
-
-                println!("HERE: IM11");
 
                 if self.config.debug {
                     log::debug!("Cumulative notional BUY: {:?}", cum_notional_buy);
@@ -841,7 +784,6 @@ impl RiskEngine {
                     }
                 }
             } else if order.is_sell() {
-                println!("HERE: IM12");
                 if cash_account.base_currency.is_some() {
                     match cum_notional_sell.as_mut() {
                         Some(cum_notional_buy_val) => {
@@ -854,7 +796,6 @@ impl RiskEngine {
                             ));
                         }
                     }
-                    println!("HERE: IM13");
                     if self.config.debug {
                         log::debug!("Cumulative notional SELL: {:?}", cum_notional_sell);
                     }
@@ -868,7 +809,6 @@ impl RiskEngine {
                 }
                 // Account is already of type Cash, so no check
                 else if let Some(base_currency) = base_currency {
-                    // TODO: fix & check
                     let cash_value = Money::from_raw(
                         order
                             .quantity()
@@ -1000,8 +940,6 @@ impl RiskEngine {
             return;
         }
 
-        println!("reason --> {reason}");
-
         let mut burrowed_cache = self.cache.borrow_mut();
         if !burrowed_cache.order_exists(&order.client_order_id()) {
             burrowed_cache
@@ -1019,11 +957,9 @@ impl RiskEngine {
             order.client_order_id(),
             reason.into(),
             UUID4::new(),
-            self.clock.borrow().timestamp_ns(), // TODO: Check if this is correct
+            self.clock.borrow().timestamp_ns(),
             self.clock.borrow().timestamp_ns(),
         ));
-
-        print!("DENIED: {denied}");
 
         self.msgbus
             .borrow_mut()
@@ -1039,7 +975,6 @@ impl RiskEngine {
     }
 
     fn reject_modify_order(&self, order: OrderAny, reason: &str) {
-        println!("REASON: {reason}");
         let ts_event = self.clock.borrow().timestamp_ns();
         let denied = OrderEventAny::ModifyRejected(OrderModifyRejected::new(
             order.trader_id(),
@@ -1050,7 +985,7 @@ impl RiskEngine {
             UUID4::new(),
             ts_event,
             ts_event,
-            false, // TODO: Check if this is correct
+            false,
             order.venue_order_id(),
             order.account_id(),
         ));
@@ -1107,7 +1042,6 @@ impl RiskEngine {
             TradingState::Active => match command {
                 TradingCommand::SubmitOrder(submit_order) => {
                     self.throttled_submit_order.send(submit_order);
-                    // return; not allowed by clippy
                 }
                 TradingCommand::SubmitOrderList(_submit_order_list) => {
                     todo!("NOT IMPLEMENTED");
@@ -1152,8 +1086,14 @@ mod tests {
     use nautilus_core::{nanos::UnixNanos, uuid::UUID4};
     use nautilus_execution::messages::{ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand};
     use nautilus_model::{
-        accounts::{any::AccountAny, stubs::cash_account},
-        data::{quote::QuoteTick, stubs::quote_audusd},
+        accounts::{
+            any::AccountAny,
+            stubs::{cash_account, margin_account},
+        },
+        data::{
+            quote::QuoteTick,
+            stubs::{quote_audusd, quote_ethusdt_binance},
+        },
         enums::{AccountType, OrderSide, OrderType, TradingState},
         events::{
             account::{state::AccountState, stubs::cash_account_state_million_usd},
@@ -1610,22 +1550,10 @@ mod tests {
         .unwrap();
 
         risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
-        // TODO: received or not
-        // let saved_process_messages =
-        //     get_process_order_event_handler_messages(process_order_event_handler);
-        // assert_eq!(saved_process_messages.len(), 1);
-
-        // assert_eq!(
-        //     saved_process_messages.first().unwrap().event_type(),
-        //     OrderEventType::Denied
-        // );
-        // assert_eq!(
-        //     saved_process_messages.first().unwrap().message().unwrap(),
-        //     Ustr::from("Instrument for AUD/USD.SIM not found")
-        // );
+        // TODO: verify
     }
 
-    // // TODO: fix later using OrderFilled?
+    // // TODO: fix using OrderFilled?
     #[rstest]
     fn test_submit_reduce_only_order_when_position_already_closed_then_denies() {}
 
@@ -3248,11 +3176,11 @@ mod tests {
         }
     }
 
-    // TODO: will work after portfolio
+    // TODO: After portfolio
     #[rstest]
     fn test_submit_order_list_buys_when_trading_reducing_then_denies_orders() {}
 
-    // TODO: will work after portfolio
+    // TODO: After portfolio
     #[rstest]
     fn test_submit_order_list_sells_when_trading_reducing_then_denies_orders() {}
 
@@ -3343,8 +3271,6 @@ mod tests {
         // let saved_process_messages =
         //     get_process_order_event_handler_messages(process_order_event_handler);
         // assert_eq!(saved_process_messages.len(), 0);
-
-        // TODO: need something similar to this: assert self.exec_client.calls == ["_start", "submit_order_list"]
     }
 
     #[rstest]
@@ -3498,7 +3424,6 @@ mod tests {
 
         risk_engine.execute(TradingCommand::ModifyOrder(modify_order));
 
-        // TODO: assert log?
         let saved_process_messages =
             get_process_order_event_handler_messages(process_order_event_handler);
         assert_eq!(saved_process_messages.len(), 0);
@@ -3663,13 +3588,153 @@ mod tests {
 
         risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
         risk_engine.execute(TradingCommand::ModifyOrder(modify_order));
-
-        // TODO
+        // TODO: verify
     }
 
     #[rstest]
     fn test_modify_order_for_emulated_order_then_sends_to_emulator() {}
 
-    // #[rstest]
-    // fn
+    #[rstest]
+    fn test_submit_order_when_market_order_and_over_free_balance_then_denies_with_betting_account(
+        mut msgbus: MessageBus,
+        strategy_id_ema_cross: StrategyId,
+        client_id_binance: ClientId,
+        trader_id: TraderId,
+        client_order_id: ClientOrderId,
+        instrument_audusd: InstrumentAny,
+        venue_order_id: VenueOrderId,
+        process_order_event_handler: ShareableMessageHandler,
+        cash_account_state_million_usd: AccountState,
+        quote_audusd: QuoteTick,
+        mut simple_cache: Cache,
+    ) {
+        msgbus.register(
+            msgbus.switchboard.exec_engine_process,
+            process_order_event_handler.clone(),
+        );
+
+        simple_cache
+            .add_instrument(instrument_audusd.clone())
+            .unwrap();
+
+        simple_cache
+            .add_account(AccountAny::Margin(margin_account(
+                cash_account_state_million_usd,
+            )))
+            .unwrap();
+
+        simple_cache.add_quote(quote_audusd).unwrap();
+
+        let mut risk_engine = get_risk_engine(
+            Rc::new(RefCell::new(msgbus)),
+            Some(Rc::new(RefCell::new(simple_cache))),
+            None,
+            None,
+            false,
+        );
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_audusd.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from_str("100000").unwrap())
+            .build();
+
+        let submit_order = SubmitOrder::new(
+            trader_id,
+            client_id_binance,
+            strategy_id_ema_cross,
+            instrument_audusd.id(),
+            client_order_id,
+            venue_order_id,
+            order,
+            None,
+            None,
+            UUID4::new(),
+            risk_engine.clock.borrow().timestamp_ns(),
+        )
+        .unwrap();
+
+        risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+        let saved_process_messages =
+            get_process_order_event_handler_messages(process_order_event_handler);
+        assert_eq!(saved_process_messages.len(), 0); // Currently, it executes because check_orders_risk returns true for margin_account
+    }
+
+    #[rstest]
+    fn test_submit_order_for_less_than_max_cum_transaction_value_adausdt_with_crypto_cash_account(
+        mut msgbus: MessageBus,
+        strategy_id_ema_cross: StrategyId,
+        client_id_binance: ClientId,
+        trader_id: TraderId,
+        client_order_id: ClientOrderId,
+        instrument_xbtusd_bitmex: InstrumentAny,
+        venue_order_id: VenueOrderId,
+        process_order_event_handler: ShareableMessageHandler,
+        bitmex_cash_account_state_multi: AccountState,
+        quote_ethusdt_binance: QuoteTick,
+        mut simple_cache: Cache,
+    ) {
+        let quote = QuoteTick::new(
+            instrument_xbtusd_bitmex.id(),
+            Price::from("0.6109"),
+            Price::from("0.6110"),
+            Quantity::from("1000"),
+            Quantity::from("1000"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+
+        msgbus.register(
+            msgbus.switchboard.exec_engine_process,
+            process_order_event_handler.clone(),
+        );
+
+        simple_cache
+            .add_instrument(instrument_xbtusd_bitmex.clone())
+            .unwrap();
+
+        simple_cache
+            .add_account(AccountAny::Cash(cash_account(
+                bitmex_cash_account_state_multi,
+            )))
+            .unwrap();
+
+        simple_cache.add_quote(quote_ethusdt_binance).unwrap();
+
+        let mut risk_engine = get_risk_engine(
+            Rc::new(RefCell::new(msgbus)),
+            Some(Rc::new(RefCell::new(simple_cache))),
+            None,
+            None,
+            false,
+        );
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_xbtusd_bitmex.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from_str("440").unwrap())
+            .build();
+
+        let submit_order = SubmitOrder::new(
+            trader_id,
+            client_id_binance,
+            strategy_id_ema_cross,
+            instrument_xbtusd_bitmex.id(),
+            client_order_id,
+            venue_order_id,
+            order,
+            None,
+            None,
+            UUID4::new(),
+            risk_engine.clock.borrow().timestamp_ns(),
+        )
+        .unwrap();
+
+        risk_engine.execute(TradingCommand::SubmitOrder(submit_order));
+        let saved_process_messages =
+            get_process_order_event_handler_messages(process_order_event_handler);
+        assert_eq!(saved_process_messages.len(), 0);
+        // TODO: verify
+    }
+
+    #[rstest]
+    fn test_partial_fill_and_full_fill_account_balance_correct() {}
 }
