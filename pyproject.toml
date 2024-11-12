@@ -106,6 +106,7 @@ pytest = "^7.4.4"
 pytest-aiohttp = "^1.0.5"
 pytest-asyncio = "==0.21.1"  # Pinned due Cython: cannot set '__pytest_asyncio_scoped_event_loop' attribute of immutable type
 pytest-benchmark = "^4.0.0"
+pytest-codspeed = "^3.0.0"
 pytest-cov = "^4.1.0"
 pytest-mock = "^3.14.0"
 pytest-xdist = {version = "^3.6.1", extras = ["psutil"]}
