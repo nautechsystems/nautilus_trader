@@ -16,7 +16,7 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use arrow::{
-    array::{Int64Array, StringBuilder, StringViewArray, UInt64Array, UInt8Array},
+    array::{Int64Array, StringViewArray, StringViewBuilder, UInt64Array, UInt8Array},
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
     record_batch::RecordBatch,
@@ -40,7 +40,7 @@ impl ArrowSchemaProvider for TradeTick {
             Field::new("price", DataType::Int64, false),
             Field::new("size", DataType::UInt64, false),
             Field::new("aggressor_side", DataType::UInt8, false),
-            Field::new("trade_id", DataType::Utf8, false),
+            Field::new("trade_id", DataType::Utf8View, false),
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
         ];
@@ -84,7 +84,7 @@ impl EncodeToRecordBatch for TradeTick {
         let mut price_builder = Int64Array::builder(data.len());
         let mut size_builder = UInt64Array::builder(data.len());
         let mut aggressor_side_builder = UInt8Array::builder(data.len());
-        let mut trade_id_builder = StringBuilder::new();
+        let mut trade_id_builder = StringViewBuilder::new();
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
 
@@ -131,7 +131,7 @@ impl DecodeFromRecordBatch for TradeTick {
         let aggressor_side_values =
             extract_column::<UInt8Array>(cols, "aggressor_side", 2, DataType::UInt8)?;
         let trade_id_values =
-            extract_column::<StringViewArray>(cols, "trade_id", 3, DataType::Utf8)?;
+            extract_column::<StringViewArray>(cols, "trade_id", 3, DataType::Utf8View)?;
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 4, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 5, DataType::UInt64)?;
 
@@ -201,7 +201,7 @@ mod tests {
             Field::new("price", DataType::Int64, false),
             Field::new("size", DataType::UInt64, false),
             Field::new("aggressor_side", DataType::UInt8, false),
-            Field::new("trade_id", DataType::Utf8, false),
+            Field::new("trade_id", DataType::Utf8View, false),
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
         ];
@@ -212,11 +212,12 @@ mod tests {
     #[rstest]
     fn test_get_schema_map() {
         let schema_map = TradeTick::get_schema_map();
+        dbg!(&schema_map);
         let mut expected_map = HashMap::new();
         expected_map.insert("price".to_string(), "Int64".to_string());
         expected_map.insert("size".to_string(), "UInt64".to_string());
         expected_map.insert("aggressor_side".to_string(), "UInt8".to_string());
-        expected_map.insert("trade_id".to_string(), "Utf8".to_string());
+        expected_map.insert("trade_id".to_string(), "Utf8View".to_string());
         expected_map.insert("ts_event".to_string(), "UInt64".to_string());
         expected_map.insert("ts_init".to_string(), "UInt64".to_string());
         assert_eq!(schema_map, expected_map);
