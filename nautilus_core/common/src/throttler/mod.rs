@@ -24,6 +24,7 @@ use inner::InnerThrottler;
 use crate::clock::Clock;
 
 /// Represents a throttling limit per interval.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RateLimit {
     pub limit: usize,
     pub interval_ns: u64,
@@ -100,8 +101,8 @@ impl<T, F> Throttler<T, F> {
 
 impl<T, F> Throttler<T, F>
 where
-    F: Fn(T) + 'static,
     T: 'static,
+    F: Fn(T) + 'static,
 {
     pub fn send(&self, msg: T) {
         let throttler_clone = Self {

@@ -300,6 +300,19 @@ pub fn quote_ethusdt_binance() -> QuoteTick {
 }
 
 #[fixture]
+pub fn quote_audusd() -> QuoteTick {
+    QuoteTick {
+        instrument_id: InstrumentId::from("AUD/USD.SIM"),
+        bid_price: Price::from("100.0000"),
+        ask_price: Price::from("101.0000"),
+        bid_size: Quantity::from("1.00000000"),
+        ask_size: Quantity::from("1.00000000"),
+        ts_event: UnixNanos::default(),
+        ts_init: UnixNanos::from(1),
+    }
+}
+
+#[fixture]
 pub fn stub_trade_ethusdt_buyer() -> TradeTick {
     TradeTick {
         instrument_id: InstrumentId::from("ETHUSDT-PERP.BINANCE"),

@@ -56,6 +56,12 @@ pub enum OrderAny {
     TrailingStopMarket(TrailingStopMarketOrder),
 }
 
+impl Default for OrderAny {
+    fn default() -> Self {
+        Self::Limit(LimitOrder::default())
+    }
+}
+
 impl OrderAny {
     /// Applies the given `event` to the order.
     pub fn apply(&mut self, event: OrderEventAny) -> Result<(), OrderError> {
