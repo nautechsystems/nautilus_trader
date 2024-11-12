@@ -531,7 +531,7 @@ files = [
 name = "cffi"
 version = "1.17.1"
 description = "Foreign Function Interface for Python calling C code."
-optional = true
+optional = false
 python-versions = ">=3.8"
 files = [
     {file = "cffi-1.17.1-cp310-cp310-macosx_10_9_x86_64.whl", hash = "sha256:df8b1c11f177bc2313ec4b2d46baec87a5f3e71fc8b45dab2ee7cae86d9aba14"},
@@ -2860,7 +2860,7 @@ test = ["cffi", "hypothesis", "pandas", "pytest", "pytz"]
 name = "pycparser"
 version = "2.22"
 description = "C parser in Python"
-optional = true
+optional = false
 python-versions = ">=3.8"
 files = [
     {file = "pycparser-2.22-py3-none-any.whl", hash = "sha256:c3702b6d3dd8c7abc1afa565d7e63d53a1d0bd86cdc24edd75470f4de499cfcc"},
@@ -3145,6 +3145,30 @@ pytest = ">=3.8"
 aspect = ["aspectlib"]
 elasticsearch = ["elasticsearch"]
 histogram = ["pygal", "pygaljs"]
+
+[[package]]
+name = "pytest-codspeed"
+version = "3.0.0"
+description = "Pytest plugin to create CodSpeed benchmarks"
+optional = false
+python-versions = ">=3.9"
+files = [
+    {file = "pytest_codspeed-3.0.0-py3-none-any.whl", hash = "sha256:ab1b8cb9da72e0d394718333d1abc7bea38524e09fd4854bc70a91abbcdcb20e"},
+    {file = "pytest_codspeed-3.0.0.tar.gz", hash = "sha256:c5b80100ea32dd44079bb2db298288763eb8fe859eafa1650a8711bd2c32fd06"},
+]
+
+[package.dependencies]
+cffi = ">=1.17.1"
+filelock = ">=3.12.2"
+pytest = ">=3.8"
+rich = ">=13.8.1"
+setuptools = {version = "*", markers = "python_full_version >= \"3.12.0\""}
+
+[package.extras]
+build = ["semver (>=3.0.2)"]
+compat = ["pytest-benchmark (>=5.0.0,<5.1.0)", "pytest-xdist (>=3.6.1,<3.7.0)"]
+lint = ["mypy (>=1.11.2,<1.12.0)", "ruff (>=0.6.5,<0.7.0)"]
+test = ["pytest (>=7.0,<8.0)", "pytest-cov (>=4.0.0,<4.1.0)"]
 
 [[package]]
 name = "pytest-cov"
@@ -3453,6 +3477,24 @@ urllib3 = ">=1.21.1,<3"
 [package.extras]
 socks = ["PySocks (>=1.5.6,!=1.5.7)"]
 use-chardet-on-py3 = ["chardet (>=3.0.2,<6)"]
+
+[[package]]
+name = "rich"
+version = "13.9.4"
+description = "Render rich text, tables, progress bars, syntax highlighting, markdown and more to the terminal"
+optional = false
+python-versions = ">=3.8.0"
+files = [
+    {file = "rich-13.9.4-py3-none-any.whl", hash = "sha256:6049d5e6ec054bf2779ab3358186963bac2ea89175919d699e378b99738c2a90"},
+    {file = "rich-13.9.4.tar.gz", hash = "sha256:439594978a49a09530cff7ebc4b5c7103ef57baf48d5ea3184f21d9a2befa098"},
+]
+
+[package.dependencies]
+markdown-it-py = ">=2.2.0"
+pygments = ">=2.13.0,<3.0.0"
+
+[package.extras]
+jupyter = ["ipywidgets (>=7.5.1,<9)"]
 
 [[package]]
 name = "rlp"
@@ -4047,4 +4089,4 @@ polymarket = ["py-clob-client"]
 [metadata]
 lock-version = "2.0"
 python-versions = ">=3.11,<3.13"
-content-hash = "93a7e1126894ad24e093354acc58cd90f54e8597bf12916e6ece1ad9394b4d23"
+content-hash = "3d9c8ce1706c0fb8a9b08484be9cdf1444507fbe9d870fe2063aab77a57df618"
