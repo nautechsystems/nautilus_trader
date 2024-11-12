@@ -16,7 +16,7 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use arrow::{
-    array::{Int64Array, StringArray, StringBuilder, UInt64Array, UInt8Array},
+    array::{Int64Array, StringBuilder, StringViewArray, UInt64Array, UInt8Array},
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
     record_batch::RecordBatch,
@@ -130,7 +130,8 @@ impl DecodeFromRecordBatch for TradeTick {
         let size_values = extract_column::<UInt64Array>(cols, "size", 1, DataType::UInt64)?;
         let aggressor_side_values =
             extract_column::<UInt8Array>(cols, "aggressor_side", 2, DataType::UInt8)?;
-        let trade_id_values = extract_column::<StringArray>(cols, "trade_id", 3, DataType::Utf8)?;
+        let trade_id_values =
+            extract_column::<StringViewArray>(cols, "trade_id", 3, DataType::Utf8)?;
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 4, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 5, DataType::UInt64)?;
 
