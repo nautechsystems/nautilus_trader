@@ -646,15 +646,14 @@ impl RiskEngine {
                             let burrowed_cache = self.cache.borrow();
                             let last_trade = burrowed_cache.trade(&instrument.id());
 
-                            match last_trade {
-                                Some(last_trade) => Some(last_trade.price),
-                                None => {
-                                    log::warn!(
-                                        "Cannot check MARKET order risk: no prices for {}",
-                                        instrument.id()
-                                    );
-                                    continue;
-                                }
+                            if let Some(last_trade) = last_trade {
+                                Some(last_trade.price)
+                            } else {
+                                log::warn!(
+                                    "Cannot check MARKET order risk: no prices for {}",
+                                    instrument.id()
+                                );
+                                continue;
                             }
                         }
                     } else {
@@ -1305,7 +1304,7 @@ mod tests {
             true, // <-- Bypassing pre-trade risk checks for backtest
         );
 
-        assert_eq!(risk_engine.config.bypass, true);
+        assert!(risk_engine.config.bypass);
     }
 
     #[rstest]
@@ -1460,7 +1459,7 @@ mod tests {
     ) {
         msgbus.register(
             msgbus.switchboard.exec_engine_process,
-            process_order_event_handler.clone(),
+            process_order_event_handler,
         );
 
         simple_cache
@@ -1521,7 +1520,7 @@ mod tests {
     ) {
         msgbus.register(
             msgbus.switchboard.exec_engine_process,
-            process_order_event_handler.clone(),
+            process_order_event_handler,
         );
 
         let mut risk_engine =
@@ -2279,7 +2278,7 @@ mod tests {
     ) {
         msgbus.register(
             msgbus.switchboard.exec_engine_execute,
-            execute_order_event_handler.clone(),
+            execute_order_event_handler,
         );
 
         simple_cache
@@ -2349,7 +2348,7 @@ mod tests {
     ) {
         msgbus.register(
             msgbus.switchboard.exec_engine_process,
-            process_order_event_handler.clone(),
+            process_order_event_handler,
         );
 
         simple_cache
@@ -2837,7 +2836,7 @@ mod tests {
 
         assert_eq!(saved_process_messages.len(), 3);
 
-        for event in saved_process_messages.iter() {
+        for event in &saved_process_messages {
             assert_eq!(event.event_type(), OrderEventType::Denied);
         }
 
@@ -2924,7 +2923,7 @@ mod tests {
 
         assert_eq!(saved_process_messages.len(), 3);
 
-        for event in saved_process_messages.iter() {
+        for event in &saved_process_messages {
             assert_eq!(event.event_type(), OrderEventType::Denied);
         }
 
@@ -3170,7 +3169,7 @@ mod tests {
             get_process_order_event_handler_messages(process_order_event_handler);
         assert_eq!(saved_process_messages.len(), 3);
 
-        for event in saved_process_messages.iter() {
+        for event in &saved_process_messages {
             assert_eq!(event.event_type(), OrderEventType::Denied);
             assert_eq!(event.message().unwrap(), Ustr::from("TradingState::HALTED"));
         }
@@ -3201,7 +3200,7 @@ mod tests {
     ) {
         msgbus.register(
             msgbus.switchboard.exec_engine_process,
-            process_order_event_handler.clone(),
+            process_order_event_handler,
         );
 
         simple_cache
@@ -3358,7 +3357,7 @@ mod tests {
             get_process_order_event_handler_messages(process_order_event_handler);
         assert_eq!(saved_process_messages.len(), 3);
 
-        for event in saved_process_messages.iter() {
+        for event in &saved_process_messages {
             assert_eq!(event.event_type(), OrderEventType::Denied);
             assert_eq!(
                 event.message().unwrap(),
@@ -3669,6 +3668,7 @@ mod tests {
         instrument_xbtusd_bitmex: InstrumentAny,
         venue_order_id: VenueOrderId,
         process_order_event_handler: ShareableMessageHandler,
+        execute_order_event_handler: ShareableMessageHandler,
         bitmex_cash_account_state_multi: AccountState,
         quote_ethusdt_binance: QuoteTick,
         mut simple_cache: Cache,
@@ -3686,6 +3686,11 @@ mod tests {
         msgbus.register(
             msgbus.switchboard.exec_engine_process,
             process_order_event_handler.clone(),
+        );
+
+        msgbus.register(
+            msgbus.switchboard.exec_engine_execute,
+            execute_order_event_handler,
         );
 
         simple_cache
@@ -3732,6 +3737,10 @@ mod tests {
         let saved_process_messages =
             get_process_order_event_handler_messages(process_order_event_handler);
         assert_eq!(saved_process_messages.len(), 0);
+
+        // let saved_execute_messages =
+        // get_process_order_event_handler_messages(execute_order_event_handler);
+        // assert_eq!(saved_execute_messages.len(), 1);
         // TODO: verify
     }
 

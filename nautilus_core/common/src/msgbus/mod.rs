@@ -552,7 +552,7 @@ mod tests {
         let handler = get_call_check_shareable_handler(None);
 
         msgbus.register(endpoint, handler.clone());
-        assert!(msgbus.get_endpoint(&endpoint).is_some());
+        assert!(msgbus.get_endpoint(endpoint).is_some());
         assert!(!check_handler_was_called(handler.clone()));
 
         // Send a message to the endpoint
