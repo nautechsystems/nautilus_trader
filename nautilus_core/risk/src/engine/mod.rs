@@ -3688,10 +3688,10 @@ mod tests {
             process_order_event_handler.clone(),
         );
 
-        msgbus.register(
-            msgbus.switchboard.exec_engine_execute,
-            execute_order_event_handler,
-        );
+        // msgbus.register(
+        //     msgbus.switchboard.exec_engine_execute,
+        //     execute_order_event_handler,
+        // );
 
         simple_cache
             .add_instrument(instrument_xbtusd_bitmex.clone())
