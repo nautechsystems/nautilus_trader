@@ -139,7 +139,7 @@ def test_get_schema_map_with_unsupported_type() -> None:
                 "price": "Int64",
                 "size": "UInt64",
                 "aggressor_side": "UInt8",
-                "trade_id": "Utf8",
+                "trade_id": "Utf8View",
                 "ts_event": "UInt64",
                 "ts_init": "UInt64",
             },
