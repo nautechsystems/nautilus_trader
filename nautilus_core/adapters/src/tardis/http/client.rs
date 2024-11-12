@@ -84,8 +84,8 @@ impl TardisHttpClient {
         Ok(Self {
             base_url,
             api_key,
-            normalize_symbols,
             client,
+            normalize_symbols,
         })
     }
 

@@ -160,8 +160,8 @@ impl<T, F> InnerThrottler<T, F> {
 
 impl<T, F> InnerThrottler<T, F>
 where
-    F: Fn(T) + 'static,
     T: 'static,
+    F: Fn(T) + 'static,
 {
     #[inline]
     pub fn send_msg(&mut self, msg: T) {
