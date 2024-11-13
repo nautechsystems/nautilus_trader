@@ -622,7 +622,7 @@ cdef class Order:
         """
         Return whether the order is active and held in the local system.
 
-        An order is considered active local when its status is any of;
+        An order is considered active local when its status is any of:
         - ``INITIALIZED``
         - ``EMULATED``
         - ``RELEASED``
@@ -699,8 +699,7 @@ cdef class Order:
         """
         Return whether the order is in-flight (order request sent to the trading venue).
 
-        An order is considered in-flight when its status is any of;
-
+        An order is considered in-flight when its status is any of:
         - ``SUBMITTED``
         - ``PENDING_UPDATE``
         - ``PENDING_CANCEL``
@@ -721,8 +720,7 @@ cdef class Order:
         """
         Return whether the order is open at the trading venue.
 
-        An order is considered open when its status is any of;
-
+        An order is considered open when its status is any of:
         - ``ACCEPTED``
         - ``TRIGGERED``
         - ``PENDING_UPDATE``
