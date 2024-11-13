@@ -103,7 +103,7 @@ Download the appropriate `.whl` for your operating system and Python version, th
 
 ## Redis
 
-Using Redis with NautilusTrader is **optional** and only required if configured as the backend for a cache database or [message bus](/docs/concepts/message_bus.md).
+Using Redis with NautilusTrader is **optional** and only required if configured as the backend for a cache database or [message bus](../concepts/message_bus.md).
 
 :::info
 The minimum supported Redis version is 6.2 or higher (required for [streams](https://redis.io/docs/latest/develop/data-types/streams/) functionality).
