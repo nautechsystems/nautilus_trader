@@ -25,6 +25,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.nautilus_pyo3 import TardisHttpClient
+from nautilus_trader.core.nautilus_pyo3 import TardisMachineClient
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import BarType
@@ -89,6 +90,11 @@ class TardisDataClient(LiveMarketDataClient):
         # Configuration
         self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
 
+        # Tardis Machine
+        self._ws_base_url = self._config.base_url_ws
+        self._ws_client: TardisMachineClient = self._create_websocket_client()
+        self._ws_clients: dict[InstrumentId, TardisMachineClient] = {}
+
         # Tasks
         self._update_instruments_interval_mins: int | None = config.update_instruments_interval_mins
         self._update_instruments_task: asyncio.Task | None = None
@@ -102,8 +108,7 @@ class TardisDataClient(LiveMarketDataClient):
                 self._update_instruments(self._update_instruments_interval_mins),
             )
 
-        for ws_client in self._ws_clients.values():
-            await ws_client.connect()
+        # TODO: Stream initial subscriptions from websocket
 
     async def _disconnect(self) -> None:
         if self._update_instruments_task:
@@ -111,8 +116,20 @@ class TardisDataClient(LiveMarketDataClient):
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
 
+        if not self._ws_client.is_closed():
+            self._ws_client.close()
+
         for ws_client in self._ws_clients.values():
-            await ws_client.disconnect()
+            ws_client.close()
+
+        # TODO: Await all closed
+
+    def _create_websocket_client(self) -> TardisMachineClient:
+        self._log.info("Creating new TardisMachineClient", LogColor.MAGENTA)
+        return TardisMachineClient(
+            base_url=self._ws_base_url,
+            normalize_symbols=True,
+        )
 
     def _send_all_instruments_to_data_engine(self) -> None:
         for instrument in self._instrument_provider.get_all().values():

@@ -73,6 +73,10 @@ impl TardisMachineClient {
     #[must_use]
     pub fn is_closed(&self) -> bool {
         self.replay_signal.load(Ordering::Relaxed)
+            && self
+                .stream_signals
+                .values()
+                .all(|signal| signal.load(Ordering::Relaxed))
     }
 
     pub fn close(&mut self) {
