@@ -40,7 +40,7 @@ integration written for it, this then enables external publishing of messages.
 
 :::info
 Redis is currently supported for all serializable messages which are published externally.
-The minimum supported Redis version is 6.2.
+The minimum supported Redis version is 6.2 or higher (required for [streams](https://redis.io/docs/latest/develop/data-types/streams/) functionality).
 :::
 
 Under the hood, when a backing database (or any other compatible technology) is configured,
@@ -185,8 +185,6 @@ Automatic stream trimming helps manage the size of your message streams by remov
 The current Redis implementation will maintain the `autotrim_mins` as a maximum width (plus roughly a minute, as streams are trimmed no more than once per minute).
 Rather than a maximum lookback window based on the current wall clock time.
 :::
-
-The minimum supported Redis version is 6.2.
 
 ## External streams
 
