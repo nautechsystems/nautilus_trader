@@ -63,6 +63,7 @@ impl PortfolioAnalyzer {
     /// Creates a new [`PortfolioAnalyzer`] instance.
     ///
     /// Starts with empty state.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             statistics: HashMap::new(),
@@ -98,16 +99,19 @@ impl PortfolioAnalyzer {
     }
 
     /// Returns all tracked currencies.
+    #[must_use]
     pub fn currencies(&self) -> Vec<&Currency> {
         self.account_balances.keys().collect()
     }
 
     /// Retrieves a specific statistic by name.
+    #[must_use]
     pub fn statistic(&self, name: &str) -> Option<&Statistic> {
         self.statistics.get(name)
     }
 
     /// Returns all calculated returns.
+    #[must_use]
     pub const fn returns(&self) -> &Returns {
         &self.returns
     }
@@ -152,6 +156,7 @@ impl PortfolioAnalyzer {
     }
 
     /// Retrieves realized `PnLs` for a specific currency.
+    #[must_use]
     pub fn realized_pnls(&self, currency: Option<&Currency>) -> Option<Vec<(PositionId, f64)>> {
         if self.realized_pnls.is_empty() {
             return None;
@@ -272,6 +277,7 @@ impl PortfolioAnalyzer {
     }
 
     /// Gets all return-based performance statistics.
+    #[must_use]
     pub fn get_performance_stats_returns(&self) -> HashMap<String, f64> {
         let mut output = HashMap::new();
 
@@ -285,6 +291,7 @@ impl PortfolioAnalyzer {
     }
 
     /// Gets general portfolio statistics.
+    #[must_use]
     pub fn get_performance_stats_general(&self) -> HashMap<String, f64> {
         let mut output = HashMap::new();
 
@@ -325,6 +332,7 @@ impl PortfolioAnalyzer {
     }
 
     /// Gets formatted return statistics as strings.
+    #[must_use]
     pub fn get_stats_returns_formatted(&self) -> Vec<String> {
         let max_length = self.get_max_length_name();
         let stats = self.get_performance_stats_returns();
@@ -339,6 +347,7 @@ impl PortfolioAnalyzer {
     }
 
     /// Gets formatted general statistics as strings.
+    #[must_use]
     pub fn get_stats_general_formatted(&self) -> Vec<String> {
         let max_length = self.get_max_length_name();
         let stats = self.get_performance_stats_general();
