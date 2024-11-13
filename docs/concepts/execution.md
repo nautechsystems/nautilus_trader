@@ -244,7 +244,7 @@ know as "primary" (original) orders when being handled by an execution algorithm
 ```python
 from nautilus_trader.model.orders.base import Order
 
-def on_order(self, order: Order) -> None:  # noqa (too complex)
+def on_order(self, order: Order) -> None:
     # Handle the order here
 ```
 
