@@ -15,6 +15,7 @@ members = [
     "model",
     "network",
     "persistence",
+    "portfolio",
     "pyo3",
     "risk",
     "serialization",
