@@ -29,6 +29,7 @@ Released on TBD (UTC).
 - Refined Bybit HMAC authentication signatures (now using Rust implemented function)
 - Refined Tardis instrument ID parsing
 - Removed Bybit `msgspec` redundant import alias (#2050), thanks @sunlei
+- Upgraded `databento` crate to v0.16.0
 
 ### Breaking Changes
 None

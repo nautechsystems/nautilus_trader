@@ -786,9 +786,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.1.37"
+version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40545c26d092346d8a8dab71ee48e7685a7a9cba76e634790c215b41a4a7b4cf"
+checksum = "1aeb932158bd710538c73702db6945cb68a8fb08c519e6e12706b94263b36db8"
 dependencies = [
  "jobserver",
  "libc",
@@ -1234,9 +1234,9 @@ checksum = "e8566979429cf69b49a5c740c60791108e86440e8be149bbea4fe54d2c32d6e2"
 
 [[package]]
 name = "databento"
-version = "0.15.0"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b8cd91261000de864038a4ca59bfb467719f0f17378966acbe7dea618727ccc7"
+checksum = "a20008f5cc6235c9cc18691449f1f90ba101dfcf9e8a8b615b92aa8f69bc867b"
 dependencies = [
  "dbn",
  "futures",
@@ -1617,9 +1617,9 @@ dependencies = [
 
 [[package]]
 name = "dbn"
-version = "0.23.0"
+version = "0.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1072c2f8d3d8e9952124d76adb2c35c4cdeb01f32aedaac88bf96c48d36061af"
+checksum = "5c960e0f7fd591cc01264124ed3462c366207e406972b111b1d3174c79946d62"
 dependencies = [
  "async-compression",
  "csv",
@@ -1629,7 +1629,7 @@ dependencies = [
  "json-writer",
  "num_enum",
  "serde",
- "thiserror 1.0.69",
+ "thiserror 2.0.3",
  "time",
  "tokio",
  "zstd",
@@ -1637,9 +1637,9 @@ dependencies = [
 
 [[package]]
 name = "dbn-macros"
-version = "0.23.0"
+version = "0.23.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "aa41c08f05611e17a679ed088e7d528e4e18796dba35427e4c564196aedb42c3"
+checksum = "eb5edb3c0414a5c178ae67de963544f48a5badb1a1708af4f89bc33241a9eae6"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
