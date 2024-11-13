@@ -1669,7 +1669,7 @@ cdef class BookOrder:
         return Price.from_raw_c(self._mem.price.raw, self._mem.price.precision)
 
     @property
-    def size(self) -> Price:
+    def size(self) -> Quantity:
         """
         Return the book orders size.
 
@@ -4299,7 +4299,7 @@ cdef class TradeTick(Data):
         return Price.from_raw_c(self._mem.price.raw, self._mem.price.precision)
 
     @property
-    def size(self) -> Price:
+    def size(self) -> Quantity:
         """
         Return the ticks size.
 
