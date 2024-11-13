@@ -3199,6 +3199,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-portfolio"
+version = "0.36.0"
+dependencies = [
+ "anyhow",
+ "criterion",
+ "derive_builder",
+ "indexmap",
+ "log",
+ "nautilus-analysis",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-model",
+ "pyo3",
+ "pyo3-async-runtimes",
+ "rstest",
+ "rust_decimal",
+ "rust_decimal_macros",
+ "serde",
+ "serde_json",
+ "strum",
+ "thiserror 2.0.3",
+ "ustr",
+]
+
+[[package]]
 name = "nautilus-pyo3"
 version = "0.36.0"
 dependencies = [
