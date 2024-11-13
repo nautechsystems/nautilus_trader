@@ -6,7 +6,7 @@ We are currently working on this guide.
 
 Backtesting with NautilusTrader is a methodical simulation process that replicates trading
 activities using a specific system implementation. This system is composed of various components
-including the built-in engines, `Cache`, `MessageBus`, `Portfolio`, [Actors](advanced/actors.md), [Strategies](strategies.md), [Execution Algorithms](execution.md),
+including the built-in engines, `Cache`, [MessageBus](message_bus.md), `Portfolio`, [Actors](advanced/actors.md), [Strategies](strategies.md), [Execution Algorithms](execution.md),
 and other user-defined modules. The entire trading simulation is predicated on a stream of historical data processed by a
 `BacktestEngine`. Once this data stream is exhausted, the engine concludes its operation, producing 
 detailed results and performance metrics for in-depth analysis.
