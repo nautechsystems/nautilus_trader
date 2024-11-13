@@ -35,10 +35,11 @@ use std::collections::BTreeMap;
 
 use nautilus_core::nanos::UnixNanos;
 
-mod analyzer;
-#[cfg(feature = "python")]
-pub mod python;
+pub mod analyzer;
 pub mod statistic;
 pub mod statistics;
+
+#[cfg(feature = "python")]
+pub mod python;
 
 pub type Returns = BTreeMap<UnixNanos, f64>;
