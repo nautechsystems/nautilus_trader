@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import itertools
 import os
-import pathlib
 import platform
 from collections import defaultdict
 from collections.abc import Callable
@@ -128,7 +127,12 @@ class ParquetDataCatalog(BaseDataCatalog):
         show_query_paths: bool = False,
     ) -> None:
         self.fs_protocol: str = fs_protocol or _DEFAULT_FS_PROTOCOL
+        if isinstance(self.fs_protocol, str) and self.fs_protocol.startswith("("):
+            print(f"Unexpected `fs_protocol` format: {self.fs_protocol}, defaulting to 'file'")
+            self.fs_protocol = "file"
+
         self.fs_storage_options = fs_storage_options or {}
+
         self.fs: fsspec.AbstractFileSystem = fsspec.filesystem(
             self.fs_protocol,
             **self.fs_storage_options,
@@ -454,11 +458,16 @@ class ParquetDataCatalog(BaseDataCatalog):
 
         file_prefix = class_to_filename(data_cls)
         glob_path = f"{self.path}/data/{file_prefix}/**/*"
-        dirs: list[str] = self.fs.glob(glob_path)
-        if self.show_query_paths:
-            print(dirs)
+        paths: list[str] = self.fs.glob(glob_path)
 
-        for idx, path in enumerate(dirs):
+        # Ensure all paths are files (fsspec now includes directories in recursive globbing)
+        paths = [path for path in paths if self.fs.isfile(path)]
+
+        if self.show_query_paths:
+            for dir in paths:
+                print(dir)
+
+        for idx, path in enumerate(paths):
             assert self.fs.exists(path)
             # Parse the parent directory which *should* be the instrument ID,
             # this prevents us matching all instrument ID substrings.
@@ -712,17 +721,18 @@ class ParquetDataCatalog(BaseDataCatalog):
             **kwargs,
         )
 
-    def list_data_types(self):
-        glob_path = f"{self.path}/data/*"
-        return [pathlib.Path(p).stem for p in self.fs.glob(glob_path)]
+    def _list_directory_stems(self, subdirectory: str) -> list[str]:
+        glob_path = f"{self.path}/{subdirectory}/*"
+        return [Path(p).stem for p in self.fs.glob(glob_path)]
+
+    def list_data_types(self) -> list[str]:
+        return self._list_directory_stems("data")
 
     def list_backtest_runs(self) -> list[str]:
-        glob_path = f"{self.path}/backtest/*"
-        return [p.stem for p in map(Path, self.fs.glob(glob_path))]
+        return self._list_directory_stems("backtest")
 
     def list_live_runs(self) -> list[str]:
-        glob_path = f"{self.path}/live/*"
-        return [p.stem for p in map(Path, self.fs.glob(glob_path))]
+        return self._list_directory_stems("live")
 
     def read_live_run(self, instance_id: str, **kwargs: Any) -> list[Data]:
         return self._read_feather(kind="live", instance_id=instance_id, **kwargs)
@@ -767,15 +777,24 @@ class ParquetDataCatalog(BaseDataCatalog):
         prefix = f"{self.path}/{kind}/{urisafe_instrument_id(instance_id)}"
 
         # Non-instrument feather files
-        for fn in self.fs.glob(f"{prefix}/*.feather"):
-            cls_name = fn.replace(prefix + "/", "").replace(".feather", "")
-            cls_name = "_".join(cls_name.split("_")[:-1])
-            yield FeatherFile(path=fn, class_name=cls_name)
+        for path_str in self.fs.glob(f"{prefix}/*.feather"):
+            if not Path(path_str).is_file():
+                continue
+            file_name = path_str.replace(prefix + "/", "").replace(".feather", "")
+            cls_name = "_".join(file_name.split("_")[:-1])
+            if not cls_name:
+                raise ValueError(f"`cls_name` was empty when a value was expected: {path_str}")
+            yield FeatherFile(path=path_str, class_name=cls_name)
 
         # Per-instrument feather files
-        for ins_fn in self.fs.glob(f"{prefix}/**/*.feather"):
-            ins_cls_name = pathlib.Path(ins_fn.replace(prefix + "/", "")).parent.name
-            yield FeatherFile(path=ins_fn, class_name=ins_cls_name)
+        for path_str in self.fs.glob(f"{prefix}/**/*.feather"):
+            if not Path(path_str).is_file():
+                continue
+            file_name = path_str.replace(prefix + "/", "").replace(".feather", "")
+            cls_name = Path(file_name).parent.name
+            if not cls_name:
+                continue
+            yield FeatherFile(path=path_str, class_name=cls_name)
 
     def _read_feather_file(
         self,
