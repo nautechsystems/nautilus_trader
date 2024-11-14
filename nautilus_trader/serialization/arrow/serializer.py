@@ -147,7 +147,6 @@ class ArrowSerializer:
                     )
                 elif data_cls == TradeTick:
                     pyo3_trades = TradeTick.to_pyo3_list(data)
-                    print("Reached here")
                     batch_bytes = nautilus_pyo3.trade_ticks_to_arrow_record_batch_bytes(
                         pyo3_trades,
                     )

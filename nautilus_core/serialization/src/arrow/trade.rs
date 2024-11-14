@@ -234,7 +234,6 @@ mod tests {
     #[rstest]
     fn test_get_schema_map() {
         let schema_map = TradeTick::get_schema_map();
-        dbg!(&schema_map);
         let mut expected_map = HashMap::new();
         expected_map.insert("price".to_string(), "Int64".to_string());
         expected_map.insert("size".to_string(), "UInt64".to_string());
