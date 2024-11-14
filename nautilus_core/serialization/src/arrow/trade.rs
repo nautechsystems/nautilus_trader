@@ -13,10 +13,14 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{collections::HashMap, str::FromStr, sync::Arc};
+use std::{
+    collections::HashMap,
+    str::FromStr,
+    sync::{atomic::AtomicBool, Arc},
+};
 
 use arrow::{
-    array::{Int64Array, StringViewArray, StringViewBuilder, UInt64Array, UInt8Array},
+    array::{Int64Array, StringArray, StringBuilder, StringViewArray, UInt64Array, UInt8Array},
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
     record_batch::RecordBatch,
@@ -40,7 +44,7 @@ impl ArrowSchemaProvider for TradeTick {
             Field::new("price", DataType::Int64, false),
             Field::new("size", DataType::UInt64, false),
             Field::new("aggressor_side", DataType::UInt8, false),
-            Field::new("trade_id", DataType::Utf8View, false),
+            Field::new("trade_id", DataType::Utf8, false),
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
         ];
@@ -84,7 +88,7 @@ impl EncodeToRecordBatch for TradeTick {
         let mut price_builder = Int64Array::builder(data.len());
         let mut size_builder = UInt64Array::builder(data.len());
         let mut aggressor_side_builder = UInt8Array::builder(data.len());
-        let mut trade_id_builder = StringViewBuilder::new();
+        let mut trade_id_builder = StringBuilder::new();
         let mut ts_event_builder = UInt64Array::builder(data.len());
         let mut ts_init_builder = UInt64Array::builder(data.len());
 
@@ -118,6 +122,12 @@ impl EncodeToRecordBatch for TradeTick {
     }
 }
 
+/// Global Variable to indicate datafusion is being used. It is set when
+/// a datafusion backend is created. It is a hack to change how
+/// TradeTick is decoded when datafusion is set. Datafusion decodes
+/// strings as StringViewArray.
+pub static DATAFUSION_BACKEND: AtomicBool = AtomicBool::new(false);
+
 impl DecodeFromRecordBatch for TradeTick {
     fn decode_batch(
         metadata: &HashMap<String, String>,
@@ -130,10 +140,22 @@ impl DecodeFromRecordBatch for TradeTick {
         let size_values = extract_column::<UInt64Array>(cols, "size", 1, DataType::UInt64)?;
         let aggressor_side_values =
             extract_column::<UInt8Array>(cols, "aggressor_side", 2, DataType::UInt8)?;
-        let trade_id_values =
-            extract_column::<StringViewArray>(cols, "trade_id", 3, DataType::Utf8View)?;
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 4, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 5, DataType::UInt64)?;
+
+        // Datafusion reads trade_ids as StringView
+        let trade_id_values: Vec<TradeId> =
+            if DATAFUSION_BACKEND.load(std::sync::atomic::Ordering::Relaxed) {
+                extract_column::<StringViewArray>(cols, "trade_id", 3, DataType::Utf8View)?
+                    .iter()
+                    .map(|id| TradeId::from(id.unwrap()))
+                    .collect()
+            } else {
+                extract_column::<StringArray>(cols, "trade_id", 3, DataType::Utf8)?
+                    .iter()
+                    .map(|id| TradeId::from(id.unwrap()))
+                    .collect()
+            };
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|i| {
@@ -147,7 +169,7 @@ impl DecodeFromRecordBatch for TradeTick {
                             format!("Invalid enum value, was {aggressor_side_value}"),
                         )
                     })?;
-                let trade_id = TradeId::from(trade_id_values.value(i));
+                let trade_id = trade_id_values[i];
                 let ts_event = ts_event_values.value(i).into();
                 let ts_init = ts_init_values.value(i).into();
 
@@ -201,7 +223,7 @@ mod tests {
             Field::new("price", DataType::Int64, false),
             Field::new("size", DataType::UInt64, false),
             Field::new("aggressor_side", DataType::UInt8, false),
-            Field::new("trade_id", DataType::Utf8View, false),
+            Field::new("trade_id", DataType::Utf8, false),
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
         ];
@@ -217,7 +239,7 @@ mod tests {
         expected_map.insert("price".to_string(), "Int64".to_string());
         expected_map.insert("size".to_string(), "UInt64".to_string());
         expected_map.insert("aggressor_side".to_string(), "UInt8".to_string());
-        expected_map.insert("trade_id".to_string(), "Utf8View".to_string());
+        expected_map.insert("trade_id".to_string(), "Utf8".to_string());
         expected_map.insert("ts_event".to_string(), "UInt64".to_string());
         expected_map.insert("ts_init".to_string(), "UInt64".to_string());
         assert_eq!(schema_map, expected_map);
@@ -257,10 +279,7 @@ mod tests {
         let price_values = columns[0].as_any().downcast_ref::<Int64Array>().unwrap();
         let size_values = columns[1].as_any().downcast_ref::<UInt64Array>().unwrap();
         let aggressor_side_values = columns[2].as_any().downcast_ref::<UInt8Array>().unwrap();
-        let trade_id_values = columns[3]
-            .as_any()
-            .downcast_ref::<StringViewArray>()
-            .unwrap();
+        let trade_id_values = columns[3].as_any().downcast_ref::<StringArray>().unwrap();
         let ts_event_values = columns[4].as_any().downcast_ref::<UInt64Array>().unwrap();
         let ts_init_values = columns[5].as_any().downcast_ref::<UInt64Array>().unwrap();
 
@@ -293,7 +312,7 @@ mod tests {
         let price = Int64Array::from(vec![1_000_000_000_000, 1_010_000_000_000]);
         let size = UInt64Array::from(vec![1000, 900]);
         let aggressor_side = UInt8Array::from(vec![0, 1]); // 0 for BUY, 1 for SELL
-        let trade_id = StringViewArray::from(vec!["1", "2"]);
+        let trade_id = StringArray::from(vec!["1", "2"]);
         let ts_event = UInt64Array::from(vec![1, 2]);
         let ts_init = UInt64Array::from(vec![3, 4]);
 

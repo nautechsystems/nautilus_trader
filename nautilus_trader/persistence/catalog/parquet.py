@@ -241,7 +241,23 @@ class ParquetDataCatalog(BaseDataCatalog):
     ) -> None:
         if isinstance(data[0], CustomData):
             data = [d.data for d in data]
+        print(f"data_cls={data_cls}")
+        print(f"data={data[0]}")
         table = self._objects_to_table(data, data_cls=data_cls)
+
+        # TradeTicks are special case. The `trade_id` string_view type needs
+        # to be converted to string type
+        if data_cls == TradeTick:
+            # Create a new schema with the "trade_id" field changed to string type
+            new_fields = [
+                field.with_type(pa.string()) if field.name == "trade_id" else field
+                for field in table.schema
+            ]
+            new_schema = pa.schema(new_fields, metadata=table.schema.metadata)
+            new_batches = [batch.cast(new_schema) for batch in table.to_batches()]
+            table = pa.Table.from_batches(new_batches, new_schema)
+
+        print(table.schema)
         path = self._make_path(data_cls=data_cls, instrument_id=instrument_id)
         kw = dict(**self.dataset_kwargs, **kwargs)
 

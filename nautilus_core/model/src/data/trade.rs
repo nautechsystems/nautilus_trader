@@ -103,8 +103,6 @@ impl TradeTick {
         metadata.insert("price".to_string(), "Int64".to_string());
         metadata.insert("size".to_string(), "UInt64".to_string());
         metadata.insert("aggressor_side".to_string(), "UInt8".to_string());
-        // Note: pyarrow does not recognize Utf8View alias
-        // It maps Utf8 to String which is equivalent to what Utf8View does
         metadata.insert("trade_id".to_string(), "Utf8".to_string());
         metadata.insert("ts_event".to_string(), "UInt64".to_string());
         metadata.insert("ts_init".to_string(), "UInt64".to_string());
