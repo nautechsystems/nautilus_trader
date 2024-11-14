@@ -4092,6 +4092,7 @@ class DatabentoLiveClient:
 # Tardis
 
 def tardis_exchange_from_venue_str(venue_str: str) -> list[str]: ...
+def bar_spec_to_tardis_trade_bar_string(bar_spec: BarSpecification) -> str: ...
 
 def load_tardis_deltas(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> list[OrderBookDelta]: ...  # noqa
 def load_tardis_depth10_from_snapshot5(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> list[OrderBookDepth10]: ...  # noqa
@@ -4103,6 +4104,14 @@ def load_tardis_depth10_from_snapshot5_as_pycapsule(filepath: str, price_precisi
 def load_tardis_depth10_from_snapshot25_as_pycapsule(filepath: str, price_precision: int, size_precision: int,  instrument_id: InstrumentId | None, limit: int | None = None) -> object: ...  # noqa
 def load_tardis_quotes_as_pycapsule(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> object: ...  # noqa
 def load_tardis_trades_as_pycapsule(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> object: ...  # noqa
+
+class InstrumentMiniInfo:
+    def __init__(
+        self,
+        instrument_id: InstrumentId,
+        price_precision: int,
+        size_precision:int,
+    ) -> None: ...
 
 class TardisHttpClient:
     def __init__(
@@ -4132,7 +4141,7 @@ class TardisMachineClient:
     def is_closed(self) -> bool: ...
     def close(self) -> None: ...
     def replay(self, options: list[ReplayNormalizedRequestOptions], callback: Callable) -> None: ...
-    def stream(self, options: list[StreamNormalizedRequestOptions], callback: Callable) -> None: ...
+    def stream(self, instruments: list[InstrumentMiniInfo], options: list[StreamNormalizedRequestOptions], callback: Callable,) -> None: ...
 
 async def run_tardis_machine_replay(config_filepath: str, output_path: str | None = None) -> None: ...
 

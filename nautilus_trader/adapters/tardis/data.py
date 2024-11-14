@@ -17,6 +17,8 @@ import asyncio
 
 import pandas as pd
 
+from nautilus_trader.adapters.tardis.common import create_instrument_info
+from nautilus_trader.adapters.tardis.common import create_stream_normalized_request_options
 from nautilus_trader.adapters.tardis.config import TardisDataClientConfig
 from nautilus_trader.adapters.tardis.constants import TARDIS
 from nautilus_trader.adapters.tardis.providers import TardisInstrumentProvider
@@ -24,12 +26,13 @@ from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.enums import LogColor
-from nautilus_trader.core.nautilus_pyo3 import TardisHttpClient
+from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.nautilus_pyo3 import TardisMachineClient
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import DataType
+from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
@@ -49,8 +52,6 @@ class TardisDataClient(LiveMarketDataClient):
     ----------
     loop : asyncio.AbstractEventLoop
         The event loop for the client.
-    client : TardisHttpClient
-        The Tardis HTTP client.
     msgbus : MessageBus
         The message bus for the client.
     cache : Cache
@@ -69,7 +70,6 @@ class TardisDataClient(LiveMarketDataClient):
     def __init__(
         self,
         loop: asyncio.AbstractEventLoop,
-        client: TardisHttpClient,
         msgbus: MessageBus,
         cache: Cache,
         clock: LiveClock,
@@ -88,16 +88,21 @@ class TardisDataClient(LiveMarketDataClient):
         )
 
         # Configuration
+        self._config = config
         self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
 
         # Tardis Machine
         self._ws_base_url = self._config.base_url_ws
         self._ws_client: TardisMachineClient = self._create_websocket_client()
         self._ws_clients: dict[InstrumentId, TardisMachineClient] = {}
+        self._ws_pending_infos: list[nautilus_pyo3.InstrumentMiniInfo] = []
+        self._ws_pending_streams: list[nautilus_pyo3.StreamNormalizedRequestOptions] = []
 
         # Tasks
         self._update_instruments_interval_mins: int | None = config.update_instruments_interval_mins
         self._update_instruments_task: asyncio.Task | None = None
+        self._main_ws_connect_task: asyncio.Task | None = None
+        self._main_ws_delay = True
 
     async def _connect(self) -> None:
         await self._instrument_provider.initialize()
@@ -108,7 +113,7 @@ class TardisDataClient(LiveMarketDataClient):
                 self._update_instruments(self._update_instruments_interval_mins),
             )
 
-        # TODO: Stream initial subscriptions from websocket
+        self._main_ws_connect_task = self.create_task(self._connect_main_ws_after_delay())
 
     async def _disconnect(self) -> None:
         if self._update_instruments_task:
@@ -116,6 +121,12 @@ class TardisDataClient(LiveMarketDataClient):
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
 
+        if self._main_ws_connect_task:
+            self._log.debug("Canceling task 'connect_main_ws_after_delay'")
+            self._main_ws_connect_task.cancel()
+            self._main_ws_connect_task = None
+
+        # Shutdown websockets
         if not self._ws_client.is_closed():
             self._ws_client.close()
 
@@ -124,12 +135,33 @@ class TardisDataClient(LiveMarketDataClient):
 
         # TODO: Await all closed
 
+        self._main_ws_delay = True
+        await asyncio.sleep(1.0)  # Wait for websocket clients to close (temporary)
+
     def _create_websocket_client(self) -> TardisMachineClient:
         self._log.info("Creating new TardisMachineClient", LogColor.MAGENTA)
         return TardisMachineClient(
             base_url=self._ws_base_url,
             normalize_symbols=True,
         )
+
+    async def _connect_main_ws_after_delay(self) -> None:
+        delay_secs = self._config.ws_connection_delay_secs
+        self._log.info(
+            f"Awaiting initial websocket connection delay ({delay_secs}s)...",
+            LogColor.BLUE,
+        )
+        await asyncio.sleep(delay_secs)
+        if self._ws_pending_streams:
+            self._ws_client.stream(
+                instruments=self._ws_pending_infos,
+                options=self._ws_pending_streams,
+                callback=self._handle_msg,
+            )
+            self._ws_pending_infos.clear()
+            self._ws_pending_streams.clear()
+
+        self._main_ws_delay = False
 
     def _send_all_instruments_to_data_engine(self) -> None:
         for instrument in self._instrument_provider.get_all().values():
@@ -166,13 +198,66 @@ class TardisDataClient(LiveMarketDataClient):
             return
 
     async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
-        pass
+        instrument = self._cache.instrument(instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot subscribe quotes: no instrument for {instrument_id}")
+            return
+
+        instrument_info = create_instrument_info(instrument)
+        stream_request = create_stream_normalized_request_options(
+            exchange=nautilus_pyo3.tardis_exchange_from_venue_str(instrument_id.venue.value)[0],
+            symbols=[instrument_id.symbol.value],
+            data_types=["quote"],
+            timeout_interval_ms=5_000,
+        )
+        if self._main_ws_delay:
+            self._ws_pending_infos.append(instrument_info)
+            self._ws_pending_streams.append(stream_request)
+            return
+
+        # TODO: Start new tardis-machine client
 
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
-        pass
+        instrument = self._cache.instrument(instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot subscribe trades: no instrument for {instrument_id}")
+            return
+
+        instrument_info = create_instrument_info(instrument)
+        stream_request = create_stream_normalized_request_options(
+            exchange=nautilus_pyo3.tardis_exchange_from_venue_str(instrument_id.venue.value)[0],
+            symbols=[instrument_id.symbol.value],
+            data_types=["trade"],
+            timeout_interval_ms=5_000,
+        )
+        if self._main_ws_delay:
+            self._ws_pending_infos.append(instrument_info)
+            self._ws_pending_streams.append(stream_request)
+            return
+
+        # TODO: Start new tardis-machine client
 
     async def _subscribe_bars(self, bar_type: BarType) -> None:
-        pass
+        instrument_id = bar_type.instrument_id
+        instrument = self._cache.instrument(instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot subscribe bars: no instrument for {instrument_id}")
+            return
+
+        instrument_info = create_instrument_info(instrument)
+        bar_type_pyo3 = nautilus_pyo3.BarType.from_str(str(bar_type))
+        stream_request = create_stream_normalized_request_options(
+            exchange=nautilus_pyo3.tardis_exchange_from_venue_str(instrument_id.venue.value)[0],
+            symbols=[instrument_id.symbol.value],
+            data_types=[nautilus_pyo3.bar_spec_to_tardis_trade_bar_string(bar_type_pyo3.spec)],
+            timeout_interval_ms=5_000,
+        )
+        if self._main_ws_delay:
+            self._ws_pending_infos.append(instrument_info)
+            self._ws_pending_streams.append(stream_request)
+            return
+
+        # TODO: Start new tardis-machine client
 
     async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
         pass
@@ -181,13 +266,13 @@ class TardisDataClient(LiveMarketDataClient):
         pass
 
     async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
-        pass
+        pass  # TODO: Implement
 
     async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
-        pass
+        pass  # TODO: Implement
 
     async def _unsubscribe_bars(self, bar_type: BarType) -> None:
-        pass
+        pass  # TODO: Implement
 
     async def _request_instrument(
         self,
@@ -295,3 +380,13 @@ class TardisDataClient(LiveMarketDataClient):
             return
 
         # TODO: Use Tardis Machine replay
+
+    def _handle_msg(
+        self,
+        pycapsule: object,
+    ) -> None:
+        # The capsule will fall out of scope at the end of this method,
+        # and eventually be garbage collected. The contained pointer
+        # to `Data` is still owned and managed by Rust.
+        data = capsule_to_data(pycapsule)
+        self._handle_data(data)

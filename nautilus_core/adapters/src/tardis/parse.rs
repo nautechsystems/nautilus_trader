@@ -178,6 +178,20 @@ pub fn parse_bar_spec(value: &str) -> BarSpecification {
     }
 }
 
+/// Converts a Nautilus `BarSpecification` to the Tardis trade bar string convention.
+#[must_use]
+pub fn bar_spec_to_tardis_trade_bar_string(bar_spec: &BarSpecification) -> String {
+    let suffix = match bar_spec.aggregation {
+        BarAggregation::Millisecond => "ms",
+        BarAggregation::Second => "s",
+        BarAggregation::Minute => "m",
+        BarAggregation::Tick => "ticks",
+        BarAggregation::Volume => "vol",
+        _ => panic!("Unsupported bar aggregation type {}", bar_spec.aggregation),
+    };
+    format!("trade_bar_{}{}", bar_spec.step, suffix)
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // Tests
 ////////////////////////////////////////////////////////////////////////////////
@@ -337,5 +351,26 @@ mod tests {
     #[should_panic(expected = "Invalid step")]
     fn test_parse_bar_spec_invalid_step(#[case] value: &str) {
         let _ = parse_bar_spec(value);
+    }
+
+    #[rstest]
+    #[case(
+        BarSpecification::new(10, BarAggregation::Millisecond, PriceType::Last),
+        "trade_bar_10ms"
+    )]
+    #[case(
+        BarSpecification::new(5, BarAggregation::Minute, PriceType::Last),
+        "trade_bar_5m"
+    )]
+    #[case(
+        BarSpecification::new(100, BarAggregation::Tick, PriceType::Last),
+        "trade_bar_100ticks"
+    )]
+    #[case(
+        BarSpecification::new(100_000, BarAggregation::Volume, PriceType::Last),
+        "trade_bar_100000vol"
+    )]
+    fn test_to_tardis_string(#[case] bar_spec: BarSpecification, #[case] expected: &str) {
+        assert_eq!(bar_spec_to_tardis_trade_bar_string(&bar_spec), expected);
     }
 }
