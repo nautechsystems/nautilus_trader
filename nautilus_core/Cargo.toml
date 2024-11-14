@@ -86,9 +86,10 @@ cbindgen = "0.27.0"
 
 [profile.dev]
 opt-level = 0
-debug = true
+debug = false  # Improves compile times
 debug-assertions = false  # Fails Cython build if true
 overflow-checks = true
+strip = "debuginfo"  # Improves compile times
 lto = false
 panic = "unwind"
 incremental = true
@@ -96,9 +97,10 @@ codegen-units = 256
 
 [profile.test]
 opt-level = 0
-debug = true
-debug-assertions = true  # Fails Cython build if true (OK for cargo test)
+debug = false  # Improves compile times
+debug-assertions = true  # Fails Cython build if true
 overflow-checks = true
+strip = "debuginfo"  # Improves compile times
 lto = false
 incremental = true
 codegen-units = 256
