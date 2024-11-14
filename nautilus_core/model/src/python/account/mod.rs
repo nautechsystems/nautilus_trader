@@ -13,6 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod cash;
+pub mod margin;
+pub mod transformer;
+
 use nautilus_core::python::to_pyvalue_err;
 use pyo3::{IntoPy, PyObject, PyResult, Python};
 
@@ -20,10 +24,6 @@ use crate::{
     accounts::{any::AccountAny, cash::CashAccount, margin::MarginAccount},
     enums::AccountType,
 };
-
-pub mod cash;
-pub mod margin;
-pub mod transformer;
 
 pub fn convert_pyobject_to_account_any(py: Python, account: PyObject) -> PyResult<AccountAny> {
     let account_type = account

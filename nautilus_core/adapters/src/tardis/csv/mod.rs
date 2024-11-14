@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+mod record;
+
 use std::{error::Error, fs::File, io::BufReader, path::Path};
 
 use csv::{Reader, ReaderBuilder, StringRecord};
@@ -30,8 +32,6 @@ use nautilus_model::{
     identifiers::{InstrumentId, TradeId},
     types::{price::Price, quantity::Quantity},
 };
-
-mod record;
 
 use super::{
     csv::record::{

@@ -15,6 +15,10 @@
 
 //! The logging framework for Nautilus systems.
 
+pub mod headers;
+pub mod logger;
+pub mod writer;
+
 use std::{
     collections::HashMap,
     env,
@@ -33,10 +37,6 @@ use self::{
     writer::FileWriterConfig,
 };
 use crate::enums::LogLevel;
-
-pub mod headers;
-pub mod logger;
-pub mod writer;
 
 pub const RECV: &str = "<--";
 pub const SENT: &str = "-->";
