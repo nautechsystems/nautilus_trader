@@ -31,15 +31,15 @@
 //! - `ffi`: Enables the C foreign function interface (FFI) from `cbindgen`.
 //! - `python`: Enables Python bindings from `pyo3`.
 
-use std::collections::BTreeMap;
-
-use nautilus_core::nanos::UnixNanos;
-
 pub mod analyzer;
 pub mod statistic;
 pub mod statistics;
 
 #[cfg(feature = "python")]
 pub mod python;
+
+use std::collections::BTreeMap;
+
+use nautilus_core::nanos::UnixNanos;
 
 pub type Returns = BTreeMap<UnixNanos, f64>;
