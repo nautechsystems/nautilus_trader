@@ -15,6 +15,7 @@
 
 //! Python bindings from `pyo3`.
 
+pub mod config;
 pub mod csv;
 pub mod enums;
 pub mod http;
@@ -26,11 +27,16 @@ use pyo3::prelude::*;
 #[pymodule]
 pub fn tardis(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<super::http::client::TardisHttpClient>()?;
+    m.add_class::<super::machine::InstrumentMiniInfo>()?;
     m.add_class::<super::machine::TardisMachineClient>()?;
     m.add_class::<super::machine::ReplayNormalizedRequestOptions>()?;
     m.add_class::<super::machine::StreamNormalizedRequestOptions>()?;
     m.add_function(wrap_pyfunction!(
         enums::py_tardis_exchange_from_venue_str,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        config::py_bar_spec_to_tardis_trade_bar_string,
         m
     )?)?;
     m.add_function(wrap_pyfunction!(machine::py_run_tardis_machine_replay, m)?)?;

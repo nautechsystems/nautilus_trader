@@ -34,6 +34,8 @@ class TardisDataClientConfig(LiveDataClientConfig, frozen=True):
         If ``None`` then will source the `TARDIS_MACHINE_WS_URL`.
     update_instruments_interval_mins: PositiveInt or None, default 60
         The interval (minutes) between reloading instruments from the venue.
+    ws_connection_delay_secs : PositiveInt, default 5
+        The delay (seconds) prior to main websocket connection to allow initial subscriptions to arrive.
 
     References
     ----------
@@ -45,3 +47,4 @@ class TardisDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_http: str | None = None
     base_url_ws: str | None = None
     update_instruments_interval_mins: PositiveInt | None = 60
+    ws_connection_delay_secs: PositiveInt = 5

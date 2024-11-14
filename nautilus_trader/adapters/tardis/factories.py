@@ -135,7 +135,6 @@ class TardisLiveDataClientFactory(LiveDataClientFactory):
         )
         return TardisDataClient(
             loop=loop,
-            client=client,
             msgbus=msgbus,
             cache=cache,
             clock=clock,

@@ -76,11 +76,16 @@ impl TardisMachineClient {
     #[pyo3(name = "stream")]
     fn py_stream<'py>(
         &self,
-        instrument: InstrumentMiniInfo,
+        instruments: Vec<InstrumentMiniInfo>,
         options: Vec<StreamNormalizedRequestOptions>,
         callback: PyObject,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
+        let mut instrument_map: HashMap<InstrumentId, Arc<InstrumentMiniInfo>> = HashMap::new();
+        for i in instruments {
+            instrument_map.insert(i.instrument_id, Arc::new(i));
+        }
+
         let base_url = self.base_url.clone();
         let replay_signal = self.replay_signal.clone();
 
@@ -91,8 +96,7 @@ impl TardisMachineClient {
 
             // We use Box::pin to heap-allocate the stream and ensure it implements
             // Unpin for safe async handling across lifetimes.
-            handle_python_stream(Box::pin(stream), callback, Some(Arc::new(instrument)), None)
-                .await;
+            handle_python_stream(Box::pin(stream), callback, None, Some(instrument_map)).await;
             Ok(())
         })
     }
