@@ -21,7 +21,6 @@ from nautilus_trader.adapters.tardis.constants import TARDIS
 from nautilus_trader.adapters.tardis.constants import TARDIS_CLIENT_ID
 from nautilus_trader.adapters.tardis.factories import TardisLiveDataClientFactory
 from nautilus_trader.cache.config import CacheConfig
-from nautilus_trader.common.config import DatabaseConfig
 from nautilus_trader.common.enums import LogColor
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveExecEngineConfig
@@ -65,7 +64,7 @@ config_node = TradingNodeConfig(
         # snapshot_positions_interval_secs=5.0,
     ),
     cache=CacheConfig(
-        database=DatabaseConfig(),
+        # database=DatabaseConfig(),
         encoding="msgpack",
         timestamps_as_iso8601=True,
         buffer_interval_ms=100,
@@ -139,15 +138,15 @@ class DataSubscriber(Strategy):
         """
         for instrument_id in self.instrument_ids:
             # from nautilus_trader.model.enums import BookType
-
+            #
             # self.subscribe_order_book_at_interval(
             #     instrument_id=instrument_id,
             #     book_type=BookType.L2_MBP,
-            #     depth=10,
+            #     depth=10,  # Optimal for Tardis snapshots
             #     interval_ms=1000,
             # )
 
-            self.subscribe_order_book_deltas(instrument_id=instrument_id, client_id=self.client_id)
+            # self.subscribe_order_book_deltas(instrument_id=instrument_id, client_id=self.client_id)
             self.subscribe_quote_ticks(instrument_id, client_id=self.client_id)
             self.subscribe_trade_ticks(instrument_id, client_id=self.client_id)
 
@@ -175,9 +174,12 @@ class DataSubscriber(Strategy):
         Actions to be performed when the strategy is stopped.
         """
         for instrument_id in self.instrument_ids:
-            self.subscribe_order_book_deltas(instrument_id=instrument_id, client_id=self.client_id)
-            self.subscribe_quote_ticks(instrument_id, client_id=self.client_id)
-            self.subscribe_trade_ticks(instrument_id, client_id=self.client_id)
+            self.unsubscribe_order_book_deltas(
+                instrument_id=instrument_id,
+                client_id=self.client_id,
+            )
+            self.unsubscribe_quote_ticks(instrument_id, client_id=self.client_id)
+            self.unsubscribe_trade_ticks(instrument_id, client_id=self.client_id)
 
     def on_historical_data(self, data: Any) -> None:
         self.log.info(repr(data), LogColor.CYAN)
