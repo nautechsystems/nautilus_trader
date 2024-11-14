@@ -21,7 +21,7 @@ use crate::tardis::{machine::InstrumentMiniInfo, parse::bar_spec_to_tardis_trade
 #[pymethods]
 impl InstrumentMiniInfo {
     #[new]
-    fn py_new(
+    const fn py_new(
         instrument_id: InstrumentId,
         price_precision: u8,
         size_precision: u8,
