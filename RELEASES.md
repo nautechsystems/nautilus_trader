@@ -50,6 +50,7 @@ None
 - Fixed `BybitResponse.time` field as optional `int` (#2051), thanks @sunlei
 - Fixed single instrument requests for `DatabentoDataClient` (was incorrectly calling `_handle_instruments` instead of `_handle_instrument`), thanks for reporting @Emsu
 - Fixed `fsspec` recursive globbing behavior to ensure only file paths are included, and bumped dependency to version 2024.10.0
+- Fixed jupyterlab url typo (#2057), thanks @Alsheh
 
 ---
 
