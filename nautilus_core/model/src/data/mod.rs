@@ -23,9 +23,10 @@ pub mod greeks;
 pub mod order;
 pub mod quote;
 pub mod status;
+pub mod trade;
+
 #[cfg(feature = "stubs")]
 pub mod stubs;
-pub mod trade;
 
 use std::{
     fmt::{Debug, Display},

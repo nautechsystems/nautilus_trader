@@ -19,6 +19,7 @@
 
 pub mod any;
 pub mod base;
+pub mod builder;
 pub mod default;
 pub mod limit;
 pub mod limit_if_touched;
@@ -30,8 +31,6 @@ pub mod stop_limit;
 pub mod stop_market;
 pub mod trailing_stop_limit;
 pub mod trailing_stop_market;
-
-pub mod builder;
 
 #[cfg(feature = "stubs")]
 pub mod stubs;

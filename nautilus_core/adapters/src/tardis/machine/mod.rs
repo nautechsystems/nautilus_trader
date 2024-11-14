@@ -13,6 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+pub mod client;
+pub mod message;
+pub mod parse;
+
 use std::{
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -35,10 +39,6 @@ use tokio_tungstenite::{
 };
 
 use super::enums::Exchange;
-
-pub mod client;
-pub mod message;
-pub mod parse;
 
 pub use crate::tardis::machine::client::TardisMachineClient;
 
