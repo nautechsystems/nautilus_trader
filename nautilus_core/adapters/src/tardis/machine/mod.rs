@@ -32,6 +32,7 @@ use message::WsMessage;
 use nautilus_model::identifiers::InstrumentId;
 use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
+use tokio::time::timeout;
 use tokio_tungstenite::{
     connect_async,
     tungstenite::{self, protocol::frame::coding::CloseCode},
@@ -212,15 +213,24 @@ async fn stream_from_websocket(
         let (writer, mut reader) = ws_stream.split();
         tokio::spawn(heartbeat(writer));
 
+        // Timeout awaiting the next record before checking signal
+        let timeout_duration = Duration::from_millis(10);
+
         tracing::info!("Streaming from websocket...");
 
         loop {
             if signal.load(Ordering::Relaxed) {
-                tracing::info!("Shutdown signal received");
+                tracing::debug!("Shutdown signal received");
                 break;
             }
 
-            match reader.next().await {
+            let result = timeout(timeout_duration, reader.next()).await;
+            let msg = match result {
+                Ok(msg) => msg,
+                Err(_) => continue, // Timeout
+            };
+
+            match msg {
                 Some(Ok(msg)) => match msg {
                     tungstenite::Message::Frame(_)
                     | tungstenite::Message::Binary(_)
@@ -273,6 +283,8 @@ async fn stream_from_websocket(
                 }
             }
         }
+
+        tracing::info!("Shutdown stream");
     })
 }
 

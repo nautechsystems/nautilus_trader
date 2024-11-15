@@ -49,18 +49,19 @@ class TardisInstrumentProvider(InstrumentProvider):
         self._encoder = msgspec.json.Encoder()
 
     async def load_all_async(self, filters: dict | None = None) -> None:
-        if filters is None or not filters.get("exchanges"):
+        if filters is None or not filters.get("venues"):
             raise ValueError(
-                "`filters` with an 'exchanges' key must be provided to load all instruments for each exchange",
+                "`filters` with a 'venues' key must be provided to load all instruments for each exchange",
             )
 
-        exchanges = filters["exchanges"]
+        venues = filters["venues"]
 
-        for exchange in exchanges:
-            pyo3_instruments = await self._client.instruments(exchange.lower())
-            instruments = instruments_from_pyo3(pyo3_instruments)
-            for instrument in instruments:
-                self.add(instrument=instrument)
+        for venue in venues:
+            for exchange in nautilus_pyo3.tardis_exchange_from_venue_str(venue):
+                pyo3_instruments = await self._client.instruments(exchange.lower())
+                instruments = instruments_from_pyo3(pyo3_instruments)
+                for instrument in instruments:
+                    self.add(instrument=instrument)
 
     async def load_ids_async(
         self,

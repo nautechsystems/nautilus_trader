@@ -19,6 +19,12 @@ import msgspec
 
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.correctness import PyCondition
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import OrderBookDelta
+from nautilus_trader.model.data import OrderBookDepth10
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.instruments import Instrument
 
 
@@ -28,6 +34,28 @@ def create_instrument_info(instrument: Instrument) -> nautilus_pyo3.InstrumentMi
         price_precision=instrument.price_precision,
         size_precision=instrument.size_precision,
     )
+
+
+def get_ws_client_key(instrument_id: InstrumentId, tardis_data_type: str) -> str:
+    return f"{instrument_id}-{tardis_data_type}"
+
+
+def convert_nautilus_data_type_to_tardis_data_type(data_type: type) -> str:
+    if data_type is OrderBookDelta:
+        return "book_change"
+    elif data_type is OrderBookDepth10:
+        return "book_snapshot"
+    elif data_type is QuoteTick:
+        return "quote"
+    elif data_type is TradeTick:
+        return "trade"
+    else:
+        raise ValueError(f"Invalid `data_type` to convert, was {data_type}")
+
+
+def convert_nautilus_bar_type_to_tardis_data_type(bar_type: BarType) -> str:
+    bar_type_pyo3 = nautilus_pyo3.BarType.from_str(str(bar_type))
+    return nautilus_pyo3.bar_spec_to_tardis_trade_bar_string(bar_type_pyo3.spec)
 
 
 def create_replay_normalized_request_options(
