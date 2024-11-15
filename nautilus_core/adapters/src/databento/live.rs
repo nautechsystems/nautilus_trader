@@ -134,7 +134,7 @@ impl DatabentoFeedHandler {
         };
 
         // Timeout awaiting the next record before checking for a command
-        let timeout_duration = Duration::from_millis(1);
+        let timeout_duration = Duration::from_millis(10);
 
         // Flag to control whether to continue to await next record
         let mut running = false;
