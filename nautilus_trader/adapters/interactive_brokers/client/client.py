@@ -163,7 +163,7 @@ class InteractiveBrokersClient(
 
         """
         if not self._loop.is_running():
-            self._log.warning("Started when loop is not running.")
+            self._log.warning("Started when loop is not running")
             self._loop.run_until_complete(self._start_async())
         else:
             self._create_task(self._start_async())
@@ -177,12 +177,12 @@ class InteractiveBrokersClient(
                     not self._indefinite_reconnect
                     and self._connection_attempts > self._max_connection_attempts
                 ):
-                    self._log.error("Max connection attempts reached. Connection failed.")
+                    self._log.error("Max connection attempts reached, connection failed")
                     self._stop()
                     break
                 if self._connection_attempts > 1:
                     self._log.info(
-                        f"Attempt {self._connection_attempts}: Attempting to reconnect in {self._reconnect_delay} seconds...",
+                        f"Attempt {self._connection_attempts}: attempting to reconnect in {self._reconnect_delay} seconds...",
                     )
                     await asyncio.sleep(self._reconnect_delay)
                 await self._connect()

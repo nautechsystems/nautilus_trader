@@ -586,19 +586,19 @@ class DYDXDataClient(LiveMarketDataClient):
 
         if bar_type.is_internally_aggregated():
             self._log.error(
-                f"Cannot request {bar_type}: only historical bars with EXTERNAL aggregation available from dYdX",
+                f"Cannot request {bar_type} bars: only historical bars with EXTERNAL aggregation available from dYdX",
             )
             return
 
         if not bar_type.spec.is_time_aggregated():
             self._log.error(
-                f"Cannot request {bar_type}: only time bars are aggregated by dYdX",
+                f"Cannot request {bar_type} bars: only time bars are aggregated by dYdX",
             )
             return
 
         if bar_type.spec.price_type != PriceType.LAST:
             self._log.error(
-                f"Cannot request {bar_type}: only historical bars for LAST price type available from dYdX",
+                f"Cannot request {bar_type} bars: only historical bars for LAST price type available from dYdX",
             )
             return
 

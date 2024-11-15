@@ -168,7 +168,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         if not (instrument := self._cache.instrument(instrument_id)):
             self._log.error(
-                f"Cannot subscribe to QuoteTicks for {instrument_id}, Instrument not found.",
+                f"Cannot subscribe to quote ticks for {instrument_id}: instrument not found",
             )
             return
 
@@ -182,13 +182,13 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         if not (instrument := self._cache.instrument(instrument_id)):
             self._log.error(
-                f"Cannot subscribe to TradeTicks for {instrument_id}, Instrument not found.",
+                f"Cannot subscribe to trade ticks for {instrument_id}: instrument not found",
             )
             return
 
         if isinstance(instrument, CurrencyPair):
             self._log.error(
-                "InteractiveBrokers doesn't support Trade Ticks for CurrencyPair.",
+                "Interactive Brokers does not support trade ticks for CurrencyPair instruments",
             )
             return
 
@@ -201,7 +201,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
 
     async def _subscribe_bars(self, bar_type: BarType) -> None:
         if not (instrument := self._cache.instrument(bar_type.instrument_id)):
-            self._log.error(f"Cannot subscribe to {bar_type}, Instrument not found.")
+            self._log.error(f"Cannot subscribe to {bar_type} bars: instrument not found")
             return
 
         if bar_type.spec.timedelta.total_seconds() == 5:
@@ -281,19 +281,19 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     ) -> None:
         if start is not None:
             self._log.warning(
-                f"Requesting instrument {instrument_id} with specified `start` which has no effect.",
+                f"Requesting instrument {instrument_id} with specified `start` which has no effect",
             )
 
         if end is not None:
             self._log.warning(
-                f"Requesting instrument {instrument_id} with specified `end` which has no effect.",
+                f"Requesting instrument {instrument_id} with specified `end` which has no effect",
             )
 
         await self.instrument_provider.load_async(instrument_id)
         if instrument := self.instrument_provider.find(instrument_id):
             self._handle_data(instrument)
         else:
-            self._log.warning(f"{instrument_id} not available.")
+            self._log.warning(f"Instrument for {instrument_id} not available")
             return
         self._handle_instrument(instrument, correlation_id)
 
@@ -318,7 +318,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     ) -> None:
         if not (instrument := self._cache.instrument(instrument_id)):
             self._log.error(
-                f"Cannot request QuoteTicks for {instrument_id}, Instrument not found.",
+                f"Cannot request quote ticks for {instrument_id}, instrument not found",
             )
             return
 
@@ -330,7 +330,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             end,
         )
         if not ticks:
-            self._log.warning(f"QuoteTicks not received for {instrument_id}")
+            self._log.warning(f"No quote tick data received for {instrument_id}")
             return
 
         self._handle_quote_ticks(instrument_id, ticks, correlation_id)
@@ -345,13 +345,13 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     ) -> None:
         if not (instrument := self._cache.instrument(instrument_id)):
             self._log.error(
-                f"Cannot request TradeTicks for {instrument_id}, Instrument not found.",
+                f"Cannot request trade ticks for {instrument_id}: instrument not found",
             )
             return
 
         if isinstance(instrument, CurrencyPair):
             self._log.error(
-                "InteractiveBrokers doesn't support Trade Ticks for CurrencyPair.",
+                "Interactive Brokers does not support trade ticks for CurrencyPair instruments",
             )
             return
 
@@ -363,7 +363,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             end,
         )
         if not ticks:
-            self._log.warning(f"TradeTicks not received for {instrument_id}")
+            self._log.warning(f"No trade ticks received for {instrument_id}")
             return
 
         self._handle_trade_ticks(instrument_id, ticks, correlation_id)
@@ -409,14 +409,12 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
         end: pd.Timestamp | None = None,
     ) -> None:
         if not (instrument := self._cache.instrument(bar_type.instrument_id)):
-            self._log.error(
-                f"Cannot request {bar_type}, Instrument not found.",
-            )
+            self._log.error(f"Cannot request {bar_type} bars: instrument not found")
             return
 
         if not bar_type.spec.is_time_aggregated():
             self._log.error(
-                f"Cannot request {bar_type}: only time bars are aggregated by InteractiveBrokers.",
+                f"Cannot request {bar_type} bars: only time bars are aggregated by Interactive Brokers",
             )
             return
 
@@ -453,7 +451,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             self._handle_bars(bar_type, bars, bars[0], correlation_id)
             status_msg = {"id": correlation_id, "status": "Success"}
         else:
-            self._log.warning(f"Bar Data not received for {bar_type}")
+            self._log.warning(f"No bar data received for {bar_type}")
             status_msg = {"id": correlation_id, "status": "Failed"}
 
         # Publish Status event

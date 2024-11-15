@@ -592,8 +592,8 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             if start is not None or end is not None:
                 self._log.warning(
                     "Trade ticks have been requested with a from/to time range, "
-                    f"however the request will be for the most recent {limit}. "
-                    "Consider using aggregated trade ticks (`use_agg_trade_ticks`)",
+                    f"however the request will be for the most recent {limit}: "
+                    "consider using aggregated trade ticks (`use_agg_trade_ticks`)",
                 )
             ticks = await self._http_market.request_trade_ticks(
                 instrument_id=instrument_id,
@@ -628,7 +628,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     ) -> None:
         if bar_type.spec.price_type != PriceType.LAST:
             self._log.error(
-                f"Cannot request {bar_type}: "
+                f"Cannot request {bar_type} bars: "
                 f"only historical bars for LAST price type available from Binance",
             )
             return
@@ -644,14 +644,14 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         if bar_type.is_externally_aggregated() or bar_type.spec.is_time_aggregated():
             if not bar_type.spec.is_time_aggregated():
                 self._log.error(
-                    f"Cannot request {bar_type}: only time bars are aggregated by Binance",
+                    f"Cannot request {bar_type} bars: only time bars are aggregated by Binance",
                 )
                 return
 
             resolution = self._enum_parser.parse_nautilus_bar_aggregation(bar_type.spec.aggregation)
             if not self._binance_account_type.is_spot_or_margin and resolution == "s":
                 self._log.error(
-                    f"Cannot request {bar_type}: "
+                    f"Cannot request {bar_type} bars: "
                     "second interval bars are not aggregated by Binance Futures",
                 )
             try:

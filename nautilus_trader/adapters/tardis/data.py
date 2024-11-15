@@ -40,7 +40,6 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
-from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
@@ -384,7 +383,9 @@ class TardisDataClient(LiveMarketDataClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> None:
-        pass  # TODO: Use Tardis Machine replay
+        self._log.error(
+            f"Cannot request historical quote ticks for {instrument_id}: not supported in this version",
+        )
 
     async def _request_trade_ticks(
         self,
@@ -394,7 +395,9 @@ class TardisDataClient(LiveMarketDataClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> None:
-        pass  # TODO: Use Tardis Machine replay
+        self._log.error(
+            f"Cannot request historical trade ticks for {instrument_id}: not supported in this version",
+        )
 
     async def _request_bars(
         self,
@@ -404,21 +407,9 @@ class TardisDataClient(LiveMarketDataClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> None:
-        if bar_type.is_internally_aggregated():
-            self._log.error(
-                f"Cannot request {bar_type}: "
-                f"only historical bars with EXTERNAL aggregation available from Tardis",
-            )
-            return
-
-        if bar_type.spec.price_type != PriceType.LAST:
-            self._log.error(
-                f"Cannot request {bar_type}: "
-                f"only historical bars for LAST price type available from Tardis",
-            )
-            return
-
-        # TODO: Use Tardis Machine replay
+        self._log.error(
+            f"Cannot request historical bars for {bar_type}: not supported in this version",
+        )
 
     def _handle_msg(
         self,

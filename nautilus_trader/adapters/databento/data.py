@@ -710,7 +710,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         else:
             raise NotImplementedError(
-                f"Cannot request {data_type.type} (not implemented).",
+                f"Cannot request {data_type.type} (not implemented)",
             )
 
     async def _request_instrument_status(self, data_type: DataType, correlation_id: UUID4) -> None:
