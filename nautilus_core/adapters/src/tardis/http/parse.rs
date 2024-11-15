@@ -19,6 +19,7 @@ use nautilus_core::{nanos::UnixNanos, parsing::precision_from_str};
 use nautilus_model::{
     currencies::CURRENCY_MAP,
     enums::{AssetClass, CurrencyType},
+    identifiers::Symbol,
     instruments::{
         any::InstrumentAny, crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual,
         currency_pair::CurrencyPair, options_contract::OptionsContract,
@@ -60,12 +61,13 @@ fn parse_spot_instrument(
         parse_instrument_id(&info.exchange, &info.id)
     };
 
+    let raw_symbol = Symbol::new(&info.id);
     let price_increment = get_price_increment(info.price_increment);
     let size_increment = get_size_increment(info.amount_increment);
 
     let instrument = CurrencyPair::new(
         instrument_id,
-        instrument_id.symbol,
+        raw_symbol,
         get_currency(info.base_currency.to_uppercase().as_str()),
         get_currency(info.quote_currency.to_uppercase().as_str()),
         price_increment.precision,
@@ -101,12 +103,13 @@ fn parse_perp_instrument(
         parse_instrument_id(&info.exchange, &info.id)
     };
 
+    let raw_symbol = Symbol::new(&info.id);
     let price_increment = get_price_increment(info.price_increment);
     let size_increment = get_size_increment(info.amount_increment);
 
     let instrument = CryptoPerpetual::new(
         instrument_id,
-        instrument_id.symbol,
+        raw_symbol,
         get_currency(info.base_currency.to_uppercase().as_str()),
         get_currency(info.quote_currency.to_uppercase().as_str()),
         get_currency(
@@ -150,12 +153,13 @@ fn parse_future_instrument(
         parse_instrument_id(&info.exchange, &info.id)
     };
 
+    let raw_symbol = Symbol::new(&info.id);
     let price_increment = get_price_increment(info.price_increment);
     let size_increment = get_size_increment(info.amount_increment);
 
     let instrument = CryptoFuture::new(
         instrument_id,
-        instrument_id.symbol,
+        raw_symbol,
         get_currency(info.base_currency.to_uppercase().as_str()),
         get_currency(info.quote_currency.to_uppercase().as_str()),
         get_currency(info.base_currency.to_uppercase().as_str()),
@@ -196,11 +200,12 @@ fn parse_option_instrument(
         parse_instrument_id(&info.exchange, &info.id)
     };
 
+    let raw_symbol = Symbol::new(&info.id);
     let price_increment = get_price_increment(info.price_increment);
 
     let instrument = OptionsContract::new(
         instrument_id,
-        instrument_id.symbol,
+        raw_symbol,
         AssetClass::Cryptocurrency,
         Some(Ustr::from(instrument_id.venue.as_str())),
         Ustr::from(info.base_currency.to_string().to_uppercase().as_str()),

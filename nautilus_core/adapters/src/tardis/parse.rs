@@ -41,7 +41,8 @@ pub fn normalize_symbol_str(
     let mut symbol = symbol.to_string();
 
     match exchange {
-        Exchange::BinanceFutures
+        Exchange::Binance
+        | Exchange::BinanceFutures
         | Exchange::BinanceUs
         | Exchange::BinanceDex
         | Exchange::BinanceJersey
@@ -50,7 +51,7 @@ pub fn normalize_symbol_str(
             symbol.push_str("-PERP");
         }
 
-        Exchange::Bybit => match instrument_type {
+        Exchange::Bybit | Exchange::BybitSpot | Exchange::BybitOptions => match instrument_type {
             InstrumentType::Spot => {
                 symbol.push_str("-SPOT");
             }

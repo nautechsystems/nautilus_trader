@@ -214,22 +214,36 @@ class TardisDataClient(LiveMarketDataClient):
             return
 
         instrument_info = create_instrument_info(instrument)
-        stream_request = create_stream_normalized_request_options(
-            exchange=nautilus_pyo3.tardis_exchange_from_venue_str(instrument_id.venue.value)[0],
-            symbols=[instrument_id.symbol.value],
-            data_types=[tardis_data_type],
-            timeout_interval_ms=5_000,
-        )
+        exchanges = nautilus_pyo3.tardis_exchange_from_venue_str(instrument_id.venue.value)
+        # TODO: Refine which exchanges streams are subscribed for
+
+        stream_requests: list[nautilus_pyo3.StreamNormalizedRequestOptions] = []
+        for exchange in exchanges:
+            raw_symbol_str = instrument.raw_symbol.value
+            self._log.debug(
+                f"Subscribing stream {exchange=}, symbol={raw_symbol_str}",
+                LogColor.MAGENTA,
+            )
+            stream_request = create_stream_normalized_request_options(
+                exchange=exchange,
+                symbols=[raw_symbol_str],
+                data_types=[tardis_data_type],
+                timeout_interval_ms=5_000,
+            )
+            stream_requests.append(stream_request)
+
+            if self._main_ws_delay:
+                self._ws_pending_infos.append(instrument_info)
+                self._ws_pending_streams.append(stream_request)
+
         if self._main_ws_delay:
-            self._ws_pending_infos.append(instrument_info)
-            self._ws_pending_streams.append(stream_request)
             return
 
         ws_client = self._create_websocket_client()
         future = asyncio.ensure_future(
             ws_client.stream(
                 instruments=[instrument_info],
-                options=[stream_request],
+                options=stream_requests,
                 callback=self._handle_msg,
             ),
         )

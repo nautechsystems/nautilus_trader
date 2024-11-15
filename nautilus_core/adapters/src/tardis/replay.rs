@@ -149,18 +149,23 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
     for (exchange, instruments) in &info_map {
         for inst in instruments {
             let instrument_type = inst.instrument_type.clone();
-            let instrument_id = parse_instrument_id(exchange, &inst.id);
+            let raw_instrument_id = parse_instrument_id(exchange, &inst.id);
             let price_precision = precision_from_str(&inst.price_increment.to_string());
             let size_precision = precision_from_str(&inst.amount_increment.to_string());
 
-            let normalized_id = if normalize_symbols {
+            let instrument_id = if normalize_symbols {
                 normalize_instrument_id(exchange, &inst.id, instrument_type, inst.inverse)
             } else {
-                instrument_id
+                raw_instrument_id
             };
 
-            let info = InstrumentMiniInfo::new(normalized_id, price_precision, size_precision);
-            machine_client.add_instrument_info(instrument_id, info);
+            let info = InstrumentMiniInfo::new(
+                instrument_id,
+                Some(raw_instrument_id),
+                price_precision,
+                size_precision,
+            );
+            machine_client.add_instrument_info(raw_instrument_id, info);
         }
     }
 

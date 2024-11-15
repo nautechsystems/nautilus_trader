@@ -21,12 +21,18 @@ use crate::tardis::{machine::InstrumentMiniInfo, parse::bar_spec_to_tardis_trade
 #[pymethods]
 impl InstrumentMiniInfo {
     #[new]
-    const fn py_new(
+    fn py_new(
         instrument_id: InstrumentId,
+        raw_instrument_id: InstrumentId,
         price_precision: u8,
         size_precision: u8,
     ) -> PyResult<Self> {
-        Ok(Self::new(instrument_id, price_precision, size_precision))
+        Ok(Self::new(
+            instrument_id,
+            Some(raw_instrument_id),
+            price_precision,
+            size_precision,
+        ))
     }
 }
 

@@ -52,6 +52,8 @@ pub use crate::tardis::machine::client::TardisMachineClient;
 pub struct InstrumentMiniInfo {
     /// The instrument ID with optionally Nautilus normalized symbol.
     pub instrument_id: InstrumentId,
+    /// The raw instrument ID as streamed from Tardis.
+    pub raw_instrument_id: InstrumentId,
     /// The price precision for the instrument.
     pub price_precision: u8,
     /// The size precision for the instrument.
@@ -60,10 +62,18 @@ pub struct InstrumentMiniInfo {
 
 impl InstrumentMiniInfo {
     /// Creates a new [`InstrumentMiniInfo`] instance.
+    ///
+    /// If `raw_instrument_id` is `None` then the `instrument_id` value will be assigned.
     #[must_use]
-    pub const fn new(instrument_id: InstrumentId, price_precision: u8, size_precision: u8) -> Self {
+    pub fn new(
+        instrument_id: InstrumentId,
+        raw_instrument_id: Option<InstrumentId>,
+        price_precision: u8,
+        size_precision: u8,
+    ) -> Self {
         Self {
             instrument_id,
+            raw_instrument_id: raw_instrument_id.unwrap_or(instrument_id),
             price_precision,
             size_precision,
         }
