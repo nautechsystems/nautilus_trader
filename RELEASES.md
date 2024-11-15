@@ -36,6 +36,7 @@ None
 
 ### Fixes
 - Fixed loading specific instrument IDs for `InstrumentProviderConfig`
+- Fixed PyO3 instrument conversions for `raw_symbol` (was incorrectly using the normalized symbol)
 - Fixed reconcile open orders and account websocket message for dYdX (#2039), thanks @davidsblom
 - Fixed market order `avg_px` for Polymarket trade reports
 - Fixed Betfair clients keepalive (#2040), thanks @limx0
@@ -78,7 +79,7 @@ Released on 3rd November 2024 (UTC).
 - Refined Arrow serialization (record batch functions now also available in Rust)
 - Refined core `Bar` API to remove unnecessary unwraps
 - Standardized network client logging
-- Fixed all pyo3 deprecations for API breaking changes
+- Fixed all PyO3 deprecations for API breaking changes
 - Fixed all clippy warning lints for PyO3 changes (#2030), thanks @Pushkarm029
 - PyO3 upgrade refactor and repair catalog tests (#2032), thanks @twitu
 - Upgraded `pyo3` crate to v0.22.5
@@ -86,7 +87,7 @@ Released on 3rd November 2024 (UTC).
 - Upgraded `tokio` crate to v1.41.0
 
 ### Breaking Changes
-- Removed pyo3 `DataTransformer` (was being used for namespacing, so refactored to separate functions)
+- Removed PyO3 `DataTransformer` (was being used for namespacing, so refactored to separate functions)
 - Moved `TEST_DATA_DIR` constant from `tests` to `nautilus_trader` package (#2020), thanks @faysou
 
 ### Fixes

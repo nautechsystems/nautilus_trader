@@ -228,7 +228,7 @@ cdef class CryptoFuture(Instrument):
     cdef CryptoFuture from_pyo3_c(pyo3_instrument):
         return CryptoFuture(
             instrument_id=InstrumentId.from_str_c(pyo3_instrument.id.value),
-            raw_symbol=Symbol(pyo3_instrument.id.symbol.value),
+            raw_symbol=Symbol(pyo3_instrument.raw_symbol.value),
             underlying=Currency.from_str_c(pyo3_instrument.underlying.code),
             quote_currency=Currency.from_str_c(pyo3_instrument.quote_currency.code),
             settlement_currency=Currency.from_str_c(pyo3_instrument.settlement_currency.code),
