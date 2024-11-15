@@ -4109,6 +4109,7 @@ class InstrumentMiniInfo:
     def __init__(
         self,
         instrument_id: InstrumentId,
+        raw_instrument_id: InstrumentId,
         price_precision: int,
         size_precision:int,
     ) -> None: ...

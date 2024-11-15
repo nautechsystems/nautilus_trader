@@ -29,8 +29,10 @@ from nautilus_trader.model.instruments import Instrument
 
 
 def create_instrument_info(instrument: Instrument) -> nautilus_pyo3.InstrumentMiniInfo:
+    raw_instrument_id_str = f"{instrument.raw_symbol.value}.{instrument.venue.value}"
     return nautilus_pyo3.InstrumentMiniInfo(
         instrument_id=nautilus_pyo3.InstrumentId.from_str(instrument.id.value),
+        raw_instrument_id=nautilus_pyo3.InstrumentId.from_str(f"{raw_instrument_id_str}"),
         price_precision=instrument.price_precision,
         size_precision=instrument.size_precision,
     )

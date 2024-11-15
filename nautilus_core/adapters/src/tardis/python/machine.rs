@@ -82,8 +82,8 @@ impl TardisMachineClient {
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let mut instrument_map: HashMap<InstrumentId, Arc<InstrumentMiniInfo>> = HashMap::new();
-        for i in instruments {
-            instrument_map.insert(i.instrument_id, Arc::new(i));
+        for inst in instruments {
+            instrument_map.insert(inst.raw_instrument_id, Arc::new(inst));
         }
 
         let base_url = self.base_url.clone();

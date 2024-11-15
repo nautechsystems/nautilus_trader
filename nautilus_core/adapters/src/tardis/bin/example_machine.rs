@@ -33,8 +33,8 @@ async fn main() {
 
     let instrument_id1 = InstrumentId::from("XBTUSD.BITMEX");
     let instrument_id2 = InstrumentId::from("ETHUSD.BITMEX");
-    let info1 = InstrumentMiniInfo::new(instrument_id1, 1, 0);
-    let info2 = InstrumentMiniInfo::new(instrument_id2, 1, 0);
+    let info1 = InstrumentMiniInfo::new(instrument_id1, None, 1, 0);
+    let info2 = InstrumentMiniInfo::new(instrument_id2, None, 1, 0);
     client.add_instrument_info(instrument_id1, info1.clone());
     client.add_instrument_info(instrument_id2, info2.clone());
 
