@@ -184,14 +184,14 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         # Validate if connected to expected TWS/Gateway using Account
         if self.account_id.get_id() in self._client.accounts():
             self._log.info(
-                f"Account `{self.account_id.get_id()}` found in the connected TWS/Gateway.",
+                f"Account `{self.account_id.get_id()}` found in the connected TWS/Gateway",
                 LogColor.GREEN,
             )
         else:
             self.fault()
             raise ValueError(
-                f"Account `{self.account_id.get_id()}` not found in the connected TWS/Gateway. "
-                f"Available accounts are {self._client.accounts()}",
+                f"Account `{self.account_id.get_id()}` not found in the connected TWS/Gateway: "
+                f"available accounts are {self._client.accounts()}",
             )
 
         # Event hooks
@@ -246,7 +246,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         PyCondition.type_or_none(client_order_id, ClientOrderId, "client_order_id")
         PyCondition.type_or_none(venue_order_id, VenueOrderId, "venue_order_id")
         if not (client_order_id or venue_order_id):
-            self._log.debug("Both `client_order_id` and `venue_order_id` cannot be None.")
+            self._log.debug("Both `client_order_id` and `venue_order_id` cannot be None")
             return None
 
         report = None
@@ -263,7 +263,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 break
         if report is None:
             self._log.warning(
-                f"Order {client_order_id=}, {venue_order_id} not found, canceling...",
+                f"Order {client_order_id=}, {venue_order_id} not found, canceling",
             )
             self._on_order_status(
                 order_ref=client_order_id.value,
@@ -450,7 +450,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         list[FillReport]
 
         """
-        self._log.warning("Cannot generate `list[FillReport]`: not yet implemented.")
+        self._log.warning("Cannot generate `list[FillReport]`: not yet implemented")
 
         return []  # TODO: Implement
 
@@ -779,11 +779,11 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                     ts_event=self._clock.timestamp_ns(),
                 )
             else:
-                self._log.debug(f"Order {order.client_order_id} already accepted.")
+                self._log.debug(f"Order {order.client_order_id} already accepted")
         elif status == OrderStatus.FILLED:
             if order.status != OrderStatus.FILLED:
                 # TODO: self.generate_order_filled
-                self._log.debug(f"Order {order.client_order_id} is filled.")
+                self._log.debug(f"Order {order.client_order_id} is filled")
         elif status == OrderStatus.PENDING_CANCEL:
             # TODO: self.generate_order_pending_cancel
             self._log.warning(f"Order {order.client_order_id} is {status.name}")
@@ -808,7 +808,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
         else:
             self._log.warning(
                 f"Order {order.client_order_id} with status={status.name} is unknown or "
-                "not yet implemented.",
+                "not yet implemented",
             )
 
     async def handle_order_status_report(self, ib_order: IBOrder) -> None:

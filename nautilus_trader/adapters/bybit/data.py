@@ -503,20 +503,20 @@ class BybitDataClient(LiveMarketDataClient):
 
         if bar_type.is_internally_aggregated():
             self._log.error(
-                f"Cannot request {bar_type}: "
+                f"Cannot request {bar_type} bars: "
                 f"only historical bars with EXTERNAL aggregation available from Bybit",
             )
             return
 
         if not bar_type.spec.is_time_aggregated():
             self._log.error(
-                f"Cannot request {bar_type}: only time bars are aggregated by Bybit",
+                f"Cannot request {bar_type} bars: only time bars are aggregated by Bybit",
             )
             return
 
         if bar_type.spec.price_type != PriceType.LAST:
             self._log.error(
-                f"Cannot request {bar_type}: "
+                f"Cannot request {bar_type} bars: "
                 f"only historical bars for LAST price type available from Bybit",
             )
             return
