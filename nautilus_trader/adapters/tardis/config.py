@@ -47,4 +47,4 @@ class TardisDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_http: str | None = None
     base_url_ws: str | None = None
     update_instruments_interval_mins: PositiveInt | None = 60
-    ws_connection_delay_secs: PositiveInt = 0
+    ws_connection_delay_secs: PositiveInt = 5
