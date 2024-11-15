@@ -284,7 +284,7 @@ cdef class Cfd(Instrument):
     cdef Cfd from_pyo3_c(pyo3_instrument):
         return Cfd(
             instrument_id=InstrumentId.from_str_c(pyo3_instrument.id.value),
-            raw_symbol=Symbol(pyo3_instrument.id.symbol.value),
+            raw_symbol=Symbol(pyo3_instrument.raw_symbol.value),
             asset_class=asset_class_from_str(str(pyo3_instrument.asset_class)),
             quote_currency=Currency.from_str_c(pyo3_instrument.quote_currency.code),
             price_precision=pyo3_instrument.price_precision,

@@ -290,7 +290,7 @@ cdef class CurrencyPair(Instrument):
     cdef CurrencyPair from_pyo3_c(pyo3_instrument):
         return CurrencyPair(
             instrument_id=InstrumentId.from_str_c(pyo3_instrument.id.value),
-            raw_symbol=Symbol(pyo3_instrument.id.symbol.value),
+            raw_symbol=Symbol(pyo3_instrument.raw_symbol.value),
             base_currency=Currency.from_str_c(pyo3_instrument.base_currency.code),
             quote_currency=Currency.from_str_c(pyo3_instrument.quote_currency.code),
             price_precision=pyo3_instrument.price_precision,
