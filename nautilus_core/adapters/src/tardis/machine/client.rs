@@ -40,7 +40,7 @@ use crate::tardis::{machine::parse::parse_tardis_ws_message, parse::parse_instru
 pub struct TardisMachineClient {
     pub base_url: String,
     pub replay_signal: Arc<AtomicBool>,
-    pub stream_signals: HashMap<InstrumentMiniInfo, Arc<AtomicBool>>,
+    pub stream_signal: Arc<AtomicBool>,
     pub instruments: HashMap<InstrumentId, Arc<InstrumentMiniInfo>>,
     pub normalize_symbols: bool,
 }
@@ -60,7 +60,7 @@ impl TardisMachineClient {
         Ok(Self {
             base_url,
             replay_signal: Arc::new(AtomicBool::new(false)),
-            stream_signals: HashMap::new(),
+            stream_signal: Arc::new(AtomicBool::new(false)),
             instruments: HashMap::new(),
             normalize_symbols,
         })
@@ -72,21 +72,14 @@ impl TardisMachineClient {
 
     #[must_use]
     pub fn is_closed(&self) -> bool {
-        self.replay_signal.load(Ordering::Relaxed)
-            && self
-                .stream_signals
-                .values()
-                .all(|signal| signal.load(Ordering::Relaxed))
+        self.replay_signal.load(Ordering::Relaxed) && self.stream_signal.load(Ordering::Relaxed)
     }
 
     pub fn close(&mut self) {
         tracing::debug!("Closing");
 
         self.replay_signal.store(true, Ordering::Relaxed);
-
-        for signal in self.stream_signals.values() {
-            signal.store(true, Ordering::Relaxed);
-        }
+        self.stream_signal.store(true, Ordering::Relaxed);
 
         tracing::debug!("Closed");
     }
@@ -109,7 +102,7 @@ impl TardisMachineClient {
         instrument: InstrumentMiniInfo,
         options: Vec<StreamNormalizedRequestOptions>,
     ) -> impl Stream<Item = Data> {
-        let stream = stream_normalized(&self.base_url, options, self.replay_signal.clone())
+        let stream = stream_normalized(&self.base_url, options, self.stream_signal.clone())
             .await
             .expect("Failed to connect to WebSocket");
 

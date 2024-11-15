@@ -46,10 +46,15 @@ from nautilus_trader.trading.strategy import Strategy
 instrument_ids = [
     InstrumentId.from_str("XBTUSDT.BITMEX"),
     InstrumentId.from_str("ETHUSDT.BITMEX"),
+    # InstrumentId.from_str("BTCUSDT.BINANCE"),
+    # InstrumentId.from_str("ETHUSDT.BYBIT"),
 ]
 
-exchanges = ["bitmex", "binance", "bybit"]
-filters = {"exchanges": frozenset(exchanges)}
+# See supported venues https://nautilustrader.io/docs/nightly/integrations/tardis#venues
+venues = ["BITMEX"]
+# venues = ["BINANCE"]
+# venues = ["BITMEX", "BINANCE", "BYBIT"]
+filters = {"venues": frozenset(venues)}
 instrument_provider_config = InstrumentProviderConfig(load_all=True, filters=filters)
 
 # Configure the trading node
@@ -86,7 +91,7 @@ config_node = TradingNodeConfig(
             instrument_provider=instrument_provider_config,
         ),
     },
-    timeout_connection=60.0,
+    timeout_connection=20.0,
     timeout_reconciliation=10.0,  # Not applicable
     timeout_portfolio=10.0,
     timeout_disconnection=10.0,
@@ -138,7 +143,6 @@ class DataSubscriber(Strategy):
         """
         for instrument_id in self.instrument_ids:
             # from nautilus_trader.model.enums import BookType
-            #
             # self.subscribe_order_book_at_interval(
             #     instrument_id=instrument_id,
             #     book_type=BookType.L2_MBP,
@@ -150,7 +154,7 @@ class DataSubscriber(Strategy):
             self.subscribe_quote_ticks(instrument_id, client_id=self.client_id)
             self.subscribe_trade_ticks(instrument_id, client_id=self.client_id)
 
-            # bar_type = BarType.from_str(f"{instrument_id}-1-SECOND-LAST-EXTERNAL")
+            # bar_type = BarType.from_str(f"{instrument_id}-10-TICK-LAST-EXTERNAL")
             # self.subscribe_bars(bar_type, client_id=self.client_id)
 
             # self.subscribe_instrument_status(instrument_id)
