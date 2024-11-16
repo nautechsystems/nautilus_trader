@@ -15,6 +15,7 @@
 
 use std::str::FromStr;
 
+use chrono::{DateTime, Utc};
 use nautilus_core::{nanos::UnixNanos, parsing::precision_from_str};
 use nautilus_model::{
     currencies::CURRENCY_MAP,
@@ -156,6 +157,8 @@ fn parse_future_instrument(
     let raw_symbol = Symbol::new(&info.id);
     let price_increment = get_price_increment(info.price_increment);
     let size_increment = get_size_increment(info.amount_increment);
+    let activation = parse_datetime_to_unix_nanos(Some(&info.available_since), "available_since");
+    let expiration = parse_datetime_to_unix_nanos(info.expiry.as_deref(), "expiry");
 
     let instrument = CryptoFuture::new(
         instrument_id,
@@ -164,8 +167,8 @@ fn parse_future_instrument(
         get_currency(info.quote_currency.to_uppercase().as_str()),
         get_currency(info.base_currency.to_uppercase().as_str()),
         info.inverse.expect("Future should have `inverse` field"),
-        UnixNanos::default(), // TODO: Parse activation
-        UnixNanos::default(), // TODO: Parse expiration
+        activation,
+        expiration,
         price_increment.precision,
         size_increment.precision,
         price_increment,
@@ -203,6 +206,9 @@ fn parse_option_instrument(
     let raw_symbol = Symbol::new(&info.id);
     let price_increment = get_price_increment(info.price_increment);
 
+    let activation = parse_datetime_to_unix_nanos(Some(&info.available_since), "available_since");
+    let expiration = parse_datetime_to_unix_nanos(info.expiry.as_deref(), "expiry");
+
     let instrument = OptionsContract::new(
         instrument_id,
         raw_symbol,
@@ -219,8 +225,8 @@ fn parse_option_instrument(
             price_increment.precision,
         ),
         get_currency(info.quote_currency.to_uppercase().as_str()),
-        UnixNanos::default(), // TODO: Parse activation
-        UnixNanos::default(), // TODO: Parse expiration
+        activation,
+        expiration,
         price_increment.precision,
         price_increment,
         Quantity::from(1),
@@ -238,7 +244,7 @@ fn parse_option_instrument(
     InstrumentAny::OptionsContract(instrument)
 }
 
-// TODO: Temporary function to handle price increments beyond max precision
+/// Returns the price increment from the given `value` limiting to a maximum precision of 9.
 fn get_price_increment(value: f64) -> Price {
     let value_str = value.to_string();
     let precision = precision_from_str(&value_str);
@@ -248,7 +254,7 @@ fn get_price_increment(value: f64) -> Price {
     }
 }
 
-// TODO: Temporary function to handle size increments beyond max precision
+/// Returns the size increment from the given `value` limiting to a maximum precision of 9.
 fn get_size_increment(value: f64) -> Quantity {
     let value_str = value.to_string();
     let precision = precision_from_str(&value_str);
@@ -258,7 +264,7 @@ fn get_size_increment(value: f64) -> Quantity {
     }
 }
 
-// TODO: Temporary function to handle "unknown" crypto currencies
+/// Returns the currency either from the internal currency map or creates a default crypto.
 fn get_currency(code: &str) -> Currency {
     CURRENCY_MAP
         .lock()
@@ -266,6 +272,22 @@ fn get_currency(code: &str) -> Currency {
         .get(code)
         .copied()
         .unwrap_or(Currency::new(code, 8, 0, code, CurrencyType::Crypto))
+}
+
+/// Parses the given RFC 3339 datetime string (UTC) into a `UnixNanos` timestamp.
+/// If `value` is `None`, then defaults to the UNIX epoch (0 nanoseconds).
+fn parse_datetime_to_unix_nanos(value: Option<&str>, field: &str) -> UnixNanos {
+    value
+        .map(|dt| {
+            UnixNanos::from(
+                DateTime::parse_from_rfc3339(dt)
+                    .unwrap_or_else(|_| panic!("Failed to parse `{field}`"))
+                    .with_timezone(&Utc)
+                    .timestamp_nanos_opt()
+                    .unwrap_or(0) as u64,
+            )
+        })
+        .unwrap_or_default()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -287,7 +309,19 @@ mod tests {
         let instrument = parse_instrument_any(info, UnixNanos::default(), false);
 
         assert_eq!(instrument.id(), InstrumentId::from("XBTUSD.BITMEX"));
-        // TODO: Assert remaining fields on InstrumentAny
+        assert_eq!(instrument.raw_symbol(), Symbol::from("XBTUSD"));
+        assert_eq!(instrument.underlying(), None);
+        assert_eq!(instrument.base_currency(), Some(Currency::BTC()));
+        assert_eq!(instrument.quote_currency(), Currency::USD());
+        assert_eq!(instrument.settlement_currency(), Currency::USD());
+        assert_eq!(instrument.is_inverse(), true);
+        assert_eq!(instrument.price_precision(), 1);
+        assert_eq!(instrument.size_precision(), 0);
+        assert_eq!(instrument.price_increment(), Price::from("0.5"));
+        assert_eq!(instrument.size_increment(), Quantity::from(1));
+        assert_eq!(instrument.multiplier(), Quantity::from(1));
+        assert_eq!(instrument.activation_ns(), None);
+        assert_eq!(instrument.expiration_ns(), None);
     }
 
     // TODO: test_parse_instrument_currency_pair
