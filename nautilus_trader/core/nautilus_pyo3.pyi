@@ -4109,10 +4109,21 @@ class InstrumentMiniInfo:
     def __init__(
         self,
         instrument_id: InstrumentId,
-        raw_instrument_id: InstrumentId,
+        raw_symbol: str,
+        exchange: str,
         price_precision: int,
         size_precision:int,
     ) -> None: ...
+    @property
+    def instrument_id(self) -> InstrumentId: ...
+    @property
+    def raw_symbol(self) -> str: ...
+    @property
+    def exchange(self) -> str: ...
+    @property
+    def price_precision(self) -> int: ...
+    @property
+    def size_precision(self) -> int: ...
 
 class TardisHttpClient:
     def __init__(

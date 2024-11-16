@@ -16,6 +16,7 @@
 pub mod client;
 pub mod message;
 pub mod parse;
+pub mod types;
 
 use std::{
     sync::{
@@ -26,120 +27,17 @@ use std::{
 };
 
 use async_stream::stream;
-use chrono::NaiveDate;
 use futures_util::{stream::SplitSink, SinkExt, Stream, StreamExt};
 use message::WsMessage;
-use nautilus_model::identifiers::InstrumentId;
-use serde::{Deserialize, Serialize};
-use tokio::net::TcpStream;
-use tokio::time::timeout;
+use tokio::{net::TcpStream, time::timeout};
 use tokio_tungstenite::{
     connect_async,
     tungstenite::{self, protocol::frame::coding::CloseCode},
     MaybeTlsStream, WebSocketStream,
 };
-
-use super::enums::Exchange;
+use types::{ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions};
 
 pub use crate::tardis::machine::client::TardisMachineClient;
-
-/// Instrument definition information necessary for stream parsing.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
-)]
-pub struct InstrumentMiniInfo {
-    /// The instrument ID with optionally Nautilus normalized symbol.
-    pub instrument_id: InstrumentId,
-    /// The raw instrument ID as streamed from Tardis.
-    pub raw_instrument_id: InstrumentId,
-    /// The price precision for the instrument.
-    pub price_precision: u8,
-    /// The size precision for the instrument.
-    pub size_precision: u8,
-}
-
-impl InstrumentMiniInfo {
-    /// Creates a new [`InstrumentMiniInfo`] instance.
-    ///
-    /// If `raw_instrument_id` is `None` then the `instrument_id` value will be assigned.
-    #[must_use]
-    pub fn new(
-        instrument_id: InstrumentId,
-        raw_instrument_id: Option<InstrumentId>,
-        price_precision: u8,
-        size_precision: u8,
-    ) -> Self {
-        Self {
-            instrument_id,
-            raw_instrument_id: raw_instrument_id.unwrap_or(instrument_id),
-            price_precision,
-            size_precision,
-        }
-    }
-}
-
-/// The options that can be specified for calling Tardis Machine Server's replay-normalized.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
-)]
-pub struct ReplayNormalizedRequestOptions {
-    /// Requested [`Exchange`].
-    pub exchange: Exchange,
-    /// Optional symbols of requested historical data feed.
-    /// Use /exchanges/:exchange HTTP API to get allowed symbols for requested exchange.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
-    pub symbols: Option<Vec<String>>,
-    /// Replay period start date (UTC) in a ISO 8601 format, e.g., 2019-10-01.
-    pub from: NaiveDate,
-    /// Replay period start date (UTC) in a ISO 8601 format, e.g., 2019-10-02.
-    pub to: NaiveDate,
-    /// Array of normalized [data types](https://docs.tardis.dev/api/tardis-machine#normalized-data-types)
-    /// for which real-time data will be provided.
-    #[serde(alias = "data_types")]
-    pub data_types: Vec<String>,
-    /// When set to true, sends also disconnect messages that mark events when real-time WebSocket
-    /// connection that was used to collect the historical data got disconnected.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
-    #[serde(alias = "with_disconnect_messages")]
-    pub with_disconnect_messages: Option<bool>,
-}
-
-/// The options that can be specified for calling Tardis Machine Server's stream-normalized.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.adapters")
-)]
-pub struct StreamNormalizedRequestOptions {
-    /// Requested [`Exchange`].
-    pub exchange: Exchange,
-    /// Optional symbols of requested real-time data feed.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
-    pub symbols: Option<Vec<String>>,
-    /// Array of normalized [data types](https://docs.tardis.dev/api/tardis-machine#normalized-data-types)
-    /// for which real-time data will be provided.
-    #[serde(alias = "data_types")]
-    pub data_types: Vec<String>,
-    /// When set to true, sends disconnect messages anytime underlying exchange real-time WebSocket
-    /// connection(s) gets disconnected.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default)]
-    pub with_disconnect_messages: Option<bool>,
-    /// Specifies time in milliseconds after which connection to real-time exchanges' WebSocket API
-    /// is restarted if no message has been received.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(default, rename = "timeoutIntervalMS")]
-    pub timeout_interval_ms: Option<u64>,
-}
 
 pub type Result<T> = std::result::Result<T, Error>;
 

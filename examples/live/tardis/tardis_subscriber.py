@@ -44,9 +44,10 @@ from nautilus_trader.trading.strategy import Strategy
 # docker run -p 8000:8000 -p 8001:8001 -e "TM_API_KEY=YOUR_API_KEY" -d tardisdev/tardis-machine
 
 instrument_ids = [
-    InstrumentId.from_str("BTCUSDT-SPOT.BYBIT"),
-    InstrumentId.from_str("BTCUSDT-LINEAR.BYBIT"),
-    # InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
+    InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),
+    # InstrumentId.from_str("BTCUSDT-SPOT.BYBIT"),
+    # InstrumentId.from_str("BTCUSDT-LINEAR.BYBIT"),
+    # InstrumentId.from_str("BTCUSDT.BINANCE"),
     # InstrumentId.from_str("XBTUSDT.BITMEX"),
     # InstrumentId.from_str("ETHUSDT.BITMEX"),
 ]

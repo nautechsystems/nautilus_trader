@@ -23,13 +23,19 @@ use std::{
 };
 
 use futures_util::{pin_mut, Stream, StreamExt};
-use nautilus_model::{data::Data, identifiers::InstrumentId};
+use nautilus_model::data::Data;
+use ustr::Ustr;
 
 use super::{
-    message::WsMessage, replay_normalized, stream_normalized, Error, InstrumentMiniInfo,
-    ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions,
+    message::WsMessage,
+    replay_normalized, stream_normalized,
+    types::{
+        InstrumentMiniInfo, ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions,
+        TardisInstrumentKey,
+    },
+    Error,
 };
-use crate::tardis::{machine::parse::parse_tardis_ws_message, parse::parse_instrument_id};
+use crate::tardis::machine::parse::parse_tardis_ws_message;
 
 /// Provides a client for connecting to a [Tardis Machine Server](https://docs.tardis.dev/api/tardis-machine).
 #[cfg_attr(
@@ -41,7 +47,7 @@ pub struct TardisMachineClient {
     pub base_url: String,
     pub replay_signal: Arc<AtomicBool>,
     pub stream_signal: Arc<AtomicBool>,
-    pub instruments: HashMap<InstrumentId, Arc<InstrumentMiniInfo>>,
+    pub instruments: HashMap<TardisInstrumentKey, Arc<InstrumentMiniInfo>>,
     pub normalize_symbols: bool,
 }
 
@@ -66,8 +72,9 @@ impl TardisMachineClient {
         })
     }
 
-    pub fn add_instrument_info(&mut self, instrument_id: InstrumentId, info: InstrumentMiniInfo) {
-        self.instruments.insert(instrument_id, Arc::new(info));
+    pub fn add_instrument_info(&mut self, info: InstrumentMiniInfo) {
+        let key = info.as_tardis_instrument_key();
+        self.instruments.insert(key, Arc::new(info.clone()));
     }
 
     #[must_use]
@@ -115,7 +122,7 @@ impl TardisMachineClient {
 fn handle_ws_stream<S>(
     stream: S,
     instrument: Option<Arc<InstrumentMiniInfo>>,
-    instrument_map: Option<HashMap<InstrumentId, Arc<InstrumentMiniInfo>>>,
+    instrument_map: Option<HashMap<TardisInstrumentKey, Arc<InstrumentMiniInfo>>>,
 ) -> impl Stream<Item = Data>
 where
     S: Stream<Item = Result<WsMessage, Error>> + Unpin,
@@ -158,20 +165,28 @@ where
 
 pub fn determine_instrument_info(
     msg: &WsMessage,
-    instrument_map: &HashMap<InstrumentId, Arc<InstrumentMiniInfo>>,
+    instrument_map: &HashMap<TardisInstrumentKey, Arc<InstrumentMiniInfo>>,
 ) -> Option<Arc<InstrumentMiniInfo>> {
-    let instrument_id = match msg {
-        WsMessage::BookChange(msg) => parse_instrument_id(&msg.exchange, &msg.symbol),
-        WsMessage::BookSnapshot(msg) => parse_instrument_id(&msg.exchange, &msg.symbol),
-        WsMessage::Trade(msg) => parse_instrument_id(&msg.exchange, &msg.symbol),
-        WsMessage::TradeBar(msg) => parse_instrument_id(&msg.exchange, &msg.symbol),
+    let key = match msg {
+        WsMessage::BookChange(msg) => {
+            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange.clone())
+        }
+        WsMessage::BookSnapshot(msg) => {
+            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange.clone())
+        }
+        WsMessage::Trade(msg) => {
+            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange.clone())
+        }
+        WsMessage::TradeBar(msg) => {
+            TardisInstrumentKey::new(Ustr::from(&msg.symbol), msg.exchange.clone())
+        }
         WsMessage::DerivativeTicker(_) => return None,
         WsMessage::Disconnect(_) => return None,
     };
-    if let Some(instr) = instrument_map.get(&instrument_id) {
-        Some(instr.clone())
+    if let Some(inst) = instrument_map.get(&key) {
+        Some(inst.clone())
     } else {
-        tracing::error!("Instrument definition info not available for {instrument_id}");
+        tracing::error!("Instrument definition info not available for {key:?}");
         None
     }
 }

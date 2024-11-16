@@ -25,17 +25,56 @@ from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.instruments import CryptoFuture
+from nautilus_trader.model.instruments import CryptoPerpetual
+from nautilus_trader.model.instruments import CurrencyPair
 from nautilus_trader.model.instruments import Instrument
+from nautilus_trader.model.instruments import OptionsContract
 
 
 def create_instrument_info(instrument: Instrument) -> nautilus_pyo3.InstrumentMiniInfo:
-    raw_instrument_id_str = f"{instrument.raw_symbol.value}.{instrument.venue.value}"
     return nautilus_pyo3.InstrumentMiniInfo(
         instrument_id=nautilus_pyo3.InstrumentId.from_str(instrument.id.value),
-        raw_instrument_id=nautilus_pyo3.InstrumentId.from_str(f"{raw_instrument_id_str}"),
+        raw_symbol=instrument.raw_symbol.value,
+        exchange=infer_tardis_exchange_str(instrument),
         price_precision=instrument.price_precision,
         size_precision=instrument.size_precision,
     )
+
+
+def infer_tardis_exchange_str(instrument: Instrument) -> str:  # noqa: C901 (too complex)
+    venue = instrument.venue.value
+    match venue:
+        case "BINANCE":
+            if isinstance(instrument, CurrencyPair):
+                return "binance"
+            elif isinstance(instrument, OptionsContract):
+                return "binance-options"
+            else:
+                return "binance-futures"
+        case "BITFINEX":
+            if isinstance(instrument, CurrencyPair):
+                return "bitfinex"
+            else:
+                return "bitfinex-derivatives"
+        case "BYBIT":
+            if isinstance(instrument, CurrencyPair):
+                return "bybit-spot"
+            elif isinstance(instrument, OptionsContract):
+                return "bybit-options"
+            else:
+                return "bybit"
+        case "OKX":
+            if isinstance(instrument, CurrencyPair):
+                return "okex"
+            elif isinstance(instrument, CryptoPerpetual):
+                return "okex-swap"
+            elif isinstance(instrument, CryptoFuture):
+                return "okex-futures"
+            elif isinstance(instrument, OptionsContract):
+                return "okex-options"
+
+    return venue.lower()
 
 
 def get_ws_client_key(instrument_id: InstrumentId, tardis_data_type: str) -> str:
