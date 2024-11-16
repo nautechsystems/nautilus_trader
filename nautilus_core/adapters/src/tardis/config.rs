@@ -15,7 +15,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::machine::ReplayNormalizedRequestOptions;
+use super::machine::types::ReplayNormalizedRequestOptions;
 
 /// Provides a configuration for a Tarid Machine -> Nautilus data -> Parquet replay run.
 #[derive(Debug, Clone, Serialize, Deserialize)]

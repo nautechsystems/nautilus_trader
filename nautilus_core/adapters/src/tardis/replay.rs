@@ -45,6 +45,7 @@ use nautilus_serialization::{
     parquet::write_batch_to_parquet,
 };
 use thousands::Separable;
+use ustr::Ustr;
 
 use super::{
     enums::Exchange,
@@ -53,7 +54,7 @@ use super::{
 use crate::tardis::{
     config::TardisReplayConfig,
     http::TardisHttpClient,
-    machine::{InstrumentMiniInfo, TardisMachineClient},
+    machine::{types::InstrumentMiniInfo, TardisMachineClient},
     parse::{normalize_instrument_id, parse_instrument_id},
 };
 
@@ -149,23 +150,23 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
     for (exchange, instruments) in &info_map {
         for inst in instruments {
             let instrument_type = inst.instrument_type.clone();
-            let raw_instrument_id = parse_instrument_id(exchange, &inst.id);
             let price_precision = precision_from_str(&inst.price_increment.to_string());
             let size_precision = precision_from_str(&inst.amount_increment.to_string());
 
             let instrument_id = if normalize_symbols {
                 normalize_instrument_id(exchange, &inst.id, instrument_type, inst.inverse)
             } else {
-                raw_instrument_id
+                parse_instrument_id(exchange, &inst.id)
             };
 
             let info = InstrumentMiniInfo::new(
                 instrument_id,
-                Some(raw_instrument_id),
+                Some(Ustr::from(&inst.id)),
+                exchange.clone(),
                 price_precision,
                 size_precision,
             );
-            machine_client.add_instrument_info(raw_instrument_id, info);
+            machine_client.add_instrument_info(info);
         }
     }
 

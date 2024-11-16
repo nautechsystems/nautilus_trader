@@ -35,7 +35,7 @@ use uuid::Uuid;
 
 use super::{
     message::{BarMsg, BookChangeMsg, BookLevel, BookSnapshotMsg, TradeMsg, WsMessage},
-    InstrumentMiniInfo,
+    types::InstrumentMiniInfo,
 };
 use crate::tardis::parse::{parse_aggressor_side, parse_bar_spec, parse_book_action};
 

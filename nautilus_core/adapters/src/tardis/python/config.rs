@@ -15,24 +15,62 @@
 
 use nautilus_model::{data::bar::BarSpecification, identifiers::InstrumentId};
 use pyo3::prelude::*;
+use ustr::Ustr;
 
-use crate::tardis::{machine::InstrumentMiniInfo, parse::bar_spec_to_tardis_trade_bar_string};
+use crate::tardis::{
+    enums::Exchange, machine::types::InstrumentMiniInfo, parse::bar_spec_to_tardis_trade_bar_string,
+};
 
 #[pymethods]
 impl InstrumentMiniInfo {
     #[new]
     fn py_new(
         instrument_id: InstrumentId,
-        raw_instrument_id: InstrumentId,
+        raw_symbol: String,
+        exchange: String,
         price_precision: u8,
         size_precision: u8,
     ) -> PyResult<Self> {
+        let exchange: Exchange = exchange
+            .parse()
+            .expect("`exchange` should be Tardis convention");
         Ok(Self::new(
             instrument_id,
-            Some(raw_instrument_id),
+            Some(Ustr::from(&raw_symbol)),
+            exchange,
             price_precision,
             size_precision,
         ))
+    }
+
+    #[getter]
+    #[pyo3(name = "instrument_id")]
+    fn py_instrument_id(&self) -> InstrumentId {
+        self.instrument_id
+    }
+
+    #[getter]
+    #[pyo3(name = "raw_symbol")]
+    fn py_raw_symbol(&self) -> String {
+        self.raw_symbol.to_string()
+    }
+
+    #[getter]
+    #[pyo3(name = "exchange")]
+    fn py_exchange(&self) -> String {
+        self.exchange.to_string()
+    }
+
+    #[getter]
+    #[pyo3(name = "price_precision")]
+    fn py_price_precision(&self) -> u8 {
+        self.price_precision
+    }
+
+    #[getter]
+    #[pyo3(name = "size_precision")]
+    fn py_size_precision(&self) -> u8 {
+        self.size_precision
     }
 }
 
