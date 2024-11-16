@@ -13,11 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    collections::HashMap,
-    str::FromStr,
-    sync::{atomic::AtomicBool, Arc},
-};
+use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use arrow::{
     array::{Int64Array, StringArray, StringBuilder, StringViewArray, UInt64Array, UInt8Array},
@@ -122,12 +118,6 @@ impl EncodeToRecordBatch for TradeTick {
     }
 }
 
-/// Global Variable to indicate datafusion is being used. It is set when
-/// a datafusion backend is created. It is a hack to change how
-/// TradeTick is decoded when datafusion is set. Datafusion decodes
-/// strings as StringViewArray.
-pub static DATAFUSION_BACKEND: AtomicBool = AtomicBool::new(false);
-
 impl DecodeFromRecordBatch for TradeTick {
     fn decode_batch(
         metadata: &HashMap<String, String>,
@@ -144,18 +134,22 @@ impl DecodeFromRecordBatch for TradeTick {
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 5, DataType::UInt64)?;
 
         // Datafusion reads trade_ids as StringView
-        let trade_id_values: Vec<TradeId> =
-            if DATAFUSION_BACKEND.load(std::sync::atomic::Ordering::Relaxed) {
-                extract_column::<StringViewArray>(cols, "trade_id", 3, DataType::Utf8View)?
-                    .iter()
-                    .map(|id| TradeId::from(id.unwrap()))
-                    .collect()
-            } else {
-                extract_column::<StringArray>(cols, "trade_id", 3, DataType::Utf8)?
-                    .iter()
-                    .map(|id| TradeId::from(id.unwrap()))
-                    .collect()
-            };
+        let trade_id_values: Vec<TradeId> = if record_batch
+            .schema()
+            .field_with_name("trade_id")?
+            .data_type()
+            == &DataType::Utf8View
+        {
+            extract_column::<StringViewArray>(cols, "trade_id", 3, DataType::Utf8View)?
+                .iter()
+                .map(|id| TradeId::from(id.unwrap()))
+                .collect()
+        } else {
+            extract_column::<StringArray>(cols, "trade_id", 3, DataType::Utf8)?
+                .iter()
+                .map(|id| TradeId::from(id.unwrap()))
+                .collect()
+        };
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|i| {

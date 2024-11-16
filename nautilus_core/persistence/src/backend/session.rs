@@ -23,8 +23,7 @@ use futures::StreamExt;
 use nautilus_core::ffi::cvec::CVec;
 use nautilus_model::data::{Data, GetTsInit};
 use nautilus_serialization::arrow::{
-    trade::DATAFUSION_BACKEND, DataStreamingError, DecodeDataFromRecordBatch, EncodeToRecordBatch,
-    WriteStream,
+    DataStreamingError, DecodeDataFromRecordBatch, EncodeToRecordBatch, WriteStream,
 };
 
 use super::kmerge_batch::{EagerStream, ElementBatchIter, KMerge};
@@ -68,8 +67,6 @@ impl DataBackendSession {
     /// Creates a new [`DataBackendSession`] instance.
     #[must_use]
     pub fn new(chunk_size: usize) -> Self {
-        DATAFUSION_BACKEND.store(true, std::sync::atomic::Ordering::Relaxed);
-
         let runtime = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
