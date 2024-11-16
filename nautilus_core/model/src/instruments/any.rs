@@ -25,7 +25,7 @@ use super::{
 };
 use crate::{
     enums::InstrumentClass,
-    identifiers::InstrumentId,
+    identifiers::{InstrumentId, Symbol, Venue},
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
@@ -62,6 +62,22 @@ impl InstrumentAny {
     }
 
     #[must_use]
+    pub fn instrument_class(&self) -> InstrumentClass {
+        match self {
+            Self::Betting(inst) => inst.instrument_class(),
+            Self::BinaryOption(inst) => inst.instrument_class(),
+            Self::CryptoFuture(inst) => inst.instrument_class(),
+            Self::CryptoPerpetual(inst) => inst.instrument_class(),
+            Self::CurrencyPair(inst) => inst.instrument_class(),
+            Self::Equity(inst) => inst.instrument_class(),
+            Self::FuturesContract(inst) => inst.instrument_class(),
+            Self::FuturesSpread(inst) => inst.instrument_class(),
+            Self::OptionsContract(inst) => inst.instrument_class(),
+            Self::OptionsSpread(inst) => inst.instrument_class(),
+        }
+    }
+
+    #[must_use]
     pub fn id(&self) -> InstrumentId {
         match self {
             Self::Betting(inst) => inst.id,
@@ -74,6 +90,54 @@ impl InstrumentAny {
             Self::FuturesSpread(inst) => inst.id,
             Self::OptionsContract(inst) => inst.id,
             Self::OptionsSpread(inst) => inst.id,
+        }
+    }
+
+    #[must_use]
+    pub fn symbol(&self) -> Symbol {
+        match self {
+            Self::Betting(inst) => inst.id.symbol,
+            Self::BinaryOption(inst) => inst.id.symbol,
+            Self::CryptoFuture(inst) => inst.id.symbol,
+            Self::CryptoPerpetual(inst) => inst.id.symbol,
+            Self::CurrencyPair(inst) => inst.id.symbol,
+            Self::Equity(inst) => inst.id.symbol,
+            Self::FuturesContract(inst) => inst.id.symbol,
+            Self::FuturesSpread(inst) => inst.id.symbol,
+            Self::OptionsContract(inst) => inst.id.symbol,
+            Self::OptionsSpread(inst) => inst.id.symbol,
+        }
+    }
+
+    #[must_use]
+    pub fn venue(&self) -> Venue {
+        match self {
+            Self::Betting(inst) => inst.id.venue,
+            Self::BinaryOption(inst) => inst.id.venue,
+            Self::CryptoFuture(inst) => inst.id.venue,
+            Self::CryptoPerpetual(inst) => inst.id.venue,
+            Self::CurrencyPair(inst) => inst.id.venue,
+            Self::Equity(inst) => inst.id.venue,
+            Self::FuturesContract(inst) => inst.id.venue,
+            Self::FuturesSpread(inst) => inst.id.venue,
+            Self::OptionsContract(inst) => inst.id.venue,
+            Self::OptionsSpread(inst) => inst.id.venue,
+        }
+    }
+
+    #[must_use]
+    pub fn raw_symbol(&self) -> Symbol {
+        match self {
+            Self::Betting(inst) => inst.raw_symbol(),
+            Self::BinaryOption(inst) => inst.raw_symbol(),
+            Self::CryptoFuture(inst) => inst.raw_symbol(),
+            Self::CryptoPerpetual(inst) => inst.raw_symbol(),
+            Self::CurrencyPair(inst) => inst.raw_symbol(),
+            Self::Equity(inst) => inst.raw_symbol(),
+            Self::FuturesContract(inst) => inst.raw_symbol(),
+            Self::FuturesSpread(inst) => inst.raw_symbol(),
+            Self::OptionsContract(inst) => inst.raw_symbol(),
+            Self::OptionsSpread(inst) => inst.raw_symbol(),
         }
     }
 
@@ -234,22 +298,6 @@ impl InstrumentAny {
             Self::FuturesSpread(inst) => inst.multiplier(),
             Self::OptionsContract(inst) => inst.multiplier(),
             Self::OptionsSpread(inst) => inst.multiplier(),
-        }
-    }
-
-    #[must_use]
-    pub fn instrument_class(&self) -> InstrumentClass {
-        match self {
-            Self::Betting(inst) => inst.instrument_class(),
-            Self::BinaryOption(inst) => inst.instrument_class(),
-            Self::CryptoFuture(inst) => inst.instrument_class(),
-            Self::CryptoPerpetual(inst) => inst.instrument_class(),
-            Self::CurrencyPair(inst) => inst.instrument_class(),
-            Self::Equity(inst) => inst.instrument_class(),
-            Self::FuturesContract(inst) => inst.instrument_class(),
-            Self::FuturesSpread(inst) => inst.instrument_class(),
-            Self::OptionsContract(inst) => inst.instrument_class(),
-            Self::OptionsSpread(inst) => inst.instrument_class(),
         }
     }
 
