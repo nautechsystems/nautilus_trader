@@ -678,13 +678,13 @@ class DatabentoDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError(
-            f"Cannot unsubscribe from {instrument_id} quote ticks, "
+            f"Cannot unsubscribe from {instrument_id} quotes, "
             "unsubscribing not supported by Databento.",
         )
 
     async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         raise NotImplementedError(
-            f"Cannot unsubscribe from {instrument_id} trade ticks, "
+            f"Cannot unsubscribe from {instrument_id} trades, "
             "unsubscribing not supported by Databento.",
         )
 
@@ -898,8 +898,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
 
         self._log.info(
-            f"Requesting {instrument_id} quote ticks: "
-            f"dataset={dataset}, start={start}, end={end}",
+            f"Requesting {instrument_id} quotes: dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
 
@@ -938,8 +937,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
 
         self._log.info(
-            f"Requesting {instrument_id} trade ticks: "
-            f"dataset={dataset}, start={start}, end={end}",
+            f"Requesting {instrument_id} trades: dataset={dataset}, start={start}, end={end}",
             LogColor.BLUE,
         )
 

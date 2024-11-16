@@ -574,7 +574,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         end: pd.Timestamp | None = None,
     ) -> None:
         self._log.error(
-            "Cannot request historical quote ticks: not published by Binance",
+            "Cannot request historical quotes: not published by Binance",
         )
 
     async def _request_trade_ticks(
@@ -591,9 +591,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         if not self._use_agg_trade_ticks:
             if start is not None or end is not None:
                 self._log.warning(
-                    "Trade ticks have been requested with a from/to time range, "
+                    "Trades have been requested with a from/to time range, "
                     f"however the request will be for the most recent {limit}: "
-                    "consider using aggregated trade ticks (`use_agg_trade_ticks`)",
+                    "consider using aggregated trades (`use_agg_trade_ticks`)",
                 )
             ticks = await self._http_market.request_trade_ticks(
                 instrument_id=instrument_id,
@@ -884,7 +884,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
             return []
 
-        self._log.info("Requesting aggregated trade ticks to infer INTERNAL bars...", LogColor.BLUE)
+        self._log.info("Requesting aggregated trades to infer INTERNAL bars...", LogColor.BLUE)
 
         ticks = await self._http_market.request_agg_trade_ticks(
             instrument_id=instrument.id,
@@ -924,7 +924,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             aggregator.handle_trade_tick(tick)
 
         self._log.info(
-            f"Inferred {len(bars)} {bar_type} bars aggregated from {len(ticks)} trade ticks",
+            f"Inferred {len(bars)} {bar_type} bars aggregated from {len(ticks)} trades",
             LogColor.BLUE,
         )
 

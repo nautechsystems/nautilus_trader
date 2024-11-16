@@ -106,7 +106,7 @@ Bar data aggregation can be either *internal* or *external*:
 
 Bar types can also be classified as either *standard* or *composite*:
 
-- **Standard**: Generated from granular market data, such as quotes or trade ticks.
+- **Standard**: Generated from granular market data, such as quotes or trades.
 - **Composite**: Derived from a higher-granularity bar type through subsampling.
 
 ### Defining standard bars

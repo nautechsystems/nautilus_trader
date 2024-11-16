@@ -265,12 +265,12 @@ class PolymarketDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         self._log.error(
-            f"Cannot unsubscribe from {instrument_id} quote ticks: unsubscribing not supported by Polymarket",
+            f"Cannot unsubscribe from {instrument_id} quotes: unsubscribing not supported by Polymarket",
         )
 
     async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         self._log.error(
-            f"Cannot unsubscribe from {instrument_id} trade ticks: unsubscribing not supported by Polymarket",
+            f"Cannot unsubscribe from {instrument_id} trades: unsubscribing not supported by Polymarket",
         )
 
     async def _unsubscribe_bars(self, bar_type: BarType) -> None:
@@ -349,7 +349,7 @@ class PolymarketDataClient(LiveMarketDataClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> None:
-        self._log.error("Cannot request historical quote ticks: not published by Polymarket")
+        self._log.error("Cannot request historical quotes: not published by Polymarket")
 
     async def _request_trade_ticks(
         self,
@@ -359,7 +359,7 @@ class PolymarketDataClient(LiveMarketDataClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> None:
-        self._log.error("Cannot request historical trade ticks: not published by Polymarket")
+        self._log.error("Cannot request historical trades: not published by Polymarket")
 
     async def _request_bars(
         self,

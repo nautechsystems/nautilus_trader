@@ -130,7 +130,7 @@ def market_change_to_updates(  # noqa: C901
                 if deltas is not None:
                     book_updates.append(deltas)
 
-            # Trade ticks
+            # Trades
             if rc.trd:
                 if instrument_id not in traded_volumes:
                     traded_volumes[instrument_id] = {}
@@ -376,7 +376,7 @@ def runner_change_to_trade_ticks(
     for trd in rc.trd:
         if trd.volume == 0:
             continue
-        # Betfair trade ticks are total volume traded.
+        # Betfair trades are total volume traded
         if trd.price not in traded_volumes:
             traded_volumes[trd.price] = 0
         existing_volume = traded_volumes[trd.price]

@@ -482,7 +482,7 @@ cdef class DataEngine(Component):
 
     cpdef list subscribed_synthetic_quotes(self):
         """
-        Return the synthetic instrument quote ticks subscribed to.
+        Return the synthetic instrument quotes subscribed to.
 
         Returns
         -------
@@ -493,7 +493,7 @@ cdef class DataEngine(Component):
 
     cpdef list subscribed_synthetic_trades(self):
         """
-        Return the synthetic instrument trade ticks subscribed to.
+        Return the synthetic instrument trades subscribed to.
 
         Returns
         -------

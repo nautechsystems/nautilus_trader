@@ -38,7 +38,7 @@ cdef class VariableIndexDynamicAverage(MovingAverage):
     period : int
         The rolling window period for the indicator (> 0).
     price_type : PriceType
-        The specified price type for extracting values from quote ticks.
+        The specified price type for extracting values from quotes.
     cmo_ma_type : int
         The moving average type for CMO indicator.
 

@@ -625,7 +625,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
         Parameters
         ----------
         req_id : int
-            The request identifier for which the trade ticks are being processed.
+            The request identifier for which the trades are being processed.
         ticks : list
             A list of trade tick data received from Interactive Brokers.
 
@@ -869,7 +869,7 @@ class InteractiveBrokersClientMarketDataMixin(BaseMixin):
 
     async def process_historical_ticks_last(self, *, req_id: int, ticks: list, done: bool) -> None:
         """
-        Return the requested historic trade ticks.
+        Return the requested historic trades.
         """
         if not done:
             return

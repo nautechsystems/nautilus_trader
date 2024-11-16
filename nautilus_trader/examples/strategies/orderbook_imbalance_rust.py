@@ -57,7 +57,7 @@ class OrderBookImbalanceConfig(StrategyConfig, frozen=True):
     book_type : str, default 'L2_MBP'
         The order book type for the strategy.
     use_quote_ticks : bool, default False
-        If quote ticks should be used.
+        If quotes should be used.
     subscribe_ticker : bool, default False
         If tickers should be subscribed to.
 

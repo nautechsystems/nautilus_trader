@@ -59,9 +59,9 @@ class EMACrossConfig(StrategyConfig, frozen=True):
     slow_ema_period : int, default 20
         The slow EMA period.
     subscribe_trade_ticks : bool, default True
-        If trade ticks should be subscribed to.
+        If trades should be subscribed to.
     subscribe_quote_ticks : bool, default False
-        If quote ticks should be subscribed to.
+        If quotes should be subscribed to.
     close_positions_on_stop : bool, default True
         If all open positions should be closed on strategy stop.
 

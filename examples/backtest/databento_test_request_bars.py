@@ -146,7 +146,7 @@ class TestHistoricalAggStrategy(Strategy):
         # self.register_indicator_for_bars(external_bar_type, self.external_sma)
         # self.register_indicator_for_bars(composite_bar_type, self.composite_sma)
 
-        ######### for testing quote ticks
+        ######### for testing quotes
         # utc_now = self._clock.utc_now()
         # start_historical_bars = utc_now - pd.Timedelta(minutes=self._historical_start_delay)
         # end_historical_bars = utc_now - pd.Timedelta(
@@ -169,7 +169,7 @@ class TestHistoricalAggStrategy(Strategy):
         #     include_external_data=False,
         # )
 
-        ######### for testing trade ticks
+        ######### for testing trades
         # utc_now = self._clock.utc_now()
         # start_historical_bars = utc_now - pd.Timedelta(minutes=self._historical_start_delay)
         # end_historical_bars = utc_now - pd.Timedelta(
@@ -309,7 +309,7 @@ configs = [
         # for bars
         start="2024-07-01T23:55",
         end="2024-07-02T00:10",
-        # for quote or trade ticks
+        # for quotes or trades
         # start="2024-07-02T00:00",
         # end="2024-07-02T00:02",
     ),

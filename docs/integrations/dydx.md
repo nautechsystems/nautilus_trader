@@ -206,5 +206,5 @@ In these cases, a _warn and continue_ approach is taken (the instrument will not
 ## Order books
 
 Order books can be maintained at full depth or top-of-book quotes depending on the
-subscription. The venue does not provide quote ticks, but the adapter subscribes to order
-book deltas and sends new quote ticks to the `DataEngine` when there is a top-of-book price or size change.
+subscription. The venue does not provide quotes, but the adapter subscribes to order
+book deltas and sends new quotes to the `DataEngine` when there is a top-of-book price or size change.

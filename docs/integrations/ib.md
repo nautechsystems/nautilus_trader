@@ -264,7 +264,7 @@ instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
 `InteractiveBrokersDataClient` interfaces with IB for streaming and retrieving market data. Upon
 connection, it configures the [market data type](https://ibkrcampus.com/ibkr-api-page/trader-workstation-api/#delayed-market-data)
 and loads instruments based on the settings in `InteractiveBrokersInstrumentProviderConfig`.
-This client can subscribe to and unsubscribe from various market data types, including quote ticks, trade ticks, and bars.
+This client can subscribe to and unsubscribe from various market data types, including quotes, trades, and bars.
 
 Configurable through `InteractiveBrokersDataClientConfig`, it enables adjustments for handling revised bars,
 trading hours preferences, and market data types (e.g., `IBMarketDataTypeEnum.REALTIME` or `IBMarketDataTypeEnum.DELAYED_FROZEN`).

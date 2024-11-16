@@ -47,7 +47,7 @@ cdef class MovingAverage(Indicator):
     params : list
         The initialization parameters for the indicator.
     price_type : PriceType, optional
-        The specified price type for extracting values from quote ticks.
+        The specified price type for extracting values from quotes.
 
     Warnings
     --------

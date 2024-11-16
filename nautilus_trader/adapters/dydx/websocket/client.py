@@ -287,7 +287,7 @@ class DYDXWebsocketClient:
 
         self._subscriptions.add(subscription)
         msg = {"type": "subscribe", "channel": "v4_trades", "id": symbol}
-        self._log.debug(f"Subscribe to {symbol} trade ticks")
+        self._log.debug(f"Subscribe to {symbol} trades")
         await self._send(msg)
 
     async def subscribe_order_book(

@@ -657,9 +657,9 @@ cdef class Actor(Component):
 
         if indicator not in self._indicators_for_quotes[instrument_id]:
             self._indicators_for_quotes[instrument_id].append(indicator)
-            self.log.info(f"Registered Indicator {indicator} for {instrument_id} quote ticks")
+            self.log.info(f"Registered Indicator {indicator} for {instrument_id} quotes")
         else:
-            self.log.error(f"Indicator {indicator} already registered for {instrument_id} quote ticks")
+            self.log.error(f"Indicator {indicator} already registered for {instrument_id} quotes")
 
     cpdef void register_indicator_for_trade_ticks(self, InstrumentId instrument_id, Indicator indicator):
         """
@@ -685,9 +685,9 @@ cdef class Actor(Component):
 
         if indicator not in self._indicators_for_trades[instrument_id]:
             self._indicators_for_trades[instrument_id].append(indicator)
-            self.log.info(f"Registered Indicator {indicator} for {instrument_id} trade ticks")
+            self.log.info(f"Registered Indicator {indicator} for {instrument_id} trades")
         else:
-            self.log.error(f"Indicator {indicator} already registered for {instrument_id} trade ticks")
+            self.log.error(f"Indicator {indicator} already registered for {instrument_id} trades")
 
     cpdef void register_indicator_for_bars(self, BarType bar_type, Indicator indicator):
         """
@@ -2349,7 +2349,7 @@ cdef class Actor(Component):
         """
         Request historical aggregated `Bar` data for multiple bar types.
         The first bar is used to determine which market data type will be queried.
-        This can either be quote ticks, trade ticks or bars. If bars are queried,
+        This can either be quotes, trades or bars. If bars are queried,
         the first bar type needs to have a composite bar that is external (i.e. not internal/aggregated).
         This external bar type will be queried.
 

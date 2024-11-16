@@ -4019,12 +4019,12 @@ cdef class QuoteTick(Data):
     @staticmethod
     def from_pyo3_list(list pyo3_quotes) -> list[QuoteTick]:
         """
-        Return legacy Cython quote ticks converted from the given pyo3 Rust objects.
+        Return legacy Cython quotes converted from the given pyo3 Rust objects.
 
         Parameters
         ----------
         pyo3_quotes : list[nautilus_pyo3.QuoteTick]
-            The pyo3 Rust quote ticks to convert from.
+            The pyo3 Rust quotes to convert from.
 
         Returns
         -------
@@ -4041,12 +4041,12 @@ cdef class QuoteTick(Data):
     @staticmethod
     def to_pyo3_list(list[QuoteTick] quotes) -> list[nautilus_pyo3.QuoteTick]:
         """
-        Return pyo3 Rust quote ticks converted from the given legacy Cython objects.
+        Return pyo3 Rust quotes converted from the given legacy Cython objects.
 
         Parameters
         ----------
         quotes : list[QuoteTick]
-            The legacy Cython quote ticks to convert from.
+            The legacy Cython quotes to convert from.
 
         Returns
         -------
@@ -4604,12 +4604,12 @@ cdef class TradeTick(Data):
     @staticmethod
     def to_pyo3_list(list[TradeTick] trades) -> list[nautilus_pyo3.TradeTick]:
         """
-        Return pyo3 Rust trade ticks converted from the given legacy Cython objects.
+        Return pyo3 Rust trades converted from the given legacy Cython objects.
 
         Parameters
         ----------
         ticks : list[TradeTick]
-            The legacy Cython Rust trade ticks to convert from.
+            The legacy Cython Rust trades to convert from.
 
         Returns
         -------
@@ -4646,12 +4646,12 @@ cdef class TradeTick(Data):
     @staticmethod
     def from_pyo3_list(list pyo3_trades) -> list[TradeTick]:
         """
-        Return legacy Cython trade ticks converted from the given pyo3 Rust objects.
+        Return legacy Cython trades converted from the given pyo3 Rust objects.
 
         Parameters
         ----------
         pyo3_trades : list[nautilus_pyo3.TradeTick]
-            The pyo3 Rust trade ticks to convert from.
+            The pyo3 Rust trades to convert from.
 
         Returns
         -------

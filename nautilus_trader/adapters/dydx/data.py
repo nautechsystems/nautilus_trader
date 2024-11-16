@@ -289,7 +289,7 @@ class DYDXDataClient(LiveMarketDataClient):
             self._log.error(f"Failed to parse trade tick: {raw.decode()} with error {e}")
 
     def _handle_trade_subscribed(self, raw: bytes) -> None:
-        # Do not send the historical trade ticks to the DataEngine for the initial subscribed message.
+        # Do not send the historical trades to the DataEngine for the initial subscribed message.
         pass
 
     def _handle_orderbook(self, raw: bytes) -> None:
