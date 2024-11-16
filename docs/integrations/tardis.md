@@ -9,8 +9,13 @@ The capabilities of this adapter include:
 - `TardisCSVDataLoader`: Reads Tardis-format CSV files and converts them into Nautilus data.
 - `TardisMachineClient`: Supports live streaming and historical replay of data from the Tardis Machine WebSocket server - converting messages into Nautilus data.
 - `TardisHttpClient`: Requests instrument definition metadata from the Tardis HTTP API, parsing it into Nautilus instrument definitions.
-- `TardisDataClient`: Provides a live data client for requesting historical data and subscribing to WebSocket data streams.
+- `TardisDataClient`: Provides a live data client for subscribing to data streams from a Tardis Machine WebSocket server.
+- `TardisInstrumentProvider`: Provides instrument definitions from Tardis through the HTTP instrument metadata API.
 - **Data pipeline functions**: Enables replay of historical data from Tardis Machine and writes it to the Nautilus Parquet format, including direct catalog integration for streamlined data management (see below).
+
+:::info
+A Tardis API key is required for the adapter to operate correctly. See also [environment variables](#environment-variables).
+:::
 
 ## Overview
 
@@ -30,7 +35,7 @@ It's recommended you also refer to the Tardis documentation in conjunction with 
 ## Supported formats
 
 Tardis provides *normalized* market data—a unified format consistent across all supported exchanges.
-This normalization is highly valuable because it allows a single parser to handle data from any [Tardis-supported exchange](https://api.tardis.dev/v1/exchanges), reducing development time and complexity.
+This normalization is highly valuable because it allows a single parser to handle data from any [Tardis-supported exchange](#venues), reducing development time and complexity.
 As a result, NautilusTrader will not support exchange-native market data formats, as it would be inefficient to implement separate parsers for each exchange at this stage.
 
 The following normalized Tardis formats are supported by NautilusTrader:
@@ -410,3 +415,72 @@ async fn main() {
     println!("Received: {resp:?}");
 }
 ```
+
+## Instrument provider
+
+The `TardisInstrumentProvider` fetches and parses instrument definitions from Tardis through the HTTP instrument metadata API.
+Since there are multiple [Tardis-supported exchanges](#venues), when loading all instruments,
+you must filter for the desired venues using an `InstrumentProviderConfig`:
+
+```python
+from nautilus_trader.config import InstrumentProviderConfig
+
+filters = {"venues": frozenset(venues)}
+instrument_provider_config = InstrumentProviderConfig(load_all=True, filters=filters)
+```
+
+You can also load specific instrument definitions in the usual way:
+
+```python
+from nautilus_trader.config import InstrumentProviderConfig
+
+instrument_ids = [
+    InstrumentId.from_str("BTCUSDT-PERP.BINANCE"),  # Will use the 'binance-futures' exchange
+    InstrumentId.from_str("BTCUSDT.BINANCE"),  # Will use the 'binance' exchange
+]
+instrument_provider_config = InstrumentProviderConfig(load_ids=instrument_ids)
+```
+
+:::note
+Instruments must be available in the cache for all subscriptions.
+For simplicity, it’s recommended to load all instruments for the venues you intend to subscribe to.
+:::
+
+## Live data client
+
+The `TardisDataClient` enables integration of a Tardis Machine with a running NautilusTrader system.
+It supports subscriptions to the following data types:
+
+- `OrderBookDelta` (L2 granularity from Tardis, includes all changes or full-depth snapshots) 
+- `OrderBookDepth10` (L2 granularity from Tardis, provides snapshots up to 10 levels)
+- `QuoteTick`
+- `TradeTick`
+- `Bar` (trade bars with [Tardis-supported bar aggregations](#bars))
+
+### Data WebSockets
+
+The main `TardisMachineClient` data WebSocket manages all stream subscriptions received during the initial connection phase,
+up to the duration specified by `ws_connection_delay_secs`. For any additional subscriptions made 
+after this period, a new `TardisMachineClient` is created. This approach optimizes performance by 
+allowing the main WebSocket to handle potentially hundreds of subscriptions in a single stream if 
+they are provided at startup.
+
+When an initial subscription delay is set with `ws_connection_delay_secs`, unsubscribing from any 
+of these streams will not actually remove the subscription from the Tardis Machine stream, as selective 
+unsubscription is not supported by Tardis. However, the component will still unsubscribe from message 
+bus publishing as expected.
+
+All subscriptions made after any initial delay will behave normally, fully unsubscribing from the
+Tardis Machine stream when requested.
+
+:::tip
+If you anticipate frequent subscription and unsubscription of data, it is recommended to set 
+`ws_connection_delay_secs` to zero. This will create a new client for each initial subscription,
+allowing them to be later closed individually upon unsubscription.
+:::
+
+## Limitations and considerations
+
+The following limitations and considerations are currently known:
+
+- Historical data requests are not supported, as each would require a minimum one-day replay from the Tardis Machine, potentially with a filter. This approach is neither practical nor efficient.
