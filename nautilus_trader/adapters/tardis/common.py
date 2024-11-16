@@ -126,7 +126,6 @@ def create_stream_normalized_request_options(
     exchange: str,
     symbols: list[str],
     data_types: list[str],
-    timeout_interval_ms: int | None = None,
 ) -> nautilus_pyo3.StreamNormalizedRequestOptions:
     PyCondition.not_empty(symbols, "symbols")
     PyCondition.not_empty(data_types, "data_types")
@@ -135,7 +134,6 @@ def create_stream_normalized_request_options(
         "exchange": exchange,
         "symbols": symbols,
         "data_types": data_types,
-        "timeout_interval_ms": timeout_interval_ms,
         "with_disconnect_messages": True,
     }
 
