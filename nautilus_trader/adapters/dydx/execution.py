@@ -1016,13 +1016,22 @@ class DYDXExecutionClient(LiveExecutionClient):
         good_til_date_secs: int | None = None
         good_til_block: int | None = None
 
+        if dydx_order_tags.is_short_term_order is False and order.order_type == OrderType.MARKET:
+            rejection_reason = "Cannot submit order: long term market order not supported by dYdX."
+            self.generate_order_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=rejection_reason,
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
         if dydx_order_tags.is_short_term_order:
             try:
                 latest_block = await self._grpc_account.latest_block_height()
             except AioRpcError as e:
                 rejection_reason = f"Failed to submit the order while retrieve the latest block height: code {e.code} {e.details}"
-                self._log.error(rejection_reason)
-
                 self.generate_order_rejected(
                     strategy_id=order.strategy_id,
                     instrument_id=order.instrument_id,
@@ -1071,8 +1080,6 @@ class DYDXExecutionClient(LiveExecutionClient):
             rejection_reason = (
                 f"Cannot submit order: order type `{order.order_type}` not (yet) supported."
             )
-            self._log.error(rejection_reason)
-
             self.generate_order_rejected(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
