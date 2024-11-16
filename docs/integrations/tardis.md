@@ -70,18 +70,18 @@ This includes the following:
 | [ticks](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix) - number of ticks | `TICK`                      |
 | [vol](https://docs.tardis.dev/api/tardis-machine#trade_bar_-aggregation_interval-suffix) - volume size       | `VOLUME`                    |
 
-### Symbology and normalization
+## Symbology and normalization
 
 The Tardis integration seamlessly integrates with NautilusTrader's crypto exchange adapters through consistent symbol normalization.
 Each exchange's raw symbols are normalized to follow Nautilus symbology conventions as detailed below:
 
-#### Common rules
+### Common rules
 
 - All symbols are converted to uppercase.
 - Market type suffixes are appended with a hyphen for some exchanges (see [exchange-specific normalizations](#exchange-specific-normalizations)).
 - Original exchange symbols are preserved in the Nautilus instrument definitions `raw_symbol` field.
 
-#### Exchange-specific normalizations
+### Exchange-specific normalizations
 
 - **Binance**: Nautilus appends the suffix `-PERP` to all perpetual symbols.
 - **Bybit**: Nautilus uses specific product category suffixes, including `-SPOT`, `-LINEAR`, `-INVERSE`, `-OPTION`.
@@ -188,7 +188,7 @@ Next, ensure you have a configuration JSON file available.
 
 **Configuration JSON format**
 
-| name                | type              | description                                                                         | default                                                                                               |
+| Field               | Type              | Description                                                                         | Default                                                                                               |
 |:--------------------|:------------------|:------------------------------------------------------------------------------------|:------------------------------------------------------------------------------------------------------|
 | `tardis_ws_url`     | string (optional) | The Tardis Machine WebSocket URL.                                                   | If `null` then will use the `TARDIS_WS_URL` env var.                                                  |
 | `normalize_symbols` | bool (optional)   | If Nautilus [symbol normalization](#symbology-and-normalization) should be applied. | If `null` then will default to `true`.                                                                |
