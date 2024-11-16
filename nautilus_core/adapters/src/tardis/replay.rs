@@ -263,7 +263,7 @@ fn handle_deltas_msg(
     }
 
     map.entry(deltas.instrument_id)
-        .or_insert_with(|| Vec::with_capacity(1_000_000)) // TODO: Configure capacity
+        .or_insert_with(|| Vec::with_capacity(1_000_000))
         .extend(&*deltas.deltas);
 }
 
@@ -286,7 +286,7 @@ fn handle_depth10_msg(
     }
 
     map.entry(depth10.instrument_id)
-        .or_insert_with(|| Vec::with_capacity(1_000_000)) // TODO: Configure capacity
+        .or_insert_with(|| Vec::with_capacity(1_000_000))
         .push(depth10);
 }
 
@@ -309,7 +309,7 @@ fn handle_quote_msg(
     }
 
     map.entry(quote.instrument_id)
-        .or_insert_with(|| Vec::with_capacity(1_000_000)) // TODO: Configure capacity
+        .or_insert_with(|| Vec::with_capacity(1_000_000))
         .push(quote);
 }
 
@@ -332,7 +332,7 @@ fn handle_trade_msg(
     }
 
     map.entry(trade.instrument_id)
-        .or_insert_with(|| Vec::with_capacity(1_000_000)) // TODO: Configure capacity
+        .or_insert_with(|| Vec::with_capacity(1_000_000))
         .push(trade);
 }
 
@@ -355,7 +355,7 @@ fn handle_bar_msg(
     }
 
     map.entry(bar.bar_type)
-        .or_insert_with(|| Vec::with_capacity(1_000_000)) // TODO: Configure capacity
+        .or_insert_with(|| Vec::with_capacity(1_000_000))
         .push(bar);
 }
 
