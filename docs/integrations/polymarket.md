@@ -205,14 +205,6 @@ Once a trade is initially matched, subsequent trade status updates will be recei
 NautilusTrader records the initial trade details in the `info` field of the `OrderFilled` event,
 with additional trade events stored in the cache as JSON under a custom key to retain this information.
 
-## Limitations and considerations
-
-The following limitations and considerations are currently known:
-
-- Order signing via the Polymarket Python client is slow, taking around one second.
-- Post-only orders are not supported.
-- Reduce-only orders are not supported.
-
 ## Reconciliation
 
 The Polymarket API returns either all **active** (open) orders or specific orders when queried by the
@@ -249,3 +241,11 @@ a separate `PolymarketWebSocketClient` is created for each new instrument (asset
 :::note
 Polymarket does not support unsubscribing from channel streams once subscribed.
 :::
+
+## Limitations and considerations
+
+The following limitations and considerations are currently known:
+
+- Order signing via the Polymarket Python client is slow, taking around one second.
+- Post-only orders are not supported.
+- Reduce-only orders are not supported.
