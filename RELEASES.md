@@ -398,7 +398,7 @@ Released on 2nd August 2024 (UTC).
 - Fixed `DataEngine` unsubscribing from order book deltas (#1814), thanks @davidsblom
 - Fixed `LiveExecutionEngine` handling of adapter client execution report causing `None` mass status (#1789), thanks for reporting @faysou
 - Fixed `InteractiveBrokersExecutionClient` handling of instruments not found when generating execution reports (#1789), thanks for reporting @faysou
-- Fixed Bybit parsing of trade and quote ticks for websocket messages (#1794), thanks @davidsblom
+- Fixed Bybit parsing of trade and quotes for websocket messages (#1794), thanks @davidsblom
 
 ---
 
@@ -987,7 +987,7 @@ This will be the final release with support for Python 3.9.
 - Added `Cache.is_order_pending_cancel_local(...)` (tracks local orders in cancel transition)
 - Added `BinanceTimeInForce.GTD` enum member (futures only)
 - Added Binance Futures support for GTD orders
-- Added Binance internal bar aggregation inference from aggregated trade ticks or 1-MINUTE bars (depending on lookback window)
+- Added Binance internal bar aggregation inference from aggregated trades or 1-MINUTE bars (depending on lookback window)
 - Added `BinanceExecClientConfig.use_gtd` option (to remap to GTC and locally manage GTD orders)
 - Added package version check for `nautilus_ibapi`, thanks @rsmb7z
 - Added `RiskEngine` min/max instrument notional limit checks

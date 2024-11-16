@@ -303,7 +303,7 @@ class OKXDataClient(LiveMarketDataClient):
     async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         if instrument_id in self._tob_client_map:
             self._log.warning(
-                f"Already subscribed to {instrument_id} top-of-book (quote ticks)",
+                f"Already subscribed to {instrument_id} top-of-book (quotes)",
                 LogColor.MAGENTA,
             )
             return
@@ -321,7 +321,7 @@ class OKXDataClient(LiveMarketDataClient):
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         if instrument_id in self._trades_client_map:
             self._log.warning(
-                f"Already subscribed to {instrument_id} trade ticks",
+                f"Already subscribed to {instrument_id} trades",
                 LogColor.MAGENTA,
             )
             return
@@ -355,7 +355,7 @@ class OKXDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         self._log.debug(
-            f"Unsubscribing {instrument_id} from quote ticks (top-of-book)",
+            f"Unsubscribing {instrument_id} from quotes (top-of-book)",
             LogColor.MAGENTA,
         )
         okx_symbol = OKXSymbol(instrument_id.symbol.value)
@@ -367,7 +367,7 @@ class OKXDataClient(LiveMarketDataClient):
         self._tob_client_map.pop(instrument_id, None)
 
     async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
-        self._log.debug(f"Unsubscribing {instrument_id} from trade ticks", LogColor.MAGENTA)
+        self._log.debug(f"Unsubscribing {instrument_id} from trades", LogColor.MAGENTA)
         okx_symbol = OKXSymbol(instrument_id.symbol.value)
 
         for iid, ws_client in self._trades_client_map.items():
@@ -457,8 +457,8 @@ class OKXDataClient(LiveMarketDataClient):
         end: pd.Timestamp | None = None,
     ) -> None:
         self._log.error(
-            "Cannot request historical quote ticks: not published by OKX. Please subscribe to "
-            "quote ticks or L1_MBP order book.",
+            "Cannot request historical quotes: not published by OKX. Subscribe to "
+            "quotes or L1_MBP order book.",
         )
         return
 
@@ -470,7 +470,7 @@ class OKXDataClient(LiveMarketDataClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> None:
-        self._log.error("Cannot request historical trade ticks: not yet implemented for OKX")
+        self._log.error("Cannot request historical trades: not yet implemented for OKX")
         return
 
     async def _request_bars(

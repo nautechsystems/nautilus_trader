@@ -431,7 +431,7 @@ class OKXWebsocketClient:
     @check_public
     async def subscribe_trades(self, instId: str) -> None:
         """
-        Subscribe to aggregated trade ticks (one update per taker order).
+        Subscribe to aggregated trades (one update per taker order).
         """
         if self._client is None:
             self._log.warning("Cannot subscribe: not connected")
@@ -449,7 +449,7 @@ class OKXWebsocketClient:
     @check_public
     async def unsubscribe_trades(self, instId: str) -> None:
         """
-        Unsubscribe from aggregated trade ticks (one update per taker order).
+        Unsubscribe from aggregated trades (one update per taker order).
         """
         if self._client is None:
             self._log.warning("Cannot unsubscribe: not connected")

@@ -303,7 +303,7 @@ cdef class Portfolio(PortfolioFacade):
         """
         Update the portfolio with the given tick.
 
-        Clears the unrealized PnL for the quote ticks instrument, and
+        Clears the unrealized PnL for the quoting instrument, and
         performs any initialization calculations which may have been pending
         a market quote update.
 

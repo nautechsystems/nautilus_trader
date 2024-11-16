@@ -1198,7 +1198,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void add_quote_ticks(self, list ticks):
         """
-        Add the given quote ticks to the cache.
+        Add the given quotes to the cache.
 
         Parameters
         ----------
@@ -1235,7 +1235,7 @@ cdef class Cache(CacheFacade):
 
     cpdef void add_trade_ticks(self, list ticks):
         """
-        Add the given trade ticks to the cache.
+        Add the given trades to the cache.
 
         Parameters
         ----------
@@ -2005,7 +2005,7 @@ cdef class Cache(CacheFacade):
 
     cpdef list quote_ticks(self, InstrumentId instrument_id):
         """
-        Return the quote ticks for the given instrument ID.
+        Return the quotes for the given instrument ID.
 
         Parameters
         ----------
@@ -2023,7 +2023,7 @@ cdef class Cache(CacheFacade):
 
     cpdef list trade_ticks(self, InstrumentId instrument_id):
         """
-        Return trade ticks for the given instrument ID.
+        Return trades for the given instrument ID.
 
         Parameters
         ----------
@@ -2238,7 +2238,7 @@ cdef class Cache(CacheFacade):
 
     cpdef int quote_tick_count(self, InstrumentId instrument_id):
         """
-        The count of quote ticks for the given instrument ID.
+        The count of quotes for the given instrument ID.
 
         Parameters
         ----------
@@ -2256,7 +2256,7 @@ cdef class Cache(CacheFacade):
 
     cpdef int trade_tick_count(self, InstrumentId instrument_id):
         """
-        The count of trade ticks for the given instrument ID.
+        The count of trades for the given instrument ID.
 
         Parameters
         ----------
@@ -2309,7 +2309,7 @@ cdef class Cache(CacheFacade):
 
     cpdef bint has_quote_ticks(self, InstrumentId instrument_id):
         """
-        Return a value indicating whether the cache has quote ticks for the
+        Return a value indicating whether the cache has quotes for the
         given instrument ID.
 
         Parameters
@@ -2328,7 +2328,7 @@ cdef class Cache(CacheFacade):
 
     cpdef bint has_trade_ticks(self, InstrumentId instrument_id):
         """
-        Return a value indicating whether the cache has trade ticks for the
+        Return a value indicating whether the cache has trades for the
         given instrument ID.
 
         Parameters

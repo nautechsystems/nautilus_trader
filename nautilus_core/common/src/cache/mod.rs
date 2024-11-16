@@ -2362,7 +2362,7 @@ impl Cache {
         }
     }
 
-    /// Gets all quote ticks for the given `instrument_id`.
+    /// Gets all quotes for the given `instrument_id`.
     #[must_use]
     pub fn quotes(&self, instrument_id: &InstrumentId) -> Option<Vec<QuoteTick>> {
         self.quotes
@@ -2370,7 +2370,7 @@ impl Cache {
             .map(|quotes| quotes.iter().copied().collect())
     }
 
-    /// Gets all trade ticks for the given `instrument_id`.
+    /// Gets all trades for the given `instrument_id`.
     #[must_use]
     pub fn trades(&self, instrument_id: &InstrumentId) -> Option<Vec<TradeTick>> {
         self.trades
@@ -2456,13 +2456,13 @@ impl Cache {
         self.books.contains_key(instrument_id)
     }
 
-    /// Returns whether the cache contains quote ticks for the given `instrument_id`.
+    /// Returns whether the cache contains quotes for the given `instrument_id`.
     #[must_use]
     pub fn has_quote_ticks(&self, instrument_id: &InstrumentId) -> bool {
         self.quote_count(instrument_id) > 0
     }
 
-    /// Returns whether the cache contains trade ticks for the given `instrument_id`.
+    /// Returns whether the cache contains trades for the given `instrument_id`.
     #[must_use]
     pub fn has_trade_ticks(&self, instrument_id: &InstrumentId) -> bool {
         self.trade_count(instrument_id) > 0

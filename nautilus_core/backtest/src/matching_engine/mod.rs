@@ -306,7 +306,7 @@ impl OrderMatchingEngine {
     }
 
     fn process_trade_ticks_from_bar(&mut self, bar: &Bar) {
-        // Split the bar into 4 trade ticks with quarter volume
+        // Split the bar into 4 trades with quarter volume
         let size = Quantity::new(bar.volume.as_f64() / 4.0, bar.volume.precision);
         let aggressor_side = if !self.core.is_last_initialized || bar.open > self.core.last.unwrap()
         {

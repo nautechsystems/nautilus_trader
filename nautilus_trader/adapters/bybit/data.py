@@ -460,7 +460,7 @@ class BybitDataClient(LiveMarketDataClient):
         end: pd.Timestamp | None = None,
     ) -> None:
         self._log.error(
-            "Cannot request historical quote ticks: not published by Bybit",
+            "Cannot request historical quotes: not published by Bybit",
         )
 
     async def _request_trade_ticks(
@@ -476,11 +476,11 @@ class BybitDataClient(LiveMarketDataClient):
 
         if start is not None:
             self._log.error(
-                "Cannot specify `start` for historical trade ticks: Bybit only provides 'recent trades'",
+                "Cannot specify `start` for historical trades: Bybit only provides 'recent trades'",
             )
         if end is not None:
             self._log.error(
-                "Cannot specify `end` for historical trade ticks: Bybit only provides 'recent trades'",
+                "Cannot specify `end` for historical trades: Bybit only provides 'recent trades'",
             )
 
         trades = await self._http_market.request_bybit_trades(
@@ -636,7 +636,7 @@ class BybitDataClient(LiveMarketDataClient):
         self._handle_data(deltas)
 
     def _handle_ticker(self, product_type: BybitProductType, raw: bytes) -> None:
-        # Currently we use the ticker stream to parse quote ticks, and this
+        # Currently we use the ticker stream to parse quotes, and this
         # is only handled of LINEAR / INVERSE. Other product types should
         # subscribe to an orderbook stream.
         if product_type in (BybitProductType.LINEAR, BybitProductType.INVERSE):

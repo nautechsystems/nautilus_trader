@@ -168,7 +168,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         if not (instrument := self._cache.instrument(instrument_id)):
             self._log.error(
-                f"Cannot subscribe to quote ticks for {instrument_id}: instrument not found",
+                f"Cannot subscribe to quotes for {instrument_id}: instrument not found",
             )
             return
 
@@ -182,13 +182,13 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         if not (instrument := self._cache.instrument(instrument_id)):
             self._log.error(
-                f"Cannot subscribe to trade ticks for {instrument_id}: instrument not found",
+                f"Cannot subscribe to trades for {instrument_id}: instrument not found",
             )
             return
 
         if isinstance(instrument, CurrencyPair):
             self._log.error(
-                "Interactive Brokers does not support trade ticks for CurrencyPair instruments",
+                "Interactive Brokers does not support trades for CurrencyPair instruments",
             )
             return
 
@@ -318,7 +318,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     ) -> None:
         if not (instrument := self._cache.instrument(instrument_id)):
             self._log.error(
-                f"Cannot request quote ticks for {instrument_id}, instrument not found",
+                f"Cannot request quotes for {instrument_id}, instrument not found",
             )
             return
 
@@ -345,13 +345,13 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
     ) -> None:
         if not (instrument := self._cache.instrument(instrument_id)):
             self._log.error(
-                f"Cannot request trade ticks for {instrument_id}: instrument not found",
+                f"Cannot request trades for {instrument_id}: instrument not found",
             )
             return
 
         if isinstance(instrument, CurrencyPair):
             self._log.error(
-                "Interactive Brokers does not support trade ticks for CurrencyPair instruments",
+                "Interactive Brokers does not support trades for CurrencyPair instruments",
             )
             return
 
@@ -363,7 +363,7 @@ class InteractiveBrokersDataClient(LiveMarketDataClient):
             end,
         )
         if not ticks:
-            self._log.warning(f"No trade ticks received for {instrument_id}")
+            self._log.warning(f"No trades received for {instrument_id}")
             return
 
         self._handle_trade_ticks(instrument_id, ticks, correlation_id)

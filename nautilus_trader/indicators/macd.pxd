@@ -23,7 +23,7 @@ cdef class MovingAverageConvergenceDivergence(Indicator):
     cdef MovingAverage _slow_ma
 
     cdef readonly PriceType price_type
-    """The specified price type for extracting values from quote ticks.\n\n:returns: `PriceType`"""
+    """The specified price type for extracting values from quotes.\n\n:returns: `PriceType`"""
     cdef readonly int fast_period
     """The fast moving average window period.\n\n:returns: `int`"""
     cdef readonly int slow_period

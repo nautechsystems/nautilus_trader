@@ -106,7 +106,7 @@ class TemplateLiveDataClient(LiveDataClient):
 
 ### MarketDataClient
 
-The `MarketDataClient` handles market-specific data such as order books, top-of-book quotes and trade ticks, 
+The `MarketDataClient` handles market-specific data such as order books, top-of-book quotes and trades, 
 and instrument status updates. It focuses on providing historical and real-time market data that is essential for 
 trading operations.
 

@@ -91,8 +91,8 @@ When submitting trailing stop orders from your strategy, you have two options:
 You must also have at least *one* of the following:
 
 - The `trigger_price` for the order is set (this will act as the Binance *activation_price*).
-- (or) you have subscribed to quote ticks for the instrument you're submitting the order for (used to infer activation price).
-- (or) you have subscribed to trade ticks for the instrument you're submitting the order for (used to infer activation price).
+- (or) you have subscribed to quotes for the instrument you're submitting the order for (used to infer activation price).
+- (or) you have subscribed to trades for the instrument you're submitting the order for (used to infer activation price).
 
 ## Configuration
 
@@ -223,7 +223,7 @@ config = TradingNodeConfig(
 
 ### Aggregated trades
 
-Binance provides aggregated trade data endpoints as an alternative source of trade ticks.
+Binance provides aggregated trade data endpoints as an alternative source of trades.
 In comparison to the default trade endpoints, aggregated trade data endpoints can return all
 ticks between a `start_time` and `end_time`.
 

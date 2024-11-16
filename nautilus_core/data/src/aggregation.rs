@@ -277,7 +277,7 @@ where
     }
 }
 
-/// Provides a means of building tick bars aggregated from quote and trade ticks.
+/// Provides a means of building tick bars aggregated from quote and trades.
 ///
 /// When received tick count reaches the step threshold of the bar
 /// specification, then a bar is created and sent to the handler.
@@ -330,7 +330,7 @@ where
     }
 }
 
-/// Provides a means of building volume bars aggregated from quote and trade ticks.
+/// Provides a means of building volume bars aggregated from quote and trades.
 pub struct VolumeBarAggregator<H>
 where
     H: FnMut(Bar),
@@ -400,7 +400,7 @@ where
     }
 }
 
-/// Provides a means of building value bars aggregated from quote and trade ticks.
+/// Provides a means of building value bars aggregated from quote and trades.
 ///
 /// When received value reaches the step threshold of the bar
 /// specification, then a bar is created and sent to the handler.
@@ -476,7 +476,7 @@ where
     }
 }
 
-/// Provides a means of building time bars aggregated from quote and trade ticks.
+/// Provides a means of building time bars aggregated from quote and trades.
 ///
 /// At each aggregation time interval, a bar is created and sent to the handler.
 pub struct TimeBarAggregator<C, H>
