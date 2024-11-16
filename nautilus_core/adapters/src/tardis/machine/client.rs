@@ -137,7 +137,6 @@ where
         while let Some(result) = stream.next().await {
             match result {
                 Ok(msg) => {
-                    // TODO: This sequence needs optimizing
                     let info = if let Some(ref instrument) = instrument {
                         Some(instrument.clone())
                     } else {

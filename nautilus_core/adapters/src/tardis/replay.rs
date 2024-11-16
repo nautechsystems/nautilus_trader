@@ -422,7 +422,6 @@ fn batch_and_write_trades(
 fn batch_and_write_bars(bars: Vec<Bar>, bar_type: &BarType, date: NaiveDate, path: &Path) {
     let typename = stringify!(Bar);
     let batch = match bars_to_arrow_record_batch_bytes(bars) {
-        // TODO: Handle bar type
         Ok(batch) => batch,
         Err(e) => {
             tracing::error!("Error converting `{typename}` to Arrow: {e:?}");
