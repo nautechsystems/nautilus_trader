@@ -72,7 +72,7 @@ ustr = { version = "1.1.0", features = ["serde"] }
 uuid = { version = "1.11.0", features = ["v4"] }
 
 # dev-dependencies
-axum = "0.7.8"
+axum = "0.7.9"
 criterion = "0.5.1"
 float-cmp = "0.10.0"
 iai = "0.1.1"
