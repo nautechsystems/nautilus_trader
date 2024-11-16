@@ -883,7 +883,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             return
 
         if fill_msg.orderId is None:
-            message = f"Cannot handle fill event: orderId is None for fill {fill_msg.type} event."
+            message = f"Cannot handle fill event: orderId is None for fill {fill_msg.type} event"
             self._log.error(message)
             return
 
@@ -1017,7 +1017,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         good_til_block: int | None = None
 
         if dydx_order_tags.is_short_term_order is False and order.order_type == OrderType.MARKET:
-            rejection_reason = "Cannot submit order: long term market order not supported by dYdX."
+            rejection_reason = "Cannot submit order: long term market order not supported by dYdX"
             self.generate_order_rejected(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
@@ -1078,7 +1078,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             price = 0
         else:
             rejection_reason = (
-                f"Cannot submit order: order type `{order.order_type}` not (yet) supported."
+                f"Cannot submit order: order type `{order.order_type}` not (yet) supported"
             )
             self.generate_order_rejected(
                 strategy_id=order.strategy_id,
@@ -1106,7 +1106,7 @@ class DYDXExecutionClient(LiveExecutionClient):
 
     async def _place_order(self, order_msg: DYDXOrder, order: Order):
         if self._wallet is None:
-            rejection_reason = "Cannot submit order: no wallet available."
+            rejection_reason = "Cannot submit order: no wallet available"
             self._log.error(rejection_reason)
 
             self.generate_order_rejected(
@@ -1351,7 +1351,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         good_til_date_secs: int | None,
     ) -> None:
         if self._wallet is None:
-            reason = f"Cannot cancel order {order.client_order_id!r}: no wallet available."
+            reason = f"Cannot cancel order {order.client_order_id!r}: no wallet available"
             self._log.error(reason)
             self.generate_order_cancel_rejected(
                 strategy_id=order.strategy_id,
