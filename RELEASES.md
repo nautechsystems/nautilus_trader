@@ -6,7 +6,7 @@ Released on TBD (UTC).
 None
 
 ### Internal Improvements
-- Upgraded `datafusion` crate to v0.43.0 (#2056), thanks @twitu
+- Upgraded `datafusion` crate to v43.0.0 (#2056), thanks @twitu
 
 ### Breaking Changes
 None
@@ -25,7 +25,6 @@ Released on 17th November 2024 (UTC).
 - Added `TardisInstrumentProvider` providing instrument definitions from Tardis through the HTTP instrument metadata API
 - Added `Portfolio.realized_pnl(...)` method for per instrument realized PnL (based on positions)
 - Added `Portfolio.realized_pnls(...)` method for per venue realized PnL (based on positions)
-- Added `PolymarketExecClientConfig.generate_order_history_from_trades` config setting (default False and not currently recommended)
 - Added configuration warning for `InstrumentProvider` (to warn when node starts with no instrument loading)
 - Implemented Tardis optional [symbol normalization](https://nautilustrader.io/docs/nightly/integrations/tardis/#symbology-and-normalization)
 - Implemented `WebSocketClient` reconnection retries (#2044), thanks @davidsblom
