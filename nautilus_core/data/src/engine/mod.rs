@@ -45,7 +45,6 @@ use std::{
     cell::{Ref, RefCell},
     collections::{HashMap, HashSet, VecDeque},
     num::NonZeroU64,
-    ops::Deref,
     rc::Rc,
     sync::Arc,
 };
@@ -102,7 +101,7 @@ pub struct DataEngine {
     bar_aggregators: Vec<Box<dyn BarAggregator>>, // TODO: dyn for now
     synthetic_quote_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     synthetic_trade_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
-    buffered_deltas_map: HashMap<InstrumentId, Vec<OrderBookDelta>>,
+    buffered_deltas_map: HashMap<InstrumentId, Vec<OrderBookDelta>>, // TODO: Use OrderBookDeltas?
     msgbus_priority: u8,
     command_queue: VecDeque<SubscriptionCommand>,
     config: DataEngineConfig,
@@ -342,38 +341,28 @@ impl DataEngine {
     }
 
     pub fn execute(&mut self, cmd: SubscriptionCommand) {
-        match cmd.action {
+        let result = match cmd.action {
             Action::Subscribe => match cmd.data_type.type_name() {
                 stringify!(OrderBookDelta) => self.handle_subscribe_book_deltas(&cmd),
                 stringify!(OrderBook) => self.handle_subscribe_book_snapshots(&cmd),
                 stringify!(Bar) => self.handle_subscribe_bars(&cmd),
-                type_name => Err(anyhow::anyhow!(
-                    "Cannot handle subscription, type `{type_name}` is unrecognized"
-                )),
+                _ => Ok(()), // No other actions for engine
             },
             Action::Unsubscribe => match cmd.data_type.type_name() {
                 stringify!(OrderBookDelta) => self.handle_unsubscribe_book_deltas(&cmd),
                 stringify!(OrderBook) => self.handle_unsubscribe_book_snapshots(&cmd),
                 stringify!(Bar) => self.handle_unsubscribe_bars(&cmd),
-                type_name => Err(anyhow::anyhow!(
-                    "Cannot handle subscription, type `{type_name}` is unrecognized"
-                )),
+                _ => Ok(()), // No other actions for engine
             },
+        };
+
+        if let Err(e) = result {
+            log::error!("{e}");
+            return;
         }
-        .unwrap_or_else(|e| log::error!("{e}"));
 
         if let Some(client) = self.get_client_mut(&cmd.client_id, &cmd.venue) {
-            client.execute(cmd.clone());
-
-            // TBD if we want to do the below instead
-            // if client.handles_order_book_deltas {
-            //     client.subscribe_order_book_deltas(instrument_id, book_type, depth)?;
-            // } else if client.handles_order_book_snapshots {
-            //     client.subscribe_order_book_snapshots(instrument_id, book_type, depth)?;
-            // } else {
-            //     anyhow::bail!("Cannot subscribe order book for {instrument_id}: client does not handle book subscriptions");
-            // }
-            // client.execute(command);
+            client.execute(cmd);
         } else {
             log::error!(
                 "Cannot handle command: no client found for {}",
@@ -405,7 +394,7 @@ impl DataEngine {
     pub fn process_data(&mut self, data: Data) {
         match data {
             Data::Delta(delta) => self.handle_delta(delta),
-            Data::Deltas(deltas) => self.handle_deltas(deltas.deref().clone()), // TODO: Optimize
+            Data::Deltas(deltas) => self.handle_deltas(deltas.into_inner()),
             Data::Depth10(depth) => self.handle_depth10(depth),
             Data::Quote(quote) => self.handle_quote(quote),
             Data::Trade(trade) => self.handle_trade(trade),
@@ -472,10 +461,13 @@ impl DataEngine {
                 return; // Not the last delta for event
             }
 
-            // TODO: Improve efficiency, the FFI API will go along with Cython
-            OrderBookDeltas::new(delta.instrument_id, buffer_deltas.clone())
+            // SAFETY: We know the deltas exists already
+            let deltas = self
+                .buffered_deltas_map
+                .remove(&delta.instrument_id)
+                .unwrap();
+            OrderBookDeltas::new(delta.instrument_id, deltas)
         } else {
-            // TODO: Improve efficiency, the FFI API will go along with Cython
             OrderBookDeltas::new(delta.instrument_id, vec![delta])
         };
 
@@ -503,8 +495,12 @@ impl DataEngine {
                 return;
             }
 
-            // TODO: Improve efficiency, the FFI API will go along with Cython
-            OrderBookDeltas::new(deltas.instrument_id, buffer_deltas.clone())
+            // SAFETY: We know the deltas exists already
+            let buffer_deltas = self
+                .buffered_deltas_map
+                .remove(&deltas.instrument_id)
+                .unwrap();
+            OrderBookDeltas::new(deltas.instrument_id, buffer_deltas)
         } else {
             deltas
         };
