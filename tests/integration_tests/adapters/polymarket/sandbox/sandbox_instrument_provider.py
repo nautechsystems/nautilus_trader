@@ -13,14 +13,13 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import pytest
+import asyncio
 
 from nautilus_trader.adapters.polymarket.factories import get_polymarket_http_client
 from nautilus_trader.adapters.polymarket.providers import PolymarketInstrumentProvider
 from nautilus_trader.common.component import LiveClock
 
 
-@pytest.mark.asyncio()
 async def test_polymarket_instrument_provider():
     clock = LiveClock()
     client = get_polymarket_http_client()
@@ -39,3 +38,7 @@ async def test_polymarket_instrument_provider():
 
     instruments = provider.list_all()
     await provider.load_async(instruments[0].id)
+
+
+if __name__ == "__main__":
+    asyncio.run(test_polymarket_instrument_provider())

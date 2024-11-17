@@ -111,6 +111,7 @@ impl Display for FuzzyCandle {
 }
 
 impl FuzzyCandle {
+    /// Creates a new [`FuzzyCandle`] instance.
     #[must_use]
     pub const fn new(
         direction: CandleDirection,

@@ -1,3 +1,60 @@
+# NautilusTrader 1.206.0 Beta
+
+Released on 17th November 2024 (UTC).
+
+### Enhancements
+- Added `Portfolio.realized_pnl(...)` method for per instrument realized PnL (based on positions)
+- Added `Portfolio.realized_pnls(...)` method for per venue realized PnL (based on positions)
+- Added `TardisInstrumentProvider`
+- Added `PolymarketExecClientConfig.generate_order_history_from_trades` config setting (default False and not currently recommended)
+- Added configuration warning for `InstrumentProvider` (to warn when node starts with no instrument loading)
+- Implemented Tardis optional [symbol normalization](https://nautilustrader.io/docs/nightly/integrations/tardis/#symbology-and-normalization)
+- Implemented `WebSocketClient` reconnection retries (#2044), thanks @davidsblom
+- Implemented `OrderCancelRejected` event generation for Binance and Bybit
+- Implemented `OrderModifyRejected` event generation for Binance and Bybit
+- Improved `OrderRejected` handling of `reason` string (`None` is now allowed which will become the string `'None'`)
+- Improved `OrderCancelRejected` handling of `reason` string (`None` is now allowed which will become the string `'None'`)
+- Improved `OrderModifyRejected` handling of `reason` string (`None` is now allowed which will become the string `'None'`)
+
+### Internal Improvements
+- Ported `RiskEngine` to Rust (#2035), thanks @Pushkarm029 and @twitu
+- Ported `ExecutionEngine` to Rust (#2048), thanks @twitu
+- Added globally shared data channels to send events from engines to Runner in Rust (#2042), thanks @twitu
+- Added LRU caching for dYdX HTTP client (#2049), thanks @davidsblom
+- Improved identifier constructors to take `AsRef<str>` for a cleaner more flexible API
+- Refined identifiers `From` trait impls
+- Refined `InstrumentProvider` initialization behavior and logging
+- Refined `LiveTimer` cancel and performance testing
+- Simplified `LiveTimer` cancellation model (#2046), thanks @twitu
+- Refined Bybit HMAC authentication signatures (now using Rust implemented function)
+- Refined Tardis instrument ID parsing
+- Removed Bybit `msgspec` redundant import alias (#2050), thanks @sunlei
+- Upgraded `databento` crate to v0.16.0
+
+### Breaking Changes
+None
+
+### Fixes
+- Fixed loading specific instrument IDs for `InstrumentProviderConfig`
+- Fixed PyO3 instrument conversions for `raw_symbol` (was incorrectly using the normalized symbol)
+- Fixed reconcile open orders and account websocket message for dYdX (#2039), thanks @davidsblom
+- Fixed market order `avg_px` for Polymarket trade reports
+- Fixed Betfair clients keepalive (#2040), thanks @limx0
+- Fixed Betfair reconciliation (#2041), thanks @limx0
+- Fixed Betfair customer order ref limit to 32 chars
+- Fixed Bybit handling of `PARTIALLY_FILLED_CANCELED` status orders
+- Fixed Polymarket size precision for `BinaryOption` instruments (precision 6 to match USDC.e)
+- Fixed adapter instrument reloading (providers were not reloading instruments at the configured interval due to internal state flags)
+- Fixed static time logging for `BacktestEngine` when running with `use_pyo3` logging config
+- Fixed in-flight orders check and improve error handling (#2053), thanks @davidsblom
+- Fixed dYdX handling for liquidated fills (#2052), thanks @davidsblom
+- Fixed `BybitResponse.time` field as optional `int` (#2051), thanks @sunlei
+- Fixed single instrument requests for `DatabentoDataClient` (was incorrectly calling `_handle_instruments` instead of `_handle_instrument`), thanks for reporting @Emsu
+- Fixed `fsspec` recursive globbing behavior to ensure only file paths are included, and bumped dependency to version 2024.10.0
+- Fixed jupyterlab url typo (#2057), thanks @Alsheh
+
+---
+
 # NautilusTrader 1.205.0 Beta
 
 Released on 3rd November 2024 (UTC).
@@ -22,7 +79,7 @@ Released on 3rd November 2024 (UTC).
 - Refined Arrow serialization (record batch functions now also available in Rust)
 - Refined core `Bar` API to remove unnecessary unwraps
 - Standardized network client logging
-- Fixed all pyo3 deprecations for API breaking changes
+- Fixed all PyO3 deprecations for API breaking changes
 - Fixed all clippy warning lints for PyO3 changes (#2030), thanks @Pushkarm029
 - PyO3 upgrade refactor and repair catalog tests (#2032), thanks @twitu
 - Upgraded `pyo3` crate to v0.22.5
@@ -30,7 +87,7 @@ Released on 3rd November 2024 (UTC).
 - Upgraded `tokio` crate to v1.41.0
 
 ### Breaking Changes
-- Removed pyo3 `DataTransformer` (was being used for namespacing, so refactored to separate functions)
+- Removed PyO3 `DataTransformer` (was being used for namespacing, so refactored to separate functions)
 - Moved `TEST_DATA_DIR` constant from `tests` to `nautilus_trader` package (#2020), thanks @faysou
 
 ### Fixes
@@ -42,7 +99,7 @@ Released on 3rd November 2024 (UTC).
 - Fixed catalog query mem leak test (#2031), thanks @Pushkarm029
 - Fixed `OrderInitialized.to_dict()` `tags` value type to `list[str]` (was a concatenated `str`)
 - Fixed `OrderInitialized.to_dict()` `linked_order_ids` value type to `list[str]` (was a concatenated `str`)
-- Fix Betfair clients shutdown (#2037), thanks @limx0
+- Fixed Betfair clients shutdown (#2037), thanks @limx0
 
 ---
 
@@ -341,7 +398,7 @@ Released on 2nd August 2024 (UTC).
 - Fixed `DataEngine` unsubscribing from order book deltas (#1814), thanks @davidsblom
 - Fixed `LiveExecutionEngine` handling of adapter client execution report causing `None` mass status (#1789), thanks for reporting @faysou
 - Fixed `InteractiveBrokersExecutionClient` handling of instruments not found when generating execution reports (#1789), thanks for reporting @faysou
-- Fixed Bybit parsing of trade and quote ticks for websocket messages (#1794), thanks @davidsblom
+- Fixed Bybit parsing of trade and quotes for websocket messages (#1794), thanks @davidsblom
 
 ---
 
@@ -930,7 +987,7 @@ This will be the final release with support for Python 3.9.
 - Added `Cache.is_order_pending_cancel_local(...)` (tracks local orders in cancel transition)
 - Added `BinanceTimeInForce.GTD` enum member (futures only)
 - Added Binance Futures support for GTD orders
-- Added Binance internal bar aggregation inference from aggregated trade ticks or 1-MINUTE bars (depending on lookback window)
+- Added Binance internal bar aggregation inference from aggregated trades or 1-MINUTE bars (depending on lookback window)
 - Added `BinanceExecClientConfig.use_gtd` option (to remap to GTC and locally manage GTD orders)
 - Added package version check for `nautilus_ibapi`, thanks @rsmb7z
 - Added `RiskEngine` min/max instrument notional limit checks
@@ -1075,7 +1132,7 @@ Released on 31st July 2023 (UTC).
 - Fixed Binance reconciliation which was requesting reports for the same symbol multiple times
 - Fixed Binance Futures native symbol parsing (was actually Nautilus symbol values)
 - Fixed Binance Futures `PositionStatusReport` parsing of position side
-- Fixed Binance Futures `TradeReport` assignment of position ID (was hardcoded to hedging mode)
+- Fixed Binance Futures `TradeReport` assignment of position ID (was hard-coded to hedging mode)
 - Fixed Binance execution submitting of order lists
 - Fixed Binance commission rates requests for `InstrumentProvider`
 - Fixed Binance `TriggerType` parsing #1154, thanks for reporting @davidblom603

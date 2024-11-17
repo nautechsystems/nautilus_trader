@@ -24,12 +24,17 @@ pub struct ThrottlerResume<T, F> {
 }
 
 impl<T, F> ThrottlerResume<T, F> {
+    /// Creates a new [`ThrottlerResume`] instance.
     pub const fn new(inner: Rc<RefCell<InnerThrottler<T, F>>>) -> Self {
         Self { inner }
     }
 }
 
-impl<T: 'static, F: Fn(T) + 'static> From<ThrottlerResume<T, F>> for TimeEventCallback {
+impl<T, F> From<ThrottlerResume<T, F>> for TimeEventCallback
+where
+    T: 'static,
+    F: Fn(T) + 'static,
+{
     fn from(value: ThrottlerResume<T, F>) -> Self {
         Self::Rust(Rc::new(move |_event: TimeEvent| {
             value.inner.borrow_mut().is_limiting = false;
@@ -44,12 +49,17 @@ pub struct ThrottlerProcess<T, F> {
 }
 
 impl<T, F> ThrottlerProcess<T, F> {
+    /// Creates a new [`ThrottlerProcess`] instance.
     pub const fn new(inner: Rc<RefCell<InnerThrottler<T, F>>>) -> Self {
         Self { inner }
     }
 }
 
-impl<T: 'static, F: Fn(T) + 'static> From<ThrottlerProcess<T, F>> for TimeEventCallback {
+impl<T, F> From<ThrottlerProcess<T, F>> for TimeEventCallback
+where
+    T: 'static,
+    F: Fn(T) + 'static,
+{
     fn from(value: ThrottlerProcess<T, F>) -> Self {
         Self::Rust(Rc::new(move |_event: TimeEvent| {
             let process_clone = ThrottlerProcess {

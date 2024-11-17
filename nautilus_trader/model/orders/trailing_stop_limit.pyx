@@ -67,10 +67,10 @@ cdef class TrailingStopLimitOrder(Order):
         The order side.
     quantity : Quantity
         The order quantity (> 0).
-    price : Price, optional with no default so ``None`` must be passed explicitly
+    price : Price or ``None``
         The order price (LIMIT). If ``None`` then will typically default to the
         delta of market price and `limit_offset`.
-    trigger_price : Price, optional with no default so ``None`` must be passed explicitly
+    trigger_price : Price or ``None``
         The order trigger price (STOP). If ``None`` then will typically default
         to the delta of market price and `trailing_offset`.
     trigger_type : TriggerType

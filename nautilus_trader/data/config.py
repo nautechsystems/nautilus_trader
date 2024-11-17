@@ -29,13 +29,13 @@ class DataEngineConfig(NautilusConfig, frozen=True):
         If time bar aggregators will build and emit bars with no new market updates.
     time_bars_timestamp_on_close : bool, default True
         If time bar aggregators will timestamp `ts_event` on bar close.
-        If False then will timestamp on bar open.
+        If False, then will timestamp on bar open.
     time_bars_interval_type : str, default 'left-open'
         Determines the type of interval used for time aggregation.
         - 'left-open': start time is excluded and end time is included (default).
         - 'right-open': start time is included and end time is excluded.
     time_bars_origins : dict[BarAggregation, pd.Timedelta | pd.DateOffset], optional
-            A dictionary mapping time bar aggregations to their origin time offsets.
+        A dictionary mapping time bar aggregations to their origin time offsets.
     validate_data_sequence : bool, default False
         If data objects timestamp sequencing will be validated and handled.
     buffer_deltas : bool, default False

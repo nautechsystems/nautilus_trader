@@ -141,12 +141,8 @@ impl<'r> FromRow<'r, PgRow> for OrderInitializedModel {
         let reduce_only = row.try_get::<bool, _>("reduce_only")?;
         let quote_quantity = row.try_get::<bool, _>("quote_quantity")?;
         let reconciliation = row.try_get::<bool, _>("reconciliation")?;
-        let ts_event = row
-            .try_get::<String, _>("ts_event")
-            .map(|res| UnixNanos::from(res.as_str()))?;
-        let ts_init = row
-            .try_get::<String, _>("ts_init")
-            .map(|res| UnixNanos::from(res.as_str()))?;
+        let ts_event = row.try_get::<String, _>("ts_event").map(UnixNanos::from)?;
+        let ts_init = row.try_get::<String, _>("ts_init").map(UnixNanos::from)?;
         let price = row
             .try_get::<Option<&str>, _>("price")
             .ok()

@@ -15,7 +15,6 @@
 
 import asyncio
 import base64
-import hmac
 from collections import defaultdict
 from collections.abc import Awaitable
 from collections.abc import Callable
@@ -41,6 +40,7 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClient
 from nautilus_trader.core.nautilus_pyo3 import WebSocketClientError
 from nautilus_trader.core.nautilus_pyo3 import WebSocketConfig
+from nautilus_trader.core.nautilus_pyo3 import hmac_signature
 
 
 MAX_ARGS_PER_SUBSCRIPTION_REQUEST = 10  # not OKX limit but smart; carried over from Bybit adapter
@@ -138,6 +138,7 @@ def get_ws_url(base_url_ws: str, ws_base_url_type: OKXWsBaseUrlType) -> str:
         case OKXWsBaseUrlType.BUSINESS:
             return f"{base_url_ws}/business"
         case _:
+            # Theoretically unreachable but retained to keep the match exhaustive
             raise ValueError(
                 f"unknown websocket base url type {ws_base_url_type} - must be one of "
                 f"{list(OKXWsBaseUrlType)}",
@@ -430,7 +431,7 @@ class OKXWebsocketClient:
     @check_public
     async def subscribe_trades(self, instId: str) -> None:
         """
-        Subscribe to aggregated trade ticks (one update per taker order).
+        Subscribe to aggregated trades (one update per taker order).
         """
         if self._client is None:
             self._log.warning("Cannot subscribe: not connected")
@@ -448,7 +449,7 @@ class OKXWebsocketClient:
     @check_public
     async def unsubscribe_trades(self, instId: str) -> None:
         """
-        Unsubscribe from aggregated trade ticks (one update per taker order).
+        Unsubscribe from aggregated trades (one update per taker order).
         """
         if self._client is None:
             self._log.warning("Cannot unsubscribe: not connected")
@@ -998,9 +999,12 @@ class OKXWebsocketClient:
             await self._send(payload)
 
     async def _login(self):
+        if self._api_secret is None:
+            raise ValueError("`api_secret` was `None` for private websocket")
+
         timestamp = int(self._clock.timestamp())
         message = str(timestamp) + "GET/users/self/verify"
-        digest = hmac.new(self._api_secret.encode(), message.encode(), "sha256").digest()
+        digest = hmac_signature(self._api_secret, message).encode()
         sign = base64.b64encode(digest).decode()
         payload = {
             "op": "login",

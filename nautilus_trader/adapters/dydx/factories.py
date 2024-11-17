@@ -17,6 +17,7 @@ Provide factories to construct data and execution clients for dYdX.
 """
 
 import asyncio
+from functools import lru_cache
 
 from nautilus_trader.adapters.dydx.common.credentials import get_wallet_address
 from nautilus_trader.adapters.dydx.common.urls import get_grpc_base_url
@@ -36,9 +37,6 @@ from nautilus_trader.common.component import MessageBus
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.live.factories import LiveDataClientFactory
 from nautilus_trader.live.factories import LiveExecClientFactory
-
-
-HTTP_CLIENTS: dict[str, DYDXHttpClient] = {}
 
 
 def get_dydx_grcp_client(
@@ -64,6 +62,7 @@ def get_dydx_grcp_client(
     )
 
 
+@lru_cache(1)
 def get_dydx_http_client(
     clock: LiveClock,
     base_url: str | None = None,
@@ -72,8 +71,7 @@ def get_dydx_http_client(
     """
     Cache and return a dYdX HTTP client with the given key and secret.
 
-    If a cached client with matching key and secret already exists, then that cached
-    client will be returned.
+    If a cached client with matching parameters already exists, the cached client will be returned.
 
     Parameters
     ----------
@@ -90,17 +88,13 @@ def get_dydx_http_client(
 
     """
     http_base_url = base_url or get_http_base_url(is_testnet)
-
-    if http_base_url not in HTTP_CLIENTS:
-        client = DYDXHttpClient(
-            clock=clock,
-            base_url=http_base_url,
-        )
-        HTTP_CLIENTS[http_base_url] = client
-
-    return HTTP_CLIENTS[http_base_url]
+    return DYDXHttpClient(
+        clock=clock,
+        base_url=http_base_url,
+    )
 
 
+@lru_cache(1)
 def get_dydx_instrument_provider(
     client: DYDXHttpClient,
     clock: LiveClock,
@@ -111,8 +105,7 @@ def get_dydx_instrument_provider(
     """
     Cache and return a dYdX instrument provider.
 
-    If a cached provider with matching key and secret already exists, then that
-    cached provider will be returned.
+    If a cached provider already exists, then that provider will be returned.
 
     Parameters
     ----------

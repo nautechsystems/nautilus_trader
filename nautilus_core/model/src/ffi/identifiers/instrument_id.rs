@@ -20,7 +20,7 @@ use std::{
     str::FromStr,
 };
 
-use nautilus_core::ffi::string::{cstr_to_str, str_to_cstr};
+use nautilus_core::ffi::string::{cstr_as_str, str_to_cstr};
 
 use crate::identifiers::{InstrumentId, Symbol, Venue};
 
@@ -36,7 +36,7 @@ pub extern "C" fn instrument_id_new(symbol: Symbol, venue: Venue) -> InstrumentI
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn instrument_id_check_parsing(ptr: *const c_char) -> *const c_char {
-    match InstrumentId::from_str(cstr_to_str(ptr)) {
+    match InstrumentId::from_str(cstr_as_str(ptr)) {
         Ok(_) => str_to_cstr(""),
         Err(e) => str_to_cstr(&e.to_string()),
     }
@@ -49,7 +49,7 @@ pub unsafe extern "C" fn instrument_id_check_parsing(ptr: *const c_char) -> *con
 /// - Assumes `ptr` is a valid C string pointer.
 #[no_mangle]
 pub unsafe extern "C" fn instrument_id_from_cstr(ptr: *const c_char) -> InstrumentId {
-    InstrumentId::from(cstr_to_str(ptr))
+    InstrumentId::from(cstr_as_str(ptr))
 }
 
 /// Returns an [`InstrumentId`] as a C string pointer.

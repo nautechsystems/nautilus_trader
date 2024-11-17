@@ -53,6 +53,7 @@ pub struct TardisHttpClient {
     base_url: String,
     api_key: String,
     client: reqwest::Client,
+    normalize_symbols: bool,
 }
 
 impl TardisHttpClient {
@@ -61,6 +62,7 @@ impl TardisHttpClient {
         api_key: Option<&str>,
         base_url: Option<&str>,
         timeout_secs: Option<u64>,
+        normalize_symbols: bool,
     ) -> anyhow::Result<Self> {
         let api_key = match api_key {
             Some(key) => key.to_string(),
@@ -83,6 +85,7 @@ impl TardisHttpClient {
             base_url,
             api_key,
             client,
+            normalize_symbols,
         })
     }
 
@@ -143,7 +146,7 @@ impl TardisHttpClient {
 
         infos
             .into_iter()
-            .map(|info| Ok(parse_instrument_any(info, ts_init)))
+            .map(|info| Ok(parse_instrument_any(info, ts_init, self.normalize_symbols)))
             .collect()
     }
 
@@ -162,6 +165,6 @@ impl TardisHttpClient {
         let now = Utc::now();
         let ts_init = UnixNanos::from(now.timestamp_nanos_opt().unwrap() as u64);
 
-        Ok(parse_instrument_any(info, ts_init))
+        Ok(parse_instrument_any(info, ts_init, self.normalize_symbols))
     }
 }

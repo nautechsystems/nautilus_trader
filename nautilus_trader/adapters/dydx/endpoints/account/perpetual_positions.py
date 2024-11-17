@@ -39,7 +39,7 @@ class DYDXGetPerpetualPositionsGetParams(msgspec.Struct, omit_defaults=True, fro
 
     address: str
     subaccountNumber: int
-    status: DYDXPerpetualPositionStatus | None = None
+    status: list[DYDXPerpetualPositionStatus] | None = None
     limit: int | None = None
     createdBeforeOrAtHeight: int | None = None
     createdBeforeOrAt: datetime.datetime | None = None

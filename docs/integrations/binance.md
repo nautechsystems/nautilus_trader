@@ -29,13 +29,13 @@ The following documentation assumes a trader is setting up for both live market
 data feeds, and trade execution. The full Binance integration consists of an assortment of components,
 which can be used together or separately depending on the user's needs.
 
-- `BinanceHttpClient`: Low-level HTTP API connectivity
-- `BinanceWebSocketClient`: Low-level WebSocket API connectivity
-- `BinanceInstrumentProvider`: Instrument parsing and loading functionality
-- `BinanceSpotDataClient`/`BinanceFuturesDataClient`: A market data feed manager
-- `BinanceSpotExecutionClient`/`BinanceFuturesExecutionClient`: An account management and trade execution gateway
-- `BinanceLiveDataClientFactory`: Factory for Binance data clients (used by the trading node builder)
-- `BinanceLiveExecClientFactory`: Factory for Binance execution clients (used by the trading node builder)
+- `BinanceHttpClient`: Low-level HTTP API connectivity.
+- `BinanceWebSocketClient`: Low-level WebSocket API connectivity.
+- `BinanceInstrumentProvider`: Instrument parsing and loading functionality.
+- `BinanceSpotDataClient`/`BinanceFuturesDataClient`: A market data feed manager.
+- `BinanceSpotExecutionClient`/`BinanceFuturesExecutionClient`: An account management and trade execution gateway.
+- `BinanceLiveDataClientFactory`: Factory for Binance data clients (used by the trading node builder).
+- `BinanceLiveExecClientFactory`: Factory for Binance execution clients (used by the trading node builder).
 
 :::note
 Most users will simply define a configuration for a live trading node (as below),
@@ -46,9 +46,10 @@ and won't need to necessarily work with these lower level components directly.
 
 To provide complete API functionality to traders, the integration includes several
 custom data types:
-- `BinanceTicker` returned when subscribing to Binance 24hr tickers (contains many prices and stats).
-- `BinanceBar` returned when requesting historical, or subscribing to, Binance bars (contains extra volume information).
-- `BinanceFuturesMarkPriceUpdate` returned when subscribing to Binance Futures mark price updates.
+
+- `BinanceTicker`: Represents data returned for Binance 24-hour ticker subscriptions, including comprehensive price and statistical information.
+- `BinanceBar`: Represents data for historical requests or real-time subscriptions to Binance bars, with additional volume metrics.
+- `BinanceFuturesMarkPriceUpdate`: Represents mark price updates for Binance Futures subscriptions.
 
 See the Binance [API Reference](../api_reference/adapters/binance.md) for full definitions.
 
@@ -57,8 +58,10 @@ See the Binance [API Reference](../api_reference/adapters/binance.md) for full d
 As per the Nautilus unification policy for symbols, the native Binance symbols are used where possible including for
 spot assets and futures contracts. Because NautilusTrader is capable of multi-venue + multi-account
 trading, it's necessary to explicitly clarify the difference between `BTCUSDT` as the spot and margin traded
-pair, and the `BTCUSDT` perpetual futures contract (this symbol is used for _both_ natively by Binance). Therefore, NautilusTrader appends `-PERP` to all native perpetual symbols.
-E.g. for Binance Futures, the said instrument's symbol is `BTCUSDT-PERP` within the Nautilus system boundary.
+pair, and the `BTCUSDT` perpetual futures contract (this symbol is used for _both_ natively by Binance).
+
+Therefore, Nautilus appends the suffix `-PERP` to all perpetual symbols.
+E.g. for Binance Futures, the `BTCUSDT` perpetual futures contract symbol would be `BTCUSDT-PERP` within the Nautilus system boundary.
 
 ## Order types
 
@@ -87,9 +90,9 @@ When submitting trailing stop orders from your strategy, you have two options:
 
 You must also have at least *one* of the following:
 
-- The `trigger_price` for the order is set (this will act as the Binance *activation_price*)
-- (or) you have subscribed to quote ticks for the instrument you're submitting the order for (used to infer activation price)
-- (or) you have subscribed to trade ticks for the instrument you're submitting the order for (used to infer activation price)
+- The `trigger_price` for the order is set (this will act as the Binance *activation_price*).
+- (or) you have subscribed to quotes for the instrument you're submitting the order for (used to infer activation price).
+- (or) you have subscribed to trades for the instrument you're submitting the order for (used to infer activation price).
 
 ## Configuration
 
@@ -172,9 +175,10 @@ credentials are valid and have trading permissions.
 
 All the Binance account types will be supported for live trading. Set the `account_type`
 using the `BinanceAccountType` enum. The account type options are:
+
 - `SPOT`
-- `MARGIN` (Margin shared between open positions.)
-- `ISOLATED_MARGIN` (Margin assigned to a single position.)
+- `MARGIN` (Margin shared between open positions)
+- `ISOLATED_MARGIN` (Margin assigned to a single position)
 - `USDT_FUTURE` (USDT or BUSD stablecoins as collateral)
 - `COIN_FUTURE` (other cryptocurrency as collateral)
 
@@ -219,7 +223,7 @@ config = TradingNodeConfig(
 
 ### Aggregated trades
 
-Binance provides aggregated trade data endpoints as an alternative source of trade ticks.
+Binance provides aggregated trade data endpoints as an alternative source of trades.
 In comparison to the default trade endpoints, aggregated trade data endpoints can return all
 ticks between a `start_time` and `end_time`.
 
@@ -319,25 +323,31 @@ Order books can be maintained at full or partial depths depending on the
 subscription. WebSocket stream throttling is different between Spot and Futures exchanges,
 Nautilus will use the highest streaming rate possible:
 
-- Spot 100ms
-- Futures 0ms (unthrottled)
+Order books can be maintained at full or partial depths based on the subscription settings.
+WebSocket stream update rates differ between Spot and Futures exchanges, with Nautilus using the
+highest available streaming rate:
+
+- **Spot**: 100ms
+- **Futures**: 0ms (*unthrottled*)
 
 There is a limitation of one order book per instrument per trader instance.
 As stream subscriptions may vary, the latest order book data (deltas or snapshots)
 subscription will be used by the Binance data client.
 
 Order book snapshot rebuilds will be triggered on:
+
 - Initial subscription of the order book data
 - Data websocket reconnects
 
 The sequence of events is as follows:
-- Deltas will start buffered
-- Snapshot is requested and awaited
-- Snapshot response is parsed to `OrderBookDeltas`
-- Snapshot deltas are sent to the `DataEngine`
-- Buffered deltas are iterated, dropping those where the sequence number is not greater than the last delta in the snapshot
-- Deltas will stop buffering
-- Remaining deltas are sent to the `DataEngine`
+
+- Deltas will start buffered.
+- Snapshot is requested and awaited.
+- Snapshot response is parsed to `OrderBookDeltas`.
+- Snapshot deltas are sent to the `DataEngine`.
+- Buffered deltas are iterated, dropping those where the sequence number is not greater than the last delta in the snapshot.
+- Deltas will stop buffering.
+- Remaining deltas are sent to the `DataEngine`.
 
 ## Binance data differences
 

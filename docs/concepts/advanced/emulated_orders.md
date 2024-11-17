@@ -14,8 +14,8 @@ The only requirement to emulate an order is to pass a `TriggerType` to the `emul
 parameter of an `Order` constructor, or `OrderFactory` creation method. The following
 emulation trigger types are currently supported:
 - `DEFAULT` (which is the same as `BID_ASK`)
-- `BID_ASK` (emulated using quote ticks)
-- `LAST` (emulated using trade ticks)
+- `BID_ASK` (emulated using quotes)
+- `LAST` (emulated using trades)
 
 Emulated orders are subject to the same risk controls as 'regular' orders, and can be
 modified and canceled by a trading strategy in the normal way. They will also be included

@@ -180,29 +180,30 @@ class OKXDataClient(LiveMarketDataClient):
         self._decoder_ws_trade = decoder_ws_trade()
 
         # Instrument updates
-        self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
+        self._update_instruments_interval_mins: int | None = config.update_instruments_interval_mins
         self._update_instruments_task: asyncio.Task | None = None
 
     async def _connect(self) -> None:
-        self._log.info("Initializing instruments...")
         await self._instrument_provider.initialize()
-
         self._send_all_instruments_to_data_engine()
-        self._update_instruments_task = self.create_task(self._update_instruments())
-        self._log.info("Initializing websocket connections")
+
+        if self._update_instruments_interval_mins:
+            self._update_instruments_task = self.create_task(
+                self._update_instruments(self._update_instruments_interval_mins),
+            )
+
         for ws_client in self._ws_clients.values():
             await ws_client.connect()
             await asyncio.sleep(0.5)
         await asyncio.sleep(0.5)
         await self._ws_client_tbt_books.connect()
 
-        self._log.info("Data client connected")
-
     async def _disconnect(self) -> None:
         if self._update_instruments_task:
-            self._log.debug("Cancelling `update_instruments` task")
+            self._log.debug("Cancelling 'update_instruments' task")
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
+
         for ws_client in self._ws_clients.values():
             await ws_client.disconnect()
         await self._ws_client_tbt_books.disconnect()
@@ -214,18 +215,17 @@ class OKXDataClient(LiveMarketDataClient):
         for currency in self._instrument_provider.currencies().values():
             self._cache.add_currency(currency)
 
-    async def _update_instruments(self) -> None:
+    async def _update_instruments(self, interval_mins: int) -> None:
         try:
             while True:
                 self._log.debug(
-                    f"Scheduled `update_instruments` to run in "
-                    f"{self._update_instrument_interval}s",
+                    f"Scheduled task 'update_instruments' to run in {interval_mins} minutes",
                 )
-                await asyncio.sleep(self._update_instrument_interval)
-                await self._instrument_provider.load_all_async()
+                await asyncio.sleep(interval_mins * 60)
+                await self._instrument_provider.initialize(reload=True)
                 self._send_all_instruments_to_data_engine()
         except asyncio.CancelledError:
-            self._log.debug("Canceled `update_instruments` task")
+            self._log.debug("Canceled 'update_instruments' task")
 
     async def _get_ws_client(
         self,
@@ -303,7 +303,7 @@ class OKXDataClient(LiveMarketDataClient):
     async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         if instrument_id in self._tob_client_map:
             self._log.warning(
-                f"Already subscribed to {instrument_id} top-of-book (quote ticks)",
+                f"Already subscribed to {instrument_id} top-of-book (quotes)",
                 LogColor.MAGENTA,
             )
             return
@@ -321,7 +321,7 @@ class OKXDataClient(LiveMarketDataClient):
     async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         if instrument_id in self._trades_client_map:
             self._log.warning(
-                f"Already subscribed to {instrument_id} trade ticks",
+                f"Already subscribed to {instrument_id} trades",
                 LogColor.MAGENTA,
             )
             return
@@ -355,7 +355,7 @@ class OKXDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         self._log.debug(
-            f"Unsubscribing {instrument_id} from quote ticks (top-of-book)",
+            f"Unsubscribing {instrument_id} from quotes (top-of-book)",
             LogColor.MAGENTA,
         )
         okx_symbol = OKXSymbol(instrument_id.symbol.value)
@@ -367,7 +367,7 @@ class OKXDataClient(LiveMarketDataClient):
         self._tob_client_map.pop(instrument_id, None)
 
     async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
-        self._log.debug(f"Unsubscribing {instrument_id} from trade ticks", LogColor.MAGENTA)
+        self._log.debug(f"Unsubscribing {instrument_id} from trades", LogColor.MAGENTA)
         okx_symbol = OKXSymbol(instrument_id.symbol.value)
 
         for iid, ws_client in self._trades_client_map.items():
@@ -457,8 +457,8 @@ class OKXDataClient(LiveMarketDataClient):
         end: pd.Timestamp | None = None,
     ) -> None:
         self._log.error(
-            "Cannot request historical quote ticks: not published by OKX. Please subscribe to "
-            "quote ticks or L1_MBP order book.",
+            "Cannot request historical quotes: not published by OKX. Subscribe to "
+            "quotes or L1_MBP order book.",
         )
         return
 
@@ -470,7 +470,7 @@ class OKXDataClient(LiveMarketDataClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> None:
-        self._log.error("Cannot request historical trade ticks: not yet implemented for OKX")
+        self._log.error("Cannot request historical trades: not yet implemented for OKX")
         return
 
     async def _request_bars(

@@ -50,7 +50,7 @@ impl Display for BusMessage {
 ///
 /// # Notes
 ///
-/// If `database_type` is `"redis"`, it requires Redis version 6.2.0 and above for correct operation.
+/// If `database_type` is `"redis"`, it requires Redis version 6.2 or higher for correct operation.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DatabaseConfig {
@@ -72,6 +72,7 @@ pub struct DatabaseConfig {
 }
 
 impl Default for DatabaseConfig {
+    /// Creates a new default [`DatabaseConfig`] instance.
     fn default() -> Self {
         Self {
             database_type: "redis".to_string(),
@@ -102,7 +103,7 @@ pub struct MessageBusConfig {
     pub buffer_interval_ms: Option<u32>,
     /// The lookback window in minutes for automatic stream trimming.
     /// The actual window may extend up to one minute beyond the specified value since streams are trimmed at most once every minute.
-    /// This feature requires Redis version 6.2.0 or higher; otherwise, it will result in a command syntax error.
+    /// This feature requires Redis version 6.2 or higher; otherwise, it will result in a command syntax error.
     pub autotrim_mins: Option<u32>,
     /// If a 'trader-' prefix is used for stream names.
     pub use_trader_prefix: bool,
@@ -124,6 +125,7 @@ pub struct MessageBusConfig {
 }
 
 impl Default for MessageBusConfig {
+    /// Creates a new default [`MessageBusConfig`] instance.
     fn default() -> Self {
         Self {
             database: None,

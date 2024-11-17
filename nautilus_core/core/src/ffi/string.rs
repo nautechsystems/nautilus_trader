@@ -99,7 +99,7 @@ pub unsafe fn optional_cstr_to_ustr(ptr: *const c_char) -> Option<Ustr> {
 /// This function panics:
 /// - If `ptr` is null.
 #[must_use]
-pub unsafe fn cstr_to_str(ptr: *const c_char) -> &'static str {
+pub unsafe fn cstr_as_str(ptr: *const c_char) -> &'static str {
     assert!(!ptr.is_null(), "`ptr` was NULL");
     CStr::from_ptr(ptr).to_str().expect("CStr::from_ptr failed")
 }
@@ -114,7 +114,7 @@ pub unsafe fn optional_cstr_to_str(ptr: *const c_char) -> Option<&'static str> {
     if ptr.is_null() {
         None
     } else {
-        Some(cstr_to_str(ptr))
+        Some(cstr_as_str(ptr))
     }
 }
 
@@ -175,7 +175,7 @@ mod tests {
         // Create a valid C string pointer
         let c_string = CString::new("test string2").expect("CString::new failed");
         let ptr = c_string.as_ptr();
-        let result = unsafe { cstr_to_str(ptr) };
+        let result = unsafe { cstr_as_str(ptr) };
         assert_eq!(result, "test string2");
     }
 

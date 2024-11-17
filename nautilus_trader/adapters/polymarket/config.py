@@ -52,7 +52,7 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
         The WebSocket client custom endpoint override.
     ws_connection_delay_secs : PositiveInt, default 5
         The delay (seconds) prior to main websocket connection to allow initial subscriptions to arrive.
-    update_instruments_interval_mins : PositiveInt, default 60
+    update_instruments_interval_mins: PositiveInt or None, default 60
         The interval (minutes) between updating Polymarket instruments.
     compute_effective_deltas : bool, default False
         If True, computes effective deltas by comparing old and new order book states,
@@ -70,7 +70,7 @@ class PolymarketDataClientConfig(LiveDataClientConfig, frozen=True):
     base_url_http: str | None = None
     base_url_ws: str | None = None
     ws_connection_delay_secs: PositiveInt = 5
-    update_instrument_interval_mins: PositiveInt = 60
+    update_instruments_interval_mins: PositiveInt | None = 60
     compute_effective_deltas: bool = False
 
 
@@ -107,6 +107,10 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
         The maximum number of times a submit or cancel order request will be retried.
     retry_delay : PositiveFloat, optional
         The delay (seconds) between retries.
+    generate_order_history_from_trades : bool, default False
+        If True, uses trades history to generate reports for orders which are no longer active.
+        The Polymarket API only returns active orders and trades.
+        This feature is experimental and is not currently recommended (leave set to False).
 
     """
 
@@ -121,3 +125,4 @@ class PolymarketExecClientConfig(LiveExecClientConfig, frozen=True):
     base_url_ws: str | None = None
     max_retries: PositiveInt | None = None
     retry_delay: PositiveFloat | None = None
+    generate_order_history_from_trades: bool = False

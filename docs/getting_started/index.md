@@ -41,7 +41,7 @@ deleted when the container is deleted.
 - Run the docker container, exposing the jupyter port: 
   - `docker run -p 8888:8888 ghcr.io/nautechsystems/jupyterlab:nightly`
 - Open your web browser to `localhost:{port}`
-  - https://localhost:8888
+  - http://localhost:8888
  
 :::info
 NautilusTrader currently exceeds the rate limit for Jupyter notebook logging (stdout output),

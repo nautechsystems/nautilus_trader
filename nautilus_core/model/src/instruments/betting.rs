@@ -168,6 +168,7 @@ impl BettingInstrument {
         })
     }
 
+    /// Creates a new [`BettingInstrument`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,
@@ -390,7 +391,7 @@ mod tests {
 
     #[rstest]
     fn test_equality(betting: BettingInstrument) {
-        let cloned = betting.clone();
+        let cloned = betting;
         assert_eq!(betting, cloned);
     }
 }

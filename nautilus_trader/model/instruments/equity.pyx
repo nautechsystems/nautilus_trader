@@ -175,7 +175,7 @@ cdef class Equity(Instrument):
     cdef Equity from_pyo3_c(pyo3_instrument):
         return Equity(
             instrument_id=InstrumentId.from_str_c(pyo3_instrument.id.value),
-            raw_symbol=Symbol(pyo3_instrument.id.symbol.value),
+            raw_symbol=Symbol(pyo3_instrument.raw_symbol.value),
             currency=Currency.from_str_c(pyo3_instrument.quote_currency.code),
             price_precision=pyo3_instrument.price_precision,
             price_increment=Price.from_raw_c(pyo3_instrument.price_increment.raw, pyo3_instrument.price_precision),

@@ -58,7 +58,7 @@ class LiveDataClient(DataClient):
         The event loop for the client.
     client_id : ClientId
         The client ID.
-    venue : Venue, optional with no default so ``None`` must be passed explicitly
+    venue : Venue or ``None``
         The client venue. If multi-venue then can be ``None``.
     msgbus : MessageBus
         The message bus for the client.
@@ -279,7 +279,7 @@ class LiveMarketDataClient(MarketDataClient):
         The event loop for the client.
     client_id : ClientId
         The client ID.
-    venue : Venue, optional with no default so ``None`` must be passed explicitly
+    venue : Venue or ``None``
         The client venue. If multi-venue then can be ``None``.
     msgbus : MessageBus
         The message bus for the client.
@@ -709,7 +709,7 @@ class LiveMarketDataClient(MarketDataClient):
     ) -> None:
         time_range = f" {start} to {end}" if (start or end) else ""
         limit_str = f" limit={limit}" if limit else ""
-        self._log.info(f"Request {instrument_id} quote ticks{time_range}{limit_str}", LogColor.BLUE)
+        self._log.info(f"Request {instrument_id} quotes{time_range}{limit_str}", LogColor.BLUE)
         self.create_task(
             self._request_quote_ticks(
                 instrument_id=instrument_id,
@@ -718,7 +718,7 @@ class LiveMarketDataClient(MarketDataClient):
                 start=start,
                 end=end,
             ),
-            log_msg=f"request: quote ticks {instrument_id}",
+            log_msg=f"request: quotes {instrument_id}",
         )
 
     def request_trade_ticks(
@@ -731,7 +731,7 @@ class LiveMarketDataClient(MarketDataClient):
     ) -> None:
         time_range = f" {start} to {end}" if (start or end) else ""
         limit_str = f" limit={limit}" if limit else ""
-        self._log.info(f"Request {instrument_id} trade ticks{time_range}{limit_str}", LogColor.BLUE)
+        self._log.info(f"Request {instrument_id} trades{time_range}{limit_str}", LogColor.BLUE)
         self.create_task(
             self._request_trade_ticks(
                 instrument_id=instrument_id,
@@ -740,7 +740,7 @@ class LiveMarketDataClient(MarketDataClient):
                 start=start,
                 end=end,
             ),
-            log_msg=f"request: trade ticks {instrument_id}",
+            log_msg=f"request: trades {instrument_id}",
         )
 
     def request_bars(
@@ -785,12 +785,12 @@ class LiveMarketDataClient(MarketDataClient):
     ############################################################################
     # Coroutines to implement
     ############################################################################
-    async def _connect(self):
+    async def _connect(self) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_connect` coroutine",  # pragma: no cover
         )
 
-    async def _disconnect(self):
+    async def _disconnect(self) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_disconnect` coroutine",  # pragma: no cover
         )

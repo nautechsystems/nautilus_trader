@@ -40,7 +40,7 @@ cdef class TradingCommand(Command):
 
     Parameters
     ----------
-    client_id : ClientId, optional with no default so ``None`` must be passed explicitly
+    client_id : ClientId or ``None``
         The execution client ID for the command.
     trader_id : TraderId
         The trader ID for the command.
@@ -358,13 +358,13 @@ cdef class ModifyOrder(TradingCommand):
         The instrument ID for the command.
     client_order_id : ClientOrderId
         The client order ID to update.
-    venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
+    venue_order_id : VenueOrderId or ``None``
         The venue order ID (assigned by the venue) to update.
-    quantity : Quantity, optional with no default so ``None`` must be passed explicitly
+    quantity : Quantity or ``None``
         The quantity for the order update.
-    price : Price, optional with no default so ``None`` must be passed explicitly
+    price : Price or ``None``
         The price for the order update.
-    trigger_price : Price, optional with no default so ``None`` must be passed explicitly
+    trigger_price : Price or ``None``
         The trigger price for the order update.
     command_id : UUID4
         The command ID.
@@ -518,7 +518,7 @@ cdef class CancelOrder(TradingCommand):
         The instrument ID for the command.
     client_order_id : ClientOrderId
         The client order ID to cancel.
-    venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
+    venue_order_id : VenueOrderId or ``None``
         The venue order ID (assigned by the venue) to cancel.
     command_id : UUID4
         The command ID.
@@ -902,7 +902,7 @@ cdef class QueryOrder(TradingCommand):
         The instrument ID for the command.
     client_order_id : ClientOrderId
         The client order ID for the order to query.
-    venue_order_id : VenueOrderId, optional with no default so ``None`` must be passed explicitly
+    venue_order_id : VenueOrderId or ``None``
         The venue order ID (assigned by the venue) to query.
     command_id : UUID4
         The command ID.

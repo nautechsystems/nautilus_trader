@@ -26,7 +26,9 @@ use crate::{
     logging::{
         self, headers,
         logger::{self, LogGuard, LoggerConfig},
-        logging_set_bypass, map_log_level_to_filter, parse_level_filter_str,
+        logging_clock_set_realtime_mode, logging_clock_set_static_mode,
+        logging_clock_set_static_time, logging_set_bypass, map_log_level_to_filter,
+        parse_level_filter_str,
         writer::FileWriterConfig,
     },
 };
@@ -138,8 +140,8 @@ fn parse_component_levels(
 /// Create a new log event.
 #[pyfunction]
 #[pyo3(name = "logger_log")]
-pub fn py_logger_log(level: LogLevel, color: LogColor, component: String, message: String) {
-    logger::log(level, color, Ustr::from(&component), message.as_str());
+pub fn py_logger_log(level: LogLevel, color: LogColor, component: &str, message: &str) {
+    logger::log(level, color, Ustr::from(component), message);
 }
 
 /// Logs the standard Nautilus system header.
@@ -154,4 +156,22 @@ pub fn py_log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, 
 #[pyo3(name = "log_sysinfo")]
 pub fn py_log_sysinfo(component: &str) {
     headers::log_sysinfo(Ustr::from(component));
+}
+
+#[pyfunction]
+#[pyo3(name = "logging_clock_set_static_mode")]
+pub fn py_logging_clock_set_static_mode() {
+    logging_clock_set_static_mode();
+}
+
+#[pyfunction]
+#[pyo3(name = "logging_clock_set_realtime_mode")]
+pub fn py_logging_clock_set_realtime_mode() {
+    logging_clock_set_realtime_mode();
+}
+
+#[pyfunction]
+#[pyo3(name = "logging_clock_set_static_time")]
+pub fn py_logging_clock_set_static_time(time_ns: u64) {
+    logging_clock_set_static_time(time_ns);
 }

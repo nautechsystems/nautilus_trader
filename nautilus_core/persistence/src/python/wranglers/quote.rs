@@ -59,7 +59,7 @@ impl QuoteTickDataWrangler {
         self.size_precision
     }
 
-    fn process_record_batch_bytes(&self, _py: Python, data: &[u8]) -> PyResult<Vec<QuoteTick>> {
+    fn process_record_batch_bytes(&self, data: &[u8]) -> PyResult<Vec<QuoteTick>> {
         // Create a StreamReader (from Arrow IPC)
         let cursor = Cursor::new(data);
         let reader = match StreamReader::try_new(cursor, None) {

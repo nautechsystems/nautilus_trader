@@ -15,7 +15,10 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::tardis::enums::{Exchange, InstrumentType, OptionType};
+use crate::tardis::{
+    enums::{Exchange, InstrumentType, OptionType},
+    parse::deserialize_uppercase,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -58,6 +61,7 @@ pub struct InstrumentChanges {
 /// See <https://docs.tardis.dev/api/instruments-metadata-api>.
 pub struct InstrumentInfo {
     /// The instrument symbol.
+    #[serde(deserialize_with = "deserialize_uppercase")]
     pub id: String,
     /// The instrument exchange.
     pub exchange: Exchange,

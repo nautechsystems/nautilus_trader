@@ -99,7 +99,6 @@ async def main(
                 max_trade_size=Decimal(10),
                 trigger_min_size=2,
                 order_id_tag=instrument.selection_id,
-                subscribe_ticker=True,
             ),
         )
         for instrument in instruments

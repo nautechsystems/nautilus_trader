@@ -17,6 +17,11 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 
+pub mod config;
+
+#[cfg(test)]
+mod tests;
+
 use std::{any::Any, cell::RefCell, collections::HashMap, rc::Rc};
 
 use chrono::TimeDelta;
@@ -58,10 +63,6 @@ use ustr::Ustr;
 use uuid::Uuid;
 
 use crate::{matching_engine::config::OrderMatchingEngineConfig, models::fill::FillModel};
-
-pub mod config;
-#[cfg(test)]
-mod tests;
 
 /// An order matching engine for a single market.
 pub struct OrderMatchingEngine {
@@ -305,7 +306,7 @@ impl OrderMatchingEngine {
     }
 
     fn process_trade_ticks_from_bar(&mut self, bar: &Bar) {
-        // Split the bar into 4 trade ticks with quarter volume
+        // Split the bar into 4 trades with quarter volume
         let size = Quantity::new(bar.volume.as_f64() / 4.0, bar.volume.precision);
         let aggressor_side = if !self.core.is_last_initialized || bar.open > self.core.last.unwrap()
         {
@@ -899,7 +900,7 @@ impl OrderMatchingEngine {
 
         self.position_count += 1;
         if self.config.use_random_ids {
-            Some(PositionId::new(&Uuid::new_v4().to_string()))
+            Some(PositionId::new(Uuid::new_v4().to_string()))
         } else {
             Some(PositionId::new(
                 format!("{}-{}-{}", self.venue, self.raw_id, self.position_count).as_str(),

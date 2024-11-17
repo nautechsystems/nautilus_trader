@@ -142,9 +142,10 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._use_agg_trade_ticks = config.use_agg_trade_ticks
         self._log.info(f"Key type: {config.key_type.value}", LogColor.BLUE)
         self._log.info(f"Account type: {self._binance_account_type.value}", LogColor.BLUE)
+        self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
         self._log.info(f"{config.use_agg_trade_ticks=}", LogColor.BLUE)
 
-        self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
+        self._update_instruments_interval_mins: int | None = config.update_instruments_interval_mins
         self._update_instruments_task: asyncio.Task | None = None
 
         self._connect_websockets_delay: float = 0.0  # Delay for bulk subscriptions to come in
@@ -198,7 +199,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         self._decoder_candlestick_msg = msgspec.json.Decoder(BinanceCandlestickMsg)
         self._decoder_agg_trade_msg = msgspec.json.Decoder(BinanceAggregatedTradeMsg)
 
-        # Retry logic (hard coded for now)
+        # Retry logic (hard-coded for now)
         self._max_retries: int = 3
         self._retry_delay: float = 1.0
         self._retry_errors: set[BinanceErrorCode] = {
@@ -210,24 +211,24 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         }
 
     async def _connect(self) -> None:
-        self._log.info("Initializing instruments...")
-
         await self._instrument_provider.initialize()
-
         self._send_all_instruments_to_data_engine()
-        self._update_instruments_task = self.create_task(self._update_instruments())
 
-    async def _update_instruments(self) -> None:
+        if self._update_instruments_interval_mins:
+            self._update_instruments_task = self.create_task(
+                self._update_instruments(self._update_instruments_interval_mins),
+            )
+
+    async def _update_instruments(self, interval_mins: int) -> None:
         while True:
             retries = 0
             while True:
                 try:
                     self._log.debug(
-                        f"Scheduled `update_instruments` to run in "
-                        f"{self._update_instrument_interval}s",
+                        f"Scheduled task 'update_instruments' to run in {interval_mins} minutes",
                     )
-                    await asyncio.sleep(self._update_instrument_interval)
-                    await self._instrument_provider.load_all_async()
+                    await asyncio.sleep(interval_mins * 60)
+                    await self._instrument_provider.initialize(reload=True)
                     self._send_all_instruments_to_data_engine()
                     break
                 except BinanceError as e:
@@ -573,7 +574,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         end: pd.Timestamp | None = None,
     ) -> None:
         self._log.error(
-            "Cannot request historical quote ticks: not published by Binance",
+            "Cannot request historical quotes: not published by Binance",
         )
 
     async def _request_trade_ticks(
@@ -590,9 +591,9 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         if not self._use_agg_trade_ticks:
             if start is not None or end is not None:
                 self._log.warning(
-                    "Trade ticks have been requested with a from/to time range, "
-                    f"however the request will be for the most recent {limit}. "
-                    "Consider using aggregated trade ticks (`use_agg_trade_ticks`)",
+                    "Trades have been requested with a from/to time range, "
+                    f"however the request will be for the most recent {limit}: "
+                    "consider using aggregated trades (`use_agg_trade_ticks`)",
                 )
             ticks = await self._http_market.request_trade_ticks(
                 instrument_id=instrument_id,
@@ -627,7 +628,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
     ) -> None:
         if bar_type.spec.price_type != PriceType.LAST:
             self._log.error(
-                f"Cannot request {bar_type}: "
+                f"Cannot request {bar_type} bars: "
                 f"only historical bars for LAST price type available from Binance",
             )
             return
@@ -643,14 +644,14 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         if bar_type.is_externally_aggregated() or bar_type.spec.is_time_aggregated():
             if not bar_type.spec.is_time_aggregated():
                 self._log.error(
-                    f"Cannot request {bar_type}: only time bars are aggregated by Binance",
+                    f"Cannot request {bar_type} bars: only time bars are aggregated by Binance",
                 )
                 return
 
             resolution = self._enum_parser.parse_nautilus_bar_aggregation(bar_type.spec.aggregation)
             if not self._binance_account_type.is_spot_or_margin and resolution == "s":
                 self._log.error(
-                    f"Cannot request {bar_type}: "
+                    f"Cannot request {bar_type} bars: "
                     "second interval bars are not aggregated by Binance Futures",
                 )
             try:
@@ -883,7 +884,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
             return []
 
-        self._log.info("Requesting aggregated trade ticks to infer INTERNAL bars...", LogColor.BLUE)
+        self._log.info("Requesting aggregated trades to infer INTERNAL bars...", LogColor.BLUE)
 
         ticks = await self._http_market.request_agg_trade_ticks(
             instrument_id=instrument.id,
@@ -923,7 +924,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             aggregator.handle_trade_tick(tick)
 
         self._log.info(
-            f"Inferred {len(bars)} {bar_type} bars aggregated from {len(ticks)} trade ticks",
+            f"Inferred {len(bars)} {bar_type} bars aggregated from {len(ticks)} trades",
             LogColor.BLUE,
         )
 

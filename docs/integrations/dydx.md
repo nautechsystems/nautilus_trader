@@ -34,14 +34,14 @@ The following documentation assumes a trader is setting up for both live market
 data feeds, and trade execution. The full dYdX integration consists of an assortment of components,
 which can be used together or separately depending on the user's needs.
 
-- `DYDXHttpClient`: Low-level HTTP API connectivity
-- `DYDXWebSocketClient`: Low-level WebSocket API connectivity
-- `DYDXAccountGRPCAPI`: Low-level gRPC API connectivity for account updates
-- `DYDXInstrumentProvider`: Instrument parsing and loading functionality
-- `DYDXDataClient`: A market data feed manager
-- `DYDXExecutionClient`: An account management and trade execution gateway
-- `DYDXLiveDataClientFactory`: Factory for dYdX data clients (used by the trading node builder)
-- `DYDXLiveExecClientFactory`: Factory for dYdX execution clients (used by the trading node builder)
+- `DYDXHttpClient`: Low-level HTTP API connectivity.
+- `DYDXWebSocketClient`: Low-level WebSocket API connectivity.
+- `DYDXAccountGRPCAPI`: Low-level gRPC API connectivity for account updates.
+- `DYDXInstrumentProvider`: Instrument parsing and loading functionality.
+- `DYDXDataClient`: A market data feed manager.
+- `DYDXExecutionClient`: An account management and trade execution gateway.
+- `DYDXLiveDataClientFactory`: Factory for dYdX data clients (used by the trading node builder).
+- `DYDXLiveExecClientFactory`: Factory for dYdX execution clients (used by the trading node builder).
 
 :::note
 Most users will simply define a configuration for a live trading node (as below),
@@ -206,5 +206,5 @@ In these cases, a _warn and continue_ approach is taken (the instrument will not
 ## Order books
 
 Order books can be maintained at full depth or top-of-book quotes depending on the
-subscription. The venue does not provide quote ticks, but the adapter subscribes to order
-book deltas and sends new quote ticks to the `DataEngine` when there is a top-of-book price or size change.
+subscription. The venue does not provide quotes, but the adapter subscribes to order
+book deltas and sends new quotes to the `DataEngine` when there is a top-of-book price or size change.

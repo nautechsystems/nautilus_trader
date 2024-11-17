@@ -144,7 +144,7 @@ cdef class OrderMatchingEngine:
         If orders with GTD time in force will be supported by the venue.
     support_contingent_orders : bool, default True
         If contingent orders will be supported/respected by the venue.
-        If False then its expected the strategy will be managing any contingent orders.
+        If False, then its expected the strategy will be managing any contingent orders.
     use_position_ids : bool, default True
         If venue position IDs will be generated on order fills.
     use_random_ids : bool, default False

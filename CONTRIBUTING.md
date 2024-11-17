@@ -10,7 +10,8 @@ To contribute, follow these steps:
 
 2. Once everyone is aligned, fork the `develop` branch and ensure your fork is up-to-date by regularly merging any upstream changes.
 
-3. Install and configure [pre-commit](https://pre-commit.com/) on your local machine to automatically run code checks, formatters, and linters before each commit. You can install pre-commit via:
+3. Install and configure [pre-commit](https://pre-commit.com/) on your local machine to automatically run code checks, formatters, and linters before each commit.
+   You can install pre-commit with:
     ```bash
     pip install pre-commit
     pre-commit install
@@ -18,9 +19,9 @@ To contribute, follow these steps:
 
 4. Open a pull request (PR) on the `develop` branch with a summary comment and reference to any relevant GitHub issue(s).
 
-5. The CI system will run the full test suite over your code including all unit and integration tests, so include appropriate tests with the PR.
+5. The CI system will run the full test suite on your code including all unit and integration tests, so include appropriate tests with the PR.
 
-6. [Deepsource](https://deepsource.io) will perform an automated code review. Fix any issues which cause a failed check, and add the commit to your PR.
+6. [Deepsource](https://deepsource.io) will perform an automated code review. Fix any issues that cause a failed check, and add the commit to your PR.
 
 7. Read and understand the Contributor License Agreement (CLA), available at https://github.com/nautechsystems/nautilus_trader/blob/develop/CLA.md.
 

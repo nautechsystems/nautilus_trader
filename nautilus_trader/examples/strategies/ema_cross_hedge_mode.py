@@ -59,9 +59,9 @@ class EMACrossConfig(StrategyConfig, frozen=True):
     slow_ema_period : int, default 20
         The slow EMA period.
     subscribe_trade_ticks : bool, default True
-        If trade ticks should be subscribed to.
+        If trades should be subscribed to.
     subscribe_quote_ticks : bool, default False
-        If quote ticks should be subscribed to.
+        If quotes should be subscribed to.
     close_positions_on_stop : bool, default True
         If all open positions should be closed on strategy stop.
 
@@ -142,7 +142,6 @@ class EMACross(Strategy):
         if self.config.subscribe_trade_ticks:
             self.subscribe_trade_ticks(self.instrument_id)
 
-        # self.subscribe_ticker(self.instrument_id)  # For debugging
         # self.subscribe_order_book_deltas(self.instrument_id, depth=20)  # For debugging
         # self.subscribe_order_book_at_interval(self.instrument_id, depth=20)  # For debugging
 
@@ -314,7 +313,6 @@ class EMACross(Strategy):
         self.unsubscribe_bars(self.bar_type)
         # self.unsubscribe_quote_ticks(self.instrument_id)
         self.unsubscribe_trade_ticks(self.instrument_id)
-        # self.unsubscribe_ticker(self.instrument_id)
         # self.unsubscribe_order_book_deltas(self.instrument_id)
         # self.unsubscribe_order_book_at_interval(self.instrument_id)
 

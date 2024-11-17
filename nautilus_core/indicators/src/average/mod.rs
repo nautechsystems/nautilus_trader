@@ -15,17 +15,6 @@
 
 //! Moving average type indicators.
 
-use nautilus_model::enums::PriceType;
-use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
-
-use crate::{
-    average::{
-        dema::DoubleExponentialMovingAverage, ema::ExponentialMovingAverage,
-        hma::HullMovingAverage, rma::WilderMovingAverage, sma::SimpleMovingAverage,
-    },
-    indicator::MovingAverage,
-};
-
 pub mod ama;
 pub mod dema;
 pub mod ema;
@@ -36,6 +25,17 @@ pub mod sma;
 pub mod vidya;
 pub mod vwap;
 pub mod wma;
+
+use nautilus_model::enums::PriceType;
+use strum::{AsRefStr, Display, EnumIter, EnumString, FromRepr};
+
+use crate::{
+    average::{
+        dema::DoubleExponentialMovingAverage, ema::ExponentialMovingAverage,
+        hma::HullMovingAverage, rma::WilderMovingAverage, sma::SimpleMovingAverage,
+    },
+    indicator::MovingAverage,
+};
 
 #[repr(C)]
 #[derive(

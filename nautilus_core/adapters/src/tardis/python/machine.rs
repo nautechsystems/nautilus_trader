@@ -17,7 +17,7 @@ use std::{collections::HashMap, path::Path, sync::Arc};
 
 use futures_util::{pin_mut, Stream, StreamExt};
 use nautilus_core::python::to_pyruntime_err;
-use nautilus_model::{identifiers::InstrumentId, python::data::data_to_pycapsule};
+use nautilus_model::python::data::data_to_pycapsule;
 use pyo3::prelude::*;
 
 use crate::tardis::{
@@ -25,18 +25,52 @@ use crate::tardis::{
         client::{determine_instrument_info, TardisMachineClient},
         message::WsMessage,
         parse::parse_tardis_ws_message,
-        replay_normalized, stream_normalized, Error, InstrumentMiniInfo,
-        ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions,
+        replay_normalized, stream_normalized,
+        types::{
+            InstrumentMiniInfo, ReplayNormalizedRequestOptions, StreamNormalizedRequestOptions,
+            TardisInstrumentKey,
+        },
+        Error,
     },
     replay::run_tardis_machine_replay_from_config,
 };
 
 #[pymethods]
+impl ReplayNormalizedRequestOptions {
+    #[staticmethod]
+    #[pyo3(name = "from_json")]
+    fn py_from_json(data: Vec<u8>) -> Self {
+        serde_json::from_slice(&data).expect("Failed to parse JSON")
+    }
+
+    #[pyo3(name = "from_json_array")]
+    #[staticmethod]
+    fn py_from_json_array(data: Vec<u8>) -> Vec<Self> {
+        serde_json::from_slice(&data).expect("Failed to parse JSON array")
+    }
+}
+
+#[pymethods]
+impl StreamNormalizedRequestOptions {
+    #[staticmethod]
+    #[pyo3(name = "from_json")]
+    fn py_from_json(data: Vec<u8>) -> Self {
+        serde_json::from_slice(&data).expect("Failed to parse JSON")
+    }
+
+    #[pyo3(name = "from_json_array")]
+    #[staticmethod]
+    fn py_from_json_array(data: Vec<u8>) -> Vec<Self> {
+        serde_json::from_slice(&data).expect("Failed to parse JSON array")
+    }
+}
+
+#[pymethods]
 impl TardisMachineClient {
     #[new]
-    #[pyo3(signature = (base_url=None))]
-    fn py_new(base_url: Option<&str>) -> PyResult<Self> {
-        Self::new(base_url).map_err(to_pyruntime_err)
+    #[pyo3(signature = (base_url=None, normalize_symbols=true))]
+    fn py_new(base_url: Option<&str>, normalize_symbols: bool) -> PyResult<Self> {
+        Self::new(base_url, normalize_symbols).map_err(to_pyruntime_err)
     }
 
     #[pyo3(name = "is_closed")]
@@ -76,11 +110,18 @@ impl TardisMachineClient {
     #[pyo3(name = "stream")]
     fn py_stream<'py>(
         &self,
-        instrument: InstrumentMiniInfo,
+        instruments: Vec<InstrumentMiniInfo>,
         options: Vec<StreamNormalizedRequestOptions>,
         callback: PyObject,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
+        let mut instrument_map: HashMap<TardisInstrumentKey, Arc<InstrumentMiniInfo>> =
+            HashMap::new();
+        for inst in instruments {
+            let key = inst.as_tardis_instrument_key();
+            instrument_map.insert(key, Arc::new(inst.clone()));
+        }
+
         let base_url = self.base_url.clone();
         let replay_signal = self.replay_signal.clone();
 
@@ -91,8 +132,7 @@ impl TardisMachineClient {
 
             // We use Box::pin to heap-allocate the stream and ensure it implements
             // Unpin for safe async handling across lifetimes.
-            handle_python_stream(Box::pin(stream), callback, Some(Arc::new(instrument)), None)
-                .await;
+            handle_python_stream(Box::pin(stream), callback, None, Some(instrument_map)).await;
             Ok(())
         })
     }
@@ -122,7 +162,7 @@ async fn handle_python_stream<S>(
     stream: S,
     callback: PyObject,
     instrument: Option<Arc<InstrumentMiniInfo>>,
-    instrument_map: Option<HashMap<InstrumentId, Arc<InstrumentMiniInfo>>>,
+    instrument_map: Option<HashMap<TardisInstrumentKey, Arc<InstrumentMiniInfo>>>,
 ) where
     S: Stream<Item = Result<WsMessage, Error>> + Unpin,
 {
@@ -131,7 +171,6 @@ async fn handle_python_stream<S>(
     while let Some(result) = stream.next().await {
         match result {
             Ok(msg) => {
-                // TODO: This sequence needs optimizing
                 let info = if let Some(ref instrument) = instrument {
                     Some(instrument.clone())
                 } else {
@@ -167,34 +206,4 @@ pub fn call_python(py: Python, callback: &PyObject, py_obj: PyObject) -> PyResul
         e
     })?;
     Ok(())
-}
-
-#[pymethods]
-impl ReplayNormalizedRequestOptions {
-    #[staticmethod]
-    #[pyo3(name = "from_json")]
-    fn py_from_json(data: Vec<u8>) -> Self {
-        serde_json::from_slice(&data).expect("Failed to parse JSON")
-    }
-
-    #[pyo3(name = "from_json_array")]
-    #[staticmethod]
-    fn py_from_json_array(data: Vec<u8>) -> Vec<Self> {
-        serde_json::from_slice(&data).expect("Failed to parse JSON array")
-    }
-}
-
-#[pymethods]
-impl StreamNormalizedRequestOptions {
-    #[staticmethod]
-    #[pyo3(name = "from_json")]
-    fn py_from_json(data: Vec<u8>) -> Self {
-        serde_json::from_slice(&data).expect("Failed to parse JSON")
-    }
-
-    #[pyo3(name = "from_json_array")]
-    #[staticmethod]
-    fn py_from_json_array(data: Vec<u8>) -> Vec<Self> {
-        serde_json::from_slice(&data).expect("Failed to parse JSON array")
-    }
 }

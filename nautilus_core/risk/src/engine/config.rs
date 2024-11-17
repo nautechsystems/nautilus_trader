@@ -22,6 +22,8 @@ use nautilus_core::datetime::NANOSECONDS_IN_SECOND;
 use nautilus_model::identifiers::InstrumentId;
 use rust_decimal::Decimal;
 
+#[derive(Debug)]
+/// Configuration for `RiskEngineConfig` instances.
 pub struct RiskEngineConfig {
     pub bypass: bool,
     pub max_order_submit: RateLimit,
@@ -31,6 +33,7 @@ pub struct RiskEngineConfig {
 }
 
 impl Default for RiskEngineConfig {
+    /// Creates a new [`RiskEngineConfig`] instance.
     fn default() -> Self {
         Self {
             bypass: false,

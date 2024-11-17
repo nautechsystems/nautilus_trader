@@ -13,13 +13,13 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+mod database;
+pub mod opt;
+
 use crate::{
     database::postgres::run_database_command,
     opt::{Commands, NautilusCli},
 };
-
-mod database;
-pub mod opt;
 
 pub async fn run(opt: NautilusCli) -> anyhow::Result<()> {
     match opt.command {

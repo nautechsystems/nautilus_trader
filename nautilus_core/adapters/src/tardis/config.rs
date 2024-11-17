@@ -15,13 +15,15 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::machine::ReplayNormalizedRequestOptions;
+use super::machine::types::ReplayNormalizedRequestOptions;
 
 /// Provides a configuration for a Tarid Machine -> Nautilus data -> Parquet replay run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TardisReplayConfig {
     /// The Tardis Machine websocket url.
     pub tardis_ws_url: Option<String>,
+    /// If symbols should be normalized with Nautilus conventions.
+    pub normalize_symbols: Option<bool>,
     /// The output directory for writing Nautilus format Parquet files.
     pub output_path: Option<String>,
     /// The Tardis Machine replay options.

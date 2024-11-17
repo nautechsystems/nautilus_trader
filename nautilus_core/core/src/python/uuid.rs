@@ -59,8 +59,8 @@ impl UUID4 {
     }
 
     /// Gets the state of the `UUID4` instance for pickling.
-    fn __getstate__(&self, _py: Python) -> PyResult<PyObject> {
-        Ok(PyBytes::new_bound(_py, &self.value).to_object(_py))
+    fn __getstate__(&self, py: Python) -> PyResult<PyObject> {
+        Ok(PyBytes::new_bound(py, &self.value).to_object(py))
     }
 
     /// Reduces the `UUID4` instance for pickling.

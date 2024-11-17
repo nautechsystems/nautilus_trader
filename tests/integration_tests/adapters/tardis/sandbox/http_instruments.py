@@ -21,11 +21,11 @@ from nautilus_trader.core import nautilus_pyo3
 async def run():
     http_client = nautilus_pyo3.TardisHttpClient()
 
-    instrument = await http_client.instrument("bitmex", "xbtusd")
-    print(f"Received: {instrument}")
+    pyo3_instrument = await http_client.instrument("bitmex", "xbtusd")
+    print(f"Received: {pyo3_instrument}")
 
-    instruments = await http_client.instruments("bitmex")
-    print(f"Received: {len(instruments)} instruments")
+    pyo3_instruments = await http_client.instruments("bitmex")
+    print(f"Received: {len(pyo3_instruments)} instruments")
 
 
 if __name__ == "__main__":

@@ -32,7 +32,7 @@ cdef class WilderMovingAverage(MovingAverage):
     period : int
         The rolling window period for the indicator (> 0).
     price_type : PriceType
-        The specified price type for extracting values from quote ticks.
+        The specified price type for extracting values from quotes.
 
     Raises
     ------

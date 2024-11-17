@@ -41,7 +41,7 @@ impl MessageBus {
     /// Sends a message to a an endpoint.
     #[pyo3(name = "send")]
     pub fn send_py(&self, endpoint: &str, message: PyObject) {
-        if let Some(handler) = self.get_endpoint(&Ustr::from(endpoint)) {
+        if let Some(handler) = self.get_endpoint(endpoint) {
             handler.0.handle(&message);
         }
     }
@@ -62,7 +62,7 @@ impl MessageBus {
     pub fn register_py(&mut self, endpoint: &str, handler: PythonMessageHandler) {
         // Updates value if key already exists
         let handler = ShareableMessageHandler(Rc::new(handler));
-        self.register(Ustr::from(endpoint), handler);
+        self.register(endpoint, handler);
     }
 
     /// Subscribes the given `handler` to the `topic`.
@@ -91,7 +91,7 @@ impl MessageBus {
     ) {
         // Updates value if key already exists
         let handler = ShareableMessageHandler(Rc::new(handler));
-        slf.subscribe(Ustr::from(topic), handler, priority);
+        slf.subscribe(topic, handler, priority);
     }
 
     /// Returns whether there are subscribers for the given `pattern`.
@@ -106,7 +106,7 @@ impl MessageBus {
     #[pyo3(name = "unsubscribe")]
     pub fn unsubscribe_py(&mut self, topic: &str, handler: PythonMessageHandler) {
         let handler = ShareableMessageHandler(Rc::new(handler));
-        self.unsubscribe(Ustr::from(topic), handler);
+        self.unsubscribe(topic, handler);
     }
 
     /// Returns whether there are subscribers for the given `pattern`.

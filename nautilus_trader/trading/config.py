@@ -50,7 +50,7 @@ class StrategyConfig(NautilusConfig, kw_only=True, frozen=True):
         Any emulated orders which are active local will be managed by the `OrderEmulator` instead.
     manage_gtd_expiry : bool, default False
         If all order GTD time in force expirations should be managed by the strategy.
-        If True then will ensure open orders have their GTD timers re-activated on start.
+        If True, then will ensure open orders have their GTD timers re-activated on start.
 
     """
 

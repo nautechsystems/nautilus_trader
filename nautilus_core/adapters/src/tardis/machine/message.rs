@@ -16,7 +16,7 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::tardis::enums::Exchange;
+use crate::tardis::{enums::Exchange, parse::deserialize_uppercase};
 
 /// Represents a single level in the order book (bid or ask).
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -32,6 +32,7 @@ pub struct BookLevel {
 #[serde(rename_all = "camelCase")]
 pub struct BookChangeMsg {
     /// The symbol as provided by the exchange.
+    #[serde(deserialize_with = "deserialize_uppercase")]
     pub symbol: String,
     /// The exchange ID.
     pub exchange: Exchange,
@@ -52,6 +53,7 @@ pub struct BookChangeMsg {
 #[serde(rename_all = "camelCase")]
 pub struct BookSnapshotMsg {
     /// The symbol as provided by the exchange.
+    #[serde(deserialize_with = "deserialize_uppercase")]
     pub symbol: String,
     /// The exchange ID.
     pub exchange: Exchange,
@@ -77,6 +79,7 @@ pub struct BookSnapshotMsg {
 #[serde(rename_all = "camelCase")]
 pub struct TradeMsg {
     /// The symbol as provided by the exchange.
+    #[serde(deserialize_with = "deserialize_uppercase")]
     pub symbol: String,
     /// The exchange ID.
     pub exchange: Exchange,
@@ -99,6 +102,7 @@ pub struct TradeMsg {
 #[serde(rename_all = "camelCase")]
 pub struct DerivativeTickerMsg {
     /// The symbol as provided by the exchange.
+    #[serde(deserialize_with = "deserialize_uppercase")]
     pub symbol: String,
     /// The exchange ID.
     pub exchange: Exchange,
@@ -125,6 +129,7 @@ pub struct DerivativeTickerMsg {
 #[serde(rename_all = "camelCase")]
 pub struct BarMsg {
     /// The symbol as provided by the exchange.
+    #[serde(deserialize_with = "deserialize_uppercase")]
     pub symbol: String,
     /// The exchange ID.
     pub exchange: Exchange,
@@ -204,8 +209,8 @@ mod tests {
         assert!(!message.is_snapshot);
         assert!(message.bids.is_empty());
         assert_eq!(message.asks.len(), 1);
-        assert_eq!(message.asks[0].price, 7985.0);
-        assert_eq!(message.asks[0].amount, 283318.0);
+        assert_eq!(message.asks[0].price, 7_985.0);
+        assert_eq!(message.asks[0].amount, 283_318.0);
         assert_eq!(
             message.timestamp,
             DateTime::parse_from_rfc3339("2019-10-23T11:29:53.469Z").unwrap()
@@ -228,10 +233,10 @@ mod tests {
         assert_eq!(message.interval, 50);
         assert_eq!(message.bids.len(), 2);
         assert_eq!(message.asks.len(), 2);
-        assert_eq!(message.bids[0].price, 7633.5);
-        assert_eq!(message.bids[0].amount, 1906067.0);
-        assert_eq!(message.asks[0].price, 7634.0);
-        assert_eq!(message.asks[0].amount, 1467849.0);
+        assert_eq!(message.bids[0].price, 7_633.5);
+        assert_eq!(message.bids[0].amount, 1_906_067.0);
+        assert_eq!(message.asks[0].price, 7_634.0);
+        assert_eq!(message.asks[0].amount, 1_467_849.0);
         assert_eq!(
             message.timestamp,
             DateTime::parse_from_rfc3339("2019-10-25T13:39:46.950Z").unwrap(),
@@ -253,7 +258,7 @@ mod tests {
             message.id,
             Some("282a0445-0e3a-abeb-f403-11003204ea1b".to_string())
         );
-        assert_eq!(message.price, 7996.0);
+        assert_eq!(message.price, 7_996.0);
         assert_eq!(message.amount, 50.0);
         assert_eq!(message.side, "sell");
         assert_eq!(
@@ -273,11 +278,11 @@ mod tests {
 
         assert_eq!(message.symbol, "BTC-PERPETUAL");
         assert_eq!(message.exchange, Exchange::Deribit);
-        assert_eq!(message.last_price, Some(7987.5));
-        assert_eq!(message.open_interest, Some(84129491.0));
+        assert_eq!(message.last_price, Some(7_987.5));
+        assert_eq!(message.open_interest, Some(84_129_491.0));
         assert_eq!(message.funding_rate, Some(-0.00001568));
-        assert_eq!(message.index_price, Some(7989.28));
-        assert_eq!(message.mark_price, Some(7987.56));
+        assert_eq!(message.index_price, Some(7_989.28));
+        assert_eq!(message.mark_price, Some(7_987.56));
         assert_eq!(
             message.timestamp,
             DateTime::parse_from_rfc3339("2019-10-23T11:34:29.302Z").unwrap()
@@ -296,16 +301,16 @@ mod tests {
         assert_eq!(message.symbol, "XBTUSD");
         assert_eq!(message.exchange, Exchange::Bitmex);
         assert_eq!(message.name, "trade_bar_10000ms");
-        assert_eq!(message.interval, 10000);
-        assert_eq!(message.open, 7623.5);
-        assert_eq!(message.high, 7623.5);
-        assert_eq!(message.low, 7623.0);
-        assert_eq!(message.close, 7623.5);
-        assert_eq!(message.volume, 37034.0);
-        assert_eq!(message.buy_volume, 24244.0);
-        assert_eq!(message.sell_volume, 12790.0);
+        assert_eq!(message.interval, 10_000);
+        assert_eq!(message.open, 7_623.5);
+        assert_eq!(message.high, 7_623.5);
+        assert_eq!(message.low, 7_623.0);
+        assert_eq!(message.close, 7_623.5);
+        assert_eq!(message.volume, 37_034.0);
+        assert_eq!(message.buy_volume, 24_244.0);
+        assert_eq!(message.sell_volume, 12_790.0);
         assert_eq!(message.trades, 9);
-        assert_eq!(message.vwap, 7623.327320840309);
+        assert_eq!(message.vwap, 7_623.327320840309);
         assert_eq!(
             message.open_timestamp,
             DateTime::parse_from_rfc3339("2019-10-25T13:11:31.574Z").unwrap()

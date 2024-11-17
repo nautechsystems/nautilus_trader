@@ -124,6 +124,10 @@ class BybitDataClient(LiveMarketDataClient):
             instrument_provider=instrument_provider,
         )
 
+        # Configuration
+        self._log.info(f"Product types: {[p.value for p in product_types]}", LogColor.BLUE)
+        self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
+
         # HTTP API
         self._http_market = BybitMarketHttpAPI(
             client=client,
@@ -156,7 +160,7 @@ class BybitDataClient(LiveMarketDataClient):
         self._depths: dict[InstrumentId, int] = {}
         self._topic_bar_type: dict[str, BarType] = {}
 
-        self._update_instrument_interval: int = 60 * 60  # Once per hour (hardcode)
+        self._update_instruments_interval_mins: int | None = config.update_instruments_interval_mins
         self._update_instruments_task: asyncio.Task | None = None
 
         # Register custom endpoint for fetching tickers
@@ -209,12 +213,14 @@ class BybitDataClient(LiveMarketDataClient):
         )
 
     async def _connect(self) -> None:
-        self._log.info("Initializing instruments...")
         await self._instrument_provider.initialize()
-
         self._send_all_instruments_to_data_engine()
-        self._update_instruments_task = self.create_task(self._update_instruments())
-        self._log.info("Initializing websocket connections")
+
+        if self._update_instruments_interval_mins:
+            self._update_instruments_task = self.create_task(
+                self._update_instruments(self._update_instruments_interval_mins),
+            )
+
         for ws_client in self._ws_clients.values():
             await ws_client.connect()
 
@@ -223,6 +229,7 @@ class BybitDataClient(LiveMarketDataClient):
             self._log.debug("Canceling task 'update_instruments'")
             self._update_instruments_task.cancel()
             self._update_instruments_task = None
+
         for ws_client in self._ws_clients.values():
             await ws_client.disconnect()
 
@@ -233,15 +240,14 @@ class BybitDataClient(LiveMarketDataClient):
         for currency in self._instrument_provider.currencies().values():
             self._cache.add_currency(currency)
 
-    async def _update_instruments(self) -> None:
+    async def _update_instruments(self, interval_mins: int) -> None:
         try:
             while True:
                 self._log.debug(
-                    f"Scheduled task 'update_instruments' to run in "
-                    f"{self._update_instrument_interval}s",
+                    f"Scheduled task 'update_instruments' to run in {interval_mins} minutes",
                 )
-                await asyncio.sleep(self._update_instrument_interval)
-                await self._instrument_provider.load_all_async()
+                await asyncio.sleep(interval_mins * 60)
+                await self._instrument_provider.initialize(reload=True)
                 self._send_all_instruments_to_data_engine()
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'update_instruments'")
@@ -279,6 +285,7 @@ class BybitDataClient(LiveMarketDataClient):
                 depths_available = BYBIT_OPTION_DEPTHS
                 depth = depth or BYBIT_OPTION_DEPTHS[-1]
             case _:
+                # Theoretically unreachable but retained to keep the match exhaustive
                 raise ValueError(
                     f"Invalit Bybit product type {product_type}",
                 )
@@ -453,7 +460,7 @@ class BybitDataClient(LiveMarketDataClient):
         end: pd.Timestamp | None = None,
     ) -> None:
         self._log.error(
-            "Cannot request historical quote ticks: not published by Bybit",
+            "Cannot request historical quotes: not published by Bybit",
         )
 
     async def _request_trade_ticks(
@@ -469,11 +476,11 @@ class BybitDataClient(LiveMarketDataClient):
 
         if start is not None:
             self._log.error(
-                "Cannot specify `start` for historical trade ticks: Bybit only provides 'recent trades'",
+                "Cannot specify `start` for historical trades: Bybit only provides 'recent trades'",
             )
         if end is not None:
             self._log.error(
-                "Cannot specify `end` for historical trade ticks: Bybit only provides 'recent trades'",
+                "Cannot specify `end` for historical trades: Bybit only provides 'recent trades'",
             )
 
         trades = await self._http_market.request_bybit_trades(
@@ -496,20 +503,20 @@ class BybitDataClient(LiveMarketDataClient):
 
         if bar_type.is_internally_aggregated():
             self._log.error(
-                f"Cannot request {bar_type}: "
+                f"Cannot request {bar_type} bars: "
                 f"only historical bars with EXTERNAL aggregation available from Bybit",
             )
             return
 
         if not bar_type.spec.is_time_aggregated():
             self._log.error(
-                f"Cannot request {bar_type}: only time bars are aggregated by Bybit",
+                f"Cannot request {bar_type} bars: only time bars are aggregated by Bybit",
             )
             return
 
         if bar_type.spec.price_type != PriceType.LAST:
             self._log.error(
-                f"Cannot request {bar_type}: "
+                f"Cannot request {bar_type} bars: "
                 f"only historical bars for LAST price type available from Bybit",
             )
             return
@@ -629,7 +636,7 @@ class BybitDataClient(LiveMarketDataClient):
         self._handle_data(deltas)
 
     def _handle_ticker(self, product_type: BybitProductType, raw: bytes) -> None:
-        # Currently we use the ticker stream to parse quote ticks, and this
+        # Currently we use the ticker stream to parse quotes, and this
         # is only handled of LINEAR / INVERSE. Other product types should
         # subscribe to an orderbook stream.
         if product_type in (BybitProductType.LINEAR, BybitProductType.INVERSE):

@@ -328,6 +328,29 @@ def test_account_channel_data_msg() -> None:
     assert len(msg.contents.orders) == 1
 
 
+def test_account_channel_data_msg_affiliate_rev_share_fill() -> None:
+    """
+    Test parsing the account channel data.
+    """
+    # Prepare
+    decoder = msgspec.json.Decoder(DYDXWsSubaccountsChannelData)
+
+    # Act
+    with Path(
+        "tests/test_data/dydx/websocket/v4_accounts_channel_data_affiliate_rev_share.json",
+    ).open() as file_reader:
+        msg = decoder.decode(file_reader.read())
+
+    # Assert
+    assert msg.channel == "v4_subaccounts"
+    assert msg.contents.orders is not None
+    assert msg.contents.fills is not None
+    assert msg.contents.perpetualPositions is not None
+    assert len(msg.contents.orders) == 1
+    assert len(msg.contents.fills) == 1
+    assert len(msg.contents.perpetualPositions) == 1
+
+
 def test_account_channel_data_msg_order_expired() -> None:
     """
     Test parsing the account channel data.

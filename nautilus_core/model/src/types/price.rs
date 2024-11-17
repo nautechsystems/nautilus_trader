@@ -197,19 +197,25 @@ impl Price {
 impl FromStr for Price {
     type Err = String;
 
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        let float_from_input = input
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        let float_from_input = value
             .replace('_', "")
             .parse::<f64>()
-            .map_err(|e| format!("Error parsing `input` string '{input}' as f64: {e}"))?;
+            .map_err(|e| format!("Error parsing `input` string '{value}' as f64: {e}"))?;
 
-        Ok(Self::new(float_from_input, precision_from_str(input)))
+        Ok(Self::new(float_from_input, precision_from_str(value)))
     }
 }
 
 impl From<&str> for Price {
-    fn from(input: &str) -> Self {
-        Self::from_str(input).expect(FAILED)
+    fn from(value: &str) -> Self {
+        Self::from_str(value).expect(FAILED)
+    }
+}
+
+impl From<String> for Price {
+    fn from(value: String) -> Self {
+        Self::from(value.as_str())
     }
 }
 

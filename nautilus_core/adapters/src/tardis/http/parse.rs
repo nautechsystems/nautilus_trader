@@ -15,10 +15,12 @@
 
 use std::str::FromStr;
 
+use chrono::{DateTime, Utc};
 use nautilus_core::{nanos::UnixNanos, parsing::precision_from_str};
 use nautilus_model::{
     currencies::CURRENCY_MAP,
     enums::{AssetClass, CurrencyType},
+    identifiers::Symbol,
     instruments::{
         any::InstrumentAny, crypto_future::CryptoFuture, crypto_perpetual::CryptoPerpetual,
         currency_pair::CurrencyPair, options_contract::OptionsContract,
@@ -32,27 +34,41 @@ use ustr::Ustr;
 use super::types::InstrumentInfo;
 use crate::tardis::{
     enums::InstrumentType,
-    parse::{parse_instrument_id_with_enum, parse_option_kind},
+    parse::{normalize_instrument_id, parse_instrument_id, parse_option_kind},
 };
 
 #[must_use]
-pub fn parse_instrument_any(info: InstrumentInfo, ts_init: UnixNanos) -> InstrumentAny {
+pub fn parse_instrument_any(
+    info: InstrumentInfo,
+    ts_init: UnixNanos,
+    normalize_symbols: bool,
+) -> InstrumentAny {
     match info.instrument_type {
-        InstrumentType::Spot => parse_spot_instrument(info, ts_init),
-        InstrumentType::Perpetual => parse_perp_instrument(info, ts_init),
-        InstrumentType::Future => parse_future_instrument(info, ts_init),
-        InstrumentType::Option => parse_option_instrument(info, ts_init),
+        InstrumentType::Spot => parse_spot_instrument(info, ts_init, normalize_symbols),
+        InstrumentType::Perpetual => parse_perp_instrument(info, ts_init, normalize_symbols),
+        InstrumentType::Future => parse_future_instrument(info, ts_init, normalize_symbols),
+        InstrumentType::Option => parse_option_instrument(info, ts_init, normalize_symbols),
     }
 }
 
-fn parse_spot_instrument(info: InstrumentInfo, ts_init: UnixNanos) -> InstrumentAny {
-    let instrument_id = parse_instrument_id_with_enum(&info.id, &info.exchange);
+fn parse_spot_instrument(
+    info: InstrumentInfo,
+    ts_init: UnixNanos,
+    normalize_symbols: bool,
+) -> InstrumentAny {
+    let instrument_id = if normalize_symbols {
+        normalize_instrument_id(&info.exchange, &info.id, info.instrument_type, info.inverse)
+    } else {
+        parse_instrument_id(&info.exchange, &info.id)
+    };
+
+    let raw_symbol = Symbol::new(&info.id);
     let price_increment = get_price_increment(info.price_increment);
     let size_increment = get_size_increment(info.amount_increment);
 
     let instrument = CurrencyPair::new(
         instrument_id,
-        instrument_id.symbol,
+        raw_symbol,
         get_currency(info.base_currency.to_uppercase().as_str()),
         get_currency(info.quote_currency.to_uppercase().as_str()),
         price_increment.precision,
@@ -77,14 +93,24 @@ fn parse_spot_instrument(info: InstrumentInfo, ts_init: UnixNanos) -> Instrument
     InstrumentAny::CurrencyPair(instrument)
 }
 
-fn parse_perp_instrument(info: InstrumentInfo, ts_init: UnixNanos) -> InstrumentAny {
-    let instrument_id = parse_instrument_id_with_enum(&info.id, &info.exchange);
+fn parse_perp_instrument(
+    info: InstrumentInfo,
+    ts_init: UnixNanos,
+    normalize_symbols: bool,
+) -> InstrumentAny {
+    let instrument_id = if normalize_symbols {
+        normalize_instrument_id(&info.exchange, &info.id, info.instrument_type, info.inverse)
+    } else {
+        parse_instrument_id(&info.exchange, &info.id)
+    };
+
+    let raw_symbol = Symbol::new(&info.id);
     let price_increment = get_price_increment(info.price_increment);
     let size_increment = get_size_increment(info.amount_increment);
 
     let instrument = CryptoPerpetual::new(
         instrument_id,
-        instrument_id.symbol,
+        raw_symbol,
         get_currency(info.base_currency.to_uppercase().as_str()),
         get_currency(info.quote_currency.to_uppercase().as_str()),
         get_currency(
@@ -117,20 +143,32 @@ fn parse_perp_instrument(info: InstrumentInfo, ts_init: UnixNanos) -> Instrument
     InstrumentAny::CryptoPerpetual(instrument)
 }
 
-fn parse_future_instrument(info: InstrumentInfo, ts_init: UnixNanos) -> InstrumentAny {
-    let instrument_id = parse_instrument_id_with_enum(&info.id, &info.exchange);
+fn parse_future_instrument(
+    info: InstrumentInfo,
+    ts_init: UnixNanos,
+    normalize_symbols: bool,
+) -> InstrumentAny {
+    let instrument_id = if normalize_symbols {
+        normalize_instrument_id(&info.exchange, &info.id, info.instrument_type, info.inverse)
+    } else {
+        parse_instrument_id(&info.exchange, &info.id)
+    };
+
+    let raw_symbol = Symbol::new(&info.id);
     let price_increment = get_price_increment(info.price_increment);
     let size_increment = get_size_increment(info.amount_increment);
+    let activation = parse_datetime_to_unix_nanos(Some(&info.available_since), "available_since");
+    let expiration = parse_datetime_to_unix_nanos(info.expiry.as_deref(), "expiry");
 
     let instrument = CryptoFuture::new(
         instrument_id,
-        instrument_id.symbol,
+        raw_symbol,
         get_currency(info.base_currency.to_uppercase().as_str()),
         get_currency(info.quote_currency.to_uppercase().as_str()),
         get_currency(info.base_currency.to_uppercase().as_str()),
         info.inverse.expect("Future should have `inverse` field"),
-        UnixNanos::default(), // TODO: Parse activation
-        UnixNanos::default(), // TODO: Parse expiration
+        activation,
+        expiration,
         price_increment.precision,
         size_increment.precision,
         price_increment,
@@ -154,13 +192,26 @@ fn parse_future_instrument(info: InstrumentInfo, ts_init: UnixNanos) -> Instrume
     InstrumentAny::CryptoFuture(instrument)
 }
 
-fn parse_option_instrument(info: InstrumentInfo, ts_init: UnixNanos) -> InstrumentAny {
-    let instrument_id = parse_instrument_id_with_enum(&info.id, &info.exchange);
+fn parse_option_instrument(
+    info: InstrumentInfo,
+    ts_init: UnixNanos,
+    normalize_symbols: bool,
+) -> InstrumentAny {
+    let instrument_id = if normalize_symbols {
+        normalize_instrument_id(&info.exchange, &info.id, info.instrument_type, info.inverse)
+    } else {
+        parse_instrument_id(&info.exchange, &info.id)
+    };
+
+    let raw_symbol = Symbol::new(&info.id);
     let price_increment = get_price_increment(info.price_increment);
+
+    let activation = parse_datetime_to_unix_nanos(Some(&info.available_since), "available_since");
+    let expiration = parse_datetime_to_unix_nanos(info.expiry.as_deref(), "expiry");
 
     let instrument = OptionsContract::new(
         instrument_id,
-        instrument_id.symbol,
+        raw_symbol,
         AssetClass::Cryptocurrency,
         Some(Ustr::from(instrument_id.venue.as_str())),
         Ustr::from(info.base_currency.to_string().to_uppercase().as_str()),
@@ -174,8 +225,8 @@ fn parse_option_instrument(info: InstrumentInfo, ts_init: UnixNanos) -> Instrume
             price_increment.precision,
         ),
         get_currency(info.quote_currency.to_uppercase().as_str()),
-        UnixNanos::default(), // TODO: Parse activation
-        UnixNanos::default(), // TODO: Parse expiration
+        activation,
+        expiration,
         price_increment.precision,
         price_increment,
         Quantity::from(1),
@@ -193,7 +244,7 @@ fn parse_option_instrument(info: InstrumentInfo, ts_init: UnixNanos) -> Instrume
     InstrumentAny::OptionsContract(instrument)
 }
 
-// TODO: Temporary function to handle price increments beyond max precision
+/// Returns the price increment from the given `value` limiting to a maximum precision of 9.
 fn get_price_increment(value: f64) -> Price {
     let value_str = value.to_string();
     let precision = precision_from_str(&value_str);
@@ -203,7 +254,7 @@ fn get_price_increment(value: f64) -> Price {
     }
 }
 
-// TODO: Temporary function to handle size increments beyond max precision
+/// Returns the size increment from the given `value` limiting to a maximum precision of 9.
 fn get_size_increment(value: f64) -> Quantity {
     let value_str = value.to_string();
     let precision = precision_from_str(&value_str);
@@ -213,7 +264,7 @@ fn get_size_increment(value: f64) -> Quantity {
     }
 }
 
-// TODO: Temporary function to handle "unknown" crypto currencies
+/// Returns the currency either from the internal currency map or creates a default crypto.
 fn get_currency(code: &str) -> Currency {
     CURRENCY_MAP
         .lock()
@@ -221,6 +272,22 @@ fn get_currency(code: &str) -> Currency {
         .get(code)
         .copied()
         .unwrap_or(Currency::new(code, 8, 0, code, CurrencyType::Crypto))
+}
+
+/// Parses the given RFC 3339 datetime string (UTC) into a `UnixNanos` timestamp.
+/// If `value` is `None`, then defaults to the UNIX epoch (0 nanoseconds).
+fn parse_datetime_to_unix_nanos(value: Option<&str>, field: &str) -> UnixNanos {
+    value
+        .map(|dt| {
+            UnixNanos::from(
+                DateTime::parse_from_rfc3339(dt)
+                    .unwrap_or_else(|_| panic!("Failed to parse `{field}`"))
+                    .with_timezone(&Utc)
+                    .timestamp_nanos_opt()
+                    .unwrap_or(0) as u64,
+            )
+        })
+        .unwrap_or_default()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -239,10 +306,22 @@ mod tests {
         let json_data = load_test_json("instrument_perpetual.json");
         let info: InstrumentInfo = serde_json::from_str(&json_data).unwrap();
 
-        let instrument = parse_instrument_any(info, UnixNanos::default());
+        let instrument = parse_instrument_any(info, UnixNanos::default(), false);
 
         assert_eq!(instrument.id(), InstrumentId::from("XBTUSD.BITMEX"));
-        // TODO: Assert remaining fields on InstrumentAny
+        assert_eq!(instrument.raw_symbol(), Symbol::from("XBTUSD"));
+        assert_eq!(instrument.underlying(), None);
+        assert_eq!(instrument.base_currency(), Some(Currency::BTC()));
+        assert_eq!(instrument.quote_currency(), Currency::USD());
+        assert_eq!(instrument.settlement_currency(), Currency::USD());
+        assert!(instrument.is_inverse());
+        assert_eq!(instrument.price_precision(), 1);
+        assert_eq!(instrument.size_precision(), 0);
+        assert_eq!(instrument.price_increment(), Price::from("0.5"));
+        assert_eq!(instrument.size_increment(), Quantity::from(1));
+        assert_eq!(instrument.multiplier(), Quantity::from(1));
+        assert_eq!(instrument.activation_ns(), None);
+        assert_eq!(instrument.expiration_ns(), None);
     }
 
     // TODO: test_parse_instrument_currency_pair

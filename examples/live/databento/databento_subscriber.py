@@ -30,6 +30,7 @@ from nautilus_trader.config import StrategyConfig
 from nautilus_trader.config import TradingNodeConfig
 from nautilus_trader.live.node import TradingNode
 from nautilus_trader.model.book import OrderBook
+from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
@@ -156,7 +157,7 @@ class DataSubscriber(Strategy):
 
             self.subscribe_quote_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
             self.subscribe_trade_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
-            self.subscribe_instrument_status(instrument_id, client_id=DATABENTO_CLIENT_ID)
+            # self.subscribe_instrument_status(instrument_id, client_id=DATABENTO_CLIENT_ID)
             # self.request_quote_ticks(instrument_id)
             # self.request_trade_ticks(instrument_id)
 
@@ -249,6 +250,18 @@ class DataSubscriber(Strategy):
 
         """
         self.log.info(repr(tick), LogColor.CYAN)
+
+    def on_bar(self, bar: Bar) -> None:
+        """
+        Actions to be performed when the strategy is running and receives a bar.
+
+        Parameters
+        ----------
+        bar : Bar
+            The bar received.
+
+        """
+        self.log.info(repr(bar), LogColor.CYAN)
 
 
 # Configure and initialize your strategy

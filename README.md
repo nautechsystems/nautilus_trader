@@ -46,7 +46,7 @@ including FX, Equities, Futures, Options, CFDs, Crypto and Betting - across mult
 ## Features
 
 - **Fast**: Core is written in Rust with asynchronous networking using [tokio](https://crates.io/crates/tokio).
-- **Reliable**: Type safety and thread safety through Rust. Redis-backed performant state persistence.
+- **Reliable**: Type safety and thread safety through Rust. Redis-backed performant state persistence (optional).
 - **Portable**: OS independent, runs on Linux, macOS, and Windows. Deploy using Docker.
 - **Flexible**: Modular adapters mean any REST, WebSocket, or FIX API can be integrated.
 - **Advanced**: Time in force `IOC`, `FOK`, `GTD`, `AT_THE_OPEN`, `AT_THE_CLOSE`, advanced order types and conditional triggers. Execution instructions `post-only`, `reduce-only`, and icebergs. Contingency order lists including `OCO`, `OTO`.
@@ -153,9 +153,9 @@ See the [Integrations](https://nautilustrader.io/docs/latest/integrations/index.
 
 ### From PyPI
 
-We recommend running the platform with the latest stable version of Python, and in a virtual environment to isolate the dependencies.
+We recommend using the latest supported version of Python and setting up [nautilus_trader](https://pypi.org/project/nautilus_trader/) in a virtual environment to isolate dependencies
 
-To install the latest binary wheel from PyPI:
+To install the latest binary wheel (or sdist package) from PyPI using Pythons pip package manager:
 
     pip install -U nautilus_trader
 
@@ -168,9 +168,9 @@ For MacBook Pro M1/M2, make sure your Python installed using pyenv is configured
 
     PYTHON_CONFIGURE_OPTS="--enable-shared" pyenv install <python_version>
 
-See https://pyo3.rs/latest/getting_started#virtualenvs.
+See the [PyO3 user guide](https://pyo3.rs/latest/getting-started#virtualenvs) for more details.
 
-It's possible to install from source using `pip` if you first install the build dependencies
+It's possible to install from source using pip if you first install the build dependencies
 as specified in the `pyproject.toml`. We highly recommend installing using [poetry](https://python-poetry.org/) as below.
 
 1. Install [rustup](https://rustup.rs/) (the Rust toolchain installer):
@@ -217,7 +217,12 @@ as specified in the `pyproject.toml`. We highly recommend installing using [poet
        cd nautilus_trader
        poetry install --only main --all-extras
 
-See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation.html) for other options and further details.
+See the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation) for other options and further details.
+
+## Redis
+
+Using Redis with NautilusTrader is **optional** and only required if configured as the backend for a cache database or [message bus](https://nautilustrader.io/docs/latest/concepts/message_bus).
+See the Redis section of the [Installation Guide](https://nautilustrader.io/docs/latest/getting_started/installation#redis) for further details.
 
 ## Versioning and releases
 

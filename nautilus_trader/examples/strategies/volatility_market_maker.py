@@ -372,11 +372,17 @@ class VolatilityMarketMaker(Strategy):
         Actions to be performed when the strategy is stopped.
         """
         self.cancel_all_orders(self.instrument_id, client_id=self.client_id)
-        self.close_all_positions(self.instrument_id, client_id=self.client_id)
 
+        # # Uncomment to test individual cancels
+        # for order in self.cache.orders_open(instrument_id=self.instrument_id):
+        #     self.cancel_order(order)
+
+        # # Uncomment to test batch cancel
         # open_orders = self.cache.orders_open(instrument_id=self.instrument_id)
         # if open_orders:
         #     self.cancel_orders(open_orders, client_id=self.client_id)
+
+        self.close_all_positions(self.instrument_id, client_id=self.client_id)
 
         # Unsubscribe from data
         self.unsubscribe_bars(self.bar_type, client_id=self.client_id)

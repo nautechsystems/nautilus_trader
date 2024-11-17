@@ -50,14 +50,24 @@ from nautilus_trader.trading.strategy import Strategy
 # For correct subscription operation, you must specify all instruments to be immediately
 # subscribed for as part of the data client configuration
 
-# Trump Election 2024 Winner market
-condition_id = "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917"
-token_id1 = 21742633143463906290569050155826241533067272736897614950488156847949938836455  # (Yes)
-token_id2 = 48331043336612883890938759509493159234755048973500640148014422747788308965732  # (No)
+# US Election 2024 Winner market
+
+# Trump
+condition_id1 = "0xdd22472e552920b8438158ea7238bfadfa4f736aa4cee91a6b86c39ead110917"
+token_id11 = 21742633143463906290569050155826241533067272736897614950488156847949938836455  #  (Yes)
+token_id12 = 48331043336612883890938759509493159234755048973500640148014422747788308965732  #  (No)
+
+# Kamala
+condition_id2 = "0xc6485bb7ea46d7bb89beb9c91e7572ecfc72a6273789496f78bc5e989e4d1638"
+token_id21 = 69236923620077691027083946871148646972011131466059644796654161903044970987404  #  (Yes)
+token_id22 = 87584955359245246404952128082451897287778571240979823316620093987046202296181  #  (No)
+
 
 instrument_ids = [
-    get_polymarket_instrument_id(condition_id, token_id1),
-    get_polymarket_instrument_id(condition_id, token_id2),
+    get_polymarket_instrument_id(condition_id1, token_id11),
+    get_polymarket_instrument_id(condition_id1, token_id12),
+    get_polymarket_instrument_id(condition_id2, token_id21),
+    get_polymarket_instrument_id(condition_id2, token_id22),
 ]
 
 filters = {
@@ -114,6 +124,7 @@ config_node = TradingNodeConfig(
             api_secret=None,  # 'POLYMARKET_API_SECRET' env var
             passphrase=None,  # 'POLYMARKET_PASSPHRASE' env var
             instrument_provider=instrument_provider_config,
+            generate_order_history_from_trades=False,
         ),
     },
     timeout_connection=60.0,
@@ -365,7 +376,7 @@ strat_config1 = TOBQuoterConfig(
     instrument_id=instrument_id1,
     external_order_claims=[instrument_id1],
     trade_size=trade_size,
-    dry_run=False,
+    dry_run=True,  # This event has now ended and should not be traded
 )
 # strat_config2 = TOBQuoterConfig(
 #     instrument_id=instrument_id2,

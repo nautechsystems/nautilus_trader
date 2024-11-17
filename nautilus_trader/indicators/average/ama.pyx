@@ -42,7 +42,7 @@ cdef class AdaptiveMovingAverage(MovingAverage):
     period_alpha_slow : int
         The period for the slow smoothing constant (> 0 < alpha_fast).
     price_type : PriceType
-        The specified price type for extracting values from quote ticks.
+        The specified price type for extracting values from quotes.
     """
 
     def __init__(

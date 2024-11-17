@@ -108,7 +108,7 @@ class OptionStrategy(Strategy):
     """
     An options trading strategy that calculates and displays the portfolio greeks.
 
-    The strategy subscribes to quote ticks for two options and a futures contract, and
+    The strategy subscribes to quotes for two options and a futures contract, and
     initializes a portfolio with some trades. It can optionally load greeks from a
     catalog, or compute them on the fly. The strategy logs the portfolio greeks at
     regular intervals.

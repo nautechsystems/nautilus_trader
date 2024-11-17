@@ -1,7 +1,7 @@
 # Synthetic Instruments
 
 The platform supports creating customized synthetic instruments, which can generate synthetic quote 
-and trade ticks. These are useful for:
+and trades. These are useful for:
 
 - Enabling `Actor` and `Strategy` components to subscribe to quote or trade feeds
 - Triggering emulated orders
@@ -62,7 +62,7 @@ self._synthetic_id = synthetic.id
 # Add the synthetic instrument for use by other components
 self.add_synthetic(synthetic)
 
-# Subscribe to quote ticks for the synthetic instrument
+# Subscribe to quotes for the synthetic instrument
 self.subscribe_quote_ticks(self._synthetic_id)
 ```
 
@@ -89,7 +89,7 @@ self.update_synthetic(synthetic)
 ## Trigger instrument IDs
 The platform allows for emulated orders to be triggered based on synthetic instrument prices. In 
 the following example, we build upon the previous one to submit a new emulated order. 
-This order will be retained in the emulator until a trigger from synthetic quote ticks releases it. 
+This order will be retained in the emulator until a trigger from synthetic quotes releases it. 
 It will then be submitted to Binance as a MARKET order:
 
 ```

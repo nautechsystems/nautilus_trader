@@ -15,6 +15,7 @@
 
 use nautilus_core::nanos::UnixNanos;
 use rust_decimal::Decimal;
+use ustr::Ustr;
 
 use super::{
     betting::BettingInstrument, binary_option::BinaryOption, crypto_future::CryptoFuture,
@@ -24,7 +25,7 @@ use super::{
 };
 use crate::{
     enums::InstrumentClass,
-    identifiers::InstrumentId,
+    identifiers::{InstrumentId, Symbol, Venue},
     types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
 };
 
@@ -61,6 +62,22 @@ impl InstrumentAny {
     }
 
     #[must_use]
+    pub fn instrument_class(&self) -> InstrumentClass {
+        match self {
+            Self::Betting(inst) => inst.instrument_class(),
+            Self::BinaryOption(inst) => inst.instrument_class(),
+            Self::CryptoFuture(inst) => inst.instrument_class(),
+            Self::CryptoPerpetual(inst) => inst.instrument_class(),
+            Self::CurrencyPair(inst) => inst.instrument_class(),
+            Self::Equity(inst) => inst.instrument_class(),
+            Self::FuturesContract(inst) => inst.instrument_class(),
+            Self::FuturesSpread(inst) => inst.instrument_class(),
+            Self::OptionsContract(inst) => inst.instrument_class(),
+            Self::OptionsSpread(inst) => inst.instrument_class(),
+        }
+    }
+
+    #[must_use]
     pub fn id(&self) -> InstrumentId {
         match self {
             Self::Betting(inst) => inst.id,
@@ -73,6 +90,70 @@ impl InstrumentAny {
             Self::FuturesSpread(inst) => inst.id,
             Self::OptionsContract(inst) => inst.id,
             Self::OptionsSpread(inst) => inst.id,
+        }
+    }
+
+    #[must_use]
+    pub fn symbol(&self) -> Symbol {
+        match self {
+            Self::Betting(inst) => inst.id.symbol,
+            Self::BinaryOption(inst) => inst.id.symbol,
+            Self::CryptoFuture(inst) => inst.id.symbol,
+            Self::CryptoPerpetual(inst) => inst.id.symbol,
+            Self::CurrencyPair(inst) => inst.id.symbol,
+            Self::Equity(inst) => inst.id.symbol,
+            Self::FuturesContract(inst) => inst.id.symbol,
+            Self::FuturesSpread(inst) => inst.id.symbol,
+            Self::OptionsContract(inst) => inst.id.symbol,
+            Self::OptionsSpread(inst) => inst.id.symbol,
+        }
+    }
+
+    #[must_use]
+    pub fn venue(&self) -> Venue {
+        match self {
+            Self::Betting(inst) => inst.id.venue,
+            Self::BinaryOption(inst) => inst.id.venue,
+            Self::CryptoFuture(inst) => inst.id.venue,
+            Self::CryptoPerpetual(inst) => inst.id.venue,
+            Self::CurrencyPair(inst) => inst.id.venue,
+            Self::Equity(inst) => inst.id.venue,
+            Self::FuturesContract(inst) => inst.id.venue,
+            Self::FuturesSpread(inst) => inst.id.venue,
+            Self::OptionsContract(inst) => inst.id.venue,
+            Self::OptionsSpread(inst) => inst.id.venue,
+        }
+    }
+
+    #[must_use]
+    pub fn raw_symbol(&self) -> Symbol {
+        match self {
+            Self::Betting(inst) => inst.raw_symbol(),
+            Self::BinaryOption(inst) => inst.raw_symbol(),
+            Self::CryptoFuture(inst) => inst.raw_symbol(),
+            Self::CryptoPerpetual(inst) => inst.raw_symbol(),
+            Self::CurrencyPair(inst) => inst.raw_symbol(),
+            Self::Equity(inst) => inst.raw_symbol(),
+            Self::FuturesContract(inst) => inst.raw_symbol(),
+            Self::FuturesSpread(inst) => inst.raw_symbol(),
+            Self::OptionsContract(inst) => inst.raw_symbol(),
+            Self::OptionsSpread(inst) => inst.raw_symbol(),
+        }
+    }
+
+    #[must_use]
+    pub fn underlying(&self) -> Option<&Ustr> {
+        match self {
+            Self::Betting(_) => None,
+            Self::BinaryOption(_) => None,
+            Self::CryptoFuture(inst) => Some(&inst.underlying.code),
+            Self::CryptoPerpetual(_) => None,
+            Self::CurrencyPair(_) => None,
+            Self::Equity(_) => None,
+            Self::FuturesContract(inst) => Some(&inst.underlying),
+            Self::FuturesSpread(inst) => Some(&inst.underlying),
+            Self::OptionsContract(inst) => Some(&inst.underlying),
+            Self::OptionsSpread(inst) => Some(&inst.underlying),
         }
     }
 
@@ -221,22 +302,6 @@ impl InstrumentAny {
     }
 
     #[must_use]
-    pub fn instrument_class(&self) -> InstrumentClass {
-        match self {
-            Self::Betting(inst) => inst.instrument_class(),
-            Self::BinaryOption(inst) => inst.instrument_class(),
-            Self::CryptoFuture(inst) => inst.instrument_class(),
-            Self::CryptoPerpetual(inst) => inst.instrument_class(),
-            Self::CurrencyPair(inst) => inst.instrument_class(),
-            Self::Equity(inst) => inst.instrument_class(),
-            Self::FuturesContract(inst) => inst.instrument_class(),
-            Self::FuturesSpread(inst) => inst.instrument_class(),
-            Self::OptionsContract(inst) => inst.instrument_class(),
-            Self::OptionsSpread(inst) => inst.instrument_class(),
-        }
-    }
-
-    #[must_use]
     pub fn activation_ns(&self) -> Option<UnixNanos> {
         match self {
             Self::Betting(inst) => inst.activation_ns(),
@@ -265,6 +330,66 @@ impl InstrumentAny {
             Self::FuturesSpread(inst) => inst.expiration_ns(),
             Self::OptionsContract(inst) => inst.expiration_ns(),
             Self::OptionsSpread(inst) => inst.expiration_ns(),
+        }
+    }
+
+    pub fn max_quantity(&self) -> Option<Quantity> {
+        match self {
+            Self::Betting(inst) => inst.max_quantity(),
+            Self::BinaryOption(inst) => inst.max_quantity(),
+            Self::CryptoFuture(inst) => inst.max_quantity(),
+            Self::CryptoPerpetual(inst) => inst.max_quantity(),
+            Self::CurrencyPair(inst) => inst.max_quantity(),
+            Self::Equity(inst) => inst.max_quantity(),
+            Self::FuturesContract(inst) => inst.max_quantity(),
+            Self::FuturesSpread(inst) => inst.max_quantity(),
+            Self::OptionsContract(inst) => inst.max_quantity(),
+            Self::OptionsSpread(inst) => inst.max_quantity(),
+        }
+    }
+
+    pub fn min_quantity(&self) -> Option<Quantity> {
+        match self {
+            Self::Betting(inst) => inst.min_quantity(),
+            Self::BinaryOption(inst) => inst.min_quantity(),
+            Self::CryptoFuture(inst) => inst.min_quantity(),
+            Self::CryptoPerpetual(inst) => inst.min_quantity(),
+            Self::CurrencyPair(inst) => inst.min_quantity(),
+            Self::Equity(inst) => inst.min_quantity(),
+            Self::FuturesContract(inst) => inst.min_quantity(),
+            Self::FuturesSpread(inst) => inst.min_quantity(),
+            Self::OptionsContract(inst) => inst.min_quantity(),
+            Self::OptionsSpread(inst) => inst.min_quantity(),
+        }
+    }
+
+    pub fn max_notional(&self) -> Option<Money> {
+        match self {
+            Self::Betting(inst) => inst.max_notional(),
+            Self::BinaryOption(inst) => inst.max_notional(),
+            Self::CryptoFuture(inst) => inst.max_notional(),
+            Self::CryptoPerpetual(inst) => inst.max_notional(),
+            Self::CurrencyPair(inst) => inst.max_notional(),
+            Self::Equity(inst) => inst.max_notional(),
+            Self::FuturesContract(inst) => inst.max_notional(),
+            Self::FuturesSpread(inst) => inst.max_notional(),
+            Self::OptionsContract(inst) => inst.max_notional(),
+            Self::OptionsSpread(inst) => inst.max_notional(),
+        }
+    }
+
+    pub fn min_notional(&self) -> Option<Money> {
+        match self {
+            Self::Betting(inst) => inst.min_notional(),
+            Self::BinaryOption(inst) => inst.min_notional(),
+            Self::CryptoFuture(inst) => inst.min_notional(),
+            Self::CryptoPerpetual(inst) => inst.min_notional(),
+            Self::CurrencyPair(inst) => inst.min_notional(),
+            Self::Equity(inst) => inst.min_notional(),
+            Self::FuturesContract(inst) => inst.min_notional(),
+            Self::FuturesSpread(inst) => inst.min_notional(),
+            Self::OptionsContract(inst) => inst.min_notional(),
+            Self::OptionsSpread(inst) => inst.min_notional(),
         }
     }
 
@@ -370,6 +495,21 @@ impl InstrumentAny {
             Self::FuturesSpread(inst) => inst.taker_fee(),
             Self::OptionsContract(inst) => inst.taker_fee(),
             Self::OptionsSpread(inst) => inst.taker_fee(),
+        }
+    }
+
+    pub fn get_base_quantity(&self, quantity: Quantity, last_px: Price) -> Quantity {
+        match self {
+            Self::Betting(inst) => inst.calculate_base_quantity(quantity, last_px),
+            Self::BinaryOption(inst) => inst.calculate_base_quantity(quantity, last_px),
+            Self::CryptoFuture(inst) => inst.calculate_base_quantity(quantity, last_px),
+            Self::CryptoPerpetual(inst) => inst.calculate_base_quantity(quantity, last_px),
+            Self::CurrencyPair(inst) => inst.calculate_base_quantity(quantity, last_px),
+            Self::Equity(inst) => inst.calculate_base_quantity(quantity, last_px),
+            Self::FuturesContract(inst) => inst.calculate_base_quantity(quantity, last_px),
+            Self::FuturesSpread(inst) => inst.calculate_base_quantity(quantity, last_px),
+            Self::OptionsContract(inst) => inst.calculate_base_quantity(quantity, last_px),
+            Self::OptionsSpread(inst) => inst.calculate_base_quantity(quantity, last_px),
         }
     }
 }

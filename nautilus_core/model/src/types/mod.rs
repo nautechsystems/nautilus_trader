@@ -21,5 +21,6 @@ pub mod fixed;
 pub mod money;
 pub mod price;
 pub mod quantity;
+
 #[cfg(feature = "stubs")]
 pub mod stubs;

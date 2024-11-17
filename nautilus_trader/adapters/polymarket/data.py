@@ -101,7 +101,8 @@ class PolymarketDataClient(LiveMarketDataClient):
         # Configuration
         self._config = config
         self._log.info(f"{config.ws_connection_delay_secs=}", LogColor.BLUE)
-        self._log.info(f"{config.update_instrument_interval_mins=}", LogColor.BLUE)
+        self._log.info(f"{config.update_instruments_interval_mins=}", LogColor.BLUE)
+        self._log.info(f"{config.compute_effective_deltas=}", LogColor.BLUE)
 
         # HTTP API
         self._http_client = http_client
@@ -113,7 +114,7 @@ class PolymarketDataClient(LiveMarketDataClient):
         self._decoder_market_msg = msgspec.json.Decoder(MARKET_WS_MESSAGE)
 
         # Tasks
-        self._update_instrument_interval: int = config.update_instrument_interval_mins * 60
+        self._update_instruments_interval_mins: int | None = config.update_instruments_interval_mins
         self._update_instruments_task: asyncio.Task | None = None
         self._main_ws_connect_task: asyncio.Task | None = None
         self._main_ws_delay = True
@@ -125,9 +126,13 @@ class PolymarketDataClient(LiveMarketDataClient):
     async def _connect(self) -> None:
         self._log.info("Initializing instruments...")
         await self._instrument_provider.initialize()
-
         self._send_all_instruments_to_data_engine()
-        self._update_instruments_task = self.create_task(self._update_instruments())
+
+        if self._update_instruments_interval_mins:
+            self._update_instruments_task = self.create_task(
+                self._update_instruments(self._update_instruments_interval_mins),
+            )
+
         self._main_ws_connect_task = self.create_task(self._connect_main_ws_after_delay())
 
     async def _disconnect(self) -> None:
@@ -186,15 +191,14 @@ class PolymarketDataClient(LiveMarketDataClient):
         for currency in self._instrument_provider.currencies().values():
             self._cache.add_currency(currency)
 
-    async def _update_instruments(self) -> None:
+    async def _update_instruments(self, interval_mins: int) -> None:
         try:
             while True:
                 self._log.debug(
-                    f"Scheduled task 'update_instruments' to run in "
-                    f"{self._update_instrument_interval}s",
+                    f"Scheduled task 'update_instruments' to run in {interval_mins} minutes",
                 )
-                await asyncio.sleep(self._update_instrument_interval)
-                await self._instrument_provider.initialize()
+                await asyncio.sleep(interval_mins * 60)
+                await self._instrument_provider.initialize(reload=True)
                 self._send_all_instruments_to_data_engine()
         except asyncio.CancelledError:
             self._log.debug("Canceled task 'update_instruments'")
@@ -261,12 +265,12 @@ class PolymarketDataClient(LiveMarketDataClient):
 
     async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
         self._log.error(
-            f"Cannot unsubscribe from {instrument_id} quote ticks: unsubscribing not supported by Polymarket",
+            f"Cannot unsubscribe from {instrument_id} quotes: unsubscribing not supported by Polymarket",
         )
 
     async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
         self._log.error(
-            f"Cannot unsubscribe from {instrument_id} trade ticks: unsubscribing not supported by Polymarket",
+            f"Cannot unsubscribe from {instrument_id} trades: unsubscribing not supported by Polymarket",
         )
 
     async def _unsubscribe_bars(self, bar_type: BarType) -> None:
@@ -345,7 +349,7 @@ class PolymarketDataClient(LiveMarketDataClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> None:
-        self._log.error("Cannot request historical quote ticks: not published by Polymarket")
+        self._log.error("Cannot request historical quotes: not published by Polymarket")
 
     async def _request_trade_ticks(
         self,
@@ -355,7 +359,7 @@ class PolymarketDataClient(LiveMarketDataClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> None:
-        self._log.error("Cannot request historical trade ticks: not published by Polymarket")
+        self._log.error("Cannot request historical trades: not published by Polymarket")
 
     async def _request_bars(
         self,

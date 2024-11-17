@@ -47,6 +47,7 @@ pub struct MockDataClient {
 }
 
 impl MockDataClient {
+    /// Creates a new [`MockDataClient`] instance.
     pub const fn new(
         cache: Rc<RefCell<Cache>>,
         msgbus: Rc<RefCell<MessageBus>>,

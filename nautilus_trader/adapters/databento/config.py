@@ -40,8 +40,8 @@ class DatabentoDataClientConfig(LiveDataClientConfig, frozen=True):
         The timeout (seconds) to wait for instruments to load (concurrently per dataset).
     mbo_subscriptions_delay : float, default 3.0
         The timeout (seconds) to wait for MBO/L3 subscriptions (concurrently per dataset).
-        After the timeout the MBO order book feed will start and replay messages from the start of
-        the week which encompasses the initial snapshot and then all deltas.
+        After the timeout the MBO order book feed will start and replay messages from the initial
+        snapshot and then all deltas.
 
     """
 

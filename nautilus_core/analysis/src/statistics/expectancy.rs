@@ -1,26 +1,21 @@
-// # -------------------------------------------------------------------------------------------------
-// #  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
-// #  https://nautechsystems.io
-// #
-// #  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
-// #  You may not use this file except in compliance with the License.
-// #  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
-// #
-// #  Unless required by applicable law or agreed to in writing, software
-// #  distributed under the License is distributed on an "AS IS" BASIS,
-// #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// #  See the License for the specific language governing permissions and
-// #  limitations under the License.
-// # -------------------------------------------------------------------------------------------------
+// -------------------------------------------------------------------------------------------------
+//  Copyright (C) 2015-2024 Nautech Systems Pty Ltd. All rights reserved.
+//  https://nautechsystems.io
+//
+//  Licensed under the GNU Lesser General Public License Version 3.0 (the "License");
+//  You may not use this file except in compliance with the License.
+//  You may obtain a copy of the License at https://www.gnu.org/licenses/lgpl-3.0.en.html
+//
+//  Unless required by applicable law or agreed to in writing, software
+//  distributed under the License is distributed on an "AS IS" BASIS,
+//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+//  See the License for the specific language governing permissions and
+//  limitations under the License.
+// -------------------------------------------------------------------------------------------------
 
 use super::{loser_avg::AvgLoser, winner_avg::AvgWinner};
 use crate::statistic::PortfolioStatistic;
 
-/// An indicator which calculates an adaptive moving average (AMA) across a
-/// rolling window. Developed by Perry Kaufman, the AMA is a moving average
-/// designed to account for market noise and volatility. The AMA will closely
-/// follow prices when the price swings are relatively small and the noise is
-/// low. The AMA will increase lag when the price swings increase.
 #[repr(C)]
 #[derive(Debug)]
 #[cfg_attr(

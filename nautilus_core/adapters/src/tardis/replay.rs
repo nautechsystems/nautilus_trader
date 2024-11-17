@@ -45,6 +45,7 @@ use nautilus_serialization::{
     parquet::write_batch_to_parquet,
 };
 use thousands::Separable;
+use ustr::Ustr;
 
 use super::{
     enums::Exchange,
@@ -53,8 +54,8 @@ use super::{
 use crate::tardis::{
     config::TardisReplayConfig,
     http::TardisHttpClient,
-    machine::{InstrumentMiniInfo, TardisMachineClient},
-    parse::parse_instrument_id_with_enum,
+    machine::{types::InstrumentMiniInfo, TardisMachineClient},
+    parse::{normalize_instrument_id, parse_instrument_id},
 };
 
 struct DateCursor {
@@ -65,6 +66,7 @@ struct DateCursor {
 }
 
 impl DateCursor {
+    /// Creates a new [`DateCursor`] instance.
     fn new(current_ns: UnixNanos) -> Self {
         let current_utc = DateTime::from_timestamp_nanos(current_ns.as_i64());
         let date_utc = current_utc.date_naive();
@@ -136,17 +138,34 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
 
     tracing::info!("Output path: {}", path.display());
 
-    let http_client = TardisHttpClient::new(None, None, None)?;
-    let mut machine_client = TardisMachineClient::new(config.tardis_ws_url.as_deref())?;
+    let normalize_symbols = config.normalize_symbols.unwrap_or(true);
+    tracing::info!("normalize_symbols={normalize_symbols}");
+
+    let http_client = TardisHttpClient::new(None, None, None, normalize_symbols)?;
+    let mut machine_client =
+        TardisMachineClient::new(config.tardis_ws_url.as_deref(), normalize_symbols)?;
 
     let info_map = gather_instruments_info(&config, &http_client).await;
 
     for (exchange, instruments) in &info_map {
         for inst in instruments {
-            let instrument_id = parse_instrument_id_with_enum(&inst.id, exchange);
+            let instrument_type = inst.instrument_type.clone();
             let price_precision = precision_from_str(&inst.price_increment.to_string());
             let size_precision = precision_from_str(&inst.amount_increment.to_string());
-            let info = InstrumentMiniInfo::new(instrument_id, price_precision, size_precision);
+
+            let instrument_id = if normalize_symbols {
+                normalize_instrument_id(exchange, &inst.id, instrument_type, inst.inverse)
+            } else {
+                parse_instrument_id(exchange, &inst.id)
+            };
+
+            let info = InstrumentMiniInfo::new(
+                instrument_id,
+                Some(Ustr::from(&inst.id)),
+                exchange.clone(),
+                price_precision,
+                size_precision,
+            );
             machine_client.add_instrument_info(info);
         }
     }
@@ -218,7 +237,10 @@ pub async fn run_tardis_machine_replay_from_config(config_filepath: &Path) -> an
         batch_and_write_bars(bars, &bar_type, cursor.date_utc, &path);
     }
 
-    tracing::info!("Replay completed");
+    tracing::info!(
+        "Replay completed after {} messages",
+        msg_count.separate_with_commas()
+    );
     Ok(())
 }
 
@@ -241,7 +263,7 @@ fn handle_deltas_msg(
     }
 
     map.entry(deltas.instrument_id)
-        .or_insert_with(|| Vec::with_capacity(1_000_000)) // TODO: Configure capacity
+        .or_insert_with(|| Vec::with_capacity(1_000_000))
         .extend(&*deltas.deltas);
 }
 
@@ -264,7 +286,7 @@ fn handle_depth10_msg(
     }
 
     map.entry(depth10.instrument_id)
-        .or_insert_with(|| Vec::with_capacity(1_000_000)) // TODO: Configure capacity
+        .or_insert_with(|| Vec::with_capacity(1_000_000))
         .push(depth10);
 }
 
@@ -287,7 +309,7 @@ fn handle_quote_msg(
     }
 
     map.entry(quote.instrument_id)
-        .or_insert_with(|| Vec::with_capacity(1_000_000)) // TODO: Configure capacity
+        .or_insert_with(|| Vec::with_capacity(1_000_000))
         .push(quote);
 }
 
@@ -310,7 +332,7 @@ fn handle_trade_msg(
     }
 
     map.entry(trade.instrument_id)
-        .or_insert_with(|| Vec::with_capacity(1_000_000)) // TODO: Configure capacity
+        .or_insert_with(|| Vec::with_capacity(1_000_000))
         .push(trade);
 }
 
@@ -333,7 +355,7 @@ fn handle_bar_msg(
     }
 
     map.entry(bar.bar_type)
-        .or_insert_with(|| Vec::with_capacity(1_000_000)) // TODO: Configure capacity
+        .or_insert_with(|| Vec::with_capacity(1_000_000))
         .push(bar);
 }
 
@@ -400,7 +422,6 @@ fn batch_and_write_trades(
 fn batch_and_write_bars(bars: Vec<Bar>, bar_type: &BarType, date: NaiveDate, path: &Path) {
     let typename = stringify!(Bar);
     let batch = match bars_to_arrow_record_batch_bytes(bars) {
-        // TODO: Handle bar type
         Ok(batch) => batch,
         Err(e) => {
             tracing::error!("Error converting `{typename}` to Arrow: {e:?}");

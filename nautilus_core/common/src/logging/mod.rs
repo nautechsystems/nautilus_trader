@@ -15,6 +15,10 @@
 
 //! The logging framework for Nautilus systems.
 
+pub mod headers;
+pub mod logger;
+pub mod writer;
+
 use std::{
     collections::HashMap,
     env,
@@ -33,10 +37,6 @@ use self::{
     writer::FileWriterConfig,
 };
 use crate::enums::LogLevel;
-
-pub mod headers;
-pub mod logger;
-pub mod writer;
 
 pub const RECV: &str = "<--";
 pub const SENT: &str = "-->";
@@ -108,8 +108,10 @@ pub extern "C" fn logging_clock_set_static_time(time_ns: u64) {
 pub fn init_tracing() {
     // Skip tracing initialization if `RUST_LOG` is not set
     if let Ok(v) = env::var("RUST_LOG") {
+        let env_filter = EnvFilter::new(v.clone());
+
         tracing_subscriber::fmt()
-            .with_env_filter(EnvFilter::new(v.clone()))
+            .with_env_filter(env_filter)
             .try_init()
             .unwrap_or_else(|e| {
                 tracing::error!("Cannot set tracing subscriber because of error: {e}");

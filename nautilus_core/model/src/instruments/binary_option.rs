@@ -141,6 +141,7 @@ impl BinaryOption {
         })
     }
 
+    /// Creates a new [`BinaryOption`] instance.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: InstrumentId,
@@ -345,7 +346,7 @@ mod tests {
 
     #[rstest]
     fn test_equality(binary_option: BinaryOption) {
-        let cloned = binary_option.clone();
+        let cloned = binary_option;
         assert_eq!(binary_option, cloned);
     }
 }

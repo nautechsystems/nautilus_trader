@@ -185,7 +185,6 @@ class PolymarketExecutionClient(LiveExecutionClient):
         self._allowances: dict[InstrumentId, str] = {}
 
     async def _connect(self) -> None:
-        self._log.info("Initializing instruments...")
         await self._instrument_provider.initialize()
 
         # Set up initial active markets
@@ -196,9 +195,6 @@ class PolymarketExecutionClient(LiveExecutionClient):
         if self._ws_client.is_disconnected():
             await self._ws_client.connect()
 
-        instrument_ids = [i.id for i in instruments]
-
-        await self._update_allowances(instrument_ids)
         await self._update_account_state()
 
         # Wait for account to initialize
@@ -239,6 +235,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         if condition_id in self._active_markets:
             return  # Already active
 
+        # Update balance and allowances
         token_id = get_polymarket_token_id(instrument_id)
         params = BalanceAllowanceParams(
             asset_type=AssetType.CONDITIONAL,
@@ -293,6 +290,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
             self._log.info(str(response))
 
     async def _update_account_state(self) -> None:
+        self._log.info("Checking account balance")
+
         params = BalanceAllowanceParams(
             asset_type=AssetType.COLLATERAL,
             signature_type=self._signature_type,
@@ -307,6 +306,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
             locked=Money.from_raw(0, USDC_POS),
             free=total,
         )
+
         self.generate_account_state(
             balances=[account_balance],
             margins=[],  # N/A
@@ -373,96 +373,101 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     )
                     reports.append(report)
 
-        # Check residual open orders
-        reported_client_order_ids: set[ClientOrderId] = {r.client_order_id for r in reports}
-        for order in self._cache.orders_open(venue=POLYMARKET_VENUE):
-            if order.client_order_id in reported_client_order_ids:
-                continue  # Already reported
-            maybe_report = await self.generate_order_status_report(
-                instrument_id=order.instrument_id,
-                client_order_id=order.client_order_id,
-                venue_order_id=order.venue_order_id,
-            )
-            if maybe_report:
-                reports.append(maybe_report)
-
-        known_venue_order_ids: set[VenueOrderId] = {o.venue_order_id for o in self._cache.orders()}
-        known_venue_order_ids.update({r.venue_order_id for r in reports})
-
-        # Check fills to generate order reports
-        fill_reports = await self.generate_fill_reports(instrument_id)
-        if fill_reports and not known_venue_order_ids:
+        if self._config.generate_order_history_from_trades:
             self._log.warning(
-                "No previously known venue order IDs found in cache or from active orders",
+                "Experimental feature not currently recommended: generating order history from trades",
             )
+            reported_client_order_ids: set[ClientOrderId] = {r.client_order_id for r in reports}
+            for order in self._cache.orders_open(venue=POLYMARKET_VENUE):
+                if order.client_order_id in reported_client_order_ids:
+                    continue  # Already reported
+                maybe_report = await self.generate_order_status_report(
+                    instrument_id=order.instrument_id,
+                    client_order_id=order.client_order_id,
+                    venue_order_id=order.venue_order_id,
+                )
+                if maybe_report:
+                    reports.append(maybe_report)
 
-        venue_order_id_fill_reports: dict[VenueOrderId, list[FillReport]] = defaultdict(list)
-        for fill in fill_reports:
-            venue_order_id_fill_reports[fill.venue_order_id].append(fill)
+            known_venue_order_ids: set[VenueOrderId] = {
+                o.venue_order_id for o in self._cache.orders()
+            }
+            known_venue_order_ids.update({r.venue_order_id for r in reports})
 
-        for venue_order_id, fill_reports in venue_order_id_fill_reports.items():
-            first_fill = fill_reports[0]
-            instrument = self._cache.instrument(first_fill.instrument_id)
-            if instrument is None:
-                self._log.error(
-                    f"Cannot handle order report: instrument {first_fill.instrument_id} not found",
+            # Check fills to generate order reports
+            fill_reports = await self.generate_fill_reports(instrument_id)
+            if fill_reports and not known_venue_order_ids:
+                self._log.warning(
+                    "No previously known venue order IDs found in cache or from active orders",
                 )
 
-            order_type = (
-                OrderType.MARKET
-                if first_fill.liquidity_side == LiquiditySide.TAKER
-                else OrderType.LIMIT
-            )
+            venue_order_id_fill_reports: dict[VenueOrderId, list[FillReport]] = defaultdict(list)
+            for fill in fill_reports:
+                if fill.venue_order_id in known_venue_order_ids:
+                    continue  # Already reported
+                venue_order_id_fill_reports[fill.venue_order_id].append(fill)
 
-            if order_type == OrderType.LIMIT:
-                price = first_fill.last_px
-                order_side = (
-                    OrderSide.BUY if first_fill.order_side == OrderSide.SELL else OrderSide.SELL
+            for venue_order_id, fill_reports in venue_order_id_fill_reports.items():
+                first_fill = fill_reports[0]
+                instrument = self._cache.instrument(first_fill.instrument_id)
+                if instrument is None:
+                    self._log.error(
+                        f"Cannot handle order report: instrument {first_fill.instrument_id} not found",
+                    )
+
+                order_type = (
+                    OrderType.MARKET
+                    if first_fill.liquidity_side == LiquiditySide.TAKER
+                    else OrderType.LIMIT
                 )
-            else:
-                price = None
+
+                if order_type == OrderType.LIMIT:
+                    price = first_fill.last_px
+                else:
+                    price = None
+
                 order_side = first_fill.order_side
 
-            avg_px: float = 0.0
-            filled_qty: float = 0.0
-            ts_last: int = first_fill.ts_event
+                avg_px: float = 0.0
+                filled_qty: float = 0.0
+                ts_last: int = first_fill.ts_event
 
-            for fill_report in fill_reports:
-                avg_px += float(fill_report.last_px) * float(fill_report.last_qty)
-                filled_qty += float(fill_report.last_qty)
-                ts_last = fill_report.ts_event
+                for fill_report in fill_reports:
+                    avg_px += float(fill_report.last_px) * float(fill_report.last_qty)
+                    filled_qty += float(fill_report.last_qty)
+                    ts_last = fill_report.ts_event
 
-            if filled_qty > 0:
-                avg_px /= filled_qty
-            else:
-                avg_px = 0.0
+                if filled_qty > 0:
+                    avg_px /= filled_qty
+                else:
+                    avg_px = 0.0
 
-            self._log.warning(f"{venue_order_id=}")
-            self._log.warning(f"{avg_px=}")
-            self._log.warning(f"{filled_qty=}")
+                self._log.warning(f"{venue_order_id=}")
+                self._log.warning(f"{avg_px=}")
+                self._log.warning(f"{filled_qty=}")
 
-            report = OrderStatusReport(
-                account_id=first_fill.account_id,
-                instrument_id=first_fill.instrument_id,
-                client_order_id=ClientOrderId(str(UUID4())),
-                order_list_id=None,
-                venue_order_id=venue_order_id,
-                order_side=order_side,
-                order_type=order_type,
-                contingency_type=ContingencyType.NO_CONTINGENCY,
-                time_in_force=TimeInForce.GTC,
-                order_status=OrderStatus.FILLED,
-                price=price,
-                avg_px=instrument.make_price(avg_px),
-                quantity=instrument.make_qty(filled_qty),
-                filled_qty=instrument.make_qty(filled_qty),
-                ts_accepted=ts_last,
-                ts_last=ts_last,
-                report_id=UUID4(),
-                ts_init=self._clock.timestamp_ns(),
-            )
-            self._log.warning(f"Generated from fill report: {report}")
-            reports.append(report)
+                report = OrderStatusReport(
+                    account_id=first_fill.account_id,
+                    instrument_id=first_fill.instrument_id,
+                    client_order_id=ClientOrderId(str(UUID4())),
+                    order_list_id=None,
+                    venue_order_id=venue_order_id,
+                    order_side=order_side,
+                    order_type=order_type,
+                    contingency_type=ContingencyType.NO_CONTINGENCY,
+                    time_in_force=TimeInForce.GTC,
+                    order_status=OrderStatus.FILLED,
+                    price=price,
+                    avg_px=instrument.make_price(avg_px),
+                    quantity=instrument.make_qty(first_fill.last_qty),
+                    filled_qty=instrument.make_qty(first_fill.last_qty),
+                    ts_accepted=ts_last,
+                    ts_last=ts_last,
+                    report_id=UUID4(),
+                    ts_init=self._clock.timestamp_ns(),
+                )
+                self._log.warning(f"Generated from fill report: {report}")
+                reports.append(report)
 
         len_reports = len(reports)
         plural = "" if len_reports == 1 else "s"
@@ -532,7 +537,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
         self._log.debug("Requesting FillReports...")
         reports: list[FillReport] = []
 
-        params = TradeParams(maker_address=self._wallet_address)
+        params = TradeParams()
         if instrument_id:
             condition_id = get_polymarket_condition_id(instrument_id)
             asset_id = get_polymarket_token_id(instrument_id)
@@ -554,12 +559,10 @@ class PolymarketExecutionClient(LiveExecutionClient):
             if response:
                 # Uncomment for development
                 # self._log.info(str(response), LogColor.MAGENTA)
+                trade_ids: set[TradeId] = set()
                 for json_obj in response:
                     raw = msgspec.json.encode(json_obj)
                     polymarket_trade = self._decoder_trade_report.decode(raw)
-
-                    if polymarket_trade.owner != self._api_key:
-                        continue  # Not own trade
 
                     instrument_id = get_polymarket_instrument_id(
                         polymarket_trade.market,
@@ -583,6 +586,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
                         maker_address=self._wallet_address,
                         ts_init=self._clock.timestamp_ns(),
                     )
+                    assert report.trade_id not in trade_ids, "trade IDs should be unique"
+                    trade_ids.add(report.trade_id)
                     reports.append(report)
 
         len_reports = len(reports)
@@ -965,11 +970,16 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     else LiquiditySide.TAKER
                 )
 
+                # Commissions TBD (currently zero fees for Polymarket) cannot determine
+                # from order status message?
+                commissions = Money(0.0, USDC_POS)
+
                 if strategy_id is None:
                     report = msg.parse_to_fill_report(
                         account_id=self.account_id,
                         instrument=instrument,
                         client_order_id=client_order_id,
+                        commission=commissions,
                         liquidity_side=liquidity_side,
                         ts_init=self._clock.timestamp_ns(),
                     )
@@ -994,7 +1004,7 @@ class PolymarketExecutionClient(LiveExecutionClient):
                     last_qty=last_qty,
                     last_px=instrument.make_price(msg.price),
                     quote_currency=USDC_POS,
-                    commission=Money(0.0, USDC_POS),  # TBD: maker commissions
+                    commission=commissions,
                     liquidity_side=liquidity_side,
                     ts_event=millis_to_nanos(int(msg.timestamp)),
                     info=msgspec.structs.asdict(msg),
@@ -1039,8 +1049,8 @@ class PolymarketExecutionClient(LiveExecutionClient):
         if order.is_closed:
             return  # Already closed (only status update)
 
-        last_qty = instrument.make_qty(msg.size)
-        last_px = instrument.make_price(msg.price)
+        last_qty = instrument.make_qty(msg.last_qty(self._wallet_address))
+        last_px = instrument.make_price(msg.last_px(self._wallet_address))
         commission = float(last_qty * last_px) * basis_points_as_percentage(float(msg.fee_rate_bps))
 
         self.generate_order_filled(
@@ -1052,11 +1062,11 @@ class PolymarketExecutionClient(LiveExecutionClient):
             trade_id=TradeId(msg.id),
             order_side=parse_order_side(msg.side),
             order_type=order.order_type,
-            last_qty=instrument.make_qty(msg.size),
-            last_px=instrument.make_price(msg.price),
+            last_qty=last_qty,
+            last_px=last_px,
             quote_currency=USDC_POS,
             commission=Money(commission, USDC_POS),
-            liquidity_side=msg.liqudity_side(),
+            liquidity_side=msg.liquidity_side(),
             ts_event=millis_to_nanos(int(msg.match_time)),
             info=msg.to_dict(),
         )

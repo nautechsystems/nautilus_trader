@@ -13,16 +13,16 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use nautilus_core::time::AtomicTime;
 use nautilus_model::identifiers::{PositionId, StrategyId, TraderId};
 
 use super::get_datetime_tag;
+use crate::clock::Clock;
 
 #[repr(C)]
 pub struct PositionIdGenerator {
-    clock: &'static AtomicTime,
+    clock: Rc<RefCell<dyn Clock>>,
     trader_id: TraderId,
     counts: HashMap<StrategyId, usize>,
 }
@@ -30,7 +30,7 @@ pub struct PositionIdGenerator {
 impl PositionIdGenerator {
     /// Creates a new [`PositionIdGenerator`] instance.
     #[must_use]
-    pub fn new(trader_id: TraderId, clock: &'static AtomicTime) -> Self {
+    pub fn new(trader_id: TraderId, clock: Rc<RefCell<dyn Clock>>) -> Self {
         Self {
             clock,
             trader_id,
@@ -55,12 +55,12 @@ impl PositionIdGenerator {
         let strategy = strategy_id;
         let next_count = self.count(strategy_id) + 1;
         self.set_count(next_count, strategy_id);
-        let datetime_tag = get_datetime_tag(self.clock.get_time_ms());
+        let datetime_tag = get_datetime_tag(self.clock.borrow().timestamp_ms());
         let trader_tag = self.trader_id.get_tag();
         let strategy_tag = strategy.get_tag();
         let flipped = if flipped { "F" } else { "" };
-        let id = format!("P-{datetime_tag}-{trader_tag}-{strategy_tag}-{next_count}{flipped}");
-        PositionId::from(id.as_str())
+        let value = format!("P-{datetime_tag}-{trader_tag}-{strategy_tag}-{next_count}{flipped}");
+        PositionId::from(value)
     }
 }
 
@@ -69,14 +69,15 @@ impl PositionIdGenerator {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use nautilus_core::time::get_atomic_clock_static;
+    use std::{cell::RefCell, rc::Rc};
+
     use nautilus_model::identifiers::{PositionId, StrategyId, TraderId};
     use rstest::rstest;
 
-    use crate::generators::position_id::PositionIdGenerator;
+    use crate::{clock::TestClock, generators::position_id::PositionIdGenerator};
 
     fn get_position_id_generator() -> PositionIdGenerator {
-        PositionIdGenerator::new(TraderId::default(), get_atomic_clock_static())
+        PositionIdGenerator::new(TraderId::default(), Rc::new(RefCell::new(TestClock::new())))
     }
 
     #[rstest]

@@ -44,7 +44,7 @@ def compute_effective_deltas(
 
     Returns
     -------
-    OrderBookDeltas or `None`
+    OrderBookDeltas or ``None``
         A collection of deltas representing the changes between the old and new book states.
         If no change between book states, then `None` is returned.
 

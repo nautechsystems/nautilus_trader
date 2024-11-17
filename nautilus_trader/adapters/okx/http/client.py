@@ -15,7 +15,6 @@
 
 import base64
 import datetime
-import hmac
 import json
 from typing import Any
 from urllib import parse
@@ -29,6 +28,7 @@ from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 from nautilus_trader.core.nautilus_pyo3 import HttpResponse
 from nautilus_trader.core.nautilus_pyo3 import Quota
+from nautilus_trader.core.nautilus_pyo3 import hmac_signature
 from nautilus_trader.okx.common.error import raise_okx_error
 from nautilus_trader.okx.http.errors import OKXHttpError
 
@@ -131,7 +131,7 @@ class OKXHttpClient:
         if body == "{}" or body == "None":
             body = ""
         message = str(timestamp) + method.upper() + url_path + body
-        digest = hmac.new(self._api_secret.encode(), message.encode(), "sha256").digest()
+        digest = hmac_signature(self._api_secret, message).encode()
         return base64.b64encode(digest).decode()
 
     async def send_request(

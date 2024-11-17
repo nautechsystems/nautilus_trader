@@ -294,8 +294,6 @@ class DYDXExecutionClient(LiveExecutionClient):
             sequence=account.sequence,
         )
 
-        self._log.info("Execution client connected")
-
     async def _disconnect(self) -> None:
         await self._ws_client.unsubscribe_account_update(
             wallet_address=self._wallet_address,
@@ -487,7 +485,9 @@ class DYDXExecutionClient(LiveExecutionClient):
             address=self._wallet_address,
             subaccount_number=self._subaccount,
             symbol=symbol,
-            order_status=[DYDXOrderStatus.OPEN] if open_only else None,
+            order_status=(
+                [DYDXOrderStatus.OPEN, DYDXOrderStatus.BEST_EFFORT_OPENED] if open_only else None
+            ),
         )
 
         if dydx_orders is not None:
@@ -626,7 +626,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         dydx_positions = await self._http_account.get_perpetual_positions(
             address=self._wallet_address,
             subaccount_number=self._subaccount,
-            status=DYDXPerpetualPositionStatus.OPEN,
+            status=[DYDXPerpetualPositionStatus.OPEN],
         )
 
         if dydx_positions is not None:
@@ -882,6 +882,11 @@ class DYDXExecutionClient(LiveExecutionClient):
             self._log.error(message)
             return
 
+        if fill_msg.orderId is None:
+            message = f"Cannot handle fill event: orderId is None for fill {fill_msg.type} event"
+            self._log.error(message)
+            return
+
         venue_order_id = VenueOrderId(fill_msg.orderId)
         client_order_id = self._cache.client_order_id(venue_order_id)
 
@@ -1011,13 +1016,22 @@ class DYDXExecutionClient(LiveExecutionClient):
         good_til_date_secs: int | None = None
         good_til_block: int | None = None
 
+        if dydx_order_tags.is_short_term_order is False and order.order_type == OrderType.MARKET:
+            rejection_reason = "Cannot submit order: long term market order not supported by dYdX"
+            self.generate_order_rejected(
+                strategy_id=order.strategy_id,
+                instrument_id=order.instrument_id,
+                client_order_id=order.client_order_id,
+                reason=rejection_reason,
+                ts_event=self._clock.timestamp_ns(),
+            )
+            return
+
         if dydx_order_tags.is_short_term_order:
             try:
                 latest_block = await self._grpc_account.latest_block_height()
             except AioRpcError as e:
                 rejection_reason = f"Failed to submit the order while retrieve the latest block height: code {e.code} {e.details}"
-                self._log.error(rejection_reason)
-
                 self.generate_order_rejected(
                     strategy_id=order.strategy_id,
                     instrument_id=order.instrument_id,
@@ -1064,10 +1078,8 @@ class DYDXExecutionClient(LiveExecutionClient):
             price = 0
         else:
             rejection_reason = (
-                f"Cannot submit order: order type `{order.order_type}` not (yet) supported."
+                f"Cannot submit order: order type `{order.order_type}` not (yet) supported"
             )
-            self._log.error(rejection_reason)
-
             self.generate_order_rejected(
                 strategy_id=order.strategy_id,
                 instrument_id=order.instrument_id,
@@ -1094,7 +1106,7 @@ class DYDXExecutionClient(LiveExecutionClient):
 
     async def _place_order(self, order_msg: DYDXOrder, order: Order):
         if self._wallet is None:
-            rejection_reason = "Cannot submit order: no wallet available."
+            rejection_reason = "Cannot submit order: no wallet available"
             self._log.error(rejection_reason)
 
             self.generate_order_rejected(
@@ -1339,7 +1351,7 @@ class DYDXExecutionClient(LiveExecutionClient):
         good_til_date_secs: int | None,
     ) -> None:
         if self._wallet is None:
-            reason = f"Cannot cancel order {order.client_order_id!r}: no wallet available."
+            reason = f"Cannot cancel order {order.client_order_id!r}: no wallet available"
             self._log.error(reason)
             self.generate_order_cancel_rejected(
                 strategy_id=order.strategy_id,

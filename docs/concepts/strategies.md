@@ -21,7 +21,7 @@ There are two main parts of a Nautilus trading strategy:
 - The _optional_ strategy configuration, defined by inheriting the `StrategyConfig` class
 
 :::tip
-Once a strategy is defined, the same source can be used for backtesting and live trading.
+Once a strategy is defined, the same source code can be used for backtesting and live trading.
 :::
 
 The main capabilities of a strategy include:
@@ -327,9 +327,11 @@ def balances_locked(self, venue: Venue) -> dict[Currency, Money]
 def margins_init(self, venue: Venue) -> dict[Currency, Money]
 def margins_maint(self, venue: Venue) -> dict[Currency, Money]
 def unrealized_pnls(self, venue: Venue) -> dict[Currency, Money]
+def realized_pnls(self, venue: Venue) -> dict[Currency, Money]
 def net_exposures(self, venue: Venue) -> dict[Currency, Money]
 
 def unrealized_pnl(self, instrument_id: InstrumentId) -> Money
+def realized_pnl(self, instrument_id: InstrumentId) -> Money
 def net_exposure(self, instrument_id: InstrumentId) -> Money
 def net_position(self, instrument_id: InstrumentId) -> decimal.Decimal
 

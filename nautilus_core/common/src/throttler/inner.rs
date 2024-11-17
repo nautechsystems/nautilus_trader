@@ -68,6 +68,7 @@ where
 }
 
 impl<T, F> InnerThrottler<T, F> {
+    /// Creates a new [`InnerThrottler`] instance.
     #[inline]
     pub fn new(
         limit: usize,
@@ -159,8 +160,8 @@ impl<T, F> InnerThrottler<T, F> {
 
 impl<T, F> InnerThrottler<T, F>
 where
-    F: Fn(T) + 'static,
     T: 'static,
+    F: Fn(T) + 'static,
 {
     #[inline]
     pub fn send_msg(&mut self, msg: T) {

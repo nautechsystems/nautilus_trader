@@ -13,8 +13,6 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
-import hashlib
-import hmac
 from typing import Any
 from urllib import parse
 
@@ -28,13 +26,14 @@ from nautilus_trader.core.nautilus_pyo3 import HttpClient
 from nautilus_trader.core.nautilus_pyo3 import HttpMethod
 from nautilus_trader.core.nautilus_pyo3 import HttpResponse
 from nautilus_trader.core.nautilus_pyo3 import Quota
+from nautilus_trader.core.nautilus_pyo3 import hmac_signature
 
 
 class BybitResponse(msgspec.Struct, frozen=True):
     retCode: int
     retMsg: str
     result: dict[str, Any]
-    time: int
+    time: int | None = None
     retExtInfo: dict[str, Any] | None = None
 
 
@@ -72,7 +71,7 @@ class BybitHttpClient:
         self._log: Logger = Logger(name=type(self).__name__)
         self._api_key: str = api_key
         self._api_secret: str = api_secret
-        self._recv_window: int = 5000
+        self._recv_window: int = 5_000
 
         self._base_url: str = base_url
         self._headers: dict[str, Any] = {
@@ -165,20 +164,12 @@ class BybitHttpClient:
         timestamp = str(self._clock.timestamp_ms())
         payload_str = msgspec.json.encode(payload).decode()
         result = timestamp + self._api_key + str(self._recv_window) + payload_str
-        signature = hmac.new(
-            self._api_secret.encode(),
-            result.encode(),
-            hashlib.sha256,
-        ).hexdigest()
+        signature = hmac_signature(self._api_secret, result)
         return [timestamp, signature]
 
     def _sign_get_request(self, payload: dict[str, Any]) -> list[str]:
         timestamp = str(self._clock.timestamp_ms())
         payload_str = parse.urlencode(payload)
         result = timestamp + self._api_key + str(self._recv_window) + payload_str
-        signature = hmac.new(
-            self._api_secret.encode(),
-            result.encode(),
-            hashlib.sha256,
-        ).hexdigest()
+        signature = hmac_signature(self._api_secret, result)
         return [timestamp, signature]

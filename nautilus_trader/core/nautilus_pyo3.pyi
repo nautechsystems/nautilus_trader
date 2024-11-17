@@ -181,16 +181,16 @@ def is_within_last_24_hours(timestamp_ns: int) -> bool:
 
     """
 
-def convert_to_snake_case(s: str) -> str:
+def convert_to_snake_case(input: str) -> str:
     """
     Convert the given string from any common case (PascalCase, camelCase, kebab-case, etc.)
     to *lower* snake_case.
 
-    This function uses the `heck` crate under the hood.
+    This function uses the `heck` Rust crate under the hood.
 
     Parameters
     ----------
-    s : str
+    input : str
         The input string to convert.
 
     Returns
@@ -4091,6 +4091,9 @@ class DatabentoLiveClient:
 
 # Tardis
 
+def tardis_exchange_from_venue_str(venue_str: str) -> list[str]: ...
+def bar_spec_to_tardis_trade_bar_string(bar_spec: BarSpecification) -> str: ...
+
 def load_tardis_deltas(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> list[OrderBookDelta]: ...  # noqa
 def load_tardis_depth10_from_snapshot5(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> list[OrderBookDepth10]: ...  # noqa
 def load_tardis_depth10_from_snapshot25(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> list[OrderBookDepth10]: ...  # noqa
@@ -4102,8 +4105,34 @@ def load_tardis_depth10_from_snapshot25_as_pycapsule(filepath: str, price_precis
 def load_tardis_quotes_as_pycapsule(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> object: ...  # noqa
 def load_tardis_trades_as_pycapsule(filepath: str, price_precision: int, size_precision: int, instrument_id: InstrumentId | None, limit: int | None = None) -> object: ...  # noqa
 
+class InstrumentMiniInfo:
+    def __init__(
+        self,
+        instrument_id: InstrumentId,
+        raw_symbol: str,
+        exchange: str,
+        price_precision: int,
+        size_precision:int,
+    ) -> None: ...
+    @property
+    def instrument_id(self) -> InstrumentId: ...
+    @property
+    def raw_symbol(self) -> str: ...
+    @property
+    def exchange(self) -> str: ...
+    @property
+    def price_precision(self) -> int: ...
+    @property
+    def size_precision(self) -> int: ...
+
 class TardisHttpClient:
-    def __init__(self, api_key: str | None = None, base_url: str | None = None, timeout_sec: int = 60) -> None: ...
+    def __init__(
+        self,
+        api_key: str | None = None,
+        base_url: str | None = None,
+        timeout_secs: int = 60,
+        normalize_symbols: bool = True,
+    ) -> None: ...
     async def instrument(self, exchange: str, symbol: str) -> Instrument: ...
     async def instruments(self, exchange: str) -> list[Instrument]: ...
 
@@ -4120,11 +4149,11 @@ class StreamNormalizedRequestOptions:
     def from_json_array(cls, data: bytes) -> list[StreamNormalizedRequestOptions]: ...
 
 class TardisMachineClient:
-    def __init__(self, base_url: str | None = None) -> None: ...
+    def __init__(self, base_url: str | None = None, normalize_symbols: bool = True) -> None: ...
     def is_closed(self) -> bool: ...
     def close(self) -> None: ...
-    def replay(self, options: list[ReplayNormalizedRequestOptions], callback: Callable) -> None: ...
-    def stream(self, options: list[StreamNormalizedRequestOptions], callback: Callable) -> None: ...
+    def replay(self, options: list[ReplayNormalizedRequestOptions], callback: Callable) -> Awaitable[None]: ...
+    def stream(self, instruments: list[InstrumentMiniInfo], options: list[StreamNormalizedRequestOptions], callback: Callable,) -> Awaitable[None]: ...  # noqa
 
 async def run_tardis_machine_replay(config_filepath: str, output_path: str | None = None) -> None: ...
 

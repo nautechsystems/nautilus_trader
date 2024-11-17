@@ -14,7 +14,7 @@ install-debug:
 
 .PHONY: install-docs
 install-docs:
-	BUILD_MODE=debug poetry install --with docs
+	BUILD_MODE=debug poetry install --with docs --all-extras
 
 .PHONY: install-just-deps
 install-just-deps:

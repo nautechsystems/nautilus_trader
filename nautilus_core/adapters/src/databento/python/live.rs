@@ -131,7 +131,7 @@ impl DatabentoLiveClient {
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<LiveCommand>();
 
-        // Hard coded to a reasonable size for now
+        // Hard-coded to a reasonable size for now
         let buffer_size = 100_000;
 
         Ok(Self {

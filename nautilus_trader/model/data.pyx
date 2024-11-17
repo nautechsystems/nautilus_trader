@@ -1669,7 +1669,7 @@ cdef class BookOrder:
         return Price.from_raw_c(self._mem.price.raw, self._mem.price.precision)
 
     @property
-    def size(self) -> Price:
+    def size(self) -> Quantity:
         """
         Return the book orders size.
 
@@ -1832,7 +1832,7 @@ cdef class OrderBookDelta(Data):
         The instrument ID for the book.
     action : BookAction {``ADD``, ``UPDATE``, ``DELETE``, ``CLEAR``}
         The order book delta action.
-    order : BookOrder, optional with no default so ``None`` must be passed explicitly
+    order : BookOrder or ``None``
         The book order for the delta.
     flags : uint8_t
         The record flags bit field, indicating event end and data information.
@@ -3292,7 +3292,7 @@ cdef class InstrumentStatus(Data):
 
         returns
         -------
-        bool or `None`
+        bool or ``None``
 
         """
         return self._is_trading
@@ -3304,7 +3304,7 @@ cdef class InstrumentStatus(Data):
 
         returns
         -------
-        bool or `None`
+        bool or ``None``
 
         """
         return self._is_quoting
@@ -3316,7 +3316,7 @@ cdef class InstrumentStatus(Data):
 
         returns
         -------
-        bool or `None`
+        bool or ``None``
 
         """
         return self._is_short_sell_restricted
@@ -4019,12 +4019,12 @@ cdef class QuoteTick(Data):
     @staticmethod
     def from_pyo3_list(list pyo3_quotes) -> list[QuoteTick]:
         """
-        Return legacy Cython quote ticks converted from the given pyo3 Rust objects.
+        Return legacy Cython quotes converted from the given pyo3 Rust objects.
 
         Parameters
         ----------
         pyo3_quotes : list[nautilus_pyo3.QuoteTick]
-            The pyo3 Rust quote ticks to convert from.
+            The pyo3 Rust quotes to convert from.
 
         Returns
         -------
@@ -4041,12 +4041,12 @@ cdef class QuoteTick(Data):
     @staticmethod
     def to_pyo3_list(list[QuoteTick] quotes) -> list[nautilus_pyo3.QuoteTick]:
         """
-        Return pyo3 Rust quote ticks converted from the given legacy Cython objects.
+        Return pyo3 Rust quotes converted from the given legacy Cython objects.
 
         Parameters
         ----------
         quotes : list[QuoteTick]
-            The legacy Cython quote ticks to convert from.
+            The legacy Cython quotes to convert from.
 
         Returns
         -------
@@ -4299,7 +4299,7 @@ cdef class TradeTick(Data):
         return Price.from_raw_c(self._mem.price.raw, self._mem.price.precision)
 
     @property
-    def size(self) -> Price:
+    def size(self) -> Quantity:
         """
         Return the ticks size.
 
@@ -4604,12 +4604,12 @@ cdef class TradeTick(Data):
     @staticmethod
     def to_pyo3_list(list[TradeTick] trades) -> list[nautilus_pyo3.TradeTick]:
         """
-        Return pyo3 Rust trade ticks converted from the given legacy Cython objects.
+        Return pyo3 Rust trades converted from the given legacy Cython objects.
 
         Parameters
         ----------
         ticks : list[TradeTick]
-            The legacy Cython Rust trade ticks to convert from.
+            The legacy Cython Rust trades to convert from.
 
         Returns
         -------
@@ -4646,12 +4646,12 @@ cdef class TradeTick(Data):
     @staticmethod
     def from_pyo3_list(list pyo3_trades) -> list[TradeTick]:
         """
-        Return legacy Cython trade ticks converted from the given pyo3 Rust objects.
+        Return legacy Cython trades converted from the given pyo3 Rust objects.
 
         Parameters
         ----------
         pyo3_trades : list[nautilus_pyo3.TradeTick]
-            The pyo3 Rust trade ticks to convert from.
+            The pyo3 Rust trades to convert from.
 
         Returns
         -------
