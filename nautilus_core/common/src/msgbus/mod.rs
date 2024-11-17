@@ -38,11 +38,11 @@ use crate::messages::data::DataResponse;
 
 pub const CLOSE_TOPIC: &str = "CLOSE";
 
-// Represents a subscription to a particular topic.
-//
-// This is an internal class intended to be used by the message bus to organize
-// topics and their subscribers.
-//
+/// Represents a subscription to a particular topic.
+///
+/// This is an internal class intended to be used by the message bus to organize
+/// topics and their subscribers.
+///
 /// # Warnings
 ///
 /// Assigning priority handling is an advanced feature which *shouldn't
