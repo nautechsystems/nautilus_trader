@@ -74,7 +74,7 @@ impl TardisMachineClient {
 
     pub fn add_instrument_info(&mut self, info: InstrumentMiniInfo) {
         let key = info.as_tardis_instrument_key();
-        self.instruments.insert(key, Arc::new(info.clone()));
+        self.instruments.insert(key, Arc::new(info));
     }
 
     #[must_use]

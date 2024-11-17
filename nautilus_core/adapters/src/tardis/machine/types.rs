@@ -61,6 +61,7 @@ impl InstrumentMiniInfo {
         }
     }
 
+    #[must_use]
     pub fn as_tardis_instrument_key(&self) -> TardisInstrumentKey {
         TardisInstrumentKey::new(self.raw_symbol, self.exchange.clone())
     }
@@ -82,7 +83,7 @@ pub struct TardisInstrumentKey {
 impl TardisInstrumentKey {
     /// Creates a new [`TardisInstrumentKey`] instance.
     #[must_use]
-    pub fn new(raw_symbol: Ustr, exchange: Exchange) -> Self {
+    pub const fn new(raw_symbol: Ustr, exchange: Exchange) -> Self {
         Self {
             raw_symbol,
             exchange,
