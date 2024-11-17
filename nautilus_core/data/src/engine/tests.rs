@@ -155,6 +155,13 @@ fn test_execute_subscribe_custom_data(
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
+    let endpoint = switchboard.data_engine_execute;
+    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
+        id: endpoint,
+        engine_ref: data_engine.clone(),
+    }));
+    msgbus.borrow_mut().register(endpoint, handler);
+
     let data_type = DataType::new(stringify!(String), None);
     let cmd = SubscriptionCommand::new(
         client_id,
@@ -164,17 +171,26 @@ fn test_execute_subscribe_custom_data(
         UUID4::new(),
         UnixNanos::default(),
     );
-
-    let endpoint = switchboard.data_engine_execute;
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus.borrow_mut().register(endpoint, handler);
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
     assert!(data_engine
+        .borrow()
+        .subscribed_custom_data()
+        .contains(&data_type));
+
+    let cmd = SubscriptionCommand::new(
+        client_id,
+        venue,
+        data_type.clone(),
+        Action::Unsubscribe,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    data_engine.borrow_mut().run();
+
+    assert!(!data_engine
         .borrow()
         .subscribed_custom_data()
         .contains(&data_type));
@@ -192,6 +208,13 @@ fn test_execute_subscribe_order_book_deltas(
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
+    let endpoint = switchboard.data_engine_execute;
+    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
+        id: endpoint,
+        engine_ref: data_engine.clone(),
+    }));
+    msgbus.borrow_mut().register(endpoint, handler);
+
     let metadata = indexmap! {
         "instrument_id".to_string() => audusd_sim.id.to_string(),
         "book_type".to_string() => BookType::L3_MBO.to_string(),
@@ -201,22 +224,31 @@ fn test_execute_subscribe_order_book_deltas(
     let cmd = SubscriptionCommand::new(
         client_id,
         venue,
-        data_type,
+        data_type.clone(),
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
     );
-
-    let endpoint = switchboard.data_engine_execute;
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus.borrow_mut().register(endpoint, handler);
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
     assert!(data_engine
+        .borrow()
+        .subscribed_order_book_deltas()
+        .contains(&audusd_sim.id));
+
+    let cmd = SubscriptionCommand::new(
+        client_id,
+        venue,
+        data_type.clone(),
+        Action::Unsubscribe,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    data_engine.borrow_mut().run();
+
+    assert!(!data_engine
         .borrow()
         .subscribed_order_book_deltas()
         .contains(&audusd_sim.id));
@@ -234,6 +266,13 @@ fn test_execute_subscribe_order_book_snapshots(
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
+    let endpoint = switchboard.data_engine_execute;
+    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
+        id: endpoint,
+        engine_ref: data_engine.clone(),
+    }));
+    msgbus.borrow_mut().register(endpoint, handler);
+
     let metadata = indexmap! {
         "instrument_id".to_string() => audusd_sim.id.to_string(),
         "book_type".to_string() => BookType::L2_MBP.to_string(),
@@ -243,22 +282,31 @@ fn test_execute_subscribe_order_book_snapshots(
     let cmd = SubscriptionCommand::new(
         client_id,
         venue,
-        data_type,
+        data_type.clone(),
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
     );
-
-    let endpoint = switchboard.data_engine_execute;
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus.borrow_mut().register(endpoint, handler);
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
     assert!(data_engine
+        .borrow()
+        .subscribed_order_book_snapshots()
+        .contains(&audusd_sim.id));
+
+    let cmd = SubscriptionCommand::new(
+        client_id,
+        venue,
+        data_type.clone(),
+        Action::Unsubscribe,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    data_engine.borrow_mut().run();
+
+    assert!(!data_engine
         .borrow()
         .subscribed_order_book_snapshots()
         .contains(&audusd_sim.id));
@@ -276,6 +324,13 @@ fn test_execute_subscribe_instrument(
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
+    let endpoint = switchboard.data_engine_execute;
+    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
+        id: endpoint,
+        engine_ref: data_engine.clone(),
+    }));
+    msgbus.borrow_mut().register(endpoint, handler);
+
     let metadata = indexmap! {
         "instrument_id".to_string() => audusd_sim.id.to_string(),
     };
@@ -283,22 +338,31 @@ fn test_execute_subscribe_instrument(
     let cmd = SubscriptionCommand::new(
         client_id,
         venue,
-        data_type,
+        data_type.clone(),
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
     );
-
-    let endpoint = switchboard.data_engine_execute;
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus.borrow_mut().register(endpoint, handler);
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
     assert!(data_engine
+        .borrow()
+        .subscribed_instruments()
+        .contains(&audusd_sim.id));
+
+    let cmd = SubscriptionCommand::new(
+        client_id,
+        venue,
+        data_type.clone(),
+        Action::Unsubscribe,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    data_engine.borrow_mut().run();
+
+    assert!(!data_engine
         .borrow()
         .subscribed_instruments()
         .contains(&audusd_sim.id));
@@ -316,6 +380,13 @@ fn test_execute_subscribe_quote_ticks(
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
+    let endpoint = switchboard.data_engine_execute;
+    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
+        id: endpoint,
+        engine_ref: data_engine.clone(),
+    }));
+    msgbus.borrow_mut().register(endpoint, handler);
+
     let metadata = indexmap! {
         "instrument_id".to_string() => audusd_sim.id.to_string(),
     };
@@ -323,22 +394,31 @@ fn test_execute_subscribe_quote_ticks(
     let cmd = SubscriptionCommand::new(
         client_id,
         venue,
-        data_type,
+        data_type.clone(),
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
     );
-
-    let endpoint = switchboard.data_engine_execute;
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus.borrow_mut().register(endpoint, handler);
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
     assert!(data_engine
+        .borrow()
+        .subscribed_quote_ticks()
+        .contains(&audusd_sim.id));
+
+    let cmd = SubscriptionCommand::new(
+        client_id,
+        venue,
+        data_type.clone(),
+        Action::Unsubscribe,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    data_engine.borrow_mut().run();
+
+    assert!(!data_engine
         .borrow()
         .subscribed_quote_ticks()
         .contains(&audusd_sim.id));
@@ -356,6 +436,13 @@ fn test_execute_subscribe_trade_ticks(
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
+    let endpoint = switchboard.data_engine_execute;
+    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
+        id: endpoint,
+        engine_ref: data_engine.clone(),
+    }));
+    msgbus.borrow_mut().register(endpoint, handler);
+
     let metadata = indexmap! {
         "instrument_id".to_string() => audusd_sim.id.to_string(),
     };
@@ -363,22 +450,31 @@ fn test_execute_subscribe_trade_ticks(
     let cmd = SubscriptionCommand::new(
         client_id,
         venue,
-        data_type,
+        data_type.clone(),
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
     );
-
-    let endpoint = switchboard.data_engine_execute;
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus.borrow_mut().register(endpoint, handler);
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
     assert!(data_engine
+        .borrow()
+        .subscribed_trade_ticks()
+        .contains(&audusd_sim.id));
+
+    let cmd = SubscriptionCommand::new(
+        client_id,
+        venue,
+        data_type.clone(),
+        Action::Unsubscribe,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    data_engine.borrow_mut().run();
+
+    assert!(!data_engine
         .borrow()
         .subscribed_trade_ticks()
         .contains(&audusd_sim.id));
@@ -395,6 +491,13 @@ fn test_execute_subscribe_bars(
     let venue = data_client.venue;
     data_engine.borrow_mut().register_client(data_client, None);
 
+    let endpoint = switchboard.data_engine_execute;
+    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
+        id: endpoint,
+        engine_ref: data_engine.clone(),
+    }));
+    msgbus.borrow_mut().register(endpoint, handler);
+
     let bar_type = BarType::from("AUDUSD.SIM-1-MINUTE-LAST-INTERNAL");
     let metadata = indexmap! {
         "bar_type".to_string() => bar_type.to_string(),
@@ -403,22 +506,28 @@ fn test_execute_subscribe_bars(
     let cmd = SubscriptionCommand::new(
         client_id,
         venue,
-        data_type,
+        data_type.clone(),
         Action::Subscribe,
         UUID4::new(),
         UnixNanos::default(),
     );
-
-    let endpoint = switchboard.data_engine_execute;
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus.borrow_mut().register(endpoint, handler);
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
     data_engine.borrow_mut().run();
 
     assert!(data_engine.borrow().subscribed_bars().contains(&bar_type));
+
+    let cmd = SubscriptionCommand::new(
+        client_id,
+        venue,
+        data_type.clone(),
+        Action::Unsubscribe,
+        UUID4::new(),
+        UnixNanos::default(),
+    );
+    msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
+    data_engine.borrow_mut().run();
+
+    assert!(!data_engine.borrow().subscribed_bars().contains(&bar_type));
 }
 
 #[rstest]
@@ -437,6 +546,13 @@ fn test_process_instrument(
     let metadata = indexmap! {
         "instrument_id".to_string() => audusd_sim.id().to_string(),
     };
+    let endpoint = switchboard.data_engine_execute;
+    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
+        id: endpoint,
+        engine_ref: data_engine.clone(),
+    }));
+    msgbus.borrow_mut().register(endpoint, handler);
+
     let data_type = DataType::new(stringify!(InstrumentAny), Some(metadata));
     let cmd = SubscriptionCommand::new(
         client_id,
@@ -446,13 +562,6 @@ fn test_process_instrument(
         UUID4::new(),
         UnixNanos::default(),
     );
-
-    let endpoint = switchboard.data_engine_execute;
-    let handler = ShareableMessageHandler(Rc::new(SubscriptionCommandHandler {
-        id: endpoint,
-        engine_ref: data_engine.clone(),
-    }));
-    msgbus.borrow_mut().register(endpoint, handler);
     msgbus.borrow().send(&endpoint, &cmd as &dyn Any);
 
     let handler = get_message_saving_handler::<InstrumentAny>(None);
