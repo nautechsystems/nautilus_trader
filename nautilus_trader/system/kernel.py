@@ -15,6 +15,7 @@
 
 import asyncio
 import concurrent.futures
+import os
 import platform
 import signal
 import socket
@@ -170,6 +171,9 @@ class NautilusKernel:
         logging: LoggingConfig = config.logging or LoggingConfig()
 
         if not is_logging_initialized():
+            if "RUST_LOG" not in os.environ:
+                os.environ["RUST_LOG"] = "off"
+
             if not logging.bypass_logging:
                 if logging.clear_log_file and logging.log_directory and logging.log_file_name:
                     file_path = Path(
@@ -184,6 +188,7 @@ class NautilusKernel:
 
                 if logging.use_pyo3:
                     set_logging_pyo3(True)
+
                     # Initialize tracing for async Rust
                     nautilus_pyo3.init_tracing()
 

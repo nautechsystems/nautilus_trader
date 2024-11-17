@@ -49,7 +49,7 @@ instrument_ids = [
     # InstrumentId.from_str("ES.FUT.GLBX"),
     # InstrumentId.from_str("CL.FUT.GLBX"),
     # InstrumentId.from_str("LO.OPT.GLBX"),
-    # InstrumentId.from_str("AAPL.XNAS"),
+    # InstrumentId.from_str("AAPL.IEXG"),
 ]
 
 # Configure the trading node
@@ -171,7 +171,7 @@ class DataSubscriber(Strategy):
             # self.request_data(status_data_type, client_id=DATABENTO_CLIENT_ID)
 
             # from nautilus_trader.model.data import BarType
-            # self.request_bars(BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL"))
+            # self.request_bars(BarType.from_str(f"{instrument_id}-1-SECOND-LAST-EXTERNAL"))
 
             # # Imbalance
             # from nautilus_trader.adapters.databento import DatabentoImbalance
