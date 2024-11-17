@@ -16,7 +16,7 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use arrow::{
-    array::{Int64Array, StringArray, StringBuilder, UInt64Array, UInt8Array},
+    array::{Int64Array, StringArray, StringBuilder, StringViewArray, UInt64Array, UInt8Array},
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
     record_batch::RecordBatch,
@@ -130,9 +130,26 @@ impl DecodeFromRecordBatch for TradeTick {
         let size_values = extract_column::<UInt64Array>(cols, "size", 1, DataType::UInt64)?;
         let aggressor_side_values =
             extract_column::<UInt8Array>(cols, "aggressor_side", 2, DataType::UInt8)?;
-        let trade_id_values = extract_column::<StringArray>(cols, "trade_id", 3, DataType::Utf8)?;
         let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 4, DataType::UInt64)?;
         let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 5, DataType::UInt64)?;
+
+        // Datafusion reads trade_ids as StringView
+        let trade_id_values: Vec<TradeId> = if record_batch
+            .schema()
+            .field_with_name("trade_id")?
+            .data_type()
+            == &DataType::Utf8View
+        {
+            extract_column::<StringViewArray>(cols, "trade_id", 3, DataType::Utf8View)?
+                .iter()
+                .map(|id| TradeId::from(id.unwrap()))
+                .collect()
+        } else {
+            extract_column::<StringArray>(cols, "trade_id", 3, DataType::Utf8)?
+                .iter()
+                .map(|id| TradeId::from(id.unwrap()))
+                .collect()
+        };
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|i| {
@@ -146,7 +163,7 @@ impl DecodeFromRecordBatch for TradeTick {
                             format!("Invalid enum value, was {aggressor_side_value}"),
                         )
                     })?;
-                let trade_id = TradeId::from(trade_id_values.value(i));
+                let trade_id = trade_id_values[i];
                 let ts_event = ts_event_values.value(i).into();
                 let ts_init = ts_init_values.value(i).into();
 
@@ -184,7 +201,7 @@ mod tests {
     use std::sync::Arc;
 
     use arrow::{
-        array::{Array, Int64Array, StringArray, UInt64Array, UInt8Array},
+        array::{Array, Int64Array, UInt64Array, UInt8Array},
         record_batch::RecordBatch,
     };
     use rstest::rstest;
