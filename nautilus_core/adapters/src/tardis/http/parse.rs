@@ -314,7 +314,7 @@ mod tests {
         assert_eq!(instrument.base_currency(), Some(Currency::BTC()));
         assert_eq!(instrument.quote_currency(), Currency::USD());
         assert_eq!(instrument.settlement_currency(), Currency::USD());
-        assert_eq!(instrument.is_inverse(), true);
+        assert!(instrument.is_inverse());
         assert_eq!(instrument.price_precision(), 1);
         assert_eq!(instrument.size_precision(), 0);
         assert_eq!(instrument.price_increment(), Price::from("0.5"));

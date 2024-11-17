@@ -45,7 +45,7 @@ impl InstrumentMiniInfo {
 
     #[getter]
     #[pyo3(name = "instrument_id")]
-    fn py_instrument_id(&self) -> InstrumentId {
+    const fn py_instrument_id(&self) -> InstrumentId {
         self.instrument_id
     }
 
@@ -63,13 +63,13 @@ impl InstrumentMiniInfo {
 
     #[getter]
     #[pyo3(name = "price_precision")]
-    fn py_price_precision(&self) -> u8 {
+    const fn py_price_precision(&self) -> u8 {
         self.price_precision
     }
 
     #[getter]
     #[pyo3(name = "size_precision")]
-    fn py_size_precision(&self) -> u8 {
+    const fn py_size_precision(&self) -> u8 {
         self.size_precision
     }
 }

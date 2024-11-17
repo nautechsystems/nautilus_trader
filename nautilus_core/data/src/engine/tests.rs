@@ -240,7 +240,7 @@ fn test_execute_subscribe_order_book_deltas(
     let cmd = SubscriptionCommand::new(
         client_id,
         venue,
-        data_type.clone(),
+        data_type,
         Action::Unsubscribe,
         UUID4::new(),
         UnixNanos::default(),
@@ -298,7 +298,7 @@ fn test_execute_subscribe_order_book_snapshots(
     let cmd = SubscriptionCommand::new(
         client_id,
         venue,
-        data_type.clone(),
+        data_type,
         Action::Unsubscribe,
         UUID4::new(),
         UnixNanos::default(),
@@ -354,7 +354,7 @@ fn test_execute_subscribe_instrument(
     let cmd = SubscriptionCommand::new(
         client_id,
         venue,
-        data_type.clone(),
+        data_type,
         Action::Unsubscribe,
         UUID4::new(),
         UnixNanos::default(),
@@ -410,7 +410,7 @@ fn test_execute_subscribe_quote_ticks(
     let cmd = SubscriptionCommand::new(
         client_id,
         venue,
-        data_type.clone(),
+        data_type,
         Action::Unsubscribe,
         UUID4::new(),
         UnixNanos::default(),
@@ -466,7 +466,7 @@ fn test_execute_subscribe_trade_ticks(
     let cmd = SubscriptionCommand::new(
         client_id,
         venue,
-        data_type.clone(),
+        data_type,
         Action::Unsubscribe,
         UUID4::new(),
         UnixNanos::default(),
@@ -519,7 +519,7 @@ fn test_execute_subscribe_bars(
     let cmd = SubscriptionCommand::new(
         client_id,
         venue,
-        data_type.clone(),
+        data_type,
         Action::Unsubscribe,
         UUID4::new(),
         UnixNanos::default(),
