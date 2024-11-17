@@ -890,7 +890,7 @@ class TestOrders:
             Quantity.from_int(100_000),
             Price.from_str("1.00000"),
             Price.from_str("1.10010"),
-            emulation_trigger=TriggerType.LAST_TRADE,
+            emulation_trigger=TriggerType.LAST_PRICE,
             tags=["ENTRY"],
         )
 
@@ -909,11 +909,11 @@ class TestOrders:
         assert isinstance(order.init_event, OrderInitialized)
         assert (
             str(order)
-            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC EMULATED[LAST_TRADE], status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, position_id=None, tags=['ENTRY'])"  # noqa
+            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC EMULATED[LAST_PRICE], status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, position_id=None, tags=['ENTRY'])"  # noqa
         )
         assert (
             repr(order)
-            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC EMULATED[LAST_TRADE], status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, position_id=None, tags=['ENTRY'])"  # noqa
+            == "LimitIfTouchedOrder(BUY 100_000 AUD/USD.SIM LIMIT_IF_TOUCHED @ 1.10010-STOP[DEFAULT] 1.00000-LIMIT GTC EMULATED[LAST_PRICE], status=INITIALIZED, client_order_id=O-19700101-000000-000-001-1, venue_order_id=None, position_id=None, tags=['ENTRY'])"  # noqa
         )
 
     def test_limit_if_touched_order_to_dict(self):
@@ -925,7 +925,7 @@ class TestOrders:
             Price.from_str("1.00000"),
             Price.from_str("1.10010"),
             trigger_type=TriggerType.MARK_PRICE,
-            emulation_trigger=TriggerType.LAST_TRADE,
+            emulation_trigger=TriggerType.LAST_PRICE,
             trigger_instrument_id=TestIdStubs.usdjpy_id(),
             tags=["STOP_LOSS"],
         )
@@ -964,7 +964,7 @@ class TestOrders:
             "is_reduce_only": False,
             "is_quote_quantity": False,
             "display_qty": None,
-            "emulation_trigger": "LAST_TRADE",
+            "emulation_trigger": "LAST_PRICE",
             "trigger_instrument_id": "USD/JPY.SIM",
             "contingency_type": "NO_CONTINGENCY",
             "order_list_id": None,

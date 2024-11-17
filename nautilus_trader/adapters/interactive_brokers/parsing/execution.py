@@ -27,7 +27,7 @@ from nautilus_trader.model.enums import TriggerType
 MAP_TRIGGER_METHOD: dict[int, int] = {
     TriggerType.DEFAULT: 0,
     TriggerType.DOUBLE_BID_ASK: 1,
-    TriggerType.LAST_TRADE: 2,
+    TriggerType.LAST_PRICE: 2,
     TriggerType.DOUBLE_LAST: 3,
     TriggerType.BID_ASK: 4,
     TriggerType.LAST_OR_BID_ASK: 7,

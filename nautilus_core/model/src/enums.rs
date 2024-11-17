@@ -1164,22 +1164,22 @@ pub enum TriggerType {
     NoTrigger = 0,
     /// The default trigger type set by the trading venue.
     Default = 1,
-    /// Based on the top-of-book quoted prices for the instrument.
-    BidAsk = 2,
     /// Based on the last traded price for the instrument.
-    LastTrade = 3,
-    /// Based on a 'double match' of the last traded price for the instrument
-    DoubleLast = 4,
-    /// Based on a 'double match' of the bid/ask price for the instrument
-    DoubleBidAsk = 5,
-    /// Based on both the [`TriggerType::LastTrade`] and [`TriggerType::BidAsk`].
-    LastOrBidAsk = 6,
-    /// Based on the mid-point of the [`TriggerType::BidAsk`].
-    MidPoint = 7,
+    LastPrice = 2,
     /// Based on the mark price for the instrument.
-    MarkPrice = 8,
+    MarkPrice = 3,
     /// Based on the index price for the instrument.
-    IndexPrice = 9,
+    IndexPrice = 4,
+    /// Based on the top-of-book quoted prices for the instrument.
+    BidAsk = 5,
+    /// Based on a 'double match' of the last traded price for the instrument
+    DoubleLast = 6,
+    /// Based on a 'double match' of the bid/ask price for the instrument
+    DoubleBidAsk = 7,
+    /// Based on both the [`TriggerType::LastTrade`] and [`TriggerType::BidAsk`].
+    LastOrBidAsk = 8,
+    /// Based on the mid-point of the [`TriggerType::BidAsk`].
+    MidPoint = 9,
 }
 
 enum_strum_serde!(AccountType);

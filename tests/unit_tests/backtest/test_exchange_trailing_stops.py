@@ -191,7 +191,7 @@ class TestSimulatedExchange:
             quantity=Quantity.from_int(200_000),
             trailing_offset_type=TrailingOffsetType.PRICE,
             trailing_offset=Decimal("1.0"),
-            trigger_type=TriggerType.LAST_TRADE,
+            trigger_type=TriggerType.LAST_PRICE,
         )
         self.strategy.submit_order(trailing_stop)
 
@@ -288,14 +288,14 @@ class TestSimulatedExchange:
                 OrderSide.BUY,
                 TrailingOffsetType.PRICE,
                 Decimal("1.0"),
-                TriggerType.LAST_TRADE,
+                TriggerType.LAST_PRICE,
                 Price.from_str("15.000"),
             ],
             [
                 OrderSide.SELL,
                 TrailingOffsetType.PRICE,
                 Decimal("1.0"),
-                TriggerType.LAST_TRADE,
+                TriggerType.LAST_PRICE,
                 Price.from_str("13.000"),
             ],
             [
@@ -543,7 +543,7 @@ class TestSimulatedExchange:
                 OrderSide.BUY,
                 TrailingOffsetType.PRICE,
                 Decimal("1.0"),
-                TriggerType.LAST_TRADE,
+                TriggerType.LAST_PRICE,
                 Price.from_str("15.000"),
                 Price.from_str("15.000"),
             ],
@@ -551,7 +551,7 @@ class TestSimulatedExchange:
                 OrderSide.SELL,
                 TrailingOffsetType.PRICE,
                 Decimal("1.0"),
-                TriggerType.LAST_TRADE,
+                TriggerType.LAST_PRICE,
                 Price.from_str("13.000"),
                 Price.from_str("13.000"),
             ],
@@ -575,7 +575,7 @@ class TestSimulatedExchange:
                 OrderSide.BUY,
                 TrailingOffsetType.BASIS_POINTS,
                 Decimal("100"),
-                TriggerType.LAST_TRADE,
+                TriggerType.LAST_PRICE,
                 Price.from_str("14.140"),
                 Price.from_str("14.140"),
             ],
@@ -583,7 +583,7 @@ class TestSimulatedExchange:
                 OrderSide.SELL,
                 TrailingOffsetType.BASIS_POINTS,
                 Decimal("100"),
-                TriggerType.LAST_TRADE,
+                TriggerType.LAST_PRICE,
                 Price.from_str("13.860"),
                 Price.from_str("13.860"),
             ],
@@ -871,7 +871,7 @@ class TestSimulatedExchange:
             trailing_offset_type=TrailingOffsetType.TICKS,
             trailing_offset=Decimal("20"),
             limit_offset=Decimal("20"),
-            trigger_type=TriggerType.LAST_TRADE,
+            trigger_type=TriggerType.LAST_PRICE,
         )
         self.strategy.submit_order(trailing_stop)
         self.exchange.process(0)
@@ -929,7 +929,7 @@ class TestSimulatedExchange:
             trailing_offset_type=TrailingOffsetType.TICKS,
             trailing_offset=Decimal("20"),
             limit_offset=Decimal("20"),
-            trigger_type=TriggerType.LAST_TRADE,
+            trigger_type=TriggerType.LAST_PRICE,
         )
         self.strategy.submit_order(trailing_stop)
         self.exchange.process(0)

@@ -75,7 +75,7 @@ from nautilus_trader.model.orders.market cimport MarketOrder
 from nautilus_trader.portfolio.base cimport PortfolioFacade
 
 
-cdef set SUPPORTED_TRIGGERS = {TriggerType.DEFAULT, TriggerType.BID_ASK, TriggerType.LAST_TRADE}
+cdef set SUPPORTED_TRIGGERS = {TriggerType.DEFAULT, TriggerType.BID_ASK, TriggerType.LAST_PRICE}
 
 
 cdef class OrderEmulator(Actor):
@@ -412,7 +412,7 @@ cdef class OrderEmulator(Actor):
                     self.subscribe_order_book_deltas(trigger_instrument_id)
                 self.subscribe_quote_ticks(trigger_instrument_id)
                 self._subscribed_quotes.add(trigger_instrument_id)
-        elif emulation_trigger == TriggerType.LAST_TRADE:
+        elif emulation_trigger == TriggerType.LAST_PRICE:
             if trigger_instrument_id not in self._subscribed_trades:
                 self.subscribe_trade_ticks(trigger_instrument_id)
                 self._subscribed_trades.add(trigger_instrument_id)

@@ -399,22 +399,22 @@ cdef extern from "../includes/model.h":
         NO_TRIGGER # = 0,
         # The default trigger type set by the trading venue.
         DEFAULT # = 1,
-        # Based on the top-of-book quoted prices for the instrument.
-        BID_ASK # = 2,
         # Based on the last traded price for the instrument.
-        LAST_TRADE # = 3,
-        # Based on a 'double match' of the last traded price for the instrument
-        DOUBLE_LAST # = 4,
-        # Based on a 'double match' of the bid/ask price for the instrument
-        DOUBLE_BID_ASK # = 5,
-        # Based on both the [`TriggerType::LastTrade`] and [`TriggerType::BidAsk`].
-        LAST_OR_BID_ASK # = 6,
-        # Based on the mid-point of the [`TriggerType::BidAsk`].
-        MID_POINT # = 7,
+        LAST_PRICE # = 2,
         # Based on the mark price for the instrument.
-        MARK_PRICE # = 8,
+        MARK_PRICE # = 3,
         # Based on the index price for the instrument.
-        INDEX_PRICE # = 9,
+        INDEX_PRICE # = 4,
+        # Based on the top-of-book quoted prices for the instrument.
+        BID_ASK # = 5,
+        # Based on a 'double match' of the last traded price for the instrument
+        DOUBLE_LAST # = 6,
+        # Based on a 'double match' of the bid/ask price for the instrument
+        DOUBLE_BID_ASK # = 7,
+        # Based on both the [`TriggerType::LastTrade`] and [`TriggerType::BidAsk`].
+        LAST_OR_BID_ASK # = 8,
+        # Based on the mid-point of the [`TriggerType::BidAsk`].
+        MID_POINT # = 9,
 
     # Represents a discrete price level in an order book.
     #

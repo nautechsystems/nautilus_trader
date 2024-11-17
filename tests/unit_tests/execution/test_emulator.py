@@ -351,7 +351,7 @@ class TestOrderEmulatorWithSingleOrders:
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(10),
             price=ETHUSDT_PERP_BINANCE.make_price(2_000),
-            emulation_trigger=TriggerType.LAST_TRADE,
+            emulation_trigger=TriggerType.LAST_PRICE,
         )
 
         # Act
@@ -372,7 +372,7 @@ class TestOrderEmulatorWithSingleOrders:
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(10),
             price=ETHUSDT_PERP_BINANCE.make_price(2_000),
-            emulation_trigger=TriggerType.LAST_TRADE,
+            emulation_trigger=TriggerType.LAST_PRICE,
         )
 
         self.strategy.submit_order(order)
@@ -396,7 +396,7 @@ class TestOrderEmulatorWithSingleOrders:
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(10),
             price=ETHUSDT_PERP_BINANCE.make_price(2_000),
-            emulation_trigger=TriggerType.LAST_TRADE,
+            emulation_trigger=TriggerType.LAST_PRICE,
         )
 
         self.strategy.submit_order(order)
@@ -414,7 +414,7 @@ class TestOrderEmulatorWithSingleOrders:
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(10),
             price=ETHUSDT_PERP_BINANCE.make_price(2_000),
-            emulation_trigger=TriggerType.LAST_TRADE,
+            emulation_trigger=TriggerType.LAST_PRICE,
         )
 
         order2 = self.strategy.order_factory.limit(
@@ -422,7 +422,7 @@ class TestOrderEmulatorWithSingleOrders:
             order_side=OrderSide.SELL,
             quantity=Quantity.from_int(10),
             price=ETHUSDT_PERP_BINANCE.make_price(2_010),
-            emulation_trigger=TriggerType.LAST_TRADE,
+            emulation_trigger=TriggerType.LAST_PRICE,
         )
 
         self.strategy.submit_order(order1)
@@ -444,7 +444,7 @@ class TestOrderEmulatorWithSingleOrders:
             order_side=OrderSide.BUY,
             quantity=Quantity.from_int(10),
             price=ETHUSDT_PERP_BINANCE.make_price(2_000),
-            emulation_trigger=TriggerType.LAST_TRADE,
+            emulation_trigger=TriggerType.LAST_PRICE,
         )
 
         order2 = self.strategy.order_factory.limit(
@@ -452,7 +452,7 @@ class TestOrderEmulatorWithSingleOrders:
             order_side=OrderSide.SELL,
             quantity=Quantity.from_int(10),
             price=ETHUSDT_PERP_BINANCE.make_price(2_010),
-            emulation_trigger=TriggerType.LAST_TRADE,
+            emulation_trigger=TriggerType.LAST_PRICE,
         )
 
         self.strategy.submit_order(order1)
@@ -485,7 +485,7 @@ class TestOrderEmulatorWithSingleOrders:
             order_side=order_side,
             quantity=Quantity.from_int(10),
             price=trigger_price,
-            emulation_trigger=TriggerType.LAST_TRADE,
+            emulation_trigger=TriggerType.LAST_PRICE,
         )
 
         self.strategy.submit_order(order)
