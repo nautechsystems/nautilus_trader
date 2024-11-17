@@ -1,6 +1,6 @@
 # NautilusTrader 1.206.0 Beta
 
-Released on TBD (UTC).
+Released on 17th November 2024 (UTC).
 
 ### Enhancements
 - Added `Portfolio.realized_pnl(...)` method for per instrument realized PnL (based on positions)
