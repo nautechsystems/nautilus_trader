@@ -2936,7 +2936,6 @@ version = "0.36.0"
 dependencies = [
  "anyhow",
  "clap",
- "clap_derive",
  "dotenvy",
  "log",
  "nautilus-common",
@@ -3027,7 +3026,6 @@ dependencies = [
  "anyhow",
  "chrono",
  "criterion",
- "derive_builder",
  "futures",
  "indexmap",
  "log",
@@ -3037,10 +3035,6 @@ dependencies = [
  "pyo3",
  "pyo3-async-runtimes",
  "rstest",
- "rust_decimal",
- "rust_decimal_macros",
- "serde",
- "serde_json",
  "thiserror 2.0.3",
  "tokio",
  "ustr",
@@ -3053,7 +3047,6 @@ dependencies = [
  "anyhow",
  "criterion",
  "derive_builder",
- "indexmap",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -3061,12 +3054,9 @@ dependencies = [
  "pyo3",
  "pyo3-async-runtimes",
  "rstest",
- "rust_decimal",
- "rust_decimal_macros",
  "serde",
  "strum",
  "thiserror 2.0.3",
- "ustr",
 ]
 
 [[package]]
@@ -3246,8 +3236,6 @@ version = "0.36.0"
 dependencies = [
  "anyhow",
  "criterion",
- "derive_builder",
- "indexmap",
  "log",
  "nautilus-common",
  "nautilus-core",
@@ -3257,10 +3245,6 @@ dependencies = [
  "pyo3-async-runtimes",
  "rstest",
  "rust_decimal",
- "rust_decimal_macros",
- "serde",
- "serde_json",
- "strum",
  "thiserror 2.0.3",
  "ustr",
 ]
