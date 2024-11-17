@@ -15,6 +15,7 @@
 
 //! Provides a generic `Portfolio` for all environments.
 
+pub mod manager;
 pub mod portfolio;
 
 // Re-exports
