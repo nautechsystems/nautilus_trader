@@ -56,18 +56,6 @@ use crate::{
     mocks::MockDataClient,
 };
 
-// TODO: Used for development
-// fn init_logger(stdout_level: LevelFilter) {
-//     let mut config = LoggerConfig::default();
-//     config.stdout_level = stdout_level;
-//     init_logging(
-//         TraderId::default(),
-//         UUID4::new(),
-//         config,
-//         FileWriterConfig::default(),
-//     );
-// }
-
 #[fixture]
 fn trader_id() -> TraderId {
     TraderId::default()
