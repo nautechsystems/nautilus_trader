@@ -88,6 +88,7 @@ impl MessageHandler for BookUpdater {
 
 pub struct BookSnapshotter {
     pub id: Ustr,
+    pub timer_name: Ustr,
     pub snap_info: BookSnapshotInfo,
     pub cache: Rc<RefCell<Cache>>,
     pub msgbus: Rc<RefCell<MessageBus>>,
@@ -100,8 +101,19 @@ impl BookSnapshotter {
         cache: Rc<RefCell<Cache>>,
         msgbus: Rc<RefCell<MessageBus>>,
     ) -> Self {
+        let id_str = format!(
+            "{}-{}",
+            stringify!(BookSnapshotter),
+            snap_info.instrument_id
+        );
+        let timer_name = format!(
+            "OrderBook|{}|{}",
+            snap_info.instrument_id, snap_info.interval_ms
+        );
+
         Self {
-            id: Ustr::from(&format!("{}-{:?}", stringify!(BookSnapshotter), snap_info)),
+            id: Ustr::from(&id_str),
+            timer_name: Ustr::from(&timer_name),
             snap_info,
             cache,
             msgbus,
