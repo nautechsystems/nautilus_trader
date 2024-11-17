@@ -50,7 +50,7 @@ use std::{
     sync::Arc,
 };
 
-use book::{BookSnapshotter, BookUpdater};
+use book::{BookSnapshotInfo, BookSnapshotter, BookUpdater};
 use config::DataEngineConfig;
 use indexmap::IndexMap;
 use nautilus_common::{
@@ -816,14 +816,4 @@ impl MessageHandler for SubscriptionCommandHandler {
     fn as_any(&self) -> &dyn Any {
         self
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct BookSnapshotInfo {
-    pub instrument_id: InstrumentId,
-    pub venue: Venue,
-    pub is_composite: bool,
-    pub root: Ustr,
-    pub topic: Ustr,
-    pub interval_ms: NonZeroU64,
 }

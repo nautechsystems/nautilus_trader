@@ -16,6 +16,7 @@
 use std::{
     any::Any,
     cell::{Ref, RefCell},
+    num::NonZeroU64,
     rc::Rc,
 };
 
@@ -25,10 +26,22 @@ use nautilus_common::{
     msgbus::{handler::MessageHandler, MessageBus},
     timer::TimeEvent,
 };
-use nautilus_model::{data::Data, identifiers::InstrumentId};
+use nautilus_model::{
+    data::Data,
+    identifiers::{InstrumentId, Venue},
+};
 use ustr::Ustr;
 
-use super::BookSnapshotInfo;
+/// Contains information for creating snapshots of specific order books.
+#[derive(Clone, Debug)]
+pub struct BookSnapshotInfo {
+    pub instrument_id: InstrumentId,
+    pub venue: Venue,
+    pub is_composite: bool,
+    pub root: Ustr,
+    pub topic: Ustr,
+    pub interval_ms: NonZeroU64,
+}
 
 pub struct BookUpdater {
     pub id: Ustr,
