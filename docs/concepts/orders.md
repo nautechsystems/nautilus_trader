@@ -245,7 +245,7 @@ order: StopMarketOrder = self.order_factory.stop_market(
     order_side=OrderSide.SELL,
     quantity=Quantity.from_int(1),
     trigger_price=Price.from_int(100_000),
-    trigger_type=TriggerType.LAST_TRADE,  # <-- optional (default DEFAULT)
+    trigger_type=TriggerType.LAST_PRICE,  # <-- optional (default DEFAULT)
     time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
     expire_time=None,  # <-- optional (default None)
     reduce_only=False,  # <-- optional (default False)
@@ -328,7 +328,7 @@ See the `MarketToLimitOrder` [API Reference](../api_reference/model/orders.md#cl
 ### Market-If-Touched
 
 A _Market-If-Touched_ order is a conditional order which once triggered will immediately
-place a _Market_ order. This order type is often used to enter a new position on a stop price in the market orders direction,
+place a _Market_ order. This order type is often used to enter a new position on a stop price,
 or to take profits for an existing position, either as a SELL order against LONG positions, 
 or as a BUY order against SHORT positions.
 
@@ -349,7 +349,7 @@ order: MarketIfTouchedOrder = self.order_factory.market_if_touched(
     order_side=OrderSide.SELL,
     quantity=Quantity.from_int(10),
     trigger_price=Price.from_str("10_000.00"),
-    trigger_type=TriggerType.LAST_TRADE,  # <-- optional (default DEFAULT)
+    trigger_type=TriggerType.LAST_PRICE,  # <-- optional (default DEFAULT)
     time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)
     expire_time=None,  # <-- optional (default None)
     reduce_only=False,  # <-- optional (default False)
@@ -386,7 +386,7 @@ order: StopLimitOrder = self.order_factory.limit_if_touched(
     quantity=Quantity.from_int(5),
     price=Price.from_str("30_100"),
     trigger_price=Price.from_str("30_150"),
-    trigger_type=TriggerType.LAST_TRADE,  # <-- optional (default DEFAULT)
+    trigger_type=TriggerType.LAST_PRICE,  # <-- optional (default DEFAULT)
     time_in_force=TimeInForce.GTD,  # <-- optional (default GTC)
     expire_time=pd.Timestamp("2022-06-06T12:00"),
     post_only=True,  # <-- optional (default False)
@@ -425,7 +425,7 @@ order: TrailingStopMarketOrder = self.order_factory.trailing_stop_market(
     order_side=OrderSide.SELL,
     quantity=Quantity.from_int(10),
     trigger_price=Price.from_str("5_000"),
-    trigger_type=TriggerType.LAST_TRADE,  # <-- optional (default DEFAULT)
+    trigger_type=TriggerType.LAST_PRICE,  # <-- optional (default DEFAULT)
     trailing_offset=Decimal(100),
     trailing_offset_type=TrailingOffsetType.BASIS_POINTS,
     time_in_force=TimeInForce.GTC,  # <-- optional (default GTC)

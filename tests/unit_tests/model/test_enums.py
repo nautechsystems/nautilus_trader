@@ -1036,7 +1036,7 @@ class TestTriggerType:
         [
             [TriggerType.NO_TRIGGER, "NO_TRIGGER"],
             [TriggerType.DEFAULT, "DEFAULT"],
-            [TriggerType.LAST_TRADE, "LAST_TRADE"],
+            [TriggerType.LAST_PRICE, "LAST_PRICE"],
             [TriggerType.BID_ASK, "BID_ASK"],
             [TriggerType.DOUBLE_LAST, "DOUBLE_LAST"],
             [TriggerType.DOUBLE_BID_ASK, "DOUBLE_BID_ASK"],
@@ -1058,7 +1058,7 @@ class TestTriggerType:
         [
             ["NO_TRIGGER", TriggerType.NO_TRIGGER],
             ["DEFAULT", TriggerType.DEFAULT],
-            ["LAST_TRADE", TriggerType.LAST_TRADE],
+            ["LAST_PRICE", TriggerType.LAST_PRICE],
             ["BID_ASK", TriggerType.BID_ASK],
             ["DOUBLE_LAST", TriggerType.DOUBLE_LAST],
             ["DOUBLE_BID_ASK", TriggerType.DOUBLE_BID_ASK],

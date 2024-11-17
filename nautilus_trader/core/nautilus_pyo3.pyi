@@ -1040,14 +1040,14 @@ class TrailingOffsetType(Enum):
 
 class TriggerType(Enum):
     DEFAULT = "DEFAULT"
+    LAST_PRICE = "LAST_PRICE"
+    MARK_PRICE = "MARK_PRICE"
+    INDEX_PRICE = "INDEX_PRICE"
     BID_ASK = "BID_ASK"
-    LAST_TRADE = "LAST_TRADE"
     DOUBLE_LAST = "DOUBLE_LAST"
     DOUBLE_BID_ASK = "DOUBLE_BID_ASK"
     LAST_OR_BID_ASK = "LAST_OR_BID_ASK"
     MID_POINT = "MID_POINT"
-    MARK_PRICE = "MARK_PRICE"
-    INDEX_PRICE = "INDEX_PRICE"
 
 class MovingAverageType(Enum):
     SIMPLE = "SIMPLE"

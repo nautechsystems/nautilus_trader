@@ -97,7 +97,7 @@ strat_config = EMACrossTrailingStopConfig(
     atr_period=20,
     trailing_atr_multiple=3.0,
     trailing_offset_type="BASIS_POINTS",
-    trigger_type="LAST_TRADE",
+    trigger_type="LAST_PRICE",
     trade_size=trade_size,
 )
 # Instantiate your strategy

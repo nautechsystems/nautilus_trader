@@ -9,7 +9,7 @@ None
 - Upgraded `datafusion` crate to v43.0.0 (#2056), thanks @twitu
 
 ### Breaking Changes
-None
+- Renamed `TriggerType.LAST_TRADE` to `LAST_PRICE`
 
 ### Fixes
 None

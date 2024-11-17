@@ -400,7 +400,7 @@ def buy(self) -> None:
         order_side=OrderSide.BUY,
         quantity=self.instrument.make_qty(self.trade_size),
         price=self.instrument.make_price(5000.00),
-        emulation_trigger=TriggerType.LAST_TRADE,
+        emulation_trigger=TriggerType.LAST_PRICE,
     )
 
     self.submit_order(order)
