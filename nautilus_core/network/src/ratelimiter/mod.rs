@@ -29,6 +29,7 @@ use std::{
 };
 
 use dashmap::DashMap;
+use futures_util::StreamExt;
 use tokio::time::sleep;
 
 use self::{
@@ -190,6 +191,17 @@ where
                 }
             }
         }
+    }
+
+    pub async fn await_keys_ready(&self, keys: Option<Vec<K>>) {
+        let keys = keys.unwrap_or_default();
+        let tasks = keys.iter().map(|key| self.until_key_ready(key));
+
+        futures::stream::iter(tasks)
+            .for_each_concurrent(None, |key_future| async move {
+                key_future.await;
+            })
+            .await;
     }
 }
 

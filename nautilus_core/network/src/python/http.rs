@@ -19,8 +19,7 @@ use std::{
 };
 
 use bytes::Bytes;
-use futures_util::{stream, StreamExt};
-use pyo3::{create_exception, exceptions::PyException, prelude::*, types::PyBytes};
+use pyo3::{create_exception, exceptions::PyException, prelude::*};
 
 use crate::{
     http::{HttpClient, HttpClientError, HttpMethod, HttpResponse},
@@ -138,24 +137,16 @@ impl HttpClient {
         method: HttpMethod,
         url: String,
         headers: Option<HashMap<String, String>>,
-        body: Option<Bound<'py, PyBytes>>,
+        body: Option<Vec<u8>>,
         keys: Option<Vec<String>>,
         timeout_secs: Option<u64>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.client.clone();
         let rate_limiter = self.rate_limiter.clone();
-        let keys = keys.unwrap_or_default();
-        let body = body.map(|py_bytes| Bytes::from(py_bytes.as_bytes().to_vec()));
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            // TODO: Consolidate rate limiting
-            let tasks = keys.iter().map(|key| rate_limiter.until_key_ready(key));
-            stream::iter(tasks)
-                .for_each(|key| async move {
-                    key.await;
-                })
-                .await;
+            rate_limiter.await_keys_ready(keys).await;
             client
                 .send_request(method.into(), url, headers, body, timeout_secs)
                 .await
