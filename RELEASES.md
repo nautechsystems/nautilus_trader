@@ -6,6 +6,7 @@ Released on TBD (UTC).
 None
 
 ### Internal Improvements
+- Improve live engines error logging (will now log all exceptions rather than just `RuntimeError`)
 - Upgraded `datafusion` crate to v43.0.0 (#2056), thanks @twitu
 
 ### Breaking Changes

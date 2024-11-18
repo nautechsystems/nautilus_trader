@@ -398,8 +398,8 @@ class LiveExecutionEngine(ExecutionEngine):
                 self._execute_command(command)
         except asyncio.CancelledError:
             self._log.warning("Command message queue canceled")
-        except RuntimeError as e:
-            self._log.error(f"RuntimeError: {e}")
+        except Exception as e:
+            self._log.error(repr(e))
         finally:
             stopped_msg = "Command message queue stopped"
             if not self._cmd_queue.empty():
@@ -419,8 +419,8 @@ class LiveExecutionEngine(ExecutionEngine):
                 self._handle_event(event)
         except asyncio.CancelledError:
             self._log.warning("Event message queue canceled")
-        except RuntimeError as e:
-            self._log.error(f"RuntimeError: {e}")
+        except Exception as e:
+            self._log.error(repr(e))
         finally:
             stopped_msg = "Event message queue stopped"
             if not self._evt_queue.empty():
