@@ -7,6 +7,7 @@ None
 
 ### Internal Improvements
 - Improve live engines error logging (will now log all exceptions rather than just `RuntimeError`)
+- Refined `HttpClient` for use directly from Rust
 - Upgraded `datafusion` crate to v43.0.0 (#2056), thanks @twitu
 
 ### Breaking Changes
