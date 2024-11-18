@@ -16,7 +16,6 @@
 use std::{
     collections::{hash_map::DefaultHasher, HashMap},
     hash::{Hash, Hasher},
-    sync::Arc,
 };
 
 use bytes::Bytes;
@@ -24,8 +23,8 @@ use futures_util::{stream, StreamExt};
 use pyo3::{create_exception, exceptions::PyException, prelude::*, types::PyBytes};
 
 use crate::{
-    http::{HttpClient, HttpClientError, HttpMethod, HttpResponse, InnerHttpClient},
-    ratelimiter::{quota::Quota, RateLimiter},
+    http::{HttpClient, HttpClientError, HttpMethod, HttpResponse},
+    ratelimiter::quota::Quota,
 };
 
 // Python exception class for generic HTTP errors.
@@ -86,7 +85,7 @@ impl HttpResponse {
 
 #[pymethods]
 impl HttpClient {
-    /// Create a new HttpClient.
+    /// Creates a new HttpClient.
     ///
     /// `header_keys`: The key value pairs for the given `header_keys` are retained from the responses.
     /// `keyed_quota`: A list of string quota pairs that gives quota for specific key values.
@@ -115,18 +114,7 @@ impl HttpClient {
         keyed_quotas: Vec<(String, Quota)>,
         default_quota: Option<Quota>,
     ) -> Self {
-        let client = reqwest::Client::new();
-        let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
-
-        let client = InnerHttpClient {
-            client,
-            header_keys,
-        };
-
-        Self {
-            rate_limiter,
-            client,
-        }
+        Self::new(header_keys, keyed_quotas, default_quota)
     }
 
     /// Send an HTTP request.
@@ -155,14 +143,13 @@ impl HttpClient {
         timeout_secs: Option<u64>,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let headers = headers.unwrap_or_default();
-        let body_vec = body.map(|py_bytes| py_bytes.as_bytes().to_vec());
-        let keys = keys.unwrap_or_default();
         let client = self.client.clone();
         let rate_limiter = self.rate_limiter.clone();
-        let method = method.into();
+        let keys = keys.unwrap_or_default();
+        let body = body.map(|py_bytes| Bytes::from(py_bytes.as_bytes().to_vec()));
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            // Check keys for rate limiting quota
+            // TODO: Consolidate rate limiting
             let tasks = keys.iter().map(|key| rate_limiter.until_key_ready(key));
             stream::iter(tasks)
                 .for_each(|key| async move {
@@ -170,9 +157,9 @@ impl HttpClient {
                 })
                 .await;
             client
-                .send_request(method, url, headers, body_vec, timeout_secs)
+                .send_request(method.into(), url, headers, body, timeout_secs)
                 .await
-                .map_err(super::super::http::HttpClientError::into_py_err)
+                .map_err(HttpClientError::into_py_err)
         })
     }
 }

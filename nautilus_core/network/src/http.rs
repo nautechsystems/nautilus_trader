@@ -18,12 +18,13 @@
 use std::{collections::HashMap, hash::Hash, sync::Arc, time::Duration};
 
 use bytes::Bytes;
+use futures_util::{stream, StreamExt};
 use reqwest::{
     header::{HeaderMap, HeaderName},
     Method, Response, Url,
 };
 
-use crate::ratelimiter::{clock::MonotonicClock, RateLimiter};
+use crate::ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter};
 
 /// Represents the HTTP methods supported by the `HttpClient`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -70,23 +71,6 @@ pub struct HttpResponse {
     pub(crate) body: Bytes,
 }
 
-/// A high-performance HTTP client with rate limiting and timeout capabilities.
-///
-/// This struct is designed to handle HTTP requests efficiently, providing
-/// support for rate limiting, timeouts, and custom headers. The client is
-/// built on top of `reqwest` and can be used for both synchronous and
-/// asynchronous HTTP requests.
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
-)]
-pub struct HttpClient {
-    /// The rate limiter to control the request rate.
-    pub(crate) rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
-    /// The underlying HTTP client used to make requests.
-    pub(crate) client: InnerHttpClient,
-}
-
 /// Represents errors that can occur when using the `HttpClient`.
 ///
 /// This enum provides variants for general HTTP errors and timeout errors,
@@ -116,6 +100,85 @@ impl From<String> for HttpClientError {
     }
 }
 
+/// A high-performance HTTP client with rate limiting and timeout capabilities.
+///
+/// This struct is designed to handle HTTP requests efficiently, providing
+/// support for rate limiting, timeouts, and custom headers. The client is
+/// built on top of `reqwest` and can be used for both synchronous and
+/// asynchronous HTTP requests.
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+)]
+pub struct HttpClient {
+    /// The rate limiter to control the request rate.
+    pub(crate) rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
+    /// The underlying HTTP client used to make requests.
+    pub(crate) client: Arc<InnerHttpClient>,
+}
+
+impl HttpClient {
+    /// Creates a new [`HttpClient`] instance.
+    #[must_use]
+    pub fn new(
+        header_keys: Vec<String>,
+        keyed_quotas: Vec<(String, Quota)>,
+        default_quota: Option<Quota>,
+    ) -> Self {
+        let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
+        let client = InnerHttpClient {
+            client: reqwest::Client::new(),
+            header_keys,
+        };
+
+        Self {
+            rate_limiter,
+            client: Arc::new(client),
+        }
+    }
+
+    /// Send an HTTP request.
+    ///
+    /// `method`: The HTTP method to call.
+    /// `url`: The request is sent to this url.
+    /// `headers`: The header key value pairs in the request.
+    /// `body`: The bytes sent in the body of request.
+    /// `keys`: The keys used for rate limiting the request.
+    ///
+    /// # Example
+    ///
+    /// When a request is made the URL should be split into all relevant keys within it.
+    ///
+    /// For request /foo/bar, should pass keys ["foo/bar", "foo"] for rate limiting.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn request(
+        &self,
+        method: Method,
+        url: String,
+        headers: Option<HashMap<String, String>>,
+        body: Option<Bytes>,
+        keys: Option<Vec<String>>,
+        timeout_secs: Option<u64>,
+    ) -> Result<HttpResponse, HttpClientError> {
+        let client = self.client.clone();
+        let rate_limiter = self.rate_limiter.clone();
+
+        // Check keys for rate limiting quota
+        let keys = keys.unwrap_or_default();
+        let tasks = keys.iter().map(|key| rate_limiter.until_key_ready(key));
+
+        stream::iter(tasks)
+            .for_each(|key| async move {
+                key.await;
+            })
+            .await;
+
+        client
+            .send_request(method, url, headers, body, timeout_secs)
+            .await
+    }
+}
+
 /// A high-performance `HttpClient` for HTTP requests.
 ///
 /// The client is backed by a hyper Client which keeps connections alive and
@@ -142,10 +205,11 @@ impl InnerHttpClient {
         &self,
         method: Method,
         url: String,
-        headers: HashMap<String, String>,
-        body: Option<Vec<u8>>,
+        headers: Option<HashMap<String, String>>,
+        body: Option<Bytes>,
         timeout_secs: Option<u64>,
     ) -> Result<HttpResponse, HttpClientError> {
+        let headers = headers.unwrap_or_default();
         let reqwest_url = Url::parse(url.as_str())
             .map_err(|e| HttpClientError::from(format!("URL parse error: {e}")))?;
 
@@ -169,7 +233,7 @@ impl InnerHttpClient {
 
         let request = match body {
             Some(b) => request_builder
-                .body(b)
+                .body(b.to_vec())
                 .build()
                 .map_err(HttpClientError::from)?,
             None => request_builder.build().map_err(HttpClientError::from)?,
@@ -277,13 +341,7 @@ mod tests {
 
         let client = InnerHttpClient::default();
         let response = client
-            .send_request(
-                reqwest::Method::GET,
-                format!("{url}/get"),
-                HashMap::new(),
-                None,
-                None,
-            )
+            .send_request(reqwest::Method::GET, format!("{url}/get"), None, None, None)
             .await
             .unwrap();
 
@@ -301,7 +359,7 @@ mod tests {
             .send_request(
                 reqwest::Method::POST,
                 format!("{url}/post"),
-                HashMap::new(),
+                None,
                 None,
                 None,
             )
@@ -329,13 +387,13 @@ mod tests {
         );
 
         let body_string = serde_json::to_string(&body).unwrap();
-        let body_bytes = body_string.into_bytes();
+        let body_bytes = Bytes::from(body_string.into_bytes());
 
         let response = client
             .send_request(
                 reqwest::Method::POST,
                 format!("{url}/post"),
-                HashMap::new(),
+                None,
                 Some(body_bytes),
                 None,
             )
@@ -355,7 +413,7 @@ mod tests {
             .send_request(
                 reqwest::Method::PATCH,
                 format!("{url}/patch"),
-                HashMap::new(),
+                None,
                 None,
                 None,
             )
@@ -375,7 +433,7 @@ mod tests {
             .send_request(
                 reqwest::Method::DELETE,
                 format!("{url}/delete"),
-                HashMap::new(),
+                None,
                 None,
                 None,
             )
