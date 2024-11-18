@@ -21,15 +21,14 @@ use std::{
     time::{Duration, Instant},
 };
 
-use log::LevelFilter;
 use nautilus_core::uuid::UUID4;
 use nautilus_model::identifiers::TraderId;
 
 use crate::logging::{init_logging, logger::LoggerConfig, writer::FileWriterConfig};
 
-pub fn init_logger_for_testing(stdout_level: LevelFilter) {
+pub fn init_logger_for_testing(stdout_level: Option<log::LevelFilter>) {
     let mut config = LoggerConfig::default();
-    config.stdout_level = stdout_level;
+    config.stdout_level = stdout_level.unwrap_or(log::LevelFilter::Trace);
     init_logging(
         TraderId::default(),
         UUID4::new(),
