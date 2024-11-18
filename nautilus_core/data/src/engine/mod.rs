@@ -77,7 +77,7 @@ use nautilus_model::{
         trade::TradeTick,
         Data, DataType,
     },
-    enums::{BookType, RecordFlag},
+    enums::{AggregationSource, BookType, PriceType, RecordFlag},
     identifiers::{ClientId, InstrumentId, Venue},
     instruments::{any::InstrumentAny, synthetic::SyntheticInstrument},
     orderbook::book::OrderBook,
@@ -98,7 +98,7 @@ pub struct DataEngine {
     book_intervals: HashMap<NonZeroU64, HashSet<InstrumentId>>,
     book_updaters: HashMap<InstrumentId, Rc<BookUpdater>>,
     book_snapshotters: HashMap<InstrumentId, Rc<BookSnapshotter>>,
-    bar_aggregators: Vec<Box<dyn BarAggregator>>, // TODO: dyn for now
+    bar_aggregators: HashMap<BarType, Box<dyn BarAggregator>>,
     synthetic_quote_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     synthetic_trade_feeds: HashMap<InstrumentId, Vec<SyntheticInstrument>>,
     buffered_deltas_map: HashMap<InstrumentId, Vec<OrderBookDelta>>, // TODO: Use OrderBookDeltas?
@@ -127,7 +127,7 @@ impl DataEngine {
             book_intervals: HashMap::new(),
             book_updaters: HashMap::new(),
             book_snapshotters: HashMap::new(),
-            bar_aggregators: Vec::new(),
+            bar_aggregators: HashMap::new(),
             synthetic_quote_feeds: HashMap::new(),
             synthetic_trade_feeds: HashMap::new(),
             buffered_deltas_map: HashMap::new(),
@@ -579,7 +579,7 @@ impl DataEngine {
     ) -> anyhow::Result<()> {
         let instrument_id = command.data_type.instrument_id().ok_or_else(|| {
             anyhow::anyhow!(
-                "Invalid order book deltas subscription: did not contain an `instrument_id`, {}",
+                "Invalid order book deltas subscription: did not contain an 'instrument_id', {}",
                 command.data_type
             )
         })?;
@@ -608,7 +608,7 @@ impl DataEngine {
     ) -> anyhow::Result<()> {
         let instrument_id = command.data_type.instrument_id().ok_or_else(|| {
             anyhow::anyhow!(
-                "Invalid order book snapshots subscription: did not contain an `instrument_id`, {}",
+                "Invalid order book snapshots subscription: did not contain an 'instrument_id', {}",
                 command.data_type
             )
         })?;
@@ -677,7 +677,23 @@ impl DataEngine {
     }
 
     fn handle_subscribe_bars(&mut self, command: &SubscriptionCommand) -> anyhow::Result<()> {
-        // TODO: Handle aggregators
+        let bar_type = command.data_type.bar_type();
+
+        match bar_type.aggregation_source() {
+            AggregationSource::Internal => {
+                if !self.bar_aggregators.contains_key(&bar_type.standard()) {
+                    self.start_bar_aggregator(bar_type)?;
+                }
+            }
+            AggregationSource::External => {
+                if bar_type.instrument_id().is_synthetic() {
+                    anyhow::bail!(
+                        "Cannot subscribe for externally aggregated synthetic instrument bar data"
+                    );
+                };
+            }
+        }
+
         Ok(())
     }
 
@@ -687,7 +703,7 @@ impl DataEngine {
     ) -> anyhow::Result<()> {
         let instrument_id = command.data_type.instrument_id().ok_or_else(|| {
             anyhow::anyhow!(
-                "Invalid order book snapshots subscription: did not contain an `instrument_id`, {}",
+                "Invalid order book snapshots subscription: did not contain an 'instrument_id', {}",
                 command.data_type
             )
         })?;
@@ -718,7 +734,7 @@ impl DataEngine {
     ) -> anyhow::Result<()> {
         let instrument_id = command.data_type.instrument_id().ok_or_else(|| {
             anyhow::anyhow!(
-                "Invalid order book snapshots subscription: did not contain an `instrument_id`, {}",
+                "Invalid order book snapshots subscription: did not contain an 'instrument_id', {}",
                 command.data_type
             )
         })?;
@@ -857,6 +873,66 @@ impl DataEngine {
         if !only_deltas && !msgbus.is_subscribed(topic, handler.clone()) {
             msgbus.subscribe(topic, handler, Some(self.msgbus_priority));
         }
+
+        Ok(())
+    }
+
+    fn start_bar_aggregator(&mut self, bar_type: BarType) -> anyhow::Result<()> {
+        let instrument = self
+            .cache
+            .borrow()
+            .instrument(&bar_type.instrument_id())
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Cannot start bar aggregation: no instrument found for {}",
+                    bar_type.instrument_id(),
+                )
+            })?;
+
+        // Create aggregator
+        // TODO: Determine how to handle generic Clock vs dyn Clock
+        // let aggregator = if bar_type.spec().is_time_aggregated() {
+        //     TimeBarAggregator::new(
+        //         instrument,
+        //         bar_type,
+        //         |b| self.handle_bar(b),
+        //         false,
+        //         self.clock,
+        //         self.config.time_bars_build_with_no_updates,
+        //         self.config.time_bars_timestamp_on_close,
+        //         &self.config.time_bars_interval_type,
+        //     )
+        // };
+
+        Ok(())
+    }
+
+    fn stop_bar_aggregator(&mut self, bar_type: BarType) -> anyhow::Result<()> {
+        let aggregator = self
+            .bar_aggregators
+            .remove(&bar_type.standard())
+            .ok_or_else(|| {
+                anyhow::anyhow!("Cannot stop bar aggregator: no aggregator to stop for {bar_type}")
+            })?;
+
+        // TODO: If its a `TimeBarAggregator` then call `.stop()`
+        // if let Some(aggregator) = (aggregator as &dyn BarAggregator)
+        //     .as_any()
+        //     .downcast_ref::<TimeBarAggregator<_, _>>()
+        // {
+        //     aggregator.stop();
+        // };
+
+        if bar_type.is_composite() {
+            let composite_bar_type = bar_type.composite();
+            // TODO: Unsubscribe the `aggregator.handle_bar`
+        } else if bar_type.spec().price_type == PriceType::Last {
+            // TODO: Unsubscribe `aggregator.handle_trade_tick`
+            todo!()
+        } else {
+            // TODO: Unsubscribe `aggregator.handle_quote_tick`
+            todo!()
+        };
 
         Ok(())
     }
