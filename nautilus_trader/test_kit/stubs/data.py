@@ -192,7 +192,7 @@ class TestDataStubs:
         return BarType(TestIdStubs.adabtc_binance_id(), TestDataStubs.bar_spec_1min_last())
 
     @staticmethod
-    def bar_5decimal() -> Bar:
+    def bar_5decimal(ts_event=0, ts_init=0) -> Bar:
         return Bar(
             bar_type=TestDataStubs.bartype_audusd_1min_bid(),
             open=Price.from_str("1.00002"),
@@ -200,8 +200,8 @@ class TestDataStubs:
             low=Price.from_str("1.00001"),
             close=Price.from_str("1.00003"),
             volume=Quantity.from_int(1_000_000),
-            ts_event=0,
-            ts_init=0,
+            ts_event=ts_event,
+            ts_init=ts_init,
         )
 
     @staticmethod

@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 None
+- Improved `Cache` behavior when adding more recent quotes, trades, or bars (now adds to cache)
 
 ### Internal Improvements
 - Improve live engines error logging (will now log all exceptions rather than just `RuntimeError`)
