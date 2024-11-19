@@ -14,7 +14,7 @@ None
 - Renamed `TriggerType.LAST_TRADE` to `LAST_PRICE`
 
 ### Fixes
-None
+- Fixed missing venue -> exchange mappings for Tardis integration
 
 ---
 

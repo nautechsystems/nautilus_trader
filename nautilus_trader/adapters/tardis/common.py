@@ -64,6 +64,30 @@ def infer_tardis_exchange_str(instrument: Instrument) -> str:  # noqa: C901 (too
                 return "bybit-options"
             else:
                 return "bybit"
+        case "CRYPTO_COM":
+            if isinstance(instrument, CurrencyPair):
+                return "crypto-com"
+            else:
+                return "crypto-com-derivatives"
+        case "GATEIO":
+            if isinstance(instrument, CurrencyPair):
+                return "gate-io"
+            else:
+                return "gate-io-futures"
+        case "HUOBI":
+            if isinstance(instrument, CurrencyPair):
+                return "huobi"
+            elif isinstance(instrument, CryptoPerpetual):
+                return "huobi-dm-linear-swap"
+            elif isinstance(instrument, OptionsContract):
+                return "huobi-dm-options"
+            else:
+                return "huobi-dm-swap"
+        case "KRAKEN":
+            if isinstance(instrument, CurrencyPair):
+                return "kraken"
+            else:
+                return "kraken-futures"
         case "OKX":
             if isinstance(instrument, CurrencyPair):
                 return "okex"
