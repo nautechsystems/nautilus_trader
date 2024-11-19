@@ -51,6 +51,8 @@ instrument_ids = [
     # InstrumentId.from_str("BTCUSDT.BINANCE"),
     # InstrumentId.from_str("XBTUSDT.BITMEX"),
     # InstrumentId.from_str("ETHUSDT.BITMEX"),
+    # InstrumentId.from_str("BTC_USDT.GATEIO"),
+    # InstrumentId.from_str("BTC_USDT-PERP.GATEIO"),
 ]
 
 # See supported venues https://nautilustrader.io/docs/nightly/integrations/tardis#venues

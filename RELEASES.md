@@ -7,7 +7,8 @@ None
 - Improved `Cache` behavior when adding more recent quotes, trades, or bars (now adds to cache)
 
 ### Internal Improvements
-- Improve live engines error logging (will now log all exceptions rather than just `RuntimeError`)
+- Improved live engines error logging (will now log all exceptions rather than just `RuntimeError`)
+- Improved symbol normalization for Tardis
 - Refined `HttpClient` for use directly from Rust
 - Upgraded `datafusion` crate to v43.0.0 (#2056), thanks @twitu
 
