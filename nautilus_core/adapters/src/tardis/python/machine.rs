@@ -87,13 +87,25 @@ impl TardisMachineClient {
     #[pyo3(name = "replay")]
     fn py_replay<'py>(
         &self,
+        instruments: Vec<InstrumentMiniInfo>,
         options: Vec<ReplayNormalizedRequestOptions>,
         callback: PyObject,
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
+        let map = if !instruments.is_empty() {
+            let mut instrument_map: HashMap<TardisInstrumentKey, Arc<InstrumentMiniInfo>> =
+                HashMap::new();
+            for inst in instruments {
+                let key = inst.as_tardis_instrument_key();
+                instrument_map.insert(key, Arc::new(inst.clone()));
+            }
+            instrument_map
+        } else {
+            self.instruments.clone()
+        };
+
         let base_url = self.base_url.clone();
         let replay_signal = self.replay_signal.clone();
-        let map = self.instruments.clone();
 
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let stream = replay_normalized(&base_url, options, replay_signal)

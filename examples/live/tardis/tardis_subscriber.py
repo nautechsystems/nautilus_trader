@@ -156,7 +156,7 @@ class DataSubscriber(Strategy):
             self.subscribe_trade_ticks(instrument_id, client_id=self.client_id)
 
             # from nautilus_trader.model.data import BarType
-            # bar_type = BarType.from_str(f"{instrument_id}-10-TICK-LAST-EXTERNAL")
+            # bar_type = BarType.from_str(f"{instrument_id}-1-SECOND-LAST-EXTERNAL")
             # self.subscribe_bars(bar_type, client_id=self.client_id)
 
             # self.subscribe_instrument_status(instrument_id)
@@ -173,7 +173,7 @@ class DataSubscriber(Strategy):
             # self.request_data(status_data_type)
 
             # from nautilus_trader.model.data import BarType
-            # self.request_bars(BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL"))
+            # self.request_bars(BarType.from_str(f"{instrument_id}-1-SECOND-LAST-EXTERNAL"))
 
     def on_stop(self) -> None:
         """
