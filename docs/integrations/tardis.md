@@ -425,6 +425,8 @@ you must filter for the desired venues using an `InstrumentProviderConfig`:
 ```python
 from nautilus_trader.config import InstrumentProviderConfig
 
+# See supported venues https://nautilustrader.io/docs/nightly/integrations/tardis#venues
+venues = {"BINANCE", "BYBIT"}
 filters = {"venues": frozenset(venues)}
 instrument_provider_config = InstrumentProviderConfig(load_all=True, filters=filters)
 ```

@@ -20,6 +20,7 @@ import pandas as pd
 from nautilus_trader.adapters.tardis.common import convert_nautilus_bar_type_to_tardis_data_type
 from nautilus_trader.adapters.tardis.common import convert_nautilus_data_type_to_tardis_data_type
 from nautilus_trader.adapters.tardis.common import create_instrument_info
+from nautilus_trader.adapters.tardis.common import create_replay_normalized_request_options
 from nautilus_trader.adapters.tardis.common import create_stream_normalized_request_options
 from nautilus_trader.adapters.tardis.common import get_ws_client_key
 from nautilus_trader.adapters.tardis.config import TardisDataClientConfig
@@ -32,6 +33,7 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
 from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import OrderBookDelta
@@ -40,6 +42,7 @@ from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
@@ -413,9 +416,78 @@ class TardisDataClient(LiveMarketDataClient):
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
     ) -> None:
-        self._log.error(
-            f"Cannot request historical bars for {bar_type}: not supported in this version",
+        if bar_type.is_internally_aggregated():
+            self._log.error(
+                f"Cannot request {bar_type} bars: "
+                f"only historical bars with EXTERNAL aggregation available from Tardis",
+            )
+            return
+
+        if bar_type.spec.price_type != PriceType.LAST:
+            self._log.error(
+                f"Cannot request {bar_type} bars: "
+                f"only historical bars for LAST price type available through Tardis",
+            )
+            return
+
+        instrument = self._cache.instrument(bar_type.instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot request bars: no instrument for {bar_type.instrument_id}")
+            return
+
+        instrument_info = create_instrument_info(instrument)
+        tardis_exchange_str = instrument_info.exchange
+        raw_symbol_str = instrument.raw_symbol.value
+        tardis_data_type = convert_nautilus_bar_type_to_tardis_data_type(bar_type)
+
+        self._log.info(
+            f"Subscribing replay: exchange={tardis_exchange_str}, raw_symbol={raw_symbol_str}, data_type={tardis_data_type}",
+            LogColor.MAGENTA,
         )
+
+        date_now_utc = self._clock.utc_now().date()
+
+        replay_request = create_replay_normalized_request_options(
+            exchange=tardis_exchange_str,
+            symbols=[raw_symbol_str],
+            from_date=start.date() if start is not None else date_now_utc - pd.Timedelta(days=1),
+            to_date=end.date() if end is not None else date_now_utc,
+            data_types=[tardis_data_type],
+        )
+
+        bar_capsules: list[object] = []
+
+        await asyncio.ensure_future(
+            self._ws_client.replay(
+                instruments=[instrument_info],
+                options=[replay_request],
+                callback=bar_capsules.append,
+            ),
+        )
+
+        self._log.info(
+            f"Streamed {len(bar_capsules):,} {bar_type} bars from replay",
+            LogColor.MAGENTA,
+        )
+
+        if limit:
+            bar_capsules = bar_capsules[-limit:]
+
+        # Convert capsules to bars and apply time filters in one pass
+        bars: list[Bar] = [
+            bar
+            for pycapsule in bar_capsules
+            if (bar := capsule_to_data(pycapsule))
+            and (start is None or bar.ts_event >= start)
+            and (end is None or bar.ts_event <= end)
+        ]
+
+        self._log.info(
+            f"Sending response with {len(bars):,} bars after filtering",
+            LogColor.MAGENTA,
+        )
+
+        self._handle_bars(bar_type, bars, None, correlation_id)
 
     def _handle_msg(
         self,
