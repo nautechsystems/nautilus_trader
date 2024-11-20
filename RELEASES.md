@@ -11,6 +11,7 @@ None
 - Improved symbol normalization for Tardis
 - Refined `HttpClient` for use directly from Rust
 - Upgraded `datafusion` crate to v43.0.0 (#2056), thanks @twitu
+- Efficiently clean up expired timers in clocks (#2064), thanks @twitu
 
 ### Breaking Changes
 - Renamed `TriggerType.LAST_TRADE` to `LAST_PRICE`
