@@ -465,7 +465,7 @@ class TardisDataClient(LiveMarketDataClient):
             ),
         )
 
-        self._log.info(
+        self._log.debug(
             f"Streamed {len(bar_capsules):,} {bar_type} bars from replay",
             LogColor.MAGENTA,
         )
@@ -482,7 +482,7 @@ class TardisDataClient(LiveMarketDataClient):
             and (end is None or bar.ts_event <= end)
         ]
 
-        self._log.info(
+        self._log.debug(
             f"Sending response with {len(bars):,} bars after filtering",
             LogColor.MAGENTA,
         )
