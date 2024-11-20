@@ -81,12 +81,6 @@ pub fn normalize_symbol_str(
             symbol.push_str("-PERP");
         }
 
-        Exchange::HuobiDmSwap | Exchange::HuobiDmLinearSwap
-            if instrument_type == InstrumentType::Perpetual =>
-        {
-            symbol.push_str("-PERP");
-        }
-
         _ => {}
     }
 
