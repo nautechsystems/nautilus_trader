@@ -31,7 +31,7 @@ impl LongRatio {
     }
 
     #[pyo3(name = "calculate_from_positions")]
-    fn py_calculate_from_positions(&mut self, positions: Vec<Position>) -> Option<String> {
+    fn py_calculate_from_positions(&mut self, positions: Vec<Position>) -> Option<f64> {
         self.calculate_from_positions(&positions)
     }
 }
