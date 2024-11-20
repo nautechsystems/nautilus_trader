@@ -49,6 +49,7 @@ instrument_ids = [
     # InstrumentId.from_str("ES.FUT.GLBX"),
     # InstrumentId.from_str("CL.FUT.GLBX"),
     # InstrumentId.from_str("LO.OPT.GLBX"),
+    # InstrumentId.from_str("AAPL.XNAS"),
     # InstrumentId.from_str("AAPL.IEXG"),
 ]
 
@@ -157,7 +158,9 @@ class DataSubscriber(Strategy):
 
             self.subscribe_quote_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
             self.subscribe_trade_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
+            # self.subscribe_bars(BarType.from_str(f"{instrument_id}-1-SECOND-LAST-EXTERNAL"))
             # self.subscribe_instrument_status(instrument_id, client_id=DATABENTO_CLIENT_ID)
+
             # self.request_quote_ticks(instrument_id)
             # self.request_trade_ticks(instrument_id)
 
