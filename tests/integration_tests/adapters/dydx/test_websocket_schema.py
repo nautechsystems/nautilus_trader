@@ -205,8 +205,8 @@ def test_account_parse_to_account_balances() -> None:
     expected_result = [
         AccountBalance(
             total=Money(Decimal("11.62332500"), Currency.from_str("USDC")),
-            locked=Money(Decimal("10.00590000"), Currency.from_str("USDC")),
-            free=Money(Decimal("1.61742500"), Currency.from_str("USDC")),
+            locked=Money(Decimal("0"), Currency.from_str("USDC")),
+            free=Money(Decimal("11.62332500"), Currency.from_str("USDC")),
         ),
     ]
 
@@ -228,8 +228,8 @@ def test_account_parse_to_account_balances_order_best_effort_canceled() -> None:
     expected_result = [
         AccountBalance(
             total=Money(Decimal("11.62332500"), Currency.from_str("USDC")),
-            locked=Money(Decimal("10.00590000"), Currency.from_str("USDC")),
-            free=Money(Decimal("1.61742500"), Currency.from_str("USDC")),
+            locked=Money(Decimal("0"), Currency.from_str("USDC")),
+            free=Money(Decimal("11.62332500"), Currency.from_str("USDC")),
         ),
     ]
 
@@ -660,7 +660,7 @@ def test_account_channel_data_order_best_effort_canceled() -> None:
         order_side=OrderSide.SELL,
         order_type=OrderType.LIMIT,
         time_in_force=TimeInForce.IOC,
-        order_status=OrderStatus.PENDING_CANCEL,
+        order_status=OrderStatus.CANCELED,
         price=Price(2519.4, 4),
         quantity=Quantity(0.003, 5),
         filled_qty=Quantity(0, 5),
