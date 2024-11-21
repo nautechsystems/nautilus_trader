@@ -3,8 +3,9 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
 - Improved `Cache` behavior when adding more recent quotes, trades, or bars (now adds to cache)
+- Added `STOP_MARKET` and `STOP_LIMIT` order support for dYdX (#2066), thanks @davidsblom
+- Added `max_reconnection_tries` to data client config for dYdX (#2066), thanks @davidsblom
 
 ### Internal Improvements
 - Improved live engines error logging (will now log all exceptions rather than just `RuntimeError`)
@@ -18,6 +19,7 @@ None
 
 ### Fixes
 - Fixed missing venue -> exchange mappings for Tardis integration
+- Fixed account balance and order status parsing for dYdX (#2067), thanks @davidsblom
 
 ---
 
