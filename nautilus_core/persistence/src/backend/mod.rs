@@ -17,3 +17,4 @@
 
 pub mod kmerge_batch;
 pub mod session;
+pub mod catalog;

@@ -3188,6 +3188,7 @@ dependencies = [
  "criterion",
  "datafusion",
  "futures",
+ "itertools 0.13.0",
  "log",
  "nautilus-core",
  "nautilus-model",
