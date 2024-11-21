@@ -445,6 +445,12 @@ impl WebSocketClient {
         }
     }
 
+    pub async fn send_text(&self, data: String) -> Result<(), Error> {
+        tracing::trace!("Sending text: {data:?}");
+        let mut guard = self.writer.lock().await;
+        guard.send(Message::Text(data)).await
+    }
+
     pub async fn send_bytes(&self, data: Vec<u8>) -> Result<(), Error> {
         tracing::trace!("Sending bytes: {data:?}");
         let mut guard = self.writer.lock().await;
