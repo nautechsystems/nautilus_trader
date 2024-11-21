@@ -2770,6 +2770,7 @@ class WebSocketConfig:
         heartbeat: int | None = None,
         heartbeat_msg: str | None = None,
         ping_handler: Callable[..., Any] | None = None,
+        max_reconnection_tries: int | None = None,
     ) -> None: ...
 
 class WebSocketClient:
