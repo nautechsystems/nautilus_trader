@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Literal
 
 from ibapi.common import MarketDataTypeEnum as IBMarketDataTypeEnum
@@ -24,6 +25,12 @@ from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveDataClientConfig
 from nautilus_trader.config import LiveExecClientConfig
 from nautilus_trader.config import NautilusConfig
+
+
+class SymbologyMethod(Enum):
+    DATABENTO = "databento"
+    IB_SIMPLIFIED = "simplified"
+    IB_RAW = "raw"
 
 
 class DockerizedIBGatewayConfig(NautilusConfig, frozen=True):
@@ -93,12 +100,18 @@ class InteractiveBrokersInstrumentProviderConfig(InstrumentProviderConfig, froze
         correspond to the instruments that the  provider preloads. It's important to note that while the `load_ids`
         option can be used for loading individual instruments, using `load_contracts` allows for a more versatile
         loading of several related instruments like Futures and Options that share the same underlying asset.
-    strict_symbology : bool, optional
-        Determines the symbology format used for identifying instruments. If set to True,
-        a strict symbology format is used, as provided by InteractiveBrokers where instrument symbols
-        are detailed in the format `localSymbol=secType.exchange` (e.g., `EUR.USD=CASH.IDEALPRO`).
-        If False, a simplified symbology format is applied, using a notation like `EUR/USD.IDEALPRO`.
-        The default value is False, favoring simplified symbology unless specified otherwise.
+    symbology_method : SymbologyMethod, optional
+        Specifies the symbology format used for identifying financial instruments. The available options are:
+        - IB_RAW: Uses the raw symbology format provided by Interactive Brokers. Instrument symbols follow a detailed
+        format such as `localSymbol=secType.exchange` (e.g., `EUR.USD=CASH.IDEALPRO`).
+        While this format may lack visual clarity, it is robust and supports instruments from any region,
+        especially those with non-standard symbology where simplified parsing may fail.
+        - IB_SIMPLIFIED: Adopts a simplified symbology format specific to Interactive Brokers which uses Venue acronym.
+        Instrument symbols use a cleaner notation, such as `ESZ28.CME` or `EUR/USD.IDEALPRO`.
+        This format prioritizes ease of readability and usability and is default.
+        - DATABENTO: Utilizes the symbology format defined by the Databento adapter, ensuring seamless integration with
+        `DatabentoDataClient` when used alongside `InteractiveBrokersExecClientConfig`. Example notation includes
+        `ESZ8.GLBX`. Note that this symbology is only compatible with venues supported by Databento.
     build_options_chain: bool (default: None)
         Search for full option chain. Global setting for all applicable instruments.
     build_futures_chain: bool (default: None)
@@ -142,7 +155,7 @@ class InteractiveBrokersInstrumentProviderConfig(InstrumentProviderConfig, froze
             ),
         )
 
-    strict_symbology: bool = False
+    symbology_method: SymbologyMethod = SymbologyMethod.IB_SIMPLIFIED
     load_contracts: frozenset[IBContract] | None = None
     build_options_chain: bool | None = None
     build_futures_chain: bool | None = None

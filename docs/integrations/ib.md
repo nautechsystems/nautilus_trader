@@ -101,11 +101,11 @@ To troubleshoot TWS API incoming message issues, consider starting at the `Inter
 
 ## Symbology
 
-The InteractiveBrokersInstrumentProvider supports two methods for constructing InstrumentId instances, which can be configured via the strict_symbology flag in InteractiveBrokersInstrumentProviderConfig.
+The InteractiveBrokersInstrumentProvider supports three methods for constructing InstrumentId instances, which can be configured via the `symbology_method` enum in `InteractiveBrokersInstrumentProviderConfig`.
 
 ### Simplified Symbology
 
-When strict_symbology is set to False (the default setting), the system utilizes the following parsing rules for symbology:
+When symbology_method is set to `IB_SIMPLIFIED` (the default setting), the system utilizes the following parsing rules for symbology:
 
 - Forex: The format is `{symbol}/{currency}.{exchange}`, where the currency pair is constructed as `EUR/USD.IDEALPRO`.
 - Stocks: The format is `{localSymbol}.{primaryExchange}`. Any spaces in localSymbol are replaced with -, e.g., `BF-B.NYSE`.
@@ -113,15 +113,22 @@ When strict_symbology is set to False (the default setting), the system utilizes
 - Options: The format is `{localSymbol}.{exchange}`, with all spaces removed from localSymbol, e.g., `AAPL230217P00155000.SMART`.
 - Index: The format is `^{localSymbol}.{exchange}`, e.g., `^SPX.CBOE`.
 
-### Strict Symbology
+### Raw Symbology
 
-Setting strict_symbology to True enforces stricter parsing rules that align directly with the fields defined in the ibapi. The format for each security type is as follows:
+Setting symbology_method to `IB_RAW` enforces stricter parsing rules that align directly with the fields defined in the ibapi. The format for each security type is as follows:
 
 - CFDs: `{localSymbol}={secType}.IBCFD`
 - Commodities: `{localSymbol}={secType}.IBCMDTY`
 - Default for Other Types: `{localSymbol}={secType}.{exchange}`
 
 This configuration ensures that the symbology is explicitly defined and matched with the Interactive Brokers API requirements, providing clear and consistent instrument identification.
+While this format may lack visual clarity, it is robust and supports instruments from any region,
+especially those with non-standard symbology where simplified parsing may fail.
+
+### Databento Symbology
+
+Setting symbology_method to `DATABENTO`, the system utilized the symbology rules defined by `DatabentoInstrumentProvider`.
+Note that this symbology is only compatible with venues supported by Databento and there is not automatic fall-back to other symbology methods to avoid any conflicts.
 
 ## Instruments & Contracts
 
@@ -129,7 +136,7 @@ In IB, a NautilusTrader `Instrument` is equivalent to a [Contract](https://ibkrc
 
 To search for contract information, use the [IB Contract Information Center](https://pennies.interactivebrokers.com/cstools/contract_info/).
 
-It's typically suggested to utilize `strict_symbology=False` (which is the default setting). This provides a cleaner and more intuitive use of `InstrumentId` by employing `load_ids` in the `InteractiveBrokersInstrumentProviderConfig`, following the guidelines established in the Simplified Symbology section. 
+It's typically suggested to utilize `symbology_method=SymbologyMethod.IB_SIMPLIFIED` (which is the default setting). This provides a cleaner and more intuitive use of `InstrumentId` by employing `load_ids` in the `InteractiveBrokersInstrumentProviderConfig`, following the guidelines established in the Simplified Symbology section. 
 In order to load multiple Instruments, such as Options Instrument without having to specify each strike explicitly, you would need to utilize `load_contracts` with provided instances of `IBContract`.
 
 ```python
@@ -232,9 +239,11 @@ Additionally, this provider offers specialized methods to build and retrieve the
 
 ```python
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
+from nautilus_trader.adapters.interactive_brokers.config import SymbologyMethod
 
 
 instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
+    symbology_method=SymbologyMethod.IB_SIMPLIFIED,
     build_futures_chain=False,  # Set to True if fetching futures
     build_options_chain=False,  # Set to True if fetching options
     min_expiry_days=10,         # Relevant for futures/options with expiration
@@ -258,6 +267,16 @@ instrument_provider_config = InteractiveBrokersInstrumentProviderConfig(
     ),
 )
 ```
+
+### Integration with Databento Data Client
+To integrate with `DatabentoDataClient`, set the `symbology_method` in `InteractiveBrokersInstrumentProviderConfig`
+to `SymbologyMethod.DATABENTO`. This ensures seamless compatibility with Databento symbology, eliminating the need
+for manual translations or mappings within your strategy.
+
+When using this configuration:
+- `InteractiveBrokersInstrumentProvider` will not publish instruments to the cache to prevent conflicts.
+- Instruments Cache management must be handled exclusively by `DatabentoDataClient`.
+
 
 ### Data Client
 

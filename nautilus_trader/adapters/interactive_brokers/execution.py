@@ -32,6 +32,7 @@ from nautilus_trader.adapters.interactive_brokers.client.common import IBPositio
 from nautilus_trader.adapters.interactive_brokers.common import IB_VENUE
 from nautilus_trader.adapters.interactive_brokers.common import IBOrderTags
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
+from nautilus_trader.adapters.interactive_brokers.config import SymbologyMethod
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import MAP_ORDER_ACTION
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import MAP_ORDER_FIELDS
 from nautilus_trader.adapters.interactive_brokers.parsing.execution import MAP_ORDER_STATUS
@@ -502,7 +503,10 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 )
                 continue
 
-            if not self._cache.instrument(instrument.id):
+            if (
+                self.instrument_provider.config.symbology_method != SymbologyMethod.DATABENTO
+                and not self._cache.instrument(instrument.id)
+            ):
                 self._handle_data(instrument)
 
             position_status = PositionStatusReport(
@@ -532,7 +536,7 @@ class InteractiveBrokersExecutionClient(LiveExecutionClient):
                 else:
                     setattr(ib_order, field, fn(value))
 
-        if self._cache.instrument(order.instrument_id).is_inverse:
+        if self.instrument_provider.find(order.instrument_id).is_inverse:
             ib_order.cashQty = int(ib_order.totalQuantity)
             ib_order.totalQuantity = 0
 
