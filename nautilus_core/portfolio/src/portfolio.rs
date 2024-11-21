@@ -16,11 +16,10 @@
 //! Provides a generic `Portfolio` for all environments.
 
 // Under development
-#![allow(dead_code)]
-#![allow(unused_variables)]
 // improve error handling: TODO
 
 use std::{
+    any::Any,
     cell::RefCell,
     collections::{HashMap, HashSet},
     rc::Rc,
@@ -38,10 +37,18 @@ use nautilus_analysis::{
         winner_avg::AvgWinner, winner_max::MaxWinner, winner_min::MinWinner,
     },
 };
-use nautilus_common::{cache::Cache, clock::Clock, msgbus::MessageBus};
+use nautilus_common::{
+    cache::Cache,
+    clock::Clock,
+    messages::data::DataResponse,
+    msgbus::{
+        handler::{MessageHandler, ShareableMessageHandler},
+        MessageBus,
+    },
+};
 use nautilus_model::{
     accounts::any::AccountAny,
-    data::quote::QuoteTick,
+    data::{quote::QuoteTick, Data},
     enums::{OrderSide, OrderType, PositionSide, PriceType},
     events::{account::state::AccountState, order::OrderEventAny, position::PositionEvent},
     identifiers::{InstrumentId, Venue},
@@ -57,6 +64,86 @@ use rust_decimal::{
 use ustr::Ustr;
 
 use crate::manager::AccountsManager;
+
+struct UpdateQuoteTickHandler {
+    id: Ustr,
+    callback: Box<dyn Fn(&QuoteTick)>,
+}
+
+impl MessageHandler for UpdateQuoteTickHandler {
+    fn id(&self) -> Ustr {
+        self.id
+    }
+
+    fn handle(&self, msg: &dyn Any) {
+        (self.callback)(msg.downcast_ref::<&QuoteTick>().unwrap());
+    }
+    fn handle_response(&self, _resp: DataResponse) {}
+    fn handle_data(&self, _data: Data) {}
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+struct UpdateOrderHandler {
+    id: Ustr,
+    callback: Box<dyn Fn(&OrderEventAny)>,
+}
+
+impl MessageHandler for UpdateOrderHandler {
+    fn id(&self) -> Ustr {
+        self.id
+    }
+
+    fn handle(&self, msg: &dyn Any) {
+        (self.callback)(msg.downcast_ref::<&OrderEventAny>().unwrap());
+    }
+    fn handle_response(&self, _resp: DataResponse) {}
+    fn handle_data(&self, _data: Data) {}
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+struct UpdatePositionHandler {
+    id: Ustr,
+    callback: Box<dyn Fn(&PositionEvent)>,
+}
+
+impl MessageHandler for UpdatePositionHandler {
+    fn id(&self) -> Ustr {
+        self.id
+    }
+
+    fn handle(&self, msg: &dyn Any) {
+        (self.callback)(msg.downcast_ref::<&PositionEvent>().unwrap());
+    }
+    fn handle_response(&self, _resp: DataResponse) {}
+    fn handle_data(&self, _data: Data) {}
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+struct UpdateAccountHandler {
+    id: Ustr,
+    callback: Box<dyn Fn(&AccountState)>,
+}
+
+impl MessageHandler for UpdateAccountHandler {
+    fn id(&self) -> Ustr {
+        self.id
+    }
+
+    fn handle(&self, msg: &dyn Any) {
+        (self.callback)(msg.downcast_ref::<&AccountState>().unwrap());
+    }
+    fn handle_response(&self, _resp: DataResponse) {}
+    fn handle_data(&self, _data: Data) {}
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
 
 pub struct Portfolio {
     clock: Rc<RefCell<dyn Clock>>,
@@ -97,34 +184,90 @@ impl Portfolio {
         analyzer.register_statistic(Arc::new(RiskReturnRatio {}));
         analyzer.register_statistic(Arc::new(LongRatio::new(None)));
 
-        {
-            let burrowed_msgbus = msgbus.borrow();
-
-            // todo
-            // Register endpoints
-            // burrowed_msgbus.register("Portfolio.update_account", update_account);
-            // msgbus
-            //     .borrow()
-            //     .register("Portfolio.update_account", Self::update_account);
-
-            // Require subscriptions
-            // burrowed_msgbus.subscribe("data.quotes.*", handler, Some(10));
-            // burrowed_msgbus.subscribe("events.order.*", handler, Some(10));
-            // burrowed_msgbus.subscribe("events.position.*", handler, Some(10));
-            // burrowed_msgbus.subscribe("events.account.*", handler, Some(10));
-        }
-        Self {
+        let portfolio = Self {
             clock: clock.clone(),
             cache: cache.clone(),
-            msgbus,
-            accounts: AccountsManager::new(clock, cache),
+            msgbus: msgbus.clone(),
+            accounts: AccountsManager::new(clock, cache.clone()),
             analyzer,
             unrealized_pnls: HashMap::new(),
             realized_pnls: HashMap::new(),
             net_positions: HashMap::new(),
             pending_calcs: HashSet::new(),
             initialized: false,
-        }
+        };
+
+        let portfolio_rc = Rc::new(RefCell::new(portfolio));
+        Self::register_message_handlers(&msgbus, &cache, &portfolio_rc);
+
+        Rc::try_unwrap(portfolio_rc)
+            .map_err(|_| "Failed to unwrap Portfolio")
+            .unwrap()
+            .into_inner()
+    }
+
+    fn register_message_handlers(
+        msgbus: &Rc<RefCell<MessageBus>>,
+        cache: &Rc<RefCell<Cache>>,
+        portfolio: &Rc<RefCell<Self>>,
+    ) {
+        // previously-used method
+        let update_account_handler = {
+            let cache = cache.clone();
+            ShareableMessageHandler(Rc::new(UpdateAccountHandler {
+                id: Ustr::from("TODO:FIX-ME"),
+                callback: Box::new(move |event: &AccountState| {
+                    let mut borrowed_cache = cache.borrow_mut();
+                    if let Some(existing) = borrowed_cache.account(&event.account_id) {
+                        let mut account = existing.clone();
+                        account.apply(event.clone());
+                        borrowed_cache.update_account(account.clone()).unwrap();
+                    } else {
+                        let account = AccountAny::from_events(vec![event.clone()]).unwrap();
+                        borrowed_cache.add_account(account).unwrap();
+                    };
+                    log::info!("Updated account {}", event);
+                }),
+            }))
+        };
+
+        // new-experimental method
+        let update_position_handler = {
+            let portfolio = portfolio.clone();
+            ShareableMessageHandler(Rc::new(UpdatePositionHandler {
+                id: Ustr::from("TODO:FIX-ME"),
+                callback: Box::new(move |event: &PositionEvent| {
+                    portfolio.borrow_mut().update_position(event);
+                }),
+            }))
+        };
+
+        let update_quote_handler = {
+            let portfolio = portfolio.clone();
+            ShareableMessageHandler(Rc::new(UpdateQuoteTickHandler {
+                id: Ustr::from("TODO:FIX-ME"),
+                callback: Box::new(move |quote: &QuoteTick| {
+                    portfolio.borrow_mut().update_quote_tick(quote);
+                }),
+            }))
+        };
+
+        let update_order_handler = {
+            let portfolio = portfolio.clone();
+            ShareableMessageHandler(Rc::new(UpdateOrderHandler {
+                id: Ustr::from("TODO:FIX-ME"),
+                callback: Box::new(move |event: &OrderEventAny| {
+                    portfolio.borrow_mut().update_order(event);
+                }),
+            }))
+        };
+
+        let mut borrowed_msgbus = msgbus.borrow_mut();
+        borrowed_msgbus.register("Portfolio.update_account", update_account_handler.clone());
+        borrowed_msgbus.subscribe("data.quotes.*", update_quote_handler, Some(10));
+        borrowed_msgbus.subscribe("events.order.*", update_order_handler, Some(10));
+        borrowed_msgbus.subscribe("events.position.*", update_position_handler, Some(10));
+        borrowed_msgbus.subscribe("events.account.*", update_account_handler, Some(10));
     }
 
     pub fn reset(&mut self) {
@@ -721,15 +864,13 @@ impl Portfolio {
     pub fn update_account(&mut self, event: &AccountState) {
         let mut borrowed_cache = self.cache.borrow_mut();
 
-        let account = if let Some(existing) = borrowed_cache.account(&event.account_id) {
+        if let Some(existing) = borrowed_cache.account(&event.account_id) {
             let mut account = existing.clone();
             account.apply(event.clone());
             borrowed_cache.update_account(account.clone()).unwrap();
-            account
         } else {
             let account = AccountAny::from_events(vec![event.clone()]).unwrap();
-            borrowed_cache.add_account(account.clone()).unwrap();
-            account
+            borrowed_cache.add_account(account).unwrap();
         };
 
         log::info!("Updated {}", event);
@@ -805,15 +946,16 @@ impl Portfolio {
                 return;
             };
 
-        if let OrderEventAny::Filled(order_filled) = event {
-            let _ =
-                self.accounts
-                    .update_balances(account.clone(), instrument.clone(), *order_filled);
+        // TODO: fix borrowing issue
+        // if let OrderEventAny::Filled(order_filled) = event {
+        //     let _ =
+        //         self.accounts
+        //             .update_balances(account.clone(), instrument.clone(), *order_filled);
 
-            // let unrealized_pnl = self.calculate_unrealized_pnl(&order_filled.instrument_id); : TODO
-            // self.unrealized_pnls
-            //     .insert(event.instrument_id(), unrealized_pnl.unwrap());
-        }
+        //     let unrealized_pnl = self.calculate_unrealized_pnl(&order_filled.instrument_id);
+        //     self.unrealized_pnls
+        //         .insert(event.instrument_id(), unrealized_pnl.unwrap());
+        // }
 
         let orders_open =
             borrowed_cache.orders_open(None, Some(&event.instrument_id()), None, None);
