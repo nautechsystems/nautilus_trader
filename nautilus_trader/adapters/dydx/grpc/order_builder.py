@@ -240,7 +240,7 @@ class OrderBuilder:
         good_til_block: int | None = None,
         good_til_block_time: int | None = None,
         execution: OrderExecution = OrderExecution.DEFAULT,
-        conditional_order_trigger_subticks: int = 0,
+        trigger_price: float | None = None,
     ) -> Order:
         """
         Create a new Order instance.
@@ -271,7 +271,9 @@ class OrderBuilder:
             not yet filled.
         execution : OrderExecution, default OrderExecution.DEFAULT
             OrderExecution enum: DEFAULT, IOC, FOK or POST_ONLY
-        conditional_order_trigger_subticks : int, default value is 0.
+        trigger_price : float, optional.
+            The price of the conditional limit order. Only applicable to STOP_LIMIT,
+            STOP_MARKET, TAKE_PROFIT_MARKET or TAKE_PROFIT_LIMIT orders.
 
         """
         order_time_in_force = OrderHelper.calculate_time_in_force(
@@ -282,6 +284,10 @@ class OrderBuilder:
         )
         client_metadata = OrderHelper.calculate_client_metadata(order_type)
         condition_type = OrderHelper.calculate_condition_type(order_type)
+        conditional_order_trigger_subticks = 0
+
+        if trigger_price is not None:
+            conditional_order_trigger_subticks = self.calculate_subticks(trigger_price)
 
         return Order(
             order_id=order_id,

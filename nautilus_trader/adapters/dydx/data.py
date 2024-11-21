@@ -133,6 +133,7 @@ class DYDXDataClient(LiveMarketDataClient):
             handler_reconnect=None,
             base_url=ws_base_url,
             loop=loop,
+            max_reconnection_tries=config.max_ws_reconnection_tries,
         )
 
         # HTTP API
