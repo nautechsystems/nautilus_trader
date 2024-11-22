@@ -445,6 +445,17 @@ class TardisDataClient(LiveMarketDataClient):
             LogColor.MAGENTA,
         )
 
+        if start and start.date() == self._clock.utc_now().date():
+            self._log.error(
+                f"Cannot request bars: `start` cannot fall on the current UTC date, was {start.date()} (try an earlier `start`)",
+            )
+            return
+        if start and end and start.date() == end.date():
+            self._log.error(
+                f"Cannot request bars: `start` and `end` cannot fall on the same date, was {start.date()} (try an earlier `start`)",
+            )
+            return
+
         date_now_utc = self._clock.utc_now().date()
 
         replay_request = create_replay_normalized_request_options(
@@ -478,8 +489,8 @@ class TardisDataClient(LiveMarketDataClient):
             bar
             for pycapsule in bar_capsules
             if (bar := capsule_to_data(pycapsule))
-            and (start is None or bar.ts_event >= start)
-            and (end is None or bar.ts_event <= end)
+            and (start is None or bar.ts_event >= start.value)
+            and (end is None or bar.ts_event <= end.value)
         ]
 
         self._log.debug(
