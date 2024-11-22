@@ -2496,7 +2496,6 @@ impl Cache {
 
         let (bid_quote, ask_quote) = self.build_quote_table(&venue);
 
-        // TODO: improve error and complete this fn
         get_exchange_rate(from_currency, to_currency, price_type, bid_quote, ask_quote)
     }
 

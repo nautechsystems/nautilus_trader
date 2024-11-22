@@ -14,9 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Provides a generic `Portfolio` for all environments.
-
-// improve error handling: TODO
-
 use std::{
     any::Any,
     cell::RefCell,
@@ -61,6 +58,7 @@ use rust_decimal::{
     Decimal,
 };
 use ustr::Ustr;
+use uuid::Uuid;
 
 use crate::manager::AccountsManager;
 
@@ -144,7 +142,7 @@ impl MessageHandler for UpdateAccountHandler {
     }
 }
 
-pub struct PortfolioState {
+struct PortfolioState {
     accounts: AccountsManager,
     analyzer: PortfolioAnalyzer,
     unrealized_pnls: HashMap<InstrumentId, Money>,
@@ -186,7 +184,7 @@ impl PortfolioState {
         }
     }
 
-    pub fn reset(&mut self) {
+    fn reset(&mut self) {
         log::debug!("RESETTING");
         self.net_positions.clear();
         self.unrealized_pnls.clear();
@@ -194,16 +192,6 @@ impl PortfolioState {
         self.pending_calcs.clear();
         self.analyzer.reset();
         log::debug!("READY");
-    }
-
-    #[must_use]
-    pub const fn analyzer(&self) -> &PortfolioAnalyzer {
-        &self.analyzer
-    }
-
-    #[must_use]
-    pub const fn accounts(&self) -> &AccountsManager {
-        &self.accounts
     }
 }
 
@@ -249,7 +237,7 @@ impl Portfolio {
         let update_account_handler = {
             let cache = cache.clone();
             ShareableMessageHandler(Rc::new(UpdateAccountHandler {
-                id: Ustr::from("TODO:FIX-ME"),
+                id: Ustr::from(&Uuid::new_v4().to_string()),
                 callback: Box::new(move |event: &AccountState| {
                     update_account(cache.clone(), event);
                 }),
@@ -262,7 +250,7 @@ impl Portfolio {
             let clock = clock.clone();
             let inner = inner.clone();
             ShareableMessageHandler(Rc::new(UpdatePositionHandler {
-                id: Ustr::from("TODO:FIX-ME"),
+                id: Ustr::from(&Uuid::new_v4().to_string()),
                 callback: Box::new(move |event: &PositionEvent| {
                     update_position(
                         cache.clone(),
@@ -281,7 +269,7 @@ impl Portfolio {
             let clock = clock.clone();
             let inner = inner.clone();
             ShareableMessageHandler(Rc::new(UpdateQuoteTickHandler {
-                id: Ustr::from("TODO:FIX-ME"),
+                id: Ustr::from(&Uuid::new_v4().to_string()),
                 callback: Box::new(move |quote: &QuoteTick| {
                     update_quote_tick(
                         cache.clone(),
@@ -300,7 +288,7 @@ impl Portfolio {
             let clock = clock.clone();
             let inner = inner;
             ShareableMessageHandler(Rc::new(UpdateOrderHandler {
-                id: Ustr::from("TODO:FIX-ME"),
+                id: Ustr::from(&Uuid::new_v4().to_string()),
                 callback: Box::new(move |event: &OrderEventAny| {
                     update_order(
                         cache.clone(),
@@ -788,8 +776,12 @@ impl Portfolio {
 
             self.update_net_position(&instrument_id, positions_open);
 
-            let calculated_unrealized_pnl = self.calculate_unrealized_pnl(&instrument_id).unwrap();
-            let calculated_realized_pnl = self.calculate_realized_pnl(&instrument_id).unwrap();
+            let calculated_unrealized_pnl = self
+                .calculate_unrealized_pnl(&instrument_id)
+                .expect("Failed to calculate unrealized PnL");
+            let calculated_realized_pnl = self
+                .calculate_realized_pnl(&instrument_id)
+                .expect("Failed to calculate realized PnL");
 
             self.inner
                 .borrow_mut()
@@ -1104,16 +1096,23 @@ impl Portfolio {
                         price_type,
                     )
                     .to_f64()
-                    // todo: improve error
-                    .expect("Fails to convert Decimal to f64")
+                    .unwrap_or_else(|| {
+                        log::error!(
+                            "Failed to get/convert xrate for instrument {} from {} to {}",
+                            instrument.id(),
+                            instrument.settlement_currency(),
+                            base_currency
+                        );
+                        1.0
+                    })
             }
             None => 1.0, // No conversion needed
         }
     }
 }
 
-// helper functions
-pub fn update_quote_tick(
+// Helper functions
+fn update_quote_tick(
     cache: Rc<RefCell<Cache>>,
     msgbus: Rc<RefCell<MessageBus>>,
     clock: Rc<RefCell<dyn Clock>>,
@@ -1213,7 +1212,7 @@ pub fn update_quote_tick(
     }
 }
 
-pub fn update_order(
+fn update_order(
     cache: Rc<RefCell<Cache>>,
     msgbus: Rc<RefCell<MessageBus>>,
     clock: Rc<RefCell<dyn Clock>>,
@@ -1288,7 +1287,6 @@ pub fn update_order(
         return;
     };
 
-    // TODO: fix borrowing issue
     if let OrderEventAny::Filled(order_filled) = event {
         let _ = inner.borrow().accounts.update_balances(
             account.clone(),
@@ -1303,11 +1301,20 @@ pub fn update_order(
             inner: inner.clone(),
         };
 
-        let unrealized_pnl = portfolio_clone.calculate_unrealized_pnl(&order_filled.instrument_id);
-        inner
-            .borrow_mut()
-            .unrealized_pnls
-            .insert(event.instrument_id(), unrealized_pnl.unwrap());
+        match portfolio_clone.calculate_unrealized_pnl(&order_filled.instrument_id) {
+            Some(unrealized_pnl) => {
+                inner
+                    .borrow_mut()
+                    .unrealized_pnls
+                    .insert(event.instrument_id(), unrealized_pnl);
+            }
+            None => {
+                log::error!(
+                    "Failed to calculate unrealized PnL for instrument {}",
+                    event.instrument_id()
+                );
+            }
+        }
     }
 
     let orders_open = borrowed_cache.orders_open(None, Some(&event.instrument_id()), None, None);
@@ -1332,7 +1339,7 @@ pub fn update_order(
     log::debug!("Updated {}", event);
 }
 
-pub fn update_position(
+fn update_position(
     cache: Rc<RefCell<Cache>>,
     msgbus: Rc<RefCell<MessageBus>>,
     clock: Rc<RefCell<dyn Clock>>,
@@ -1362,10 +1369,10 @@ pub fn update_position(
 
     let calculated_unrealized_pnl = portfolio_clone
         .calculate_unrealized_pnl(&instrument_id)
-        .unwrap();
+        .expect("Failed to calculate unrealized PnL");
     let calculated_realized_pnl = portfolio_clone
         .calculate_realized_pnl(&instrument_id)
-        .unwrap();
+        .expect("Failed to calculate realized PnL");
 
     inner
         .borrow_mut()
@@ -1415,11 +1422,25 @@ pub fn update_account(cache: Rc<RefCell<Cache>>, event: &AccountState) {
     if let Some(existing) = borrowed_cache.account(&event.account_id) {
         let mut account = existing.clone();
         account.apply(event.clone());
-        borrowed_cache.update_account(account.clone()).unwrap();
+
+        if let Err(e) = borrowed_cache.update_account(account.clone()) {
+            log::error!("Failed to update account: {}", e);
+            return;
+        }
     } else {
-        let account = AccountAny::from_events(vec![event.clone()]).unwrap();
-        borrowed_cache.add_account(account).unwrap();
-    };
+        let account = match AccountAny::from_events(vec![event.clone()]) {
+            Ok(account) => account,
+            Err(e) => {
+                log::error!("Failed to create account: {}", e);
+                return;
+            }
+        };
+
+        if let Err(e) = borrowed_cache.add_account(account) {
+            log::error!("Failed to add account: {}", e);
+            return;
+        }
+    }
 
     log::info!("Updated {}", event);
 }
