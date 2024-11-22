@@ -16,7 +16,6 @@
 use std::sync::{atomic::Ordering, Arc};
 
 use futures::SinkExt;
-use futures_util::{stream, StreamExt};
 use nautilus_core::python::to_pyvalue_err;
 use pyo3::{create_exception, exceptions::PyException, prelude::*};
 use tokio_tungstenite::tungstenite::Message;
@@ -136,18 +135,11 @@ impl WebSocketClient {
         py: Python<'py>,
         keys: Option<Vec<String>>,
     ) -> PyResult<Bound<'py, PyAny>> {
-        let keys = keys.unwrap_or_default();
         let writer = slf.writer.clone();
         let rate_limiter = slf.rate_limiter.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let tasks = keys.iter().map(|key| rate_limiter.until_key_ready(key));
-            stream::iter(tasks)
-                .for_each(|key| async move {
-                    key.await;
-                })
-                .await;
 
-            // Log after passing rate limit checks
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            rate_limiter.await_keys_ready(keys).await;
             tracing::trace!("Sending binary: {data:?}");
 
             let mut guard = writer.lock().await;
@@ -180,18 +172,11 @@ impl WebSocketClient {
         keys: Option<Vec<String>>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let data = String::from_utf8(data).map_err(to_pyvalue_err)?;
-        let keys = keys.unwrap_or_default();
         let writer = slf.writer.clone();
         let rate_limiter = slf.rate_limiter.clone();
-        pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            let tasks = keys.iter().map(|key| rate_limiter.until_key_ready(key));
-            stream::iter(tasks)
-                .for_each(|key| async move {
-                    key.await;
-                })
-                .await;
 
-            // Log after passing rate limit checks
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            rate_limiter.await_keys_ready(keys).await;
             tracing::trace!("Sending text: {data}");
 
             let mut guard = writer.lock().await;
@@ -214,8 +199,9 @@ impl WebSocketClient {
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let data_str = String::from_utf8(data.clone()).map_err(to_pyvalue_err)?;
-        tracing::trace!("Sending pong: {data_str}");
         let writer = slf.writer.clone();
+        tracing::trace!("Sending pong: {data_str}");
+
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
             let mut guard = writer.lock().await;
             guard
