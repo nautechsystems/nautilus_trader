@@ -17,8 +17,10 @@ use std::{collections::HashMap, path::Path, sync::Arc};
 
 use futures_util::{pin_mut, Stream, StreamExt};
 use nautilus_core::python::to_pyruntime_err;
+use nautilus_model::data::{bar::Bar, Data};
 use nautilus_model::python::data::data_to_pycapsule;
 use pyo3::prelude::*;
+use pyo3::types::PyList;
 
 use crate::tardis::{
     machine::{
@@ -116,6 +118,70 @@ impl TardisMachineClient {
             // Unpin for safe async handling across lifetimes.
             handle_python_stream(Box::pin(stream), callback, None, Some(map)).await;
             Ok(())
+        })
+    }
+
+    #[pyo3(name = "replay_bars")]
+    fn py_replay_bars<'py>(
+        &self,
+        instruments: Vec<InstrumentMiniInfo>,
+        options: Vec<ReplayNormalizedRequestOptions>,
+        py: Python<'py>,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let map = if !instruments.is_empty() {
+            let mut instrument_map: HashMap<TardisInstrumentKey, Arc<InstrumentMiniInfo>> =
+                HashMap::new();
+            for inst in instruments {
+                let key = inst.as_tardis_instrument_key();
+                instrument_map.insert(key, Arc::new(inst.clone()));
+            }
+            instrument_map
+        } else {
+            self.instruments.clone()
+        };
+
+        let base_url = self.base_url.clone();
+        let replay_signal = self.replay_signal.clone();
+
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let stream = replay_normalized(&base_url, options, replay_signal)
+                .await
+                .map_err(to_pyruntime_err)?;
+
+            // We use Box::pin to heap-allocate the stream and ensure it implements
+            // Unpin for safe async handling across lifetimes.
+            pin_mut!(stream);
+
+            let mut bars: Vec<Bar> = Vec::new();
+
+            while let Some(result) = stream.next().await {
+                match result {
+                    Ok(msg) => {
+                        let info = determine_instrument_info(&msg, &map);
+
+                        if let Some(info) = info {
+                            if let Some(data) = parse_tardis_ws_message(msg, info) {
+                                if let Data::Bar(bar) = data {
+                                    bars.push(bar)
+                                }
+                            } else {
+                                continue; // Non-data message
+                            }
+                        } else {
+                            continue; // No instrument info
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Error in WebSocket stream: {e:?}");
+                        break;
+                    }
+                }
+            }
+
+            Python::with_gil(|py| {
+                let pylist = PyList::new_bound(py, bars.into_iter().map(|bar| bar.into_py(py)));
+                Ok(pylist.into_py(py))
+            })
         })
     }
 
