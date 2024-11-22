@@ -17,10 +17,11 @@ use std::{collections::HashMap, path::Path, sync::Arc};
 
 use futures_util::{pin_mut, Stream, StreamExt};
 use nautilus_core::python::to_pyruntime_err;
-use nautilus_model::data::{bar::Bar, Data};
-use nautilus_model::python::data::data_to_pycapsule;
-use pyo3::prelude::*;
-use pyo3::types::PyList;
+use nautilus_model::{
+    data::{bar::Bar, Data},
+    python::data::data_to_pycapsule,
+};
+use pyo3::{prelude::*, types::PyList};
 
 use crate::tardis::{
     machine::{
