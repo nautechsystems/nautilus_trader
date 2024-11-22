@@ -1444,3 +1444,225 @@ pub fn update_account(cache: Rc<RefCell<Cache>>, event: &AccountState) {
 
     log::info!("Updated {}", event);
 }
+
+////////////////////////////////////////////////////////////////////////////////
+// Tests
+////////////////////////////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use nautilus_common::{cache::Cache, clock::TestClock, msgbus::MessageBus};
+    use nautilus_model::{
+        data::quote::QuoteTick,
+        enums::AccountType,
+        events::account::state::AccountState,
+        identifiers::{stubs::uuid4, AccountId},
+        instruments::{any::InstrumentAny, currency_pair::CurrencyPair, stubs::audusd_sim},
+        types::{
+            balance::AccountBalance, currency::Currency, money::Money, price::Price,
+            quantity::Quantity,
+        },
+    };
+    use rstest::{fixture, rstest};
+    use rust_decimal::Decimal;
+
+    use super::Portfolio;
+
+    #[fixture]
+    fn msgbus() -> MessageBus {
+        MessageBus::default()
+    }
+
+    #[fixture]
+    fn simple_cache() -> Cache {
+        Cache::new(None, None)
+    }
+
+    #[fixture]
+    fn clock() -> TestClock {
+        TestClock::new()
+    }
+
+    #[fixture]
+    fn portfolio(msgbus: MessageBus, simple_cache: Cache, clock: TestClock) -> Portfolio {
+        Portfolio::new(
+            Rc::new(RefCell::new(msgbus)),
+            Rc::new(RefCell::new(simple_cache)),
+            Rc::new(RefCell::new(clock)),
+        )
+    }
+
+    #[fixture]
+    fn instrument_audusd(audusd_sim: CurrencyPair) -> InstrumentAny {
+        InstrumentAny::CurrencyPair(audusd_sim)
+    }
+
+    use std::collections::HashMap;
+
+    use nautilus_model::identifiers::Venue;
+
+    // Tests
+
+    // #[rstest]
+    // fn test_account_when_no_account_returns_none(portfolio: Portfolio) {
+    //     let venue = Venue::new("SIM");
+    //     // TODO
+    //     // let result = portfolio.account(&venue);
+    //     // assert!(result.is_none());
+    // }
+
+    #[rstest]
+    fn test_account_when_account_returns_the_account_facade(mut portfolio: Portfolio) {
+        let account_id = AccountId::new("BINANCE-1513111");
+        let state = AccountState::new(
+            account_id,
+            AccountType::Cash,
+            vec![AccountBalance::new(
+                Money::new(10.00000000, Currency::BTC()),
+                Money::new(0.00000000, Currency::BTC()),
+                Money::new(10.00000000, Currency::BTC()),
+            )],
+            vec![],
+            true,
+            uuid4(),
+            0.into(),
+            0.into(),
+            None,
+        );
+
+        portfolio.update_account(&state);
+
+        // let venue = Venue::new("BINANCE");
+        // TODO
+        // let result = portfolio.account(&venue).unwrap();
+
+        // assert_eq!(result.id.get_issuer(), "BINANCE");
+        // assert_eq!(result.id.get_id(), "1513111");
+    }
+
+    #[rstest]
+    fn test_balances_locked_when_no_account_for_venue_returns_none(portfolio: Portfolio) {
+        let venue = Venue::new("SIM");
+        let result = portfolio.balances_locked(&venue);
+        assert_eq!(result, HashMap::new());
+    }
+
+    #[rstest]
+    fn test_margins_init_when_no_account_for_venue_returns_none(portfolio: Portfolio) {
+        let venue = Venue::new("SIM");
+        let result = portfolio.margins_init(&venue);
+        assert_eq!(result, HashMap::new());
+    }
+
+    #[rstest]
+    fn test_margins_maint_when_no_account_for_venue_returns_none(portfolio: Portfolio) {
+        let venue = Venue::new("SIM");
+        let result = portfolio.margins_maint(&venue);
+        assert_eq!(result, HashMap::new());
+    }
+
+    #[rstest]
+    fn test_unrealized_pnl_for_instrument_when_no_instrument_returns_none(
+        mut portfolio: Portfolio,
+        instrument_audusd: InstrumentAny,
+    ) {
+        let result = portfolio.unrealized_pnl(&instrument_audusd.id());
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_unrealized_pnl_for_venue_when_no_account_returns_empty_dict(mut portfolio: Portfolio) {
+        let venue = Venue::new("SIM");
+        let result = portfolio.unrealized_pnls(&venue);
+        assert_eq!(result, HashMap::new());
+    }
+
+    #[rstest]
+    fn test_realized_pnl_for_instrument_when_no_instrument_returns_none(
+        mut portfolio: Portfolio,
+        instrument_audusd: InstrumentAny,
+    ) {
+        let result = portfolio.realized_pnl(&instrument_audusd.id());
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_realized_pnl_for_venue_when_no_account_returns_empty_dict(mut portfolio: Portfolio) {
+        let venue = Venue::new("SIM");
+        let result = portfolio.realized_pnls(&venue);
+        assert_eq!(result, HashMap::new());
+    }
+
+    #[rstest]
+    fn test_net_position_when_no_positions_returns_zero(
+        portfolio: Portfolio,
+        instrument_audusd: InstrumentAny,
+    ) {
+        let result = portfolio.net_position(&instrument_audusd.id());
+        assert_eq!(result, Decimal::ZERO);
+    }
+
+    #[rstest]
+    fn test_net_exposures_when_no_positions_returns_none(portfolio: Portfolio) {
+        let venue = Venue::new("SIM");
+        let result = portfolio.net_exposures(&venue);
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_is_net_long_when_no_positions_returns_false(
+        portfolio: Portfolio,
+        instrument_audusd: InstrumentAny,
+    ) {
+        let result = portfolio.is_net_long(&instrument_audusd.id());
+        assert!(!result);
+    }
+
+    #[rstest]
+    fn test_is_net_short_when_no_positions_returns_false(
+        portfolio: Portfolio,
+        instrument_audusd: InstrumentAny,
+    ) {
+        let result = portfolio.is_net_short(&instrument_audusd.id());
+        assert!(!result);
+    }
+
+    #[rstest]
+    fn test_is_flat_when_no_positions_returns_true(
+        portfolio: Portfolio,
+        instrument_audusd: InstrumentAny,
+    ) {
+        let result = portfolio.is_flat(&instrument_audusd.id());
+        assert!(result);
+    }
+
+    #[rstest]
+    fn test_is_completely_flat_when_no_positions_returns_true(portfolio: Portfolio) {
+        let result = portfolio.is_completely_flat();
+        assert!(result);
+    }
+
+    #[rstest]
+    fn test_open_value_when_no_account_returns_none(portfolio: Portfolio) {
+        let venue = Venue::new("SIM");
+        let result = portfolio.net_exposures(&venue);
+        assert!(result.is_none());
+    }
+
+    #[rstest]
+    fn test_update_tick(mut portfolio: Portfolio, instrument_audusd: InstrumentAny) {
+        let tick = QuoteTick::new(
+            instrument_audusd.id(),
+            Price::new(1.2500, 0),
+            Price::new(1.2510, 0),
+            Quantity::new(1.0, 0),
+            Quantity::new(1.0, 0),
+            0.into(),
+            0.into(),
+        );
+
+        portfolio.update_quote_tick(&tick);
+        assert!(portfolio.unrealized_pnl(&instrument_audusd.id()).is_none());
+    }
+}

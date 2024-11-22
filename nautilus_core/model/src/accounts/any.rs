@@ -98,8 +98,8 @@ impl AccountAny {
 
     pub fn calculate_pnls(
         &self,
-        instrument: InstrumentAny, // TODO: Make this a reference
-        fill: OrderFilled,         // TODO: Make this a reference
+        instrument: InstrumentAny,
+        fill: OrderFilled,
         position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>> {
         match self {

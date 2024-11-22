@@ -105,7 +105,6 @@ impl AccountsManager {
         }
     }
 
-    // TODO: too many clones inside this
     #[must_use]
     pub fn update_positions(
         &self,
@@ -114,14 +113,11 @@ impl AccountsManager {
         positions: Vec<&Position>,
         ts_event: UnixNanos,
     ) -> Option<AccountState> {
-        // Initialize variables
         let mut total_margin_maint = Decimal::ZERO;
         let mut base_xrate = Decimal::ZERO;
         let mut currency = instrument.settlement_currency();
 
-        // Process each position
         for position in positions {
-            // Verify position is for correct instrument
             assert_eq!(
                 position.instrument_id,
                 instrument.id(),
@@ -129,7 +125,6 @@ impl AccountsManager {
                 instrument.id()
             );
 
-            // Skip closed positions
             if !position.is_open() {
                 continue;
             }
@@ -199,10 +194,8 @@ impl AccountsManager {
 
             let mut margin_maint = margin_maint.as_decimal();
 
-            // Handle base currency conversion if needed
             if let Some(base_currency) = account.base_currency {
                 if base_xrate.is_zero() {
-                    // Cache base currency and calculate exchange rate
                     currency = base_currency;
                     base_xrate = self.calculate_xrate_to_base(
                         AccountAny::Margin(account.clone()),
@@ -216,21 +209,15 @@ impl AccountsManager {
                     }
                 }
 
-                // Apply base exchange rate
                 margin_maint = (margin_maint * base_xrate).round_dp(currency.precision.into());
             }
 
-            // Increment total maintenance margin
             total_margin_maint += margin_maint;
         }
 
-        // Create Money object for margin maintenance
         let margin_maint_money = Money::new(total_margin_maint.to_f64()?, currency);
-
-        // Update account margin maintenance
         account.update_maintenance_margin(instrument.id(), margin_maint_money);
 
-        // Log the update
         log::info!(
             "{} margin_maint={}",
             instrument.id(),
@@ -256,15 +243,12 @@ impl AccountsManager {
             return Some(self.generate_account_state(AccountAny::Cash(account.clone()), ts_event));
         }
 
-        // Initialize variables
         let mut total_locked = Decimal::ZERO;
         let mut base_xrate = Decimal::ZERO;
 
         let mut currency = instrument.settlement_currency();
 
-        // Process each open order
         for order in orders_open {
-            // Verify order is for correct instrument
             assert_eq!(
                 order.instrument_id(),
                 instrument.id(),
@@ -273,12 +257,10 @@ impl AccountsManager {
             );
             assert!(order.is_open(), "Order is not open");
 
-            // Skip orders without price or trigger price
             if order.price().is_none() && order.trigger_price().is_none() {
                 continue;
             }
 
-            // Calculate locked balance for this order
             let price = if order.price().is_some() {
                 order.price()
             } else {
@@ -296,10 +278,8 @@ impl AccountsManager {
                 .unwrap()
                 .as_decimal();
 
-            // Handle base currency conversion if needed
             if let Some(base_curr) = account.base_currency() {
                 if base_xrate.is_zero() {
-                    // Cache base currency and calculate exchange rate
                     currency = base_curr;
                     base_xrate = self.calculate_xrate_to_base(
                         AccountAny::Cash(account.clone()),
@@ -308,18 +288,14 @@ impl AccountsManager {
                     );
                 }
 
-                // Apply base exchange rate and round to currency precision
                 locked = (locked * base_xrate).round_dp(u32::from(currency.precision));
             }
 
-            // Add to total locked amount
             total_locked += locked;
         }
 
-        // Create Money object for locked balance
         let locked_money = Money::new(total_locked.to_f64()?, currency);
 
-        // Update account locked balance
         if let Some(balance) = account.balances.get_mut(&instrument.quote_currency()) {
             balance.locked = locked_money;
             let currency = balance.currency;
@@ -609,7 +585,6 @@ impl AccountsManager {
         }
 
         if apply_commission {
-            // if apply_commission is true, then commission is not none.
             let commission = commission.unwrap();
             let currency = commission.currency;
             let balances = account.balances();

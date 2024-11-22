@@ -372,23 +372,23 @@ mod tests {
 
     #[test]
     #[should_panic]
-    /// Test empty quotes handling
     fn test_empty_quotes() {
         let quotes_bid = HashMap::new();
         let quotes_ask = HashMap::new();
 
-        get_exchange_rate(
+        let out_xrate = get_exchange_rate(
             Currency::from_str("EUR").unwrap(),
             Currency::from_str("USD").unwrap(),
             PriceType::Mid,
             quotes_bid,
             quotes_ask,
         );
+
+        assert_eq!(out_xrate, Decimal::ZERO);
     }
 
     #[test]
     #[should_panic]
-    /// Test unequal quotes length handling
     fn test_unequal_quotes_length() {
         let mut quotes_bid = HashMap::new();
         let mut quotes_ask = HashMap::new();
@@ -397,13 +397,15 @@ mod tests {
         quotes_bid.insert(Symbol::from_str_unchecked("GBP/USD"), dec!(1.3000));
         quotes_ask.insert(Symbol::from_str_unchecked("EUR/USD"), dec!(1.1002));
 
-        get_exchange_rate(
+        let out_xrate = get_exchange_rate(
             Currency::from_str("EUR").unwrap(),
             Currency::from_str("USD").unwrap(),
             PriceType::Mid,
             quotes_bid,
             quotes_ask,
         );
+
+        assert_eq!(out_xrate, Decimal::ZERO);
     }
 
     #[test]
@@ -412,13 +414,15 @@ mod tests {
     fn test_invalid_price_type() {
         let (quotes_bid, quotes_ask) = setup_test_quotes();
 
-        get_exchange_rate(
+        let out_xrate = get_exchange_rate(
             Currency::from_str("EUR").unwrap(),
             Currency::from_str("USD").unwrap(),
             PriceType::Last, // Invalid price type
             quotes_bid,
             quotes_ask,
         );
+
+        assert_eq!(out_xrate, Decimal::ZERO);
     }
 
     #[test]

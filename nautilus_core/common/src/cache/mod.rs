@@ -1145,11 +1145,6 @@ impl Cache {
             database.add_instrument(&instrument)?;
         }
 
-        // match instrument {
-        //     InstrumentAny::CurrencyPair(_) | InstrumentAny::CryptoPerpetual(_) => {}
-        //     _ => {}
-        // }
-
         self.instruments.insert(instrument.id(), instrument);
         Ok(())
     }
@@ -2512,14 +2507,12 @@ impl Cache {
             }
 
             let (bid_price, ask_price) = if let Some(ticks) = self.quotes.get(instrument_id) {
-                // Use quote ticks if available
                 if let Some(tick) = ticks.front() {
                     (tick.bid_price, tick.ask_price)
                 } else {
                     continue; // Empty ticks vector
                 }
             } else {
-                // Fall back to bars if no quotes available
                 let bid_bar = self
                     .bars
                     .iter()
@@ -2545,7 +2538,7 @@ impl Cache {
 
                         (bid_price, ask_price)
                     }
-                    _ => continue, // Missing either bid or ask bar
+                    _ => continue,
                 }
             };
 
