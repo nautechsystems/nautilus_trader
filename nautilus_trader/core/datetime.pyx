@@ -316,7 +316,7 @@ def max_date_str(date1: str | int | None = None, date2: str | int | None = None)
 
     Returns
     -------
-    str | None
+    str or ``None``
         The maximum date as an ISO 8601 formatted string, or None if both input dates are None.
 
     """
@@ -345,7 +345,7 @@ def min_date_str(date1: str | int | None = None, date2: str | int | None = None)
 
     Returns
     -------
-    str | None
+    str or ``None``
         The minimum date as an ISO 8601 formatted string, or None if both input dates are None.
 
     """
