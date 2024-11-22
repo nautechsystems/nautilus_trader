@@ -481,11 +481,13 @@ class DYDXAccountGRPCAPI:
         """
         async with self._lock:
             response = await self.broadcast(self._transaction_builder.build(wallet, message), mode)
-            wallet.sequence += 1
+
+            if response.tx_response.code == 0:
+                wallet.sequence += 1
 
             # The sequence number is not correct. Retrieve it from the gRPC channel.
             # The retry manager can retry the transaction.
-            if response.tx_response.code == ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODE:
+            elif response.tx_response.code == ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODE:
                 account = await self.get_account(wallet.address)
                 wallet.sequence = account.sequence
 
