@@ -245,7 +245,7 @@ class DYDXEnumParser:
             DYDXOrderStatus.FILLED: OrderStatus.FILLED,
             DYDXOrderStatus.CANCELED: OrderStatus.CANCELED,
             DYDXOrderStatus.BEST_EFFORT_CANCELED: OrderStatus.CANCELED,
-            DYDXOrderStatus.BEST_EFFORT_OPENED: OrderStatus.SUBMITTED,
+            DYDXOrderStatus.BEST_EFFORT_OPENED: OrderStatus.ACCEPTED,
         }
 
         self.dydx_to_nautilus_time_in_force = {
