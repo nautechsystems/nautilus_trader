@@ -21,6 +21,7 @@ Released on TBD (UTC).
 ### Fixes
 - Fixed missing venue -> exchange mappings for Tardis integration
 - Fixed account balance and order status parsing for dYdX (#2067), thanks @davidsblom
+- Fixed parsing best effort opened order status for dYdX (#2068), thanks @davidsblom
 
 ---
 
