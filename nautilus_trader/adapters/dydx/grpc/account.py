@@ -260,13 +260,15 @@ class DYDXAccountGRPCAPI:
         """
         Retrieve the account information for a given address.
 
-        Args:
-        ----
-            address (str): The account address.
+        Parameters
+        ----------
+        address : str
+            The account address.
 
-        Returns:
+        Returns
         -------
-            BaseAccount: The base account information.
+        BaseAccount
+            The base account information.
 
         """
         account = BaseAccount()
@@ -282,13 +284,15 @@ class DYDXAccountGRPCAPI:
         """
         Retrieve all account balances for a given address.
 
-        Args:
-        ----
-            address (str): The account address.
+        Parameters
+        ----------
+        address : str
+            The account address.
 
-        Returns:
+        Returns
         -------
-            bank_query.QueryAllBalancesResponse: The response containing all account balances.
+        bank_query.QueryAllBalancesResponse
+            The response containing all account balances.
 
         """
         stub = bank_query_grpc.QueryStub(self._channel)
@@ -300,7 +304,8 @@ class DYDXAccountGRPCAPI:
 
         Returns
         -------
-            tendermint_query.GetLatestBlockResponse: The response containing the latest block information.
+        tendermint_query.GetLatestBlockResponse
+            The response containing the latest block information.
 
         """
         return await tendermint_query_grpc.ServiceStub(self._channel).GetLatestBlock(
@@ -313,7 +318,8 @@ class DYDXAccountGRPCAPI:
 
         Returns
         -------
-            int: The height of the latest block.
+        int
+            The height of the latest block.
 
         """
         block = await self.latest_block()
@@ -325,7 +331,8 @@ class DYDXAccountGRPCAPI:
 
         Returns
         -------
-            fee_tier_query.QueryPerpetualFeeParamsResponse: The response containing the perpetual fee parameters.
+        fee_tier_query.QueryPerpetualFeeParamsResponse
+            The response containing the perpetual fee parameters.
 
         """
         stub = fee_tier_query_grpc.QueryStub(self._channel)
@@ -335,13 +342,15 @@ class DYDXAccountGRPCAPI:
         """
         Retrieve the user fee tier for a given address.
 
-        Args:
-        ----
-            address (str): The user address.
+        Parameters
+        ----------
+        address : str
+            The user address.
 
-        Returns:
+        Returns
         -------
-            fee_tier_query.QueryUserFeeTierResponse: The response containing the user fee tier.
+        fee_tier_query.QueryUserFeeTierResponse
+            The response containing the user fee tier.
 
         """
         stub = fee_tier_query_grpc.QueryStub(self._channel)
@@ -351,13 +360,16 @@ class DYDXAccountGRPCAPI:
         """
         Places an order.
 
-        Args:
-        ----
-            wallet (Wallet): The wallet to use for signing the transaction.
-            order (Order): The order to place.
+        Parameters
+        ----------
+        wallet : Wallet
+            The wallet to use for signing the transaction.
+        order : Order
+            The order to place.
 
-        Returns:
+        Returns
         -------
+        BroadcastTxResponse
             The response from the transaction broadcast.
 
         """
@@ -468,24 +480,29 @@ class DYDXAccountGRPCAPI:
         """
         Broadcast a message.
 
-        Args:
-        ----
-            wallet (Wallet): The wallet to use for signing the transaction.
-            message (Message): The message to broadcast.
-            mode (BroadcastMode, optional): The broadcast mode. Defaults to BroadcastMode.BROADCAST_MODE_SYNC.
+        Parameters
+        ----------
+        wallet : Wallet
+            The wallet to use for signing the transaction.
+        message : Message
+            The message to broadcast.
+        mode : BroadcastMode, optional
+            The broadcast mode. Defaults to BroadcastMode.BROADCAST_MODE_SYNC.
 
-        Returns:
+        Returns
         -------
             The response from the broadcast.
 
         """
         async with self._lock:
             response = await self.broadcast(self._transaction_builder.build(wallet, message), mode)
-            wallet.sequence += 1
+
+            if response.tx_response.code == 0:
+                wallet.sequence += 1
 
             # The sequence number is not correct. Retrieve it from the gRPC channel.
             # The retry manager can retry the transaction.
-            if response.tx_response.code == ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODE:
+            elif response.tx_response.code == ACCOUNT_SEQUENCE_MISMATCH_ERROR_CODE:
                 account = await self.get_account(wallet.address)
                 wallet.sequence = account.sequence
 
@@ -499,14 +516,17 @@ class DYDXAccountGRPCAPI:
         """
         Broadcast a transaction.
 
-        Args:
-        ----
-            transaction (Tx): The transaction to broadcast.
-            mode (BroadcastMode, optional): The broadcast mode. Defaults to BroadcastMode.BROADCAST_MODE_SYNC.
+        Parameters
+        ----------
+        transaction : Tx
+            The transaction to broadcast.
+        mode : BroadcastMode, optional
+            The broadcast mode. Defaults to BroadcastMode.BROADCAST_MODE_SYNC.
 
-        Returns:
+        Returns
         -------
-            BroadcastTxResponse: The response from the broadcast.
+        BroadcastTxResponse
+            The response from the broadcast.
 
         """
         request = BroadcastTxRequest(tx_bytes=transaction.SerializeToString(), mode=mode)
