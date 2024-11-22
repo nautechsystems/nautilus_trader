@@ -130,13 +130,10 @@ impl TardisMachineClient {
         py: Python<'py>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let map = if !instruments.is_empty() {
-            let mut instrument_map: HashMap<TardisInstrumentKey, Arc<InstrumentMiniInfo>> =
-                HashMap::new();
-            for inst in instruments {
-                let key = inst.as_tardis_instrument_key();
-                instrument_map.insert(key, Arc::new(inst.clone()));
-            }
-            instrument_map
+            instruments
+                .into_iter()
+                .map(|inst| (inst.as_tardis_instrument_key(), Arc::new(inst)))
+                .collect()
         } else {
             self.instruments.clone()
         };
@@ -158,18 +155,10 @@ impl TardisMachineClient {
             while let Some(result) = stream.next().await {
                 match result {
                     Ok(msg) => {
-                        let info = determine_instrument_info(&msg, &map);
-
-                        if let Some(info) = info {
-                            if let Some(data) = parse_tardis_ws_message(msg, info) {
-                                if let Data::Bar(bar) = data {
-                                    bars.push(bar);
-                                }
-                            } else {
-                                continue; // Non-data message
-                            }
-                        } else {
-                            continue; // No instrument info
+                        if let Some(Data::Bar(bar)) = determine_instrument_info(&msg, &map)
+                            .and_then(|info| parse_tardis_ws_message(msg, info))
+                        {
+                            bars.push(bar);
                         }
                     }
                     Err(e) => {
@@ -250,13 +239,11 @@ async fn handle_python_stream<S>(
     while let Some(result) = stream.next().await {
         match result {
             Ok(msg) => {
-                let info = if let Some(ref instrument) = instrument {
-                    Some(instrument.clone())
-                } else {
+                let info = instrument.clone().or_else(|| {
                     instrument_map
                         .as_ref()
                         .and_then(|map| determine_instrument_info(&msg, map))
-                };
+                });
 
                 if let Some(info) = info {
                     if let Some(data) = parse_tardis_ws_message(msg, info) {
@@ -264,11 +251,7 @@ async fn handle_python_stream<S>(
                             let py_obj = data_to_pycapsule(py, data);
                             let _ = call_python(py, &callback, py_obj);
                         });
-                    } else {
-                        continue; // Non-data message
                     }
-                } else {
-                    continue; // No instrument info
                 }
             }
             Err(e) => {

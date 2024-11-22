@@ -137,20 +137,16 @@ where
         while let Some(result) = stream.next().await {
             match result {
                 Ok(msg) => {
-                    let info = if let Some(ref instrument) = instrument {
-                        Some(instrument.clone())
-                    } else {
-                        instrument_map.as_ref().and_then(|map| determine_instrument_info(&msg, map))
-                    };
+                    let info = instrument.clone().or_else(|| {
+                        instrument_map
+                            .as_ref()
+                            .and_then(|map| determine_instrument_info(&msg, map))
+                    });
 
                     if let Some(info) = info {
                         if let Some(data) = parse_tardis_ws_message(msg, info) {
                             yield data;
-                        } else {
-                            continue;  // Non-data message
                         }
-                    } else {
-                        continue;  // No instrument info
                     }
                 }
                 Err(e) => {
