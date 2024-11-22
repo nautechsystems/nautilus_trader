@@ -226,6 +226,25 @@ class OrderBuilder:
             order_flags=order_flags,
             clob_pair_id=self._clob_pair_id,
         )
+    
+    def calculate_conditional_order_trigger_subticks(self, order_type: DYDXGRPCOrderType, trigger_price: float) -> int:
+        """
+        Calculate the conditional order trigger price in subticks.
+
+        This function calculates the conditional order trigger price in subticks based on the given order type and trigger price.
+        It only applies to stop limit and stop market orders.
+
+        Parameters:
+        - order_type (DYDXGRPCOrderType): The type of the order.
+        - trigger_price (float): The trigger price of the conditional order.
+
+        Returns:
+        - int: The trigger price in subticks. If the order type is not stop limit or stop market, it returns 0.
+        """
+        if order_type in [DYDXGRPCOrderType.STOP_LIMIT, DYDXGRPCOrderType.STOP_MARKET]:
+            return self.calculate_subticks(trigger_price)
+
+        return 0
 
     def create_order(
         self,
@@ -241,6 +260,7 @@ class OrderBuilder:
         good_til_block_time: int | None = None,
         execution: OrderExecution = OrderExecution.DEFAULT,
         conditional_order_trigger_subticks: int = 0,
+        trigger_price: float = 0
     ) -> Order:
         """
         Create a new Order instance.
@@ -294,5 +314,5 @@ class OrderBuilder:
             reduce_only=reduce_only,
             client_metadata=client_metadata,
             condition_type=condition_type,
-            conditional_order_trigger_subticks=conditional_order_trigger_subticks,
+            conditional_order_trigger_subticks=self.calculate_conditional_order_trigger_subticks(order_type, trigger_price) if trigger_price > 0 else 0,
         )

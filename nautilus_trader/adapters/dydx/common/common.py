@@ -23,6 +23,7 @@ class DYDXOrderTags(NautilusConfig, frozen=True, repr_omit_defaults=True):
 
     is_short_term_order: bool = True
     num_blocks_open: int = 20
+    is_conditional_order: bool = False
 
     @property
     def value(self) -> str:

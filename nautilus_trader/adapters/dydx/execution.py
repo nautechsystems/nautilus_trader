@@ -1027,7 +1027,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             )
             return
 
-        if dydx_order_tags.is_short_term_order:
+        if dydx_order_tags.is_short_term_order and not dydx_order_tags.is_conditional_order:
             try:
                 latest_block = await self._grpc_account.latest_block_height()
             except AioRpcError as e:
@@ -1042,6 +1042,11 @@ class DYDXExecutionClient(LiveExecutionClient):
                 return
 
             good_til_block = latest_block + dydx_order_tags.num_blocks_open
+        elif dydx_order_tags.is_conditional_order:
+            order_flags = OrderFlags.CONDITIONAL
+            good_til_date_secs = (
+            int(nanos_to_secs(order.expire_time_ns)) if order.expire_time_ns else None
+        )
         else:
             order_flags = OrderFlags.LONG_TERM
             good_til_date_secs = (
@@ -1057,6 +1062,8 @@ class DYDXExecutionClient(LiveExecutionClient):
         order_type_map = {
             OrderType.LIMIT: DYDXGRPCOrderType.LIMIT,
             OrderType.MARKET: DYDXGRPCOrderType.MARKET,
+            OrderType.STOP_LIMIT: DYDXGRPCOrderType.STOP_LIMIT,
+            OrderType.STOP_MARKET: DYDXGRPCOrderType.STOP_MARKET,
         }
         order_side_map = {
             OrderSide.NO_ORDER_SIDE: DYDXOrder.Side.SIDE_UNSPECIFIED,
@@ -1071,11 +1078,18 @@ class DYDXExecutionClient(LiveExecutionClient):
         }
 
         price = 0
+        trigger_price = 0
 
         if order.order_type == OrderType.LIMIT:
             price = order.price.as_double()
         elif order.order_type == OrderType.MARKET:
             price = 0
+        elif order.order_type == OrderType.STOP_LIMIT:
+            price = order.price.as_double()
+            trigger_price = order.trigger_price.as_double()
+        elif order.order_type == OrderType.STOP_MARKET:
+            price = order.price.as_double()
+            trigger_price = order.trigger_price.as_double()
         else:
             rejection_reason = (
                 f"Cannot submit order: order type `{order.order_type}` not (yet) supported"
@@ -1100,6 +1114,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             post_only=order.is_post_only,
             good_til_block=good_til_block,
             good_til_block_time=good_til_date_secs,
+            trigger_price=trigger_price,
         )
 
         await self._place_order(order_msg=order_msg, order=order)
