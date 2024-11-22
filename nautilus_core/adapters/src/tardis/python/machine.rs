@@ -163,7 +163,7 @@ impl TardisMachineClient {
                         if let Some(info) = info {
                             if let Some(data) = parse_tardis_ws_message(msg, info) {
                                 if let Data::Bar(bar) = data {
-                                    bars.push(bar)
+                                    bars.push(bar);
                                 }
                             } else {
                                 continue; // Non-data message
