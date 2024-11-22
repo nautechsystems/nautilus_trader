@@ -145,7 +145,7 @@ def test_parse_nautilus_order_side(
         (DYDXOrderStatus.FILLED, OrderStatus.FILLED),
         (DYDXOrderStatus.CANCELED, OrderStatus.CANCELED),
         (DYDXOrderStatus.BEST_EFFORT_CANCELED, OrderStatus.CANCELED),
-        (DYDXOrderStatus.BEST_EFFORT_OPENED, OrderStatus.SUBMITTED),
+        (DYDXOrderStatus.BEST_EFFORT_OPENED, OrderStatus.ACCEPTED),
     ],
 )
 def test_parse_order_status(
