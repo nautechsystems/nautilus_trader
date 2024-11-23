@@ -103,6 +103,29 @@ impl OrderBookDelta {
         }
     }
 
+    pub fn metadata(&self) -> HashMap<String, String> {
+        // TODO: handle second delta check differently
+        // Check if price and size precision are both zero
+        // if price_precision == 0 && size_precision == 0 {
+        //     // If both are zero, try the second delta if available
+        //     if data.len() > 1 {
+        //         let second = &data[1];
+        //         price_precision = second.order.price.precision;
+        //         size_precision = second.order.size.precision;
+        //     } else {
+        //         // If there is no second delta, use zero precision
+        //         price_precision = 0;
+        //         size_precision = 0;
+        //     }
+        // }
+
+        Self::get_metadata(
+            &self.instrument_id,
+            self.order.price.precision,
+            self.order.size.precision,
+        )
+    }
+
     /// Returns the metadata for the type, for use with serialization formats.
     #[must_use]
     pub fn get_metadata(

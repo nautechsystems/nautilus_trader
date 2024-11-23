@@ -223,6 +223,10 @@ impl EncodeToRecordBatch for OrderBookDepth10 {
 
         RecordBatch::try_new(Self::get_schema(Some(metadata.clone())).into(), columns)
     }
+
+    fn metadata(&self) -> HashMap<String, String> {
+        self.metadata()
+    }
 }
 
 impl DecodeFromRecordBatch for OrderBookDepth10 {

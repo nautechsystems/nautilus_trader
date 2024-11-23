@@ -115,6 +115,10 @@ impl EncodeToRecordBatch for QuoteTick {
             ],
         )
     }
+
+    fn metadata(&self) -> HashMap<String, String> {
+        self.metadata()
+    }
 }
 
 impl DecodeFromRecordBatch for QuoteTick {

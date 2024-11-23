@@ -116,6 +116,10 @@ impl EncodeToRecordBatch for TradeTick {
             ],
         )
     }
+
+    fn metadata(&self) -> HashMap<String, String> {
+        self.metadata()
+    }
 }
 
 impl DecodeFromRecordBatch for TradeTick {

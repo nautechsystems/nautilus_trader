@@ -131,6 +131,10 @@ impl EncodeToRecordBatch for OrderBookDelta {
             ],
         )
     }
+
+    fn metadata(&self) -> HashMap<String, String> {
+        self.metadata()
+    }
 }
 
 impl DecodeFromRecordBatch for OrderBookDelta {

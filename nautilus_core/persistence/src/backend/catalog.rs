@@ -1,15 +1,15 @@
 use itertools::Itertools;
 use log::info;
-use nautilus_serialization::arrow::{
-    bars_to_arrow_record_batch_bytes, order_book_deltas_to_arrow_record_batch_bytes,
-    order_book_depth10_to_arrow_record_batch_bytes, quote_ticks_to_arrow_record_batch_bytes,
-    trade_ticks_to_arrow_record_batch_bytes,
-};
+use nautilus_model::data::bar::Bar;
+use nautilus_model::data::delta::OrderBookDelta;
+use nautilus_model::data::depth::OrderBookDepth10;
+use nautilus_model::data::quote::QuoteTick;
+use nautilus_model::data::trade::TradeTick;
+use nautilus_serialization::arrow::EncodeToRecordBatch;
 use std::path::PathBuf;
 
 use datafusion::arrow::record_batch::RecordBatch;
 use nautilus_model::data::{Data, GetTsInit};
-use nautilus_serialization::arrow::EncodingError;
 use nautilus_serialization::parquet::write_batches_to_parquet;
 
 pub struct ParquetCatalog {
@@ -46,46 +46,40 @@ impl ParquetCatalog {
         );
     }
 
-    fn write_batch_to_parquet(batch: RecordBatch, path: PathBuf, type_name: &str) {
+    pub fn write_batch_to_parquet(batch: RecordBatch, path: PathBuf, type_name: &str) {
         info!("Writing {} data to {:?}", type_name, path);
         write_batches_to_parquet(&[batch], &path, None)
-            .expect(&format!("Failed to write {} to parquet", type_name));
+            .unwrap_or_else(|_| panic!("Failed to write {} to parquet", type_name));
     }
 
-    fn write_data<T, F>(
-        &self,
-        items: Vec<Data>,
-        extract_fn: F,
-        to_batch_fn: fn(Vec<T>) -> Result<RecordBatch, EncodingError>,
-        type_name: &str,
-        instrument_id: &str,
-    ) where
-        F: Fn(Data) -> Option<T>,
-        T: GetTsInit,
+    fn write_data<T>(&self, data: Vec<T>, type_name: &str)
+    where
+        T: GetTsInit + EncodeToRecordBatch,
     {
-        let data: Vec<T> = items.into_iter().filter_map(extract_fn).collect();
-
         ParquetCatalog::check_ascending_timestamps(&data, type_name);
 
-        let path = self.make_path(type_name, Some(instrument_id));
+        // TODO: use instrument id
+        let path = self.make_path(type_name, None);
         info!(
             "Processing {} data in chunks of {} to {:?}",
             type_name, self.batch_size, path
         );
 
+        // TODO: get instrument id from batch metadata
         // Convert all chunks to record batches first
         let batches: Vec<RecordBatch> = data
             .into_iter()
             .chunks(self.batch_size)
             .into_iter()
-            .map(|chunk| match to_batch_fn(chunk.collect()) {
-                Ok(batch) => batch,
-                Err(e) => {
-                    panic!(
-                        "Failed to convert {} chunk to record batch: {:?}",
-                        type_name, e
-                    )
-                }
+            .map(|chunk| {
+                // Take first element and extract metadata
+                // SAFETY: Unwrap safe as already checked that `data` not empty
+                let data = chunk.collect_vec();
+                let first = data
+                    .first()
+                    .expect("Encode to record batch expects non-empty chunk");
+                let metadata = first.metadata();
+                T::encode_batch(&metadata, &data).expect("Expected to encode batch")
             })
             .collect();
 
@@ -97,95 +91,41 @@ impl ParquetCatalog {
             path
         );
         write_batches_to_parquet(&batches, &path, None)
-            .expect(&format!("Failed to write {} to parquet", type_name));
+            .unwrap_or_else(|_| panic!("Failed to write {} to parquet", type_name));
     }
 
     pub fn write_data_enum(&self, data: Vec<Data>) {
-        // Group data by variant
-        let grouped_data = data.into_iter().chunk_by(|d| std::mem::discriminant(d));
+        let mut delta: Vec<OrderBookDelta> = Vec::new();
+        let mut depth10: Vec<OrderBookDepth10> = Vec::new();
+        let mut quote: Vec<QuoteTick> = Vec::new();
+        let mut trade: Vec<TradeTick> = Vec::new();
+        let mut bar: Vec<Bar> = Vec::new();
 
-        for (_, group) in grouped_data.into_iter() {
-            let items: Vec<_> = group.collect();
-            if items.is_empty() {
-                continue;
-            }
-
-            // Match on the first item to determine the variant type
-            match items[0] {
-                Data::Delta(ref delta) => {
-                    self.write_data(
-                        items,
-                        |d| {
-                            if let Data::Delta(d) = d {
-                                Some(d)
-                            } else {
-                                None
-                            }
-                        },
-                        order_book_deltas_to_arrow_record_batch_bytes,
-                        "OrderBookDelta",
-                        &delta.instrument_id.to_string(),
-                    );
+        for d in data.iter().cloned() {
+            match d {
+                Data::Delta(d) => {
+                    delta.push(d);
                 }
-                Data::Depth10(depth) => {
-                    self.write_data(
-                        items,
-                        |d| {
-                            if let Data::Depth10(d) = d {
-                                Some(d)
-                            } else {
-                                None
-                            }
-                        },
-                        order_book_depth10_to_arrow_record_batch_bytes,
-                        "OrderBookDepth10",
-                        &depth.instrument_id.to_string(),
-                    );
+                Data::Depth10(d) => {
+                    depth10.push(d);
                 }
-                Data::Quote(quote) => {
-                    self.write_data(
-                        items,
-                        |d| {
-                            if let Data::Quote(d) = d {
-                                Some(d)
-                            } else {
-                                None
-                            }
-                        },
-                        quote_ticks_to_arrow_record_batch_bytes,
-                        "QuoteTick",
-                        &quote.instrument_id.to_string(),
-                    );
+                Data::Quote(d) => {
+                    quote.push(d);
                 }
-                Data::Trade(trade) => {
-                    self.write_data(
-                        items,
-                        |d| {
-                            if let Data::Trade(d) = d {
-                                Some(d)
-                            } else {
-                                None
-                            }
-                        },
-                        trade_ticks_to_arrow_record_batch_bytes,
-                        "TradeTick",
-                        &trade.instrument_id.to_string(),
-                    );
+                Data::Trade(d) => {
+                    trade.push(d);
                 }
-                Data::Bar(bar) => {
-                    self.write_data(
-                        items,
-                        |d| if let Data::Bar(d) = d { Some(d) } else { None },
-                        bars_to_arrow_record_batch_bytes,
-                        "Bar",
-                        &bar.bar_type.to_string(),
-                    );
+                Data::Bar(d) => {
+                    bar.push(d);
                 }
-                Data::Deltas(_) => {
-                    // Handle OrderBookDeltas_API if needed
-                    continue;
-                }
+                Data::Deltas(_) => continue,
             }
         }
+
+        self.write_data(delta, "OrderBookDelta");
+        self.write_data(depth10, "OrderBookDepth10");
+        self.write_data(quote, "QuoteTick");
+        self.write_data(trade, "TradeTick");
+        self.write_data(bar, "Bar");
     }
 }

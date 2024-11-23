@@ -82,6 +82,14 @@ impl TradeTick {
         }
     }
 
+    pub fn metadata(&self) -> HashMap<String, String> {
+        Self::get_metadata(
+            &self.instrument_id,
+            self.price.precision,
+            self.size.precision,
+        )
+    }
+
     /// Returns the metadata for the type, for use with serialization formats.
     #[must_use]
     pub fn get_metadata(
