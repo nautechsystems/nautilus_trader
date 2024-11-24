@@ -1,27 +1,35 @@
 use itertools::Itertools;
 use log::info;
+use nautilus_core::nanos::UnixNanos;
 use nautilus_model::data::bar::Bar;
 use nautilus_model::data::delta::OrderBookDelta;
 use nautilus_model::data::depth::OrderBookDepth10;
 use nautilus_model::data::quote::QuoteTick;
 use nautilus_model::data::trade::TradeTick;
-use nautilus_serialization::arrow::EncodeToRecordBatch;
+use nautilus_serialization::arrow::{DecodeDataFromRecordBatch, EncodeToRecordBatch};
 use std::path::PathBuf;
 
 use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::error::Result;
+use heck::ToSnakeCase;
 use nautilus_model::data::{Data, GetTsInit};
 use nautilus_serialization::parquet::write_batches_to_parquet;
 
-pub struct ParquetCatalog {
+use super::session::{self, build_query, DataBackendSession, QueryResult};
+
+pub struct ParquetDataCatalog {
     base_path: PathBuf,
     batch_size: usize,
+    session: DataBackendSession,
 }
 
-impl ParquetCatalog {
+impl ParquetDataCatalog {
     pub fn new(base_path: PathBuf, batch_size: Option<usize>) -> Self {
+        let batch_size = batch_size.unwrap_or(5000);
         Self {
             base_path,
-            batch_size: batch_size.unwrap_or(5000),
+            batch_size,
+            session: session::DataBackendSession::new(batch_size),
         }
     }
 
@@ -67,7 +75,7 @@ impl ParquetCatalog {
     where
         T: GetTsInit + EncodeToRecordBatch,
     {
-        ParquetCatalog::check_ascending_timestamps(&data, type_name);
+        ParquetDataCatalog::check_ascending_timestamps(&data, type_name);
 
         let batches = self.data_to_record_batches(data);
         if let Some(batch) = batches.first() {
@@ -85,6 +93,37 @@ impl ParquetCatalog {
             write_batches_to_parquet(&batches, &path, None)
                 .unwrap_or_else(|_| panic!("Failed to write {} to parquet", type_name));
         }
+    }
+
+    /// Query data loaded in the catalog
+    pub fn query<T>(
+        &mut self,
+        // use instrument_ids or bar_types to query specific subset of the data
+        instrument_ids: Vec<String>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        where_clause: Option<&str>,
+    ) -> Result<QueryResult>
+    where
+        T: DecodeDataFromRecordBatch,
+    {
+        let mut paths = Vec::new();
+        for instrument_id in instrument_ids.iter() {
+            paths.push(self.make_path("TODO", Some(instrument_id)));
+        }
+
+        // If no specific instrument_id is selected query all files for the data type
+        if paths.is_empty() {
+            paths.push(self.make_path("TODO", None));
+        }
+
+        for path in paths.iter() {
+            let path = path.to_str().unwrap();
+            let query = build_query(path, start, end, where_clause);
+            self.session.add_file::<T>(path, path, Some(&query))?;
+        }
+
+        Ok(self.session.get_query_result())
     }
 
     pub fn write_data_enum(&self, data: Vec<Data>) {
@@ -115,10 +154,10 @@ impl ParquetCatalog {
             }
         }
 
-        self.write_data(delta, "OrderBookDelta");
-        self.write_data(depth10, "OrderBookDepth10");
-        self.write_data(quote, "QuoteTick");
-        self.write_data(trade, "TradeTick");
-        self.write_data(bar, "Bar");
+        self.write_data(delta, &"OrderBookDelta".to_snake_case());
+        self.write_data(depth10, &"OrderBookDepth10".to_snake_case());
+        self.write_data(quote, &"QuoteTick".to_snake_case());
+        self.write_data(trade, &"TradeTick".to_snake_case());
+        self.write_data(bar, &"Bar".to_snake_case());
     }
 }
