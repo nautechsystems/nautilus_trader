@@ -25,7 +25,7 @@ impl ParquetCatalog {
         }
     }
 
-    fn make_path(&self, type_name: &str, instrument_id: Option<&str>) -> PathBuf {
+    fn make_path(&self, type_name: &str, instrument_id: Option<&String>) -> PathBuf {
         let mut path = self.base_path.join("data").join(type_name.to_lowercase());
 
         if let Some(id) = instrument_id {
@@ -46,10 +46,21 @@ impl ParquetCatalog {
         );
     }
 
-    pub fn write_batch_to_parquet(batch: RecordBatch, path: PathBuf, type_name: &str) {
-        info!("Writing {} data to {:?}", type_name, path);
-        write_batches_to_parquet(&[batch], &path, None)
-            .unwrap_or_else(|_| panic!("Failed to write {} to parquet", type_name));
+    pub fn data_to_record_batches<T>(&self, data: Vec<T>) -> Vec<RecordBatch>
+    where
+        T: GetTsInit + EncodeToRecordBatch,
+    {
+        data.into_iter()
+            .chunks(self.batch_size)
+            .into_iter()
+            .map(|chunk| {
+                // Take first element and extract metadata
+                // SAFETY: Unwrap safe as already checked that `data` not empty
+                let data = chunk.collect_vec();
+                let metadata = EncodeToRecordBatch::chunk_metadata(&data);
+                T::encode_batch(&metadata, &data).expect("Expected to encode batch")
+            })
+            .collect()
     }
 
     fn write_data<T>(&self, data: Vec<T>, type_name: &str)
@@ -58,40 +69,22 @@ impl ParquetCatalog {
     {
         ParquetCatalog::check_ascending_timestamps(&data, type_name);
 
-        // TODO: use instrument id
-        let path = self.make_path(type_name, None);
-        info!(
-            "Processing {} data in chunks of {} to {:?}",
-            type_name, self.batch_size, path
-        );
+        let batches = self.data_to_record_batches(data);
+        if let Some(batch) = batches.first() {
+            let schema = batch.schema();
+            let instrument_id = schema.metadata.get("instrument_id");
+            let path = self.make_path(type_name, instrument_id);
 
-        // TODO: get instrument id from batch metadata
-        // Convert all chunks to record batches first
-        let batches: Vec<RecordBatch> = data
-            .into_iter()
-            .chunks(self.batch_size)
-            .into_iter()
-            .map(|chunk| {
-                // Take first element and extract metadata
-                // SAFETY: Unwrap safe as already checked that `data` not empty
-                let data = chunk.collect_vec();
-                let first = data
-                    .first()
-                    .expect("Encode to record batch expects non-empty chunk");
-                let metadata = first.metadata();
-                T::encode_batch(&metadata, &data).expect("Expected to encode batch")
-            })
-            .collect();
-
-        // Write all batches to parquet file
-        info!(
-            "Writing {} batches of {} data to {:?}",
-            batches.len(),
-            type_name,
-            path
-        );
-        write_batches_to_parquet(&batches, &path, None)
-            .unwrap_or_else(|_| panic!("Failed to write {} to parquet", type_name));
+            // Write all batches to parquet file
+            info!(
+                "Writing {} batches of {} data to {:?}",
+                batches.len(),
+                type_name,
+                path
+            );
+            write_batches_to_parquet(&batches, &path, None)
+                .unwrap_or_else(|_| panic!("Failed to write {} to parquet", type_name));
+        }
     }
 
     pub fn write_data_enum(&self, data: Vec<Data>) {

@@ -585,10 +585,6 @@ impl Bar {
         self.bar_type.instrument_id()
     }
 
-    pub fn metadata(&self) -> HashMap<String, String> {
-        Self::get_metadata(&self.bar_type, self.open.precision, self.volume.precision)
-    }
-
     /// Returns the metadata for the type, for use with serialization formats.
     #[must_use]
     pub fn get_metadata(

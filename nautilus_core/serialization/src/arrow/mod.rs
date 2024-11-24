@@ -97,6 +97,12 @@ where
     ) -> Result<RecordBatch, ArrowError>;
 
     fn metadata(&self) -> HashMap<String, String>;
+    fn chunk_metadata(chunk: &[Self]) -> HashMap<String, String> {
+        chunk
+            .first()
+            .map(|elem| elem.metadata())
+            .expect("Chunk must have atleast one element to encode")
+    }
 }
 
 pub trait DecodeFromRecordBatch

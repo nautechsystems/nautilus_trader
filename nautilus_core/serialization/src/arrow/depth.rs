@@ -225,7 +225,11 @@ impl EncodeToRecordBatch for OrderBookDepth10 {
     }
 
     fn metadata(&self) -> HashMap<String, String> {
-        self.metadata()
+        OrderBookDepth10::get_metadata(
+            &self.instrument_id,
+            self.bids[0].price.precision,
+            self.bids[0].size.precision,
+        )
     }
 }
 

@@ -133,7 +133,26 @@ impl EncodeToRecordBatch for OrderBookDelta {
     }
 
     fn metadata(&self) -> HashMap<String, String> {
-        self.metadata()
+        OrderBookDelta::get_metadata(
+            &self.instrument_id,
+            self.order.price.precision,
+            self.order.size.precision,
+        )
+    }
+
+    fn chunk_metadata(chunk: &[Self]) -> HashMap<String, String> {
+        let metadata = chunk
+            .first()
+            .map(EncodeToRecordBatch::metadata)
+            .expect("Chunk should have alteast one element to encode");
+
+        // If first element precision metadata is 0, try using metadata of second element
+        metadata
+            .get("price_precision")
+            .zip(metadata.get("size_precision"))
+            .filter(|(p, s)| *p == "0" && *s == "0")
+            .and_then(|_| chunk.get(2).map(EncodeToRecordBatch::metadata))
+            .unwrap_or(metadata)
     }
 }
 
