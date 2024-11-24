@@ -63,7 +63,7 @@ impl ParquetCatalog {
             .collect()
     }
 
-    fn write_data<T>(&self, data: Vec<T>, type_name: &str)
+    pub fn write_data<T>(&self, data: Vec<T>, type_name: &str)
     where
         T: GetTsInit + EncodeToRecordBatch,
     {
