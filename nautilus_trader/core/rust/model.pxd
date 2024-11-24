@@ -22,12 +22,6 @@ cdef extern from "../includes/model.h":
     # The minimum valid money amount which can be represented.
     const double MONEY_MIN # = -9223372036.0
 
-    # The sentinel value for an unset or null price.
-    const int64_t PRICE_UNDEF # = INT64_MAX
-
-    # The sentinel value for an error or invalid price.
-    const int64_t PRICE_ERROR # = INT64_MIN
-
     # The maximum valid price value which can be represented.
     const double PRICE_MAX # = 9223372036.0
 
@@ -460,6 +454,10 @@ cdef extern from "../includes/model.h":
         # The instruments trading venue.
         Venue_t venue;
 
+    ctypedef int64_t PriceRaw;
+
+    ctypedef i128 PriceRaw;
+
     # Represents a price in a market.
     #
     # The number of decimal places may vary. For certain asset classes, prices may
@@ -473,7 +471,7 @@ cdef extern from "../includes/model.h":
     cdef struct Price_t:
         # The raw price as a signed 64-bit integer.
         # Represents the unscaled value, with `precision` defining the number of decimal places.
-        int64_t raw;
+        PriceRaw raw;
         # The number of decimal places, with a maximum precision of 9.
         uint8_t precision;
 
@@ -856,6 +854,10 @@ cdef extern from "../includes/model.h":
 
     # Represents a NULL book order (used with the `Clear` action or where an order is not specified).
     const BookOrder_t NULL_ORDER # = <BookOrder_t>{ OrderSide_NoOrderSide, <Price_t>{ 0, 0 }, <Quantity_t>{ 0, 0 }, 0 }
+
+
+
+
 
     # The sentinel `Price` representing errors (this will be removed when Cython is gone).
     const Price_t ERROR_PRICE # = <Price_t>{ PRICE_ERROR, 0 }

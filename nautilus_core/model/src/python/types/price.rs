@@ -28,7 +28,10 @@ use pyo3::{
 };
 use rust_decimal::{Decimal, RoundingStrategy};
 
-use crate::types::{fixed::fixed_i64_to_f64, price::Price};
+use crate::types::{
+    fixed::{fixed_i128_to_f64, fixed_i64_to_f64},
+    price::{Price, PriceRaw},
+};
 
 #[pymethods]
 impl Price {
@@ -39,7 +42,7 @@ impl Price {
 
     fn __setstate__(&mut self, state: &Bound<'_, PyAny>) -> PyResult<()> {
         let py_tuple: &Bound<'_, PyTuple> = state.downcast::<PyTuple>()?;
-        self.raw = py_tuple.get_item(0)?.extract::<i64>()?;
+        self.raw = py_tuple.get_item(0)?.extract::<PriceRaw>()?;
         self.precision = py_tuple.get_item(1)?.extract::<u8>()?;
         Ok(())
     }
@@ -322,7 +325,7 @@ impl Price {
     }
 
     #[getter]
-    fn raw(&self) -> i64 {
+    fn raw(&self) -> PriceRaw {
         self.raw
     }
 
@@ -333,7 +336,7 @@ impl Price {
 
     #[staticmethod]
     #[pyo3(name = "from_raw")]
-    fn py_from_raw(raw: i64, precision: u8) -> Self {
+    fn py_from_raw(raw: PriceRaw, precision: u8) -> Self {
         Self::from_raw(raw, precision)
     }
 
@@ -366,9 +369,16 @@ impl Price {
         self.is_positive()
     }
 
+    #[cfg(not(feature = "high_precision"))]
     #[pyo3(name = "as_double")]
     fn py_as_double(&self) -> f64 {
         fixed_i64_to_f64(self.raw)
+    }
+
+    #[cfg(feature = "high_precision")]
+    #[pyo3(name = "as_double")]
+    fn py_as_double(&self) -> f64 {
+        fixed_i128_to_f64(self.raw)
     }
 
     #[pyo3(name = "as_decimal")]

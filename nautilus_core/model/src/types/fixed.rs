@@ -52,6 +52,11 @@ pub fn f64_to_fixed_i64(value: f64, precision: u8) -> i64 {
     rounded * pow2
 }
 
+// TODO: Proe
+pub fn f64_to_fixed_i128(value: f64, precision: u8) -> i128 {
+    todo!()
+}
+
 /// Converts an `f64` value to a raw fixed-point `u64` representation with a specified precision.
 ///
 /// # Panics
@@ -71,6 +76,12 @@ pub fn f64_to_fixed_u64(value: f64, precision: u8) -> u64 {
 #[must_use]
 pub fn fixed_i64_to_f64(value: i64) -> f64 {
     (value as f64) / FIXED_SCALAR
+}
+
+/// Converts a raw fixed-point `i64` value back to an `f64` value.
+#[must_use]
+pub fn fixed_i128_to_f64(value: i128) -> f64 {
+    todo!()
 }
 
 /// Converts a raw fixed-point `u64` value back to an `f64` value.

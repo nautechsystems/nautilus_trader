@@ -33,16 +33,6 @@
 #define MONEY_MIN -9223372036.0
 
 /**
- * The sentinel value for an unset or null price.
- */
-#define PRICE_UNDEF INT64_MAX
-
-/**
- * The sentinel value for an error or invalid price.
- */
-#define PRICE_ERROR INT64_MIN
-
-/**
  * The maximum valid price value which can be represented.
  */
 #define PRICE_MAX 9223372036.0
@@ -850,6 +840,10 @@ typedef struct InstrumentId_t {
     struct Venue_t venue;
 } InstrumentId_t;
 
+typedef int64_t PriceRaw;
+
+typedef i128 PriceRaw;
+
 /**
  * Represents a price in a market.
  *
@@ -867,7 +861,7 @@ typedef struct Price_t {
      * The raw price as a signed 64-bit integer.
      * Represents the unscaled value, with `precision` defining the number of decimal places.
      */
-    int64_t raw;
+    PriceRaw raw;
     /**
      * The number of decimal places, with a maximum precision of 9.
      */
@@ -1490,6 +1484,10 @@ typedef struct Money_t {
  * Represents a NULL book order (used with the `Clear` action or where an order is not specified).
  */
 #define NULL_ORDER (BookOrder_t){ .side = OrderSide_NoOrderSide, .price = (Price_t){ .raw = 0, .precision = 0 }, .size = (Quantity_t){ .raw = 0, .precision = 0 }, .order_id = 0 }
+
+
+
+
 
 /**
  * The sentinel `Price` representing errors (this will be removed when Cython is gone).

@@ -36,7 +36,10 @@ use crate::{
     enums::{AggressorSide, FromU8},
     identifiers::{InstrumentId, TradeId},
     python::common::PY_MODULE_MODEL,
-    types::{price::Price, quantity::Quantity},
+    types::{
+        price::{Price, PriceRaw},
+        quantity::Quantity,
+    },
 };
 
 impl TradeTick {
@@ -48,7 +51,7 @@ impl TradeTick {
             InstrumentId::from_str(instrument_id_str.as_str()).map_err(to_pyvalue_err)?;
 
         let price_py: Bound<'_, PyAny> = obj.getattr("price")?.extract()?;
-        let price_raw: i64 = price_py.getattr("raw")?.extract()?;
+        let price_raw: PriceRaw = price_py.getattr("raw")?.extract()?;
         let price_prec: u8 = price_py.getattr("precision")?.extract()?;
         let price = Price::from_raw(price_raw, price_prec);
 
@@ -110,7 +113,7 @@ impl TradeTick {
         let price_raw = py_tuple
             .get_item(1)?
             .downcast::<PyLong>()?
-            .extract::<i64>()?;
+            .extract::<PriceRaw>()?;
         let price_prec = py_tuple
             .get_item(2)?
             .downcast::<PyLong>()?
