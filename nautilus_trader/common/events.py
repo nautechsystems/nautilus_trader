@@ -20,8 +20,8 @@ from nautilus_trader.common.messages import TradingStateChanged
 
 
 __all__ = [
-    "TimeEvent",
     "ComponentStateChanged",
     "RiskEvent",
+    "TimeEvent",
     "TradingStateChanged",
 ]

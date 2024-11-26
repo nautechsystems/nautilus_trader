@@ -133,10 +133,8 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         )
 
         if (
-            contract.secType in ["FUT", "CONTFUT"]
-            and contract.build_futures_chain
-            or self._build_futures_chain
-        ):
+            contract.secType in ["FUT", "CONTFUT"] and contract.build_futures_chain
+        ) or self._build_futures_chain:
             # Return Underlying contract details with Future Chains
             details = await self.get_future_chain_details(
                 underlying=qualified.contract,
@@ -156,10 +154,8 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             self._log.debug(f"Got {details=}")
 
         if (
-            contract.secType in ["STK", "FUT", "IND"]
-            and contract.build_options_chain
-            or self._build_options_chain
-        ):
+            contract.secType in ["STK", "FUT", "IND"] and contract.build_options_chain
+        ) or self._build_options_chain:
             # Return Underlying contract details with Option Chains, including for the Future Chains if apply
             for detail in set(details):
                 if contract.lastTradeDateOrContractMonth:

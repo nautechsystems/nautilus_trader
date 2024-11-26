@@ -32,16 +32,16 @@ from nautilus_trader.model.orders.unpacker import OrderUnpacker
 
 
 __all__ = [
-    "Order",
-    "LimitOrder",
     "LimitIfTouchedOrder",
-    "OrderList",
-    "MarketOrder",
+    "LimitOrder",
     "MarketIfTouchedOrder",
+    "MarketOrder",
     "MarketToLimitOrder",
+    "Order",
+    "OrderList",
+    "OrderUnpacker",
     "StopLimitOrder",
     "StopMarketOrder",
     "TrailingStopLimitOrder",
     "TrailingStopMarketOrder",
-    "OrderUnpacker",
 ]

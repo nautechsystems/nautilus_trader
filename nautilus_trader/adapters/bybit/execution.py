@@ -1046,7 +1046,8 @@ class BybitExecutionClient(LiveExecutionClient):
                                 order,
                                 TrailingStopMarketOrder,
                             )
-                            or bybit_order.orderType == BybitOrderType.LIMIT
+                        ) or (
+                            bybit_order.orderType == BybitOrderType.LIMIT
                             and not isinstance(
                                 order,
                                 TrailingStopLimitOrder,
