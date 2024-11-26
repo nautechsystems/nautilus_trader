@@ -46,6 +46,7 @@ indexmap = { version = "2.6.0", features = ["serde"] }
 itertools = "0.13.0"
 itoa = "1.0.14"
 once_cell = "1.20.2"
+libc = "=0.2.164"  # Pin due sysinfo issue: https://github.com/GuillaumeGomez/sysinfo/issues/1392
 log = { version = "0.4.22", features = ["std", "kv_unstable", "serde", "release_max_level_debug"] }
 parquet = "53.2.0"  # Keep in line with datafusion
 pyo3 = { version = "0.22.6", features = ["rust_decimal", "indexmap", "smallvec"] }
