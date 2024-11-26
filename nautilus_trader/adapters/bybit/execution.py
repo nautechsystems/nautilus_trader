@@ -1008,9 +1008,7 @@ class BybitExecutionClient(LiveExecutionClient):
             last_px=Price(float(execution.execPrice), instrument.price_precision),
             quote_currency=instrument.quote_currency,
             commission=Money(Decimal(execution.execFee), instrument.quote_currency),
-            liquidity_side=(
-                LiquiditySide.MAKER if order_type == OrderType.LIMIT else LiquiditySide.TAKER
-            ),
+            liquidity_side=LiquiditySide.MAKER if execution.isMaker else LiquiditySide.TAKER,
             ts_event=millis_to_nanos(float(execution.execTime)),
         )
 
