@@ -193,9 +193,9 @@ impl RiskEngine {
     }
 
     fn handle_submit_order_cache(cache: &Rc<RefCell<Cache>>, submit_order: &SubmitOrder) {
-        let mut burrowed_cache = cache.borrow_mut();
-        if !burrowed_cache.order_exists(&submit_order.client_order_id) {
-            burrowed_cache
+        let mut borrowed_cache = cache.borrow_mut();
+        if !borrowed_cache.order_exists(&submit_order.client_order_id) {
+            borrowed_cache
                 .add_order(submit_order.order.clone(), None, None, false)
                 .map_err(|e| {
                     log::error!("Cannot add order to cache: {e}");
@@ -205,8 +205,8 @@ impl RiskEngine {
     }
 
     fn get_existing_order(cache: &Rc<RefCell<Cache>>, order: &ModifyOrder) -> Option<OrderAny> {
-        let burrowed_cache = cache.borrow();
-        if let Some(order) = burrowed_cache.order(&order.client_order_id) {
+        let borrowed_cache = cache.borrow();
+        if let Some(order) = borrowed_cache.order(&order.client_order_id) {
             Some(order.clone())
         } else {
             log::error!(
@@ -424,8 +424,8 @@ impl RiskEngine {
         // VALIDATE COMMAND
         ////////////////////////////////////////////////////////////////////////////////
         let order_exists = {
-            let burrowed_cache = self.cache.borrow();
-            burrowed_cache.order(&command.client_order_id).cloned()
+            let borrowed_cache = self.cache.borrow();
+            borrowed_cache.order(&command.client_order_id).cloned()
         };
 
         let order = if let Some(order) = order_exists {
@@ -633,16 +633,16 @@ impl RiskEngine {
             last_px = match order {
                 OrderAny::Market(_) | OrderAny::MarketToLimit(_) => {
                     if last_px.is_none() {
-                        let burrowed_cache = self.cache.borrow();
-                        if let Some(last_quote) = burrowed_cache.quote(&instrument.id()) {
+                        let borrowed_cache = self.cache.borrow();
+                        if let Some(last_quote) = borrowed_cache.quote(&instrument.id()) {
                             match order.order_side() {
                                 OrderSide::Buy => Some(last_quote.ask_price),
                                 OrderSide::Sell => Some(last_quote.bid_price),
                                 _ => panic!("Invalid order side"),
                             }
                         } else {
-                            let burrowed_cache = self.cache.borrow();
-                            let last_trade = burrowed_cache.trade(&instrument.id());
+                            let borrowed_cache = self.cache.borrow();
+                            let last_trade = borrowed_cache.trade(&instrument.id());
 
                             if let Some(last_trade) = last_trade {
                                 Some(last_trade.price)
@@ -937,9 +937,9 @@ impl RiskEngine {
             return;
         }
 
-        let mut burrowed_cache = self.cache.borrow_mut();
-        if !burrowed_cache.order_exists(&order.client_order_id()) {
-            burrowed_cache
+        let mut borrowed_cache = self.cache.borrow_mut();
+        if !borrowed_cache.order_exists(&order.client_order_id()) {
+            borrowed_cache
                 .add_order(order.clone(), None, None, false)
                 .map_err(|e| {
                     log::error!("Cannot add order to cache: {e}");
