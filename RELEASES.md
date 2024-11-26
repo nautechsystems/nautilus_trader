@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added `max_reconnection_tries` to data client config for dYdX (#2066), thanks @davidsblom
 
 ### Internal Improvements
+- Ported `Portfolio` and `AccountManager` to Rust (#2058), thanks @Pushkarm029
 - Improved live engines error logging (will now log all exceptions rather than just `RuntimeError`)
 - Improved symbol normalization for Tardis
 - Improved historical bar request performance for Tardis
