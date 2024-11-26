@@ -46,7 +46,7 @@ from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecutionMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountOrderMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountPositionMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsMessageGeneral
-from nautilus_trader.adapters.bybit.websocket.client import BybitWebsocketClient
+from nautilus_trader.adapters.bybit.websocket.client import BybitWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -171,7 +171,7 @@ class BybitExecutionClient(LiveExecutionClient):
         self._set_account_id(account_id)
 
         # WebSocket API
-        self._ws_client = BybitWebsocketClient(
+        self._ws_client = BybitWebSocketClient(
             clock=clock,
             handler=self._handle_ws_message,
             handler_reconnect=None,
