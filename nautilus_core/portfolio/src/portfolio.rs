@@ -718,6 +718,7 @@ impl Portfolio {
         for (instrument, orders_open) in &orders_and_instruments {
             let mut borrowed_cache = self.cache.borrow_mut();
             let account = if let Some(account) =
+                // TODO: Temp
                 borrowed_cache.mut_account_for_venue(&instrument.id().venue)
             {
                 account
@@ -1198,7 +1199,7 @@ fn update_quote_tick(
         }
 
         account.clone()
-    }; // All borrows are dropped here
+    };
 
     let mut portfolio_clone = Portfolio {
         clock: clock.clone(),
@@ -1484,7 +1485,7 @@ mod tests {
         },
         identifiers::{
             stubs::{account_id, uuid4},
-            AccountId, ClientOrderId, PositionId, Symbol, TradeId, VenueOrderId,
+            AccountId, ClientOrderId, PositionId, StrategyId, Symbol, TradeId, VenueOrderId,
         },
         instruments::{
             any::InstrumentAny,
@@ -1640,6 +1641,11 @@ mod tests {
                     Money::new(0.000, Currency::USD()),
                     Money::new(10.000, Currency::USD()),
                 ),
+                AccountBalance::new(
+                    Money::new(10.000, Currency::GBP()),
+                    Money::new(0.000, Currency::GBP()),
+                    Money::new(10.000, Currency::GBP()),
+                ),
             ],
             Vec::new(),
             true,
@@ -1719,6 +1725,63 @@ mod tests {
             avg_px_open: position.avg_px_open,
             ts_event: 0.into(),
             ts_init: 0.into(),
+        }
+    }
+
+    fn get_changed_position(position: &Position) -> PositionChanged {
+        PositionChanged {
+            trader_id: position.trader_id,
+            strategy_id: position.strategy_id,
+            instrument_id: position.instrument_id,
+            position_id: position.id,
+            account_id: position.account_id,
+            opening_order_id: position.opening_order_id,
+            entry: position.entry,
+            side: position.side,
+            signed_qty: position.signed_qty,
+            quantity: position.quantity,
+            last_qty: position.quantity,
+            last_px: Price::new(position.avg_px_open, 0),
+            currency: position.settlement_currency,
+            avg_px_open: position.avg_px_open,
+            ts_event: 0.into(),
+            ts_init: 0.into(),
+            peak_quantity: position.quantity,
+            avg_px_close: position.avg_px_open,
+            realized_return: position.avg_px_open,
+            realized_pnl: Money::new(10.0, Currency::USD()),
+            unrealized_pnl: Money::new(10.0, Currency::USD()),
+            ts_opened: 0.into(),
+        }
+    }
+
+    fn get_close_position(position: &Position) -> PositionClosed {
+        PositionClosed {
+            trader_id: position.trader_id,
+            strategy_id: position.strategy_id,
+            instrument_id: position.instrument_id,
+            position_id: position.id,
+            account_id: position.account_id,
+            opening_order_id: position.opening_order_id,
+            entry: position.entry,
+            side: position.side,
+            signed_qty: position.signed_qty,
+            quantity: position.quantity,
+            last_qty: position.quantity,
+            last_px: Price::new(position.avg_px_open, 0),
+            currency: position.settlement_currency,
+            avg_px_open: position.avg_px_open,
+            ts_event: 0.into(),
+            ts_init: 0.into(),
+            peak_quantity: position.quantity,
+            avg_px_close: position.avg_px_open,
+            realized_return: position.avg_px_open,
+            realized_pnl: Money::new(10.0, Currency::USD()),
+            unrealized_pnl: Money::new(10.0, Currency::USD()),
+            ts_opened: 0.into(),
+            closing_order_id: ClientOrderId::new("SSD"),
+            duration: 0,
+            ts_closed: 0.into(),
         }
     }
 
@@ -1860,7 +1923,7 @@ mod tests {
         assert!(portfolio.unrealized_pnl(&instrument_audusd.id()).is_none());
     }
 
-    //TODO: FIX: It shouuld return an error
+    //TODO: FIX: It should return an error
     #[rstest]
     fn test_exceed_free_balance_single_currency_raises_account_balance_negative_exception(
         mut portfolio: Portfolio,
@@ -1881,21 +1944,19 @@ mod tests {
             .add_order(order.clone(), None, None, false)
             .unwrap();
 
-        // TODO: match with py tests
         let order_submitted = submit_order(&order);
         order
             .apply(OrderEventAny::Submitted(order_submitted))
             .unwrap();
 
         portfolio.update_order(&OrderEventAny::Submitted(order_submitted));
-        // portfolio.msgbus.borrow().publish(topic, message);
 
         let order_filled = fill_order(&order);
         order.apply(OrderEventAny::Filled(order_filled)).unwrap();
         portfolio.update_order(&OrderEventAny::Filled(order_filled));
     }
 
-    // TODO: It shouuld return an error
+    // TODO: It should return an error
     #[rstest]
     fn test_exceed_free_balance_multi_currency_raises_account_balance_negative_exception(
         mut portfolio: Portfolio,
@@ -1950,7 +2011,7 @@ mod tests {
             .instrument_id(instrument_audusd.id())
             .side(OrderSide::Buy)
             .quantity(Quantity::from("1.0"))
-            .price(Price::from_raw(50000, 0))
+            .price(Price::new(50000.0, 0))
             .build();
 
         portfolio
@@ -1978,7 +2039,7 @@ mod tests {
                 .get(&Currency::USD())
                 .unwrap()
                 .as_f64(),
-            25000.0 //TODO: should be around 30000, rn 25000
+            25000.0
         );
     }
 
@@ -1995,16 +2056,16 @@ mod tests {
             .instrument_id(instrument_btcusdt.id())
             .side(OrderSide::Buy)
             .quantity(Quantity::from("100.0"))
-            .price(Price::from_raw(5, 1))
-            .trigger_price(Price::from_raw(4, 1))
+            .price(Price::new(55.0, 1))
+            .trigger_price(Price::new(35.0, 1))
             .build();
 
         let order2 = OrderTestBuilder::new(OrderType::StopMarket)
             .instrument_id(instrument_btcusdt.id())
             .side(OrderSide::Buy)
-            .quantity(Quantity::from("100.0"))
-            .price(Price::from_raw(5, 1))
-            .trigger_price(Price::from_raw(45, 2))
+            .quantity(Quantity::from("1000.0"))
+            .price(Price::new(45.0, 1))
+            .trigger_price(Price::new(30.0, 1))
             .build();
 
         portfolio
@@ -2032,25 +2093,29 @@ mod tests {
             .unwrap();
         portfolio.cache.borrow_mut().update_order(&order1).unwrap();
 
+        // TODO: Replace with Execution Engine once implemented.
+        portfolio
+            .cache
+            .borrow_mut()
+            .add_order(order1.clone(), None, None, true)
+            .unwrap();
+
         let order_filled1 = fill_order(&order1);
         order1.apply(OrderEventAny::Filled(order_filled1)).unwrap();
 
         // Act
-        let last = get_quote_tick(&instrument_btcusdt, 25001.0, 25002.0, 1.0, 1.0);
+        let last = get_quote_tick(&instrument_btcusdt, 25001.0, 25002.0, 15.0, 12.0);
         portfolio.update_quote_tick(&last);
         portfolio.initialize_orders();
 
         // Assert
-        // TODO: It is always zero because we are not inserting "updated_order" into cache.orders (HashSet).
-        // This is why, when querying cache.orders_open, we get the order (which is not updated)
-        // with the status as INITIALIZED instead of ACCEPTED.
         assert_eq!(
             portfolio
                 .margins_init(&Venue::from("BINANCE"))
                 .get(&instrument_btcusdt.id())
                 .unwrap()
                 .as_f64(),
-            0.0
+            10.5
         );
     }
 
@@ -2068,7 +2133,7 @@ mod tests {
             .instrument_id(instrument_btcusdt.id())
             .side(OrderSide::Buy)
             .quantity(Quantity::from("100.0"))
-            .price(Price::from_raw(5, 1))
+            .price(Price::new(5.0, 0))
             .build();
 
         portfolio
@@ -2089,20 +2154,24 @@ mod tests {
             .unwrap();
         portfolio.cache.borrow_mut().update_order(&order).unwrap();
 
+        // TODO: Replace with Execution Engine once implemented.
+        portfolio
+            .cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, true)
+            .unwrap();
+
         // Act
         portfolio.initialize_orders();
 
         // Assert
-        // TODO: It is always zero because we are not inserting "updated_order" into cache.orders (HashSet).
-        // This is why, when querying cache.orders_open, we get the order (which is not updated)
-        // with the status as INITIALIZED instead of ACCEPTED.
         assert_eq!(
             portfolio
                 .margins_init(&Venue::from("BINANCE"))
                 .get(&instrument_btcusdt.id())
                 .unwrap()
                 .as_f64(),
-            0.0
+            1.5
         );
     }
 
@@ -2243,7 +2312,6 @@ mod tests {
                 .as_f64(),
             -6445.89
         );
-        // TODO: doubtful -> compare flow with python
         assert_eq!(
             portfolio
                 .realized_pnls(&Venue::from("SIM"))
@@ -2252,16 +2320,6 @@ mod tests {
                 .as_f64(),
             0.0
         );
-
-        // TODO: fix
-        // assert_eq!(
-        //     portfolio
-        //         .margins_maint(&Venue::from("SIM"))
-        //         .get(&instrument_audusd.id())
-        //         .unwrap()
-        //         .as_f64(),
-        //     0.0
-        // );
         assert_eq!(
             portfolio
                 .net_exposure(&instrument_audusd.id())
@@ -2366,7 +2424,6 @@ mod tests {
                 .as_f64(),
             -31000.0
         );
-        // TODO: doubtful -> compare flow with python
         assert_eq!(
             portfolio
                 .realized_pnls(&Venue::from("SIM"))
@@ -2375,16 +2432,6 @@ mod tests {
                 .as_f64(),
             -12.2
         );
-
-        // TODO: fix
-        // assert_eq!(
-        //     portfolio
-        //         .margins_maint(&Venue::from("SIM"))
-        //         .get(&instrument_audusd.id())
-        //         .unwrap()
-        //         .as_f64(),
-        //     0.0
-        // );
         assert_eq!(
             portfolio
                 .net_exposure(&instrument_audusd.id())
@@ -2572,7 +2619,7 @@ mod tests {
             portfolio
                 .net_exposures(&Venue::from("BITMEX"))
                 .unwrap()
-                .get(&Currency::ETH()) // TODO: IT SHOULD BE BTC()
+                .get(&Currency::ETH())
                 .unwrap()
                 .as_f64(),
             0.26595745
@@ -2851,30 +2898,7 @@ mod tests {
         );
 
         position1.apply(&fill2);
-        let position1_changed = PositionChanged {
-            trader_id: position1.trader_id,
-            strategy_id: position1.strategy_id,
-            instrument_id: position1.instrument_id,
-            position_id: position1.id,
-            account_id: position1.account_id,
-            opening_order_id: position1.opening_order_id,
-            entry: position1.entry,
-            side: position1.side,
-            signed_qty: position1.signed_qty,
-            quantity: position1.quantity,
-            last_qty: position1.quantity,
-            last_px: Price::new(position1.avg_px_open, 0),
-            currency: position1.settlement_currency,
-            avg_px_open: position1.avg_px_open,
-            ts_event: 0.into(),
-            ts_init: 0.into(),
-            peak_quantity: position1.quantity,
-            avg_px_close: position1.avg_px_open,
-            realized_return: position1.avg_px_open,
-            realized_pnl: Money::new(10.0, Currency::USD()),
-            unrealized_pnl: Money::new(10.0, Currency::USD()),
-            ts_opened: 0.into(),
-        };
+        let position1_changed = get_changed_position(&position1);
 
         // Act
         portfolio.update_position(&PositionEvent::PositionChanged(position1_changed));
@@ -2907,10 +2931,8 @@ mod tests {
                 .as_f64(),
             -12.2
         );
-
         // FIX: TODO: should not be empty
         assert_eq!(portfolio.margins_maint(&Venue::from("SIM")), HashMap::new());
-        // TODO: didnt working same as python
         assert_eq!(
             portfolio
                 .net_exposure(&instrument_audusd.id())
@@ -2956,34 +2978,10 @@ mod tests {
         mut portfolio: Portfolio,
         instrument_audusd: InstrumentAny,
     ) {
-        let account_state = AccountState::new(
-            account_id(),
-            AccountType::Margin,
-            vec![AccountBalance::new(
-                Money::new(100.000, Currency::USD()),
-                Money::new(0.000, Currency::USD()),
-                Money::new(100.000, Currency::USD()),
-            )],
-            Vec::new(),
-            true,
-            uuid4(),
-            0.into(),
-            0.into(),
-            None,
-        );
-
+        let account_state = get_margin_account(None);
         portfolio.update_account(&account_state);
 
-        let last_audusd = QuoteTick::new(
-            instrument_audusd.id(),
-            Price::new(0.80501, 0),
-            Price::new(0.80505, 0),
-            Quantity::new(1.0, 0),
-            Quantity::new(1.0, 0),
-            0.into(),
-            0.into(),
-        );
-
+        let last_audusd = get_quote_tick(&instrument_audusd, 0.80501, 0.80505, 1.0, 1.0);
         portfolio.cache.borrow_mut().add_quote(last_audusd).unwrap();
         portfolio.update_quote_tick(&last_audusd);
 
@@ -3022,24 +3020,7 @@ mod tests {
             .borrow_mut()
             .add_position(position1.clone(), OmsType::Hedging)
             .unwrap();
-        let position_opened1 = PositionOpened {
-            trader_id: position1.trader_id,
-            strategy_id: position1.strategy_id,
-            instrument_id: position1.instrument_id,
-            position_id: position1.id,
-            account_id: position1.account_id,
-            opening_order_id: position1.opening_order_id,
-            entry: position1.entry,
-            side: position1.side,
-            signed_qty: position1.signed_qty,
-            quantity: position1.quantity,
-            last_qty: position1.quantity,
-            last_px: Price::new(position1.avg_px_open, 0),
-            currency: position1.settlement_currency,
-            avg_px_open: position1.avg_px_open,
-            ts_event: 0.into(),
-            ts_init: 0.into(),
-        };
+        let position_opened1 = get_open_position(&position1);
         portfolio.update_position(&PositionEvent::PositionOpened(position_opened1));
 
         let order2 = OrderTestBuilder::new(OrderType::Market)
@@ -3078,336 +3059,226 @@ mod tests {
             .unwrap();
 
         // Act
-        let position1_closed = PositionClosed {
-            trader_id: position1.trader_id,
-            strategy_id: position1.strategy_id,
-            instrument_id: position1.instrument_id,
-            position_id: position1.id,
-            account_id: position1.account_id,
-            opening_order_id: position1.opening_order_id,
-            entry: position1.entry,
-            side: position1.side,
-            signed_qty: position1.signed_qty,
-            quantity: position1.quantity,
-            last_qty: position1.quantity,
-            last_px: Price::new(position1.avg_px_open, 0),
-            currency: position1.settlement_currency,
-            avg_px_open: position1.avg_px_open,
-            ts_event: 0.into(),
-            ts_init: 0.into(),
-            peak_quantity: position1.quantity,
-            avg_px_close: position1.avg_px_open,
-            realized_return: position1.avg_px_open,
-            realized_pnl: Money::new(10.0, Currency::USD()),
-            unrealized_pnl: Money::new(10.0, Currency::USD()),
-            ts_opened: 0.into(),
-            closing_order_id: ClientOrderId::new("SSD"),
-            duration: 0,
-            ts_closed: 0.into(),
-        };
-
+        let position1_closed = get_close_position(&position1);
         portfolio.update_position(&PositionEvent::PositionClosed(position1_closed));
 
-        // TODO: Fix
         // Assert
-        // assert_eq!(portfolio.net_exposures(&Venue::from("SIM")), None);
-        // assert_eq!(
-        //     portfolio.unrealized_pnls(&Venue::from("SIM")),
-        //     HashMap::new()
-        // );
-        // assert_eq!(portfolio.realized_pnls(&Venue::from("SIM")), HashMap::new());
-        // assert_eq!(portfolio.margins_maint(&Venue::from("SIM")), HashMap::new());
+        assert_eq!(
+            portfolio
+                .net_exposures(&Venue::from("SIM"))
+                .unwrap()
+                .get(&Currency::USD())
+                .unwrap()
+                .as_f64(),
+            100000.00
+        );
+        assert_eq!(
+            portfolio
+                .unrealized_pnls(&Venue::from("SIM"))
+                .get(&Currency::USD())
+                .unwrap()
+                .as_f64(),
+            -37500000.00
+        );
+        assert_eq!(
+            portfolio
+                .realized_pnls(&Venue::from("SIM"))
+                .get(&Currency::USD())
+                .unwrap()
+                .as_f64(),
+            -12.2
+        );
+        assert_eq!(portfolio.margins_maint(&Venue::from("SIM")), HashMap::new());
     }
 
-    // #[rstest]
-    // fn test_several_positions_with_different_instruments_updates_portfolio(
-    //     mut portfolio: Portfolio,
-    //     instrument_audusd: InstrumentAny,
-    //     instrument_gbpusd: InstrumentAny,
-    // ) {
-    //     portfolio
-    //         .cache
-    //         .borrow_mut()
-    //         .add_instrument(instrument_audusd.clone())
-    //         .unwrap();
-    //     portfolio
-    //         .cache
-    //         .borrow_mut()
-    //         .add_instrument(instrument_gbpusd.clone())
-    //         .unwrap();
+    #[rstest]
+    fn test_several_positions_with_different_instruments_updates_portfolio(
+        mut portfolio: Portfolio,
+        instrument_audusd: InstrumentAny,
+        instrument_gbpusd: InstrumentAny,
+    ) {
+        let account_state = get_margin_account(None);
+        portfolio.update_account(&account_state);
 
-    //     let account_state = AccountState::new(
-    //         account_id(),
-    //         AccountType::Margin,
-    //         vec![AccountBalance::new(
-    //             Money::new(100.000, Currency::USD()),
-    //             Money::new(0.000, Currency::USD()),
-    //             Money::new(100.000, Currency::USD()),
-    //         )],
-    //         Vec::new(),
-    //         true,
-    //         uuid4(),
-    //         0.into(),
-    //         0.into(),
-    //         None,
-    //     );
+        // Create Order
+        let order1 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_audusd.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("100000"))
+            .build();
+        let order2 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_audusd.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("100000"))
+            .build();
+        let order3 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_gbpusd.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("100000"))
+            .build();
+        let order4 = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_gbpusd.id())
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("100000"))
+            .build();
 
-    //     portfolio.update_account(&account_state);
+        let fill1 = OrderFilled::new(
+            order1.trader_id(),
+            StrategyId::new("S-1"),
+            order1.instrument_id(),
+            order1.client_order_id(),
+            VenueOrderId::new("123456"),
+            AccountId::new("SIM-001"),
+            TradeId::new("1"),
+            order1.order_side(),
+            order1.order_type(),
+            order1.quantity(),
+            Price::new(1.0, 0),
+            Currency::USD(),
+            LiquiditySide::Taker,
+            uuid4(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            Some(PositionId::new("P-1")),
+            None,
+        );
+        let fill2 = OrderFilled::new(
+            order2.trader_id(),
+            StrategyId::new("S-1"),
+            order2.instrument_id(),
+            order2.client_order_id(),
+            VenueOrderId::new("123456"),
+            AccountId::new("SIM-001"),
+            TradeId::new("2"),
+            order2.order_side(),
+            order2.order_type(),
+            order2.quantity(),
+            Price::new(1.0, 0),
+            Currency::USD(),
+            LiquiditySide::Taker,
+            uuid4(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            Some(PositionId::new("P-2")),
+            None,
+        );
+        let fill3 = OrderFilled::new(
+            order3.trader_id(),
+            StrategyId::new("S-1"),
+            order3.instrument_id(),
+            order3.client_order_id(),
+            VenueOrderId::new("123456"),
+            AccountId::new("SIM-001"),
+            TradeId::new("3"),
+            order3.order_side(),
+            order3.order_type(),
+            order3.quantity(),
+            Price::new(1.0, 0),
+            Currency::USD(),
+            LiquiditySide::Taker,
+            uuid4(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            Some(PositionId::new("P-3")),
+            None,
+        );
+        let fill4 = OrderFilled::new(
+            order4.trader_id(),
+            StrategyId::new("S-1"),
+            order4.instrument_id(),
+            order4.client_order_id(),
+            VenueOrderId::new("123456"),
+            AccountId::new("SIM-001"),
+            TradeId::new("4"),
+            order4.order_side(),
+            order4.order_type(),
+            order4.quantity(),
+            Price::new(1.0, 0),
+            Currency::USD(),
+            LiquiditySide::Taker,
+            uuid4(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            Some(PositionId::new("P-4")),
+            None,
+        );
 
-    //     // Create Order
-    //     let order1 = OrderTestBuilder::new(OrderType::Market)
-    //         .instrument_id(instrument_audusd.id())
-    //         .side(OrderSide::Buy)
-    //         .quantity(Quantity::from("100000"))
-    //         .build();
-    //     let order2 = OrderTestBuilder::new(OrderType::Market)
-    //         .instrument_id(instrument_audusd.id())
-    //         .side(OrderSide::Buy)
-    //         .quantity(Quantity::from("100000"))
-    //         .build();
-    //     let order3 = OrderTestBuilder::new(OrderType::Market)
-    //         .instrument_id(instrument_audusd.id())
-    //         .side(OrderSide::Buy)
-    //         .quantity(Quantity::from("100000"))
-    //         .build();
-    //     let order4 = OrderTestBuilder::new(OrderType::Market)
-    //         .instrument_id(instrument_audusd.id())
-    //         .side(OrderSide::Sell)
-    //         .quantity(Quantity::from("100000"))
-    //         .build();
+        let position1 = Position::new(&instrument_audusd, fill1);
+        let position2 = Position::new(&instrument_audusd, fill2);
+        let mut position3 = Position::new(&instrument_gbpusd, fill3);
 
-    //     let fill1 = OrderFilled::new(
-    //         order1.trader_id(),
-    //         StrategyId::new("S-1"),
-    //         order1.instrument_id(),
-    //         order1.client_order_id(),
-    //         VenueOrderId::new("123456"),
-    //         AccountId::new("SIM-001"),
-    //         TradeId::new("1"),
-    //         order1.order_side(),
-    //         order1.order_type(),
-    //         order1.quantity(),
-    //         Price::new(1.0, 0),
-    //         Currency::USD(),
-    //         LiquiditySide::Taker,
-    //         uuid4(),
-    //         UnixNanos::default(),
-    //         UnixNanos::default(),
-    //         false,
-    //         Some(PositionId::new("P-1")),
-    //         None,
-    //     );
-    //     let fill2 = OrderFilled::new(
-    //         order2.trader_id(),
-    //         StrategyId::new("S-1"),
-    //         order2.instrument_id(),
-    //         order2.client_order_id(),
-    //         VenueOrderId::new("123456"),
-    //         AccountId::new("SIM-001"),
-    //         TradeId::new("2"),
-    //         order2.order_side(),
-    //         order2.order_type(),
-    //         order2.quantity(),
-    //         Price::new(1.0, 0),
-    //         Currency::USD(),
-    //         LiquiditySide::Taker,
-    //         uuid4(),
-    //         UnixNanos::default(),
-    //         UnixNanos::default(),
-    //         false,
-    //         Some(PositionId::new("P-2")),
-    //         None,
-    //     );
-    //     let fill3 = OrderFilled::new(
-    //         order3.trader_id(),
-    //         StrategyId::new("S-1"),
-    //         order3.instrument_id(),
-    //         order3.client_order_id(),
-    //         VenueOrderId::new("123456"),
-    //         AccountId::new("SIM-001"),
-    //         TradeId::new("3"),
-    //         order3.order_side(),
-    //         order3.order_type(),
-    //         order3.quantity(),
-    //         Price::new(1.0, 0),
-    //         Currency::USD(),
-    //         LiquiditySide::Taker,
-    //         uuid4(),
-    //         UnixNanos::default(),
-    //         UnixNanos::default(),
-    //         false,
-    //         Some(PositionId::new("P-3")),
-    //         None,
-    //     );
-    //     let fill4 = OrderFilled::new(
-    //         order4.trader_id(),
-    //         StrategyId::new("S-1"),
-    //         order4.instrument_id(),
-    //         order4.client_order_id(),
-    //         VenueOrderId::new("123456"),
-    //         AccountId::new("SIM-001"),
-    //         TradeId::new("4"),
-    //         order4.order_side(),
-    //         order4.order_type(),
-    //         order4.quantity(),
-    //         Price::new(1.0, 0),
-    //         Currency::USD(),
-    //         LiquiditySide::Taker,
-    //         uuid4(),
-    //         UnixNanos::default(),
-    //         UnixNanos::default(),
-    //         false,
-    //         Some(PositionId::new("P-4")),
-    //         None,
-    //     );
+        let last_audusd = get_quote_tick(&instrument_audusd, 0.80501, 0.80505, 1.0, 1.0);
+        let last_gbpusd = get_quote_tick(&instrument_gbpusd, 1.30315, 1.30317, 1.0, 1.0);
 
-    //     let position1 = Position::new(&instrument_audusd, fill1);
-    //     let position2 = Position::new(&instrument_audusd, fill2);
-    //     let mut position3 = Position::new(&instrument_gbpusd, fill3);
+        portfolio.cache.borrow_mut().add_quote(last_audusd).unwrap();
+        portfolio.cache.borrow_mut().add_quote(last_gbpusd).unwrap();
+        portfolio.update_quote_tick(&last_audusd);
+        portfolio.update_quote_tick(&last_gbpusd);
 
-    //     let last_audusd = QuoteTick::new(
-    //         instrument_audusd.id(),
-    //         Price::new(0.80501, 0),
-    //         Price::new(0.80505, 0),
-    //         Quantity::new(1.0, 0),
-    //         Quantity::new(1.0, 0),
-    //         0.into(),
-    //         0.into(),
-    //     );
-    //     let last_gbpusd = QuoteTick::new(
-    //         instrument_audusd.id(),
-    //         Price::new(1.30315, 0),
-    //         Price::new(1.30317, 0),
-    //         Quantity::new(1.0, 0),
-    //         Quantity::new(1.0, 0),
-    //         0.into(),
-    //         0.into(),
-    //     );
+        portfolio
+            .cache
+            .borrow_mut()
+            .add_position(position1.clone(), OmsType::Hedging)
+            .unwrap();
+        portfolio
+            .cache
+            .borrow_mut()
+            .add_position(position2.clone(), OmsType::Hedging)
+            .unwrap();
+        portfolio
+            .cache
+            .borrow_mut()
+            .add_position(position3.clone(), OmsType::Hedging)
+            .unwrap();
 
-    //     portfolio.cache.borrow_mut().add_quote(last_audusd).unwrap();
-    //     portfolio.cache.borrow_mut().add_quote(last_gbpusd).unwrap();
-    //     portfolio.update_quote_tick(&last_audusd);
-    //     portfolio.update_quote_tick(&last_gbpusd);
+        let position_opened1 = get_open_position(&position1);
+        let position_opened2 = get_open_position(&position2);
+        let position_opened3 = get_open_position(&position3);
 
-    //     portfolio
-    //         .cache
-    //         .borrow_mut()
-    //         .add_position(position1.clone(), OmsType::Hedging)
-    //         .unwrap();
-    //     portfolio
-    //         .cache
-    //         .borrow_mut()
-    //         .add_position(position2.clone(), OmsType::Hedging)
-    //         .unwrap();
-    //     portfolio
-    //         .cache
-    //         .borrow_mut()
-    //         .add_position(position3.clone(), OmsType::Hedging)
-    //         .unwrap();
+        portfolio.update_position(&PositionEvent::PositionOpened(position_opened1));
+        portfolio.update_position(&PositionEvent::PositionOpened(position_opened2));
+        portfolio.update_position(&PositionEvent::PositionOpened(position_opened3));
 
-    //     let position_opened1 = PositionOpened {
-    //         trader_id: position1.trader_id,
-    //         strategy_id: position1.strategy_id,
-    //         instrument_id: position1.instrument_id,
-    //         position_id: position1.id,
-    //         account_id: position1.account_id,
-    //         opening_order_id: position1.opening_order_id,
-    //         entry: position1.entry,
-    //         side: position1.side,
-    //         signed_qty: position1.signed_qty,
-    //         quantity: position1.quantity,
-    //         last_qty: position1.quantity,
-    //         last_px: Price::new(position1.avg_px_open, 0),
-    //         currency: position1.settlement_currency,
-    //         avg_px_open: position1.avg_px_open,
-    //         ts_event: 0.into(),
-    //         ts_init: 0.into(),
-    //     };
-    //     let position_opened2 = PositionOpened {
-    //         trader_id: position2.trader_id,
-    //         strategy_id: position2.strategy_id,
-    //         instrument_id: position2.instrument_id,
-    //         position_id: position2.id,
-    //         account_id: position2.account_id,
-    //         opening_order_id: position2.opening_order_id,
-    //         entry: position2.entry,
-    //         side: position2.side,
-    //         signed_qty: position2.signed_qty,
-    //         quantity: position2.quantity,
-    //         last_qty: position2.quantity,
-    //         last_px: Price::new(position2.avg_px_open, 0),
-    //         currency: position2.settlement_currency,
-    //         avg_px_open: position2.avg_px_open,
-    //         ts_event: 0.into(),
-    //         ts_init: 0.into(),
-    //     };
-    //     let position_opened3 = PositionOpened {
-    //         trader_id: position3.trader_id,
-    //         strategy_id: position3.strategy_id,
-    //         instrument_id: position3.instrument_id,
-    //         position_id: position3.id,
-    //         account_id: position3.account_id,
-    //         opening_order_id: position3.opening_order_id,
-    //         entry: position3.entry,
-    //         side: position3.side,
-    //         signed_qty: position3.signed_qty,
-    //         quantity: position3.quantity,
-    //         last_qty: position3.quantity,
-    //         last_px: Price::new(position3.avg_px_open, 0),
-    //         currency: position3.settlement_currency,
-    //         avg_px_open: position3.avg_px_open,
-    //         ts_event: 0.into(),
-    //         ts_init: 0.into(),
-    //     };
+        let position_closed3 = get_close_position(&position3);
+        position3.apply(&fill4);
+        portfolio
+            .cache
+            .borrow_mut()
+            .add_position(position3.clone(), OmsType::Hedging)
+            .unwrap();
+        portfolio.update_position(&PositionEvent::PositionClosed(position_closed3));
 
-    //     portfolio.update_position(&PositionEvent::PositionOpened(position_opened1));
-    //     portfolio.update_position(&PositionEvent::PositionOpened(position_opened2));
-    //     portfolio.update_position(&PositionEvent::PositionOpened(position_opened3));
-
-    //     let position_closed3 = PositionClosed {
-    //         trader_id: position3.trader_id,
-    //         strategy_id: position3.strategy_id,
-    //         instrument_id: position3.instrument_id,
-    //         position_id: position3.id,
-    //         account_id: position3.account_id,
-    //         opening_order_id: position3.opening_order_id,
-    //         entry: position3.entry,
-    //         side: position3.side,
-    //         signed_qty: position3.signed_qty,
-    //         quantity: position3.quantity,
-    //         last_qty: position3.quantity,
-    //         last_px: Price::new(position3.avg_px_open, 0),
-    //         currency: position3.settlement_currency,
-    //         avg_px_open: position3.avg_px_open,
-    //         ts_event: 0.into(),
-    //         ts_init: 0.into(),
-    //         peak_quantity: position3.quantity,
-    //         avg_px_close: position3.avg_px_open,
-    //         realized_return: position3.avg_px_open,
-    //         realized_pnl: Money::new(10.0, Currency::USD()),
-    //         unrealized_pnl: Money::new(10.0, Currency::USD()),
-    //         ts_opened: 0.into(),
-    //         closing_order_id: ClientOrderId::new("SSD"),
-    //         duration: 0,
-    //         ts_closed: 0.into(),
-    //     };
-
-    //     position3.apply(&fill4);
-    //     portfolio
-    //         .cache
-    //         .borrow_mut()
-    //         .add_position(position3.clone(), OmsType::Hedging)
-    //         .unwrap();
-    //     portfolio.update_position(&PositionEvent::PositionClosed(position_closed3));
-
-    //     // TODO: Fix
-    //     // Assert
-    //     // assert_eq!(portfolio.net_exposures(&Venue::from("SIM")), None);
-    //     // assert_eq!(
-    //     //     portfolio.unrealized_pnls(&Venue::from("SIM")),
-    //     //     HashMap::new()
-    //     // );
-    //     // assert_eq!(portfolio.realized_pnls(&Venue::from("SIM")), HashMap::new());
-    //     // assert_eq!(portfolio.margins_maint(&Venue::from("SIM")), HashMap::new());
-    // }
+        // Assert
+        assert_eq!(
+            portfolio
+                .net_exposures(&Venue::from("SIM"))
+                .unwrap()
+                .get(&Currency::USD())
+                .unwrap()
+                .as_f64(),
+            200000.00
+        );
+        assert_eq!(
+            portfolio
+                .unrealized_pnls(&Venue::from("SIM"))
+                .get(&Currency::USD())
+                .unwrap()
+                .as_f64(),
+            0.0
+        );
+        assert_eq!(
+            portfolio
+                .realized_pnls(&Venue::from("SIM"))
+                .get(&Currency::USD())
+                .unwrap()
+                .as_f64(),
+            0.0
+        );
+        // FIX: TODO: should not be empty
+        assert_eq!(portfolio.margins_maint(&Venue::from("SIM")), HashMap::new());
+    }
 }
