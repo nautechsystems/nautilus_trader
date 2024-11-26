@@ -276,6 +276,32 @@ cpdef object as_utc_index(data: pd.DataFrame):
     return data
 
 
+cpdef time_object_to_dt(time_object):
+    """
+    Return the datetime (UTC) from the given UNIX timestamp as integer (nanoseconds), string or pd.Timestamp.
+    Returns None if the input is None.
+
+    Parameters
+    ----------
+    time_object : pd.Timestamp | str | int | None
+        The time object to convert.
+
+    Returns
+    -------
+    pd.Timestamp
+
+    """
+    if time_object is None:
+        return None
+
+    if isinstance(time_object, pd.Timestamp):
+        used_date = time_object
+    else:
+        used_date = pd.Timestamp(time_object)
+
+    return as_utc_timestamp(used_date)
+
+
 cpdef str format_iso8601(datetime dt):
     """
     Format the given datetime to a millisecond accurate ISO 8601 specification string.
@@ -303,20 +329,20 @@ cpdef str format_iso8601(datetime dt):
     return f"{dt_partitioned[0]}.{dt_partitioned[2][:3]}Z"
 
 
-def max_date_str(date1: str | int | None = None, date2: str | int | None = None) -> str | None:
+def max_date(date1: pd.Timestamp | str | int | None = None, date2: str | int | None = None) -> pd.Timestamp | None:
     """
-    Returns the maximum date as an ISO 8601 formatted string.
+    Returns the maximum date as a datetime (UTC).
 
     Parameters
     ----------
-    date1 : str | int | None, optional
+    date1 : pd.Timestamp | str | int | None, optional
         The first date to compare. Can be a string, integer (timestamp), or None. Default is None.
-    date2 : str | int | None, optional
+    date2 : pd.Timestamp | str | int | None, optional
         The second date to compare. Can be a string, integer (timestamp), or None. Default is None.
 
     Returns
     -------
-    str or ``None``
+    pd.Timestamp | None
         The maximum date as an ISO 8601 formatted string, or None if both input dates are None.
 
     """
@@ -324,28 +350,28 @@ def max_date_str(date1: str | int | None = None, date2: str | int | None = None)
         return None
 
     if date1 is None:
-        return pd.Timestamp(date2).isoformat()
+        return time_object_to_dt(date2)
 
     if date2 is None:
-        return pd.Timestamp(date1).isoformat()
+        return time_object_to_dt(date1)
 
-    return max(pd.Timestamp(date1), pd.Timestamp(date2)).isoformat()
+    return max(time_object_to_dt(date1), time_object_to_dt(date2))
 
 
-def min_date_str(date1: str | int | None = None, date2: str | int | None = None) -> str | None:
+def min_date(date1: pd.Timestamp | str | int | None = None, date2: str | int | None = None) -> pd.Timestamp | None:
     """
-    Returns the minimum date as an ISO 8601 formatted string.
+    Returns the minimum date as a datetime (UTC).
 
     Parameters
     ----------
-    date1 : str | int | None, optional
+    date1 : pd.Timestamp | str | int | None, optional
         The first date to compare. Can be a string, integer (timestamp), or None. Default is None.
-    date2 : str | int | None, optional
+    date2 : pd.Timestamp | str | int | None, optional
         The second date to compare. Can be a string, integer (timestamp), or None. Default is None.
 
     Returns
     -------
-    str or ``None``
+    pd.Timestamp | None
         The minimum date as an ISO 8601 formatted string, or None if both input dates are None.
 
     """
@@ -353,9 +379,9 @@ def min_date_str(date1: str | int | None = None, date2: str | int | None = None)
         return None
 
     if date1 is None:
-        return pd.Timestamp(date2).isoformat()
+        return time_object_to_dt(date2)
 
     if date2 is None:
-        return pd.Timestamp(date1).isoformat()
+        return time_object_to_dt(date1)
 
-    return min(pd.Timestamp(date1), pd.Timestamp(date2)).isoformat()
+    return min(time_object_to_dt(date1), time_object_to_dt(date2))
