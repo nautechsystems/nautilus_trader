@@ -42,7 +42,7 @@ from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerLinearMsg
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_kline
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_orderbook
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_trade
-from nautilus_trader.adapters.bybit.websocket.client import BybitWebsocketClient
+from nautilus_trader.adapters.bybit.websocket.client import BybitWebSocketClient
 from nautilus_trader.cache.cache import Cache
 from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
@@ -135,12 +135,12 @@ class BybitDataClient(LiveMarketDataClient):
         )
 
         # WebSocket API
-        self._ws_clients: dict[BybitProductType, BybitWebsocketClient] = {}
+        self._ws_clients: dict[BybitProductType, BybitWebSocketClient] = {}
         self._decoders: dict[str, dict[BybitProductType, msgspec.json.Decoder]] = defaultdict(
             dict,
         )
         for product_type in set(product_types):
-            self._ws_clients[product_type] = BybitWebsocketClient(
+            self._ws_clients[product_type] = BybitWebSocketClient(
                 clock=clock,
                 handler=partial(self._handle_ws_message, product_type),
                 handler_reconnect=None,

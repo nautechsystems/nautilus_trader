@@ -32,7 +32,7 @@ from nautilus_trader.core.nautilus_pyo3 import hmac_signature
 MAX_ARGS_PER_SUBSCRIPTION_REQUEST = 10
 
 
-class BybitWebsocketClient:
+class BybitWebSocketClient:
     """
     Provides a Bybit streaming WebSocket client.
 
