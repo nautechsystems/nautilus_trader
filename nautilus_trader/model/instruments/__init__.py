@@ -36,8 +36,6 @@ from nautilus_trader.model.instruments.synthetic import SyntheticInstrument
 
 
 __all__ = [
-    "Instrument",
-    "instruments_from_pyo3",
     "BettingInstrument",
     "BinaryOption",
     "Cfd",
@@ -49,7 +47,9 @@ __all__ = [
     "FuturesContract",
     "FuturesSpread",
     "IndexInstrument",
+    "Instrument",
     "OptionsContract",
     "OptionsSpread",
     "SyntheticInstrument",
+    "instruments_from_pyo3",
 ]
