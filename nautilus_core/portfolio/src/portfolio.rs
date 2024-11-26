@@ -738,7 +738,7 @@ impl Portfolio {
 
             match result {
                 Some((updated_account, _)) => {
-                    borrowed_cache.update_account(updated_account).unwrap();
+                    borrowed_cache.add_account(updated_account).unwrap(); // Temp Fix to update the mutated account
                 }
                 None => {
                     initialized = false;
@@ -849,7 +849,7 @@ impl Portfolio {
             match result {
                 Some((updated_account, _)) => {
                     borrowed_cache
-                        .update_account(AccountAny::Margin(updated_account))
+                        .add_account(AccountAny::Margin(updated_account)) // Temp Fix to update the mutated account
                         .unwrap();
                 }
                 None => {
@@ -1208,9 +1208,7 @@ fn update_quote_tick(
         }
 
         if let Some((ref updated_account, _)) = result_init {
-            borrowed_cache
-                .update_account(updated_account.clone())
-                .unwrap();
+            borrowed_cache.add_account(updated_account.clone()).unwrap(); // Temp Fix to update the mutated account
         }
         account.clone()
     };
@@ -1443,7 +1441,7 @@ fn update_position(
         let mut borrowed_cache = cache.borrow_mut();
         if let Some((margin_account, _)) = result {
             borrowed_cache
-                .update_account(AccountAny::Margin(margin_account))
+                .add_account(AccountAny::Margin(margin_account)) // Temp Fix to update the mutated account
                 .unwrap();
         }
     } else if account.is_none() {
@@ -2132,10 +2130,13 @@ mod tests {
         portfolio.initialize_orders();
 
         // Assert
-        // TODO: Fix: can;t be empty
         assert_eq!(
-            portfolio.margins_init(&Venue::from("BINANCE")),
-            HashMap::new()
+            portfolio
+                .margins_init(&Venue::from("BINANCE"))
+                .get(&instrument_btcusdt.id())
+                .unwrap()
+                .as_f64(),
+            10.5
         );
     }
 
@@ -2185,10 +2186,13 @@ mod tests {
         portfolio.initialize_orders();
 
         // Assert
-        // TODO: cant be empty
         assert_eq!(
-            portfolio.margins_init(&Venue::from("BINANCE")),
-            HashMap::new()
+            portfolio
+                .margins_init(&Venue::from("BINANCE"))
+                .get(&instrument_btcusdt.id())
+                .unwrap()
+                .as_f64(),
+            1.5
         );
     }
 
