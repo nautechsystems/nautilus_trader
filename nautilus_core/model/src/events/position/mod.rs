@@ -13,10 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use crate::events::position::{
-    changed::PositionChanged, closed::PositionClosed, opened::PositionOpened,
+use crate::{
+    events::position::{changed::PositionChanged, closed::PositionClosed, opened::PositionOpened},
+    identifiers::{AccountId, InstrumentId},
 };
-
 pub mod changed;
 pub mod closed;
 pub mod opened;
@@ -26,4 +26,22 @@ pub enum PositionEvent {
     PositionOpened(PositionOpened),
     PositionChanged(PositionChanged),
     PositionClosed(PositionClosed),
+}
+
+impl PositionEvent {
+    pub fn instrument_id(&self) -> InstrumentId {
+        match self {
+            PositionEvent::PositionOpened(position) => position.instrument_id,
+            PositionEvent::PositionChanged(position) => position.instrument_id,
+            PositionEvent::PositionClosed(position) => position.instrument_id,
+        }
+    }
+
+    pub fn account_id(&self) -> AccountId {
+        match self {
+            PositionEvent::PositionOpened(position) => position.account_id,
+            PositionEvent::PositionChanged(position) => position.account_id,
+            PositionEvent::PositionClosed(position) => position.account_id,
+        }
+    }
 }

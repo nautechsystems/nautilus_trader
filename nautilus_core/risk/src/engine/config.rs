@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides a configuration for `ExecutionEngine` instances.
+//! Provides a configuration for `RiskEngine` instances.
 
 use std::collections::HashMap;
 

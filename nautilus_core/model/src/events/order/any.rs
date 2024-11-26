@@ -26,7 +26,7 @@ use crate::{
         OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
         OrderUpdated,
     },
-    identifiers::{ClientOrderId, StrategyId, TraderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId},
 };
 
 /// Wraps an `OrderEvent` allowing polymorphism.
@@ -141,6 +141,52 @@ impl OrderEventAny {
             Self::Updated(event) => event.client_order_id,
             Self::PartiallyFilled(event) => event.client_order_id,
             Self::Filled(event) => event.client_order_id,
+        }
+    }
+
+    #[must_use]
+    pub fn account_id(&self) -> Option<AccountId> {
+        match self {
+            Self::Initialized(event) => event.account_id(),
+            Self::Denied(event) => event.account_id(),
+            Self::Emulated(event) => event.account_id(),
+            Self::Released(event) => event.account_id(),
+            Self::Submitted(event) => event.account_id(),
+            Self::Accepted(event) => event.account_id(),
+            Self::Rejected(event) => event.account_id(),
+            Self::Canceled(event) => event.account_id(),
+            Self::Expired(event) => event.account_id(),
+            Self::Triggered(event) => event.account_id(),
+            Self::PendingUpdate(event) => event.account_id(),
+            Self::PendingCancel(event) => event.account_id(),
+            Self::ModifyRejected(event) => event.account_id(),
+            Self::CancelRejected(event) => event.account_id(),
+            Self::Updated(event) => event.account_id(),
+            Self::PartiallyFilled(event) => event.account_id(),
+            Self::Filled(event) => event.account_id(),
+        }
+    }
+
+    #[must_use]
+    pub fn instrument_id(&self) -> InstrumentId {
+        match self {
+            Self::Initialized(event) => event.instrument_id(),
+            Self::Denied(event) => event.instrument_id(),
+            Self::Emulated(event) => event.instrument_id(),
+            Self::Released(event) => event.instrument_id(),
+            Self::Submitted(event) => event.instrument_id(),
+            Self::Accepted(event) => event.instrument_id(),
+            Self::Rejected(event) => event.instrument_id(),
+            Self::Canceled(event) => event.instrument_id(),
+            Self::Expired(event) => event.instrument_id(),
+            Self::Triggered(event) => event.instrument_id(),
+            Self::PendingUpdate(event) => event.instrument_id(),
+            Self::PendingCancel(event) => event.instrument_id(),
+            Self::ModifyRejected(event) => event.instrument_id(),
+            Self::CancelRejected(event) => event.instrument_id(),
+            Self::Updated(event) => event.instrument_id(),
+            Self::PartiallyFilled(event) => event.instrument_id(),
+            Self::Filled(event) => event.instrument_id(),
         }
     }
 
