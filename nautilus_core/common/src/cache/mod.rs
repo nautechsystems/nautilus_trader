@@ -2629,12 +2629,6 @@ impl Cache {
         self.accounts.get(account_id)
     }
 
-    /// Returns a mutable reference to the account for the given `account_id` (if found).
-    #[must_use]
-    pub fn mut_account(&mut self, account_id: &AccountId) -> Option<&mut AccountAny> {
-        self.accounts.get_mut(account_id)
-    }
-
     /// Returns a reference to the account for the given `venue` (if found).
     #[must_use]
     pub fn account_for_venue(&self, venue: &Venue) -> Option<&AccountAny> {
@@ -2642,15 +2636,6 @@ impl Cache {
             .venue_account
             .get(venue)
             .and_then(|account_id| self.accounts.get(account_id))
-    }
-
-    /// Returns a reference to the account for the given `venue` (if found).
-    #[must_use]
-    pub fn mut_account_for_venue(&mut self, venue: &Venue) -> Option<&mut AccountAny> {
-        self.index
-            .venue_account
-            .get(venue)
-            .and_then(|account_id| self.accounts.get_mut(account_id))
     }
 
     /// Returns a reference to the account ID for the given `venue` (if found).

@@ -90,32 +90,37 @@ impl AccountsManager {
     #[must_use]
     pub fn update_orders(
         &self,
-        account: &mut AccountAny,
+        account: &AccountAny,
         instrument: InstrumentAny,
         orders_open: Vec<&OrderAny>,
         ts_event: UnixNanos,
-    ) -> Option<AccountState> {
-        match account {
-            AccountAny::Cash(cash_account) => {
-                self.update_balance_locked(cash_account, instrument, orders_open, ts_event)
-            }
-            AccountAny::Margin(margin_account) => {
-                self.update_margin_init(margin_account, instrument, orders_open, ts_event)
-            }
+    ) -> Option<(AccountAny, AccountState)> {
+        match account.clone() {
+            AccountAny::Cash(cash_account) => self
+                .update_balance_locked(&cash_account, instrument, orders_open, ts_event)
+                .map(|(updated_cash_account, state)| {
+                    (AccountAny::Cash(updated_cash_account), state)
+                }),
+            AccountAny::Margin(margin_account) => self
+                .update_margin_init(&margin_account, instrument, orders_open, ts_event)
+                .map(|(updated_margin_account, state)| {
+                    (AccountAny::Margin(updated_margin_account), state)
+                }),
         }
     }
 
     #[must_use]
     pub fn update_positions(
         &self,
-        account: &mut MarginAccount,
+        account: &MarginAccount,
         instrument: InstrumentAny,
         positions: Vec<&Position>,
         ts_event: UnixNanos,
-    ) -> Option<AccountState> {
+    ) -> Option<(MarginAccount, AccountState)> {
         let mut total_margin_maint = Decimal::ZERO;
         let mut base_xrate = Decimal::ZERO;
         let mut currency = instrument.settlement_currency();
+        let mut account = account.clone();
 
         for position in positions {
             assert_eq!(
@@ -225,22 +230,29 @@ impl AccountsManager {
         );
 
         // Generate and return account state
-        Some(self.generate_account_state(AccountAny::Margin(account.clone()), ts_event))
+        Some((
+            account.clone(),
+            self.generate_account_state(AccountAny::Margin(account), ts_event),
+        ))
     }
 
     fn update_balance_locked(
         &self,
-        account: &mut CashAccount,
+        account: &CashAccount,
         instrument: InstrumentAny,
         orders_open: Vec<&OrderAny>,
         ts_event: UnixNanos,
-    ) -> Option<AccountState> {
+    ) -> Option<(CashAccount, AccountState)> {
+        let mut account = account.clone();
         if orders_open.is_empty() {
             let balance = account.balances.remove(&instrument.quote_currency());
             if let Some(balance) = balance {
                 account.recalculate_balance(balance.currency);
             }
-            return Some(self.generate_account_state(AccountAny::Cash(account.clone()), ts_event));
+            return Some((
+                account.clone(),
+                self.generate_account_state(AccountAny::Cash(account), ts_event),
+            ));
         }
 
         let mut total_locked = Decimal::ZERO;
@@ -308,20 +320,23 @@ impl AccountsManager {
             locked_money.to_string()
         );
 
-        // Generate and return account state
-        Some(self.generate_account_state(AccountAny::Cash(account.clone()), ts_event))
+        Some((
+            account.clone(),
+            self.generate_account_state(AccountAny::Cash(account), ts_event),
+        ))
     }
 
     fn update_margin_init(
         &self,
-        account: &mut MarginAccount,
+        account: &MarginAccount,
         instrument: InstrumentAny,
         orders_open: Vec<&OrderAny>,
         ts_event: UnixNanos,
-    ) -> Option<AccountState> {
+    ) -> Option<(MarginAccount, AccountState)> {
         let mut total_margin_init = Decimal::ZERO;
         let mut base_xrate = Decimal::ZERO;
         let mut currency = instrument.settlement_currency();
+        let mut account = account.clone();
 
         for order in orders_open {
             assert_eq!(
@@ -413,7 +428,10 @@ impl AccountsManager {
             margin_init_money.to_string()
         );
 
-        Some(self.generate_account_state(AccountAny::Margin(account.clone()), ts_event))
+        Some((
+            account.clone(),
+            self.generate_account_state(AccountAny::Margin(account), ts_event),
+        ))
     }
 
     fn update_balance_single_currency(
