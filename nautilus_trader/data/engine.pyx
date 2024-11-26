@@ -144,7 +144,6 @@ cdef class DataEngine(Component):
         self._snapshot_info: dict[str, SnapshotInfo] = {}
         self._query_group_n_components: dict[UUID4, int] = {}
         self._query_group_components: dict[UUID4, list] = {}
-        self._update_catalog_for_query: dict[UUID4, bint] = {}
 
         # Settings
         self.debug = config.debug
@@ -1305,12 +1304,13 @@ cdef class DataEngine(Component):
         if client is not None:
             Condition.is_true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
 
-        aggregated_bars_market_data_type = request.data_type.metadata.get("market_data_type", "")
-        update_catalog = request.data_type.metadata.get("update_catalog", False)
+        metadata = request.data_type.metadata
+        aggregated_bars_market_data_type = metadata.get("market_data_type", "")
+        update_catalog = metadata.get("update_catalog", False)
 
         now = self._clock.utc_now()
-        start = time_object_to_dt(request.data_type.metadata.get("start"))
-        end = time_object_to_dt(request.data_type.metadata.get("end"))
+        start = time_object_to_dt(metadata.get("start"))
+        end = time_object_to_dt(metadata.get("end"))
 
         if request.data_type.type == Instrument:
             instrument_id = request.data_type.metadata.get("instrument_id")
@@ -1326,13 +1326,12 @@ cdef class DataEngine(Component):
                         f"no client registered for '{request.client_id}', {request}")
                     return  # No client to handle request
 
-                self._update_catalog_for_query[request.id] = update_catalog
-
                 client.request_instruments(
                     request.data_type.metadata.get("venue"),
                     request.id,
                     start,
                     end,
+                    metadata,
                 )
             else:
                 last_timestamp, _ = self._catalogs_last_timestamp(
@@ -1350,13 +1349,12 @@ cdef class DataEngine(Component):
                         f"no client registered for '{request.client_id}', {request}")
                     return  # No client to handle request
 
-                self._update_catalog_for_query[request.id] = update_catalog
-
                 client.request_instrument(
                     instrument_id,
                     request.id,
                     start,
                     end,
+                    metadata,
                 )
         elif request.data_type.type == OrderBookDeltas:
             instrument_id = request.data_type.metadata.get("instrument_id")
@@ -1395,14 +1393,13 @@ cdef class DataEngine(Component):
                 self._query_catalog(request)
 
             client_start = max_date(start, last_timestamp)
-            self._update_catalog_for_query[request.id] = update_catalog
-
             client.request_quote_ticks(
                 instrument_id,
                 request.data_type.metadata.get("limit", 0),
                 request.id,
                 client_start,
                 end,
+                metadata,
             )
         elif request.data_type.type == TradeTick or aggregated_bars_market_data_type == "trade_ticks":
             instrument_id = request.data_type.metadata.get("instrument_id")
@@ -1427,14 +1424,13 @@ cdef class DataEngine(Component):
                 self._query_catalog(request)
 
             client_start = max_date(start, last_timestamp)
-            self._update_catalog_for_query[request.id] = update_catalog
-
             client.request_trade_ticks(
                 instrument_id,
                 request.data_type.metadata.get("limit", 0),
                 request.id,
                 client_start,
                 end,
+                metadata,
             )
         elif request.data_type.type == Bar or aggregated_bars_market_data_type == "bars":
             bar_type = request.data_type.metadata.get("bar_type")
@@ -1459,14 +1455,13 @@ cdef class DataEngine(Component):
                 self._query_catalog(request)
 
             client_start = max_date(start, last_timestamp)
-            self._update_catalog_for_query[request.id] = update_catalog
-
             client.request_bars(
                 bar_type,
                 request.data_type.metadata.get("limit", 0),
                 request.id,
                 client_start,
                 end,
+                metadata,
             )
         else:
             last_timestamp, _ = self._catalogs_last_timestamp(
@@ -1486,8 +1481,6 @@ cdef class DataEngine(Component):
             if last_timestamp and start and start <= last_timestamp:
                 self._new_query_group(request.id, 2)
                 self._query_catalog(request)
-
-            self._update_catalog_for_query[request.id] = update_catalog
 
             try:
                 client.request(request.data_type, request.id)
@@ -1574,10 +1567,14 @@ cdef class DataEngine(Component):
                 f"data[-1].ts_init={data[-1].ts_init}, {ts_now=}",
             )
 
+        metadata = request.data_type.metadata.copy()
+        metadata["update_catalog"] = False
+        data_type = DataType(request.data_type.type, metadata)
+
         response = DataResponse(
             client_id=request.client_id,
             venue=request.venue,
-            data_type=request.data_type,
+            data_type=data_type,
             data=data,
             correlation_id=request.id,
             response_id=UUID4(),
@@ -1798,11 +1795,8 @@ cdef class DataEngine(Component):
         correlation_id = response.correlation_id
         update_catalog = False
 
-        # "update_catalog" is a key in the catalog response metadata from _query_catalog.
-        #  We want to read update_catalog from _update_catalog_for_query only for client responses.
-        if "update_catalog" not in response.data_type.metadata and correlation_id in self._update_catalog_for_query:
-            update_catalog = self._update_catalog_for_query[correlation_id]
-            del self._update_catalog_for_query[correlation_id]
+        if response.data_type.metadata is not None:
+            update_catalog = response.data_type.metadata.get("update_catalog", False)
 
         if type(response.data) is list:
             response_data = response.data

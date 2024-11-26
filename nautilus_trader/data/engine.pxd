@@ -67,7 +67,6 @@ cdef class DataEngine(Component):
     cdef readonly dict[str, SnapshotInfo] _snapshot_info
     cdef readonly dict[UUID4, int] _query_group_n_components
     cdef readonly dict[UUID4, list] _query_group_components
-    cdef readonly dict[UUID4, bint] _update_catalog_for_query
 
     cdef readonly bint _time_bars_build_with_no_updates
     cdef readonly bint _time_bars_timestamp_on_close

@@ -394,6 +394,7 @@ class BybitDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         if start is not None:
             self._log.warning(
@@ -409,15 +410,8 @@ class BybitDataClient(LiveMarketDataClient):
         if instrument is None:
             self._log.error(f"Cannot find instrument for {instrument_id}")
             return
-        data_type = DataType(
-            type=Instrument,
-            metadata={"instrument_id": instrument_id},
-        )
-        self._handle_data_response(
-            data_type=data_type,
-            data=instrument,
-            correlation_id=correlation_id,
-        )
+
+        self._handle_instrument(instrument, correlation_id, metadata)
 
     async def _request_instruments(
         self,
@@ -425,6 +419,7 @@ class BybitDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         if start is not None:
             self._log.warning(
@@ -441,15 +436,8 @@ class BybitDataClient(LiveMarketDataClient):
         for instrument in all_instruments.values():
             if instrument.venue == venue:
                 target_instruments.append(instrument)
-        data_type = DataType(
-            type=Instrument,
-            metadata={"venue": venue},
-        )
-        self._handle_data_response(
-            data_type=data_type,
-            data=target_instruments,
-            correlation_id=correlation_id,
-        )
+
+        self._handle_instruments(venue, target_instruments, correlation_id, metadata)
 
     async def _request_quote_ticks(
         self,
@@ -458,6 +446,7 @@ class BybitDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         self._log.error(
             "Cannot request historical quotes: not published by Bybit",
@@ -470,6 +459,7 @@ class BybitDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         if limit == 0 or limit > 1000:
             limit = 1000
@@ -488,7 +478,8 @@ class BybitDataClient(LiveMarketDataClient):
             limit=limit,
             ts_init=self._clock.timestamp_ns(),
         )
-        self._handle_trade_ticks(instrument_id, trades, correlation_id)
+
+        self._handle_trade_ticks(instrument_id, trades, correlation_id, metadata)
 
     async def _request_bars(
         self,
@@ -497,6 +488,7 @@ class BybitDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         if limit == 0 or limit > 1000:
             limit = 1000
@@ -538,7 +530,7 @@ class BybitDataClient(LiveMarketDataClient):
             ts_init=self._clock.timestamp_ns(),
         )
         partial: Bar = bars.pop()
-        self._handle_bars(bar_type, bars, partial, correlation_id)
+        self._handle_bars(bar_type, bars, partial, correlation_id, metadata)
 
     async def _handle_ticker_data_request(self, symbol: Symbol, correlation_id: UUID4) -> None:
         bybit_symbol = BybitSymbol(symbol.value)

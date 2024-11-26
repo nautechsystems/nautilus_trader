@@ -811,6 +811,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
@@ -839,10 +840,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             return
 
-        self._handle_instrument(
-            instrument=instruments[0],
-            correlation_id=correlation_id,
-        )
+        self._handle_instrument(instruments[0], correlation_id, metadata)
 
     async def _request_instruments(
         self,
@@ -850,6 +848,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(venue)
         _, available_end = await self._get_dataset_range(dataset)
@@ -872,11 +871,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         instruments = instruments_from_pyo3(pyo3_instruments)
 
-        self._handle_instruments(
-            instruments=instruments,
-            venue=venue,
-            correlation_id=correlation_id,
-        )
+        self._handle_instruments(instruments, venue, correlation_id, metadata)
 
     async def _request_quote_ticks(
         self,
@@ -885,6 +880,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
@@ -911,11 +907,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         quotes = QuoteTick.from_pyo3_list(pyo3_quotes)
 
-        self._handle_quote_ticks(
-            instrument_id=instrument_id,
-            ticks=quotes,
-            correlation_id=correlation_id,
-        )
+        self._handle_quote_ticks(instrument_id, quotes, correlation_id, metadata)
 
     async def _request_trade_ticks(
         self,
@@ -924,6 +916,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
@@ -950,11 +943,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         trades = TradeTick.from_pyo3_list(pyo3_trades)
 
-        self._handle_trade_ticks(
-            instrument_id=instrument_id,
-            ticks=trades,
-            correlation_id=correlation_id,
-        )
+        self._handle_trade_ticks(instrument_id, trades, correlation_id, metadata)
 
     async def _request_bars(
         self,
@@ -963,6 +952,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(bar_type.instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
@@ -998,6 +988,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             bars=bars,
             partial=None,  # No partials
             correlation_id=correlation_id,
+            metadata=metadata,
         )
 
     def _handle_msg_pyo3(

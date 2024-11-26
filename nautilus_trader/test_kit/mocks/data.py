@@ -84,8 +84,9 @@ class MockMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: datetime | None = None,
         end: datetime | None = None,
+        metadata: dict | None = None,
     ) -> None:
-        self._handle_instrument(self.instrument, correlation_id)
+        self._handle_instrument(self.instrument, correlation_id, metadata)
 
     def request_instruments(
         self,
@@ -93,8 +94,9 @@ class MockMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: datetime | None = None,
         end: datetime | None = None,
+        metadata: dict | None = None,
     ) -> None:
-        self._handle_instruments(venue, self.instruments, correlation_id)
+        self._handle_instruments(venue, self.instruments, correlation_id, metadata)
 
     def request_quote_ticks(
         self,
@@ -103,8 +105,9 @@ class MockMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: datetime | None = None,
         end: datetime | None = None,
+        metadata: dict | None = None,
     ) -> None:
-        self._handle_quote_ticks(instrument_id, self.quote_ticks, correlation_id)
+        self._handle_quote_ticks(instrument_id, self.quote_ticks, correlation_id, metadata)
 
     def request_trade_ticks(
         self,
@@ -113,8 +116,9 @@ class MockMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: datetime | None = None,
         end: datetime | None = None,
+        metadata: dict | None = None,
     ) -> None:
-        self._handle_trade_ticks(instrument_id, self.trade_ticks, correlation_id)
+        self._handle_trade_ticks(instrument_id, self.trade_ticks, correlation_id, metadata)
 
     def request_bars(
         self,
@@ -123,8 +127,9 @@ class MockMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: datetime | None = None,
         end: datetime | None = None,
+        metadata: dict | None = None,
     ) -> None:
-        self._handle_bars(bar_type, self.bars, None, correlation_id)
+        self._handle_bars(bar_type, self.bars, None, correlation_id, metadata)
 
 
 _AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
