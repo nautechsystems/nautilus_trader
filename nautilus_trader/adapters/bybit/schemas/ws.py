@@ -31,6 +31,7 @@ from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerDirection
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
 from nautilus_trader.adapters.bybit.common.parsing import parse_bybit_delta
+from nautilus_trader.adapters.bybit.execution import BybitExecutionClient
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -50,6 +51,10 @@ from nautilus_trader.model.identifiers import ClientOrderId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import VenueOrderId
+from nautilus_trader.model.objects import AccountBalance
+from nautilus_trader.model.objects import Currency
+from nautilus_trader.model.objects import MarginBalance
+from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 
@@ -694,6 +699,25 @@ class BybitWsAccountWalletCoin(msgspec.Struct):
     collateralSwitch: bool
     marginCollateral: bool
     locked: str
+    spotHedgingQty: str
+
+    def parse_to_account_balance(self) -> AccountBalance:
+        currency = Currency.from_str(self.coin)
+        total = Decimal(self.walletBalance)
+        locked = Decimal(self.locked)  # TODO: Locked only valid for Spot
+        free = total - locked
+        return AccountBalance(
+            total=Money(total, currency),
+            locked=Money(locked, currency),
+            free=Money(free, currency),
+        )
+
+    def parse_to_margin_balance(self) -> MarginBalance:
+        currency: Currency = Currency.from_str(self.coin)
+        return MarginBalance(
+            initial=Money(Decimal(self.totalPositionIM), currency),
+            maintenance=Money(Decimal(self.totalPositionMM), currency),
+        )
 
 
 class BybitWsAccountWallet(msgspec.Struct):
@@ -710,9 +734,24 @@ class BybitWsAccountWallet(msgspec.Struct):
     accountLTV: str
     accountType: str
 
+    def parse_to_account_balance(self) -> list[AccountBalance]:
+        return [coin.parse_to_account_balance() for coin in self.coin]
+
+    def parse_to_margin_balance(self) -> list[MarginBalance]:
+        return [coin.parse_to_margin_balance() for coin in self.coin]
+
 
 class BybitWsAccountWalletMsg(msgspec.Struct):
     topic: str
     id: str
     creationTime: int
     data: list[BybitWsAccountWallet]
+
+    def handle_account_wallet_update(self, exec_client: BybitExecutionClient):
+        for wallet in self.data:
+            exec_client.generate_account_state(
+                balances=wallet.parse_to_account_balance(),
+                margins=wallet.parse_to_margin_balance(),
+                reported=True,
+                ts_event=millis_to_nanos(self.creationTime),
+            )
