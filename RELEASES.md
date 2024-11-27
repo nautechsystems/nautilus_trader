@@ -13,6 +13,7 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 - Ported `Portfolio` and `AccountManager` to Rust (#2058), thanks @Pushkarm029
+- Implemented `AsRef<str>` for `Price`, `Money`, and `Currency`
 - Improved live engines error logging (will now log all exceptions rather than just `RuntimeError`)
 - Improved symbol normalization for Tardis
 - Improved historical bar request performance for Tardis
@@ -28,6 +29,7 @@ Released on TBD (UTC).
 - Fixed missing venue -> exchange mappings for Tardis integration
 - Fixed account balance and order status parsing for dYdX (#2067), thanks @davidsblom
 - Fixed parsing best effort opened order status for dYdX (#2068), thanks @davidsblom
+- Reconcile order book for dYdX when inconsistent (#2077), thanks @davidsblom
 
 ---
 

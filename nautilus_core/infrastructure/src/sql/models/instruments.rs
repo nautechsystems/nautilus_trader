@@ -150,10 +150,10 @@ impl<'r> FromRow<'r, PgRow> for BettingInstrumentModel {
         let size_precision = row.try_get::<i32, _>("size_precision")? as u8;
         let price_increment = row
             .try_get::<String, _>("price_increment")
-            .map(|res| Price::from_str(res.as_str()).unwrap())?;
+            .map(Price::from)?;
         let size_increment = row
             .try_get::<String, _>("size_increment")
-            .map(|res| Quantity::from_str(res.as_str()).unwrap())?;
+            .map(Quantity::from)?;
         let maker_fee = row
             .try_get::<String, _>("maker_fee")
             .map(|res| Decimal::from_str(res.as_str()).unwrap())?;
