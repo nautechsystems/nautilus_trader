@@ -31,7 +31,8 @@
                     "bonus": "0",
                     "collateralSwitch": true,
                     "marginCollateral": true,
-                    "locked": "0"
+                    "locked": "0",
+                    "spotHedgingQty": "0"
                 },
                 {
                     "coin": "BTC",
@@ -50,7 +51,8 @@
                     "bonus": "0",
                     "collateralSwitch": false,
                     "marginCollateral": true,
-                    "locked": "0"
+                    "locked": "0",
+                    "spotHedgingQty": "0"
                 },
                 {
                     "coin": "USDT",
@@ -69,7 +71,8 @@
                     "bonus": "0",
                     "collateralSwitch": true,
                     "marginCollateral": true,
-                    "locked": "0"
+                    "locked": "0",
+                    "spotHedgingQty": "0"
                 }
             ],
             "accountLTV": "0",
