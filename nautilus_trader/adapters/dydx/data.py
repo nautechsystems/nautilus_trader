@@ -393,13 +393,15 @@ class DYDXDataClient(LiveMarketDataClient):
         book = self._books.get(instrument_id)
 
         if book is None:
-            self.log.error(f"Order book not found for {instrument_id}")
+            self.log.error(
+                f"Cannot resolve crossed order book: order book not found for {instrument_id}",
+            )
             return
 
         instrument = self._cache.instrument(instrument_id)
 
         if instrument is None:
-            self._log.error(f"Cannot parse kline data: no instrument for {instrument_id}")
+            self._log.error(f"Cannot resolve crossed order book: no instrument for {instrument_id}")
             return
 
         bid_price = book.best_bid_price()
