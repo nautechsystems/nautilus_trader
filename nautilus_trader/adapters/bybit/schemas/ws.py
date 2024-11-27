@@ -14,7 +14,6 @@
 # -------------------------------------------------------------------------------------------------
 
 from decimal import Decimal
-from typing import Final
 
 import msgspec
 
@@ -57,9 +56,6 @@ from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
-
-
-BYBIT_PONG: Final[str] = "pong"
 
 
 class BybitWsMessageGeneral(msgspec.Struct):
