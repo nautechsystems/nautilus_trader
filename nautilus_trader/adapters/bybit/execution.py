@@ -1164,7 +1164,7 @@ class BybitExecutionClient(LiveExecutionClient):
         try:
             self._process_wallet_update(raw)
         except Exception as e:
-            self._log.exception(f"Failed to handle account execution update: {e}", e)
+            self._log.exception(f"Failed to handle account wallet update: {e}", e)
 
     def _process_wallet_update(self, raw: bytes) -> None:
         msg: BybitWsAccountWalletMsg = self._decoder_ws_account_wallet_update.decode(raw)
