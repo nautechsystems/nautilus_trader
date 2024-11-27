@@ -63,7 +63,7 @@ strum = { version = "0.26.3", features = ["derive"] }
 thiserror = "2.0.3"
 thousands = "0.2.0"
 toml = "0.8.19"
-tracing = "0.1.40"
+tracing = "0.1.41"
 # Disable default feature "tracing-log" since it interferes with custom logging
 tracing-subscriber = { version = "0.3.18", default-features = false, features = ["smallvec", "fmt", "ansi", "std", "env-filter"] }
 tokio = { version = "1.41.1", features = ["full"] }
