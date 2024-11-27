@@ -15,6 +15,7 @@ Released on TBD (UTC).
 - Improved live engines error logging (will now log all exceptions rather than just `RuntimeError`)
 - Improved symbol normalization for Tardis
 - Improved historical bar request performance for Tardis
+- Improved `TradeId` Debug implementation to display value as proper UTF-8 string
 - Refined `HttpClient` for use directly from Rust
 - Upgraded `datafusion` crate to v43.0.0 (#2056), thanks @twitu
 - Efficiently clean up expired timers in clocks (#2064), thanks @twitu
