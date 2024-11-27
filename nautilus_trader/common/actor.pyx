@@ -1984,6 +1984,10 @@ cdef class Actor(Component):
         Raises
         ------
         ValueError
+            If `start` is not `None` and > current timestamp (now).
+        ValueError
+            If `end` is not `None` and > current timestamp (now).
+        ValueError
             If `start` and `end` are not `None` and `start` is >= `end`.
         TypeError
             If `callback` is not `None` and not of type `Callable`.
@@ -1991,7 +1995,8 @@ cdef class Actor(Component):
         """
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(instrument_id, "instrument_id")
-        now = self.clock.utc_now()
+
+        cdef datetime now = self.clock.utc_now()
         if start is not None:
             Condition.is_true(start <= now, "start was > now")
         if end is not None:
@@ -2059,6 +2064,10 @@ cdef class Actor(Component):
         Raises
         ------
         ValueError
+            If `start` is not `None` and > current timestamp (now).
+        ValueError
+            If `end` is not `None` and > current timestamp (now).
+        ValueError
             If `start` and `end` are not `None` and `start` is >= `end`.
         TypeError
             If `callback` is not `None` and not of type `Callable`.
@@ -2066,11 +2075,12 @@ cdef class Actor(Component):
         """
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(venue, "venue")
-        now = self.clock.utc_now()
+
+        cdef datetime now = self.clock.utc_now()
         if start is not None:
             Condition.is_true(start <= now, "start was > now")
         if end is not None:
-            Condition.is_true(end <= now, "start was > now")
+            Condition.is_true(end <= now, "end was > now")
         if start is not None and end is not None:
             Condition.is_true(start < end, "start was >= end")
         Condition.callable_or_none(callback, "callback")
@@ -2161,8 +2171,8 @@ cdef class Actor(Component):
         datetime end = None,
         ClientId client_id = None,
         callback: Callable[[UUID4], None] | None = None,
-        bint update_catalog = False,
         str quote_type = "",
+        bint update_catalog = False,
     ):
         """
         Request historical `QuoteTick` data.
@@ -2184,6 +2194,8 @@ cdef class Actor(Component):
         callback : Callable[[UUID4], None], optional
             The registered callback, to be called with the request ID when the response has
             completed processing.
+        quote_type : str, default ''
+            The specified quote type applicable to certain client implementations.
         update_catalog : bool, default False
             If True then updates the catalog with new data received from a client.
 
@@ -2195,6 +2207,10 @@ cdef class Actor(Component):
         Raises
         ------
         ValueError
+            If `start` is not `None` and > current timestamp (now).
+        ValueError
+            If `end` is not `None` and > current timestamp (now).
+        ValueError
             If `start` and `end` are not `None` and `start` is >= `end`.
         TypeError
             If `callback` is not `None` and not of type `Callable`.
@@ -2202,11 +2218,12 @@ cdef class Actor(Component):
         """
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(instrument_id, "instrument_id")
-        now = self.clock.utc_now()
+
+        cdef datetime now = self.clock.utc_now()
         if start is not None:
             Condition.is_true(start <= now, "start was > now")
         if end is not None:
-            Condition.is_true(end <= now, "start was > now")
+            Condition.is_true(end <= now, "end was > now")
         if start is not None and end is not None:
             Condition.is_true(start < end, "start was >= end")
         Condition.callable_or_none(callback, "callback")
@@ -2272,6 +2289,10 @@ cdef class Actor(Component):
         Raises
         ------
         ValueError
+            If `start` is not `None` and > current timestamp (now).
+        ValueError
+            If `end` is not `None` and > current timestamp (now).
+        ValueError
             If `start` and `end` are not `None` and `start` is >= `end`.
         TypeError
             If `callback` is not `None` and not of type `Callable`.
@@ -2279,11 +2300,12 @@ cdef class Actor(Component):
         """
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(instrument_id, "instrument_id")
-        now = self.clock.utc_now()
+
+        cdef datetime now = self.clock.utc_now()
         if start is not None:
             Condition.is_true(start <= now, "start was > now")
         if end is not None:
-            Condition.is_true(end <= now, "start was > now")
+            Condition.is_true(end <= now, "end was > now")
         if start is not None and end is not None:
             Condition.is_true(start < end, "start was >= end")
         Condition.callable_or_none(callback, "callback")
@@ -2348,6 +2370,10 @@ cdef class Actor(Component):
         Raises
         ------
         ValueError
+            If `start` is not `None` and > current timestamp (now).
+        ValueError
+            If `end` is not `None` and > current timestamp (now).
+        ValueError
             If `start` and `end` are not `None` and `start` is >= `end`.
         TypeError
             If `callback` is not `None` and not of type `Callable`.
@@ -2355,11 +2381,12 @@ cdef class Actor(Component):
         """
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_none(bar_type, "bar_type")
-        now = self.clock.utc_now()
+
+        cdef datetime now = self.clock.utc_now()
         if start is not None:
             Condition.is_true(start <= now, "start was > now")
         if end is not None:
-            Condition.is_true(end <= now, "start was > now")
+            Condition.is_true(end <= now, "end was > now")
         if start is not None and end is not None:
             Condition.is_true(start < end, "start was >= end")
         Condition.callable_or_none(callback, "callback")
@@ -2385,15 +2412,15 @@ cdef class Actor(Component):
         return request_id
 
     cpdef UUID4 request_aggregated_bars(
-            self,
-            list bar_types,
-            datetime start = None,
-            datetime end = None,
-            bint update_existing_subscriptions = False,
-            bint include_external_data = False,
-            ClientId client_id = None,
-            callback: Callable[[UUID4], None] | None = None,
-            bint update_catalog = False,
+        self,
+        list bar_types,
+        datetime start = None,
+        datetime end = None,
+        ClientId client_id = None,
+        callback: Callable[[UUID4], None] | None = None,
+        bint include_external_data = False,
+        bint update_existing_subscriptions = False,
+        bint update_catalog = False,
     ):
         """
         Request historical aggregated `Bar` data for multiple bar types.
@@ -2414,16 +2441,16 @@ cdef class Actor(Component):
         end : datetime, optional
             The end datetime (UTC) of request time range.
             The inclusiveness depends on individual data client implementation.
-        update_existing_subscriptions : bool, default False
-            If True, updates the aggregators of any existing subscription with the queried external data.
-        include_external_data : bool, default False
-            If True, includes the queried external data in the response.
         client_id : ClientId, optional
             The specific client ID for the command.
             If ``None`` then will be inferred from the venue in the instrument ID.
         callback : Callable[[UUID4], None], optional
             The registered callback, to be called with the request ID when the response has
             completed processing.
+        include_external_data : bool, default False
+            If True, includes the queried external data in the response.
+        update_existing_subscriptions : bool, default False
+            If True, updates the aggregators of any existing subscription with the queried external data.
         update_catalog : bool, default False
             If True then updates the catalog with new data received from a client.
 
@@ -2435,21 +2462,28 @@ cdef class Actor(Component):
         Raises
         ------
         ValueError
+            If `start` is not `None` and > current timestamp (now).
+        ValueError
+            If `end` is not `None` and > current timestamp (now).
+        ValueError
             If `start` and `end` are not `None` and `start` is >= `end`.
+        ValueError
             If `bar_types` is empty.
         TypeError
             If `callback` is not `None` and not of type `Callable`.
+        TypeError
             If `bar_types` is empty or contains elements not of type `BarType`.
 
         """
         Condition.is_true(self.trader_id is not None, "The actor has not been registered")
         Condition.not_empty(bar_types, "bar_types")
         Condition.list_type(bar_types, BarType, "bar_types")
-        now = self.clock.utc_now()
+
+        cdef datetime now = self.clock.utc_now()
         if start is not None:
             Condition.is_true(start <= now, "start was > now")
         if end is not None:
-            Condition.is_true(end <= now, "start was > now")
+            Condition.is_true(end <= now, "end was > now")
         if start is not None and end is not None:
             Condition.is_true(start < end, "start was >= end")
         Condition.callable_or_none(callback, "callback")
@@ -2480,8 +2514,8 @@ cdef class Actor(Component):
                 "bar_type": first.composite(),
                 "start": start,
                 "end": end,
-                "update_existing_subscriptions": update_existing_subscriptions,
                 "include_external_data": include_external_data,
+                "update_existing_subscriptions": update_existing_subscriptions,
                 "update_catalog": update_catalog,
             }),
             callback=self._handle_aggregated_bars_response,

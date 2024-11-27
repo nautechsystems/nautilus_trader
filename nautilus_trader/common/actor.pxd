@@ -216,8 +216,8 @@ cdef class Actor(Component):
         datetime end=*,
         ClientId client_id=*,
         callback=*,
-        bint update_catalog=*,
         str quote_type=*,
+        bint update_catalog=*,
     )
     cpdef UUID4 request_trade_ticks(
         self,
@@ -242,10 +242,10 @@ cdef class Actor(Component):
         list bar_types,
         datetime start=*,
         datetime end=*,
-        bint update_existing_subscriptions=*,
-        bint include_external_data=*,
         ClientId client_id=*,
         callback=*,
+        bint include_external_data=*,
+        bint update_existing_subscriptions=*,
         bint update_catalog=*,
     )
     cpdef bint is_pending_request(self, UUID4 request_id)
