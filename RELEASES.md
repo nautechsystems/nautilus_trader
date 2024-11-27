@@ -3,7 +3,9 @@
 Released on TBD (UTC).
 
 ### Enhancements
+- Implemented mixed catalog data requests with catalog update (#2043), thanks @faysou
 - Improved `Cache` behavior when adding more recent quotes, trades, or bars (now adds to cache)
+- Added `metadata` parameter for data requests (#2043), thanks @faysou
 - Added `STOP_MARKET` and `STOP_LIMIT` order support for dYdX (#2066), thanks @davidsblom
 - Added `max_reconnection_tries` to data client config for dYdX (#2066), thanks @davidsblom
 
