@@ -211,17 +211,9 @@ impl FromStr for Currency {
     }
 }
 
-impl From<&str> for Currency {
-    fn from(value: &str) -> Self {
-        value
-            .parse()
-            .expect("Currency string representation should be valid")
-    }
-}
-
-impl From<String> for Currency {
-    fn from(value: String) -> Self {
-        Self::from(value.as_str())
+impl<T: AsRef<str>> From<T> for Currency {
+    fn from(value: T) -> Self {
+        Self::from_str(value.as_ref()).expect(FAILED)
     }
 }
 
