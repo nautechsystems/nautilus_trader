@@ -49,12 +49,17 @@ from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.book import OrderBook
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import BookOrder
+from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.enums import BookAction
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import OrderSide
 from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.objects import Quantity
 
 
 if TYPE_CHECKING:
@@ -375,8 +380,151 @@ class DYDXDataClient(LiveMarketDataClient):
         except Exception as e:
             self._log.error(f"Failed to parse orderbook snapshot: {raw.decode()} with error {e}")
 
+    def _resolve_crossed_order_book(self, instrument_id: InstrumentId) -> None:
+        """
+        Reconcile the order book by generating new deltas when the order book is
+        crossed.
+
+        One possible explanation for this behaviour could be that certain orders are not
+        acknowledged by other validators in the network. Another more unfortunate
+        explanation is that messages are missed or not send by the venue.
+
+        """
+        book = self._books.get(instrument_id)
+
+        if book is None:
+            self.log.error(f"Order book not found for {instrument_id}")
+            return
+
+        instrument = self._cache.instrument(instrument_id)
+
+        if instrument is None:
+            self._log.error(f"Cannot parse kline data: no instrument for {instrument_id}")
+            return
+
+        bid_price = book.best_bid_price()
+        ask_price = book.best_ask_price()
+        bid_size = book.best_bid_size()
+        ask_size = book.best_ask_size()
+        is_order_book_crossed = bid_price >= ask_price
+        ts_init = self._clock.timestamp_ns()
+
+        while is_order_book_crossed is True:
+            self._log.debug("Resolve crossed order book")
+            deltas: list[OrderBookDelta] = []
+
+            if bid_size > ask_size:
+                # Remove ask price level from book and decrease bid size
+                delta = OrderBookDelta(
+                    instrument_id=instrument_id,
+                    action=BookAction.UPDATE,
+                    order=BookOrder(
+                        side=OrderSide.BUY,
+                        price=bid_price,
+                        size=Quantity(bid_size - ask_size, instrument.size_precision),
+                        order_id=0,
+                    ),
+                    flags=0,
+                    sequence=0,
+                    ts_event=ts_init,
+                    ts_init=ts_init,
+                )
+                deltas.append(delta)
+
+                delta = OrderBookDelta(
+                    instrument_id=instrument_id,
+                    action=BookAction.DELETE,
+                    order=BookOrder(
+                        side=OrderSide.SELL,
+                        price=ask_price,
+                        size=Quantity(0, instrument.size_precision),
+                        order_id=0,
+                    ),
+                    flags=0,
+                    sequence=0,
+                    ts_event=ts_init,
+                    ts_init=ts_init,
+                )
+                deltas.append(delta)
+            elif bid_size < ask_size:
+                # Remove bid price level from book and decrease ask size
+                delta = OrderBookDelta(
+                    instrument_id=instrument_id,
+                    action=BookAction.UPDATE,
+                    order=BookOrder(
+                        side=OrderSide.SELL,
+                        price=ask_price,
+                        size=Quantity(ask_size - bid_size, instrument.size_precision),
+                        order_id=0,
+                    ),
+                    flags=0,
+                    sequence=0,
+                    ts_event=ts_init,
+                    ts_init=ts_init,
+                )
+                deltas.append(delta)
+
+                delta = OrderBookDelta(
+                    instrument_id=instrument_id,
+                    action=BookAction.DELETE,
+                    order=BookOrder(
+                        side=OrderSide.BUY,
+                        price=bid_price,
+                        size=Quantity(0, instrument.size_precision),
+                        order_id=0,
+                    ),
+                    flags=0,
+                    sequence=0,
+                    ts_event=ts_init,
+                    ts_init=ts_init,
+                )
+                deltas.append(delta)
+            else:
+                # Remove bid price level and ask price level
+                delta = OrderBookDelta(
+                    instrument_id=instrument_id,
+                    action=BookAction.DELETE,
+                    order=BookOrder(
+                        side=OrderSide.BUY,
+                        price=bid_price,
+                        size=Quantity(0, instrument.size_precision),
+                        order_id=0,
+                    ),
+                    flags=0,
+                    sequence=0,
+                    ts_event=ts_init,
+                    ts_init=ts_init,
+                )
+                deltas.append(delta)
+
+                delta = OrderBookDelta(
+                    instrument_id=instrument_id,
+                    action=BookAction.DELETE,
+                    order=BookOrder(
+                        side=OrderSide.SELL,
+                        price=ask_price,
+                        size=Quantity(0, instrument.size_precision),
+                        order_id=0,
+                    ),
+                    flags=0,
+                    sequence=0,
+                    ts_event=ts_init,
+                    ts_init=ts_init,
+                )
+                deltas.append(delta)
+
+            order_book_deltas = OrderBookDeltas(instrument_id=instrument_id, deltas=deltas)
+            book.apply_deltas(order_book_deltas)
+
+            bid_price = book.best_bid_price()
+            ask_price = book.best_ask_price()
+            bid_size = book.best_bid_size()
+            ask_size = book.best_ask_size()
+            is_order_book_crossed = bid_price >= ask_price
+
     def _handle_deltas(self, instrument_id: InstrumentId, deltas: OrderBookDeltas) -> None:
         self._handle_data(deltas)
+        self._resolve_crossed_order_book(instrument_id)
 
         if instrument_id in self._books:
             book = self._books[instrument_id]
@@ -508,6 +656,9 @@ class DYDXDataClient(LiveMarketDataClient):
         subscription = ("v4_orderbook", dydx_symbol.raw_symbol)
         self._orderbook_subscriptions.add(dydx_symbol.raw_symbol)
 
+        if instrument_id not in self._books:
+            self._books[instrument_id] = OrderBook(instrument_id, book_type)
+
         if not self._ws_client.has_subscription(subscription):
             await self._ws_client.subscribe_order_book(dydx_symbol.raw_symbol)
 
@@ -517,7 +668,6 @@ class DYDXDataClient(LiveMarketDataClient):
             LogColor.MAGENTA,
         )
         book_type = BookType.L2_MBP
-        self._books[instrument_id] = OrderBook(instrument_id, book_type)
 
         # Check if the websocket client is already subscribed.
         dydx_symbol = DYDXSymbol(instrument_id.symbol.value)
