@@ -323,7 +323,7 @@ class DYDXWebsocketClient:
             return
 
         self._subscriptions.add(subscription)
-        msg = {"type": "subscribe", "channel": "v4_orderbook", "id": symbol, "batched": True}
+        msg = {"type": "subscribe", "channel": "v4_orderbook", "id": symbol}
         self._log.debug(f"Subscribe to {symbol} order book")
         await self._send(msg)
 
@@ -534,9 +534,6 @@ class DYDXWebsocketClient:
                 "channel": subscription[0],
                 "id": subscription[1],
             }
-
-            if subscription[0] == "v4_orderbook":
-                msg["batched"] = True
 
             await self._send(msg)
 
