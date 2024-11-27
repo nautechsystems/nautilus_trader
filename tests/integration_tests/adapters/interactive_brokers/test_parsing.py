@@ -22,6 +22,7 @@ import pytest
 # fmt: off
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
+from nautilus_trader.adapters.interactive_brokers.config import SymbologyMethod
 from nautilus_trader.adapters.interactive_brokers.parsing.data import bar_spec_to_bar_size
 from nautilus_trader.adapters.interactive_brokers.parsing.data import timedelta_to_duration_str
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import RE_CASH
@@ -75,7 +76,7 @@ simplified_symbology_params = [
     # fmt: on
 ]
 
-strict_symbology_params = [
+raw_symbology_params = [
     # fmt: off
     (IBContract(secType="CASH", exchange="IDEALPRO", localSymbol="EUR.USD"), "EUR.USD=CASH.IDEALPRO"),
     (IBContract(secType="OPT", exchange="SMART", localSymbol="AAPL  230217P00155000"), "AAPL  230217P00155000=OPT.SMART"),
@@ -123,8 +124,27 @@ strict_symbology_params = [
 ]
 
 
+databento_symbology_params = [
+    # fmt: off
+    (IBContract(secType="OPT", exchange="SMART", localSymbol="AAPL  230217P00155000"), "AAPL  230217P00155000.OPRA"),
+    (IBContract(secType="FUT", exchange="SMART", localSymbol="ESH3"), "ESH3.GLBX"),
+    (IBContract(secType="FUT", exchange="SMART", localSymbol="M6EH3"), "M6EH3.GLBX"),
+    (IBContract(secType="FUT", exchange="SMART", localSymbol="MYMM3"), "MYMM3.GLBX"),
+    (IBContract(secType="FUT", exchange="SMART", localSymbol="MCLV3"), "MCLV3.GLBX"),
+    (IBContract(secType="FOP", exchange="SMART", localSymbol="EX2G3 P4080"), "EX2G3 P4080.GLBX"),
+    (IBContract(secType="FOP", exchange="SMART", localSymbol="DXH3 P103.5"), "DXH3 P103.5.GLBX"),
+    (IBContract(secType="FOP", exchange="SMART", localSymbol="EX2G3 P4080"), "EX2G3 P4080.GLBX"),
+    (IBContract(secType="FOP", exchange="SMART", localSymbol="DXH3 P103.5"), "DXH3 P103.5.GLBX"),
+    (IBContract(secType="FOP", exchange="SMART", localSymbol="OJF6 C1.3"), "OJF6 C1.3.GLBX"),
+    (IBContract(secType="FOP", exchange="SMART", localSymbol="6NZ4 P0655"), "6NZ4 P0655.GLBX"),
+    (IBContract(secType="STK", exchange="SMART", currency="USD", localSymbol="SPY"), "SPY.XNAS"),
+    (IBContract(secType="STK", exchange="SMART", currency="USD", localSymbol="AAPL"), "AAPL.XNAS"),
+    # fmt: on
+]
+
+
 @pytest.mark.parametrize("contract, instrument_id", simplified_symbology_params)
-def test_ib_contract_to_instrument_id(contract, instrument_id):
+def test_ib_contract_to_instrument_id_simplified_symbology(contract, instrument_id):
     # Arrange, Act
     result = ib_contract_to_instrument_id(contract)
 
@@ -133,18 +153,37 @@ def test_ib_contract_to_instrument_id(contract, instrument_id):
     assert result == expected
 
 
-@pytest.mark.parametrize("contract, instrument_id", strict_symbology_params)
-def test_ib_contract_to_instrument_id_strict_symbology(contract, instrument_id):
+@pytest.mark.parametrize("contract, instrument_id", raw_symbology_params)
+def test_ib_contract_to_instrument_id_raw_symbology(contract, instrument_id):
     # Arrange, Act
-    result = ib_contract_to_instrument_id(contract=contract, strict_symbology=True)
+    result = ib_contract_to_instrument_id(
+        contract=contract,
+        symbology_method=SymbologyMethod.IB_RAW,
+    )
 
     # Assert
     expected = InstrumentId.from_str(instrument_id)
     assert result == expected
 
 
+@pytest.mark.parametrize("contract, instrument_id", databento_symbology_params)
+def test_ib_contract_to_instrument_id_databento_symbology(contract, instrument_id):
+    # Arrange, Act
+    instrument_id_obj = InstrumentId.from_str(instrument_id)
+    databento_venue = instrument_id_obj.venue.value
+    result = ib_contract_to_instrument_id(
+        contract=contract,
+        symbology_method=SymbologyMethod.DATABENTO,
+        databento_venue=databento_venue,
+    )
+
+    # Assert
+    expected = instrument_id_obj
+    assert result == expected
+
+
 @pytest.mark.parametrize("contract, instrument_id", simplified_symbology_params)
-def test_instrument_id_to_ib_contract(instrument_id, contract):
+def test_instrument_id_to_ib_contract_simplified_symbology(instrument_id, contract):
     # Arrange, Act
     result = instrument_id_to_ib_contract(InstrumentId.from_str(instrument_id))
 
@@ -153,10 +192,26 @@ def test_instrument_id_to_ib_contract(instrument_id, contract):
     assert result == expected
 
 
-@pytest.mark.parametrize("contract, instrument_id", simplified_symbology_params)
-def test_instrument_id_to_ib_contract_strict_symbology(instrument_id, contract):
+@pytest.mark.parametrize("contract, instrument_id", raw_symbology_params)
+def test_instrument_id_to_ib_contract_raw_symbology(instrument_id, contract):
     # Arrange, Act
-    result = instrument_id_to_ib_contract(InstrumentId.from_str(instrument_id))
+    result = instrument_id_to_ib_contract(
+        InstrumentId.from_str(instrument_id),
+        symbology_method=SymbologyMethod.IB_RAW,
+    )
+
+    # Assert
+    expected = contract
+    assert result == expected
+
+
+@pytest.mark.parametrize("contract, instrument_id", databento_symbology_params)
+def test_instrument_id_to_ib_contract_databento_symbology(instrument_id, contract):
+    # Arrange, Act
+    result = instrument_id_to_ib_contract(
+        InstrumentId.from_str(instrument_id),
+        symbology_method=SymbologyMethod.DATABENTO,
+    )
 
     # Assert
     expected = contract
