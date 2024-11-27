@@ -312,12 +312,13 @@ class DYDXDataClient(LiveMarketDataClient):
                 self._log.error(f"Cannot parse orderbook data: no instrument for {instrument_id}")
                 return
 
+            ts_init = self._clock.timestamp_ns()
             deltas = msg.parse_to_deltas(
                 instrument_id=instrument_id,
                 price_precision=instrument.price_precision,
                 size_precision=instrument.size_precision,
-                ts_event=self._clock.timestamp_ns(),
-                ts_init=self._clock.timestamp_ns(),
+                ts_event=ts_init,
+                ts_init=ts_init,
             )
 
             self._handle_deltas(instrument_id=instrument_id, deltas=deltas)
@@ -338,12 +339,13 @@ class DYDXDataClient(LiveMarketDataClient):
                 self._log.error(f"Cannot parse orderbook data: no instrument for {instrument_id}")
                 return
 
+            ts_init = self._clock.timestamp_ns()
             deltas = msg.parse_to_deltas(
                 instrument_id=instrument_id,
                 price_precision=instrument.price_precision,
                 size_precision=instrument.size_precision,
-                ts_event=self._clock.timestamp_ns(),
-                ts_init=self._clock.timestamp_ns(),
+                ts_event=ts_init,
+                ts_init=ts_init,
             )
 
             self._handle_deltas(instrument_id=instrument_id, deltas=deltas)
@@ -368,12 +370,13 @@ class DYDXDataClient(LiveMarketDataClient):
                 )
                 return
 
+            ts_init = self._clock.timestamp_ns()
             deltas = msg.parse_to_snapshot(
                 instrument_id=instrument_id,
                 price_precision=instrument.price_precision,
                 size_precision=instrument.size_precision,
-                ts_event=self._clock.timestamp_ns(),
-                ts_init=self._clock.timestamp_ns(),
+                ts_event=ts_init,
+                ts_init=ts_init,
             )
 
             self._handle_deltas(instrument_id=instrument_id, deltas=deltas)
