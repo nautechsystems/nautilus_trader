@@ -38,7 +38,7 @@ pub const TRADE_ID_LEN: usize = 37;
 ///
 /// Maximum length is 36 characters.
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.model")
@@ -122,6 +122,12 @@ impl TradeId {
         // SAFETY: Unwrap safe as we always store valid C strings
         // We use until nul because the values array may be padded with nul bytes
         CStr::from_bytes_until_nul(&self.value).unwrap()
+    }
+}
+
+impl Debug for TradeId {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}('{}')", stringify!(TradeId), self)
     }
 }
 
@@ -231,6 +237,7 @@ mod tests {
     fn test_string_reprs(trade_id: TradeId) {
         assert_eq!(trade_id.to_string(), "1234567890");
         assert_eq!(format!("{trade_id}"), "1234567890");
+        assert_eq!(format!("{trade_id:?}"), "TradeId('1234567890')");
     }
 
     #[rstest]
