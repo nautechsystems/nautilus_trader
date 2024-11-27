@@ -13,7 +13,10 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from __future__ import annotations
+
 from decimal import Decimal
+from typing import TYPE_CHECKING
 
 import msgspec
 
@@ -30,7 +33,6 @@ from nautilus_trader.adapters.bybit.common.enums import BybitTimeInForce
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerDirection
 from nautilus_trader.adapters.bybit.common.enums import BybitTriggerType
 from nautilus_trader.adapters.bybit.common.parsing import parse_bybit_delta
-from nautilus_trader.adapters.bybit.execution import BybitExecutionClient
 from nautilus_trader.core.datetime import millis_to_nanos
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.execution.reports import OrderStatusReport
@@ -56,6 +58,10 @@ from nautilus_trader.model.objects import MarginBalance
 from nautilus_trader.model.objects import Money
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
+
+
+if TYPE_CHECKING:
+    from nautilus_trader.adapters.bybit.execution import BybitExecutionClient
 
 
 class BybitWsMessageGeneral(msgspec.Struct):
