@@ -35,8 +35,8 @@ from nautilus_trader.adapters.bybit.config import BybitDataClientConfig
 from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.market import BybitMarketHttpAPI
 from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
+from nautilus_trader.adapters.bybit.schemas.common import BYBIT_PONG
 from nautilus_trader.adapters.bybit.schemas.market.ticker import BybitTickerData
-from nautilus_trader.adapters.bybit.schemas.ws import BYBIT_PONG
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsMessageGeneral
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsTickerLinearMsg
 from nautilus_trader.adapters.bybit.schemas.ws import decoder_ws_kline

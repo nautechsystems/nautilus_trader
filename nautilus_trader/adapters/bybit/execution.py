@@ -39,12 +39,13 @@ from nautilus_trader.adapters.bybit.http.client import BybitHttpClient
 from nautilus_trader.adapters.bybit.http.errors import BybitError
 from nautilus_trader.adapters.bybit.http.errors import should_retry
 from nautilus_trader.adapters.bybit.providers import BybitInstrumentProvider
+from nautilus_trader.adapters.bybit.schemas.common import BYBIT_PONG
 from nautilus_trader.adapters.bybit.schemas.common import BybitWsSubscriptionMsg
-from nautilus_trader.adapters.bybit.schemas.ws import BYBIT_PONG
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecution
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountExecutionMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountOrderMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountPositionMsg
+from nautilus_trader.adapters.bybit.schemas.ws import BybitWsAccountWalletMsg
 from nautilus_trader.adapters.bybit.schemas.ws import BybitWsMessageGeneral
 from nautilus_trader.adapters.bybit.websocket.client import BybitWebSocketClient
 from nautilus_trader.cache.cache import Cache
@@ -202,13 +203,11 @@ class BybitExecutionClient(LiveExecutionClient):
         # Decoders
         self._decoder_ws_msg_general = msgspec.json.Decoder(BybitWsMessageGeneral)
         self._decoder_ws_subscription = msgspec.json.Decoder(BybitWsSubscriptionMsg)
+
         self._decoder_ws_account_order_update = msgspec.json.Decoder(BybitWsAccountOrderMsg)
-        self._decoder_ws_account_execution_update = msgspec.json.Decoder(
-            BybitWsAccountExecutionMsg,
-        )
-        self._decoder_ws_account_position_update = msgspec.json.Decoder(
-            BybitWsAccountPositionMsg,
-        )
+        self._decoder_ws_account_execution_update = msgspec.json.Decoder(BybitWsAccountExecutionMsg)
+        self._decoder_ws_account_position_update = msgspec.json.Decoder(BybitWsAccountPositionMsg)
+        self._decoder_ws_account_wallet_update = msgspec.json.Decoder(BybitWsAccountWalletMsg)
 
         # Hot caches
         self._instrument_ids: dict[str, InstrumentId] = {}
@@ -230,6 +229,7 @@ class BybitExecutionClient(LiveExecutionClient):
         await self._ws_client.connect()
         await self._ws_client.subscribe_executions_update()
         await self._ws_client.subscribe_orders_update()
+        await self._ws_client.subscribe_wallet_update()
 
     async def _disconnect(self) -> None:
         await self._ws_client.disconnect()
@@ -941,6 +941,8 @@ class BybitExecutionClient(LiveExecutionClient):
                 self._handle_account_order_update(raw)
             elif "execution" in ws_message.topic:
                 self._handle_account_execution_update(raw)
+            elif "wallet" == ws_message.topic:
+                self._handle_account_wallet_update(raw)
             else:
                 self._log.error(f"Unknown websocket message topic: {ws_message.topic}")
         except Exception as e:
@@ -1157,6 +1159,16 @@ class BybitExecutionClient(LiveExecutionClient):
                     )
         except Exception as e:
             self._log.error(repr(e))
+
+    def _handle_account_wallet_update(self, raw: bytes) -> None:
+        try:
+            self._process_wallet_update(raw)
+        except Exception as e:
+            self._log.exception(f"Failed to handle account wallet update: {e}", e)
+
+    def _process_wallet_update(self, raw: bytes) -> None:
+        msg: BybitWsAccountWalletMsg = self._decoder_ws_account_wallet_update.decode(raw)
+        msg.handle_account_wallet_update(self)
 
     def _create_market_batch_order(
         self,

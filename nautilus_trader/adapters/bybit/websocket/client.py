@@ -253,6 +253,15 @@ class BybitWebSocketClient:
         msg = {"op": "subscribe", "args": [subscription]}
         await self._send(msg)
 
+    async def subscribe_wallet_update(self) -> None:
+        subscription = "wallet"
+        if subscription in self._subscriptions:
+            return
+
+        self._subscriptions.append(subscription)
+        msg = {"op": "subscribe", "args": [subscription]}
+        await self._send(msg)
+
     def _get_signature(self):
         expires = self._clock.timestamp_ms() + 5_000
         sign = f"GET/realtime{expires}"
