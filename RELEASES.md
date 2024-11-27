@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added `metadata` parameter for data requests (#2043), thanks @faysou
 - Added `STOP_MARKET` and `STOP_LIMIT` order support for dYdX (#2066), thanks @davidsblom
 - Added `max_reconnection_tries` to data client config for dYdX (#2066), thanks @davidsblom
+- Added wallet subscription for Bybit (#2076), thanks @sunlei
 
 ### Internal Improvements
 - Ported `Portfolio` and `AccountManager` to Rust (#2058), thanks @Pushkarm029
