@@ -923,7 +923,7 @@ cdef class MarketDataClient(DataClient):
         dict metadata = None,
     ):
         """
-        Request historical `Bar` data.
+        Request historical `Bar` data. To load historical data from a catalog, you can pass a list[DataCatalogConfig] to the TradingNodeConfig or the BacktestEngineConfig.
 
         Parameters
         ----------
