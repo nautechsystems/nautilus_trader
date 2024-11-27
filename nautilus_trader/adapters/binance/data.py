@@ -538,6 +538,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         if start is not None:
             self._log.warning(
@@ -554,16 +555,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             self._log.error(f"Cannot find instrument for {instrument_id}")
             return
 
-        data_type = DataType(
-            type=Instrument,
-            metadata={"instrument_id": instrument_id},
-        )
-
-        self._handle_data_response(
-            data_type=data_type,
-            data=[instrument],  # Data engine handles lists of instruments
-            correlation_id=correlation_id,
-        )
+        self._handle_instrument(instrument, correlation_id, metadata)
 
     async def _request_quote_ticks(
         self,
@@ -572,6 +564,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         self._log.error(
             "Cannot request historical quotes: not published by Binance",
@@ -584,6 +577,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         if limit == 0 or limit > 1000:
             limit = 1000
@@ -616,7 +610,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
                 ts_init=self._clock.timestamp_ns(),
             )
 
-        self._handle_trade_ticks(instrument_id, ticks, correlation_id)
+        self._handle_trade_ticks(instrument_id, ticks, correlation_id, metadata)
 
     async def _request_bars(  # (too complex)
         self,
@@ -625,6 +619,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         if bar_type.spec.price_type != PriceType.LAST:
             self._log.error(
@@ -693,7 +688,7 @@ class BinanceCommonDataClient(LiveMarketDataClient):
             )
 
         partial: Bar = bars.pop()
-        self._handle_bars(bar_type, bars, partial, correlation_id)
+        self._handle_bars(bar_type, bars, partial, correlation_id, metadata)
 
     async def _request_order_book_snapshot(
         self,

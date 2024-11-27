@@ -15,12 +15,14 @@
 
 import sys
 
+import pandas as pd
 import pytest
 
 from nautilus_trader.backtest.data_client import BacktestMarketDataClient
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.component import TestClock
 from nautilus_trader.core.data import Data
+from nautilus_trader.core.datetime import time_object_to_dt
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.data.engine import DataEngine
 from nautilus_trader.data.engine import DataEngineConfig
@@ -38,6 +40,7 @@ from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDeltas
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.enums import AggressorSide
 from nautilus_trader.model.enums import BarAggregation
 from nautilus_trader.model.enums import BookType
 from nautilus_trader.model.enums import PriceType
@@ -45,11 +48,13 @@ from nautilus_trader.model.enums import RecordFlag
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Symbol
+from nautilus_trader.model.identifiers import TradeId
 from nautilus_trader.model.identifiers import Venue
 from nautilus_trader.model.instruments import Instrument
 from nautilus_trader.model.objects import Price
 from nautilus_trader.model.objects import Quantity
 from nautilus_trader.portfolio.portfolio import Portfolio
+from nautilus_trader.test_kit.mocks.data import MockMarketDataClient
 from nautilus_trader.test_kit.mocks.data import setup_catalog
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.test_kit.stubs.component import TestComponentStubs
@@ -122,6 +127,13 @@ class TestDataEngine:
 
         self.betfair = BacktestMarketDataClient(
             client_id=ClientId("BETFAIR"),
+            msgbus=self.msgbus,
+            cache=self.cache,
+            clock=self.clock,
+        )
+
+        self.mock_market_data_client = MockMarketDataClient(
+            client_id=ClientId(BINANCE.value),
             msgbus=self.msgbus,
             cache=self.cache,
             clock=self.clock,
@@ -2239,6 +2251,442 @@ class TestDataEngine:
         # Assert
         assert self.data_engine.request_count == 1
         assert len(handler) == 0
+
+    def test_request_bars_reaches_client(self):
+        # Arrange
+        self.data_engine.register_client(self.mock_market_data_client)
+        bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
+        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
+        bar = Bar(
+            bar_type,
+            Price.from_str("1051.00000"),
+            Price.from_str("1055.00000"),
+            Price.from_str("1050.00000"),
+            Price.from_str("1052.00000"),
+            Quantity.from_int(100),
+            0,
+            0,
+        )
+        self.mock_market_data_client.bars = [bar]
+
+        handler = []
+        request = DataRequest(
+            client_id=None,
+            venue=bar_type.instrument_id.venue,
+            data_type=DataType(
+                Bar,
+                metadata={
+                    "bar_type": bar_type,
+                    "start": None,
+                    "end": None,
+                    "update_catalog": False,
+                },
+            ),
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert len(handler) == 1
+        assert handler[0].data == [bar]
+
+    def test_request_bars_when_catalog_registered(self):
+        # Arrange
+        catalog = setup_catalog(protocol="file")
+        bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
+        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
+        bar = Bar(
+            bar_type,
+            Price.from_str("1051.00000"),
+            Price.from_str("1055.00000"),
+            Price.from_str("1050.00000"),
+            Price.from_str("1052.00000"),
+            Quantity.from_int(100),
+            0,
+            0,
+        )
+        catalog.write_data([bar])
+        self.data_engine.register_catalog(catalog)
+
+        handler = []
+        request = DataRequest(
+            client_id=None,
+            venue=bar_type.instrument_id.venue,
+            data_type=DataType(
+                Bar,
+                metadata={
+                    "bar_type": bar_type,
+                    "start": None,
+                    "end": None,
+                    "update_catalog": False,
+                },
+            ),
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert len(handler) == 1
+        assert handler[0].data == [bar]
+
+    def test_request_bars_when_catalog_and_client_registered(self):
+        # Arrange
+        catalog = setup_catalog(protocol="file")
+        bar_spec = BarSpecification(1000, BarAggregation.TICK, PriceType.MID)
+        bar_type = BarType(ETHUSDT_BINANCE.id, bar_spec)
+        bar = Bar(
+            bar_type,
+            Price.from_str("1051.00000"),
+            Price.from_str("1055.00000"),
+            Price.from_str("1050.00000"),
+            Price.from_str("1052.00000"),
+            Quantity.from_int(100),
+            pd.Timestamp("2024-3-24").value,
+            pd.Timestamp("2024-3-24").value,
+        )
+        catalog.write_data([bar])
+        self.data_engine.register_catalog(catalog)
+
+        self.data_engine.register_client(self.mock_market_data_client)
+        bar2 = Bar(
+            bar_type,
+            Price.from_str("1051.00000"),
+            Price.from_str("1055.00000"),
+            Price.from_str("1050.00000"),
+            Price.from_str("1052.00000"),
+            Quantity.from_int(100),
+            pd.Timestamp("2024-3-25").value,
+            pd.Timestamp("2024-3-25").value,
+        )
+        self.mock_market_data_client.bars = [bar2]
+
+        handler = []
+        request = DataRequest(
+            client_id=None,
+            venue=bar_type.instrument_id.venue,
+            data_type=DataType(
+                Bar,
+                metadata={
+                    "bar_type": bar_type,
+                    "start": pd.Timestamp("2024-3-24"),
+                    "end": pd.Timestamp("2024-3-25"),
+                    "update_catalog": True,
+                },
+            ),
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.clock.advance_time(pd.Timestamp("2024-3-25").value)
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert len(handler) == 1
+        print(handler[0].data)
+        assert handler[0].data == [bar, bar2]
+        assert catalog.query_last_timestamp(Bar, bar_type=bar_type) == time_object_to_dt(
+            pd.Timestamp("2024-3-25"),
+        )
+
+    def test_request_quote_ticks_reaches_client(self):
+        # Arrange
+        self.data_engine.register_client(self.mock_market_data_client)
+        quote_tick = QuoteTick(
+            ETHUSDT_BINANCE.id,
+            Price.from_str("1051.00000"),
+            Price.from_str("1052.00000"),
+            Quantity.from_int(100),
+            Quantity.from_int(100),
+            0,
+            0,
+        )
+        self.mock_market_data_client.quote_ticks = [quote_tick]
+
+        handler = []
+        request = DataRequest(
+            client_id=None,
+            venue=ETHUSDT_BINANCE.venue,
+            data_type=DataType(
+                QuoteTick,
+                metadata={
+                    "instrument_id": ETHUSDT_BINANCE.id,
+                    "start": None,
+                    "end": None,
+                    "update_catalog": False,
+                },
+            ),
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert len(handler) == 1
+        assert handler[0].data == [quote_tick]
+
+    def test_request_quote_ticks_when_catalog_registered(self):
+        # Arrange
+        catalog = setup_catalog(protocol="file")
+        quote_tick = QuoteTick(
+            ETHUSDT_BINANCE.id,
+            Price.from_str("1051.00000"),
+            Price.from_str("1052.00000"),
+            Quantity.from_int(100),
+            Quantity.from_int(100),
+            0,
+            0,
+        )
+        catalog.write_data([quote_tick])
+        self.data_engine.register_catalog(catalog)
+
+        handler = []
+        request = DataRequest(
+            client_id=None,
+            venue=ETHUSDT_BINANCE.venue,
+            data_type=DataType(
+                QuoteTick,
+                metadata={
+                    "instrument_id": ETHUSDT_BINANCE.id,
+                    "start": None,
+                    "end": None,
+                    "update_catalog": False,
+                },
+            ),
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert len(handler) == 1
+        # assert handler[0].data == [quote_tick]
+
+    def test_request_quote_ticks_when_catalog_and_client_registered(self):
+        # Arrange
+        catalog = setup_catalog(protocol="file")
+        quote_tick = QuoteTick(
+            ETHUSDT_BINANCE.id,
+            Price.from_str("1051.00000"),
+            Price.from_str("1052.00000"),
+            Quantity.from_int(100),
+            Quantity.from_int(100),
+            pd.Timestamp("2024-3-24").value,
+            pd.Timestamp("2024-3-24").value,
+        )
+        catalog.write_data([quote_tick])
+        self.data_engine.register_catalog(catalog)
+
+        self.data_engine.register_client(self.mock_market_data_client)
+        quote_tick2 = QuoteTick(
+            ETHUSDT_BINANCE.id,
+            Price.from_str("1051.00000"),
+            Price.from_str("1052.00000"),
+            Quantity.from_int(100),
+            Quantity.from_int(100),
+            pd.Timestamp("2024-3-25").value,
+            pd.Timestamp("2024-3-25").value,
+        )
+        self.mock_market_data_client.quote_ticks = [quote_tick2]
+
+        handler = []
+        request = DataRequest(
+            client_id=None,
+            venue=ETHUSDT_BINANCE.venue,
+            data_type=DataType(
+                QuoteTick,
+                metadata={
+                    "instrument_id": ETHUSDT_BINANCE.id,
+                    "start": pd.Timestamp("2024-3-24"),
+                    "end": pd.Timestamp("2024-3-25"),
+                    "update_catalog": True,
+                },
+            ),
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.clock.advance_time(pd.Timestamp("2024-3-25").value)
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert len(handler) == 1
+        # assert handler[0].data == [quote_tick, quote_tick2]
+        assert catalog.query_last_timestamp(
+            QuoteTick,
+            instrument_id=ETHUSDT_BINANCE.id,
+        ) == time_object_to_dt(
+            pd.Timestamp("2024-3-25"),
+        )
+
+    def test_request_trade_ticks_reaches_client(self):
+        # Arrange
+        self.data_engine.register_client(self.mock_market_data_client)
+        trade_tick = TradeTick(
+            instrument_id=ETHUSDT_BINANCE.id,
+            price=Price.from_str("1051.00000"),
+            size=Quantity.from_int(100),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("123456"),
+            ts_event=0,
+            ts_init=0,
+        )
+        self.mock_market_data_client.trade_ticks = [trade_tick]
+
+        handler = []
+        request = DataRequest(
+            client_id=None,
+            venue=ETHUSDT_BINANCE.venue,
+            data_type=DataType(
+                TradeTick,
+                metadata={
+                    "instrument_id": ETHUSDT_BINANCE.id,
+                    "start": None,
+                    "end": None,
+                    "update_catalog": False,
+                },
+            ),
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert len(handler) == 1
+        assert handler[0].data == [trade_tick]
+
+    def test_request_trade_ticks_when_catalog_registered(self):
+        # Arrange
+        catalog = setup_catalog(protocol="file")
+        trade_tick = TradeTick(
+            instrument_id=ETHUSDT_BINANCE.id,
+            price=Price.from_str("1051.00000"),
+            size=Quantity.from_int(100),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("123456"),
+            ts_event=0,
+            ts_init=0,
+        )
+        catalog.write_data([trade_tick])
+        self.data_engine.register_catalog(catalog)
+
+        assert trade_tick == trade_tick
+
+        handler = []
+        request = DataRequest(
+            client_id=None,
+            venue=ETHUSDT_BINANCE.venue,
+            data_type=DataType(
+                TradeTick,
+                metadata={
+                    "instrument_id": ETHUSDT_BINANCE.id,
+                    "start": None,
+                    "end": None,
+                    "update_catalog": False,
+                },
+            ),
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert len(handler) == 1
+        # assert handler[0].data == [trade_tick]
+
+    def test_request_trade_ticks_when_catalog_and_client_registered(self):
+        # Arrange
+        catalog = setup_catalog(protocol="file")
+        trade_tick = TradeTick(
+            instrument_id=ETHUSDT_BINANCE.id,
+            price=Price.from_str("1051.00000"),
+            size=Quantity.from_int(100),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("123456"),
+            ts_event=pd.Timestamp("2024-3-24").value,
+            ts_init=pd.Timestamp("2024-3-24").value,
+        )
+        catalog.write_data([trade_tick])
+        self.data_engine.register_catalog(catalog)
+
+        self.data_engine.register_client(self.mock_market_data_client)
+        trade_tick2 = TradeTick(
+            instrument_id=ETHUSDT_BINANCE.id,
+            price=Price.from_str("1051.00000"),
+            size=Quantity.from_int(100),
+            aggressor_side=AggressorSide.BUYER,
+            trade_id=TradeId("123456"),
+            ts_event=pd.Timestamp("2024-3-25").value,
+            ts_init=pd.Timestamp("2024-3-25").value,
+        )
+        self.mock_market_data_client.trade_ticks = [trade_tick2]
+
+        handler = []
+        request = DataRequest(
+            client_id=None,
+            venue=ETHUSDT_BINANCE.venue,
+            data_type=DataType(
+                TradeTick,
+                metadata={
+                    "instrument_id": ETHUSDT_BINANCE.id,
+                    "start": pd.Timestamp("2024-3-24"),
+                    "end": pd.Timestamp("2024-3-25"),
+                    "update_catalog": True,
+                },
+            ),
+            callback=handler.append,
+            request_id=UUID4(),
+            ts_init=self.clock.timestamp_ns(),
+        )
+
+        self.clock.advance_time(pd.Timestamp("2024-3-25").value)
+
+        # Act
+        self.msgbus.request(endpoint="DataEngine.request", request=request)
+
+        # Assert
+        assert self.data_engine.request_count == 1
+        assert len(handler) == 1
+        # assert handler[0].data == [trade_tick, trade_tick2]
+        assert catalog.query_last_timestamp(
+            TradeTick,
+            instrument_id=ETHUSDT_BINANCE.id,
+        ) == time_object_to_dt(
+            pd.Timestamp("2024-3-25"),
+        )
 
     # TODO: Implement with new Rust datafusion backend"
     # def test_request_quote_ticks_when_catalog_registered_using_rust(self) -> None:

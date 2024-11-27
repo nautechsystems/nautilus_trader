@@ -665,6 +665,7 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         time_range_str = format_utc_timerange(start, end)
         self._log.info(f"Request {instrument_id} instrument{time_range_str}", LogColor.BLUE)
@@ -674,6 +675,7 @@ class LiveMarketDataClient(MarketDataClient):
                 correlation_id=correlation_id,
                 start=start,
                 end=end,
+                metadata=metadata,
             ),
             log_msg=f"request: instrument {instrument_id}",
         )
@@ -684,6 +686,7 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         time_range_str = format_utc_timerange(start, end)
         self._log.info(
@@ -696,6 +699,7 @@ class LiveMarketDataClient(MarketDataClient):
                 correlation_id=correlation_id,
                 start=start,
                 end=end,
+                metadata=metadata,
             ),
             log_msg=f"request: instruments for {venue}",
         )
@@ -707,6 +711,7 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         time_range_str = format_utc_timerange(start, end)
         limit_str = f" limit={limit}" if limit else ""
@@ -718,6 +723,7 @@ class LiveMarketDataClient(MarketDataClient):
                 correlation_id=correlation_id,
                 start=start,
                 end=end,
+                metadata=metadata,
             ),
             log_msg=f"request: quotes {instrument_id}",
         )
@@ -729,6 +735,7 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         time_range_str = format_utc_timerange(start, end)
         limit_str = f" limit={limit}" if limit else ""
@@ -740,6 +747,7 @@ class LiveMarketDataClient(MarketDataClient):
                 correlation_id=correlation_id,
                 start=start,
                 end=end,
+                metadata=metadata,
             ),
             log_msg=f"request: trades {instrument_id}",
         )
@@ -751,6 +759,7 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         time_range_str = format_utc_timerange(start, end)
         limit_str = f" limit={limit}" if limit else ""
@@ -762,6 +771,7 @@ class LiveMarketDataClient(MarketDataClient):
                 correlation_id=correlation_id,
                 start=start,
                 end=end,
+                metadata=metadata,
             ),
             log_msg=f"request: bars {bar_type}",
         )
@@ -919,6 +929,7 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_instrument` coroutine",  # pragma: no cover
@@ -930,6 +941,7 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_instruments` coroutine",  # pragma: no cover
@@ -942,6 +954,7 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_quote_ticks` coroutine",  # pragma: no cover
@@ -954,6 +967,7 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_trade_ticks` coroutine",  # pragma: no cover
@@ -966,6 +980,7 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_bars` coroutine",  # pragma: no cover
