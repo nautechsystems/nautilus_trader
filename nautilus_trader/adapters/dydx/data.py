@@ -412,7 +412,7 @@ class DYDXDataClient(LiveMarketDataClient):
             return venue_deltas
 
         is_order_book_crossed = bid_price >= ask_price
-        ts_init = self._clock.timestamp_ns()
+        ts_init = venue_deltas.ts_init
         deltas: list[OrderBookDelta] = venue_deltas.deltas
 
         while is_order_book_crossed is True:
