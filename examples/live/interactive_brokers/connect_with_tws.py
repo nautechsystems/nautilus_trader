@@ -20,6 +20,7 @@ from nautilus_trader.adapters.interactive_brokers.config import IBMarketDataType
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersDataClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersExecClientConfig
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
+from nautilus_trader.adapters.interactive_brokers.config import SymbologyMethod
 from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveDataClientFactory
 from nautilus_trader.adapters.interactive_brokers.factories import InteractiveBrokersLiveExecClientFactory
 from nautilus_trader.config import LiveDataEngineConfig
@@ -42,6 +43,7 @@ from nautilus_trader.model.identifiers import InstrumentId
 
 
 instrument_provider = InteractiveBrokersInstrumentProviderConfig(
+    symbology_method=SymbologyMethod.IB_SIMPLIFIED,
     load_ids=frozenset(
         [
             "EUR/USD.IDEALPRO",

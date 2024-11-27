@@ -23,6 +23,7 @@ from nautilus_trader.adapters.interactive_brokers.client import InteractiveBroke
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
 from nautilus_trader.adapters.interactive_brokers.config import InteractiveBrokersInstrumentProviderConfig
+from nautilus_trader.adapters.interactive_brokers.config import SymbologyMethod
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import instrument_id_to_ib_contract
 from nautilus_trader.adapters.interactive_brokers.parsing.instruments import parse_instrument
 from nautilus_trader.common.providers import InstrumentProvider
@@ -113,7 +114,7 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
         try:
             details = await self._client.get_contract_details(contract=contract)
             if not details:
-                self._log.error(f"No contract details returned for {contract}")
+                self._log.debug(f"No contract details returned for {contract}")
                 return []
             [qualified] = details
             self._log.info(
@@ -123,6 +124,8 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             )
             self._log.debug(f"Got {details=}")
         except ValueError as e:
+            for d in details:
+                print(d.__dict__)
             self._log.error(f"No contract details found for the given kwargs {contract}, {e}")
             return []
         min_expiry = pd.Timestamp.now() + pd.Timedelta(
@@ -257,27 +260,52 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             Not applicable in this case.
 
         """
+        databento_venue = None
         if isinstance(instrument_id, InstrumentId):
+            databento_venue = (
+                str(instrument_id.venue)
+                if self.config.symbology_method == SymbologyMethod.DATABENTO
+                else None
+            )
             try:
                 contract = instrument_id_to_ib_contract(
                     instrument_id=instrument_id,
-                    strict_symbology=self.config.strict_symbology,
+                    symbology_method=self.config.symbology_method,
                 )
             except ValueError as e:
                 self._log.error(
-                    f"{self.config.strict_symbology=} failed to parse {instrument_id=}, {e}",
+                    f"{self.config.symbology_method=} failed to parse {instrument_id=}, {e}",
                 )
                 return
         elif isinstance(instrument_id, IBContract):
+            assert self.config.symbology_method != SymbologyMethod.DATABENTO
             contract = instrument_id
         else:
             self._log.error(f"Expected InstrumentId or IBContract, received {instrument_id}")
             return
 
-        self._log.debug(f"Attempting to find instrument for {contract=}")
-        contract_details: list[ContractDetails]
-        if not (contract_details := await self.get_contract_details(contract)):
-            return
+        self._log.info(f"Attempting to find instrument for {contract=}")
+        if databento_venue == "GLBX":
+            for exchange in ["CME", "CBOT", "NYMEX", "NYBOT"]:
+                contract = instrument_id_to_ib_contract(
+                    instrument_id=instrument_id,
+                    symbology_method=self.config.symbology_method,
+                    exchange=exchange,
+                )
+                contract_details = await self.get_contract_details(contract)
+                if contract_details:
+                    break
+        else:
+            contract_details = await self.get_contract_details(contract)
+
+        if contract_details:
+            await self._process_contract_details(contract_details, databento_venue=databento_venue)
+
+    async def _process_contract_details(
+        self,
+        contract_details: list[ContractDetails],
+        databento_venue: str | None = None,
+    ) -> None:
         for details in copy.deepcopy(contract_details):
             details.contract = IBContract(**details.contract.__dict__)
             details = IBContractDetails(**details.__dict__)
@@ -285,10 +313,11 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
             try:
                 instrument: Instrument = parse_instrument(
                     contract_details=details,
-                    strict_symbology=self.config.strict_symbology,
+                    symbology_method=self.config.symbology_method,
+                    databento_venue=databento_venue,
                 )
             except ValueError as e:
-                self._log.error(f"{self.config.strict_symbology=} failed to parse {details=}, {e}")
+                self._log.error(f"{self.config.symbology_method=} failed to parse {details=}, {e}")
                 continue
             if self.config.filter_callable is not None:
                 filter_callable = resolve_path(self.config.filter_callable)
@@ -296,7 +325,8 @@ class InteractiveBrokersInstrumentProvider(InstrumentProvider):
                     continue
             self._log.info(f"Adding {instrument=} from InteractiveBrokersInstrumentProvider")
             self.add(instrument)
-            self._client._cache.add_instrument(instrument)
+            if self.config.symbology_method != SymbologyMethod.DATABENTO:
+                self._client._cache.add_instrument(instrument)
             self.contract_details[instrument.id.value] = details
             self.contract_id_to_instrument_id[details.contract.conId] = instrument.id
 
