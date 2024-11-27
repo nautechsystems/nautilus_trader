@@ -579,6 +579,7 @@ class DYDXDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         max_bars = 100
 
@@ -634,4 +635,4 @@ class DYDXDataClient(LiveMarketDataClient):
             ]
 
             partial: Bar = bars.pop()
-            self._handle_bars(bar_type, bars, partial, correlation_id)
+            self._handle_bars(bar_type, bars, partial, correlation_id, metadata)

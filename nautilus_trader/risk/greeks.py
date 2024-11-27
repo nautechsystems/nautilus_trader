@@ -270,7 +270,7 @@ class InterestRateProvider(Actor):
         # get the interest rate for the current month
         utc_now_ns = alert.ts_init if alert is not None else self.clock.timestamp_ns()
         utc_now = unix_nanos_to_dt(utc_now_ns)
-        month_string = f"{utc_now.year}-{str(utc_now.month).zfill(2)}"
+        month_string = f"{utc_now.year}-{str(utc_now.month).zfill(2)}"  # 2024-01
         interest_rate_value = float(self.interest_rates_df.loc[month_string, "interest_rate"])
 
         interest_rate = InterestRateData(
@@ -303,8 +303,6 @@ class InterestRateProvider(Actor):
 def import_interest_rates(xml_interest_rate_file):
     import xmltodict
 
-    data_dict = None
-
     with open(xml_interest_rate_file) as xml_file:
         data_dict = xmltodict.parse(xml_file.read())
 
@@ -314,21 +312,17 @@ def import_interest_rates(xml_interest_rate_file):
             "generic:Obs"
         ]
     ]
-    interest_rates.sort(key=lambda x: x[0])
 
     return (
-        pd.DataFrame(interest_rates, columns=["month", "interest_rate"]).set_index("month") / 100.0
+        pd.DataFrame(interest_rates, columns=["month", "interest_rate"])
+        .set_index("month")
+        .sort_index()
+        / 100.0
     )
 
 
 def next_month_start_from_timestamp(timestamp):
-    return (timestamp + pd.offsets.MonthBegin(1)).replace(
-        hour=0,
-        minute=0,
-        second=0,
-        microsecond=0,
-        nanosecond=0,
-    )
+    return (timestamp + pd.offsets.MonthBegin(1)).floor(freq="d")
 
 
 def date_to_string(date, string_format="%Y%m%d"):

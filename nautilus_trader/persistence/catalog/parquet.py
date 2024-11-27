@@ -39,6 +39,7 @@ from pyarrow import ArrowInvalid
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.data import Data
 from nautilus_trader.core.datetime import dt_to_unix_nanos
+from nautilus_trader.core.datetime import time_object_to_dt
 from nautilus_trader.core.inspect import is_nautilus_class
 from nautilus_trader.core.message import Event
 from nautilus_trader.core.nautilus_pyo3 import DataBackendSession
@@ -579,12 +580,37 @@ class ParquetDataCatalog(BaseDataCatalog):
         ts_column: str = "ts_init",
     ) -> pds.Dataset | None:
         # Original dataset
+        dataset = self._load_dataset(
+            path=path,
+            instrument_ids=instrument_ids,
+            bar_types=bar_types,
+        )
+
+        if dataset is None:
+            return None
+
+        return self._filter_dataset(
+            dataset=dataset,
+            filter_expr=filter_expr,
+            start=start,
+            end=end,
+            ts_column=ts_column,
+        )
+
+    def _load_dataset(
+        self,
+        path: str,
+        instrument_ids: list[str] | str | None = None,
+        bar_types: list[str] | str | None = None,
+    ) -> pds.Dataset | None:
+        # Original dataset
         dataset = pds.dataset(path, filesystem=self.fs)
 
         # Instrument id filters (not stored in table, need to filter based on files)
         if instrument_ids is not None:
             if not isinstance(instrument_ids, list):
                 instrument_ids = [instrument_ids]
+
             valid_files = [
                 fn
                 for fn in dataset.files
@@ -595,12 +621,27 @@ class ParquetDataCatalog(BaseDataCatalog):
         if bar_types is not None:
             if not isinstance(bar_types, list):
                 bar_types = [bar_types]
+
             valid_files = [
-                fn for fn in dataset.files if any(x.replace("/", "") in fn for x in bar_types)
+                fn for fn in dataset.files if any(str(x).replace("/", "") in fn for x in bar_types)
             ]
             dataset = pds.dataset(valid_files, filesystem=self.fs)
 
+        return dataset
+
+    def _filter_dataset(
+        self,
+        dataset: pds.Dataset,
+        filter_expr: str | None = None,
+        start: TimestampLike | None = None,
+        end: TimestampLike | None = None,
+        ts_column: str = "ts_init",
+    ) -> pds.Dataset | None:
+        if dataset is None:
+            return None
+
         filters: list[pds.Expression] = [filter_expr] if filter_expr is not None else []
+
         if start is not None:
             filters.append(pds.field(ts_column) >= pd.Timestamp(start).value)
         if end is not None:
@@ -609,7 +650,63 @@ class ParquetDataCatalog(BaseDataCatalog):
             filter_ = combine_filters(*filters)
         else:
             filter_ = None
+
         return dataset.to_table(filter=filter_)
+
+    def query_last_timestamp(
+        self,
+        data_cls: type,
+        instrument_id: str | None = None,
+        bar_type: str | None = None,
+        ts_column: str = "ts_init",
+    ) -> pd.Timestamp | None:
+        if data_cls == Instrument:
+            for instrument_type in Instrument.__subclasses__():
+                last_timestamp = self._query_last_timestamp(
+                    data_cls=instrument_type,
+                    instrument_id=instrument_id,
+                    bar_type=bar_type,
+                    ts_column=ts_column,
+                )
+
+                if last_timestamp is not None:
+                    return last_timestamp
+
+            return None
+
+        return self._query_last_timestamp(
+            data_cls=data_cls,
+            instrument_id=instrument_id,
+            bar_type=bar_type,
+            ts_column=ts_column,
+        )
+
+    def _query_last_timestamp(
+        self,
+        data_cls: type,
+        instrument_id: str | None = None,
+        bar_type: str | None = None,
+        ts_column: str = "ts_init",
+    ) -> pd.Timestamp | None:
+        file_prefix = class_to_filename(data_cls)
+        dataset_path = f"{self.path}/data/{file_prefix}"
+
+        if not self.fs.exists(dataset_path):
+            return None
+
+        # Original dataset
+        dataset = self._load_dataset(
+            path=dataset_path,
+            instrument_ids=instrument_id,
+            bar_types=bar_type,
+        )
+
+        if dataset is None:
+            return None
+
+        return time_object_to_dt(
+            dataset.sort_by([(ts_column, "descending")]).head(1)[ts_column].to_pylist()[0],
+        )
 
     def _build_query(
         self,

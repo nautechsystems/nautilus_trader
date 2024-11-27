@@ -317,6 +317,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         UUID4 correlation_id,
         datetime start: datetime | None = None,
         datetime end: datetime | None = None,
+        dict metadata = None,
     ):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(correlation_id, "correlation_id")
@@ -331,10 +332,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             metadata={"instrument_id": instrument_id},
         )
 
-        self._handle_instrument(
-            instrument=instrument,
-            correlation_id=correlation_id,
-        )
+        self._handle_instrument(instrument, correlation_id, metadata)
 
     cpdef void request_instruments(
         self,
@@ -342,6 +340,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         UUID4 correlation_id,
         datetime start: datetime | None = None,
         datetime end: datetime | None = None,
+        dict metadata = None,
     ):
         Condition.not_none(correlation_id, "correlation_id")
 
@@ -350,11 +349,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
             self._log.error(f"Cannot find instruments")
             return
 
-        self._handle_instruments(
-            venue=venue,
-            instruments=instruments,
-            correlation_id=correlation_id,
-        )
+        self._handle_instruments(venue, instruments, correlation_id, metadata)
 
     cpdef void request_order_book_snapshot(
         self,
@@ -374,6 +369,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         UUID4 correlation_id,
         datetime start: datetime | None = None,
         datetime end: datetime | None = None,
+        dict metadata = None,
     ):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(correlation_id, "correlation_id")
@@ -387,6 +383,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         UUID4 correlation_id,
         datetime start: datetime | None = None,
         datetime end: datetime | None = None,
+        dict metadata = None,
     ):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_negative_int(limit, "limit")
@@ -401,6 +398,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         UUID4 correlation_id,
         datetime start: datetime | None = None,
         datetime end: datetime | None = None,
+        dict metadata = None,
     ):
         Condition.not_none(bar_type, "bar_type")
         Condition.not_negative_int(limit, "limit")

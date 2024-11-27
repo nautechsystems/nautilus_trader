@@ -10,14 +10,11 @@ from nautilus_trader.persistence.catalog import ParquetDataCatalog
 # where you store all your databento data
 DATA_PATH = PACKAGE_ROOT / "tests" / "test_data" / "databento"
 
-# this variable can be modified with a valid key if downloading data is needed
-DATABENTO_API_KEY = "db-XXXXX"
-
-
 client = None
 
 
-def init_databento_client():
+# if DATABENTO_API_KEY is None, an environment variable with the same name can be used
+def init_databento_client(DATABENTO_API_KEY=None):
     import databento as db
 
     global client

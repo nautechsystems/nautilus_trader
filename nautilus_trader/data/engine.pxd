@@ -21,6 +21,7 @@ from nautilus_trader.common.component cimport Component
 from nautilus_trader.common.component cimport TimeEvent
 from nautilus_trader.core.data cimport Data
 from nautilus_trader.core.rust.model cimport BookType
+from nautilus_trader.core.uuid cimport UUID4
 from nautilus_trader.data.aggregation cimport BarAggregator
 from nautilus_trader.data.client cimport DataClient
 from nautilus_trader.data.client cimport MarketDataClient
@@ -52,7 +53,7 @@ cdef class DataEngine(Component):
     cdef readonly Cache _cache
     cdef readonly DataClient _default_client
     cdef readonly set[ClientId] _external_clients
-    cdef readonly list[ParquetDataCatalog] _catalogs
+    cdef readonly dict[str, ParquetDataCatalog] _catalogs
 
     cdef readonly dict[ClientId, DataClient] _clients
     cdef readonly dict[Venue, DataClient] _routing_map
@@ -64,6 +65,9 @@ cdef class DataEngine(Component):
     cdef readonly list[InstrumentId] _subscribed_synthetic_trades
     cdef readonly dict[InstrumentId, list[OrderBookDelta]] _buffered_deltas_map
     cdef readonly dict[str, SnapshotInfo] _snapshot_info
+    cdef readonly dict[UUID4, int] _query_group_n_components
+    cdef readonly dict[UUID4, list] _query_group_components
+
     cdef readonly bint _time_bars_build_with_no_updates
     cdef readonly bint _time_bars_timestamp_on_close
     cdef readonly str _time_bars_interval_type
@@ -150,7 +154,7 @@ cdef class DataEngine(Component):
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
     cpdef void _handle_data(self, Data data)
-    cpdef void _handle_instrument(self, Instrument instrument)
+    cpdef void _handle_instrument(self, Instrument instrument, bint update_catalog=*)
     cpdef void _handle_order_book_delta(self, OrderBookDelta delta)
     cpdef void _handle_order_book_deltas(self, OrderBookDeltas deltas)
     cpdef void _handle_order_book_depth(self, OrderBookDepth10 depth)
@@ -164,7 +168,11 @@ cdef class DataEngine(Component):
 # -- RESPONSE HANDLERS ----------------------------------------------------------------------------
 
     cpdef void _handle_response(self, DataResponse response)
-    cpdef void _handle_instruments(self, list instruments)
+    cpdef void _handle_instruments(self, list instruments, bint update_catalog=*)
+    cpdef void _update_catalog(self, list ticks, bint is_instrument=*)
+    cpdef void _new_query_group(self, UUID4 correlation_id, int n_components)
+    cpdef object _handle_query_group(self, UUID4 correlation_id, list ticks)
+    cdef object _handle_query_group_aux(self, UUID4 correlation_id, list ticks)
     cpdef void _handle_quote_ticks(self, list ticks)
     cpdef void _handle_trade_ticks(self, list ticks)
     cpdef void _handle_bars(self, list bars, Bar partial)

@@ -296,6 +296,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         raise NotImplementedError(
             "method `_request_instrument` must be implemented in the subclass",
@@ -307,6 +308,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         raise NotImplementedError(
             "method `_request_instruments` must be implemented in the subclass",
@@ -329,6 +331,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         raise NotImplementedError(
             "method `_request_quote_tick` must be implemented in the subclass",
@@ -341,6 +344,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         raise NotImplementedError(
             "method `_request_trade_ticks` must be implemented in the subclass",
@@ -353,6 +357,7 @@ class TemplateLiveMarketDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         raise NotImplementedError(
             "method `_request_bars` must be implemented in the subclass",
