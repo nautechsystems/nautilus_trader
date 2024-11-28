@@ -185,27 +185,6 @@ impl InstrumentStatus {
         format!("{}:{}", PY_MODULE_MODEL, stringify!(InstrumentStatus))
     }
 
-    // TODO: Implement for `Data`
-    /// Creates a `PyCapsule` containing a raw pointer to a `Data::Quote` object.
-    ///
-    /// This function takes the current object (assumed to be of a type that can be represented as
-    /// `Data::Quote`), and encapsulates a raw pointer to it within a `PyCapsule`.
-    ///
-    /// # Safety
-    ///
-    /// This function is safe as long as the following conditions are met:
-    /// - The `Data::Quote` object pointed to by the capsule must remain valid for the lifetime of the capsule.
-    /// - The consumer of the capsule must ensure proper handling to avoid dereferencing a dangling pointer.
-    ///
-    /// # Panics
-    ///
-    /// The function will panic if the `PyCapsule` creation fails, which can occur if the
-    /// `Data::Quote` object cannot be converted into a raw pointer.
-    // #[pyo3(name = "as_pycapsule")]
-    // fn py_as_pycapsule(&self, py: Python<'_>) -> PyObject {
-    //     data_to_pycapsule(py, Data::Quote(*self))
-    // }
-
     /// Return a dictionary representation of the object.
     #[pyo3(name = "as_dict")]
     fn py_as_dict(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
