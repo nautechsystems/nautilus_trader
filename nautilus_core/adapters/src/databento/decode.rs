@@ -13,11 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{
-    cmp,
-    ffi::{c_char, CStr},
-    str::FromStr,
-};
+use std::{cmp, ffi::c_char};
 
 use databento::dbn::{self};
 use nautilus_core::{datetime::NANOSECONDS_IN_SECOND, nanos::UnixNanos};
@@ -51,6 +47,7 @@ use super::{
     types::{DatabentoImbalance, DatabentoStatistics},
 };
 
+// Represents $0.01 in nano units
 const ONE_CENT_INCREMENT: i64 = 10_000_000;
 
 const BAR_SPEC_1S: BarSpecification = BarSpecification {
@@ -80,7 +77,7 @@ const BAR_CLOSE_ADJUSTMENT_1H: u64 = NANOSECONDS_IN_SECOND * 60 * 60;
 const BAR_CLOSE_ADJUSTMENT_1D: u64 = NANOSECONDS_IN_SECOND * 60 * 60 * 24;
 
 #[must_use]
-pub const fn parse_ynblank_as_opt_bool(c: c_char) -> Option<bool> {
+pub const fn parse_optional_bool(c: c_char) -> Option<bool> {
     match c as u8 as char {
         'Y' => Some(true),
         'N' => Some(false),
@@ -113,7 +110,7 @@ pub fn parse_book_action(c: c_char) -> anyhow::Result<BookAction> {
         'F' => Ok(BookAction::Update),
         'M' => Ok(BookAction::Update),
         'R' => Ok(BookAction::Clear),
-        _ => anyhow::bail!("Invalid `BookAction`, was '{c}'"),
+        invalid => anyhow::bail!("Invalid `BookAction`, was '{invalid}'"),
     }
 }
 
@@ -121,7 +118,20 @@ pub fn parse_option_kind(c: c_char) -> anyhow::Result<OptionKind> {
     match c as u8 as char {
         'C' => Ok(OptionKind::Call),
         'P' => Ok(OptionKind::Put),
-        _ => anyhow::bail!("Invalid `OptionKind`, was '{c}'"),
+        invalid => anyhow::bail!("Invalid `OptionKind`, was '{invalid}'"),
+    }
+}
+
+fn parse_currency_or_usd_default(value: Result<&str, impl std::error::Error>) -> Currency {
+    match value {
+        Ok(value) if !value.is_empty() => {
+            Currency::try_from_str(value).unwrap_or_else(Currency::USD)
+        }
+        Ok(_) => Currency::USD(),
+        Err(e) => {
+            log::error!("Error parsing currency: {e}");
+            Currency::USD()
+        }
     }
 }
 
@@ -133,6 +143,7 @@ pub fn parse_cfi_iso10926(
         anyhow::bail!("Value string is too short");
     }
 
+    // TODO: A proper CFI parser would be useful: https://en.wikipedia.org/wiki/ISO_10962
     let cfi_category = chars[0];
     let cfi_group = chars[1];
     let cfi_attribute1 = chars[2];
@@ -159,6 +170,7 @@ pub fn parse_cfi_iso10926(
     Ok((asset_class, instrument_class))
 }
 
+// https://databento.com/docs/schemas-and-data-formats/status#types-of-status-reasons
 pub fn parse_status_reason(value: u16) -> anyhow::Result<Option<Ustr>> {
     let value_str = match value {
         0 => return Ok(None),
@@ -195,7 +207,7 @@ pub fn parse_status_reason(value: u16) -> anyhow::Result<Option<Ustr>> {
         123 => "Market wide halt carryover",
         124 => "Market wide halt resumption",
         130 => "Quotation not available",
-        _ => anyhow::bail!("Invalid `StatusMsg` reason, was '{value}'"),
+        invalid => anyhow::bail!("Invalid `StatusMsg` reason, was '{invalid}'"),
     };
 
     Ok(Some(Ustr::from(value_str)))
@@ -228,29 +240,11 @@ pub fn decode_optional_price(value: i64, precision: u8) -> anyhow::Result<Option
     }
 }
 
-pub fn decode_optional_quantity_i32(value: i32) -> anyhow::Result<Option<Quantity>> {
+pub fn decode_optional_quantity(value: i32) -> anyhow::Result<Option<Quantity>> {
     match value {
         i32::MAX => Ok(None),
         _ => Ok(Some(Quantity::new(f64::from(value), 0))),
     }
-}
-
-/// # Safety
-///
-/// - Assumes `ptr` is a valid C string pointer.
-pub unsafe fn raw_ptr_to_string(ptr: *const c_char) -> anyhow::Result<String> {
-    let c_str: &CStr = unsafe { CStr::from_ptr(ptr) };
-    let str_slice: &str = c_str.to_str().map_err(|e| anyhow::anyhow!(e))?;
-    Ok(str_slice.to_owned())
-}
-
-/// # Safety
-///
-/// - Assumes `ptr` is a valid C string pointer.
-pub unsafe fn raw_ptr_to_ustr(ptr: *const c_char) -> anyhow::Result<Ustr> {
-    let c_str: &CStr = unsafe { CStr::from_ptr(ptr) };
-    let str_slice: &str = c_str.to_str().map_err(|e| anyhow::anyhow!(e))?;
-    Ok(Ustr::from(str_slice))
 }
 
 pub fn decode_equity_v1(
@@ -258,7 +252,8 @@ pub fn decode_equity_v1(
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Equity> {
-    let currency = Currency::USD(); // TODO: Hard coding of US equities for now
+    let currency = parse_currency_or_usd_default(msg.currency());
+    let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
 
     Ok(Equity::new(
         instrument_id,
@@ -272,11 +267,11 @@ pub fn decode_equity_v1(
         None, // TBD
         None, // TBD
         Some(Quantity::new(f64::from(msg.min_lot_size_round_lot), 0)),
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        msg.ts_recv.into(), // More accurate and reliable timestamp
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        ts_event,
         ts_init,
     ))
 }
@@ -286,11 +281,10 @@ pub fn decode_futures_contract_v1(
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FuturesContract> {
-    let currency = Currency::USD(); // TODO: Hard coding of US futures for now
-    let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
-    let exchange = unsafe { raw_ptr_to_ustr(msg.exchange.as_ptr())? };
-    let underlying = unsafe { raw_ptr_to_ustr(msg.asset.as_ptr())? };
-    let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+    let currency = parse_currency_or_usd_default(msg.currency());
+    let exchange = Ustr::from(msg.exchange()?);
+    let underlying = Ustr::from(msg.asset()?);
+    let (asset_class, _) = parse_cfi_iso10926(msg.cfi()?)?;
     let unit_of_measure_qty: f64 = match msg.unit_of_measure_qty {
         i64::MAX => 1.0,
         other => other as f64 / FIXED_SCALAR,
@@ -300,6 +294,7 @@ pub fn decode_futures_contract_v1(
         0 => 1.0,
         other => f64::from(other),
     };
+    let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
 
     Ok(FuturesContract::new(
         instrument_id,
@@ -314,13 +309,13 @@ pub fn decode_futures_contract_v1(
         decode_price(msg.min_price_increment, currency.precision)?,
         Quantity::new(unit_of_measure_qty, 0),
         Quantity::new(lot_size_round, 0),
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        msg.ts_recv.into(), // More accurate and reliable timestamp
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        ts_event,
         ts_init,
     ))
 }
@@ -330,12 +325,11 @@ pub fn decode_futures_spread_v1(
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FuturesSpread> {
-    let currency = Currency::USD(); // TODO: Hard coding of US futures for now
-    let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
-    let exchange = unsafe { raw_ptr_to_ustr(msg.exchange.as_ptr())? };
-    let underlying = unsafe { raw_ptr_to_ustr(msg.asset.as_ptr())? };
-    let strategy_type = unsafe { raw_ptr_to_ustr(msg.secsubtype.as_ptr())? };
-    let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+    let currency = parse_currency_or_usd_default(msg.currency());
+    let exchange = Ustr::from(msg.exchange()?);
+    let underlying = Ustr::from(msg.asset()?);
+    let (asset_class, _) = parse_cfi_iso10926(msg.cfi()?)?;
+    let strategy_type = Ustr::from(msg.secsubtype()?);
     let unit_of_measure_qty: f64 = match msg.unit_of_measure_qty {
         i64::MAX => 1.0,
         other => other as f64 / FIXED_SCALAR,
@@ -351,6 +345,7 @@ pub fn decode_futures_spread_v1(
     } else {
         currency.precision
     };
+    let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
 
     Ok(FuturesSpread::new(
         instrument_id,
@@ -366,13 +361,13 @@ pub fn decode_futures_spread_v1(
         decode_price(msg.min_price_increment, price_precision)?,
         Quantity::new(unit_of_measure_qty, 0),
         Quantity::new(lot_size_round, 0),
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        msg.ts_recv.into(), // More accurate and reliable timestamp
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        ts_event,
         ts_init,
     ))
 }
@@ -382,17 +377,16 @@ pub fn decode_options_contract_v1(
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OptionsContract> {
-    let currency_str = unsafe { raw_ptr_to_string(msg.currency.as_ptr())? };
-    let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
-    let exchange = unsafe { raw_ptr_to_ustr(msg.exchange.as_ptr())? };
+    let currency = parse_currency_or_usd_default(msg.currency());
+    let strike_price_currency = parse_currency_or_usd_default(msg.strike_price_currency());
+    let exchange = Ustr::from(msg.exchange()?);
+    let underlying = Ustr::from(msg.underlying()?);
     let asset_class_opt = if instrument_id.venue.as_str() == "OPRA" {
         Some(AssetClass::Equity)
     } else {
-        let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+        let (asset_class, _) = parse_cfi_iso10926(msg.cfi()?)?;
         asset_class
     };
-    let underlying = unsafe { raw_ptr_to_ustr(msg.underlying.as_ptr())? };
-    let currency = Currency::from_str(&currency_str)?;
     let unit_of_measure_qty: f64 = match msg.unit_of_measure_qty {
         i64::MAX => 1.0,
         other => other as f64 / FIXED_SCALAR,
@@ -402,6 +396,7 @@ pub fn decode_options_contract_v1(
         0 => 1.0,
         other => f64::from(other),
     };
+    let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
 
     Ok(OptionsContract::new(
         instrument_id,
@@ -410,7 +405,7 @@ pub fn decode_options_contract_v1(
         Some(exchange),
         underlying,
         parse_option_kind(msg.instrument_class)?,
-        Price::from_raw(msg.strike_price, currency.precision),
+        Price::from_raw(msg.strike_price, strike_price_currency.precision),
         currency,
         msg.activation.into(),
         msg.expiration.into(),
@@ -424,7 +419,7 @@ pub fn decode_options_contract_v1(
         None, // TBD
         None,
         None,
-        msg.ts_recv.into(), // More accurate and reliable timestamp
+        ts_event,
         ts_init,
     ))
 }
@@ -434,18 +429,16 @@ pub fn decode_options_spread_v1(
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OptionsSpread> {
-    let currency_str = unsafe { raw_ptr_to_string(msg.currency.as_ptr())? };
-    let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
-    let exchange = unsafe { raw_ptr_to_ustr(msg.exchange.as_ptr())? };
+    let currency = parse_currency_or_usd_default(msg.currency());
+    let exchange = Ustr::from(msg.exchange()?);
+    let underlying = Ustr::from(msg.underlying()?);
     let asset_class_opt = if instrument_id.venue.as_str() == "OPRA" {
         Some(AssetClass::Equity)
     } else {
-        let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+        let (asset_class, _) = parse_cfi_iso10926(msg.cfi()?)?;
         asset_class
     };
-    let underlying = unsafe { raw_ptr_to_ustr(msg.underlying.as_ptr())? };
-    let strategy_type = unsafe { raw_ptr_to_ustr(msg.secsubtype.as_ptr())? };
-    let currency = Currency::from_str(&currency_str)?;
+    let strategy_type = Ustr::from(msg.secsubtype()?);
     let unit_of_measure_qty: f64 = match msg.unit_of_measure_qty {
         i64::MAX => 1.0,
         other => other as f64 / FIXED_SCALAR,
@@ -455,6 +448,7 @@ pub fn decode_options_spread_v1(
         0 => 1.0,
         other => f64::from(other),
     };
+    let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
 
     Ok(OptionsSpread::new(
         instrument_id,
@@ -470,13 +464,13 @@ pub fn decode_options_spread_v1(
         decode_price(msg.min_price_increment, currency.precision)?,
         Quantity::new(unit_of_measure_qty, 0),
         Quantity::new(lot_size_round, 0),
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        msg.ts_recv.into(), // More accurate and reliable timestamp
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        ts_event,
         ts_init,
     ))
 }
@@ -754,7 +748,7 @@ pub fn decode_ohlcv_msg(
     let ts_event_adjustment = decode_ts_event_adjustment(msg)?;
 
     // Adjust `ts_event` from open to close of bar
-    let ts_event = msg.hd.ts_event.into();
+    let ts_event = UnixNanos::from(msg.hd.ts_event);
     let ts_init = cmp::max(ts_init, ts_event) + ts_event_adjustment;
 
     let bar = Bar::new(
@@ -783,9 +777,9 @@ pub fn decode_status_msg(
         ts_init,
         parse_status_reason(msg.reason)?,
         parse_status_trading_event(msg.trading_event)?,
-        parse_ynblank_as_opt_bool(msg.is_trading),
-        parse_ynblank_as_opt_bool(msg.is_quoting),
-        parse_ynblank_as_opt_bool(msg.is_short_sell_restricted),
+        parse_optional_bool(msg.is_trading),
+        parse_optional_bool(msg.is_quoting),
+        parse_optional_bool(msg.is_short_sell_restricted),
     );
 
     Ok(status)
@@ -936,7 +930,8 @@ pub fn decode_equity(
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<Equity> {
-    let currency = Currency::USD(); // TODO: Hard coding of US equities for now
+    let currency = parse_currency_or_usd_default(msg.currency());
+    let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
 
     Ok(Equity::new(
         instrument_id,
@@ -950,11 +945,11 @@ pub fn decode_equity(
         None, // TBD
         None, // TBD
         Some(Quantity::new(f64::from(msg.min_lot_size_round_lot), 0)),
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        msg.ts_recv.into(), // More accurate and reliable timestamp
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        ts_event,
         ts_init,
     ))
 }
@@ -964,11 +959,10 @@ pub fn decode_futures_contract(
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FuturesContract> {
-    let currency = Currency::USD(); // TODO: Hard coding of US futures for now
-    let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
-    let exchange = unsafe { raw_ptr_to_ustr(msg.exchange.as_ptr())? };
-    let underlying = unsafe { raw_ptr_to_ustr(msg.asset.as_ptr())? };
-    let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+    let currency = parse_currency_or_usd_default(msg.currency());
+    let exchange = Ustr::from(msg.exchange()?);
+    let underlying = Ustr::from(msg.asset()?);
+    let (asset_class, _) = parse_cfi_iso10926(msg.cfi()?)?;
     let unit_of_measure_qty: f64 = match msg.unit_of_measure_qty {
         i64::MAX => 1.0,
         other => other as f64 / FIXED_SCALAR,
@@ -978,6 +972,7 @@ pub fn decode_futures_contract(
         0 => 1.0,
         other => f64::from(other),
     };
+    let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
 
     Ok(FuturesContract::new(
         instrument_id,
@@ -992,13 +987,13 @@ pub fn decode_futures_contract(
         decode_price(msg.min_price_increment, currency.precision)?,
         Quantity::new(unit_of_measure_qty, 0),
         Quantity::new(lot_size_round, 0),
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        msg.ts_recv.into(), // More accurate and reliable timestamp
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        ts_event,
         ts_init,
     ))
 }
@@ -1008,12 +1003,11 @@ pub fn decode_futures_spread(
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FuturesSpread> {
-    let currency = Currency::USD(); // TODO: Hard coding of US futures for now
-    let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
-    let exchange = unsafe { raw_ptr_to_ustr(msg.exchange.as_ptr())? };
-    let underlying = unsafe { raw_ptr_to_ustr(msg.asset.as_ptr())? };
-    let strategy_type = unsafe { raw_ptr_to_ustr(msg.secsubtype.as_ptr())? };
-    let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+    let currency = parse_currency_or_usd_default(msg.currency());
+    let exchange = Ustr::from(msg.exchange()?);
+    let underlying = Ustr::from(msg.asset()?);
+    let (asset_class, _) = parse_cfi_iso10926(msg.cfi()?)?;
+    let strategy_type = Ustr::from(msg.secsubtype()?);
     let unit_of_measure_qty: f64 = match msg.unit_of_measure_qty {
         i64::MAX => 1.0,
         other => other as f64 / FIXED_SCALAR,
@@ -1029,6 +1023,7 @@ pub fn decode_futures_spread(
     } else {
         currency.precision
     };
+    let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
 
     Ok(FuturesSpread::new(
         instrument_id,
@@ -1044,13 +1039,13 @@ pub fn decode_futures_spread(
         decode_price(msg.min_price_increment, price_precision)?,
         Quantity::new(unit_of_measure_qty, 0),
         Quantity::new(lot_size_round, 0),
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        msg.ts_recv.into(), // More accurate and reliable timestamp
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        ts_event,
         ts_init,
     ))
 }
@@ -1060,17 +1055,16 @@ pub fn decode_options_contract(
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OptionsContract> {
-    let currency_str = unsafe { raw_ptr_to_string(msg.currency.as_ptr())? };
-    let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
-    let exchange = unsafe { raw_ptr_to_ustr(msg.exchange.as_ptr())? };
+    let currency = parse_currency_or_usd_default(msg.currency());
+    let strike_price_currency = parse_currency_or_usd_default(msg.strike_price_currency());
+    let exchange = Ustr::from(msg.exchange()?);
+    let underlying = Ustr::from(msg.underlying()?);
     let asset_class_opt = if instrument_id.venue.as_str() == "OPRA" {
         Some(AssetClass::Equity)
     } else {
-        let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+        let (asset_class, _) = parse_cfi_iso10926(msg.cfi()?)?;
         asset_class
     };
-    let underlying = unsafe { raw_ptr_to_ustr(msg.underlying.as_ptr())? };
-    let currency = Currency::from_str(&currency_str)?;
     let unit_of_measure_qty: f64 = match msg.unit_of_measure_qty {
         i64::MAX => 1.0,
         other => other as f64 / FIXED_SCALAR,
@@ -1080,6 +1074,7 @@ pub fn decode_options_contract(
         0 => 1.0,
         other => f64::from(other),
     };
+    let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
 
     Ok(OptionsContract::new(
         instrument_id,
@@ -1088,7 +1083,7 @@ pub fn decode_options_contract(
         Some(exchange),
         underlying,
         parse_option_kind(msg.instrument_class)?,
-        Price::from_raw(msg.strike_price, currency.precision),
+        Price::from_raw(msg.strike_price, strike_price_currency.precision),
         currency,
         msg.activation.into(),
         msg.expiration.into(),
@@ -1096,13 +1091,13 @@ pub fn decode_options_contract(
         decode_price(msg.min_price_increment, currency.precision)?,
         Quantity::new(unit_of_measure_qty, 0),
         Quantity::new(lot_size_round, 0),
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        msg.ts_recv.into(), // More accurate and reliable timestamp
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        ts_event,
         ts_init,
     ))
 }
@@ -1112,18 +1107,16 @@ pub fn decode_options_spread(
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OptionsSpread> {
-    let currency_str = unsafe { raw_ptr_to_string(msg.currency.as_ptr())? };
-    let cfi_str = unsafe { raw_ptr_to_string(msg.cfi.as_ptr())? };
+    let currency = parse_currency_or_usd_default(msg.currency());
+    let exchange = Ustr::from(msg.exchange()?);
+    let underlying = Ustr::from(msg.underlying()?);
     let asset_class_opt = if instrument_id.venue.as_str() == "OPRA" {
         Some(AssetClass::Equity)
     } else {
-        let (asset_class, _) = parse_cfi_iso10926(&cfi_str)?;
+        let (asset_class, _) = parse_cfi_iso10926(msg.cfi()?)?;
         asset_class
     };
-    let exchange = unsafe { raw_ptr_to_ustr(msg.exchange.as_ptr())? };
-    let underlying = unsafe { raw_ptr_to_ustr(msg.underlying.as_ptr())? };
-    let strategy_type = unsafe { raw_ptr_to_ustr(msg.secsubtype.as_ptr())? };
-    let currency = Currency::from_str(&currency_str)?;
+    let strategy_type = Ustr::from(msg.secsubtype()?);
     let unit_of_measure_qty: f64 = match msg.unit_of_measure_qty {
         i64::MAX => 1.0,
         other => other as f64 / FIXED_SCALAR,
@@ -1133,6 +1126,7 @@ pub fn decode_options_spread(
         0 => 1.0,
         other => f64::from(other),
     };
+    let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
 
     Ok(OptionsSpread::new(
         instrument_id,
@@ -1148,13 +1142,13 @@ pub fn decode_options_spread(
         decode_price(msg.min_price_increment, currency.precision)?,
         Quantity::new(unit_of_measure_qty, 0),
         Quantity::new(lot_size_round, 0),
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        None,               // TBD
-        msg.ts_recv.into(), // More accurate and reliable timestamp
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        None, // TBD
+        ts_event,
         ts_init,
     ))
 }
@@ -1196,7 +1190,7 @@ pub fn decode_statistics_msg(
         stat_type,
         update_action,
         decode_optional_price(msg.price, price_precision)?,
-        decode_optional_quantity_i32(msg.quantity)?,
+        decode_optional_quantity(msg.quantity)?,
         msg.channel_id,
         msg.stat_flags,
         msg.sequence,
@@ -1226,9 +1220,114 @@ mod tests {
     }
 
     #[rstest]
-    fn test_decode_price() {
-        assert_eq!(decode_price(2500000, 4).unwrap(), Price::from("0.0025"));
-        assert_eq!(decode_price(10000000, 2).unwrap(), Price::from("0.01"));
+    #[case('Y' as c_char, Some(true))]
+    #[case('N' as c_char, Some(false))]
+    #[case('X' as c_char, None)]
+    fn test_parse_optional_bool(#[case] input: c_char, #[case] expected: Option<bool>) {
+        assert_eq!(parse_optional_bool(input), expected);
+    }
+
+    #[rstest]
+    #[case('A' as c_char, OrderSide::Sell)]
+    #[case('B' as c_char, OrderSide::Buy)]
+    #[case('X' as c_char, OrderSide::NoOrderSide)]
+    fn test_parse_order_side(#[case] input: c_char, #[case] expected: OrderSide) {
+        assert_eq!(parse_order_side(input), expected);
+    }
+
+    #[rstest]
+    #[case('A' as c_char, AggressorSide::Seller)]
+    #[case('B' as c_char, AggressorSide::Buyer)]
+    #[case('X' as c_char, AggressorSide::NoAggressor)]
+    fn test_parse_aggressor_side(#[case] input: c_char, #[case] expected: AggressorSide) {
+        assert_eq!(parse_aggressor_side(input), expected);
+    }
+
+    #[rstest]
+    #[case('A' as c_char, Ok(BookAction::Add))]
+    #[case('C' as c_char, Ok(BookAction::Delete))]
+    #[case('F' as c_char, Ok(BookAction::Update))]
+    #[case('M' as c_char, Ok(BookAction::Update))]
+    #[case('R' as c_char, Ok(BookAction::Clear))]
+    #[case('X' as c_char, Err("Invalid `BookAction`, was 'X'"))]
+    fn test_parse_book_action(#[case] input: c_char, #[case] expected: Result<BookAction, &str>) {
+        match parse_book_action(input) {
+            Ok(action) => assert_eq!(Ok(action), expected),
+            Err(e) => assert_eq!(Err(e.to_string().as_str()), expected),
+        }
+    }
+
+    #[rstest]
+    #[case('C' as c_char, Ok(OptionKind::Call))]
+    #[case('P' as c_char, Ok(OptionKind::Put))]
+    #[case('X' as c_char, Err("Invalid `OptionKind`, was 'X'"))]
+    fn test_parse_option_kind(#[case] input: c_char, #[case] expected: Result<OptionKind, &str>) {
+        match parse_option_kind(input) {
+            Ok(kind) => assert_eq!(Ok(kind), expected),
+            Err(e) => assert_eq!(Err(e.to_string().as_str()), expected),
+        }
+    }
+
+    #[rstest]
+    #[case(Ok("USD"), Currency::USD())]
+    #[case(Ok("EUR"), Currency::try_from_str("EUR").unwrap())]
+    #[case(Ok(""), Currency::USD())]
+    #[case(Err("Error"), Currency::USD())]
+    fn test_parse_currency_or_usd_default(
+        #[case] input: Result<&str, &'static str>, // Using `&'static str` for errors
+        #[case] expected: Currency,
+    ) {
+        let actual = parse_currency_or_usd_default(
+            input.map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e)),
+        );
+        assert_eq!(actual, expected);
+    }
+
+    #[rstest]
+    #[case("DII", Ok((Some(AssetClass::Index), Some(InstrumentClass::Future))))]
+    #[case("EII", Ok((Some(AssetClass::Index), Some(InstrumentClass::Future))))]
+    #[case("EIA", Ok((Some(AssetClass::Equity), Some(InstrumentClass::Future))))]
+    #[case("XXX", Ok((None, None)))]
+    #[case("D", Err("Value string is too short"))]
+    fn test_parse_cfi_iso10926(
+        #[case] input: &str,
+        #[case] expected: Result<(Option<AssetClass>, Option<InstrumentClass>), &'static str>,
+    ) {
+        match parse_cfi_iso10926(input) {
+            Ok(result) => assert_eq!(Ok(result), expected),
+            Err(e) => assert_eq!(Err(e.to_string().as_str()), expected),
+        }
+    }
+
+    #[rstest]
+    #[case(0, 2, Price::new(0.01, 2))] // Default for 0
+    #[case(i64::MAX, 2, Price::new(0.01, 2))] // Default for i64::MAX
+    #[case(1000000, 2, Price::from_raw(1000000, 2))] // Arbitrary valid price
+    fn test_decode_price(#[case] value: i64, #[case] precision: u8, #[case] expected: Price) {
+        let actual = decode_price(value, precision).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[rstest]
+    #[case(i64::MAX, 2, None)] // None for i64::MAX
+    #[case(0, 2, Some(Price::from_raw(0, 2)))] // 0 is valid here
+    #[case(1000000, 2, Some(Price::from_raw(1000000, 2)))] // Arbitrary valid price
+    fn test_decode_optional_price(
+        #[case] value: i64,
+        #[case] precision: u8,
+        #[case] expected: Option<Price>,
+    ) {
+        let actual = decode_optional_price(value, precision).unwrap();
+        assert_eq!(actual, expected);
+    }
+
+    #[rstest]
+    #[case(i32::MAX, None)] // None for i32::MAX
+    #[case(0, Some(Quantity::new(0.0, 0)))] // 0 is valid quantity
+    #[case(10, Some(Quantity::new(10.0, 0)))] // Arbitrary valid quantity
+    fn test_decode_optional_quantity(#[case] value: i32, #[case] expected: Option<Quantity>) {
+        let actual = decode_optional_quantity(value).unwrap();
+        assert_eq!(actual, expected);
     }
 
     #[rstest]

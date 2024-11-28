@@ -39,7 +39,7 @@ use ustr::Ustr;
 use super::{
     decode::{
         decode_imbalance_msg, decode_instrument_def_msg_v1, decode_record, decode_statistics_msg,
-        decode_status_msg, raw_ptr_to_ustr,
+        decode_status_msg,
     },
     symbology::decode_nautilus_instrument_id,
     types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, Dataset, PublisherId},
@@ -179,10 +179,7 @@ impl DatabentoDataLoader {
                     let record = dbn::RecordRef::from(rec);
                     let msg = record.get::<InstrumentDefMsgV1>().unwrap();
 
-                    let raw_symbol = unsafe {
-                        raw_ptr_to_ustr(rec.raw_symbol.as_ptr())
-                            .expect("Error obtaining `raw_symbol` pointer")
-                    };
+                    let raw_symbol = rec.raw_symbol().expect("Error decoding `raw_symbol`");
                     let symbol = Symbol::from(raw_symbol);
 
                     let venue = self
