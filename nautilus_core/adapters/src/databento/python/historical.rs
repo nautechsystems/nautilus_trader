@@ -42,7 +42,7 @@ use crate::databento::{
     common::get_date_time_range,
     decode::{
         decode_imbalance_msg, decode_instrument_def_msg, decode_record, decode_statistics_msg,
-        decode_status_msg, raw_ptr_to_ustr,
+        decode_status_msg,
     },
     symbology::{check_consistent_symbology, decode_nautilus_instrument_id, infer_symbology_type},
     types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, PublisherId},
@@ -155,7 +155,7 @@ impl DatabentoHistoricalClient {
             let mut instruments = Vec::new();
 
             while let Ok(Some(msg)) = decoder.decode_record::<dbn::InstrumentDefMsg>().await {
-                let raw_symbol = unsafe { raw_ptr_to_ustr(msg.raw_symbol.as_ptr()).unwrap() };
+                let raw_symbol = msg.raw_symbol().expect("Error decoding `raw_symbol`");
                 let symbol = Symbol::from(raw_symbol);
 
                 let publisher = msg.hd.publisher().expect("Invalid `publisher` for record");

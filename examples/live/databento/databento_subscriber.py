@@ -91,7 +91,7 @@ config_node = TradingNodeConfig(
             mbo_subscriptions_delay=10.0,
         ),
     },
-    timeout_connection=20.0,
+    timeout_connection=30.0,
     timeout_reconciliation=10.0,  # Not applicable
     timeout_portfolio=10.0,
     timeout_disconnection=10.0,

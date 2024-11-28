@@ -2886,6 +2886,7 @@ dependencies = [
  "heck 0.5.0",
  "indexmap",
  "itoa",
+ "log",
  "nautilus-common",
  "nautilus-core",
  "nautilus-model",

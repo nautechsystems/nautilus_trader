@@ -20,6 +20,7 @@ Released on TBD (UTC).
 - Improved historical bar request performance for Tardis
 - Improved `TradeId` Debug implementation to display value as proper UTF-8 string
 - Refined `HttpClient` for use directly from Rust
+- Refined Databento decoder (removed currency hard coding and use of `unsafe`)
 - Upgraded `datafusion` crate to v43.0.0 (#2056), thanks @twitu
 - Efficiently clean up expired timers in clocks (#2064), thanks @twitu
 
