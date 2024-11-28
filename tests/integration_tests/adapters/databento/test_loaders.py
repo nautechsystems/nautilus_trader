@@ -63,7 +63,7 @@ def test_loader_definition_glbx_futures() -> None:
     path = DATABENTO_TEST_DATA_DIR / "definition-glbx-es-fut.dbn.zst"
 
     # Act
-    data = loader.from_dbn_file(path, as_legacy_cython=True)
+    data = loader.from_dbn_file(path, price_precision=2, as_legacy_cython=True)
 
     # Assert
     assert len(data) == 2
