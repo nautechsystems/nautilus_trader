@@ -10,6 +10,7 @@ Released on TBD (UTC).
 - Added `max_reconnection_tries` to data client config for dYdX (#2066), thanks @davidsblom
 - Added wallet subscription for Bybit (#2076), thanks @sunlei
 - Added docs clarity on loading historical bars (#2078), thanks @dodofarm
+- Added `price_precision` optional parameter for `DatabentoDataLoader` methods
 - Improved `Cache` behavior when adding more recent quotes, trades, or bars (now adds to cache)
 
 ### Internal Improvements

@@ -202,6 +202,7 @@ impl DatabentoDataLoader {
         &self,
         filepath: &Path,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
         include_trades: bool,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<(Option<Data>, Option<Data>)>> + '_>
     where
@@ -211,7 +212,7 @@ impl DatabentoDataLoader {
         let metadata = decoder.metadata().clone();
         let mut dbn_stream = decoder.decode_stream::<T>();
 
-        let price_precision = Currency::USD().precision; // Hard-coded for now
+        let price_precision = price_precision.unwrap_or(Currency::USD().precision);
 
         Ok(std::iter::from_fn(move || {
             if let Err(e) = dbn_stream.advance() {
@@ -256,8 +257,9 @@ impl DatabentoDataLoader {
         &self,
         filepath: &Path,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
     ) -> anyhow::Result<Vec<OrderBookDelta>> {
-        self.read_records::<dbn::MboMsg>(filepath, instrument_id, false)?
+        self.read_records::<dbn::MboMsg>(filepath, instrument_id, price_precision, false)?
             .filter_map(|result| match result {
                 Ok((Some(item1), _)) => {
                     if let Data::Delta(delta) = item1 {
@@ -276,8 +278,9 @@ impl DatabentoDataLoader {
         &self,
         filepath: &Path,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
     ) -> anyhow::Result<Vec<OrderBookDepth10>> {
-        self.read_records::<dbn::Mbp10Msg>(filepath, instrument_id, false)?
+        self.read_records::<dbn::Mbp10Msg>(filepath, instrument_id, price_precision, false)?
             .filter_map(|result| match result {
                 Ok((Some(item1), _)) => {
                     if let Data::Depth10(depth) = item1 {
@@ -296,8 +299,9 @@ impl DatabentoDataLoader {
         &self,
         filepath: &Path,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
     ) -> anyhow::Result<Vec<QuoteTick>> {
-        self.read_records::<dbn::Mbp1Msg>(filepath, instrument_id, false)?
+        self.read_records::<dbn::Mbp1Msg>(filepath, instrument_id, price_precision, false)?
             .filter_map(|result| match result {
                 Ok((Some(item1), _)) => {
                     if let Data::Quote(quote) = item1 {
@@ -316,8 +320,9 @@ impl DatabentoDataLoader {
         &self,
         filepath: &Path,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
     ) -> anyhow::Result<Vec<QuoteTick>> {
-        self.read_records::<dbn::BboMsg>(filepath, instrument_id, false)?
+        self.read_records::<dbn::BboMsg>(filepath, instrument_id, price_precision, false)?
             .filter_map(|result| match result {
                 Ok((Some(item1), _)) => {
                     if let Data::Quote(quote) = item1 {
@@ -336,8 +341,9 @@ impl DatabentoDataLoader {
         &self,
         filepath: &Path,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
     ) -> anyhow::Result<Vec<TradeTick>> {
-        self.read_records::<dbn::TbboMsg>(filepath, instrument_id, false)?
+        self.read_records::<dbn::TbboMsg>(filepath, instrument_id, price_precision, false)?
             .filter_map(|result| match result {
                 Ok((_, maybe_item2)) => {
                     if let Some(Data::Trade(trade)) = maybe_item2 {
@@ -355,8 +361,9 @@ impl DatabentoDataLoader {
         &self,
         filepath: &Path,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
     ) -> anyhow::Result<Vec<TradeTick>> {
-        self.read_records::<dbn::TradeMsg>(filepath, instrument_id, false)?
+        self.read_records::<dbn::TradeMsg>(filepath, instrument_id, price_precision, false)?
             .filter_map(|result| match result {
                 Ok((Some(item1), _)) => {
                     if let Data::Trade(trade) = item1 {
@@ -375,8 +382,9 @@ impl DatabentoDataLoader {
         &self,
         filepath: &Path,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
     ) -> anyhow::Result<Vec<Bar>> {
-        self.read_records::<dbn::OhlcvMsg>(filepath, instrument_id, false)?
+        self.read_records::<dbn::OhlcvMsg>(filepath, instrument_id, price_precision, false)?
             .filter_map(|result| match result {
                 Ok((Some(item1), _)) => {
                     if let Data::Bar(bar) = item1 {
@@ -435,6 +443,7 @@ impl DatabentoDataLoader {
         &self,
         filepath: &Path,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<DatabentoImbalance>> + '_>
     where
         T: dbn::Record + dbn::HasRType + 'static,
@@ -443,7 +452,7 @@ impl DatabentoDataLoader {
         let metadata = decoder.metadata().clone();
         let mut dbn_stream = decoder.decode_stream::<T>();
 
-        let price_precision = Currency::USD().precision; // Hard-coded for now
+        let price_precision = price_precision.unwrap_or(Currency::USD().precision);
 
         Ok(std::iter::from_fn(move || {
             if let Err(e) = dbn_stream.advance() {
@@ -484,6 +493,7 @@ impl DatabentoDataLoader {
         &self,
         filepath: &Path,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<DatabentoStatistics>> + '_>
     where
         T: dbn::Record + dbn::HasRType + 'static,
@@ -492,7 +502,7 @@ impl DatabentoDataLoader {
         let metadata = decoder.metadata().clone();
         let mut dbn_stream = decoder.decode_stream::<T>();
 
-        let price_precision = Currency::USD().precision; // Hard-coded for now
+        let price_precision = price_precision.unwrap_or(Currency::USD().precision);
 
         Ok(std::iter::from_fn(move || {
             if let Err(e) = dbn_stream.advance() {
@@ -571,7 +581,7 @@ mod tests {
         let instrument_id = InstrumentId::from("ESM4.GLBX");
 
         let deltas = loader
-            .load_order_book_deltas(&path, Some(instrument_id))
+            .load_order_book_deltas(&path, Some(instrument_id), None)
             .unwrap();
 
         assert_eq!(deltas.len(), 2);
@@ -584,7 +594,7 @@ mod tests {
         let instrument_id = InstrumentId::from("ESM4.GLBX");
 
         let depths = loader
-            .load_order_book_depth10(&path, Some(instrument_id))
+            .load_order_book_depth10(&path, Some(instrument_id), None)
             .unwrap();
 
         assert_eq!(depths.len(), 2);
@@ -596,7 +606,9 @@ mod tests {
         let loader = data_loader();
         let instrument_id = InstrumentId::from("ESM4.GLBX");
 
-        let quotes = loader.load_quotes(&path, Some(instrument_id)).unwrap();
+        let quotes = loader
+            .load_quotes(&path, Some(instrument_id), None)
+            .unwrap();
 
         assert_eq!(quotes.len(), 2);
     }
@@ -608,7 +620,9 @@ mod tests {
         let loader = data_loader();
         let instrument_id = InstrumentId::from("ESM4.GLBX");
 
-        let quotes = loader.load_bbo_quotes(&path, Some(instrument_id)).unwrap();
+        let quotes = loader
+            .load_bbo_quotes(&path, Some(instrument_id), None)
+            .unwrap();
 
         assert_eq!(quotes.len(), 2);
     }
@@ -619,7 +633,9 @@ mod tests {
         let loader = data_loader();
         let instrument_id = InstrumentId::from("ESM4.GLBX");
 
-        let _trades = loader.load_tbbo_trades(&path, Some(instrument_id)).unwrap();
+        let _trades = loader
+            .load_tbbo_trades(&path, Some(instrument_id), None)
+            .unwrap();
 
         // assert_eq!(trades.len(), 2);  TODO: No records?
     }
@@ -630,7 +646,9 @@ mod tests {
         let loader = data_loader();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let trades = loader.load_trades(&path, Some(instrument_id)).unwrap();
+        let trades = loader
+            .load_trades(&path, Some(instrument_id), None)
+            .unwrap();
 
         assert_eq!(trades.len(), 2);
     }
@@ -644,7 +662,7 @@ mod tests {
         let loader = data_loader();
 
         let instrument_id = InstrumentId::from("ESM4.GLBX");
-        let bars = loader.load_bars(&path, Some(instrument_id)).unwrap();
+        let bars = loader.load_bars(&path, Some(instrument_id), None).unwrap();
 
         assert_eq!(bars.len(), 2);
     }

@@ -183,7 +183,8 @@ impl DatabentoHistoricalClient {
     }
 
     #[pyo3(name = "get_range_quotes")]
-    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None))]
+    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None, price_precision=None))]
+    #[allow(clippy::too_many_arguments)]
     fn py_get_range_quotes<'py>(
         &self,
         py: Python<'py>,
@@ -192,6 +193,7 @@ impl DatabentoHistoricalClient {
         start: u64,
         end: Option<u64>,
         limit: Option<u64>,
+        price_precision: Option<u8>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.inner.clone();
 
@@ -209,7 +211,7 @@ impl DatabentoHistoricalClient {
             .limit(limit.and_then(NonZeroU64::new))
             .build();
 
-        let price_precision = Currency::USD().precision; // TODO: Hard-coded for now
+        let price_precision = price_precision.unwrap_or(Currency::USD().precision);
         let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
@@ -252,7 +254,8 @@ impl DatabentoHistoricalClient {
     }
 
     #[pyo3(name = "get_range_trades")]
-    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None))]
+    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None, price_precision=None))]
+    #[allow(clippy::too_many_arguments)]
     fn py_get_range_trades<'py>(
         &self,
         py: Python<'py>,
@@ -261,6 +264,7 @@ impl DatabentoHistoricalClient {
         start: u64,
         end: Option<u64>,
         limit: Option<u64>,
+        price_precision: Option<u8>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.inner.clone();
 
@@ -278,7 +282,7 @@ impl DatabentoHistoricalClient {
             .limit(limit.and_then(NonZeroU64::new))
             .build();
 
-        let price_precision = Currency::USD().precision; // TODO: Hard-coded for now
+        let price_precision = price_precision.unwrap_or(Currency::USD().precision);
         let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
@@ -322,7 +326,7 @@ impl DatabentoHistoricalClient {
 
     #[pyo3(name = "get_range_bars")]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (dataset, symbols, aggregation, start, end=None, limit=None))]
+    #[pyo3(signature = (dataset, symbols, aggregation, start, end=None, limit=None, price_precision=None))]
     fn py_get_range_bars<'py>(
         &self,
         py: Python<'py>,
@@ -332,6 +336,7 @@ impl DatabentoHistoricalClient {
         start: u64,
         end: Option<u64>,
         limit: Option<u64>,
+        price_precision: Option<u8>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.inner.clone();
 
@@ -356,7 +361,7 @@ impl DatabentoHistoricalClient {
             .limit(limit.and_then(NonZeroU64::new))
             .build();
 
-        let price_precision = Currency::USD().precision; // TODO: Hard-coded for now
+        let price_precision = price_precision.unwrap_or(Currency::USD().precision);
         let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
@@ -400,7 +405,7 @@ impl DatabentoHistoricalClient {
 
     #[pyo3(name = "get_range_imbalance")]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None))]
+    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None, price_precision=None))]
     fn py_get_range_imbalance<'py>(
         &self,
         py: Python<'py>,
@@ -409,6 +414,7 @@ impl DatabentoHistoricalClient {
         start: u64,
         end: Option<u64>,
         limit: Option<u64>,
+        price_precision: Option<u8>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.inner.clone();
 
@@ -426,7 +432,7 @@ impl DatabentoHistoricalClient {
             .limit(limit.and_then(NonZeroU64::new))
             .build();
 
-        let price_precision = Currency::USD().precision; // TODO: Hard-coded for now
+        let price_precision = price_precision.unwrap_or(Currency::USD().precision);
         let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
@@ -459,7 +465,7 @@ impl DatabentoHistoricalClient {
 
     #[pyo3(name = "get_range_statistics")]
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None))]
+    #[pyo3(signature = (dataset, symbols, start, end=None, limit=None, price_precision=None))]
     fn py_get_range_statistics<'py>(
         &self,
         py: Python<'py>,
@@ -468,6 +474,7 @@ impl DatabentoHistoricalClient {
         start: u64,
         end: Option<u64>,
         limit: Option<u64>,
+        price_precision: Option<u8>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.inner.clone();
 
@@ -485,7 +492,7 @@ impl DatabentoHistoricalClient {
             .limit(limit.and_then(NonZeroU64::new))
             .build();
 
-        let price_precision = Currency::USD().precision; // TODO: Hard-coded for now
+        let price_precision = price_precision.unwrap_or(Currency::USD().precision);
         let publisher_venue_map = self.publisher_venue_map.clone();
         let ts_init = self.clock.get_time_ns();
 
