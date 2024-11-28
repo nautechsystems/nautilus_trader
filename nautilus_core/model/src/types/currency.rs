@@ -126,6 +126,12 @@ impl Currency {
         Ok(())
     }
 
+    /// Attempts to parse a [`Currency`] from a string, returning `None` if not found.
+    pub fn try_from_str(s: &str) -> Option<Self> {
+        let map_guard = CURRENCY_MAP.lock().ok()?;
+        map_guard.get(s).copied()
+    }
+
     /// Checks if the currency identified by the given `code` is a fiat currency.
     ///
     /// # Errors
@@ -295,6 +301,22 @@ mod tests {
         assert_eq!(currency.iso4217, 0);
         assert_eq!(currency.name.as_str(), "Ether");
         assert_eq!(currency.currency_type, CurrencyType::Crypto);
+    }
+
+    #[rstest]
+    fn test_try_from_str_valid() {
+        let test_currency = Currency::new("TEST", 2, 999, "Test Currency", CurrencyType::Fiat);
+        Currency::register(test_currency, true).unwrap();
+
+        let currency = Currency::try_from_str("TEST");
+        assert!(currency.is_some());
+        assert_eq!(currency.unwrap(), test_currency);
+    }
+
+    #[rstest]
+    fn test_try_from_str_invalid() {
+        let invalid_currency = Currency::try_from_str("INVALID");
+        assert!(invalid_currency.is_none());
     }
 
     #[rstest]
