@@ -23,6 +23,7 @@ import pytest
 
 from nautilus_trader import TEST_DATA_DIR
 from nautilus_trader.adapters.betfair.constants import BETFAIR_PRICE_PRECISION
+from nautilus_trader.adapters.databento.loaders import DatabentoDataLoader
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.rust.model import AggressorSide
 from nautilus_trader.core.rust.model import BookAction
@@ -147,6 +148,21 @@ def test_catalog_instrument_ids_correctly_unmapped(catalog: ParquetDataCatalog) 
     # Assert
     assert instrument.id.value == "AUD/USD.SIM"
     assert trade_tick.instrument_id.value == "AUD/USD.SIM"
+
+
+@pytest.mark.skip("development_only")
+def test_catalog_with_databento_instruments(catalog: ParquetDataCatalog) -> None:
+    # Arrange
+    loader = DatabentoDataLoader()
+    path = TEST_DATA_DIR / "databento" / "temp" / "glbx-mdp3-20241020.definition.dbn.zst"
+    instruments = loader.from_dbn_file(path, as_legacy_cython=True)
+    catalog.write_data(instruments)
+
+    # Act
+    catalog.instruments()
+
+    # Assert
+    assert len(instruments) == 601_633
 
 
 @pytest.mark.skip(reason="Not yet partitioning")
