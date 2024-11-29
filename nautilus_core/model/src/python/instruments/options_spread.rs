@@ -62,7 +62,7 @@ impl OptionsSpread {
             id,
             raw_symbol,
             asset_class,
-            exchange.map(|e| Ustr::from(&e)),
+            exchange.map(|x| Ustr::from(&x)),
             underlying.into(),
             strategy_type.into(),
             activation_ns.into(),
