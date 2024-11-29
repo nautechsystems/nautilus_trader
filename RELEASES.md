@@ -1,6 +1,6 @@
 # NautilusTrader 1.207.0 Beta
 
-Released on TBD (UTC).
+Released on 29th November 2024 (UTC).
 
 ### Enhancements
 - Implemented mixed catalog data requests with catalog update (#2043), thanks @faysou
@@ -16,6 +16,7 @@ Released on TBD (UTC).
 ### Internal Improvements
 - Ported `Portfolio` and `AccountManager` to Rust (#2058), thanks @Pushkarm029
 - Implemented `AsRef<str>` for `Price`, `Money`, and `Currency`
+- Improved expired timer cleanup in clocks (#2064), thanks @twitu
 - Improved live engines error logging (will now log all exceptions rather than just `RuntimeError`)
 - Improved symbol normalization for Tardis
 - Improved historical bar request performance for Tardis
@@ -23,10 +24,9 @@ Released on TBD (UTC).
 - Refined `HttpClient` for use directly from Rust
 - Refined Databento decoder (removed currency hard coding and use of `unsafe`)
 - Upgraded `datafusion` crate to v43.0.0 (#2056), thanks @twitu
-- Efficiently clean up expired timers in clocks (#2064), thanks @twitu
 
 ### Breaking Changes
-- Renamed `TriggerType.LAST_TRADE` to `LAST_PRICE`
+- Renamed `TriggerType.LAST_TRADE` to `LAST_PRICE` (more conventional terminology)
 
 ### Fixes
 - Fixed missing venue -> exchange mappings for Tardis integration
