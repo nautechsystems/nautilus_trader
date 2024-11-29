@@ -151,15 +151,9 @@ impl FromStr for Money {
     }
 }
 
-impl From<&str> for Money {
-    fn from(value: &str) -> Self {
-        Self::from_str(value).unwrap()
-    }
-}
-
-impl From<String> for Money {
-    fn from(value: String) -> Self {
-        Self::from_str(value.as_str()).unwrap()
+impl<T: AsRef<str>> From<T> for Money {
+    fn from(value: T) -> Self {
+        Self::from_str(value.as_ref()).expect(FAILED)
     }
 }
 

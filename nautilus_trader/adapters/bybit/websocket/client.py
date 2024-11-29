@@ -32,7 +32,7 @@ from nautilus_trader.core.nautilus_pyo3 import hmac_signature
 MAX_ARGS_PER_SUBSCRIPTION_REQUEST = 10
 
 
-class BybitWebsocketClient:
+class BybitWebSocketClient:
     """
     Provides a Bybit streaming WebSocket client.
 
@@ -246,6 +246,15 @@ class BybitWebsocketClient:
 
     async def subscribe_executions_update(self) -> None:
         subscription = "execution"
+        if subscription in self._subscriptions:
+            return
+
+        self._subscriptions.append(subscription)
+        msg = {"op": "subscribe", "args": [subscription]}
+        await self._send(msg)
+
+    async def subscribe_wallet_update(self) -> None:
+        subscription = "wallet"
         if subscription in self._subscriptions:
             return
 

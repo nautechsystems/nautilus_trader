@@ -15,9 +15,9 @@
 
 | Platform           | Rust    | Python |
 | :----------------- | :------ | :----- |
-| `Linux (x86_64)`   | 1.82.0+ | 3.11+  |
-| `macOS (arm64)`    | 1.82.0+ | 3.11+  |
-| `Windows (x86_64)` | 1.82.0+ | 3.11+  |
+| `Linux (x86_64)`   | 1.83.0+ | 3.11+  |
+| `macOS (arm64)`    | 1.83.0+ | 3.11+  |
+| `Windows (x86_64)` | 1.83.0+ | 3.11+  |
 
 [![](https://dcbadge.limes.pink/api/server/AUWVs3XaCS)](https://discord.gg/AUWVs3XaCS)
 

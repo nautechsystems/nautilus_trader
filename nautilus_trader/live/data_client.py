@@ -35,6 +35,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.config import NautilusConfig
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.functions import format_utc_timerange
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
@@ -664,15 +665,17 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
-        time_range = f" {start} to {end}" if (start or end) else ""
-        self._log.info(f"Request {instrument_id} instrument{time_range}", LogColor.BLUE)
+        time_range_str = format_utc_timerange(start, end)
+        self._log.info(f"Request {instrument_id} instrument{time_range_str}", LogColor.BLUE)
         self.create_task(
             self._request_instrument(
                 instrument_id=instrument_id,
                 correlation_id=correlation_id,
                 start=start,
                 end=end,
+                metadata=metadata,
             ),
             log_msg=f"request: instrument {instrument_id}",
         )
@@ -683,10 +686,11 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
-        time_range = f" {start} to {end}" if (start or end) else ""
+        time_range_str = format_utc_timerange(start, end)
         self._log.info(
-            f"Request {venue} instruments for{time_range}",
+            f"Request {venue} instruments for{time_range_str}",
             LogColor.BLUE,
         )
         self.create_task(
@@ -695,6 +699,7 @@ class LiveMarketDataClient(MarketDataClient):
                 correlation_id=correlation_id,
                 start=start,
                 end=end,
+                metadata=metadata,
             ),
             log_msg=f"request: instruments for {venue}",
         )
@@ -706,10 +711,11 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
-        time_range = f" {start} to {end}" if (start or end) else ""
+        time_range_str = format_utc_timerange(start, end)
         limit_str = f" limit={limit}" if limit else ""
-        self._log.info(f"Request {instrument_id} quotes{time_range}{limit_str}", LogColor.BLUE)
+        self._log.info(f"Request {instrument_id} quotes{time_range_str}{limit_str}", LogColor.BLUE)
         self.create_task(
             self._request_quote_ticks(
                 instrument_id=instrument_id,
@@ -717,6 +723,7 @@ class LiveMarketDataClient(MarketDataClient):
                 correlation_id=correlation_id,
                 start=start,
                 end=end,
+                metadata=metadata,
             ),
             log_msg=f"request: quotes {instrument_id}",
         )
@@ -728,10 +735,11 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
-        time_range = f" {start} to {end}" if (start or end) else ""
+        time_range_str = format_utc_timerange(start, end)
         limit_str = f" limit={limit}" if limit else ""
-        self._log.info(f"Request {instrument_id} trades{time_range}{limit_str}", LogColor.BLUE)
+        self._log.info(f"Request {instrument_id} trades{time_range_str}{limit_str}", LogColor.BLUE)
         self.create_task(
             self._request_trade_ticks(
                 instrument_id=instrument_id,
@@ -739,6 +747,7 @@ class LiveMarketDataClient(MarketDataClient):
                 correlation_id=correlation_id,
                 start=start,
                 end=end,
+                metadata=metadata,
             ),
             log_msg=f"request: trades {instrument_id}",
         )
@@ -750,10 +759,11 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
-        time_range = f" {start} to {end}" if (start or end) else ""
+        time_range_str = format_utc_timerange(start, end)
         limit_str = f" limit={limit}" if limit else ""
-        self._log.info(f"Request {bar_type} bars{time_range}{limit_str}", LogColor.BLUE)
+        self._log.info(f"Request {bar_type} bars{time_range_str}{limit_str}", LogColor.BLUE)
         self.create_task(
             self._request_bars(
                 bar_type=bar_type,
@@ -761,6 +771,7 @@ class LiveMarketDataClient(MarketDataClient):
                 correlation_id=correlation_id,
                 start=start,
                 end=end,
+                metadata=metadata,
             ),
             log_msg=f"request: bars {bar_type}",
         )
@@ -918,6 +929,7 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_instrument` coroutine",  # pragma: no cover
@@ -929,6 +941,7 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_instruments` coroutine",  # pragma: no cover
@@ -941,6 +954,7 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_quote_ticks` coroutine",  # pragma: no cover
@@ -953,6 +967,7 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_trade_ticks` coroutine",  # pragma: no cover
@@ -965,6 +980,7 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_bars` coroutine",  # pragma: no cover

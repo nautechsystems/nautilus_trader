@@ -19,6 +19,7 @@ use std::{
     ops::{Deref, DerefMut},
 };
 
+use rust_decimal::{prelude::ToPrimitive, Decimal};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -65,6 +66,36 @@ impl CashAccount {
     #[must_use]
     pub const fn is_unleveraged(&self) -> bool {
         false
+    }
+
+    pub fn recalculate_balance(&mut self, currency: Currency) {
+        let current_balance = match self.balances.get(&currency) {
+            Some(balance) => *balance,
+            None => {
+                return;
+            }
+        };
+
+        let total_locked = self
+            .balances
+            .values()
+            .filter(|balance| balance.currency == currency)
+            .fold(Decimal::ZERO, |acc, balance| {
+                acc + balance.locked.as_decimal()
+            });
+
+        let new_balance = AccountBalance::new(
+            current_balance.total,
+            Money::new(total_locked.to_f64().unwrap(), currency),
+            Money::new(
+                (current_balance.total.as_decimal() - total_locked)
+                    .to_f64()
+                    .unwrap(),
+                currency,
+            ),
+        );
+
+        self.balances.insert(currency, new_balance);
     }
 }
 

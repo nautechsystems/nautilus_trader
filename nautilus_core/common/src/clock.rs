@@ -155,12 +155,15 @@ impl TestClock {
             self.time.set_time(to_time_ns);
         }
 
-        let mut events: Vec<TimeEvent> = self
-            .timers
-            .iter_mut()
-            .filter(|(_, timer)| !timer.is_expired())
-            .flat_map(|(_, timer)| timer.advance(to_time_ns))
-            .collect();
+        // Iterate and advance timers and collect events. Only retain alive timers.
+        let mut events: Vec<TimeEvent> = Vec::new();
+        self.timers.retain(|_, timer| {
+            timer.advance(to_time_ns).for_each(|event| {
+                events.push(event);
+            });
+
+            !timer.is_expired()
+        });
 
         events.sort_by(|a, b| a.ts_event.cmp(&b.ts_event));
         events
@@ -182,13 +185,14 @@ impl TestClock {
 
         self.time.set_time(to_time_ns);
 
-        self.timers
-            .iter_mut()
-            .filter(|(_, timer)| !timer.is_expired())
-            .flat_map(|(_, timer)| timer.advance(to_time_ns))
-            .for_each(|event| {
+        // Iterate and advance timers and push events to heap. Only retain alive timers.
+        self.timers.retain(|_, timer| {
+            timer.advance(to_time_ns).for_each(|event| {
                 self.heap.push(event);
             });
+
+            !timer.is_expired()
+        });
     }
 
     /// Matches `TimeEvent` objects with their corresponding event handlers.
@@ -398,6 +402,11 @@ impl LiveClock {
     pub const fn get_timers(&self) -> &HashMap<Ustr, LiveTimer> {
         &self.timers
     }
+
+    // Clean up expired timers. Retain only live ones
+    fn clear_expired_timers(&mut self) {
+        self.timers.retain(|_, timer| !timer.is_expired());
+    }
 }
 
 impl Default for LiveClock {
@@ -510,6 +519,8 @@ impl Clock for LiveClock {
         );
 
         timer.start();
+
+        self.clear_expired_timers();
         self.timers.insert(Ustr::from(name), timer);
     }
 
@@ -552,6 +563,8 @@ impl Clock for LiveClock {
             self.heap.clone(),
         );
         timer.start();
+
+        self.clear_expired_timers();
         self.timers.insert(Ustr::from(name), timer);
     }
 

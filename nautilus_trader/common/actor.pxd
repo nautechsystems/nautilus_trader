@@ -191,6 +191,7 @@ cdef class Actor(Component):
         datetime end=*,
         ClientId client_id=*,
         callback=*,
+        bint update_catalog=*,
     )
     cpdef UUID4 request_instruments(
         self,
@@ -199,6 +200,7 @@ cdef class Actor(Component):
         datetime end=*,
         ClientId client_id=*,
         callback=*,
+        bint update_catalog=*,
     )
     cpdef UUID4 request_order_book_snapshot(
         self,
@@ -214,6 +216,8 @@ cdef class Actor(Component):
         datetime end=*,
         ClientId client_id=*,
         callback=*,
+        str quote_type=*,
+        bint update_catalog=*,
     )
     cpdef UUID4 request_trade_ticks(
         self,
@@ -222,6 +226,7 @@ cdef class Actor(Component):
         datetime end=*,
         ClientId client_id=*,
         callback=*,
+        bint update_catalog=*,
     )
     cpdef UUID4 request_bars(
         self,
@@ -230,16 +235,18 @@ cdef class Actor(Component):
         datetime end=*,
         ClientId client_id=*,
         callback=*,
+        bint update_catalog=*,
     )
     cpdef UUID4 request_aggregated_bars(
         self,
         list bar_types,
         datetime start=*,
         datetime end=*,
-        bint update_existing_subscriptions=*,
-        bint include_external_data=*,
         ClientId client_id=*,
         callback=*,
+        bint include_external_data=*,
+        bint update_existing_subscriptions=*,
+        bint update_catalog=*,
     )
     cpdef bint is_pending_request(self, UUID4 request_id)
     cpdef bint has_pending_requests(self)

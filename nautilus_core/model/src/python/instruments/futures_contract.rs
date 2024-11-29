@@ -61,7 +61,7 @@ impl FuturesContract {
             id,
             raw_symbol,
             asset_class,
-            exchange.map(|e| Ustr::from(&e)),
+            exchange.map(|x| Ustr::from(&x)),
             underlying.into(),
             activation_ns.into(),
             expiration_ns.into(),

@@ -750,7 +750,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
     ) -> None:
         if self._binance_account_type.is_spot_or_margin:
             working_type = None
-        elif order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST_TRADE):
+        elif order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST_PRICE):
             working_type = "CONTRACT_PRICE"
         elif order.trigger_type == TriggerType.MARK_PRICE:
             working_type = "MARK_PRICE"
@@ -801,7 +801,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
     ) -> None:
         if self._binance_account_type.is_spot_or_margin:
             working_type = None
-        elif order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST_TRADE):
+        elif order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST_PRICE):
             working_type = "CONTRACT_PRICE"
         elif order.trigger_type == TriggerType.MARK_PRICE:
             working_type = "MARK_PRICE"
@@ -833,7 +833,7 @@ class BinanceCommonExecutionClient(LiveExecutionClient):
         order: TrailingStopMarketOrder,
         position_side: BinanceFuturesPositionSide | None,
     ) -> None:
-        if order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST_TRADE):
+        if order.trigger_type in (TriggerType.DEFAULT, TriggerType.LAST_PRICE):
             working_type = "CONTRACT_PRICE"
         elif order.trigger_type == TriggerType.MARK_PRICE:
             working_type = "MARK_PRICE"

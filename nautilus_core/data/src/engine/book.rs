@@ -122,16 +122,21 @@ impl BookSnapshotter {
 
     pub fn snapshot(&self, event: TimeEvent) {
         let cache = self.cache.borrow();
+        let mut msgbus = self.msgbus.borrow_mut();
 
         if self.snap_info.is_composite {
-            let msgbus = self.msgbus.borrow_mut();
             let topic = self.snap_info.topic;
             let underlying = self.snap_info.root;
             for instrument in cache.instruments(&self.snap_info.venue, Some(&underlying)) {
-                self.publish_order_book(&instrument.id(), &topic, &cache);
+                self.publish_order_book(&instrument.id(), &topic, &cache, &mut msgbus);
             }
         } else {
-            self.publish_order_book(&self.snap_info.instrument_id, &self.snap_info.topic, &cache);
+            self.publish_order_book(
+                &self.snap_info.instrument_id,
+                &self.snap_info.topic,
+                &cache,
+                &mut msgbus,
+            );
         }
     }
 
@@ -139,9 +144,9 @@ impl BookSnapshotter {
         &self,
         instrument_id: &InstrumentId,
         topic: &Ustr,
-        cache: &Ref<'_, Cache>,
+        cache: &Ref<Cache>,
+        msgbus: &mut MessageBus,
     ) {
-        // TODO: Optimize: We shouldn't need to keep fetching the message bus mut ref every time
         let book = cache
             .order_book(instrument_id)
             .unwrap_or_else(|| panic!("OrderBook for {instrument_id} was not in cache"));
@@ -151,6 +156,6 @@ impl BookSnapshotter {
             return;
         }
 
-        self.msgbus.borrow_mut().publish(topic, book as &dyn Any);
+        msgbus.publish(topic, book as &dyn Any);
     }
 }

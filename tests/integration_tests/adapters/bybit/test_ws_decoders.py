@@ -618,6 +618,7 @@ class TestBybitWsDecoders:
             collateralSwitch=True,
             marginCollateral=True,
             locked="0",
+            spotHedgingQty="0",
         )
         coin_btc = BybitWsAccountWalletCoin(
             coin="BTC",
@@ -637,6 +638,7 @@ class TestBybitWsDecoders:
             collateralSwitch=False,
             marginCollateral=True,
             locked="0",
+            spotHedgingQty="0",
         )
         coin_usdt = BybitWsAccountWalletCoin(
             coin="USDT",
@@ -656,6 +658,7 @@ class TestBybitWsDecoders:
             collateralSwitch=True,
             marginCollateral=True,
             locked="0",
+            spotHedgingQty="0",
         )
         wallet_data = BybitWsAccountWallet(
             accountIMRate="0.4782",

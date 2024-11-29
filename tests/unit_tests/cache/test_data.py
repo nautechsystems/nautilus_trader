@@ -240,7 +240,7 @@ class TestCache:
         # Assert
         assert result == [tick]
 
-    def test_add_quote_ticks_when_already_ticks_does_not_add(self):
+    def test_add_quote_ticks_when_identical_ticks_does_not_add(self):
         # Arrange
         tick = TestDataStubs.quote_tick()
 
@@ -252,6 +252,20 @@ class TestCache:
 
         # Assert
         assert result == [tick]
+
+    def test_add_quote_ticks_when_older_quotes(self):
+        # Arrange
+        tick1 = TestDataStubs.quote_tick()
+        self.cache.add_quote_tick(tick1)
+
+        tick2 = TestDataStubs.quote_tick(ts_event=1, ts_init=1)
+
+        # Act
+        self.cache.add_quote_ticks([tick2])
+        result = self.cache.quote_ticks(tick1.instrument_id)
+
+        # Assert
+        assert result == [tick2, tick1]
 
     def test_trade_ticks_when_one_tick_returns_expected_list(self):
         # Arrange
@@ -265,7 +279,7 @@ class TestCache:
         # Assert
         assert result == [tick]
 
-    def test_add_trade_ticks_when_already_ticks_does_not_add(self):
+    def test_add_trade_ticks_when_identical_ticks_does_not_add(self):
         # Arrange
         tick = TestDataStubs.trade_tick()
 
@@ -277,6 +291,21 @@ class TestCache:
 
         # Assert
         assert result == [tick]
+
+    def test_add_trade_ticks_when_older_trades(self):
+        # Arrange
+        tick1 = TestDataStubs.trade_tick()
+        self.cache.add_trade_tick(tick1)
+
+        tick2 = TestDataStubs.trade_tick(ts_event=1, ts_init=1)
+        self.cache.add_trade_tick(tick2)
+
+        # Act
+        self.cache.add_trade_ticks([tick1])
+        result = self.cache.trade_ticks(tick1.instrument_id)
+
+        # Assert
+        assert result == [tick2, tick1]
 
     def test_bars_when_one_bar_returns_expected_list(self):
         # Arrange
@@ -290,7 +319,7 @@ class TestCache:
         # Assert
         assert result == [bar]
 
-    def test_add_bars_when_already_bars_does_not_add(self):
+    def test_add_bars_when_already_identical_bar_does_not_add(self):
         # Arrange
         bar = TestDataStubs.bar_5decimal()
 
@@ -302,6 +331,21 @@ class TestCache:
 
         # Assert
         assert result == [bar]
+
+    def test_add_bars_when_older_cached_bars(self):
+        # Arrange
+        bar1 = TestDataStubs.bar_5decimal()
+        self.cache.add_bar(bar1)
+
+        bar2 = TestDataStubs.bar_5decimal(ts_event=1)
+        self.cache.add_bar(bar2)
+
+        # Act
+        self.cache.add_bars([bar2])
+        result = self.cache.bars(bar1.bar_type)
+
+        # Assert
+        assert result == [bar2, bar1]
 
     def test_instrument_when_no_instrument_returns_none(self):
         # Arrange, Act

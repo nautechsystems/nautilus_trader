@@ -20,6 +20,7 @@ import pandas as pd
 from nautilus_trader.adapters.tardis.common import convert_nautilus_bar_type_to_tardis_data_type
 from nautilus_trader.adapters.tardis.common import convert_nautilus_data_type_to_tardis_data_type
 from nautilus_trader.adapters.tardis.common import create_instrument_info
+from nautilus_trader.adapters.tardis.common import create_replay_normalized_request_options
 from nautilus_trader.adapters.tardis.common import create_stream_normalized_request_options
 from nautilus_trader.adapters.tardis.common import get_ws_client_key
 from nautilus_trader.adapters.tardis.config import TardisDataClientConfig
@@ -32,14 +33,15 @@ from nautilus_trader.common.enums import LogColor
 from nautilus_trader.core import nautilus_pyo3
 from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
+from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
-from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
 from nautilus_trader.model.data import TradeTick
 from nautilus_trader.model.data import capsule_to_data
 from nautilus_trader.model.enums import BookType
+from nautilus_trader.model.enums import PriceType
 from nautilus_trader.model.identifiers import ClientId
 from nautilus_trader.model.identifiers import InstrumentId
 from nautilus_trader.model.identifiers import Venue
@@ -324,6 +326,7 @@ class TardisDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         if start is not None:
             self._log.warning(
@@ -339,15 +342,8 @@ class TardisDataClient(LiveMarketDataClient):
         if instrument is None:
             self._log.error(f"Cannot find instrument for {instrument_id}")
             return
-        data_type = DataType(
-            type=Instrument,
-            metadata={"instrument_id": instrument_id},
-        )
-        self._handle_data_response(
-            data_type=data_type,
-            data=instrument,
-            correlation_id=correlation_id,
-        )
+
+        self._handle_instrument(instrument, correlation_id, metadata)
 
     async def _request_instruments(
         self,
@@ -355,6 +351,7 @@ class TardisDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         if start is not None:
             self._log.warning(
@@ -371,15 +368,8 @@ class TardisDataClient(LiveMarketDataClient):
         for instrument in all_instruments.values():
             if instrument.venue == venue:
                 target_instruments.append(instrument)
-        data_type = DataType(
-            type=Instrument,
-            metadata={"venue": venue},
-        )
-        self._handle_data_response(
-            data_type=data_type,
-            data=target_instruments,
-            correlation_id=correlation_id,
-        )
+
+        self._handle_instruments(target_instruments, venue, correlation_id, metadata)
 
     async def _request_quote_ticks(
         self,
@@ -388,6 +378,7 @@ class TardisDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         self._log.error(
             f"Cannot request historical quotes for {instrument_id}: not supported in this version",
@@ -400,6 +391,7 @@ class TardisDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         self._log.error(
             f"Cannot request historical trades for {instrument_id}: not supported in this version",
@@ -412,10 +404,89 @@ class TardisDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
-        self._log.error(
-            f"Cannot request historical bars for {bar_type}: not supported in this version",
+        if bar_type.is_internally_aggregated():
+            self._log.error(
+                f"Cannot request {bar_type} bars: "
+                f"only historical bars with EXTERNAL aggregation available from Tardis",
+            )
+            return
+
+        if bar_type.spec.price_type != PriceType.LAST:
+            self._log.error(
+                f"Cannot request {bar_type} bars: "
+                f"only historical bars for LAST price type available through Tardis",
+            )
+            return
+
+        instrument = self._cache.instrument(bar_type.instrument_id)
+        if instrument is None:
+            self._log.error(f"Cannot request bars: no instrument for {bar_type.instrument_id}")
+            return
+
+        instrument_info = create_instrument_info(instrument)
+        tardis_exchange_str = instrument_info.exchange
+        raw_symbol_str = instrument.raw_symbol.value
+        tardis_data_type = convert_nautilus_bar_type_to_tardis_data_type(bar_type)
+
+        self._log.info(
+            f"Subscribing replay: exchange={tardis_exchange_str}, raw_symbol={raw_symbol_str}, data_type={tardis_data_type}",
+            LogColor.MAGENTA,
         )
+
+        if start and start.date() == self._clock.utc_now().date():
+            self._log.error(
+                f"Cannot request bars: `start` cannot fall on the current UTC date, was {start.date()} (try an earlier `start`)",
+            )
+            return
+        if start and end and start.date() == end.date():
+            self._log.error(
+                f"Cannot request bars: `start` and `end` cannot fall on the same date, was {start.date()} (try an earlier `start`)",
+            )
+            return
+
+        date_now_utc = self._clock.utc_now().date()
+
+        replay_request = create_replay_normalized_request_options(
+            exchange=tardis_exchange_str,
+            symbols=[raw_symbol_str],
+            from_date=start.date() if start is not None else date_now_utc - pd.Timedelta(days=1),
+            to_date=end.date() if end is not None else date_now_utc,
+            data_types=[tardis_data_type],
+        )
+
+        pyo3_bars = await asyncio.ensure_future(
+            self._ws_client.replay_bars(
+                instruments=[instrument_info],
+                options=[replay_request],
+            ),
+        )
+
+        self._log.debug(
+            f"Streamed {len(pyo3_bars):,} {bar_type} bars from replay",
+            LogColor.MAGENTA,
+        )
+
+        if limit:
+            pyo3_bars = pyo3_bars[-limit:]
+
+        # Apply time filter
+        pyo3_bars = [
+            pyo3_bar
+            for pyo3_bar in pyo3_bars
+            if (start is None or pyo3_bar.ts_event >= start.value)
+            and (end is None or pyo3_bar.ts_event <= end.value)
+        ]
+
+        bars = Bar.from_pyo3_list(pyo3_bars)
+
+        self._log.debug(
+            f"Sending response with {len(bars):,} bars after filtering",
+            LogColor.MAGENTA,
+        )
+
+        self._handle_bars(bar_type, bars, None, correlation_id, metadata)
 
     def _handle_msg(
         self,

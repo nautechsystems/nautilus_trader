@@ -126,6 +126,7 @@ cdef class MarketDataClient(DataClient):
         UUID4 correlation_id,
         datetime start=*,
         datetime end=*,
+        dict metadata=*,
     )
     cpdef void request_instruments(
         self,
@@ -133,6 +134,7 @@ cdef class MarketDataClient(DataClient):
         UUID4 correlation_id,
         datetime start=*,
         datetime end=*,
+        dict metadata=*,
     )
     cpdef void request_order_book_snapshot(
         self,
@@ -147,6 +149,7 @@ cdef class MarketDataClient(DataClient):
         UUID4 correlation_id,
         datetime start=*,
         datetime end=*,
+        dict metadata=*,
     )
     cpdef void request_trade_ticks(
         self,
@@ -155,6 +158,7 @@ cdef class MarketDataClient(DataClient):
         UUID4 correlation_id,
         datetime start=*,
         datetime end=*,
+        dict metadata=*,
     )
     cpdef void request_bars(
         self,
@@ -163,12 +167,13 @@ cdef class MarketDataClient(DataClient):
         UUID4 correlation_id,
         datetime start=*,
         datetime end=*,
+        dict metadata=*,
     )
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
-    cpdef void _handle_instrument(self, Instrument instrument, UUID4 correlation_id)
-    cpdef void _handle_instruments(self, Venue venue, list instruments, UUID4 correlation_id)
-    cpdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id)
-    cpdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id)
-    cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id)
+    cpdef void _handle_instrument(self, Instrument instrument, UUID4 correlation_id, dict metadata)
+    cpdef void _handle_instruments(self, Venue venue, list instruments, UUID4 correlation_id, dict metadata)
+    cpdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, dict metadata)
+    cpdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, dict metadata)
+    cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id, dict metadata)

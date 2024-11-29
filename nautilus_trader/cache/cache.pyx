@@ -1223,14 +1223,12 @@ cdef class Cache(CacheFacade):
             # The instrument_id was not registered
             cached_ticks = deque(maxlen=self.tick_capacity)
             self._quote_ticks[instrument_id] = cached_ticks
-        elif len(cached_ticks) > 0:
-            # Currently the simple solution for multiple consumers requesting
-            # ticks at system spool up is just to add only if the cache is empty.
-            self._log.debug("Cache already contains ticks")
-            return
 
         cdef QuoteTick tick
         for tick in ticks:
+            if cached_ticks and tick.ts_event <= cached_ticks[0].ts_event:
+                # Only add more recent data to cache
+                continue
             cached_ticks.appendleft(tick)
 
     cpdef void add_trade_ticks(self, list ticks):
@@ -1257,17 +1255,14 @@ cdef class Cache(CacheFacade):
         cached_ticks = self._trade_ticks.get(instrument_id)
 
         if not cached_ticks:
-            # The instrument_id was not registered
             cached_ticks = deque(maxlen=self.tick_capacity)
             self._trade_ticks[instrument_id] = cached_ticks
-        elif len(cached_ticks) > 0:
-            # Currently the simple solution for multiple consumers requesting
-            # ticks at system spool up is just to add only if the cache is empty.
-            self._log.debug("Cache already contains ticks")
-            return
 
         cdef TradeTick tick
         for tick in ticks:
+            if cached_ticks and tick.ts_event <= cached_ticks[0].ts_event:
+                # Only add more recent data to cache
+                continue
             cached_ticks.appendleft(tick)
 
     cpdef void add_bars(self, list bars):
@@ -1294,17 +1289,14 @@ cdef class Cache(CacheFacade):
         cached_bars = self._bars.get(bar_type)
 
         if not cached_bars:
-            # The instrument_id was not registered
             cached_bars = deque(maxlen=self.bar_capacity)
             self._bars[bar_type] = cached_bars
-        elif len(cached_bars) > 0:
-            # Currently the simple solution for multiple consumers requesting
-            # bars at system spool up is just to add only if the cache is empty.
-            self._log.debug("Cache already contains bars")
-            return
 
         cdef Bar bar
         for bar in bars:
+            if cached_bars and bar.ts_event <= cached_bars[0].ts_event:
+                # Only add more recent data to cache
+                continue
             cached_bars.appendleft(bar)
 
         bar = bars[-1]

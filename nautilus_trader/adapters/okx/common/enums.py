@@ -406,7 +406,7 @@ class OKXEnumParser:
 
         self.okx_to_nautilus_trigger_type = {
             OKXTriggerType.NONE: TriggerType.NO_TRIGGER,
-            OKXTriggerType.LAST: TriggerType.LAST_TRADE,
+            OKXTriggerType.LAST: TriggerType.LAST_PRICE,
             OKXTriggerType.MARK: TriggerType.MARK_PRICE,
             OKXTriggerType.INDEX: TriggerType.INDEX_PRICE,
         }

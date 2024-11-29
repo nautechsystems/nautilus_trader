@@ -21,6 +21,22 @@ use std::{
     time::{Duration, Instant},
 };
 
+use nautilus_core::uuid::UUID4;
+use nautilus_model::identifiers::TraderId;
+
+use crate::logging::{init_logging, logger::LoggerConfig, writer::FileWriterConfig};
+
+pub fn init_logger_for_testing(stdout_level: Option<log::LevelFilter>) {
+    let mut config = LoggerConfig::default();
+    config.stdout_level = stdout_level.unwrap_or(log::LevelFilter::Trace);
+    init_logging(
+        TraderId::default(),
+        UUID4::new(),
+        config,
+        FileWriterConfig::default(),
+    );
+}
+
 /// Repeatedly evaluates a condition with a delay until it becomes true or a timeout occurs.
 ///
 /// * `condition`: A closure that represents the condition to be met. This closure should return `true`

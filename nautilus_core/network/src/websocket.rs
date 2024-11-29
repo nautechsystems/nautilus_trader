@@ -316,13 +316,65 @@ impl Drop for WebSocketClientInner {
     pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
 )]
 pub struct WebSocketClient {
-    pub(crate) rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
     pub(crate) writer: SharedMessageWriter,
     pub(crate) controller_task: task::JoinHandle<()>,
+    pub(crate) rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
     pub(crate) disconnect_mode: Arc<AtomicBool>,
 }
 
 impl WebSocketClient {
+    /// Creates a websocket client that returns a stream for reading messages.
+    pub async fn connect_stream(
+        url: String,
+        headers: Vec<(String, String)>,
+        heartbeat: Option<u64>,
+        heartbeat_msg: Option<String>,
+        max_reconnection_tries: Option<u64>,
+        keyed_quotas: Vec<(String, Quota)>,
+        default_quota: Option<Quota>,
+    ) -> Result<(MessageReader, Self), Error> {
+        let (ws_stream, _) = connect_async(url.clone().into_client_request()?).await?;
+        let (writer, reader) = ws_stream.split();
+        let writer = Arc::new(Mutex::new(writer));
+
+        // Create config with minimal no-op Python handler so we incrementally
+        // move towards a more Rust-native approach.
+        let config = {
+            let handler = Python::with_gil(|py| Arc::new(py.None()));
+            WebSocketConfig {
+                url,
+                handler,
+                headers,
+                heartbeat,
+                heartbeat_msg,
+                ping_handler: None,
+                max_reconnection_tries,
+            }
+        };
+
+        let disconnect_mode = Arc::new(AtomicBool::new(false));
+        let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
+
+        let inner = WebSocketClientInner::connect_url(config).await?;
+        let controller_task = Self::spawn_controller_task(
+            inner,
+            disconnect_mode.clone(),
+            None, // no post_reconnection
+            None, // no post_disconnection
+            max_reconnection_tries,
+        );
+
+        Ok((
+            reader,
+            Self {
+                writer: writer.clone(),
+                controller_task,
+                rate_limiter,
+                disconnect_mode,
+            },
+        ))
+    }
+
     /// Creates a websocket client.
     ///
     /// Creates an inner client and controller task to reconnect or disconnect
@@ -357,9 +409,9 @@ impl WebSocketClient {
         };
 
         Ok(Self {
-            rate_limiter,
             writer,
             controller_task,
+            rate_limiter,
             disconnect_mode,
         })
     }
@@ -393,6 +445,12 @@ impl WebSocketClient {
         }
     }
 
+    pub async fn send_text(&self, data: String) -> Result<(), Error> {
+        tracing::trace!("Sending text: {data:?}");
+        let mut guard = self.writer.lock().await;
+        guard.send(Message::Text(data)).await
+    }
+
     pub async fn send_bytes(&self, data: Vec<u8>) -> Result<(), Error> {
         tracing::trace!("Sending bytes: {data:?}");
         let mut guard = self.writer.lock().await;
@@ -415,9 +473,12 @@ impl WebSocketClient {
         max_reconnection_tries: Option<u64>,
     ) -> task::JoinHandle<()> {
         task::spawn(async move {
+            let check_interval = Duration::from_millis(100);
+            let retry_interval = Duration::from_millis(1000);
             let mut retry_counter: u64 = 0;
+
             loop {
-                sleep(Duration::from_millis(100)).await;
+                sleep(check_interval).await;
 
                 // Check if client needs to disconnect
                 let disconnect = disconnect_mode.load(Ordering::SeqCst);
@@ -443,7 +504,7 @@ impl WebSocketClient {
                                 if retry_counter < max_reconnection_tries {
                                     retry_counter += 1;
                                     tracing::warn!("Reconnect failed {e}. Retry {retry_counter}/{max_reconnection_tries}");
-                                    sleep(Duration::from_millis(1000)).await;
+                                    sleep(retry_interval).await;
                                 } else {
                                     tracing::error!("Reconnect failed {e}");
                                     break;

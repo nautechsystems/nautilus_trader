@@ -149,6 +149,55 @@ impl BarSpecification {
             ),
         }
     }
+
+    /// Return a value indicating whether the aggregation method is time-driven:
+    ///  - [`BarAggregation::Millisecond`]
+    ///  - [`BarAggregation::Second`]
+    ///  - [`BarAggregation::Minute`]
+    ///  - [`BarAggregation::Hour`]
+    ///  - [`BarAggregation::Day`]
+    ///  - [`BarAggregation::Month`]
+    pub fn is_time_aggregated(&self) -> bool {
+        matches!(
+            self.aggregation,
+            BarAggregation::Millisecond
+                | BarAggregation::Second
+                | BarAggregation::Minute
+                | BarAggregation::Hour
+                | BarAggregation::Day
+                | BarAggregation::Month
+        )
+    }
+
+    /// Return a value indicating whether the aggregation method is threshold-driven:
+    ///  - [`BarAggregation::Tick`]
+    ///  - [`BarAggregation::TickImbalance`]
+    ///  - [`BarAggregation::Volume`]
+    ///  - [`BarAggregation::VolumeImbalance`]
+    ///  - [`BarAggregation::Value`]
+    ///  - [`BarAggregation::ValueImbalance`]
+    pub fn is_threshold_aggregated(&self) -> bool {
+        matches!(
+            self.aggregation,
+            BarAggregation::Tick
+                | BarAggregation::TickImbalance
+                | BarAggregation::Volume
+                | BarAggregation::VolumeImbalance
+                | BarAggregation::Value
+                | BarAggregation::ValueImbalance
+        )
+    }
+
+    /// Return a value indicating whether the aggregation method is information-driven:
+    ///  - [`BarAggregation::TickRuns`]
+    ///  - [`BarAggregation::VolumeRuns`]
+    ///  - [`BarAggregation::ValueRuns`]
+    pub fn is_information_aggregated(&self) -> bool {
+        matches!(
+            self.aggregation,
+            BarAggregation::TickRuns | BarAggregation::VolumeRuns | BarAggregation::ValueRuns
+        )
+    }
 }
 
 impl Display for BarSpecification {
