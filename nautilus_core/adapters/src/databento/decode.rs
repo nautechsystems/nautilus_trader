@@ -47,9 +47,6 @@ use super::{
     types::{DatabentoImbalance, DatabentoStatistics},
 };
 
-// Represents $0.01 in nano units
-const ONE_CENT_INCREMENT: i64 = 10_000_000;
-
 const BAR_SPEC_1S: BarSpecification = BarSpecification {
     step: 1,
     aggregation: BarAggregation::Second,
@@ -226,24 +223,46 @@ pub fn parse_status_trading_event(value: u16) -> anyhow::Result<Option<Ustr>> {
     Ok(Some(Ustr::from(value_str)))
 }
 
-pub fn decode_price(value: i64, precision: u8) -> anyhow::Result<Price> {
-    Ok(match value {
-        0 | i64::MAX => Price::new(10f64.powi(-i32::from(precision)), precision),
-        _ => Price::from_raw(value, precision),
-    })
-}
-
-pub fn decode_optional_price(value: i64, precision: u8) -> anyhow::Result<Option<Price>> {
+/// Decodes a minimum price increment from the given value, expressed in units of 1e-9.
+pub fn decode_price_increment(value: i64, precision: u8) -> Price {
     match value {
-        i64::MAX => Ok(None),
-        _ => Ok(Some(Price::from_raw(value, precision))),
+        0 | i64::MAX => Price::new(10f64.powi(-i32::from(precision)), precision),
+        _ => Price::from(format!("{}", value as f64 / FIXED_SCALAR)),
     }
 }
 
-pub fn decode_optional_quantity(value: i32) -> anyhow::Result<Option<Quantity>> {
+/// Decodes a price from the given optional value, expressed in units of 1e-9.
+pub fn decode_optional_price(value: i64, precision: u8) -> Option<Price> {
     match value {
-        i32::MAX => Ok(None),
-        _ => Ok(Some(Quantity::new(f64::from(value), 0))),
+        i64::MAX => None,
+        _ => Some(Price::from_raw(value, precision)),
+    }
+}
+
+/// Decodes a quantity from the given optional value, expressed in standard whole-number units.
+pub fn decode_optional_quantity(value: i32) -> Option<Quantity> {
+    match value {
+        i32::MAX => None,
+        _ => Some(Quantity::new(f64::from(value), 0)),
+    }
+}
+
+/// Decodes a multiplier from the given value, expressed in units of 1e-9.
+pub fn decode_multiplier(value: i64) -> Quantity {
+    match value {
+        0 | i64::MAX => Quantity::from(1),
+        value => {
+            let scaled_value = std::cmp::max(value as u64, FIXED_SCALAR as u64);
+            Quantity::from_raw(scaled_value, 0)
+        }
+    }
+}
+
+/// Decodes a lot size from the given value, expressed in standard whole-number units.
+pub fn decode_lot_size(value: i32) -> Quantity {
+    match value {
+        0 | i32::MAX => Quantity::from(1),
+        value => Quantity::from(value as i64),
     }
 }
 
@@ -253,27 +272,29 @@ pub fn decode_equity_v1(
     ts_init: UnixNanos,
 ) -> anyhow::Result<Equity> {
     let currency = parse_currency_or_usd_default(msg.currency());
+    let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
+    let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
 
-    Ok(Equity::new(
+    Equity::new_checked(
         instrument_id,
         instrument_id.symbol,
         None, // No ISIN available yet
         currency,
-        currency.precision,
-        decode_price(msg.min_price_increment, currency.precision)?,
+        price_increment.precision,
+        price_increment,
         None, // TBD
         None, // TBD
         None, // TBD
         None, // TBD
-        Some(Quantity::new(f64::from(msg.min_lot_size_round_lot), 0)),
+        Some(lot_size),
         None, // TBD
         None, // TBD
         None, // TBD
         None, // TBD
         ts_event,
         ts_init,
-    ))
+    )
 }
 
 pub fn decode_futures_contract_v1(
@@ -285,18 +306,12 @@ pub fn decode_futures_contract_v1(
     let exchange = Ustr::from(msg.exchange()?);
     let underlying = Ustr::from(msg.asset()?);
     let (asset_class, _) = parse_cfi_iso10926(msg.cfi()?)?;
-    let unit_of_measure_qty: f64 = match msg.unit_of_measure_qty {
-        i64::MAX => 1.0,
-        other => other as f64 / FIXED_SCALAR,
-    };
-    let lot_size_round: f64 = match msg.min_lot_size_round_lot {
-        i32::MAX => 1.0,
-        0 => 1.0,
-        other => f64::from(other),
-    };
+    let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
+    let multiplier = decode_multiplier(msg.unit_of_measure_qty);
+    let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
 
-    Ok(FuturesContract::new(
+    FuturesContract::new_checked(
         instrument_id,
         instrument_id.symbol,
         asset_class.unwrap_or(AssetClass::Commodity),
@@ -305,10 +320,10 @@ pub fn decode_futures_contract_v1(
         msg.activation.into(),
         msg.expiration.into(),
         currency,
-        currency.precision,
-        decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(unit_of_measure_qty, 0),
-        Quantity::new(lot_size_round, 0),
+        price_increment.precision,
+        price_increment,
+        multiplier,
+        lot_size,
         None, // TBD
         None, // TBD
         None, // TBD
@@ -317,7 +332,7 @@ pub fn decode_futures_contract_v1(
         None, // TBD
         ts_event,
         ts_init,
-    ))
+    )
 }
 
 pub fn decode_futures_spread_v1(
@@ -325,29 +340,17 @@ pub fn decode_futures_spread_v1(
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FuturesSpread> {
-    let currency = parse_currency_or_usd_default(msg.currency());
     let exchange = Ustr::from(msg.exchange()?);
     let underlying = Ustr::from(msg.asset()?);
     let (asset_class, _) = parse_cfi_iso10926(msg.cfi()?)?;
     let strategy_type = Ustr::from(msg.secsubtype()?);
-    let unit_of_measure_qty: f64 = match msg.unit_of_measure_qty {
-        i64::MAX => 1.0,
-        other => other as f64 / FIXED_SCALAR,
-    };
-    let lot_size_round: f64 = match msg.min_lot_size_round_lot {
-        i32::MAX => 1.0,
-        0 => 1.0,
-        other => f64::from(other),
-    };
-
-    let price_precision = if msg.min_price_increment < ONE_CENT_INCREMENT {
-        4
-    } else {
-        currency.precision
-    };
+    let currency = parse_currency_or_usd_default(msg.currency());
+    let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
+    let multiplier = decode_multiplier(msg.unit_of_measure_qty);
+    let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
 
-    Ok(FuturesSpread::new(
+    FuturesSpread::new_checked(
         instrument_id,
         instrument_id.symbol,
         asset_class.unwrap_or(AssetClass::Commodity),
@@ -357,10 +360,10 @@ pub fn decode_futures_spread_v1(
         msg.activation.into(),
         msg.expiration.into(),
         currency,
-        price_precision,
-        decode_price(msg.min_price_increment, price_precision)?,
-        Quantity::new(unit_of_measure_qty, 0),
-        Quantity::new(lot_size_round, 0),
+        price_increment.precision,
+        price_increment,
+        multiplier,
+        lot_size,
         None, // TBD
         None, // TBD
         None, // TBD
@@ -369,7 +372,7 @@ pub fn decode_futures_spread_v1(
         None, // TBD
         ts_event,
         ts_init,
-    ))
+    )
 }
 
 pub fn decode_options_contract_v1(
@@ -387,32 +390,28 @@ pub fn decode_options_contract_v1(
         let (asset_class, _) = parse_cfi_iso10926(msg.cfi()?)?;
         asset_class
     };
-    let unit_of_measure_qty: f64 = match msg.unit_of_measure_qty {
-        i64::MAX => 1.0,
-        other => other as f64 / FIXED_SCALAR,
-    };
-    let lot_size_round: f64 = match msg.min_lot_size_round_lot {
-        i32::MAX => 1.0,
-        0 => 1.0,
-        other => f64::from(other),
-    };
+    let option_kind = parse_option_kind(msg.instrument_class)?;
+    let strike_price = Price::from_raw(msg.strike_price, strike_price_currency.precision);
+    let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
+    let multiplier = decode_multiplier(msg.unit_of_measure_qty);
+    let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
 
-    Ok(OptionsContract::new(
+    OptionsContract::new_checked(
         instrument_id,
         instrument_id.symbol,
         asset_class_opt.unwrap_or(AssetClass::Commodity),
         Some(exchange),
         underlying,
-        parse_option_kind(msg.instrument_class)?,
-        Price::from_raw(msg.strike_price, strike_price_currency.precision),
+        option_kind,
+        strike_price,
         currency,
         msg.activation.into(),
         msg.expiration.into(),
-        currency.precision,
-        decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(unit_of_measure_qty, 0),
-        Quantity::new(lot_size_round, 0),
+        price_increment.precision,
+        price_increment,
+        multiplier,
+        lot_size,
         None, // TBD
         None, // TBD
         None, // TBD
@@ -421,7 +420,7 @@ pub fn decode_options_contract_v1(
         None,
         ts_event,
         ts_init,
-    ))
+    )
 }
 
 pub fn decode_options_spread_v1(
@@ -439,18 +438,12 @@ pub fn decode_options_spread_v1(
         asset_class
     };
     let strategy_type = Ustr::from(msg.secsubtype()?);
-    let unit_of_measure_qty: f64 = match msg.unit_of_measure_qty {
-        i64::MAX => 1.0,
-        other => other as f64 / FIXED_SCALAR,
-    };
-    let lot_size_round: f64 = match msg.min_lot_size_round_lot {
-        i32::MAX => 1.0,
-        0 => 1.0,
-        other => f64::from(other),
-    };
+    let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
+    let multiplier = decode_multiplier(msg.unit_of_measure_qty);
+    let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
 
-    Ok(OptionsSpread::new(
+    OptionsSpread::new_checked(
         instrument_id,
         instrument_id.symbol,
         asset_class_opt.unwrap_or(AssetClass::Commodity),
@@ -460,10 +453,10 @@ pub fn decode_options_spread_v1(
         msg.activation.into(),
         msg.expiration.into(),
         currency,
-        currency.precision,
-        decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(unit_of_measure_qty, 0),
-        Quantity::new(lot_size_round, 0),
+        price_increment.precision,
+        price_increment,
+        multiplier,
+        lot_size,
         None, // TBD
         None, // TBD
         None, // TBD
@@ -472,7 +465,7 @@ pub fn decode_options_spread_v1(
         None, // TBD
         ts_event,
         ts_init,
-    ))
+    )
 }
 
 #[must_use]
@@ -931,6 +924,8 @@ pub fn decode_equity(
     ts_init: UnixNanos,
 ) -> anyhow::Result<Equity> {
     let currency = parse_currency_or_usd_default(msg.currency());
+    let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
+    let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
 
     Ok(Equity::new(
@@ -938,13 +933,13 @@ pub fn decode_equity(
         instrument_id.symbol,
         None, // No ISIN available yet
         currency,
-        currency.precision,
-        decode_price(msg.min_price_increment, currency.precision)?,
+        price_increment.precision,
+        price_increment,
         None, // TBD
         None, // TBD
         None, // TBD
         None, // TBD
-        Some(Quantity::new(f64::from(msg.min_lot_size_round_lot), 0)),
+        Some(lot_size),
         None, // TBD
         None, // TBD
         None, // TBD
@@ -963,18 +958,12 @@ pub fn decode_futures_contract(
     let exchange = Ustr::from(msg.exchange()?);
     let underlying = Ustr::from(msg.asset()?);
     let (asset_class, _) = parse_cfi_iso10926(msg.cfi()?)?;
-    let unit_of_measure_qty: f64 = match msg.unit_of_measure_qty {
-        i64::MAX => 1.0,
-        other => other as f64 / FIXED_SCALAR,
-    };
-    let lot_size_round: f64 = match msg.min_lot_size_round_lot {
-        i32::MAX => 1.0,
-        0 => 1.0,
-        other => f64::from(other),
-    };
+    let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
+    let multiplier = decode_multiplier(msg.unit_of_measure_qty);
+    let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
 
-    Ok(FuturesContract::new(
+    FuturesContract::new_checked(
         instrument_id,
         instrument_id.symbol,
         asset_class.unwrap_or(AssetClass::Commodity),
@@ -983,10 +972,10 @@ pub fn decode_futures_contract(
         msg.activation.into(),
         msg.expiration.into(),
         currency,
-        currency.precision,
-        decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(unit_of_measure_qty, 0),
-        Quantity::new(lot_size_round, 0),
+        price_increment.precision,
+        price_increment,
+        multiplier,
+        lot_size,
         None, // TBD
         None, // TBD
         None, // TBD
@@ -995,7 +984,7 @@ pub fn decode_futures_contract(
         None, // TBD
         ts_event,
         ts_init,
-    ))
+    )
 }
 
 pub fn decode_futures_spread(
@@ -1003,29 +992,17 @@ pub fn decode_futures_spread(
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<FuturesSpread> {
-    let currency = parse_currency_or_usd_default(msg.currency());
     let exchange = Ustr::from(msg.exchange()?);
     let underlying = Ustr::from(msg.asset()?);
     let (asset_class, _) = parse_cfi_iso10926(msg.cfi()?)?;
     let strategy_type = Ustr::from(msg.secsubtype()?);
-    let unit_of_measure_qty: f64 = match msg.unit_of_measure_qty {
-        i64::MAX => 1.0,
-        other => other as f64 / FIXED_SCALAR,
-    };
-    let lot_size_round: f64 = match msg.min_lot_size_round_lot {
-        i32::MAX => 1.0,
-        0 => 1.0,
-        other => f64::from(other),
-    };
-
-    let price_precision = if msg.min_price_increment < ONE_CENT_INCREMENT {
-        4
-    } else {
-        currency.precision
-    };
+    let currency = parse_currency_or_usd_default(msg.currency());
+    let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
+    let multiplier = decode_multiplier(msg.unit_of_measure_qty);
+    let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
 
-    Ok(FuturesSpread::new(
+    FuturesSpread::new_checked(
         instrument_id,
         instrument_id.symbol,
         asset_class.unwrap_or(AssetClass::Commodity),
@@ -1035,10 +1012,10 @@ pub fn decode_futures_spread(
         msg.activation.into(),
         msg.expiration.into(),
         currency,
-        price_precision,
-        decode_price(msg.min_price_increment, price_precision)?,
-        Quantity::new(unit_of_measure_qty, 0),
-        Quantity::new(lot_size_round, 0),
+        price_increment.precision,
+        price_increment,
+        multiplier,
+        lot_size,
         None, // TBD
         None, // TBD
         None, // TBD
@@ -1047,7 +1024,7 @@ pub fn decode_futures_spread(
         None, // TBD
         ts_event,
         ts_init,
-    ))
+    )
 }
 
 pub fn decode_options_contract(
@@ -1065,32 +1042,28 @@ pub fn decode_options_contract(
         let (asset_class, _) = parse_cfi_iso10926(msg.cfi()?)?;
         asset_class
     };
-    let unit_of_measure_qty: f64 = match msg.unit_of_measure_qty {
-        i64::MAX => 1.0,
-        other => other as f64 / FIXED_SCALAR,
-    };
-    let lot_size_round: f64 = match msg.min_lot_size_round_lot {
-        i32::MAX => 1.0,
-        0 => 1.0,
-        other => f64::from(other),
-    };
+    let option_kind = parse_option_kind(msg.instrument_class)?;
+    let strike_price = Price::from_raw(msg.strike_price, strike_price_currency.precision);
+    let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
+    let multiplier = decode_multiplier(msg.unit_of_measure_qty);
+    let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
 
-    Ok(OptionsContract::new(
+    OptionsContract::new_checked(
         instrument_id,
         instrument_id.symbol,
         asset_class_opt.unwrap_or(AssetClass::Commodity),
         Some(exchange),
         underlying,
-        parse_option_kind(msg.instrument_class)?,
-        Price::from_raw(msg.strike_price, strike_price_currency.precision),
+        option_kind,
+        strike_price,
         currency,
         msg.activation.into(),
         msg.expiration.into(),
-        currency.precision,
-        decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(unit_of_measure_qty, 0),
-        Quantity::new(lot_size_round, 0),
+        price_increment.precision,
+        price_increment,
+        multiplier,
+        lot_size,
         None, // TBD
         None, // TBD
         None, // TBD
@@ -1099,7 +1072,7 @@ pub fn decode_options_contract(
         None, // TBD
         ts_event,
         ts_init,
-    ))
+    )
 }
 
 pub fn decode_options_spread(
@@ -1107,7 +1080,6 @@ pub fn decode_options_spread(
     instrument_id: InstrumentId,
     ts_init: UnixNanos,
 ) -> anyhow::Result<OptionsSpread> {
-    let currency = parse_currency_or_usd_default(msg.currency());
     let exchange = Ustr::from(msg.exchange()?);
     let underlying = Ustr::from(msg.underlying()?);
     let asset_class_opt = if instrument_id.venue.as_str() == "OPRA" {
@@ -1117,18 +1089,13 @@ pub fn decode_options_spread(
         asset_class
     };
     let strategy_type = Ustr::from(msg.secsubtype()?);
-    let unit_of_measure_qty: f64 = match msg.unit_of_measure_qty {
-        i64::MAX => 1.0,
-        other => other as f64 / FIXED_SCALAR,
-    };
-    let lot_size_round: f64 = match msg.min_lot_size_round_lot {
-        i32::MAX => 1.0,
-        0 => 1.0,
-        other => f64::from(other),
-    };
+    let currency = parse_currency_or_usd_default(msg.currency());
+    let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
+    let multiplier = decode_multiplier(msg.unit_of_measure_qty);
+    let lot_size = decode_lot_size(msg.min_lot_size_round_lot);
     let ts_event = UnixNanos::from(msg.ts_recv); // More accurate and reliable timestamp
 
-    Ok(OptionsSpread::new(
+    OptionsSpread::new_checked(
         instrument_id,
         instrument_id.symbol,
         asset_class_opt.unwrap_or(AssetClass::Commodity),
@@ -1138,10 +1105,10 @@ pub fn decode_options_spread(
         msg.activation.into(),
         msg.expiration.into(),
         currency,
-        currency.precision,
-        decode_price(msg.min_price_increment, currency.precision)?,
-        Quantity::new(unit_of_measure_qty, 0),
-        Quantity::new(lot_size_round, 0),
+        price_increment.precision,
+        price_increment,
+        multiplier,
+        lot_size,
         None, // TBD
         None, // TBD
         None, // TBD
@@ -1150,7 +1117,7 @@ pub fn decode_options_spread(
         None, // TBD
         ts_event,
         ts_init,
-    ))
+    )
 }
 
 pub fn decode_imbalance_msg(
@@ -1189,8 +1156,8 @@ pub fn decode_statistics_msg(
         instrument_id,
         stat_type,
         update_action,
-        decode_optional_price(msg.price, price_precision)?,
-        decode_optional_quantity(msg.quantity)?,
+        decode_optional_price(msg.price, price_precision),
+        decode_optional_quantity(msg.quantity),
         msg.channel_id,
         msg.stat_flags,
         msg.sequence,
@@ -1304,7 +1271,7 @@ mod tests {
     #[case(i64::MAX, 2, Price::new(0.01, 2))] // Default for i64::MAX
     #[case(1000000, 2, Price::from_raw(1000000, 2))] // Arbitrary valid price
     fn test_decode_price(#[case] value: i64, #[case] precision: u8, #[case] expected: Price) {
-        let actual = decode_price(value, precision).unwrap();
+        let actual = decode_price_increment(value, precision);
         assert_eq!(actual, expected);
     }
 
@@ -1317,7 +1284,7 @@ mod tests {
         #[case] precision: u8,
         #[case] expected: Option<Price>,
     ) {
-        let actual = decode_optional_price(value, precision).unwrap();
+        let actual = decode_optional_price(value, precision);
         assert_eq!(actual, expected);
     }
 
@@ -1326,7 +1293,7 @@ mod tests {
     #[case(0, Some(Quantity::new(0.0, 0)))] // 0 is valid quantity
     #[case(10, Some(Quantity::new(10.0, 0)))] // Arbitrary valid quantity
     fn test_decode_optional_quantity(#[case] value: i32, #[case] expected: Option<Quantity>) {
-        let actual = decode_optional_quantity(value).unwrap();
+        let actual = decode_optional_quantity(value);
         assert_eq!(actual, expected);
     }
 

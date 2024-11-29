@@ -32,6 +32,8 @@ Released on TBD (UTC).
 - Fixed missing venue -> exchange mappings for Tardis integration
 - Fixed account balance and order status parsing for dYdX (#2067), thanks @davidsblom
 - Fixed parsing best effort opened order status for dYdX (#2068), thanks @davidsblom
+- Fixed occasionally incorrect `price_precision`, `multiplier` and `lot_size` decoding for Databento instruments
+- Fixed missing Arrow schemas for instrument deserialization
 - Reconcile order book for dYdX when inconsistent (#2077), thanks @davidsblom
 
 ---
