@@ -24,7 +24,7 @@ members = [
 
 [workspace.package]
 rust-version = "1.83.0"
-version = "0.37.0"
+version = "0.38.0"
 edition = "2021"
 authors = ["Nautech Systems <info@nautechsystems.io>"]
 description = "A high-performance algorithmic trading platform and event-driven backtester"
@@ -65,7 +65,7 @@ thousands = "0.2.0"
 toml = "0.8.19"
 tracing = "0.1.41"
 # Disable default feature "tracing-log" since it interferes with custom logging
-tracing-subscriber = { version = "0.3.18", default-features = false, features = ["smallvec", "fmt", "ansi", "std", "env-filter"] }
+tracing-subscriber = { version = "0.3.19", default-features = false, features = ["smallvec", "fmt", "ansi", "std", "env-filter"] }
 tokio = { version = "1.41.1", features = ["full"] }
 tokio-tungstenite = { version = "0.24.0", features = ["rustls-tls-native-roots"] }
 ustr = { version = "1.1.0", features = ["serde"] }
