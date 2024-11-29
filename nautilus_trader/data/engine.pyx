@@ -1304,13 +1304,13 @@ cdef class DataEngine(Component):
         if client is not None:
             Condition.is_true(isinstance(client, MarketDataClient), "client was not a MarketDataClient")
 
-        metadata = request.data_type.metadata
-        aggregated_bars_market_data_type = metadata.get("market_data_type", "")
-        update_catalog = metadata.get("update_catalog", False)
+        cdef dict[str, object] metadata = request.data_type.metadata
+        cdef str aggregated_bars_market_data_type = metadata.get("market_data_type", "")
+        cdef bint update_catalog = metadata.get("update_catalog", False)
 
-        now = self._clock.utc_now()
-        start = time_object_to_dt(metadata.get("start"))
-        end = time_object_to_dt(metadata.get("end"))
+        cdef datetime now = self._clock.utc_now()
+        cdef datetime start = time_object_to_dt(metadata.get("start"))  # Can be None
+        cdef datetime end = time_object_to_dt(metadata.get("end"))  # Can be None
 
         if request.data_type.type == Instrument:
             instrument_id = request.data_type.metadata.get("instrument_id")
@@ -1378,9 +1378,10 @@ cdef class DataEngine(Component):
                 instrument_id,
             )
 
-            if last_timestamp and now <= last_timestamp or end and end <= last_timestamp:
-                self._query_catalog(request)
-                return
+            if last_timestamp:
+                if (now <= last_timestamp) or (end and end <= last_timestamp):
+                    self._query_catalog(request)
+                    return
 
             if client is None:
                 self._log.error(
@@ -1409,9 +1410,10 @@ cdef class DataEngine(Component):
                 instrument_id,
             )
 
-            if last_timestamp and now <= last_timestamp or end and end <= last_timestamp:
-                self._query_catalog(request)
-                return
+            if last_timestamp:
+                if (now <= last_timestamp) or (end and end <= last_timestamp):
+                    self._query_catalog(request)
+                    return
 
             if client is None:
                 self._log.error(
@@ -1440,9 +1442,10 @@ cdef class DataEngine(Component):
                 bar_type=bar_type,
             )
 
-            if last_timestamp and now <= last_timestamp or end and end <= last_timestamp:
-                self._query_catalog(request)
-                return
+            if last_timestamp:
+                if (now <= last_timestamp) or (end and end <= last_timestamp):
+                    self._query_catalog(request)
+                    return
 
             if client is None:
                 self._log.error(
@@ -1468,9 +1471,10 @@ cdef class DataEngine(Component):
                 request.data_type.type,
             )
 
-            if last_timestamp and now <= last_timestamp or end and end <= last_timestamp:
-                self._query_catalog(request)
-                return
+            if last_timestamp:
+                if (now <= last_timestamp) or (end and end <= last_timestamp):
+                    self._query_catalog(request)
+                    return
 
             if client is None:
                 self._log.error(

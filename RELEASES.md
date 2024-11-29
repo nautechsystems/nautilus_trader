@@ -1,3 +1,21 @@
+# NautilusTrader 1.208.0 Beta
+
+Released on TBD (UTC).
+
+### Enhancements
+None
+
+### Internal Improvements
+None
+
+### Breaking Changes
+None
+
+### Fixes
+- Fixed data requests when specifying `end` with no catalog registered (comparison between `pd.Timestamp` and `NoneType`)
+
+---
+
 # NautilusTrader 1.207.0 Beta
 
 Released on 29th November 2024 (UTC).
