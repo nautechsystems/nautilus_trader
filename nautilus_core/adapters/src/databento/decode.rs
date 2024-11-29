@@ -224,6 +224,7 @@ pub fn parse_status_trading_event(value: u16) -> anyhow::Result<Option<Ustr>> {
 }
 
 /// Decodes a minimum price increment from the given value, expressed in units of 1e-9.
+#[must_use]
 pub fn decode_price_increment(value: i64, precision: u8) -> Price {
     match value {
         0 | i64::MAX => Price::new(10f64.powi(-i32::from(precision)), precision),
@@ -232,6 +233,7 @@ pub fn decode_price_increment(value: i64, precision: u8) -> Price {
 }
 
 /// Decodes a price from the given optional value, expressed in units of 1e-9.
+#[must_use]
 pub fn decode_optional_price(value: i64, precision: u8) -> Option<Price> {
     match value {
         i64::MAX => None,
@@ -240,6 +242,7 @@ pub fn decode_optional_price(value: i64, precision: u8) -> Option<Price> {
 }
 
 /// Decodes a quantity from the given optional value, expressed in standard whole-number units.
+#[must_use]
 pub fn decode_optional_quantity(value: i32) -> Option<Quantity> {
     match value {
         i32::MAX => None,
@@ -248,6 +251,7 @@ pub fn decode_optional_quantity(value: i32) -> Option<Quantity> {
 }
 
 /// Decodes a multiplier from the given value, expressed in units of 1e-9.
+#[must_use]
 pub fn decode_multiplier(value: i64) -> Quantity {
     match value {
         0 | i64::MAX => Quantity::from(1),
@@ -259,10 +263,11 @@ pub fn decode_multiplier(value: i64) -> Quantity {
 }
 
 /// Decodes a lot size from the given value, expressed in standard whole-number units.
+#[must_use]
 pub fn decode_lot_size(value: i32) -> Quantity {
     match value {
         0 | i32::MAX => Quantity::from(1),
-        value => Quantity::from(value as i64),
+        value => Quantity::from(i64::from(value)),
     }
 }
 
