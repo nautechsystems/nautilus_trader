@@ -276,7 +276,7 @@ cpdef object as_utc_index(data: pd.DataFrame):
     return data
 
 
-cpdef time_object_to_dt(time_object):
+cpdef datetime time_object_to_dt(time_object):
     """
     Return the datetime (UTC) from the given UNIX timestamp as integer (nanoseconds), string or pd.Timestamp.
     Returns None if the input is None.
