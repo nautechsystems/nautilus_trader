@@ -860,14 +860,14 @@ def test_load_statistics() -> None:
 def test_load_instruments_pyo3_large() -> None:
     # Arrange
     loader = DatabentoDataLoader()
-    path = DATABENTO_TEST_DATA_DIR / "temp" / "glbx-mdp3-20240101.definition.dbn.zst"
+    path = DATABENTO_TEST_DATA_DIR / "temp" / "glbx-mdp3-20241020.definition.dbn.zst"
 
     # Act
     instruments = loader.from_dbn_file(path, as_legacy_cython=False)
 
     # Assert
-    expected_id = nautilus_pyo3.InstrumentId.from_str("A8IU5-A8IV5.XNYM")
-    assert len(instruments) == 586_156
+    expected_id = nautilus_pyo3.InstrumentId.from_str("CBJ5 P2100.GLBX")
+    assert len(instruments) == 601_633
     assert instruments[0].id == expected_id
 
 
