@@ -16,7 +16,10 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use arrow::{
-    array::{Int64Array, StringArray, StringBuilder, StringViewArray, UInt64Array, UInt8Array},
+    array::{
+        FixedSizeBinaryArray, FixedSizeBinaryBuilder, Int64Array, StringArray, StringBuilder,
+        StringViewArray, UInt64Array, UInt8Array,
+    },
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
     record_batch::RecordBatch,
@@ -25,7 +28,7 @@ use nautilus_model::{
     data::trade::TradeTick,
     enums::AggressorSide,
     identifiers::{InstrumentId, TradeId},
-    types::{price::Price, quantity::Quantity},
+    types::{price::Price, price::PriceRaw, quantity::Quantity},
 };
 
 use super::{
@@ -36,14 +39,20 @@ use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRec
 
 impl ArrowSchemaProvider for TradeTick {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
-        let fields = vec![
-            Field::new("price", DataType::Int64, false),
+        let mut fields = Vec::with_capacity(6);
+
+        #[cfg(not(feature = "high_precision"))]
+        fields.push(Field::new("price", DataType::Int64, false));
+        #[cfg(feature = "high_precision")]
+        fields.push(Field::new("price", DataType::FixedSizeBinary(16), false));
+
+        fields.extend(vec![
             Field::new("size", DataType::UInt64, false),
             Field::new("aggressor_side", DataType::UInt8, false),
             Field::new("trade_id", DataType::Utf8, false),
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
-        ];
+        ]);
 
         match metadata {
             Some(metadata) => Schema::new_with_metadata(fields, metadata),
@@ -81,7 +90,11 @@ impl EncodeToRecordBatch for TradeTick {
         metadata: &HashMap<String, String>,
         data: &[Self],
     ) -> Result<RecordBatch, ArrowError> {
+        #[cfg(not(feature = "high_precision"))]
         let mut price_builder = Int64Array::builder(data.len());
+        #[cfg(feature = "high_precision")]
+        let mut price_builder = FixedSizeBinaryBuilder::with_capacity(data.len(), 16);
+
         let mut size_builder = UInt64Array::builder(data.len());
         let mut aggressor_side_builder = UInt8Array::builder(data.len());
         let mut trade_id_builder = StringBuilder::new();
@@ -89,7 +102,13 @@ impl EncodeToRecordBatch for TradeTick {
         let mut ts_init_builder = UInt64Array::builder(data.len());
 
         for tick in data {
+            #[cfg(not(feature = "high_precision"))]
             price_builder.append_value(tick.price.raw);
+            #[cfg(feature = "high_precision")]
+            price_builder
+                .append_value(tick.price.raw.to_le_bytes())
+                .unwrap();
+
             size_builder.append_value(tick.size.raw);
             aggressor_side_builder.append_value(tick.aggressor_side as u8);
             trade_id_builder.append_value(tick.trade_id.to_string());
@@ -97,22 +116,22 @@ impl EncodeToRecordBatch for TradeTick {
             ts_init_builder.append_value(tick.ts_init.as_u64());
         }
 
-        let price_array = price_builder.finish();
-        let size_array = size_builder.finish();
-        let aggressor_side_array = aggressor_side_builder.finish();
-        let trade_id_array = trade_id_builder.finish();
-        let ts_event_array = ts_event_builder.finish();
-        let ts_init_array = ts_init_builder.finish();
+        let price_array = Arc::new(price_builder.finish());
+        let size_array = Arc::new(size_builder.finish());
+        let aggressor_side_array = Arc::new(aggressor_side_builder.finish());
+        let trade_id_array = Arc::new(trade_id_builder.finish());
+        let ts_event_array = Arc::new(ts_event_builder.finish());
+        let ts_init_array = Arc::new(ts_init_builder.finish());
 
         RecordBatch::try_new(
             Self::get_schema(Some(metadata.clone())).into(),
             vec![
-                Arc::new(price_array),
-                Arc::new(size_array),
-                Arc::new(aggressor_side_array),
-                Arc::new(trade_id_array),
-                Arc::new(ts_event_array),
-                Arc::new(ts_init_array),
+                price_array,
+                size_array,
+                aggressor_side_array,
+                trade_id_array,
+                ts_event_array,
+                ts_init_array,
             ],
         )
     }
@@ -126,7 +145,16 @@ impl DecodeFromRecordBatch for TradeTick {
         let (instrument_id, price_precision, size_precision) = parse_metadata(metadata)?;
         let cols = record_batch.columns();
 
+        #[cfg(not(feature = "high_precision"))]
         let price_values = extract_column::<Int64Array>(cols, "price", 0, DataType::Int64)?;
+        #[cfg(feature = "high_precision")]
+        let price_values = extract_column::<FixedSizeBinaryArray>(
+            cols,
+            "price",
+            0,
+            DataType::FixedSizeBinary(16),
+        )?;
+
         let size_values = extract_column::<UInt64Array>(cols, "size", 1, DataType::UInt64)?;
         let aggressor_side_values =
             extract_column::<UInt8Array>(cols, "aggressor_side", 2, DataType::UInt8)?;
@@ -153,7 +181,14 @@ impl DecodeFromRecordBatch for TradeTick {
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|i| {
+                #[cfg(not(feature = "high_precision"))]
                 let price = Price::from_raw(price_values.value(i), price_precision);
+                #[cfg(feature = "high_precision")]
+                let price = Price::from_raw(
+                    PriceRaw::from_le_bytes(price_values.value(i).try_into().unwrap()),
+                    price_precision,
+                );
+
                 let size = Quantity::from_raw(size_values.value(i), size_precision);
                 let aggressor_side_value = aggressor_side_values.value(i);
                 let aggressor_side = AggressorSide::from_repr(aggressor_side_value as usize)
@@ -201,7 +236,7 @@ mod tests {
     use std::sync::Arc;
 
     use arrow::{
-        array::{Array, Int64Array, UInt64Array, UInt8Array},
+        array::{Array, FixedSizeBinaryArray, Int64Array, UInt64Array, UInt8Array},
         record_batch::RecordBatch,
     };
     use rstest::rstest;
@@ -213,14 +248,22 @@ mod tests {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
         let schema = TradeTick::get_schema(Some(metadata.clone()));
-        let expected_fields = vec![
-            Field::new("price", DataType::Int64, false),
+
+        let mut expected_fields = Vec::with_capacity(6);
+
+        #[cfg(not(feature = "high_precision"))]
+        expected_fields.push(Field::new("price", DataType::Int64, false));
+        #[cfg(feature = "high_precision")]
+        expected_fields.push(Field::new("price", DataType::FixedSizeBinary(16), false));
+
+        expected_fields.extend(vec![
             Field::new("size", DataType::UInt64, false),
             Field::new("aggressor_side", DataType::UInt8, false),
             Field::new("trade_id", DataType::Utf8, false),
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
-        ];
+        ]);
+
         let expected_schema = Schema::new_with_metadata(expected_fields, metadata);
         assert_eq!(schema, expected_schema);
     }
@@ -229,7 +272,12 @@ mod tests {
     fn test_get_schema_map() {
         let schema_map = TradeTick::get_schema_map();
         let mut expected_map = HashMap::new();
+
+        #[cfg(not(feature = "high_precision"))]
         expected_map.insert("price".to_string(), "Int64".to_string());
+        #[cfg(feature = "high_precision")]
+        expected_map.insert("price".to_string(), "FixedSizeBinary(16)".to_string());
+
         expected_map.insert("size".to_string(), "UInt64".to_string());
         expected_map.insert("aggressor_side".to_string(), "UInt8".to_string());
         expected_map.insert("trade_id".to_string(), "Utf8".to_string());
@@ -240,7 +288,6 @@ mod tests {
 
     #[rstest]
     fn test_encode_trade_tick() {
-        // Create test data
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
 
@@ -266,10 +313,31 @@ mod tests {
 
         let data = vec![tick1, tick2];
         let record_batch = TradeTick::encode_batch(&metadata, &data).unwrap();
-
-        // Verify the encoded data
         let columns = record_batch.columns();
-        let price_values = columns[0].as_any().downcast_ref::<Int64Array>().unwrap();
+
+        #[cfg(not(feature = "high_precision"))]
+        {
+            let price_values = columns[0].as_any().downcast_ref::<Int64Array>().unwrap();
+            assert_eq!(price_values.value(0), 100_100_000_000);
+            assert_eq!(price_values.value(1), 100_500_000_000);
+        }
+
+        #[cfg(feature = "high_precision")]
+        {
+            let price_values = columns[0]
+                .as_any()
+                .downcast_ref::<FixedSizeBinaryArray>()
+                .unwrap();
+            assert_eq!(
+                PriceRaw::from_le_bytes(price_values.value(0).try_into().unwrap()),
+                100_100_000_000
+            );
+            assert_eq!(
+                PriceRaw::from_le_bytes(price_values.value(1).try_into().unwrap()),
+                100_500_000_000
+            );
+        }
+
         let size_values = columns[1].as_any().downcast_ref::<UInt64Array>().unwrap();
         let aggressor_side_values = columns[2].as_any().downcast_ref::<UInt8Array>().unwrap();
         let trade_id_values = columns[3].as_any().downcast_ref::<StringArray>().unwrap();
@@ -277,9 +345,6 @@ mod tests {
         let ts_init_values = columns[5].as_any().downcast_ref::<UInt64Array>().unwrap();
 
         assert_eq!(columns.len(), 6);
-        assert_eq!(price_values.len(), 2);
-        assert_eq!(price_values.value(0), 100_100_000_000);
-        assert_eq!(price_values.value(1), 100_500_000_000);
         assert_eq!(size_values.len(), 2);
         assert_eq!(size_values.value(0), 1_000_000_000_000);
         assert_eq!(size_values.value(1), 500_000_000_000);
@@ -302,7 +367,14 @@ mod tests {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
 
+        #[cfg(not(feature = "high_precision"))]
         let price = Int64Array::from(vec![1_000_000_000_000, 1_010_000_000_000]);
+        #[cfg(feature = "high_precision")]
+        let price = FixedSizeBinaryArray::from(vec![
+            &(1_000_000_000_000 as PriceRaw).to_le_bytes(),
+            &(1_010_000_000_000 as PriceRaw).to_le_bytes(),
+        ]);
+
         let size = UInt64Array::from(vec![1000, 900]);
         let aggressor_side = UInt8Array::from(vec![0, 1]); // 0 for BUY, 1 for SELL
         let trade_id = StringArray::from(vec!["1", "2"]);
@@ -324,5 +396,7 @@ mod tests {
 
         let decoded_data = TradeTick::decode_batch(&metadata, record_batch).unwrap();
         assert_eq!(decoded_data.len(), 2);
+        assert_eq!(decoded_data[0].price, Price::from_raw(1_000_000_000_000, 2));
+        assert_eq!(decoded_data[1].price, Price::from_raw(1_010_000_000_000, 2));
     }
 }

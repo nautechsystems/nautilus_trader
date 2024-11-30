@@ -16,7 +16,10 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use arrow::{
-    array::{Array, Int64Array, UInt32Array, UInt64Array, UInt8Array},
+    array::{
+        Array, FixedSizeBinaryArray, FixedSizeBinaryBuilder, Int64Array, UInt32Array, UInt64Array,
+        UInt8Array,
+    },
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
     record_batch::RecordBatch,
@@ -28,7 +31,7 @@ use nautilus_model::{
     },
     enums::OrderSide,
     identifiers::InstrumentId,
-    types::{price::Price, quantity::Quantity},
+    types::{price::Price, price::PriceRaw, quantity::Quantity},
 };
 
 use super::{
@@ -39,72 +42,68 @@ use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRec
 
 impl ArrowSchemaProvider for OrderBookDepth10 {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
-        let fields = vec![
-            Field::new("bid_price_0", DataType::Int64, false),
-            Field::new("bid_price_1", DataType::Int64, false),
-            Field::new("bid_price_2", DataType::Int64, false),
-            Field::new("bid_price_3", DataType::Int64, false),
-            Field::new("bid_price_4", DataType::Int64, false),
-            Field::new("bid_price_5", DataType::Int64, false),
-            Field::new("bid_price_6", DataType::Int64, false),
-            Field::new("bid_price_7", DataType::Int64, false),
-            Field::new("bid_price_8", DataType::Int64, false),
-            Field::new("bid_price_9", DataType::Int64, false),
-            Field::new("ask_price_0", DataType::Int64, false),
-            Field::new("ask_price_1", DataType::Int64, false),
-            Field::new("ask_price_2", DataType::Int64, false),
-            Field::new("ask_price_3", DataType::Int64, false),
-            Field::new("ask_price_4", DataType::Int64, false),
-            Field::new("ask_price_5", DataType::Int64, false),
-            Field::new("ask_price_6", DataType::Int64, false),
-            Field::new("ask_price_7", DataType::Int64, false),
-            Field::new("ask_price_8", DataType::Int64, false),
-            Field::new("ask_price_9", DataType::Int64, false),
-            Field::new("bid_size_0", DataType::UInt64, false),
-            Field::new("bid_size_1", DataType::UInt64, false),
-            Field::new("bid_size_2", DataType::UInt64, false),
-            Field::new("bid_size_3", DataType::UInt64, false),
-            Field::new("bid_size_4", DataType::UInt64, false),
-            Field::new("bid_size_5", DataType::UInt64, false),
-            Field::new("bid_size_6", DataType::UInt64, false),
-            Field::new("bid_size_7", DataType::UInt64, false),
-            Field::new("bid_size_8", DataType::UInt64, false),
-            Field::new("bid_size_9", DataType::UInt64, false),
-            Field::new("ask_size_0", DataType::UInt64, false),
-            Field::new("ask_size_1", DataType::UInt64, false),
-            Field::new("ask_size_2", DataType::UInt64, false),
-            Field::new("ask_size_3", DataType::UInt64, false),
-            Field::new("ask_size_4", DataType::UInt64, false),
-            Field::new("ask_size_5", DataType::UInt64, false),
-            Field::new("ask_size_6", DataType::UInt64, false),
-            Field::new("ask_size_7", DataType::UInt64, false),
-            Field::new("ask_size_8", DataType::UInt64, false),
-            Field::new("ask_size_9", DataType::UInt64, false),
-            Field::new("bid_count_0", DataType::UInt32, false),
-            Field::new("bid_count_1", DataType::UInt32, false),
-            Field::new("bid_count_2", DataType::UInt32, false),
-            Field::new("bid_count_3", DataType::UInt32, false),
-            Field::new("bid_count_4", DataType::UInt32, false),
-            Field::new("bid_count_5", DataType::UInt32, false),
-            Field::new("bid_count_6", DataType::UInt32, false),
-            Field::new("bid_count_7", DataType::UInt32, false),
-            Field::new("bid_count_8", DataType::UInt32, false),
-            Field::new("bid_count_9", DataType::UInt32, false),
-            Field::new("ask_count_0", DataType::UInt32, false),
-            Field::new("ask_count_1", DataType::UInt32, false),
-            Field::new("ask_count_2", DataType::UInt32, false),
-            Field::new("ask_count_3", DataType::UInt32, false),
-            Field::new("ask_count_4", DataType::UInt32, false),
-            Field::new("ask_count_5", DataType::UInt32, false),
-            Field::new("ask_count_6", DataType::UInt32, false),
-            Field::new("ask_count_7", DataType::UInt32, false),
-            Field::new("ask_count_8", DataType::UInt32, false),
-            Field::new("ask_count_9", DataType::UInt32, false),
+        let mut fields = Vec::with_capacity(DEPTH10_LEN * 6 + 4);
+
+        // Add price fields with appropriate type based on precision
+        for i in 0..DEPTH10_LEN {
+            #[cfg(not(feature = "high_precision"))]
+            {
+                fields.push(Field::new(
+                    &format!("bid_price_{i}"),
+                    DataType::Int64,
+                    false,
+                ));
+                fields.push(Field::new(
+                    &format!("ask_price_{i}"),
+                    DataType::Int64,
+                    false,
+                ));
+            }
+            #[cfg(feature = "high_precision")]
+            {
+                fields.push(Field::new(
+                    &format!("bid_price_{i}"),
+                    DataType::FixedSizeBinary(16),
+                    false,
+                ));
+                fields.push(Field::new(
+                    &format!("ask_price_{i}"),
+                    DataType::FixedSizeBinary(16),
+                    false,
+                ));
+            }
+        }
+
+        // Add remaining fields (unchanged)
+        for i in 0..DEPTH10_LEN {
+            fields.push(Field::new(
+                &format!("bid_size_{i}"),
+                DataType::UInt64,
+                false,
+            ));
+            fields.push(Field::new(
+                &format!("ask_size_{i}"),
+                DataType::UInt64,
+                false,
+            ));
+            fields.push(Field::new(
+                &format!("bid_count_{i}"),
+                DataType::UInt32,
+                false,
+            ));
+            fields.push(Field::new(
+                &format!("ask_count_{i}"),
+                DataType::UInt32,
+                false,
+            ));
+        }
+
+        fields.extend_from_slice(&[
             Field::new("flags", DataType::UInt8, false),
             Field::new("sequence", DataType::UInt64, false),
             Field::new("ts_event", DataType::UInt64, false),
             Field::new("ts_init", DataType::UInt64, false),
-        ];
+        ]);
 
         match metadata {
             Some(metadata) => Schema::new_with_metadata(fields, metadata),
@@ -150,8 +149,16 @@ impl EncodeToRecordBatch for OrderBookDepth10 {
         let mut ask_count_builders = Vec::with_capacity(DEPTH10_LEN);
 
         for _ in 0..DEPTH10_LEN {
-            bid_price_builders.push(Int64Array::builder(data.len()));
-            ask_price_builders.push(Int64Array::builder(data.len()));
+            #[cfg(not(feature = "high_precision"))]
+            {
+                bid_price_builders.push(Int64Array::builder(data.len()));
+                ask_price_builders.push(Int64Array::builder(data.len()));
+            }
+            #[cfg(feature = "high_precision")]
+            {
+                bid_price_builders.push(FixedSizeBinaryBuilder::with_capacity(data.len(), 16));
+                ask_price_builders.push(FixedSizeBinaryBuilder::with_capacity(data.len(), 16));
+            }
             bid_size_builders.push(UInt64Array::builder(data.len()));
             ask_size_builders.push(UInt64Array::builder(data.len()));
             bid_count_builders.push(UInt32Array::builder(data.len()));
@@ -165,8 +172,20 @@ impl EncodeToRecordBatch for OrderBookDepth10 {
 
         for depth in data {
             for i in 0..DEPTH10_LEN {
-                bid_price_builders[i].append_value(depth.bids[i].price.raw);
-                ask_price_builders[i].append_value(depth.asks[i].price.raw);
+                #[cfg(not(feature = "high_precision"))]
+                {
+                    bid_price_builders[i].append_value(depth.bids[i].price.raw);
+                    ask_price_builders[i].append_value(depth.asks[i].price.raw);
+                }
+                #[cfg(feature = "high_precision")]
+                {
+                    bid_price_builders[i]
+                        .append_value(depth.bids[i].price.raw.to_le_bytes())
+                        .unwrap();
+                    ask_price_builders[i]
+                        .append_value(depth.asks[i].price.raw.to_le_bytes())
+                        .unwrap();
+                }
                 bid_size_builders[i].append_value(depth.bids[i].size.raw);
                 ask_size_builders[i].append_value(depth.asks[i].size.raw);
                 bid_count_builders[i].append_value(depth.bid_counts[i]);
@@ -230,86 +249,9 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Result<Vec<Self>, EncodingError> {
+        todo!();
         let (instrument_id, price_precision, size_precision) = parse_metadata(metadata)?;
         let cols = record_batch.columns();
-
-        let bid_price_col_names = [
-            "bid_price_0",
-            "bid_price_1",
-            "bid_price_2",
-            "bid_price_3",
-            "bid_price_4",
-            "bid_price_5",
-            "bid_price_6",
-            "bid_price_7",
-            "bid_price_8",
-            "bid_price_9",
-        ];
-
-        let ask_price_col_names = [
-            "ask_price_0",
-            "ask_price_1",
-            "ask_price_2",
-            "ask_price_3",
-            "ask_price_4",
-            "ask_price_5",
-            "ask_price_6",
-            "ask_price_7",
-            "ask_price_8",
-            "ask_price_9",
-        ];
-
-        let bid_size_col_names = [
-            "bid_size_0",
-            "bid_size_1",
-            "bid_size_2",
-            "bid_size_3",
-            "bid_size_4",
-            "bid_size_5",
-            "bid_size_6",
-            "bid_size_7",
-            "bid_size_8",
-            "bid_size_9",
-        ];
-
-        let ask_size_col_names = [
-            "ask_size_0",
-            "ask_size_1",
-            "ask_size_2",
-            "ask_size_3",
-            "ask_size_4",
-            "ask_size_5",
-            "ask_size_6",
-            "ask_size_7",
-            "ask_size_8",
-            "ask_size_9",
-        ];
-
-        let bid_count_col_names = [
-            "bid_count_0",
-            "bid_count_1",
-            "bid_count_2",
-            "bid_count_3",
-            "bid_count_4",
-            "bid_count_5",
-            "bid_count_6",
-            "bid_count_7",
-            "bid_count_8",
-            "bid_count_9",
-        ];
-
-        let ask_count_col_names = [
-            "ask_count_0",
-            "ask_count_1",
-            "ask_count_2",
-            "ask_count_3",
-            "ask_count_4",
-            "ask_count_5",
-            "ask_count_6",
-            "ask_count_7",
-            "ask_count_8",
-            "ask_count_9",
-        ];
 
         let mut bid_prices = Vec::with_capacity(DEPTH10_LEN);
         let mut ask_prices = Vec::with_capacity(DEPTH10_LEN);
@@ -319,42 +261,76 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
         let mut ask_counts = Vec::with_capacity(DEPTH10_LEN);
 
         for i in 0..DEPTH10_LEN {
-            bid_prices.push(extract_column::<Int64Array>(
-                cols,
-                bid_price_col_names[i],
-                i,
-                DataType::Int64,
-            )?);
-            ask_prices.push(extract_column::<Int64Array>(
-                cols,
-                ask_price_col_names[i],
-                DEPTH10_LEN + i,
-                DataType::Int64,
-            )?);
+            #[cfg(not(feature = "high_precision"))]
+            {
+                bid_prices.push(extract_column::<Int64Array>(
+                    cols,
+                    &format!("bid_price_{i}"),
+                    i,
+                    DataType::Int64,
+                )?);
+                ask_prices.push(extract_column::<Int64Array>(
+                    cols,
+                    &format!("ask_price_{i}"),
+                    DEPTH10_LEN + i,
+                    DataType::Int64,
+                )?);
+            }
+            #[cfg(feature = "high_precision")]
+            {
+                bid_prices.push(extract_column::<FixedSizeBinaryArray>(
+                    cols,
+                    &format!("bid_price_{i}"),
+                    i,
+                    DataType::FixedSizeBinary(16),
+                )?);
+                ask_prices.push(extract_column::<FixedSizeBinaryArray>(
+                    cols,
+                    &format!("ask_price_{i}"),
+                    DEPTH10_LEN + i,
+                    DataType::FixedSizeBinary(16),
+                )?);
+            }
             bid_sizes.push(extract_column::<UInt64Array>(
                 cols,
-                bid_size_col_names[i],
+                &format!("bid_size_{i}"),
                 2 * DEPTH10_LEN + i,
                 DataType::UInt64,
             )?);
             ask_sizes.push(extract_column::<UInt64Array>(
                 cols,
-                ask_size_col_names[i],
+                &format!("ask_size_{i}"),
                 3 * DEPTH10_LEN + i,
                 DataType::UInt64,
             )?);
             bid_counts.push(extract_column::<UInt32Array>(
                 cols,
-                bid_count_col_names[i],
+                &format!("bid_count_{i}").to_string(),
                 4 * DEPTH10_LEN + i,
                 DataType::UInt32,
             )?);
             ask_counts.push(extract_column::<UInt32Array>(
                 cols,
-                ask_count_col_names[i],
+                &format!("ask_count_{i}"),
                 5 * DEPTH10_LEN + i,
                 DataType::UInt32,
             )?);
+        }
+
+        #[cfg(feature = "high_precision")]
+        {
+            for i in 0..DEPTH10_LEN {
+                assert_eq!(
+                    bid_prices[i].value_length(),
+                    16,
+                    "High precision uses 128 bit/16 byte value"
+                );
+                assert_eq!(
+                    ask_prices[i].value_length(),
+                    16,
+                    "High precision uses 128 bit/16 byte value"
+                );
+            }
         }
 
         let flags = extract_column::<UInt8Array>(cols, "flags", 6 * DEPTH10_LEN, DataType::UInt8)?;
@@ -367,28 +343,55 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
 
         // Map record batch rows to vector of OrderBookDepth10
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
-            .map(|i| {
+            .map(|row| {
                 let mut bids = [BookOrder::default(); DEPTH10_LEN];
                 let mut asks = [BookOrder::default(); DEPTH10_LEN];
                 let mut bid_count_arr = [0u32; DEPTH10_LEN];
                 let mut ask_count_arr = [0u32; DEPTH10_LEN];
 
-                for j in 0..DEPTH10_LEN {
-                    bids[j] = BookOrder::new(
-                        OrderSide::Buy,
-                        Price::from_raw(bid_prices[j].value(i), price_precision),
-                        Quantity::from_raw(bid_sizes[j].value(i), size_precision),
-                        0, // Order ID always zero
-                    );
-
-                    asks[j] = BookOrder::new(
-                        OrderSide::Sell,
-                        Price::from_raw(ask_prices[j].value(i), price_precision),
-                        Quantity::from_raw(ask_sizes[j].value(i), size_precision),
-                        0, // Order ID always zero
-                    );
-                    bid_count_arr[j] = bid_counts[j].value(i);
-                    ask_count_arr[j] = ask_counts[j].value(i);
+                for i in 0..DEPTH10_LEN {
+                    #[cfg(not(feature = "high_precision"))]
+                    {
+                        bids[i] = BookOrder::new(
+                            OrderSide::Buy,
+                            Price::from_raw(bid_prices[i].value(row), price_precision),
+                            Quantity::from_raw(bid_sizes[i].value(row), size_precision),
+                            0,
+                        );
+                        asks[i] = BookOrder::new(
+                            OrderSide::Sell,
+                            Price::from_raw(ask_prices[i].value(row), price_precision),
+                            Quantity::from_raw(ask_sizes[i].value(row), size_precision),
+                            0,
+                        );
+                    }
+                    #[cfg(feature = "high_precision")]
+                    {
+                        bids[i] = BookOrder::new(
+                            OrderSide::Buy,
+                            Price::from_raw(
+                                PriceRaw::from_le_bytes(
+                                    bid_prices[i].value(row).try_into().unwrap(),
+                                ),
+                                price_precision,
+                            ),
+                            Quantity::from_raw(bid_sizes[i].value(row), size_precision),
+                            0,
+                        );
+                        asks[i] = BookOrder::new(
+                            OrderSide::Sell,
+                            Price::from_raw(
+                                PriceRaw::from_le_bytes(
+                                    ask_prices[i].value(row).try_into().unwrap(),
+                                ),
+                                price_precision,
+                            ),
+                            Quantity::from_raw(ask_sizes[i].value(row), size_precision),
+                            0,
+                        );
+                    }
+                    bid_count_arr[i] = bid_counts[i].value(row);
+                    ask_count_arr[i] = ask_counts[i].value(row);
                 }
 
                 Ok(Self {
@@ -397,10 +400,10 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
                     asks,
                     bid_counts: bid_count_arr,
                     ask_counts: ask_count_arr,
-                    flags: flags.value(i),
-                    sequence: sequence.value(i),
-                    ts_event: ts_event.value(i).into(),
-                    ts_init: ts_init.value(i).into(),
+                    flags: flags.value(row),
+                    sequence: sequence.value(row),
+                    ts_event: ts_event.value(row).into(),
+                    ts_init: ts_init.value(row).into(),
                 })
             })
             .collect();
@@ -437,26 +440,26 @@ mod tests {
         let metadata = OrderBookDepth10::get_metadata(&instrument_id, 2, 0);
         let schema = OrderBookDepth10::get_schema(Some(metadata.clone()));
         let expected_fields = vec![
-            Field::new("bid_price_0", DataType::Int64, false),
-            Field::new("bid_price_1", DataType::Int64, false),
-            Field::new("bid_price_2", DataType::Int64, false),
-            Field::new("bid_price_3", DataType::Int64, false),
-            Field::new("bid_price_4", DataType::Int64, false),
-            Field::new("bid_price_5", DataType::Int64, false),
-            Field::new("bid_price_6", DataType::Int64, false),
-            Field::new("bid_price_7", DataType::Int64, false),
-            Field::new("bid_price_8", DataType::Int64, false),
-            Field::new("bid_price_9", DataType::Int64, false),
-            Field::new("ask_price_0", DataType::Int64, false),
-            Field::new("ask_price_1", DataType::Int64, false),
-            Field::new("ask_price_2", DataType::Int64, false),
-            Field::new("ask_price_3", DataType::Int64, false),
-            Field::new("ask_price_4", DataType::Int64, false),
-            Field::new("ask_price_5", DataType::Int64, false),
-            Field::new("ask_price_6", DataType::Int64, false),
-            Field::new("ask_price_7", DataType::Int64, false),
-            Field::new("ask_price_8", DataType::Int64, false),
-            Field::new("ask_price_9", DataType::Int64, false),
+            Field::new("bid_price_0", DataType::FixedSizeBinary(16), false),
+            Field::new("bid_price_1", DataType::FixedSizeBinary(16), false),
+            Field::new("bid_price_2", DataType::FixedSizeBinary(16), false),
+            Field::new("bid_price_3", DataType::FixedSizeBinary(16), false),
+            Field::new("bid_price_4", DataType::FixedSizeBinary(16), false),
+            Field::new("bid_price_5", DataType::FixedSizeBinary(16), false),
+            Field::new("bid_price_6", DataType::FixedSizeBinary(16), false),
+            Field::new("bid_price_7", DataType::FixedSizeBinary(16), false),
+            Field::new("bid_price_8", DataType::FixedSizeBinary(16), false),
+            Field::new("bid_price_9", DataType::FixedSizeBinary(16), false),
+            Field::new("ask_price_0", DataType::FixedSizeBinary(16), false),
+            Field::new("ask_price_1", DataType::FixedSizeBinary(16), false),
+            Field::new("ask_price_2", DataType::FixedSizeBinary(16), false),
+            Field::new("ask_price_3", DataType::FixedSizeBinary(16), false),
+            Field::new("ask_price_4", DataType::FixedSizeBinary(16), false),
+            Field::new("ask_price_5", DataType::FixedSizeBinary(16), false),
+            Field::new("ask_price_6", DataType::FixedSizeBinary(16), false),
+            Field::new("ask_price_7", DataType::FixedSizeBinary(16), false),
+            Field::new("ask_price_8", DataType::FixedSizeBinary(16), false),
+            Field::new("ask_price_9", DataType::FixedSizeBinary(16), false),
             Field::new("bid_size_0", DataType::UInt64, false),
             Field::new("bid_size_1", DataType::UInt64, false),
             Field::new("bid_size_2", DataType::UInt64, false),
@@ -513,26 +516,52 @@ mod tests {
     fn test_get_schema_map() {
         let schema_map = OrderBookDepth10::get_schema_map();
         let mut expected_map = HashMap::new();
-        expected_map.insert("bid_price_0".to_string(), "Int64".to_string());
-        expected_map.insert("bid_price_1".to_string(), "Int64".to_string());
-        expected_map.insert("bid_price_2".to_string(), "Int64".to_string());
-        expected_map.insert("bid_price_3".to_string(), "Int64".to_string());
-        expected_map.insert("bid_price_4".to_string(), "Int64".to_string());
-        expected_map.insert("bid_price_5".to_string(), "Int64".to_string());
-        expected_map.insert("bid_price_6".to_string(), "Int64".to_string());
-        expected_map.insert("bid_price_7".to_string(), "Int64".to_string());
-        expected_map.insert("bid_price_8".to_string(), "Int64".to_string());
-        expected_map.insert("bid_price_9".to_string(), "Int64".to_string());
-        expected_map.insert("ask_price_0".to_string(), "Int64".to_string());
-        expected_map.insert("ask_price_1".to_string(), "Int64".to_string());
-        expected_map.insert("ask_price_2".to_string(), "Int64".to_string());
-        expected_map.insert("ask_price_3".to_string(), "Int64".to_string());
-        expected_map.insert("ask_price_4".to_string(), "Int64".to_string());
-        expected_map.insert("ask_price_5".to_string(), "Int64".to_string());
-        expected_map.insert("ask_price_6".to_string(), "Int64".to_string());
-        expected_map.insert("ask_price_7".to_string(), "Int64".to_string());
-        expected_map.insert("ask_price_8".to_string(), "Int64".to_string());
-        expected_map.insert("ask_price_9".to_string(), "Int64".to_string());
+        #[cfg(not(feature = "high_precision"))]
+        {
+            expected_map.insert("bid_price_0".to_string(), "Int64".to_string());
+            expected_map.insert("bid_price_1".to_string(), "Int64".to_string());
+            expected_map.insert("bid_price_2".to_string(), "Int64".to_string());
+            expected_map.insert("bid_price_3".to_string(), "Int64".to_string());
+            expected_map.insert("bid_price_4".to_string(), "Int64".to_string());
+            expected_map.insert("bid_price_5".to_string(), "Int64".to_string());
+            expected_map.insert("bid_price_6".to_string(), "Int64".to_string());
+            expected_map.insert("bid_price_7".to_string(), "Int64".to_string());
+            expected_map.insert("bid_price_8".to_string(), "Int64".to_string());
+            expected_map.insert("bid_price_9".to_string(), "Int64".to_string());
+            expected_map.insert("ask_price_0".to_string(), "Int64".to_string());
+            expected_map.insert("ask_price_1".to_string(), "Int64".to_string());
+            expected_map.insert("ask_price_2".to_string(), "Int64".to_string());
+            expected_map.insert("ask_price_3".to_string(), "Int64".to_string());
+            expected_map.insert("ask_price_4".to_string(), "Int64".to_string());
+            expected_map.insert("ask_price_5".to_string(), "Int64".to_string());
+            expected_map.insert("ask_price_6".to_string(), "Int64".to_string());
+            expected_map.insert("ask_price_7".to_string(), "Int64".to_string());
+            expected_map.insert("ask_price_8".to_string(), "Int64".to_string());
+            expected_map.insert("ask_price_9".to_string(), "Int64".to_string());
+        }
+        #[cfg(feature = "high_precision")]
+        {
+            expected_map.insert("bid_price_0".to_string(), "FixedSizeBinary(16)".to_string());
+            expected_map.insert("bid_price_1".to_string(), "FixedSizeBinary(16)".to_string());
+            expected_map.insert("bid_price_2".to_string(), "FixedSizeBinary(16)".to_string());
+            expected_map.insert("bid_price_3".to_string(), "FixedSizeBinary(16)".to_string());
+            expected_map.insert("bid_price_4".to_string(), "FixedSizeBinary(16)".to_string());
+            expected_map.insert("bid_price_5".to_string(), "FixedSizeBinary(16)".to_string());
+            expected_map.insert("bid_price_6".to_string(), "FixedSizeBinary(16)".to_string());
+            expected_map.insert("bid_price_7".to_string(), "FixedSizeBinary(16)".to_string());
+            expected_map.insert("bid_price_8".to_string(), "FixedSizeBinary(16)".to_string());
+            expected_map.insert("bid_price_9".to_string(), "FixedSizeBinary(16)".to_string());
+            expected_map.insert("ask_price_0".to_string(), "FixedSizeBinary(16)".to_string());
+            expected_map.insert("ask_price_1".to_string(), "FixedSizeBinary(16)".to_string());
+            expected_map.insert("ask_price_2".to_string(), "FixedSizeBinary(16)".to_string());
+            expected_map.insert("ask_price_3".to_string(), "FixedSizeBinary(16)".to_string());
+            expected_map.insert("ask_price_4".to_string(), "FixedSizeBinary(16)".to_string());
+            expected_map.insert("ask_price_5".to_string(), "FixedSizeBinary(16)".to_string());
+            expected_map.insert("ask_price_6".to_string(), "FixedSizeBinary(16)".to_string());
+            expected_map.insert("ask_price_7".to_string(), "FixedSizeBinary(16)".to_string());
+            expected_map.insert("ask_price_8".to_string(), "FixedSizeBinary(16)".to_string());
+            expected_map.insert("ask_price_9".to_string(), "FixedSizeBinary(16)".to_string());
+        }
         expected_map.insert("bid_size_0".to_string(), "UInt64".to_string());
         expected_map.insert("bid_size_1".to_string(), "UInt64".to_string());
         expected_map.insert("bid_size_2".to_string(), "UInt64".to_string());
