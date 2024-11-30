@@ -62,7 +62,6 @@ pub const ERROR_PRICE: Price = Price {
 #[cfg(not(feature = "high_precision"))]
 pub type PriceRaw = i64;
 #[cfg(feature = "high_precision")]
-#[allow(improper_ctypes_definitions)]
 pub type PriceRaw = i128;
 
 #[cfg(not(feature = "high_precision"))]

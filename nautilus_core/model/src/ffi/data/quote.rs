@@ -31,6 +31,7 @@ use crate::{
 };
 
 #[no_mangle]
+#[cfg_attr(feature = "high_precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn quote_tick_new(
     instrument_id: InstrumentId,
     bid_price_raw: PriceRaw,

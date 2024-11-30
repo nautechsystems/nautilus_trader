@@ -118,6 +118,46 @@ impl EncodeToRecordBatch for QuoteTick {
 }
 
 impl DecodeFromRecordBatch for QuoteTick {
+    #[cfg(not(feature = "high_precision"))]
+    fn decode_batch(
+        metadata: &HashMap<String, String>,
+        record_batch: RecordBatch,
+    ) -> Result<Vec<Self>, EncodingError> {
+        let (instrument_id, price_precision, size_precision) = parse_metadata(metadata)?;
+        let cols = record_batch.columns();
+
+        let bid_price_values = extract_column::<Int64Array>(cols, "bid_price", 0, DataType::Int64)?;
+        let ask_price_values = extract_column::<Int64Array>(cols, "ask_price", 1, DataType::Int64)?;
+        let bid_size_values = extract_column::<UInt64Array>(cols, "bid_size", 2, DataType::UInt64)?;
+        let ask_size_values = extract_column::<UInt64Array>(cols, "ask_size", 3, DataType::UInt64)?;
+        let ts_event_values = extract_column::<UInt64Array>(cols, "ts_event", 4, DataType::UInt64)?;
+        let ts_init_values = extract_column::<UInt64Array>(cols, "ts_init", 5, DataType::UInt64)?;
+
+        let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
+            .map(|i| {
+                let bid_price = Price::from_raw(bid_price_values.value(i), price_precision);
+                let ask_price = Price::from_raw(ask_price_values.value(i), price_precision);
+                let bid_size = Quantity::from_raw(bid_size_values.value(i), size_precision);
+                let ask_size = Quantity::from_raw(ask_size_values.value(i), size_precision);
+                let ts_event = ts_event_values.value(i).into();
+                let ts_init = ts_init_values.value(i).into();
+
+                Ok(Self {
+                    instrument_id,
+                    bid_price,
+                    ask_price,
+                    bid_size,
+                    ask_size,
+                    ts_event,
+                    ts_init,
+                })
+            })
+            .collect();
+
+        result
+    }
+
+    #[cfg(feature = "high_precision")]
     fn decode_batch(
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,

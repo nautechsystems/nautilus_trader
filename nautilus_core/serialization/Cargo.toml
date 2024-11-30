@@ -24,10 +24,11 @@ criterion = { workspace = true }
 rstest = { workspace = true }
 
 [features]
-default = ["python"]
+default = ["python", "high_precision"]
 extension-module = [
   "pyo3/extension-module",
   "nautilus-core/extension-module",
   "nautilus-model/extension-module",
 ]
 python = ["pyo3", "nautilus-core/python", "nautilus-model/python"]
+high_precision = ["nautilus-model/high_precision"]

@@ -222,6 +222,7 @@ pub extern "C" fn bar_type_to_cstr(bar_type: &BarType) -> *const c_char {
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high_precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn bar_new(
     bar_type: BarType,
     open: Price,
@@ -245,6 +246,7 @@ pub extern "C" fn bar_new(
 }
 
 #[no_mangle]
+#[cfg_attr(feature = "high_precision", allow(improper_ctypes_definitions))]
 pub extern "C" fn bar_new_from_raw(
     bar_type: BarType,
     open: PriceRaw,
