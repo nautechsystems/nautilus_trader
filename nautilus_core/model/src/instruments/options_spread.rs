@@ -29,7 +29,7 @@ use super::{any::InstrumentAny, Instrument};
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{currency::Currency, money::Money, price::{check_positive_price, Price}, quantity::Quantity},
 };
 
 /// Represents a generic options spread instrument.
@@ -105,7 +105,7 @@ impl OptionsSpread {
             stringify!(price_precision),
             stringify!(price_increment.precision),
         )?;
-        check_positive_i64(price_increment.raw, stringify!(price_increment.raw))?;
+        check_positive_price(price_increment.raw, stringify!(price_increment.raw))?;
         Ok(Self {
             id,
             raw_symbol,

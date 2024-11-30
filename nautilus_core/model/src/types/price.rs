@@ -23,6 +23,10 @@ use std::{
     str::FromStr,
 };
 
+#[cfg(feature = "high_precision")]
+use nautilus_core::correctness::check_positive_i128;
+#[cfg(not(feature = "high_precision"))]
+use nautilus_core::correctness::check_positive_i64;
 use nautilus_core::{
     correctness::{check_in_range_inclusive_f64, FAILED},
     parsing::precision_from_str,
@@ -58,7 +62,18 @@ pub const ERROR_PRICE: Price = Price {
 #[cfg(not(feature = "high_precision"))]
 pub type PriceRaw = i64;
 #[cfg(feature = "high_precision")]
+#[allow(improper_ctypes_definitions)]
 pub type PriceRaw = i128;
+
+#[cfg(not(feature = "high_precision"))]
+pub fn check_positive_price(value: PriceRaw, param: &str) -> anyhow::Result<()> {
+    check_positive_i64(value, param)
+}
+
+#[cfg(feature = "high_precision")]
+pub fn check_positive_price(value: PriceRaw, param: &str) -> anyhow::Result<()> {
+    check_positive_i128(value, param)
+}
 
 /// Represents a price in a market.
 ///

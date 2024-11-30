@@ -27,7 +27,7 @@ use super::{any::InstrumentAny, Instrument};
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
-    types::{currency::Currency, money::Money, price::Price, quantity::Quantity},
+    types::{currency::Currency, money::Money, price::{check_positive_price, Price}, quantity::Quantity},
 };
 
 /// Represents a generic currency pair instrument in a spot/cash market.
@@ -104,7 +104,7 @@ impl CurrencyPair {
             stringify!(size_precision),
             stringify!(size_increment.precision),
         )?;
-        check_positive_i64(price_increment.raw, stringify!(price_increment.raw))?;
+        check_positive_price(price_increment.raw, stringify!(price_increment.raw))?;
         check_positive_u64(size_increment.raw, stringify!(size_increment.raw))?;
 
         Ok(Self {

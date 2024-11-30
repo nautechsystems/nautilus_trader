@@ -25,13 +25,13 @@ use crate::{
     data::trade::TradeTick,
     enums::AggressorSide,
     identifiers::{InstrumentId, TradeId},
-    types::{price::Price, quantity::Quantity},
+    types::{price::{Price, PriceRaw}, quantity::Quantity},
 };
 
 #[no_mangle]
 pub extern "C" fn trade_tick_new(
     instrument_id: InstrumentId,
-    price_raw: i64,
+    price_raw: PriceRaw,
     price_prec: u8,
     size_raw: u64,
     size_prec: u8,

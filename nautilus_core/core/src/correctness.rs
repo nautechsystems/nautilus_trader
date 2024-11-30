@@ -163,6 +163,14 @@ pub fn check_positive_i64(value: i64, param: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Checks the `i64` value is positive (> 0).
+pub fn check_positive_i128(value: i128, param: &str) -> anyhow::Result<()> {
+    if value <= 0 {
+        anyhow::bail!("invalid i64 for '{param}' not positive, was {value}")
+    }
+    Ok(())
+}
+
 /// Checks the `f64` value is non-negative (< 0).
 pub fn check_non_negative_f64(value: f64, param: &str) -> anyhow::Result<()> {
     if value.is_nan() || value.is_infinite() {

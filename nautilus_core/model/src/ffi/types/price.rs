@@ -15,7 +15,7 @@
 
 use std::ops::{AddAssign, SubAssign};
 
-use crate::types::price::Price;
+use crate::types::price::{Price, PriceRaw};
 
 // TODO: Document panic
 #[no_mangle]
@@ -25,7 +25,7 @@ pub extern "C" fn price_new(value: f64, precision: u8) -> Price {
 }
 
 #[no_mangle]
-pub extern "C" fn price_from_raw(raw: i64, precision: u8) -> Price {
+pub extern "C" fn price_from_raw(raw: PriceRaw, precision: u8) -> Price {
     Price::from_raw(raw, precision)
 }
 
