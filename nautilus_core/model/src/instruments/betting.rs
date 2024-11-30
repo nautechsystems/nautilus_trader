@@ -27,7 +27,12 @@ use super::{any::InstrumentAny, Instrument};
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
-    types::{currency::Currency, money::Money, price::{check_positive_price, Price}, quantity::Quantity},
+    types::{
+        currency::Currency,
+        money::Money,
+        price::{check_positive_price, Price},
+        quantity::Quantity,
+    },
 };
 
 /// Represents a generic sports betting instrument.

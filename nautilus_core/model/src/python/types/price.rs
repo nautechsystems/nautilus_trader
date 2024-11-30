@@ -29,7 +29,7 @@ use pyo3::{
 use rust_decimal::{Decimal, RoundingStrategy};
 
 use crate::types::{
-    fixed::{fixed_i128_to_f64, fixed_i64_to_f64},
+    fixed::fixed_i128_to_f64,
     price::{Price, PriceRaw},
 };
 

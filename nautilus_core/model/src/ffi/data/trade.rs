@@ -25,7 +25,10 @@ use crate::{
     data::trade::TradeTick,
     enums::AggressorSide,
     identifiers::{InstrumentId, TradeId},
-    types::{price::{Price, PriceRaw}, quantity::Quantity},
+    types::{
+        price::{Price, PriceRaw},
+        quantity::Quantity,
+    },
 };
 
 #[no_mangle]

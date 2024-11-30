@@ -16,9 +16,7 @@
 use std::hash::{Hash, Hasher};
 
 use nautilus_core::{
-    correctness::{
-        check_equal_u8, check_positive_i64, check_valid_string, check_valid_string_optional, FAILED,
-    },
+    correctness::{check_equal_u8, check_valid_string, check_valid_string_optional, FAILED},
     nanos::UnixNanos,
 };
 use rust_decimal::Decimal;
@@ -29,7 +27,12 @@ use super::{any::InstrumentAny, Instrument};
 use crate::{
     enums::{AssetClass, InstrumentClass, OptionKind},
     identifiers::{InstrumentId, Symbol},
-    types::{currency::Currency, money::Money, price::{check_positive_price, Price}, quantity::Quantity},
+    types::{
+        currency::Currency,
+        money::Money,
+        price::{check_positive_price, Price},
+        quantity::Quantity,
+    },
 };
 
 /// Represents a generic deliverable futures contract instrument.
