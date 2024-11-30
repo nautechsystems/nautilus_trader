@@ -790,7 +790,7 @@ class DYDXExecutionClient(LiveExecutionClient):
                 f"Failed to parse subaccounts channel data: {raw.decode()} with error {e}",
             )
 
-    def _handle_order_message(  # noqa: C901
+    def _handle_order_message(
         self,
         order_msg: DYDXWsOrderSubaccountMessageContents,
     ) -> None:
@@ -842,7 +842,7 @@ class DYDXExecutionClient(LiveExecutionClient):
                 venue_order_id=report.venue_order_id,
                 ts_event=report.ts_last,
             )
-        elif order_msg.status == DYDXOrderStatus.CANCELED:
+        elif order_msg.status in (DYDXOrderStatus.BEST_EFFORT_CANCELED, DYDXOrderStatus.CANCELED):
             if order.status != OrderStatus.CANCELED:
                 self.generate_order_canceled(
                     strategy_id=strategy_id,
@@ -851,20 +851,6 @@ class DYDXExecutionClient(LiveExecutionClient):
                     venue_order_id=report.venue_order_id,
                     ts_event=report.ts_last,
                 )
-        elif order_msg.status in (
-            DYDXOrderStatus.UNTRIGGERED,
-            DYDXOrderStatus.BEST_EFFORT_CANCELED,
-        ):
-            self.generate_order_updated(
-                strategy_id=strategy_id,
-                instrument_id=report.instrument_id,
-                client_order_id=report.client_order_id,
-                venue_order_id=report.venue_order_id,
-                quantity=report.quantity,
-                price=report.price,
-                trigger_price=report.trigger_price,
-                ts_event=report.ts_last,
-            )
         elif order_msg.status == DYDXOrderStatus.FILLED:
             # Skip order filled message. The _handle_fill_message generates
             # a fill report.
