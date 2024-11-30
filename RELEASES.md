@@ -13,6 +13,7 @@ None
 
 ### Fixes
 - Fixed data requests when specifying `end` with no catalog registered (comparison between `pd.Timestamp` and `NoneType`)
+- Fixed `BEST_EFFORT_CANCELED` order status report for dYdX (#2082), thanks @davidsblom
 
 ---
 
