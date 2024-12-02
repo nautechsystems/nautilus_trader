@@ -249,7 +249,6 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Result<Vec<Self>, EncodingError> {
-        todo!();
         let (instrument_id, price_precision, size_precision) = parse_metadata(metadata)?;
         let cols = record_batch.columns();
 
@@ -260,61 +259,75 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
         let mut bid_counts = Vec::with_capacity(DEPTH10_LEN);
         let mut ask_counts = Vec::with_capacity(DEPTH10_LEN);
 
+        macro_rules! extract_depth_column {
+            ($array:ty, $name:literal, $i:expr, $offset:expr, $type:expr) => {
+                extract_column::<$array>(cols, concat!($name, "_", stringify!($i)), $offset, $type)?
+            };
+        }
+
         for i in 0..DEPTH10_LEN {
             #[cfg(not(feature = "high_precision"))]
             {
-                bid_prices.push(extract_column::<Int64Array>(
-                    cols,
-                    &format!("bid_price_{i}"),
+                bid_prices.push(extract_depth_column!(
+                    Int64Array,
+                    "bid_price",
                     i,
-                    DataType::Int64,
-                )?);
-                ask_prices.push(extract_column::<Int64Array>(
-                    cols,
-                    &format!("ask_price_{i}"),
+                    i,
+                    DataType::Int64
+                ));
+                ask_prices.push(extract_depth_column!(
+                    Int64Array,
+                    "ask_price",
+                    i,
                     DEPTH10_LEN + i,
-                    DataType::Int64,
-                )?);
+                    DataType::Int64
+                ));
             }
             #[cfg(feature = "high_precision")]
             {
-                bid_prices.push(extract_column::<FixedSizeBinaryArray>(
-                    cols,
-                    &format!("bid_price_{i}"),
+                bid_prices.push(extract_depth_column!(
+                    FixedSizeBinaryArray,
+                    "bid_price",
                     i,
-                    DataType::FixedSizeBinary(16),
-                )?);
-                ask_prices.push(extract_column::<FixedSizeBinaryArray>(
-                    cols,
-                    &format!("ask_price_{i}"),
+                    i,
+                    DataType::FixedSizeBinary(16)
+                ));
+                ask_prices.push(extract_depth_column!(
+                    FixedSizeBinaryArray,
+                    "ask_price",
+                    i,
                     DEPTH10_LEN + i,
-                    DataType::FixedSizeBinary(16),
-                )?);
+                    DataType::FixedSizeBinary(16)
+                ));
             }
-            bid_sizes.push(extract_column::<UInt64Array>(
-                cols,
-                &format!("bid_size_{i}"),
+            bid_sizes.push(extract_depth_column!(
+                UInt64Array,
+                "bid_size",
+                i,
                 2 * DEPTH10_LEN + i,
-                DataType::UInt64,
-            )?);
-            ask_sizes.push(extract_column::<UInt64Array>(
-                cols,
-                &format!("ask_size_{i}"),
+                DataType::UInt64
+            ));
+            ask_sizes.push(extract_depth_column!(
+                UInt64Array,
+                "ask_size",
+                i,
                 3 * DEPTH10_LEN + i,
-                DataType::UInt64,
-            )?);
-            bid_counts.push(extract_column::<UInt32Array>(
-                cols,
-                &format!("bid_count_{i}").to_string(),
+                DataType::UInt64
+            ));
+            bid_counts.push(extract_depth_column!(
+                UInt32Array,
+                "bid_count",
+                i,
                 4 * DEPTH10_LEN + i,
-                DataType::UInt32,
-            )?);
-            ask_counts.push(extract_column::<UInt32Array>(
-                cols,
-                &format!("ask_count_{i}"),
+                DataType::UInt32
+            ));
+            ask_counts.push(extract_depth_column!(
+                UInt32Array,
+                "ask_count",
+                i,
                 5 * DEPTH10_LEN + i,
-                DataType::UInt32,
-            )?);
+                DataType::UInt32
+            ));
         }
 
         #[cfg(feature = "high_precision")]
