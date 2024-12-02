@@ -295,6 +295,8 @@ class DYDXExecutionClient(LiveExecutionClient):
         )
         await self._ws_client.subscribe_block_height()
 
+        self._block_height = await self._grpc_account.latest_block_height()
+
         account = await self._grpc_account.get_account(address=self._wallet_address)
         self._wallet = Wallet(
             mnemonic=self._mnemonic,
