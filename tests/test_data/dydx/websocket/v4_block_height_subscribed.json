@@ -1,0 +1,11 @@
+{
+    "type": "subscribed",
+    "connection_id": "6f79ea7c-48ce-44b6-b5ee-e14414a5ae0b",
+    "message_id": 2,
+    "channel": "v4_block_height",
+    "id": "v4_block_height",
+    "contents": {
+      "height": "26543048",
+      "time": "2024-12-02T18:45:31.771Z"
+    }
+  }
