@@ -209,10 +209,7 @@ impl DecodeFromRecordBatch for OrderBookDelta {
                 #[cfg(not(feature = "high_precision"))]
                 let price = Price::from_raw(price_values.value(i), price_precision);
                 #[cfg(feature = "high_precision")]
-                let price = Price::from_raw(
-                    get_raw_price(price_values.value(i).try_into().unwrap()),
-                    price_precision,
-                );
+                let price = Price::from_raw(get_raw_price(price_values.value(i)), price_precision);
 
                 let size = Quantity::from_raw(size_values.value(i), size_precision);
                 let order_id = order_id_values.value(i);
@@ -302,21 +299,18 @@ mod tests {
     #[rstest]
     fn test_get_schema_map() {
         let schema_map = OrderBookDelta::get_schema_map();
-        let mut expected_map = HashMap::new();
-        expected_map.insert("action".to_string(), "UInt8".to_string());
-        expected_map.insert("side".to_string(), "UInt8".to_string());
+        assert_eq!(schema_map.get("action").unwrap(), "UInt8");
+        assert_eq!(schema_map.get("side").unwrap(), "UInt8");
         #[cfg(not(feature = "high_precision"))]
-        expected_map.insert("price".to_string(), "Int64".to_string());
+        assert_eq!(schema_map.get("price").unwrap(), "Int64");
         #[cfg(feature = "high_precision")]
-        expected_map.insert("price".to_string(), "FixedSizedBinary(16)".to_string());
-
-        expected_map.insert("size".to_string(), "UInt64".to_string());
-        expected_map.insert("order_id".to_string(), "UInt64".to_string());
-        expected_map.insert("flags".to_string(), "UInt8".to_string());
-        expected_map.insert("sequence".to_string(), "UInt64".to_string());
-        expected_map.insert("ts_event".to_string(), "UInt64".to_string());
-        expected_map.insert("ts_init".to_string(), "UInt64".to_string());
-        assert_eq!(schema_map, expected_map);
+        assert_eq!(schema_map.get("price").unwrap(), "FixedSizeBinary(16)");
+        assert_eq!(schema_map.get("size").unwrap(), "UInt64");
+        assert_eq!(schema_map.get("order_id").unwrap(), "UInt64");
+        assert_eq!(schema_map.get("flags").unwrap(), "UInt8");
+        assert_eq!(schema_map.get("sequence").unwrap(), "UInt64");
+        assert_eq!(schema_map.get("ts_event").unwrap(), "UInt64");
+        assert_eq!(schema_map.get("ts_init").unwrap(), "UInt64");
     }
 
     #[rstest]
@@ -396,11 +390,11 @@ mod tests {
             use nautilus_model::types::price::PriceRaw;
             assert_eq!(price_values.len(), 2);
             assert_eq!(
-                get_raw_price(price_values.value(0).try_into().unwrap()),
+                get_raw_price(price_values.value(0)),
                 (100.10 * FIXED_HIGH_PRECISION_SCALAR) as PriceRaw
             );
             assert_eq!(
-                get_raw_price(price_values.value(1).try_into().unwrap()),
+                get_raw_price(price_values.value(1)),
                 (101.20 * FIXED_HIGH_PRECISION_SCALAR) as PriceRaw
             );
         }

@@ -220,14 +220,8 @@ impl DecodeFromRecordBatch for QuoteTick {
 
                 #[cfg(feature = "high_precision")]
                 let (bid_price, ask_price) = (
-                    Price::from_raw(
-                        get_raw_price(bid_price_values.value(row).try_into().unwrap()),
-                        price_precision,
-                    ),
-                    Price::from_raw(
-                        get_raw_price(ask_price_values.value(row).try_into().unwrap()),
-                        price_precision,
-                    ),
+                    Price::from_raw(get_raw_price(bid_price_values.value(row)), price_precision),
+                    Price::from_raw(get_raw_price(ask_price_values.value(row)), price_precision),
                 );
 
                 Ok(Self {
@@ -384,19 +378,19 @@ mod tests {
                 .downcast_ref::<FixedSizeBinaryArray>()
                 .unwrap();
             assert_eq!(
-                get_raw_price(bid_price_values.value(0).try_into().unwrap()),
+                get_raw_price(bid_price_values.value(0)),
                 (100.10 * FIXED_HIGH_PRECISION_SCALAR) as i128
             );
             assert_eq!(
-                get_raw_price(bid_price_values.value(1).try_into().unwrap()),
+                get_raw_price(bid_price_values.value(1)),
                 (100.75 * FIXED_HIGH_PRECISION_SCALAR) as i128
             );
             assert_eq!(
-                get_raw_price(ask_price_values.value(0).try_into().unwrap()),
+                get_raw_price(ask_price_values.value(0)),
                 (101.50 * FIXED_HIGH_PRECISION_SCALAR) as i128
             );
             assert_eq!(
-                get_raw_price(ask_price_values.value(1).try_into().unwrap()),
+                get_raw_price(ask_price_values.value(1)),
                 (100.20 * FIXED_HIGH_PRECISION_SCALAR) as i128
             );
         }

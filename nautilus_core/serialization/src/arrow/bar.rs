@@ -282,22 +282,10 @@ impl DecodeFromRecordBatch for Bar {
 
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|i| {
-                let open = Price::from_raw(
-                    get_raw_price(open_values.value(i).try_into().unwrap()),
-                    price_precision,
-                );
-                let high = Price::from_raw(
-                    get_raw_price(high_values.value(i).try_into().unwrap()),
-                    price_precision,
-                );
-                let low = Price::from_raw(
-                    get_raw_price(low_values.value(i).try_into().unwrap()),
-                    price_precision,
-                );
-                let close = Price::from_raw(
-                    get_raw_price(close_values.value(i).try_into().unwrap()),
-                    price_precision,
-                );
+                let open = Price::from_raw(get_raw_price(open_values.value(i)), price_precision);
+                let high = Price::from_raw(get_raw_price(high_values.value(i)), price_precision);
+                let low = Price::from_raw(get_raw_price(low_values.value(i)), price_precision);
+                let close = Price::from_raw(get_raw_price(close_values.value(i)), price_precision);
                 let volume = Quantity::from_raw(volume_values.value(i), size_precision);
                 let ts_event = ts_event_values.value(i).into();
                 let ts_init = ts_init_values.value(i).into();
@@ -525,38 +513,38 @@ mod tests {
         assert_eq!(columns.len(), 7);
         assert_eq!(open_values.len(), 2);
         assert_eq!(
-            get_raw_price(open_values.value(0).try_into().unwrap()),
+            get_raw_price(open_values.value(0)),
             (100.10 * FIXED_HIGH_PRECISION_SCALAR) as i128
         );
         assert_eq!(
-            get_raw_price(open_values.value(1).try_into().unwrap()),
+            get_raw_price(open_values.value(1)),
             (100.00 * FIXED_HIGH_PRECISION_SCALAR) as i128
         );
         assert_eq!(high_values.len(), 2);
         assert_eq!(
-            get_raw_price(high_values.value(0).try_into().unwrap()),
+            get_raw_price(high_values.value(0)),
             (102.00 * FIXED_HIGH_PRECISION_SCALAR) as i128
         );
         assert_eq!(
-            get_raw_price(high_values.value(1).try_into().unwrap()),
+            get_raw_price(high_values.value(1)),
             (100.00 * FIXED_HIGH_PRECISION_SCALAR) as i128
         );
         assert_eq!(low_values.len(), 2);
         assert_eq!(
-            get_raw_price(low_values.value(0).try_into().unwrap()),
+            get_raw_price(low_values.value(0)),
             (100.00 * FIXED_HIGH_PRECISION_SCALAR) as i128
         );
         assert_eq!(
-            get_raw_price(low_values.value(1).try_into().unwrap()),
+            get_raw_price(low_values.value(1)),
             (100.00 * FIXED_HIGH_PRECISION_SCALAR) as i128
         );
         assert_eq!(close_values.len(), 2);
         assert_eq!(
-            get_raw_price(close_values.value(0).try_into().unwrap()),
+            get_raw_price(close_values.value(0)),
             (101.00 * FIXED_HIGH_PRECISION_SCALAR) as i128
         );
         assert_eq!(
-            get_raw_price(close_values.value(1).try_into().unwrap()),
+            get_raw_price(close_values.value(1)),
             (100.10 * FIXED_HIGH_PRECISION_SCALAR) as i128
         );
         assert_eq!(volume_values.len(), 2);

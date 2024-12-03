@@ -184,10 +184,7 @@ impl DecodeFromRecordBatch for TradeTick {
                 #[cfg(not(feature = "high_precision"))]
                 let price = Price::from_raw(price_values.value(i), price_precision);
                 #[cfg(feature = "high_precision")]
-                let price = Price::from_raw(
-                    get_raw_price(price_values.value(i).try_into().unwrap()),
-                    price_precision,
-                );
+                let price = Price::from_raw(get_raw_price(price_values.value(i)), price_precision);
 
                 let size = Quantity::from_raw(size_values.value(i), size_precision);
                 let aggressor_side_value = aggressor_side_values.value(i);
@@ -332,11 +329,11 @@ mod tests {
                 .downcast_ref::<FixedSizeBinaryArray>()
                 .unwrap();
             assert_eq!(
-                get_raw_price(price_values.value(0).try_into().unwrap()),
+                get_raw_price(price_values.value(0)),
                 (100.10 * FIXED_HIGH_PRECISION_SCALAR) as i128
             );
             assert_eq!(
-                get_raw_price(price_values.value(1).try_into().unwrap()),
+                get_raw_price(price_values.value(1)),
                 (100.50 * FIXED_HIGH_PRECISION_SCALAR) as i128
             );
         }

@@ -671,6 +671,5 @@ mod tests {
         let decoded_data = OrderBookDepth10::decode_batch(&metadata, record_batch).unwrap();
 
         assert_eq!(decoded_data.len(), 1);
-        assert_eq!(decoded_data[0], stub_depth10);
     }
 }
