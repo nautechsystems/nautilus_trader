@@ -16,7 +16,7 @@
 use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use arrow::{
-    array::{FixedSizeBinaryArray, FixedSizeBinaryBuilder, Int64Array, UInt64Array},
+    array::{FixedSizeBinaryArray, FixedSizeBinaryBuilder, UInt64Array},
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
     record_batch::RecordBatch,
@@ -24,11 +24,12 @@ use arrow::{
 use nautilus_model::{
     data::quote::QuoteTick,
     identifiers::InstrumentId,
-    types::{price::Price, price::PriceRaw, quantity::Quantity},
+    types::{price::Price, quantity::Quantity},
 };
 
 use super::{
-    extract_column, get_raw_price, DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION, KEY_SIZE_PRECISION
+    extract_column, get_raw_price, DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
+    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -263,7 +264,7 @@ mod tests {
     use std::{collections::HashMap, sync::Arc};
 
     use arrow::record_batch::RecordBatch;
-    use nautilus_model::types::fixed::FIXED_HIGH_PRECISION_SCALAR;
+    use nautilus_model::types::{fixed::FIXED_HIGH_PRECISION_SCALAR, price::PriceRaw};
     use rstest::rstest;
 
     use crate::arrow::get_raw_price;

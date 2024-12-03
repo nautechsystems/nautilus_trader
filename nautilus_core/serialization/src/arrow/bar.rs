@@ -238,8 +238,6 @@ impl DecodeFromRecordBatch for Bar {
         metadata: &HashMap<String, String>,
         record_batch: RecordBatch,
     ) -> Result<Vec<Self>, EncodingError> {
-        use nautilus_model::types::price::PriceRaw;
-
         use crate::arrow::get_raw_price;
 
         let (bar_type, price_precision, size_precision) = parse_metadata(metadata)?;

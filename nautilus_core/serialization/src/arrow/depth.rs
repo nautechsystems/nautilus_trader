@@ -17,8 +17,7 @@ use std::{collections::HashMap, str::FromStr, sync::Arc};
 
 use arrow::{
     array::{
-        Array, FixedSizeBinaryArray, FixedSizeBinaryBuilder, Int64Array, UInt32Array, UInt64Array,
-        UInt8Array,
+        Array, FixedSizeBinaryArray, FixedSizeBinaryBuilder, UInt32Array, UInt64Array, UInt8Array,
     },
     datatypes::{DataType, Field, Schema},
     error::ArrowError,
@@ -31,14 +30,16 @@ use nautilus_model::{
     },
     enums::OrderSide,
     identifiers::InstrumentId,
-    types::{price::Price, price::PriceRaw, quantity::Quantity},
+    types::{price::Price, quantity::Quantity},
 };
 
 use super::{
     extract_column, DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
     KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
 };
-use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
+use crate::arrow::{
+    get_raw_price, ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch,
+};
 
 fn get_field_data() -> Vec<(&'static str, DataType)> {
     let mut field_data = Vec::new();
@@ -59,12 +60,6 @@ fn get_field_data() -> Vec<(&'static str, DataType)> {
     field_data
 }
 
-#[inline]
-#[cfg(feature = "high_precision")]
-fn get_raw_price(bytes: &[u8]) -> PriceRaw {
-    get_raw_price(bytes.try_into().unwrap())
-}
-
 impl ArrowSchemaProvider for OrderBookDepth10 {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
         let mut fields = Vec::new();
@@ -75,7 +70,7 @@ impl ArrowSchemaProvider for OrderBookDepth10 {
         for (name, data_type) in field_data {
             for i in 0..DEPTH10_LEN {
                 fields.push(Field::new(
-                    &format!("{}_{i}", name),
+                    format!("{}_{i}", name),
                     data_type.clone(),
                     false,
                 ));
@@ -420,13 +415,13 @@ impl DecodeDataFromRecordBatch for OrderBookDepth10 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-
     use arrow::datatypes::{DataType, Field, Schema};
     use nautilus_model::data::stubs::stub_depth10;
     #[cfg(feature = "high_precision")]
     use nautilus_model::types::fixed::FIXED_HIGH_PRECISION_SCALAR;
     #[cfg(not(feature = "high_precision"))]
     use nautilus_model::types::fixed::FIXED_SCALAR;
+    use pretty_assertions::assert_eq;
     use rstest::rstest;
 
     use super::*;
