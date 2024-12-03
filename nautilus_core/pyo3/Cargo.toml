@@ -25,7 +25,7 @@ nautilus-test-kit = { path = "../test_kit" , features = ["python"] }
 pyo3 = { workspace = true }
 
 [features]
-default = []
+default = ["high_precision"]
 extension-module = [
     "pyo3/extension-module",
     "nautilus-adapters/extension-module",
@@ -46,3 +46,4 @@ ffi = [
     "nautilus-model/ffi",
     "nautilus-persistence/ffi",
 ]
+high_precision = ["nautilus-adapters/high_precision"]

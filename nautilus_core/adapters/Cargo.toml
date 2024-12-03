@@ -70,7 +70,7 @@ rstest = { workspace = true }
 tracing-test = { workspace = true }
 
 [features]
-default = ["databento", "ffi", "python", "tardis"]
+default = ["databento", "ffi", "python", "tardis", "high_precision"]
 extension-module = [
   "pyo3/extension-module",
   "nautilus-common/extension-module",
@@ -91,3 +91,4 @@ python = [
   "nautilus-model/python",
 ]
 tardis = ["arrow", "parquet", "python", "csv", "flate2", "tokio-tungstenite", "urlencoding", "uuid"]
+high_precision = ["nautilus-model/high_precision", "nautilus-serialization/high_precision"]
