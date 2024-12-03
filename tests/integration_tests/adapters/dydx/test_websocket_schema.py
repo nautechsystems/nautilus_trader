@@ -27,6 +27,8 @@ from nautilus_trader.adapters.dydx.common.enums import DYDXEnumParser
 from nautilus_trader.adapters.dydx.common.enums import DYDXOrderStatus
 from nautilus_trader.adapters.dydx.common.enums import DYDXOrderType
 from nautilus_trader.adapters.dydx.common.symbol import DYDXSymbol
+from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsBlockHeightChannelData
+from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsBlockHeightSubscribedData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsCandlesChannelData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsCandlesSubscribedData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsMarketChannelData
@@ -95,6 +97,8 @@ from nautilus_trader.model.objects import Quantity
         "tests/test_data/dydx/websocket/v4_accounts_fills.json",
         "tests/test_data/dydx/websocket/v4_markets_subscribed.json",
         "tests/test_data/dydx/websocket/v4_markets_channel_data.json",
+        "tests/test_data/dydx/websocket/v4_block_height_subscribed.json",
+        "tests/test_data/dydx/websocket/v4_block_height_channel_data.json",
     ],
 )
 def test_general_messsage(file_path: str) -> None:
@@ -110,6 +114,40 @@ def test_general_messsage(file_path: str) -> None:
 
     # Assert
     assert msg.type is not None
+
+
+def test_block_height_subscribed_message() -> None:
+    """
+    Test parsing the block height subscribed message.
+    """
+    # Prepare
+    decoder = msgspec.json.Decoder(DYDXWsBlockHeightSubscribedData)
+
+    # Act
+    with Path(
+        "tests/test_data/dydx/websocket/v4_block_height_subscribed.json",
+    ).open() as file_reader:
+        msg = decoder.decode(file_reader.read())
+
+    # Assert
+    assert msg.channel == "v4_block_height"
+
+
+def test_block_height_channel_data_message() -> None:
+    """
+    Test parsing the block height channel data message.
+    """
+    # Prepare
+    decoder = msgspec.json.Decoder(DYDXWsBlockHeightChannelData)
+
+    # Act
+    with Path(
+        "tests/test_data/dydx/websocket/v4_block_height_channel_data.json",
+    ).open() as file_reader:
+        msg = decoder.decode(file_reader.read())
+
+    # Assert
+    assert msg.channel == "v4_block_height"
 
 
 def test_account_subscribed_message() -> None:

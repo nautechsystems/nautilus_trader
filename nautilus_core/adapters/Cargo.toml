@@ -39,6 +39,7 @@ futures-util = { workspace = true }
 heck = { workspace = true }
 indexmap = { workspace = true }
 itoa = { workspace = true }
+log = { workspace = true }
 parquet = { workspace = true, optional = true }
 pyo3 = { workspace = true, optional = true }
 pyo3-async-runtimes = { workspace = true, optional = true }

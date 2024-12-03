@@ -13,9 +13,23 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
+from nautilus_trader.cache.cache import Cache
+from nautilus_trader.common.component import Clock
+from nautilus_trader.common.component import MessageBus
+from nautilus_trader.core.uuid import UUID4
+from nautilus_trader.data.client import MarketDataClient
+from nautilus_trader.model.data import Bar
+from nautilus_trader.model.data import BarType
+from nautilus_trader.model.data import QuoteTick
+from nautilus_trader.model.data import TradeTick
+from nautilus_trader.model.identifiers import ClientId
+from nautilus_trader.model.identifiers import InstrumentId
+from nautilus_trader.model.identifiers import Venue
+from nautilus_trader.model.instruments.base import Instrument
 from nautilus_trader.persistence.catalog.parquet import ParquetDataCatalog
 from nautilus_trader.persistence.catalog.singleton import clear_singleton_instances
 from nautilus_trader.persistence.wranglers import QuoteTickDataWrangler
@@ -23,6 +37,99 @@ from nautilus_trader.persistence.wranglers import TradeTickDataWrangler
 from nautilus_trader.test_kit.providers import TestDataProvider
 from nautilus_trader.test_kit.providers import TestInstrumentProvider
 from nautilus_trader.trading.filters import NewsEvent
+
+
+class MockMarketDataClient(MarketDataClient):
+    """
+    Provides an implementation of `MarketDataClient` for testing.
+
+    Parameters
+    ----------
+    client_id : ClientId
+        The data client ID.
+    msgbus : MessageBus
+        The message bus for the client.
+    cache : Cache
+        The cache for the client.
+    clock : Clock
+        The clock for the client.
+
+    """
+
+    def __init__(
+        self,
+        client_id: ClientId,
+        msgbus: MessageBus,
+        cache: Cache,
+        clock: Clock,
+    ):
+        super().__init__(
+            client_id=client_id,
+            venue=Venue(str(client_id)),
+            msgbus=msgbus,
+            cache=cache,
+            clock=clock,
+        )
+        self._set_connected()
+
+        self.instrument: Instrument | None = None
+        self.instruments: list[Instrument] = []
+        self.quote_ticks: list[QuoteTick] = []
+        self.trade_ticks: list[TradeTick] = []
+        self.bars: list[Bar] = []
+
+    def request_instrument(
+        self,
+        instrument_id: InstrumentId,
+        correlation_id: UUID4,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        metadata: dict | None = None,
+    ) -> None:
+        self._handle_instrument(self.instrument, correlation_id, metadata)
+
+    def request_instruments(
+        self,
+        venue: Venue,
+        correlation_id: UUID4,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        metadata: dict | None = None,
+    ) -> None:
+        self._handle_instruments(venue, self.instruments, correlation_id, metadata)
+
+    def request_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        limit: int,
+        correlation_id: UUID4,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        metadata: dict | None = None,
+    ) -> None:
+        self._handle_quote_ticks(instrument_id, self.quote_ticks, correlation_id, metadata)
+
+    def request_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        limit: int,
+        correlation_id: UUID4,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        metadata: dict | None = None,
+    ) -> None:
+        self._handle_trade_ticks(instrument_id, self.trade_ticks, correlation_id, metadata)
+
+    def request_bars(
+        self,
+        bar_type: BarType,
+        limit: int,
+        correlation_id: UUID4,
+        start: datetime | None = None,
+        end: datetime | None = None,
+        metadata: dict | None = None,
+    ) -> None:
+        self._handle_bars(bar_type, self.bars, None, correlation_id, metadata)
 
 
 _AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")

@@ -20,6 +20,8 @@ from abc import ABCMeta
 from abc import abstractmethod
 from typing import Any
 
+import pandas as pd
+
 from nautilus_trader.core.data import Data
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import CustomData
@@ -65,6 +67,16 @@ class BaseDataCatalog(ABC, metaclass=_CombinedMeta):
         bar_types: list[str] | None = None,
         **kwargs: Any,
     ) -> list[Data]:
+        raise NotImplementedError
+
+    @abstractmethod
+    def query_last_timestamp(
+        self,
+        data_cls: type,
+        instrument_id: str | None = None,
+        bar_type: str | None = None,
+        ts_column: str = "ts_init",
+    ) -> pd.Timestamp | None:
         raise NotImplementedError
 
     def _query_subclasses(

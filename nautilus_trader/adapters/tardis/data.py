@@ -35,7 +35,6 @@ from nautilus_trader.core.uuid import UUID4
 from nautilus_trader.live.data_client import LiveMarketDataClient
 from nautilus_trader.model.data import Bar
 from nautilus_trader.model.data import BarType
-from nautilus_trader.model.data import DataType
 from nautilus_trader.model.data import OrderBookDelta
 from nautilus_trader.model.data import OrderBookDepth10
 from nautilus_trader.model.data import QuoteTick
@@ -327,6 +326,7 @@ class TardisDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         if start is not None:
             self._log.warning(
@@ -342,15 +342,8 @@ class TardisDataClient(LiveMarketDataClient):
         if instrument is None:
             self._log.error(f"Cannot find instrument for {instrument_id}")
             return
-        data_type = DataType(
-            type=Instrument,
-            metadata={"instrument_id": instrument_id},
-        )
-        self._handle_data_response(
-            data_type=data_type,
-            data=instrument,
-            correlation_id=correlation_id,
-        )
+
+        self._handle_instrument(instrument, correlation_id, metadata)
 
     async def _request_instruments(
         self,
@@ -358,6 +351,7 @@ class TardisDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         if start is not None:
             self._log.warning(
@@ -374,15 +368,8 @@ class TardisDataClient(LiveMarketDataClient):
         for instrument in all_instruments.values():
             if instrument.venue == venue:
                 target_instruments.append(instrument)
-        data_type = DataType(
-            type=Instrument,
-            metadata={"venue": venue},
-        )
-        self._handle_data_response(
-            data_type=data_type,
-            data=target_instruments,
-            correlation_id=correlation_id,
-        )
+
+        self._handle_instruments(target_instruments, venue, correlation_id, metadata)
 
     async def _request_quote_ticks(
         self,
@@ -391,6 +378,7 @@ class TardisDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         self._log.error(
             f"Cannot request historical quotes for {instrument_id}: not supported in this version",
@@ -403,6 +391,7 @@ class TardisDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         self._log.error(
             f"Cannot request historical trades for {instrument_id}: not supported in this version",
@@ -415,6 +404,7 @@ class TardisDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         if bar_type.is_internally_aggregated():
             self._log.error(
@@ -496,7 +486,7 @@ class TardisDataClient(LiveMarketDataClient):
             LogColor.MAGENTA,
         )
 
-        self._handle_bars(bar_type, bars, None, correlation_id)
+        self._handle_bars(bar_type, bars, None, correlation_id, metadata)
 
     def _handle_msg(
         self,
