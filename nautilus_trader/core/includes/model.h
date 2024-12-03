@@ -17,10 +17,14 @@
  */
 #define FIXED_PRECISION 9
 
+#define FIXED_HIGH_PRECISION 18
+
 /**
  * The scalar value corresponding to the maximum precision (10^9).
  */
 #define FIXED_SCALAR 1000000000.0
+
+#define FIXED_HIGH_PRECISION_SCALAR 1000000000000000000.0
 
 /**
  * The maximum valid money amount which can be represented.

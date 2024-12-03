@@ -20,9 +20,11 @@
 
 /// The maximum fixed-point precision.
 pub const FIXED_PRECISION: u8 = 9;
+pub const FIXED_HIGH_PRECISION: u8 = 18;
 
 /// The scalar value corresponding to the maximum precision (10^9).
 pub const FIXED_SCALAR: f64 = 1_000_000_000.0; // 10.0**FIXED_PRECISION
+pub const FIXED_HIGH_PRECISION_SCALAR: f64 = 1_000_000_000_000_000_000.0; // 10.0**FIXED_HIGH_PRECISION
 
 /// Checks if a given `precision` value is within the allowed fixed-point precision range.
 ///
@@ -52,9 +54,21 @@ pub fn f64_to_fixed_i64(value: f64, precision: u8) -> i64 {
     rounded * pow2
 }
 
-// TODO
+/// Converts an `f64` value to a raw fixed-point `i128` representation with a specified precision.
+///
+/// # Panics
+///
+/// This function panics:
+/// - If `precision` exceeds `FIXED_PRECISION`.
 pub fn f64_to_fixed_i128(value: f64, precision: u8) -> i128 {
-    todo!()
+    assert!(
+        precision <= FIXED_HIGH_PRECISION,
+        "precision exceeded maximum 18"
+    );
+    let pow1 = 10_i128.pow(u32::from(precision));
+    let pow2 = 10_i128.pow(u32::from(FIXED_HIGH_PRECISION - precision));
+    let rounded = (value * pow1 as f64).round() as i128;
+    rounded * pow2
 }
 
 /// Converts an `f64` value to a raw fixed-point `u64` representation with a specified precision.
@@ -81,7 +95,7 @@ pub fn fixed_i64_to_f64(value: i64) -> f64 {
 /// Converts a raw fixed-point `i64` value back to an `f64` value.
 #[must_use]
 pub fn fixed_i128_to_f64(value: i128) -> f64 {
-    todo!()
+    (value as f64) / FIXED_HIGH_PRECISION_SCALAR
 }
 
 /// Converts a raw fixed-point `u64` value back to an `f64` value.

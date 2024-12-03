@@ -40,62 +40,46 @@ use super::{
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
+fn get_field_data() -> Vec<(&'static str, DataType)> {
+    let mut field_data = Vec::new();
+    #[cfg(not(feature = "high_precision"))]
+    {
+        field_data.push(("bid_price", DataType::Int64));
+        field_data.push(("ask_price", DataType::Int64));
+    }
+    #[cfg(feature = "high_precision")]
+    {
+        field_data.push(("bid_price", DataType::FixedSizeBinary(16)));
+        field_data.push(("ask_price", DataType::FixedSizeBinary(16)));
+    }
+    field_data.push(("bid_size", DataType::UInt64));
+    field_data.push(("ask_size", DataType::UInt64));
+    field_data.push(("bid_count", DataType::UInt32));
+    field_data.push(("ask_count", DataType::UInt32));
+    field_data
+}
+
+#[inline]
+#[cfg(feature = "high_precision")]
+fn get_raw_price(bytes: &[u8]) -> PriceRaw {
+    PriceRaw::from_le_bytes(bytes.try_into().unwrap())
+}
+
 impl ArrowSchemaProvider for OrderBookDepth10 {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
-        let mut fields = Vec::with_capacity(DEPTH10_LEN * 6 + 4);
+        let mut fields = Vec::new();
+        let field_data = get_field_data();
 
-        // Add price fields with appropriate type based on precision
-        for i in 0..DEPTH10_LEN {
-            #[cfg(not(feature = "high_precision"))]
-            {
+        // Schema is of the form:
+        // bid_price_0, bid_price_1, ..., bid_price_9, ask_price_0, ask_price_1
+        for (name, data_type) in field_data {
+            for i in 0..DEPTH10_LEN {
                 fields.push(Field::new(
-                    &format!("bid_price_{i}"),
-                    DataType::Int64,
-                    false,
-                ));
-                fields.push(Field::new(
-                    &format!("ask_price_{i}"),
-                    DataType::Int64,
+                    &format!("{}_{i}", name),
+                    data_type.clone(),
                     false,
                 ));
             }
-            #[cfg(feature = "high_precision")]
-            {
-                fields.push(Field::new(
-                    &format!("bid_price_{i}"),
-                    DataType::FixedSizeBinary(16),
-                    false,
-                ));
-                fields.push(Field::new(
-                    &format!("ask_price_{i}"),
-                    DataType::FixedSizeBinary(16),
-                    false,
-                ));
-            }
-        }
-
-        // Add remaining fields (unchanged)
-        for i in 0..DEPTH10_LEN {
-            fields.push(Field::new(
-                &format!("bid_size_{i}"),
-                DataType::UInt64,
-                false,
-            ));
-            fields.push(Field::new(
-                &format!("ask_size_{i}"),
-                DataType::UInt64,
-                false,
-            ));
-            fields.push(Field::new(
-                &format!("bid_count_{i}"),
-                DataType::UInt32,
-                false,
-            ));
-            fields.push(Field::new(
-                &format!("ask_count_{i}"),
-                DataType::UInt32,
-                false,
-            ));
         }
 
         fields.extend_from_slice(&[
@@ -383,9 +367,7 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
                         bids[i] = BookOrder::new(
                             OrderSide::Buy,
                             Price::from_raw(
-                                PriceRaw::from_le_bytes(
-                                    bid_prices[i].value(row).try_into().unwrap(),
-                                ),
+                                get_raw_price(bid_prices[i].value(row)),
                                 price_precision,
                             ),
                             Quantity::from_raw(bid_sizes[i].value(row), size_precision),
@@ -394,9 +376,7 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
                         asks[i] = BookOrder::new(
                             OrderSide::Sell,
                             Price::from_raw(
-                                PriceRaw::from_le_bytes(
-                                    ask_prices[i].value(row).try_into().unwrap(),
-                                ),
+                                get_raw_price(ask_prices[i].value(row)),
                                 price_precision,
                             ),
                             Quantity::from_raw(ask_sizes[i].value(row), size_precision),
@@ -443,6 +423,10 @@ mod tests {
 
     use arrow::datatypes::{DataType, Field, Schema};
     use nautilus_model::data::stubs::stub_depth10;
+    #[cfg(feature = "high_precision")]
+    use nautilus_model::types::fixed::FIXED_HIGH_PRECISION_SCALAR;
+    #[cfg(not(feature = "high_precision"))]
+    use nautilus_model::types::fixed::FIXED_SCALAR;
     use rstest::rstest;
 
     use super::*;
@@ -452,74 +436,39 @@ mod tests {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
         let metadata = OrderBookDepth10::get_metadata(&instrument_id, 2, 0);
         let schema = OrderBookDepth10::get_schema(Some(metadata.clone()));
-        let expected_fields = vec![
-            Field::new("bid_price_0", DataType::FixedSizeBinary(16), false),
-            Field::new("bid_price_1", DataType::FixedSizeBinary(16), false),
-            Field::new("bid_price_2", DataType::FixedSizeBinary(16), false),
-            Field::new("bid_price_3", DataType::FixedSizeBinary(16), false),
-            Field::new("bid_price_4", DataType::FixedSizeBinary(16), false),
-            Field::new("bid_price_5", DataType::FixedSizeBinary(16), false),
-            Field::new("bid_price_6", DataType::FixedSizeBinary(16), false),
-            Field::new("bid_price_7", DataType::FixedSizeBinary(16), false),
-            Field::new("bid_price_8", DataType::FixedSizeBinary(16), false),
-            Field::new("bid_price_9", DataType::FixedSizeBinary(16), false),
-            Field::new("ask_price_0", DataType::FixedSizeBinary(16), false),
-            Field::new("ask_price_1", DataType::FixedSizeBinary(16), false),
-            Field::new("ask_price_2", DataType::FixedSizeBinary(16), false),
-            Field::new("ask_price_3", DataType::FixedSizeBinary(16), false),
-            Field::new("ask_price_4", DataType::FixedSizeBinary(16), false),
-            Field::new("ask_price_5", DataType::FixedSizeBinary(16), false),
-            Field::new("ask_price_6", DataType::FixedSizeBinary(16), false),
-            Field::new("ask_price_7", DataType::FixedSizeBinary(16), false),
-            Field::new("ask_price_8", DataType::FixedSizeBinary(16), false),
-            Field::new("ask_price_9", DataType::FixedSizeBinary(16), false),
-            Field::new("bid_size_0", DataType::UInt64, false),
-            Field::new("bid_size_1", DataType::UInt64, false),
-            Field::new("bid_size_2", DataType::UInt64, false),
-            Field::new("bid_size_3", DataType::UInt64, false),
-            Field::new("bid_size_4", DataType::UInt64, false),
-            Field::new("bid_size_5", DataType::UInt64, false),
-            Field::new("bid_size_6", DataType::UInt64, false),
-            Field::new("bid_size_7", DataType::UInt64, false),
-            Field::new("bid_size_8", DataType::UInt64, false),
-            Field::new("bid_size_9", DataType::UInt64, false),
-            Field::new("ask_size_0", DataType::UInt64, false),
-            Field::new("ask_size_1", DataType::UInt64, false),
-            Field::new("ask_size_2", DataType::UInt64, false),
-            Field::new("ask_size_3", DataType::UInt64, false),
-            Field::new("ask_size_4", DataType::UInt64, false),
-            Field::new("ask_size_5", DataType::UInt64, false),
-            Field::new("ask_size_6", DataType::UInt64, false),
-            Field::new("ask_size_7", DataType::UInt64, false),
-            Field::new("ask_size_8", DataType::UInt64, false),
-            Field::new("ask_size_9", DataType::UInt64, false),
-            Field::new("bid_count_0", DataType::UInt32, false),
-            Field::new("bid_count_1", DataType::UInt32, false),
-            Field::new("bid_count_2", DataType::UInt32, false),
-            Field::new("bid_count_3", DataType::UInt32, false),
-            Field::new("bid_count_4", DataType::UInt32, false),
-            Field::new("bid_count_5", DataType::UInt32, false),
-            Field::new("bid_count_6", DataType::UInt32, false),
-            Field::new("bid_count_7", DataType::UInt32, false),
-            Field::new("bid_count_8", DataType::UInt32, false),
-            Field::new("bid_count_9", DataType::UInt32, false),
-            Field::new("ask_count_0", DataType::UInt32, false),
-            Field::new("ask_count_1", DataType::UInt32, false),
-            Field::new("ask_count_2", DataType::UInt32, false),
-            Field::new("ask_count_3", DataType::UInt32, false),
-            Field::new("ask_count_4", DataType::UInt32, false),
-            Field::new("ask_count_5", DataType::UInt32, false),
-            Field::new("ask_count_6", DataType::UInt32, false),
-            Field::new("ask_count_7", DataType::UInt32, false),
-            Field::new("ask_count_8", DataType::UInt32, false),
-            Field::new("ask_count_9", DataType::UInt32, false),
-            Field::new("flags", DataType::UInt8, false),
-            Field::new("sequence", DataType::UInt64, false),
-            Field::new("ts_event", DataType::UInt64, false),
-            Field::new("ts_init", DataType::UInt64, false),
-        ];
-        let expected_schema = Schema::new_with_metadata(expected_fields, metadata);
-        assert_eq!(schema, expected_schema);
+
+        let mut group_count = 0;
+        let field_data = get_field_data();
+        for (name, data_type) in field_data {
+            for i in 0..DEPTH10_LEN {
+                let field = schema.field(i + group_count * DEPTH10_LEN).clone();
+                assert_eq!(
+                    field,
+                    Field::new(&format!("{}_{i}", name), data_type.clone(), false)
+                );
+            }
+
+            group_count += 1;
+        }
+
+        let flags_field = schema.field(group_count * DEPTH10_LEN + 0).clone();
+        assert_eq!(flags_field, Field::new("flags", DataType::UInt8, false));
+        let sequence_field = schema.field(group_count * DEPTH10_LEN + 1).clone();
+        assert_eq!(
+            sequence_field,
+            Field::new("sequence", DataType::UInt64, false)
+        );
+        let ts_event_field = schema.field(group_count * DEPTH10_LEN + 2).clone();
+        assert_eq!(
+            ts_event_field,
+            Field::new("ts_event", DataType::UInt64, false)
+        );
+        let ts_init_field = schema.field(group_count * DEPTH10_LEN + 3).clone();
+        assert_eq!(
+            ts_init_field,
+            Field::new("ts_init", DataType::UInt64, false)
+        );
+
         assert_eq!(schema.metadata()["instrument_id"], "AAPL.XNAS");
         assert_eq!(schema.metadata()["price_precision"], "2");
         assert_eq!(schema.metadata()["size_precision"], "0");
@@ -528,318 +477,191 @@ mod tests {
     #[rstest]
     fn test_get_schema_map() {
         let schema_map = OrderBookDepth10::get_schema_map();
-        let mut expected_map = HashMap::new();
-        #[cfg(not(feature = "high_precision"))]
-        {
-            expected_map.insert("bid_price_0".to_string(), "Int64".to_string());
-            expected_map.insert("bid_price_1".to_string(), "Int64".to_string());
-            expected_map.insert("bid_price_2".to_string(), "Int64".to_string());
-            expected_map.insert("bid_price_3".to_string(), "Int64".to_string());
-            expected_map.insert("bid_price_4".to_string(), "Int64".to_string());
-            expected_map.insert("bid_price_5".to_string(), "Int64".to_string());
-            expected_map.insert("bid_price_6".to_string(), "Int64".to_string());
-            expected_map.insert("bid_price_7".to_string(), "Int64".to_string());
-            expected_map.insert("bid_price_8".to_string(), "Int64".to_string());
-            expected_map.insert("bid_price_9".to_string(), "Int64".to_string());
-            expected_map.insert("ask_price_0".to_string(), "Int64".to_string());
-            expected_map.insert("ask_price_1".to_string(), "Int64".to_string());
-            expected_map.insert("ask_price_2".to_string(), "Int64".to_string());
-            expected_map.insert("ask_price_3".to_string(), "Int64".to_string());
-            expected_map.insert("ask_price_4".to_string(), "Int64".to_string());
-            expected_map.insert("ask_price_5".to_string(), "Int64".to_string());
-            expected_map.insert("ask_price_6".to_string(), "Int64".to_string());
-            expected_map.insert("ask_price_7".to_string(), "Int64".to_string());
-            expected_map.insert("ask_price_8".to_string(), "Int64".to_string());
-            expected_map.insert("ask_price_9".to_string(), "Int64".to_string());
+
+        let field_data = get_field_data();
+        for (name, data_type) in field_data {
+            for i in 0..DEPTH10_LEN {
+                let field = schema_map.get(&format!("{}_{i}", name)).map(String::as_str);
+                assert_eq!(field, Some(format!("{:?}", data_type).as_str()));
+            }
         }
-        #[cfg(feature = "high_precision")]
-        {
-            expected_map.insert("bid_price_0".to_string(), "FixedSizeBinary(16)".to_string());
-            expected_map.insert("bid_price_1".to_string(), "FixedSizeBinary(16)".to_string());
-            expected_map.insert("bid_price_2".to_string(), "FixedSizeBinary(16)".to_string());
-            expected_map.insert("bid_price_3".to_string(), "FixedSizeBinary(16)".to_string());
-            expected_map.insert("bid_price_4".to_string(), "FixedSizeBinary(16)".to_string());
-            expected_map.insert("bid_price_5".to_string(), "FixedSizeBinary(16)".to_string());
-            expected_map.insert("bid_price_6".to_string(), "FixedSizeBinary(16)".to_string());
-            expected_map.insert("bid_price_7".to_string(), "FixedSizeBinary(16)".to_string());
-            expected_map.insert("bid_price_8".to_string(), "FixedSizeBinary(16)".to_string());
-            expected_map.insert("bid_price_9".to_string(), "FixedSizeBinary(16)".to_string());
-            expected_map.insert("ask_price_0".to_string(), "FixedSizeBinary(16)".to_string());
-            expected_map.insert("ask_price_1".to_string(), "FixedSizeBinary(16)".to_string());
-            expected_map.insert("ask_price_2".to_string(), "FixedSizeBinary(16)".to_string());
-            expected_map.insert("ask_price_3".to_string(), "FixedSizeBinary(16)".to_string());
-            expected_map.insert("ask_price_4".to_string(), "FixedSizeBinary(16)".to_string());
-            expected_map.insert("ask_price_5".to_string(), "FixedSizeBinary(16)".to_string());
-            expected_map.insert("ask_price_6".to_string(), "FixedSizeBinary(16)".to_string());
-            expected_map.insert("ask_price_7".to_string(), "FixedSizeBinary(16)".to_string());
-            expected_map.insert("ask_price_8".to_string(), "FixedSizeBinary(16)".to_string());
-            expected_map.insert("ask_price_9".to_string(), "FixedSizeBinary(16)".to_string());
-        }
-        expected_map.insert("bid_size_0".to_string(), "UInt64".to_string());
-        expected_map.insert("bid_size_1".to_string(), "UInt64".to_string());
-        expected_map.insert("bid_size_2".to_string(), "UInt64".to_string());
-        expected_map.insert("bid_size_3".to_string(), "UInt64".to_string());
-        expected_map.insert("bid_size_4".to_string(), "UInt64".to_string());
-        expected_map.insert("bid_size_5".to_string(), "UInt64".to_string());
-        expected_map.insert("bid_size_6".to_string(), "UInt64".to_string());
-        expected_map.insert("bid_size_7".to_string(), "UInt64".to_string());
-        expected_map.insert("bid_size_8".to_string(), "UInt64".to_string());
-        expected_map.insert("bid_size_9".to_string(), "UInt64".to_string());
-        expected_map.insert("ask_size_0".to_string(), "UInt64".to_string());
-        expected_map.insert("ask_size_1".to_string(), "UInt64".to_string());
-        expected_map.insert("ask_size_2".to_string(), "UInt64".to_string());
-        expected_map.insert("ask_size_3".to_string(), "UInt64".to_string());
-        expected_map.insert("ask_size_4".to_string(), "UInt64".to_string());
-        expected_map.insert("ask_size_5".to_string(), "UInt64".to_string());
-        expected_map.insert("ask_size_6".to_string(), "UInt64".to_string());
-        expected_map.insert("ask_size_7".to_string(), "UInt64".to_string());
-        expected_map.insert("ask_size_8".to_string(), "UInt64".to_string());
-        expected_map.insert("ask_size_9".to_string(), "UInt64".to_string());
-        expected_map.insert("bid_count_0".to_string(), "UInt32".to_string());
-        expected_map.insert("bid_count_1".to_string(), "UInt32".to_string());
-        expected_map.insert("bid_count_2".to_string(), "UInt32".to_string());
-        expected_map.insert("bid_count_3".to_string(), "UInt32".to_string());
-        expected_map.insert("bid_count_4".to_string(), "UInt32".to_string());
-        expected_map.insert("bid_count_5".to_string(), "UInt32".to_string());
-        expected_map.insert("bid_count_6".to_string(), "UInt32".to_string());
-        expected_map.insert("bid_count_7".to_string(), "UInt32".to_string());
-        expected_map.insert("bid_count_8".to_string(), "UInt32".to_string());
-        expected_map.insert("bid_count_9".to_string(), "UInt32".to_string());
-        expected_map.insert("ask_count_0".to_string(), "UInt32".to_string());
-        expected_map.insert("ask_count_1".to_string(), "UInt32".to_string());
-        expected_map.insert("ask_count_2".to_string(), "UInt32".to_string());
-        expected_map.insert("ask_count_3".to_string(), "UInt32".to_string());
-        expected_map.insert("ask_count_4".to_string(), "UInt32".to_string());
-        expected_map.insert("ask_count_5".to_string(), "UInt32".to_string());
-        expected_map.insert("ask_count_6".to_string(), "UInt32".to_string());
-        expected_map.insert("ask_count_7".to_string(), "UInt32".to_string());
-        expected_map.insert("ask_count_8".to_string(), "UInt32".to_string());
-        expected_map.insert("ask_count_9".to_string(), "UInt32".to_string());
-        expected_map.insert("flags".to_string(), "UInt8".to_string());
-        expected_map.insert("sequence".to_string(), "UInt64".to_string());
-        expected_map.insert("ts_event".to_string(), "UInt64".to_string());
-        expected_map.insert("ts_init".to_string(), "UInt64".to_string());
-        assert_eq!(schema_map, expected_map);
+
+        assert_eq!(schema_map.get("flags").map(String::as_str), Some("UInt8"));
+        assert_eq!(
+            schema_map.get("sequence").map(String::as_str),
+            Some("UInt64")
+        );
+        assert_eq!(
+            schema_map.get("ts_event").map(String::as_str),
+            Some("UInt64")
+        );
+        assert_eq!(
+            schema_map.get("ts_init").map(String::as_str),
+            Some("UInt64")
+        );
     }
 
     #[rstest]
     fn test_encode_batch(stub_depth10: OrderBookDepth10) {
         let instrument_id = InstrumentId::from("AAPL.XNAS");
-        let metadata = OrderBookDepth10::get_metadata(&instrument_id, 2, 0);
+        let price_precision = 2;
+        let metadata = OrderBookDepth10::get_metadata(&instrument_id, price_precision, 0);
 
         let data = vec![stub_depth10];
         let record_batch = OrderBookDepth10::encode_batch(&metadata, &data).unwrap();
-
         let columns = record_batch.columns();
 
-        let bid_price_0_values = columns[0].as_any().downcast_ref::<Int64Array>().unwrap();
-        let bid_price_1_values = columns[1].as_any().downcast_ref::<Int64Array>().unwrap();
-        let bid_price_2_values = columns[2].as_any().downcast_ref::<Int64Array>().unwrap();
-        let bid_price_3_values = columns[3].as_any().downcast_ref::<Int64Array>().unwrap();
-        let bid_price_4_values = columns[4].as_any().downcast_ref::<Int64Array>().unwrap();
-        let bid_price_5_values = columns[5].as_any().downcast_ref::<Int64Array>().unwrap();
-        let bid_price_6_values = columns[6].as_any().downcast_ref::<Int64Array>().unwrap();
-        let bid_price_7_values = columns[7].as_any().downcast_ref::<Int64Array>().unwrap();
-        let bid_price_8_values = columns[8].as_any().downcast_ref::<Int64Array>().unwrap();
-        let bid_price_9_values = columns[9].as_any().downcast_ref::<Int64Array>().unwrap();
+        assert_eq!(columns.len(), DEPTH10_LEN * 6 + 4);
 
-        let ask_price_0_values = columns[10].as_any().downcast_ref::<Int64Array>().unwrap();
-        let ask_price_1_values = columns[11].as_any().downcast_ref::<Int64Array>().unwrap();
-        let ask_price_2_values = columns[12].as_any().downcast_ref::<Int64Array>().unwrap();
-        let ask_price_3_values = columns[13].as_any().downcast_ref::<Int64Array>().unwrap();
-        let ask_price_4_values = columns[14].as_any().downcast_ref::<Int64Array>().unwrap();
-        let ask_price_5_values = columns[15].as_any().downcast_ref::<Int64Array>().unwrap();
-        let ask_price_6_values = columns[16].as_any().downcast_ref::<Int64Array>().unwrap();
-        let ask_price_7_values = columns[17].as_any().downcast_ref::<Int64Array>().unwrap();
-        let ask_price_8_values = columns[18].as_any().downcast_ref::<Int64Array>().unwrap();
-        let ask_price_9_values = columns[19].as_any().downcast_ref::<Int64Array>().unwrap();
+        // Extract and test bid prices
+        let bid_prices: Vec<_> = (0..DEPTH10_LEN)
+            .map(|i| {
+                columns[i]
+                    .as_any()
+                    .downcast_ref::<FixedSizeBinaryArray>()
+                    .unwrap()
+            })
+            .collect();
 
-        let bid_size_0_values = columns[20].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let bid_size_1_values = columns[21].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let bid_size_2_values = columns[22].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let bid_size_3_values = columns[23].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let bid_size_4_values = columns[24].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let bid_size_5_values = columns[25].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let bid_size_6_values = columns[26].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let bid_size_7_values = columns[27].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let bid_size_8_values = columns[28].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let bid_size_9_values = columns[29].as_any().downcast_ref::<UInt64Array>().unwrap();
+        let expected_bid_prices: Vec<f64> =
+            vec![99.0, 98.0, 97.0, 96.0, 95.0, 94.0, 93.0, 92.0, 91.0, 90.0];
 
-        let ask_size_0_values = columns[30].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ask_size_1_values = columns[31].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ask_size_2_values = columns[32].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ask_size_3_values = columns[33].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ask_size_4_values = columns[34].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ask_size_5_values = columns[35].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ask_size_6_values = columns[36].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ask_size_7_values = columns[37].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ask_size_8_values = columns[38].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ask_size_9_values = columns[39].as_any().downcast_ref::<UInt64Array>().unwrap();
+        for (i, bid_price) in bid_prices.iter().enumerate() {
+            assert_eq!(bid_price.len(), 1);
+            #[cfg(not(feature = "high_precision"))]
+            {
+                assert_eq!(bid_price.value(0), expected_bid_prices[i]);
+            }
+            #[cfg(feature = "high_precision")]
+            {
+                assert_eq!(
+                    get_raw_price(bid_price.value(0)),
+                    (expected_bid_prices[i] * FIXED_HIGH_PRECISION_SCALAR) as PriceRaw
+                );
+                assert_eq!(
+                    Price::from_raw(get_raw_price(bid_price.value(0)), price_precision).as_f64(),
+                    expected_bid_prices[i]
+                );
+            }
+        }
 
-        let bid_counts_0_values = columns[40].as_any().downcast_ref::<UInt32Array>().unwrap();
-        let bid_counts_1_values = columns[41].as_any().downcast_ref::<UInt32Array>().unwrap();
-        let bid_counts_2_values = columns[42].as_any().downcast_ref::<UInt32Array>().unwrap();
-        let bid_counts_3_values = columns[43].as_any().downcast_ref::<UInt32Array>().unwrap();
-        let bid_counts_4_values = columns[44].as_any().downcast_ref::<UInt32Array>().unwrap();
-        let bid_counts_5_values = columns[45].as_any().downcast_ref::<UInt32Array>().unwrap();
-        let bid_counts_6_values = columns[46].as_any().downcast_ref::<UInt32Array>().unwrap();
-        let bid_counts_7_values = columns[47].as_any().downcast_ref::<UInt32Array>().unwrap();
-        let bid_counts_8_values = columns[48].as_any().downcast_ref::<UInt32Array>().unwrap();
-        let bid_counts_9_values = columns[49].as_any().downcast_ref::<UInt32Array>().unwrap();
+        // Extract and test ask prices
+        let ask_prices: Vec<_> = (0..DEPTH10_LEN)
+            .map(|i| {
+                columns[DEPTH10_LEN + i]
+                    .as_any()
+                    .downcast_ref::<FixedSizeBinaryArray>()
+                    .unwrap()
+            })
+            .collect();
 
-        let ask_counts_0_values = columns[50].as_any().downcast_ref::<UInt32Array>().unwrap();
-        let ask_counts_1_values = columns[51].as_any().downcast_ref::<UInt32Array>().unwrap();
-        let ask_counts_2_values = columns[52].as_any().downcast_ref::<UInt32Array>().unwrap();
-        let ask_counts_3_values = columns[53].as_any().downcast_ref::<UInt32Array>().unwrap();
-        let ask_counts_4_values = columns[54].as_any().downcast_ref::<UInt32Array>().unwrap();
-        let ask_counts_5_values = columns[55].as_any().downcast_ref::<UInt32Array>().unwrap();
-        let ask_counts_6_values = columns[56].as_any().downcast_ref::<UInt32Array>().unwrap();
-        let ask_counts_7_values = columns[57].as_any().downcast_ref::<UInt32Array>().unwrap();
-        let ask_counts_8_values = columns[58].as_any().downcast_ref::<UInt32Array>().unwrap();
-        let ask_counts_9_values = columns[59].as_any().downcast_ref::<UInt32Array>().unwrap();
+        let expected_ask_prices: Vec<f64> = vec![
+            100.0, 101.0, 102.0, 103.0, 104.0, 105.0, 106.0, 107.0, 108.0, 109.0,
+        ];
 
-        let flags_values = columns[60].as_any().downcast_ref::<UInt8Array>().unwrap();
-        let sequence_values = columns[61].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ts_event_values = columns[62].as_any().downcast_ref::<UInt64Array>().unwrap();
-        let ts_init_values = columns[63].as_any().downcast_ref::<UInt64Array>().unwrap();
+        for (i, ask_price) in ask_prices.iter().enumerate() {
+            assert_eq!(ask_price.len(), 1);
+            #[cfg(not(feature = "high_precision"))]
+            {
+                assert_eq!(ask_price.value(0), expected_ask_prices[i]);
+            }
+            #[cfg(feature = "high_precision")]
+            {
+                assert_eq!(
+                    get_raw_price(ask_price.value(0)),
+                    (expected_ask_prices[i] * FIXED_HIGH_PRECISION_SCALAR) as PriceRaw
+                );
+                assert_eq!(
+                    Price::from_raw(get_raw_price(ask_price.value(0)), price_precision).as_f64(),
+                    expected_ask_prices[i]
+                );
+            }
+        }
 
-        assert_eq!(columns.len(), 64);
+        // Extract and test bid sizes
+        let bid_sizes: Vec<_> = (0..DEPTH10_LEN)
+            .map(|i| {
+                columns[2 * DEPTH10_LEN + i]
+                    .as_any()
+                    .downcast_ref::<UInt64Array>()
+                    .unwrap()
+            })
+            .collect();
 
-        assert_eq!(bid_price_0_values.len(), 1);
-        assert_eq!(bid_price_1_values.len(), 1);
-        assert_eq!(bid_price_2_values.len(), 1);
-        assert_eq!(bid_price_3_values.len(), 1);
-        assert_eq!(bid_price_4_values.len(), 1);
-        assert_eq!(bid_price_5_values.len(), 1);
-        assert_eq!(bid_price_6_values.len(), 1);
-        assert_eq!(bid_price_7_values.len(), 1);
-        assert_eq!(bid_price_8_values.len(), 1);
-        assert_eq!(bid_price_9_values.len(), 1);
-        assert_eq!(bid_price_0_values.value(0), 99_000_000_000);
-        assert_eq!(bid_price_1_values.value(0), 98_000_000_000);
-        assert_eq!(bid_price_2_values.value(0), 97_000_000_000);
-        assert_eq!(bid_price_3_values.value(0), 96_000_000_000);
-        assert_eq!(bid_price_4_values.value(0), 95_000_000_000);
-        assert_eq!(bid_price_5_values.value(0), 94_000_000_000);
-        assert_eq!(bid_price_6_values.value(0), 93_000_000_000);
-        assert_eq!(bid_price_7_values.value(0), 92_000_000_000);
-        assert_eq!(bid_price_8_values.value(0), 91_000_000_000);
-        assert_eq!(bid_price_9_values.value(0), 90_000_000_000);
+        for (i, bid_size) in bid_sizes.iter().enumerate() {
+            assert_eq!(bid_size.len(), 1);
+            assert_eq!(bid_size.value(0), 100_000_000_000 * (i + 1) as u64);
+        }
 
-        assert_eq!(ask_price_0_values.len(), 1);
-        assert_eq!(ask_price_1_values.len(), 1);
-        assert_eq!(ask_price_2_values.len(), 1);
-        assert_eq!(ask_price_3_values.len(), 1);
-        assert_eq!(ask_price_4_values.len(), 1);
-        assert_eq!(ask_price_5_values.len(), 1);
-        assert_eq!(ask_price_6_values.len(), 1);
-        assert_eq!(ask_price_7_values.len(), 1);
-        assert_eq!(ask_price_8_values.len(), 1);
-        assert_eq!(ask_price_9_values.len(), 1);
-        assert_eq!(ask_price_0_values.value(0), 100_000_000_000);
-        assert_eq!(ask_price_1_values.value(0), 101_000_000_000);
-        assert_eq!(ask_price_2_values.value(0), 102_000_000_000);
-        assert_eq!(ask_price_3_values.value(0), 103_000_000_000);
-        assert_eq!(ask_price_4_values.value(0), 104_000_000_000);
-        assert_eq!(ask_price_5_values.value(0), 105_000_000_000);
-        assert_eq!(ask_price_6_values.value(0), 106_000_000_000);
-        assert_eq!(ask_price_7_values.value(0), 107_000_000_000);
-        assert_eq!(ask_price_8_values.value(0), 108_000_000_000);
-        assert_eq!(ask_price_9_values.value(0), 109_000_000_000);
+        // Extract and test ask sizes
+        let ask_sizes: Vec<_> = (0..DEPTH10_LEN)
+            .map(|i| {
+                columns[3 * DEPTH10_LEN + i]
+                    .as_any()
+                    .downcast_ref::<UInt64Array>()
+                    .unwrap()
+            })
+            .collect();
 
-        assert_eq!(bid_size_0_values.len(), 1);
-        assert_eq!(bid_size_1_values.len(), 1);
-        assert_eq!(bid_size_2_values.len(), 1);
-        assert_eq!(bid_size_3_values.len(), 1);
-        assert_eq!(bid_size_4_values.len(), 1);
-        assert_eq!(bid_size_5_values.len(), 1);
-        assert_eq!(bid_size_6_values.len(), 1);
-        assert_eq!(bid_size_7_values.len(), 1);
-        assert_eq!(bid_size_8_values.len(), 1);
-        assert_eq!(bid_size_9_values.len(), 1);
-        assert_eq!(bid_size_0_values.value(0), 100_000_000_000);
-        assert_eq!(bid_size_1_values.value(0), 200_000_000_000);
-        assert_eq!(bid_size_2_values.value(0), 300_000_000_000);
-        assert_eq!(bid_size_3_values.value(0), 400_000_000_000);
-        assert_eq!(bid_size_4_values.value(0), 500_000_000_000);
-        assert_eq!(bid_size_5_values.value(0), 600_000_000_000);
-        assert_eq!(bid_size_6_values.value(0), 700_000_000_000);
-        assert_eq!(bid_size_7_values.value(0), 800_000_000_000);
-        assert_eq!(bid_size_8_values.value(0), 900_000_000_000);
-        assert_eq!(bid_size_9_values.value(0), 1_000_000_000_000);
+        for (i, ask_size) in ask_sizes.iter().enumerate() {
+            assert_eq!(ask_size.len(), 1);
+            assert_eq!(ask_size.value(0), 100_000_000_000 * (i + 1) as u64);
+        }
 
-        assert_eq!(ask_size_0_values.len(), 1);
-        assert_eq!(ask_size_1_values.len(), 1);
-        assert_eq!(ask_size_2_values.len(), 1);
-        assert_eq!(ask_size_3_values.len(), 1);
-        assert_eq!(ask_size_4_values.len(), 1);
-        assert_eq!(ask_size_5_values.len(), 1);
-        assert_eq!(ask_size_6_values.len(), 1);
-        assert_eq!(ask_size_7_values.len(), 1);
-        assert_eq!(ask_size_8_values.len(), 1);
-        assert_eq!(ask_size_9_values.len(), 1);
-        assert_eq!(ask_size_0_values.value(0), 100_000_000_000);
-        assert_eq!(ask_size_1_values.value(0), 200_000_000_000);
-        assert_eq!(ask_size_2_values.value(0), 300_000_000_000);
-        assert_eq!(ask_size_3_values.value(0), 400_000_000_000);
-        assert_eq!(ask_size_4_values.value(0), 500_000_000_000);
-        assert_eq!(ask_size_5_values.value(0), 600_000_000_000);
-        assert_eq!(ask_size_6_values.value(0), 700_000_000_000);
-        assert_eq!(ask_size_7_values.value(0), 800_000_000_000);
-        assert_eq!(ask_size_8_values.value(0), 900_000_000_000);
-        assert_eq!(ask_size_9_values.value(0), 1_000_000_000_000);
+        // Extract and test bid counts
+        let bid_counts: Vec<_> = (0..DEPTH10_LEN)
+            .map(|i| {
+                columns[4 * DEPTH10_LEN + i]
+                    .as_any()
+                    .downcast_ref::<UInt32Array>()
+                    .unwrap()
+            })
+            .collect();
 
-        assert_eq!(bid_counts_0_values.len(), 1);
-        assert_eq!(bid_counts_1_values.len(), 1);
-        assert_eq!(bid_counts_2_values.len(), 1);
-        assert_eq!(bid_counts_3_values.len(), 1);
-        assert_eq!(bid_counts_4_values.len(), 1);
-        assert_eq!(bid_counts_5_values.len(), 1);
-        assert_eq!(bid_counts_6_values.len(), 1);
-        assert_eq!(bid_counts_7_values.len(), 1);
-        assert_eq!(bid_counts_8_values.len(), 1);
-        assert_eq!(bid_counts_9_values.len(), 1);
-        assert_eq!(bid_counts_0_values.value(0), 1);
-        assert_eq!(bid_counts_1_values.value(0), 1);
-        assert_eq!(bid_counts_2_values.value(0), 1);
-        assert_eq!(bid_counts_3_values.value(0), 1);
-        assert_eq!(bid_counts_4_values.value(0), 1);
-        assert_eq!(bid_counts_5_values.value(0), 1);
-        assert_eq!(bid_counts_6_values.value(0), 1);
-        assert_eq!(bid_counts_7_values.value(0), 1);
-        assert_eq!(bid_counts_8_values.value(0), 1);
-        assert_eq!(bid_counts_9_values.value(0), 1);
+        for count_values in bid_counts {
+            assert_eq!(count_values.len(), 1);
+            assert_eq!(count_values.value(0), 1);
+        }
 
-        assert_eq!(ask_counts_0_values.len(), 1);
-        assert_eq!(ask_counts_1_values.len(), 1);
-        assert_eq!(ask_counts_2_values.len(), 1);
-        assert_eq!(ask_counts_3_values.len(), 1);
-        assert_eq!(ask_counts_4_values.len(), 1);
-        assert_eq!(ask_counts_5_values.len(), 1);
-        assert_eq!(ask_counts_6_values.len(), 1);
-        assert_eq!(ask_counts_7_values.len(), 1);
-        assert_eq!(ask_counts_8_values.len(), 1);
-        assert_eq!(ask_counts_9_values.len(), 1);
-        assert_eq!(ask_counts_0_values.value(0), 1);
-        assert_eq!(ask_counts_1_values.value(0), 1);
-        assert_eq!(ask_counts_2_values.value(0), 1);
-        assert_eq!(ask_counts_3_values.value(0), 1);
-        assert_eq!(ask_counts_4_values.value(0), 1);
-        assert_eq!(ask_counts_5_values.value(0), 1);
-        assert_eq!(ask_counts_6_values.value(0), 1);
-        assert_eq!(ask_counts_7_values.value(0), 1);
-        assert_eq!(ask_counts_8_values.value(0), 1);
-        assert_eq!(ask_counts_9_values.value(0), 1);
+        // Extract and test ask counts
+        let ask_counts: Vec<_> = (0..DEPTH10_LEN)
+            .map(|i| {
+                columns[5 * DEPTH10_LEN + i]
+                    .as_any()
+                    .downcast_ref::<UInt32Array>()
+                    .unwrap()
+            })
+            .collect();
+
+        for count_values in ask_counts {
+            assert_eq!(count_values.len(), 1);
+            assert_eq!(count_values.value(0), 1);
+        }
+
+        // Test remaining fields
+        let flags_values = columns[6 * DEPTH10_LEN]
+            .as_any()
+            .downcast_ref::<UInt8Array>()
+            .unwrap();
+        let sequence_values = columns[6 * DEPTH10_LEN + 1]
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .unwrap();
+        let ts_event_values = columns[6 * DEPTH10_LEN + 2]
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .unwrap();
+        let ts_init_values = columns[6 * DEPTH10_LEN + 3]
+            .as_any()
+            .downcast_ref::<UInt64Array>()
+            .unwrap();
 
         assert_eq!(flags_values.len(), 1);
         assert_eq!(flags_values.value(0), 0);
-
         assert_eq!(sequence_values.len(), 1);
         assert_eq!(sequence_values.value(0), 0);
-
         assert_eq!(ts_event_values.len(), 1);
         assert_eq!(ts_event_values.value(0), 1);
-
         assert_eq!(ts_init_values.len(), 1);
         assert_eq!(ts_init_values.value(0), 2);
     }
@@ -854,5 +676,6 @@ mod tests {
         let decoded_data = OrderBookDepth10::decode_batch(&metadata, record_batch).unwrap();
 
         assert_eq!(decoded_data.len(), 1);
+        assert_eq!(decoded_data[0], stub_depth10);
     }
 }

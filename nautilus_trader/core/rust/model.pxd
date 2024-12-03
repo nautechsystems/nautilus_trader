@@ -13,8 +13,12 @@ cdef extern from "../includes/model.h":
     # The maximum fixed-point precision.
     const uint8_t FIXED_PRECISION # = 9
 
+    const uint8_t FIXED_HIGH_PRECISION # = 18
+
     # The scalar value corresponding to the maximum precision (10^9).
     const double FIXED_SCALAR # = 1000000000.0
+
+    const double FIXED_HIGH_PRECISION_SCALAR # = 1000000000000000000.0
 
     # The maximum valid money amount which can be represented.
     const double MONEY_MAX # = 9223372036.0
