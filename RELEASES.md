@@ -6,7 +6,7 @@ Released on TBD (UTC).
 None
 
 ### Internal Improvements
-None
+- Subscribe to block height ws messages for dYdX (#2085), thanks @davidsblom
 
 ### Breaking Changes
 None
