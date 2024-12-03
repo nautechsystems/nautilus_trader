@@ -366,7 +366,7 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
                                 price_precision,
                             ),
                             Quantity::from_raw(bid_sizes[i].value(row), size_precision),
-                            0,
+                            0, // Order id always zero
                         );
                         asks[i] = BookOrder::new(
                             OrderSide::Sell,
@@ -375,7 +375,7 @@ impl DecodeFromRecordBatch for OrderBookDepth10 {
                                 price_precision,
                             ),
                             Quantity::from_raw(ask_sizes[i].value(row), size_precision),
-                            0,
+                            0, // Order id always zero
                         );
                     }
                     bid_count_arr[i] = bid_counts[i].value(row);

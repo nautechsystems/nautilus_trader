@@ -263,6 +263,7 @@ mod tests {
     use arrow::record_batch::RecordBatch;
     use nautilus_model::types::fixed::FIXED_HIGH_PRECISION_SCALAR;
     use nautilus_model::types::price::PriceRaw;
+    use pretty_assertions::assert_eq;
     use rstest::rstest;
 
     use crate::arrow::get_raw_price;
@@ -308,6 +309,7 @@ mod tests {
         expected_map.insert("price".to_string(), "Int64".to_string());
         #[cfg(feature = "high_precision")]
         expected_map.insert("price".to_string(), "FixedSizedBinary(16)".to_string());
+
         expected_map.insert("size".to_string(), "UInt64".to_string());
         expected_map.insert("order_id".to_string(), "UInt64".to_string());
         expected_map.insert("flags".to_string(), "UInt8".to_string());

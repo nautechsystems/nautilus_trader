@@ -470,7 +470,7 @@ mod tests {
     #[cfg(feature = "high_precision")]
     fn test_encode_batch() {
         use arrow::array::Array;
-        
+        use nautilus_model::types::fixed::FIXED_HIGH_PRECISION_SCALAR;
 
         use crate::arrow::get_raw_price;
 
@@ -526,38 +526,38 @@ mod tests {
         assert_eq!(open_values.len(), 2);
         assert_eq!(
             get_raw_price(open_values.value(0).try_into().unwrap()),
-            100_100_000_000
+            (100.10 * FIXED_HIGH_PRECISION_SCALAR) as i128
         );
         assert_eq!(
             get_raw_price(open_values.value(1).try_into().unwrap()),
-            100_000_000_000
+            (100.00 * FIXED_HIGH_PRECISION_SCALAR) as i128
         );
         assert_eq!(high_values.len(), 2);
         assert_eq!(
             get_raw_price(high_values.value(0).try_into().unwrap()),
-            102_000_000_000
+            (102.00 * FIXED_HIGH_PRECISION_SCALAR) as i128
         );
         assert_eq!(
             get_raw_price(high_values.value(1).try_into().unwrap()),
-            100_000_000_000
+            (100.00 * FIXED_HIGH_PRECISION_SCALAR) as i128
         );
         assert_eq!(low_values.len(), 2);
         assert_eq!(
             get_raw_price(low_values.value(0).try_into().unwrap()),
-            100_000_000_000
+            (100.00 * FIXED_HIGH_PRECISION_SCALAR) as i128
         );
         assert_eq!(
             get_raw_price(low_values.value(1).try_into().unwrap()),
-            100_000_000_000
+            (100.00 * FIXED_HIGH_PRECISION_SCALAR) as i128
         );
         assert_eq!(close_values.len(), 2);
         assert_eq!(
             get_raw_price(close_values.value(0).try_into().unwrap()),
-            101_000_000_000
+            (101.00 * FIXED_HIGH_PRECISION_SCALAR) as i128
         );
         assert_eq!(
             get_raw_price(close_values.value(1).try_into().unwrap()),
-            100_100_000_000
+            (100.10 * FIXED_HIGH_PRECISION_SCALAR) as i128
         );
         assert_eq!(volume_values.len(), 2);
         assert_eq!(volume_values.value(0), 1_100_000_000_000);
