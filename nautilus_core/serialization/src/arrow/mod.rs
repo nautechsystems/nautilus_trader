@@ -37,6 +37,8 @@ use nautilus_model::data::{
     bar::Bar, delta::OrderBookDelta, depth::OrderBookDepth10, quote::QuoteTick, trade::TradeTick,
     Data,
 };
+#[cfg(feature = "high_precision")]
+use nautilus_model::types::price::PriceRaw;
 use pyo3::prelude::*;
 
 // Define metadata key constants constants
@@ -71,6 +73,11 @@ pub enum EncodingError {
     ArrowError(#[from] arrow::error::ArrowError),
 }
 
+#[inline]
+#[cfg(feature = "high_precision")]
+fn get_raw_price(bytes: &[u8]) -> PriceRaw {
+    PriceRaw::from_le_bytes(bytes.try_into().unwrap())
+}
 pub trait ArrowSchemaProvider {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema;
 

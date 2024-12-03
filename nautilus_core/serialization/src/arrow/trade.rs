@@ -32,8 +32,7 @@ use nautilus_model::{
 };
 
 use super::{
-    extract_column, DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
-    KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
+    extract_column, get_raw_price, DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION, KEY_SIZE_PRECISION
 };
 use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
@@ -185,7 +184,7 @@ impl DecodeFromRecordBatch for TradeTick {
                 let price = Price::from_raw(price_values.value(i), price_precision);
                 #[cfg(feature = "high_precision")]
                 let price = Price::from_raw(
-                    PriceRaw::from_le_bytes(price_values.value(i).try_into().unwrap()),
+                    get_raw_price(price_values.value(i).try_into().unwrap()),
                     price_precision,
                 );
 
@@ -239,7 +238,10 @@ mod tests {
         array::{Array, FixedSizeBinaryArray, Int64Array, UInt64Array, UInt8Array},
         record_batch::RecordBatch,
     };
+    use nautilus_model::types::fixed::FIXED_HIGH_PRECISION_SCALAR;
     use rstest::rstest;
+
+    use crate::arrow::get_raw_price;
 
     use super::*;
 
@@ -329,12 +331,12 @@ mod tests {
                 .downcast_ref::<FixedSizeBinaryArray>()
                 .unwrap();
             assert_eq!(
-                PriceRaw::from_le_bytes(price_values.value(0).try_into().unwrap()),
-                100_100_000_000
+                get_raw_price(price_values.value(0).try_into().unwrap()),
+                (100.10 * FIXED_HIGH_PRECISION_SCALAR) as i128
             );
             assert_eq!(
-                PriceRaw::from_le_bytes(price_values.value(1).try_into().unwrap()),
-                100_500_000_000
+                get_raw_price(price_values.value(1).try_into().unwrap()),
+                (100.50 * FIXED_HIGH_PRECISION_SCALAR) as i128
             );
         }
 

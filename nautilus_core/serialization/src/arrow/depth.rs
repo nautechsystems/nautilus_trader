@@ -62,7 +62,7 @@ fn get_field_data() -> Vec<(&'static str, DataType)> {
 #[inline]
 #[cfg(feature = "high_precision")]
 fn get_raw_price(bytes: &[u8]) -> PriceRaw {
-    PriceRaw::from_le_bytes(bytes.try_into().unwrap())
+    get_raw_price(bytes.try_into().unwrap())
 }
 
 impl ArrowSchemaProvider for OrderBookDepth10 {

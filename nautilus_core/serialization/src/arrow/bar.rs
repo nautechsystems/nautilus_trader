@@ -240,6 +240,8 @@ impl DecodeFromRecordBatch for Bar {
     ) -> Result<Vec<Self>, EncodingError> {
         use nautilus_model::types::price::PriceRaw;
 
+        use crate::arrow::get_raw_price;
+
         let (bar_type, price_precision, size_precision) = parse_metadata(metadata)?;
         let cols = record_batch.columns();
 
@@ -283,19 +285,19 @@ impl DecodeFromRecordBatch for Bar {
         let result: Result<Vec<Self>, EncodingError> = (0..record_batch.num_rows())
             .map(|i| {
                 let open = Price::from_raw(
-                    PriceRaw::from_le_bytes(open_values.value(i).try_into().unwrap()),
+                    get_raw_price(open_values.value(i).try_into().unwrap()),
                     price_precision,
                 );
                 let high = Price::from_raw(
-                    PriceRaw::from_le_bytes(high_values.value(i).try_into().unwrap()),
+                    get_raw_price(high_values.value(i).try_into().unwrap()),
                     price_precision,
                 );
                 let low = Price::from_raw(
-                    PriceRaw::from_le_bytes(low_values.value(i).try_into().unwrap()),
+                    get_raw_price(low_values.value(i).try_into().unwrap()),
                     price_precision,
                 );
                 let close = Price::from_raw(
-                    PriceRaw::from_le_bytes(close_values.value(i).try_into().unwrap()),
+                    get_raw_price(close_values.value(i).try_into().unwrap()),
                     price_precision,
                 );
                 let volume = Quantity::from_raw(volume_values.value(i), size_precision);
@@ -342,6 +344,26 @@ mod tests {
     use super::*;
 
     #[rstest]
+    #[cfg(feature = "high_precision")]
+    fn test_get_schema() {
+        let bar_type = BarType::from_str("AAPL.XNAS-1-MINUTE-LAST-INTERNAL").unwrap();
+        let metadata = Bar::get_metadata(&bar_type, 2, 0);
+        let schema = Bar::get_schema(Some(metadata.clone()));
+        let expected_fields = vec![
+            Field::new("open", DataType::FixedSizeBinary(16), false),
+            Field::new("high", DataType::FixedSizeBinary(16), false),
+            Field::new("low", DataType::FixedSizeBinary(16), false),
+            Field::new("close", DataType::FixedSizeBinary(16), false),
+            Field::new("volume", DataType::UInt64, false),
+            Field::new("ts_event", DataType::UInt64, false),
+            Field::new("ts_init", DataType::UInt64, false),
+        ];
+        let expected_schema = Schema::new_with_metadata(expected_fields, metadata);
+        assert_eq!(schema, expected_schema);
+    }
+
+    #[rstest]
+    #[cfg(not(feature = "high_precision"))]
     fn test_get_schema() {
         let bar_type = BarType::from_str("AAPL.XNAS-1-MINUTE-LAST-INTERNAL").unwrap();
         let metadata = Bar::get_metadata(&bar_type, 2, 0);
@@ -363,10 +385,20 @@ mod tests {
     fn test_get_schema_map() {
         let schema_map = Bar::get_schema_map();
         let mut expected_map = HashMap::new();
-        expected_map.insert("open".to_string(), "Int64".to_string());
-        expected_map.insert("high".to_string(), "Int64".to_string());
-        expected_map.insert("low".to_string(), "Int64".to_string());
-        expected_map.insert("close".to_string(), "Int64".to_string());
+        #[cfg(not(feature = "high_precision"))]
+        {
+            expected_map.insert("open".to_string(), "Int64".to_string());
+            expected_map.insert("high".to_string(), "Int64".to_string());
+            expected_map.insert("low".to_string(), "Int64".to_string());
+            expected_map.insert("close".to_string(), "Int64".to_string());
+        }
+        #[cfg(feature = "high_precision")]
+        {
+            expected_map.insert("open".to_string(), "FixedSizeBinary(16)".to_string());
+            expected_map.insert("high".to_string(), "FixedSizeBinary(16)".to_string());
+            expected_map.insert("low".to_string(), "FixedSizeBinary(16)".to_string());
+            expected_map.insert("close".to_string(), "FixedSizeBinary(16)".to_string());
+        }
         expected_map.insert("volume".to_string(), "UInt64".to_string());
         expected_map.insert("ts_event".to_string(), "UInt64".to_string());
         expected_map.insert("ts_init".to_string(), "UInt64".to_string());
@@ -442,6 +474,8 @@ mod tests {
         use arrow::array::Array;
         use nautilus_model::types::price::PriceRaw;
 
+        use crate::arrow::get_raw_price;
+
         let bar_type = BarType::from_str("AAPL.XNAS-1-MINUTE-LAST-INTERNAL").unwrap();
         let metadata = Bar::get_metadata(&bar_type, 2, 0);
 
@@ -493,38 +527,38 @@ mod tests {
         assert_eq!(columns.len(), 7);
         assert_eq!(open_values.len(), 2);
         assert_eq!(
-            PriceRaw::from_le_bytes(open_values.value(0).try_into().unwrap()),
+            get_raw_price(open_values.value(0).try_into().unwrap()),
             100_100_000_000
         );
         assert_eq!(
-            PriceRaw::from_le_bytes(open_values.value(1).try_into().unwrap()),
+            get_raw_price(open_values.value(1).try_into().unwrap()),
             100_000_000_000
         );
         assert_eq!(high_values.len(), 2);
         assert_eq!(
-            PriceRaw::from_le_bytes(high_values.value(0).try_into().unwrap()),
+            get_raw_price(high_values.value(0).try_into().unwrap()),
             102_000_000_000
         );
         assert_eq!(
-            PriceRaw::from_le_bytes(high_values.value(1).try_into().unwrap()),
+            get_raw_price(high_values.value(1).try_into().unwrap()),
             100_000_000_000
         );
         assert_eq!(low_values.len(), 2);
         assert_eq!(
-            PriceRaw::from_le_bytes(low_values.value(0).try_into().unwrap()),
+            get_raw_price(low_values.value(0).try_into().unwrap()),
             100_000_000_000
         );
         assert_eq!(
-            PriceRaw::from_le_bytes(low_values.value(1).try_into().unwrap()),
+            get_raw_price(low_values.value(1).try_into().unwrap()),
             100_000_000_000
         );
         assert_eq!(close_values.len(), 2);
         assert_eq!(
-            PriceRaw::from_le_bytes(close_values.value(0).try_into().unwrap()),
+            get_raw_price(close_values.value(0).try_into().unwrap()),
             101_000_000_000
         );
         assert_eq!(
-            PriceRaw::from_le_bytes(close_values.value(1).try_into().unwrap()),
+            get_raw_price(close_values.value(1).try_into().unwrap()),
             100_100_000_000
         );
         assert_eq!(volume_values.len(), 2);

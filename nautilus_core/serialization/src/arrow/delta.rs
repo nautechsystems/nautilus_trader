@@ -32,7 +32,7 @@ use super::{
     extract_column, DecodeDataFromRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
     KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
 };
-use crate::arrow::{ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
+use crate::arrow::{get_raw_price, ArrowSchemaProvider, Data, DecodeFromRecordBatch, EncodeToRecordBatch};
 
 impl ArrowSchemaProvider for OrderBookDelta {
     fn get_schema(metadata: Option<HashMap<String, String>>) -> Schema {
@@ -208,7 +208,7 @@ impl DecodeFromRecordBatch for OrderBookDelta {
                 let price = Price::from_raw(price_values.value(i), price_precision);
                 #[cfg(feature = "high_precision")]
                 let price = Price::from_raw(
-                    PriceRaw::from_le_bytes(price_values.value(i).try_into().unwrap()),
+                    get_raw_price(price_values.value(i).try_into().unwrap()),
                     price_precision,
                 );
 
@@ -259,7 +259,10 @@ mod tests {
 
     use arrow::array::Array;
     use arrow::record_batch::RecordBatch;
+    use nautilus_model::types::fixed::FIXED_HIGH_PRECISION_SCALAR;
     use rstest::rstest;
+
+    use crate::arrow::get_raw_price;
 
     use super::*;
 
@@ -298,7 +301,10 @@ mod tests {
         let mut expected_map = HashMap::new();
         expected_map.insert("action".to_string(), "UInt8".to_string());
         expected_map.insert("side".to_string(), "UInt8".to_string());
+        #[cfg(not(feature = "high_precision"))]
         expected_map.insert("price".to_string(), "Int64".to_string());
+        #[cfg(feature = "high_precision")]
+        expected_map.insert("price".to_string(), "FixedSizedBinary(16)".to_string());
         expected_map.insert("size".to_string(), "UInt64".to_string());
         expected_map.insert("order_id".to_string(), "UInt64".to_string());
         expected_map.insert("flags".to_string(), "UInt8".to_string());
@@ -385,12 +391,12 @@ mod tests {
             use nautilus_model::types::price::PriceRaw;
             assert_eq!(price_values.len(), 2);
             assert_eq!(
-                PriceRaw::from_le_bytes(price_values.value(0).try_into().unwrap()),
-                100_100_000_000
+                get_raw_price(price_values.value(0).try_into().unwrap()),
+                (100.10 * FIXED_HIGH_PRECISION_SCALAR) as PriceRaw
             );
             assert_eq!(
-                PriceRaw::from_le_bytes(price_values.value(1).try_into().unwrap()),
-                101_200_000_000
+                get_raw_price(price_values.value(1).try_into().unwrap()),
+                (101.20 * FIXED_HIGH_PRECISION_SCALAR) as PriceRaw
             );
         }
 
