@@ -415,12 +415,12 @@ impl DecodeDataFromRecordBatch for OrderBookDepth10 {
 ////////////////////////////////////////////////////////////////////////////////
 #[cfg(test)]
 mod tests {
-    use arrow::datatypes::{DataType, Field, Schema};
-    use nautilus_model::data::stubs::stub_depth10;
+    use arrow::datatypes::{DataType, Field};
     #[cfg(feature = "high_precision")]
     use nautilus_model::types::fixed::FIXED_HIGH_PRECISION_SCALAR;
     #[cfg(not(feature = "high_precision"))]
     use nautilus_model::types::fixed::FIXED_SCALAR;
+    use nautilus_model::{data::stubs::stub_depth10, types::price::PriceRaw};
     use pretty_assertions::assert_eq;
     use rstest::rstest;
 
@@ -439,14 +439,14 @@ mod tests {
                 let field = schema.field(i + group_count * DEPTH10_LEN).clone();
                 assert_eq!(
                     field,
-                    Field::new(&format!("{}_{i}", name), data_type.clone(), false)
+                    Field::new(format!("{}_{i}", name), data_type.clone(), false)
                 );
             }
 
             group_count += 1;
         }
 
-        let flags_field = schema.field(group_count * DEPTH10_LEN + 0).clone();
+        let flags_field = schema.field(group_count * DEPTH10_LEN).clone();
         assert_eq!(flags_field, Field::new("flags", DataType::UInt8, false));
         let sequence_field = schema.field(group_count * DEPTH10_LEN + 1).clone();
         assert_eq!(

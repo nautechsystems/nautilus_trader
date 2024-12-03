@@ -236,7 +236,7 @@ mod tests {
     use std::sync::Arc;
 
     use arrow::{
-        array::{Array, FixedSizeBinaryArray, Int64Array, UInt64Array, UInt8Array},
+        array::{Array, FixedSizeBinaryArray, UInt64Array, UInt8Array},
         record_batch::RecordBatch,
     };
     use nautilus_model::types::{fixed::FIXED_HIGH_PRECISION_SCALAR, price::PriceRaw};

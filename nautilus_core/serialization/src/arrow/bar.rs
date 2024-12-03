@@ -470,7 +470,7 @@ mod tests {
     #[cfg(feature = "high_precision")]
     fn test_encode_batch() {
         use arrow::array::Array;
-        use nautilus_model::types::price::PriceRaw;
+        
 
         use crate::arrow::get_raw_price;
 
