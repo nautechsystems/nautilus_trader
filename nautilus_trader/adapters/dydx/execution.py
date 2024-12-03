@@ -50,6 +50,8 @@ from nautilus_trader.adapters.dydx.http.client import DYDXHttpClient
 from nautilus_trader.adapters.dydx.http.errors import DYDXError
 from nautilus_trader.adapters.dydx.http.errors import should_retry
 from nautilus_trader.adapters.dydx.providers import DYDXInstrumentProvider
+from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsBlockHeightChannelData
+from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsBlockHeightSubscribedData
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsFillSubaccountMessageContents
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsMessageGeneral
 from nautilus_trader.adapters.dydx.schemas.ws import DYDXWsOrderSubaccountMessageContents
@@ -258,10 +260,15 @@ class DYDXExecutionClient(LiveExecutionClient):
         self._decoder_ws_msg_subaccounts_channel = msgspec.json.Decoder(
             DYDXWsSubaccountsChannelData,
         )
+        self._decoder_ws_block_height_subscribed = msgspec.json.Decoder(
+            DYDXWsBlockHeightSubscribedData,
+        )
+        self._decoder_ws_block_height_channel = msgspec.json.Decoder(DYDXWsBlockHeightChannelData)
 
         # Hot caches
         self._order_builders: dict[InstrumentId, OrderBuilder] = {}
         self._generate_order_status_retries: dict[ClientOrderId, int] = {}
+        self._block_height: int = 0
 
         self._retry_manager_pool = RetryManagerPool(
             pool_size=100,
@@ -286,6 +293,9 @@ class DYDXExecutionClient(LiveExecutionClient):
             wallet_address=self._wallet_address,
             subaccount_number=self._subaccount,
         )
+        await self._ws_client.subscribe_block_height()
+
+        self._block_height = await self._grpc_account.latest_block_height()
 
         account = await self._grpc_account.get_account(address=self._wallet_address)
         self._wallet = Wallet(
@@ -299,6 +309,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             wallet_address=self._wallet_address,
             subaccount_number=self._subaccount,
         )
+        await self._ws_client.unsubscribe_block_height()
         await self._ws_client.disconnect()
         await self._grpc_account.disconnect()
 
@@ -696,8 +707,12 @@ class DYDXExecutionClient(LiveExecutionClient):
         try:
             ws_message = self._decoder_ws_msg_general.decode(raw)
 
-            if ws_message.channel == "v4_subaccounts" and ws_message.type == "channel_data":
+            if ws_message.channel == "v4_block_height" and ws_message.type == "channel_data":
+                self._handle_block_height_channel_data(raw)
+            elif ws_message.channel == "v4_subaccounts" and ws_message.type == "channel_data":
                 self._handle_subaccounts_channel_data(raw)
+            elif ws_message.channel == "v4_block_height" and ws_message.type == "subscribed":
+                self._handle_block_height_subscribed(raw)
             elif ws_message.channel == "v4_subaccounts" and ws_message.type == "subscribed":
                 self._handle_subaccounts_subscribed(raw)
             elif ws_message.type == "unsubscribed":
@@ -710,6 +725,30 @@ class DYDXExecutionClient(LiveExecutionClient):
                 self._log.error(f"Unknown message `{ws_message.type}`: {raw.decode()}")
         except Exception as e:
             self._log.error(f"Failed to parse websocket message: {raw.decode()} with error {e}")
+
+    def _handle_block_height_subscribed(self, raw: bytes) -> None:
+        try:
+            msg: DYDXWsBlockHeightSubscribedData = self._decoder_ws_block_height_subscribed.decode(
+                raw,
+            )
+            self._block_height = int(msg.contents.height)
+
+        except Exception as e:
+            self._log.error(
+                f"Failed to parse block height subscribed message: {raw.decode()} with error {e}",
+            )
+
+    def _handle_block_height_channel_data(self, raw: bytes) -> None:
+        try:
+            msg: DYDXWsBlockHeightChannelData = self._decoder_ws_block_height_channel.decode(
+                raw,
+            )
+            self._block_height = int(msg.contents.blockHeight)
+
+        except Exception as e:
+            self._log.error(
+                f"Failed to parse block height channel message: {raw.decode()} with error {e}",
+            )
 
     def _handle_subaccounts_subscribed(self, raw: bytes) -> None:
         try:
@@ -1014,20 +1053,7 @@ class DYDXExecutionClient(LiveExecutionClient):
             return
 
         if dydx_order_tags.is_short_term_order:
-            try:
-                latest_block = await self._grpc_account.latest_block_height()
-            except AioRpcError as e:
-                rejection_reason = f"Failed to submit the order while retrieve the latest block height: code {e.code} {e.details}"
-                self.generate_order_rejected(
-                    strategy_id=order.strategy_id,
-                    instrument_id=order.instrument_id,
-                    client_order_id=order.client_order_id,
-                    reason=rejection_reason,
-                    ts_event=self._clock.timestamp_ns(),
-                )
-                return
-
-            good_til_block = latest_block + dydx_order_tags.num_blocks_open
+            good_til_block = self._block_height + dydx_order_tags.num_blocks_open
         else:
             order_flags = OrderFlags.LONG_TERM
             good_til_date_secs = (
@@ -1248,8 +1274,6 @@ class DYDXExecutionClient(LiveExecutionClient):
                 )
                 order_batch_list.append(order_batch)
 
-        latest_block_height = await self._grpc_account.latest_block_height()
-
         if self._wallet is None:
             self._log.error("Cannot cancel batch of orders: no wallet available")
             return
@@ -1265,7 +1289,7 @@ class DYDXExecutionClient(LiveExecutionClient):
                     wallet_address=self._wallet_address,
                     subaccount=self._subaccount,
                     short_term_cancels=order_batch_list,
-                    good_til_block=latest_block_height + 10,
+                    good_til_block=self._block_height + 10,
                 )
                 if not retry_manager.result:
                     self._log.error(f"Failed to cancel batch of orders: {retry_manager.message}")
@@ -1378,8 +1402,6 @@ class DYDXExecutionClient(LiveExecutionClient):
             )
             return
 
-        current_block = await self._grpc_account.latest_block_height()
-
         async with self._retry_manager_pool as retry_manager:
             await retry_manager.run(
                 name="cancel_order",
@@ -1387,7 +1409,7 @@ class DYDXExecutionClient(LiveExecutionClient):
                 func=self._grpc_account.cancel_order,
                 wallet=self._wallet,
                 order_id=order_id,
-                good_til_block=current_block + 10,
+                good_til_block=self._block_height + 10,
                 good_til_block_time=good_til_date_secs,
             )
             if not retry_manager.result:
