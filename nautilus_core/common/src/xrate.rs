@@ -147,7 +147,7 @@ pub fn get_exchange_rate(
         // Skip if rate already exists
         if exchange_rates
             .get(perm1)
-            .map_or(false, |rates| rates.contains_key(perm0))
+            .is_some_and(|rates| rates.contains_key(perm0))
         {
             continue;
         }
