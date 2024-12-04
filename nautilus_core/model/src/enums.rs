@@ -1104,6 +1104,7 @@ pub enum TradingState {
     Copy,
     Clone,
     Debug,
+    Default,
     Display,
     Hash,
     PartialEq,
@@ -1123,6 +1124,7 @@ pub enum TradingState {
 )]
 pub enum TrailingOffsetType {
     /// No trailing offset type is specified (invalid for trailing type orders).
+    #[default]
     NoTrailingOffset = 0,
     /// The trailing offset is based on a market price.
     Price = 1,
