@@ -150,6 +150,10 @@ cdef class DataEngine(Component):
     cpdef void _handle_unsubscribe_trade_ticks(self, MarketDataClient client, InstrumentId instrument_id, dict metadata)
     cpdef void _handle_unsubscribe_bars(self, MarketDataClient client, BarType bar_type, dict metadata)
     cpdef void _handle_unsubscribe_data(self, DataClient client, DataType data_type)
+
+# -- REQUEST HANDLERS -----------------------------------------------------------------------------
+
+    cpdef tuple[datetime, object] _catalogs_last_timestamp(self, type data_cls, InstrumentId instrument_id=*, BarType bar_type=*, str ts_column=*)
     cpdef void _handle_request(self, DataRequest request)
     cpdef void _handle_request_instruments(self, DataRequest request, DataClient client, datetime start, datetime end, dict metadata)
     cpdef void _handle_request_instrument(self, DataRequest request, DataClient client, InstrumentId instrument_id, datetime start, datetime end, dict metadata)
