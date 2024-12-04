@@ -7,6 +7,7 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 - Subscribe to block height ws messages for dYdX (#2085), thanks @davidsblom
+- Upgraded `tokio` crate to v1.42.0
 
 ### Breaking Changes
 None
