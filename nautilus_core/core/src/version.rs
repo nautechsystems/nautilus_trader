@@ -15,6 +15,9 @@
 
 use std::env;
 
+/// The `NautilusTrader` string constant.
+pub static NAUTILUS_TRADER: &str = "NautilusTrader";
+
 /// The `NautilusTrader` version string read from the top-level `pyproject.toml` at compile time.
 pub static NAUTILUS_VERSION: &str = env!("NAUTILUS_VERSION");
 
