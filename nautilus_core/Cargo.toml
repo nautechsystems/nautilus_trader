@@ -31,7 +31,7 @@ description = "A high-performance algorithmic trading platform and event-driven 
 documentation = "https://nautilustrader.io/docs"
 
 [workspace.dependencies]
-anyhow = "1.0.93"
+anyhow = "1.0.94"
 arrow = "53.2.0"  # Keep in line with datafusion
 async-stream = "0.3.6"
 base64 = "0.22.1"
@@ -60,13 +60,13 @@ semver = "1.0.23"
 serde = { version = "1.0.215", features = ["derive"] }
 serde_json = "1.0.133"
 strum = { version = "0.26.3", features = ["derive"] }
-thiserror = "2.0.3"
+thiserror = "2.0.4"
 thousands = "0.2.0"
 toml = "0.8.19"
 tracing = "0.1.41"
 # Disable default feature "tracing-log" since it interferes with custom logging
 tracing-subscriber = { version = "0.3.19", default-features = false, features = ["smallvec", "fmt", "ansi", "std", "env-filter"] }
-tokio = { version = "1.41.1", features = ["full"] }
+tokio = { version = "1.42.0", features = ["full"] }
 tokio-tungstenite = { version = "0.24.0", features = ["rustls-tls-native-roots"] }
 ustr = { version = "1.1.0", features = ["serde"] }
 uuid = { version = "1.11.0", features = ["v4"] }
