@@ -116,7 +116,7 @@ cdef class DataEngine(Component):
         Cache cache not None,
         Clock clock not None,
         config: DataEngineConfig | None = None,
-    ):
+    ) -> None:
         if config is None:
             config = DataEngineConfig()
         Condition.type(config, DataEngineConfig, "config")
@@ -249,6 +249,8 @@ cdef class DataEngine(Component):
         ----------
         catalog : ParquetDataCatalog
             The data catalog to register.
+        name : str, default 'catalog_0'
+            The name of the catalog to register.
 
         """
         Condition.not_none(catalog, "catalog")
@@ -1284,14 +1286,16 @@ cdef class DataEngine(Component):
 
 # -- REQUEST HANDLERS -----------------------------------------------------------------------------
 
-    def _catalogs_last_timestamp(
+    cpdef tuple[datetime, object] _catalogs_last_timestamp(
         self,
-        data_cls: type,
-        instrument_id: str | None = None,
-        bar_type: str | None = None,
-        ts_column: str = "ts_init",
+        type data_cls,
+        InstrumentId instrument_id = None,
+        BarType bar_type = None,
+        str ts_column = "ts_init",
     ):
-        last_timestamp = None
+        cdef datetime last_timestamp = None
+        cdef datetime prev_last_timestamp = None
+
         last_timestamp_catalog = None
 
         for catalog in self._catalogs.values():
@@ -1333,7 +1337,6 @@ cdef class DataEngine(Component):
 
         if request.data_type.type == Instrument:
             instrument_id = request.data_type.metadata.get("instrument_id")
-
             if instrument_id is None:
                 self._handle_request_instruments(request, client, start, end, metadata)
             else:
@@ -1509,7 +1512,14 @@ cdef class DataEngine(Component):
             metadata,
         )
 
-    cpdef void _handle_request_data(self, DataRequest request, DataClient client, datetime start, datetime end, datetime now):
+    cpdef void _handle_request_data(
+        self,
+        DataRequest request,
+        DataClient client,
+        datetime start,
+        datetime end,
+        datetime now,
+    ):
         last_timestamp, _ = self._catalogs_last_timestamp(
             request.data_type.type,
         )
@@ -1606,7 +1616,7 @@ cdef class DataEngine(Component):
                     end=ts_end,
                 )
 
-        # Validation data is not from the future
+        # Validate data is not from the future
         if data and data[-1].ts_init > ts_now:
             raise RuntimeError(
                 "Invalid response: Historical data from the future: "
