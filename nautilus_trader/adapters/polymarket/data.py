@@ -224,7 +224,7 @@ class PolymarketDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int | None = None,
-        kwargs: dict | None = None,
+        metadata: dict | None = None,
     ) -> None:
         if book_type == BookType.L3_MBO:
             self._log.error(
@@ -240,38 +240,62 @@ class PolymarketDataClient(LiveMarketDataClient):
 
         await self._subscribe_asset_book(instrument_id)
 
-    async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         await self._subscribe_asset_book(instrument_id)
 
-    async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         await self._subscribe_asset_book(instrument_id)
 
-    async def _subscribe_bars(self, bar_type: BarType) -> None:
+    async def _subscribe_bars(self, bar_type: BarType, metadata: dict | None = None) -> None:
         self._log.error(
             f"Cannot subscribe to {bar_type} bars: not implemented for Polymarket",
         )
 
-    async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_order_book_deltas(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         self._log.error(
             f"Cannot unsubscribe from {instrument_id} order book deltas: unsubscribing not supported by Polymarket",
         )
 
-    async def _unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_order_book_snapshots(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         self._log.error(
             f"Cannot unsubscribe from {instrument_id} order book snapshots: unsubscribing not supported by Polymarket",
         )
 
-    async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         self._log.error(
             f"Cannot unsubscribe from {instrument_id} quotes: unsubscribing not supported by Polymarket",
         )
 
-    async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         self._log.error(
             f"Cannot unsubscribe from {instrument_id} trades: unsubscribing not supported by Polymarket",
         )
 
-    async def _unsubscribe_bars(self, bar_type: BarType) -> None:
+    async def _unsubscribe_bars(self, bar_type: BarType, metadata: dict | None = None) -> None:
         self._log.error(
             f"Cannot unsubscribe from {bar_type} bars: not implemented for Polymarket",
         )

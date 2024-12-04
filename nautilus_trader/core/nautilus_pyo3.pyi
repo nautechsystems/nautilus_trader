@@ -4019,6 +4019,8 @@ class DatabentoHistoricalClient:
         start: int,
         end: int | None = None,
         limit: int | None = None,
+        price_precision: int | None = None,
+        schema: str | None = None,
     ) -> list[QuoteTick]: ...
     async def get_range_trades(
         self,

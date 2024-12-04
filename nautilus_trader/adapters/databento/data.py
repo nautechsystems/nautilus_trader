@@ -18,6 +18,7 @@ from collections import defaultdict
 from collections.abc import Coroutine
 from typing import Any
 
+import msgspec
 import pandas as pd
 
 from nautilus_trader.adapters.databento.common import databento_schema_from_nautilus_bar_type
@@ -356,7 +357,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int | None = None,
-        kwargs: dict[str, Any] | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         if book_type != BookType.L3_MBO:
             raise NotImplementedError
@@ -366,7 +367,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 instrument_id=instrument_id,
                 book_type=book_type,
                 depth=depth,
-                kwargs=kwargs,
+                metadata=metadata,
             ),
             log_msg=f"subscribe: order_book_deltas {instrument_id}",
             actions=lambda: self._add_subscription_order_book_deltas(instrument_id),
@@ -412,11 +413,15 @@ class DatabentoDataClient(LiveMarketDataClient):
         except asyncio.CancelledError:
             self._log.warning("`_subscribe_imbalance` was canceled while still pending")
 
-    async def _subscribe_instruments(self) -> None:
+    async def _subscribe_instruments(self, metadata: dict | None = None) -> None:
         # Replace method in child class, for exchange specific data types.
         raise NotImplementedError("Cannot subscribe to all instruments (not currently supported).")
 
-    async def _subscribe_instrument(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_instrument(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         try:
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
             live_client = self._get_live_client(dataset)
@@ -464,7 +469,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int | None = None,
-        kwargs: dict | None = None,
+        metadata: dict | None = None,
     ) -> None:
         try:
             if book_type != BookType.L3_MBO:
@@ -555,7 +560,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int | None = None,
-        kwargs: dict | None = None,
+        metadata: dict | None = None,
     ) -> None:
         try:
             await self._ensure_subscribed_for_instrument(instrument_id)
@@ -581,14 +586,34 @@ class DatabentoDataClient(LiveMarketDataClient):
         except asyncio.CancelledError:
             self._log.warning("`_subscribe_order_book_snapshots` was canceled while still pending")
 
-    async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         try:
             await self._ensure_subscribed_for_instrument(instrument_id)
+            schema = None
+
+            if metadata is not None:
+                params = metadata.get("params")
+
+                if params is not None:
+                    params_dict = msgspec.msgpack.decode(params)
+                    schema = params_dict.get("schema")
+
+            # allowed schema values: mbp-1, bbo-1s, bbo-1m
+            if schema is None or schema not in [
+                DatabentoSchema.MBP_1.value,
+                DatabentoSchema.BBO_1S.value,
+                DatabentoSchema.BBO_1M.value,
+            ]:
+                schema = DatabentoSchema.MBP_1.value
 
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
             live_client = self._get_live_client(dataset)
             live_client.subscribe(
-                schema=DatabentoSchema.MBP_1.value,
+                schema=schema,
                 symbols=[instrument_id.symbol.value],
             )
 
@@ -599,7 +624,11 @@ class DatabentoDataClient(LiveMarketDataClient):
         except asyncio.CancelledError:
             self._log.warning("`_subscribe_quote_ticks` was canceled while still pending")
 
-    async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         try:
             if instrument_id in self._trade_tick_subscriptions:
                 return  # Already subscribed (this will save on data costs)
@@ -616,7 +645,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         except asyncio.CancelledError:
             self._log.warning("`_subscribe_trade_ticks` was canceled while still pending")
 
-    async def _subscribe_bars(self, bar_type: BarType) -> None:
+    async def _subscribe_bars(self, bar_type: BarType, metadata: dict | None = None) -> None:
         try:
             dataset: Dataset = self._loader.get_dataset_for_venue(bar_type.instrument_id.venue)
 
@@ -635,7 +664,11 @@ class DatabentoDataClient(LiveMarketDataClient):
         except asyncio.CancelledError:
             self._log.warning("`_subscribe_bars` was canceled while still pending")
 
-    async def _subscribe_instrument_status(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_instrument_status(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         try:
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
 
@@ -653,48 +686,72 @@ class DatabentoDataClient(LiveMarketDataClient):
             f"Cannot unsubscribe from {data_type}, unsubscribing not supported by Databento.",
         )
 
-    async def _unsubscribe_instruments(self) -> None:
+    async def _unsubscribe_instruments(self, params: dict | None = None) -> None:
         raise NotImplementedError(
             "Cannot unsubscribe from all instruments, unsubscribing not supported by Databento.",
         )
 
-    async def _unsubscribe_instrument(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_instrument(
+        self,
+        instrument_id: InstrumentId,
+        params: dict | None = None,
+    ) -> None:
         raise NotImplementedError(
             f"Cannot unsubscribe from {instrument_id} instrument, "
             "unsubscribing not supported by Databento.",
         )
 
-    async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_order_book_deltas(
+        self,
+        instrument_id: InstrumentId,
+        params: dict | None = None,
+    ) -> None:
         raise NotImplementedError(
             f"Cannot unsubscribe from {instrument_id} order book deltas, "
             "unsubscribing not supported by Databento.",
         )
 
-    async def _unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_order_book_snapshots(
+        self,
+        instrument_id: InstrumentId,
+        params: dict | None = None,
+    ) -> None:
         raise NotImplementedError(
             f"Cannot unsubscribe from {instrument_id} order book snapshots, "
             "unsubscribing not supported by Databento.",
         )
 
-    async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict | None = None,
+    ) -> None:
         raise NotImplementedError(
             f"Cannot unsubscribe from {instrument_id} quotes, "
             "unsubscribing not supported by Databento.",
         )
 
-    async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        params: dict | None = None,
+    ) -> None:
         raise NotImplementedError(
             f"Cannot unsubscribe from {instrument_id} trades, "
             "unsubscribing not supported by Databento.",
         )
 
-    async def _unsubscribe_bars(self, bar_type: BarType) -> None:
+    async def _unsubscribe_bars(self, bar_type: BarType, params: dict | None = None) -> None:
         raise NotImplementedError(
             f"Cannot unsubscribe from {bar_type} bars, "
             "unsubscribing not supported by Databento.",
         )
 
-    async def _unsubscribe_instrument_status(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_instrument_status(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         raise NotImplementedError(
             f"Cannot unsubscribe from {instrument_id} instrument status, "
             "unsubscribing not supported by Databento.",
@@ -898,11 +955,29 @@ class DatabentoDataClient(LiveMarketDataClient):
             LogColor.BLUE,
         )
 
+        schema = None
+
+        if metadata is not None:
+            params = metadata.get("params")
+
+            if params is not None:
+                params_dict = msgspec.msgpack.decode(params)
+                schema = params_dict.get("schema")
+
+        # allowed schema values: mbp-1, bbo-1s, bbo-1m
+        if schema is None or schema not in [
+            DatabentoSchema.MBP_1.value,
+            DatabentoSchema.BBO_1S.value,
+            DatabentoSchema.BBO_1M.value,
+        ]:
+            schema = DatabentoSchema.MBP_1.value
+
         pyo3_quotes = await self._http_client.get_range_quotes(
             dataset=dataset,
             symbols=[instrument_id.symbol.value],
             start=start.value,
             end=end.value,
+            schema=schema,
         )
 
         quotes = QuoteTick.from_pyo3_list(pyo3_quotes)

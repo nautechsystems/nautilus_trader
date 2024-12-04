@@ -244,7 +244,7 @@ class OKXDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int | None = None,
-        kwargs: dict | None = None,
+        metadata: dict | None = None,
     ) -> None:
         if book_type == BookType.L3_MBO:
             self._log.error(
@@ -300,7 +300,11 @@ class OKXDataClient(LiveMarketDataClient):
     # Copy subscribe method for book deltas to book snapshots (same logic)
     _subscribe_order_book_snapshots = _subscribe_order_book_deltas
 
-    async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         if instrument_id in self._tob_client_map:
             self._log.warning(
                 f"Already subscribed to {instrument_id} top-of-book (quotes)",
@@ -318,7 +322,11 @@ class OKXDataClient(LiveMarketDataClient):
         self._tob_client_map[instrument_id] = ws_client
         await ws_client.subscribe_order_book(okx_symbol.raw_symbol, 1)
 
-    async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         if instrument_id in self._trades_client_map:
             self._log.warning(
                 f"Already subscribed to {instrument_id} trades",
@@ -330,14 +338,18 @@ class OKXDataClient(LiveMarketDataClient):
         self._trades_client_map[instrument_id] = ws_client
         await ws_client.subscribe_trades(okx_symbol.raw_symbol)
 
-    async def _subscribe_bars(self, bar_type: BarType) -> None:
+    async def _subscribe_bars(self, bar_type: BarType, metadata: dict | None = None) -> None:
         PyCondition.is_true(
             bar_type.is_externally_aggregated(),
             "aggregation_source is not EXTERNAL",
         )
         self._log.error("OKX bar subscriptions are not yet implemented")
 
-    async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_order_book_deltas(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         self._log.debug(
             f"Unsubscribing {instrument_id} from order book deltas/snapshots",
             LogColor.MAGENTA,
@@ -353,7 +365,11 @@ class OKXDataClient(LiveMarketDataClient):
     # Copy unsubscribe method for book deltas to book snapshots (same logic)
     _unsubscribe_order_book_snapshots = _unsubscribe_order_book_deltas
 
-    async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         self._log.debug(
             f"Unsubscribing {instrument_id} from quotes (top-of-book)",
             LogColor.MAGENTA,
@@ -366,7 +382,11 @@ class OKXDataClient(LiveMarketDataClient):
                 break
         self._tob_client_map.pop(instrument_id, None)
 
-    async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         self._log.debug(f"Unsubscribing {instrument_id} from trades", LogColor.MAGENTA)
         okx_symbol = OKXSymbol(instrument_id.symbol.value)
 
@@ -376,7 +396,7 @@ class OKXDataClient(LiveMarketDataClient):
                 break
         self._tob_client_map.pop(instrument_id, None)
 
-    async def _unsubscribe_bars(self, bar_type: BarType) -> None:
+    async def _unsubscribe_bars(self, bar_type: BarType, metadata: dict | None = None) -> None:
         self._log.error("OKX bar subscriptions are not yet implemented")
         return
 

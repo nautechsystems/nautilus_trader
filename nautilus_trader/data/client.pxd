@@ -82,24 +82,24 @@ cdef class MarketDataClient(DataClient):
     cpdef list subscribed_instrument_status(self)
     cpdef list subscribed_instrument_close(self)
 
-    cpdef void subscribe_instruments(self)
-    cpdef void subscribe_instrument(self, InstrumentId instrument_id)
-    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookType book_type, int depth=*, dict kwargs=*)
-    cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookType book_type, int depth=*, dict kwargs=*)
-    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id)
-    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id)
-    cpdef void subscribe_bars(self, BarType bar_type)
-    cpdef void subscribe_instrument_status(self, InstrumentId instrument_id)
-    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id)
-    cpdef void unsubscribe_instruments(self)
-    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id)
-    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id)
-    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id)
-    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id)
-    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id)
-    cpdef void unsubscribe_bars(self, BarType bar_type)
-    cpdef void unsubscribe_instrument_status(self, InstrumentId instrument_id)
-    cpdef void unsubscribe_instrument_close(self, InstrumentId instrument_id)
+    cpdef void subscribe_instruments(self, dict metadata=*)
+    cpdef void subscribe_instrument(self, InstrumentId instrument_id, dict metadata=*)
+    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookType book_type, int depth=*, dict metadata=*)
+    cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookType book_type, int depth=*, dict metadata=*)
+    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id, dict metadata=*)
+    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id, dict metadata=*)
+    cpdef void subscribe_bars(self, BarType bar_type, dict metadata=*)
+    cpdef void subscribe_instrument_status(self, InstrumentId instrument_id, dict metadata=*)
+    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, dict metadata=*)
+    cpdef void unsubscribe_instruments(self, dict metadata=*)
+    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id, dict metadata=*)
+    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id, dict metadata=*)
+    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id, dict metadata=*)
+    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id, dict metadata=*)
+    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id, dict metadata=*)
+    cpdef void unsubscribe_bars(self, BarType bar_type, dict metadata=*)
+    cpdef void unsubscribe_instrument_status(self, InstrumentId instrument_id, dict metadata=*)
+    cpdef void unsubscribe_instrument_close(self, InstrumentId instrument_id, dict metadata=*)
 
     cpdef void _add_subscription_instrument(self, InstrumentId instrument_id)
     cpdef void _add_subscription_order_book_deltas(self, InstrumentId instrument_id)
@@ -140,7 +140,8 @@ cdef class MarketDataClient(DataClient):
         self,
         InstrumentId instrument_id,
         int limit,
-        UUID4 correlation_id
+        UUID4 correlation_id,
+        dict metadata=*,
     )
     cpdef void request_quote_ticks(
         self,
