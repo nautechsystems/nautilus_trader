@@ -47,6 +47,7 @@ pub struct FillReport {
 impl FillReport {
     /// Creates a new [`FillReport`] instance with required fields.
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         account_id: AccountId,
         instrument_id: InstrumentId,
@@ -81,12 +82,14 @@ impl FillReport {
     }
 
     /// Checks if the fill has a client order ID.
-    pub fn has_client_order_id(&self) -> bool {
+    #[must_use]
+    pub const fn has_client_order_id(&self) -> bool {
         self.client_order_id.is_some()
     }
 
     /// Utility method to check if the fill has a venue position ID.
-    pub fn has_venue_position_id(&self) -> bool {
+    #[must_use]
+    pub const fn has_venue_position_id(&self) -> bool {
         self.venue_position_id.is_some()
     }
 }

@@ -42,6 +42,7 @@ pub struct PositionStatusReport {
 
 impl PositionStatusReport {
     /// Creates a new [`PositionStatusReport`] instance with required fields.
+    #[must_use]
     pub fn new(
         account_id: AccountId,
         instrument_id: InstrumentId,
@@ -73,12 +74,14 @@ impl PositionStatusReport {
     }
 
     /// Checks if the position has a venue position ID.
-    pub fn has_venue_position_id(&self) -> bool {
+    #[must_use]
+    pub const fn has_venue_position_id(&self) -> bool {
         self.venue_position_id.is_some()
     }
 
     /// Checks if this is a flat position (quantity is zero).
-    pub fn is_flat(&self) -> bool {
+    #[must_use]
+    pub const fn is_flat(&self) -> bool {
         matches!(
             self.position_side,
             PositionSide::Flat | PositionSide::NoPositionSide
@@ -86,11 +89,13 @@ impl PositionStatusReport {
     }
 
     /// Checks if this is a long position.
+    #[must_use]
     pub fn is_long(&self) -> bool {
         self.position_side == PositionSide::Long
     }
 
     /// Checks if this is a short position.
+    #[must_use]
     pub fn is_short(&self) -> bool {
         self.position_side == PositionSide::Short
     }
