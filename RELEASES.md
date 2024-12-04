@@ -3,7 +3,7 @@
 Released on TBD (UTC).
 
 ### Enhancements
-None
+- Added specific `params` for data subscriptions and requests (supports Databento `bbo-1s` and `bbo-1m` quotes) (#2083), thanks @faysou
 
 ### Internal Improvements
 - Subscribe to block height ws messages for dYdX (#2085), thanks @davidsblom
