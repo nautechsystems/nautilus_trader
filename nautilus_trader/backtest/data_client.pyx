@@ -150,13 +150,13 @@ cdef class BacktestMarketDataClient(MarketDataClient):
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
-    cpdef void subscribe_instruments(self):
+    cpdef void subscribe_instruments(self, dict metadata = None):
         cdef Instrument instrument
         for instrument in self._cache.instruments(Venue(self.id.value)):
             self.subscribe_instrument(instrument.id)
         # Do nothing else for backtest
 
-    cpdef void subscribe_instrument(self, InstrumentId instrument_id):
+    cpdef void subscribe_instrument(self, InstrumentId instrument_id, dict metadata = None):
         Condition.not_none(instrument_id, "instrument_id")
 
         if not self._cache.instrument(instrument_id):
@@ -173,7 +173,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         InstrumentId instrument_id,
         BookType book_type,
         int depth = 0,
-        dict kwargs = None,
+        dict metadata = None,
     ):
         Condition.not_none(instrument_id, "instrument_id")
 
@@ -192,7 +192,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         InstrumentId instrument_id,
         BookType book_type,
         int depth = 0,
-        dict kwargs = None,
+        dict metadata = None,
     ):
         Condition.not_none(instrument_id, "instrument_id")
 
@@ -206,7 +206,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self._add_subscription_order_book_snapshots(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id):
+    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id, dict metadata = None):
         Condition.not_none(instrument_id, "instrument_id")
 
         if not self._cache.instrument(instrument_id):
@@ -219,7 +219,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self._add_subscription_quote_ticks(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id):
+    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id, dict metadata = None):
         Condition.not_none(instrument_id, "instrument_id")
 
         if not self._cache.instrument(instrument_id):
@@ -232,7 +232,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self._add_subscription_trade_ticks(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void subscribe_bars(self, BarType bar_type):
+    cpdef void subscribe_bars(self, BarType bar_type, dict metadata = None):
         Condition.not_none(bar_type, "bar_type")
 
         if not self._cache.instrument(bar_type.instrument_id):
@@ -245,65 +245,65 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         self._add_subscription_bars(bar_type)
         # Do nothing else for backtest
 
-    cpdef void subscribe_instrument_status(self, InstrumentId instrument_id):
+    cpdef void subscribe_instrument_status(self, InstrumentId instrument_id, dict metadata = None):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._add_subscription_instrument_status(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id):
+    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, dict metadata = None):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._add_subscription_instrument_close(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_instruments(self):
+    cpdef void unsubscribe_instruments(self, dict metadata = None):
         self._subscriptions_instrument.clear()
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id):
+    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id, dict metadata = None):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._remove_subscription_instrument(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id):
+    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id, dict metadata = None):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._remove_subscription_order_book_deltas(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id):
+    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id, dict metadata = None):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._remove_subscription_order_book_snapshots(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id):
+    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id, dict metadata = None):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._remove_subscription_quote_ticks(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id):
+    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id, dict metadata = None):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._remove_subscription_trade_ticks(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_bars(self, BarType bar_type):
+    cpdef void unsubscribe_bars(self, BarType bar_type, dict metadata = None):
         Condition.not_none(bar_type, "bar_type")
 
         self._remove_subscription_bars(bar_type)
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_instrument_status(self, InstrumentId instrument_id):
+    cpdef void unsubscribe_instrument_status(self, InstrumentId instrument_id, dict metadata = None):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._remove_subscription_instrument_status(instrument_id)
         # Do nothing else for backtest
 
-    cpdef void unsubscribe_instrument_close(self, InstrumentId instrument_id):
+    cpdef void unsubscribe_instrument_close(self, InstrumentId instrument_id, dict metadata = None):
         Condition.not_none(instrument_id, "instrument_id")
 
         self._remove_subscription_instrument_close(instrument_id)
@@ -356,6 +356,7 @@ cdef class BacktestMarketDataClient(MarketDataClient):
         InstrumentId instrument_id,
         int limit,
         UUID4 correlation_id,
+        dict metadata = None,
     ):
         Condition.not_none(instrument_id, "instrument_id")
         Condition.not_none(correlation_id, "correlation_id")

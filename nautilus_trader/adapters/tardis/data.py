@@ -251,7 +251,7 @@ class TardisDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int | None = None,
-        kwargs: dict | None = None,
+        metadata: dict | None = None,
     ) -> None:
         if book_type == BookType.L3_MBO:
             self._log.error(
@@ -269,7 +269,7 @@ class TardisDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int | None = None,
-        kwargs: dict | None = None,
+        metadata: dict | None = None,
     ) -> None:
         if book_type == BookType.L3_MBO:
             self._log.error(
@@ -283,39 +283,63 @@ class TardisDataClient(LiveMarketDataClient):
         tardis_data_type = f"{tardis_data_type}_{depth}_0ms"
         self._subscribe_stream(instrument_id, tardis_data_type, "order book snapshots")
 
-    async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(QuoteTick)
         self._subscribe_stream(instrument_id, tardis_data_type, "quotes")
 
-    async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(TradeTick)
         self._subscribe_stream(instrument_id, tardis_data_type, "trades")
 
-    async def _subscribe_bars(self, bar_type: BarType) -> None:
+    async def _subscribe_bars(self, bar_type: BarType, metadata: dict | None = None) -> None:
         tardis_data_type = convert_nautilus_bar_type_to_tardis_data_type(bar_type)
         self._subscribe_stream(bar_type.instrument_id, tardis_data_type, "bars")
 
-    async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_order_book_deltas(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(OrderBookDelta)
         ws_client_key = get_ws_client_key(instrument_id, tardis_data_type)
         self._dispose_websocket_client_by_key(ws_client_key)
 
-    async def _unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_order_book_snapshots(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(OrderBookDepth10)
         ws_client_key = get_ws_client_key(instrument_id, tardis_data_type)
         self._dispose_websocket_client_by_key(ws_client_key)
 
-    async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(QuoteTick)
         ws_client_key = get_ws_client_key(instrument_id, tardis_data_type)
         self._dispose_websocket_client_by_key(ws_client_key)
 
-    async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         tardis_data_type = convert_nautilus_data_type_to_tardis_data_type(TradeTick)
         ws_client_key = get_ws_client_key(instrument_id, tardis_data_type)
         self._dispose_websocket_client_by_key(ws_client_key)
 
-    async def _unsubscribe_bars(self, bar_type: BarType) -> None:
+    async def _unsubscribe_bars(self, bar_type: BarType, metadata: dict | None = None) -> None:
         tardis_data_type = convert_nautilus_bar_type_to_tardis_data_type(bar_type)
         ws_client_key = get_ws_client_key(bar_type.instrument_id, tardis_data_type)
         self._dispose_websocket_client_by_key(ws_client_key)

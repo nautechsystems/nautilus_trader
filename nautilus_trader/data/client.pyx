@@ -368,7 +368,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `subscribe` must be implemented in the subclass")
 
-    cpdef void subscribe_instruments(self):
+    cpdef void subscribe_instruments(self, dict metadata = None):
         """
         Subscribe to all `Instrument` data.
 
@@ -379,7 +379,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `subscribe_instruments` must be implemented in the subclass")
 
-    cpdef void subscribe_instrument(self, InstrumentId instrument_id):
+    cpdef void subscribe_instrument(self, InstrumentId instrument_id, dict metadata = None):
         """
         Subscribe to the `Instrument` with the given instrument ID.
 
@@ -390,7 +390,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `subscribe_instrument` must be implemented in the subclass")
 
-    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookType book_type, int depth = 0, dict kwargs = None):
+    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookType book_type, int depth = 0, dict metadata = None):
         """
         Subscribe to `OrderBookDeltas` data for the given instrument ID.
 
@@ -412,7 +412,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `subscribe_order_book_deltas` must be implemented in the subclass")
 
-    cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookType book_type, int depth = 0, dict kwargs = None):
+    cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookType book_type, int depth = 0, dict metadata = None):
         """
         Subscribe to `OrderBook` snapshots data for the given instrument ID.
 
@@ -434,7 +434,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `subscribe_order_book_snapshots` must be implemented in the subclass")
 
-    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id):
+    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id, dict metadata = None):
         """
         Subscribe to `QuoteTick` data for the given instrument ID.
 
@@ -450,7 +450,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `subscribe_quote_ticks` must be implemented in the subclass")
 
-    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id):
+    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id, dict metadata = None):
         """
         Subscribe to `TradeTick` data for the given instrument ID.
 
@@ -466,7 +466,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `subscribe_trade_ticks` must be implemented in the subclass")
 
-    cpdef void subscribe_instrument_status(self, InstrumentId instrument_id):
+    cpdef void subscribe_instrument_status(self, InstrumentId instrument_id, dict metadata = None):
         """
         Subscribe to `InstrumentStatus` data for the given instrument ID.
 
@@ -482,7 +482,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `subscribe_instrument_status` must be implemented in the subclass")
 
-    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id):
+    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, dict metadata = None):
         """
         Subscribe to `InstrumentClose` updates for the given instrument ID.
 
@@ -498,7 +498,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `subscribe_instrument_close` must be implemented in the subclass")
 
-    cpdef void subscribe_bars(self, BarType bar_type):
+    cpdef void subscribe_bars(self, BarType bar_type, dict metadata = None):
         """
         Subscribe to `Bar` data for the given bar type.
 
@@ -529,7 +529,7 @@ cdef class MarketDataClient(DataClient):
             f"You can implement by overriding the `unsubscribe` method for this client",
         )
 
-    cpdef void unsubscribe_instruments(self):
+    cpdef void unsubscribe_instruments(self, dict metadata = None):
         """
         Unsubscribe from all `Instrument` data.
 
@@ -540,7 +540,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `unsubscribe_instruments` must be implemented in the subclass")
 
-    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id):
+    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id, dict metadata = None):
         """
         Unsubscribe from `Instrument` data for the given instrument ID.
 
@@ -556,7 +556,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `unsubscribe_instrument` must be implemented in the subclass")
 
-    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id):
+    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id, dict metadata = None):
         """
         Unsubscribe from `OrderBookDeltas` data for the given instrument ID.
 
@@ -572,7 +572,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `unsubscribe_order_book_deltas` must be implemented in the subclass")
 
-    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id):
+    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id, dict metadata = None):
         """
         Unsubscribe from `OrderBook` snapshots data for the given instrument ID.
 
@@ -588,7 +588,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `unsubscribe_order_book_snapshots` must be implemented in the subclass")
 
-    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id):
+    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id, dict metadata = None):
         """
         Unsubscribe from `QuoteTick` data for the given instrument ID.
 
@@ -604,7 +604,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `unsubscribe_quote_ticks` must be implemented in the subclass")
 
-    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id):
+    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id, dict metadata = None):
         """
         Unsubscribe from `TradeTick` data for the given instrument ID.
 
@@ -620,7 +620,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `unsubscribe_trade_ticks` must be implemented in the subclass")
 
-    cpdef void unsubscribe_bars(self, BarType bar_type):
+    cpdef void unsubscribe_bars(self, BarType bar_type, dict metadata = None):
         """
         Unsubscribe from `Bar` data for the given bar type.
 
@@ -636,7 +636,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `unsubscribe_bars` must be implemented in the subclass")
 
-    cpdef void unsubscribe_instrument_status(self, InstrumentId instrument_id):
+    cpdef void unsubscribe_instrument_status(self, InstrumentId instrument_id, dict metadata = None):
         """
         Unsubscribe from `InstrumentStatus` data for the given instrument ID.
 
@@ -652,7 +652,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `unsubscribe_instrument_status` must be implemented in the subclass")
 
-    cpdef void unsubscribe_instrument_close(self, InstrumentId instrument_id):
+    cpdef void unsubscribe_instrument_close(self, InstrumentId instrument_id, dict metadata = None):
         """
         Unsubscribe from `InstrumentClose` data for the given instrument ID.
 
@@ -826,6 +826,7 @@ cdef class MarketDataClient(DataClient):
         InstrumentId instrument_id,
         int limit,
         UUID4 correlation_id,
+        dict metadata = None,
     ):
         """
         Request order book snapshot data.
