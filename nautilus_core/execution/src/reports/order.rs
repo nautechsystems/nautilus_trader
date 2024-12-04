@@ -66,6 +66,7 @@ pub struct OrderStatusReport {
 impl OrderStatusReport {
     /// Creates a new [`OrderStatusReport`] instance with required fields.
     #[allow(clippy::too_many_arguments)]
+    #[must_use]
     pub fn new(
         account_id: AccountId,
         instrument_id: InstrumentId,
@@ -115,73 +116,85 @@ impl OrderStatusReport {
     }
 
     /// Sets the client order ID.
-    pub fn with_client_order_id(mut self, client_order_id: ClientOrderId) -> Self {
+    #[must_use]
+    pub const fn with_client_order_id(mut self, client_order_id: ClientOrderId) -> Self {
         self.client_order_id = Some(client_order_id);
         self
     }
 
     /// Sets the order list ID.
-    pub fn with_order_list_id(mut self, order_list_id: OrderListId) -> Self {
+    #[must_use]
+    pub const fn with_order_list_id(mut self, order_list_id: OrderListId) -> Self {
         self.order_list_id = Some(order_list_id);
         self
     }
 
     /// Sets the price.
-    pub fn with_price(mut self, price: Price) -> Self {
+    #[must_use]
+    pub const fn with_price(mut self, price: Price) -> Self {
         self.price = Some(price);
         self
     }
 
     /// Sets the average price.
-    pub fn with_avg_px(mut self, avg_px: Decimal) -> Self {
+    #[must_use]
+    pub const fn with_avg_px(mut self, avg_px: Decimal) -> Self {
         self.avg_px = Some(avg_px);
         self
     }
 
     /// Sets the trigger price.
-    pub fn with_trigger_price(mut self, trigger_price: Price) -> Self {
+    #[must_use]
+    pub const fn with_trigger_price(mut self, trigger_price: Price) -> Self {
         self.trigger_price = Some(trigger_price);
         self
     }
 
     /// Sets the display quantity.
-    pub fn with_display_qty(mut self, display_qty: Quantity) -> Self {
+    #[must_use]
+    pub const fn with_display_qty(mut self, display_qty: Quantity) -> Self {
         self.display_qty = Some(display_qty);
         self
     }
 
     /// Sets the expire time.
-    pub fn with_expire_time(mut self, expire_time: UnixNanos) -> Self {
+    #[must_use]
+    pub const fn with_expire_time(mut self, expire_time: UnixNanos) -> Self {
         self.expire_time = Some(expire_time);
         self
     }
 
-    /// Sets post_only flag.
-    pub fn with_post_only(mut self, post_only: bool) -> Self {
+    /// Sets `post_only` flag.
+    #[must_use]
+    pub const fn with_post_only(mut self, post_only: bool) -> Self {
         self.post_only = post_only;
         self
     }
 
-    /// Sets reduce_only flag.
-    pub fn with_reduce_only(mut self, reduce_only: bool) -> Self {
+    /// Sets `reduce_only` flag.
+    #[must_use]
+    pub const fn with_reduce_only(mut self, reduce_only: bool) -> Self {
         self.reduce_only = reduce_only;
         self
     }
 
     /// Sets cancel reason.
+    #[must_use]
     pub fn with_cancel_reason(mut self, cancel_reason: &str) -> Self {
         self.cancel_reason = Some(cancel_reason.to_string());
         self
     }
 
     /// Sets the triggered timestamp.
-    pub fn with_ts_triggered(mut self, ts_triggered: UnixNanos) -> Self {
+    #[must_use]
+    pub const fn with_ts_triggered(mut self, ts_triggered: UnixNanos) -> Self {
         self.ts_triggered = Some(ts_triggered);
         self
     }
 
     /// Sets the contingency type.
-    pub fn with_contingency_type(mut self, contingency_type: ContingencyType) -> Self {
+    #[must_use]
+    pub const fn with_contingency_type(mut self, contingency_type: ContingencyType) -> Self {
         self.contingency_type = contingency_type;
         self
     }
