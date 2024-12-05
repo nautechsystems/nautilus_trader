@@ -100,3 +100,4 @@ class DataCatalogConfig(NautilusConfig, frozen=True):
     path: str
     fs_protocol: str | None = None
     fs_storage_options: dict | None = None
+    name: str | None = None

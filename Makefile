@@ -42,7 +42,7 @@ build-wheel-debug:
 
 .PHONY: clean
 clean:
-	git clean -fxd
+	git clean -fxd -e tests/test_data/large/
 
 .PHONY: format
 format:

@@ -2028,9 +2028,9 @@ impl TriggerType {
     }
 
     #[classattr]
-    #[pyo3(name = "LAST_TRADE")]
+    #[pyo3(name = "LAST_PRICE")]
     fn py_last_trade() -> Self {
-        Self::LastTrade
+        Self::LastPrice
     }
 
     #[classattr]

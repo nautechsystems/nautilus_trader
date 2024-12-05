@@ -50,6 +50,7 @@ instrument_ids = [
     # InstrumentId.from_str("CL.FUT.GLBX"),
     # InstrumentId.from_str("LO.OPT.GLBX"),
     # InstrumentId.from_str("AAPL.XNAS"),
+    # InstrumentId.from_str("AAPL.IEXG"),
 ]
 
 # Configure the trading node
@@ -90,7 +91,7 @@ config_node = TradingNodeConfig(
             mbo_subscriptions_delay=10.0,
         ),
     },
-    timeout_connection=20.0,
+    timeout_connection=30.0,
     timeout_reconciliation=10.0,  # Not applicable
     timeout_portfolio=10.0,
     timeout_disconnection=10.0,
@@ -157,7 +158,9 @@ class DataSubscriber(Strategy):
 
             self.subscribe_quote_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
             self.subscribe_trade_ticks(instrument_id, client_id=DATABENTO_CLIENT_ID)
+            # self.subscribe_bars(BarType.from_str(f"{instrument_id}-1-SECOND-LAST-EXTERNAL"))
             # self.subscribe_instrument_status(instrument_id, client_id=DATABENTO_CLIENT_ID)
+
             # self.request_quote_ticks(instrument_id)
             # self.request_trade_ticks(instrument_id)
 
@@ -171,7 +174,7 @@ class DataSubscriber(Strategy):
             # self.request_data(status_data_type, client_id=DATABENTO_CLIENT_ID)
 
             # from nautilus_trader.model.data import BarType
-            # self.request_bars(BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL"))
+            # self.request_bars(BarType.from_str(f"{instrument_id}-1-SECOND-LAST-EXTERNAL"))
 
             # # Imbalance
             # from nautilus_trader.adapters.databento import DatabentoImbalance

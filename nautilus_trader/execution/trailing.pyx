@@ -61,7 +61,7 @@ cdef class TrailingStopCalculator:
             Price temp_price
         if (
             order.trigger_type == TriggerType.DEFAULT
-            or order.trigger_type == TriggerType.LAST_TRADE
+            or order.trigger_type == TriggerType.LAST_PRICE
             or order.trigger_type == TriggerType.MARK_PRICE
         ):
             if last is None:

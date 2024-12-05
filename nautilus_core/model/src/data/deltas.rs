@@ -147,6 +147,12 @@ impl OrderBookDeltas_API {
     pub fn new(deltas: OrderBookDeltas) -> Self {
         Self(Box::new(deltas))
     }
+
+    /// Consumes the wrapper and returns the inner `OrderBookDeltas`.
+    #[must_use]
+    pub fn into_inner(self) -> OrderBookDeltas {
+        *self.0
+    }
 }
 
 impl Deref for OrderBookDeltas_API {

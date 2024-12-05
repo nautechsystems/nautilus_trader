@@ -15,15 +15,16 @@
 
 //! A high-performance HTTP client implementation.
 
-use std::{collections::HashMap, hash::Hash, sync::Arc, time::Duration};
+use std::{collections::HashMap, hash::Hash, str::FromStr, sync::Arc, time::Duration};
 
 use bytes::Bytes;
+use http::HeaderValue;
 use reqwest::{
     header::{HeaderMap, HeaderName},
     Method, Response, Url,
 };
 
-use crate::ratelimiter::{clock::MonotonicClock, RateLimiter};
+use crate::ratelimiter::{clock::MonotonicClock, quota::Quota, RateLimiter};
 
 /// Represents the HTTP methods supported by the `HttpClient`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -65,26 +66,9 @@ pub struct HttpResponse {
     /// The HTTP status code returned by the server.
     pub status: u16,
     /// The headers returned by the server as a map of key-value pairs.
-    pub(crate) headers: HashMap<String, String>,
+    pub headers: HashMap<String, String>,
     /// The body of the response as raw bytes.
-    pub(crate) body: Bytes,
-}
-
-/// A high-performance HTTP client with rate limiting and timeout capabilities.
-///
-/// This struct is designed to handle HTTP requests efficiently, providing
-/// support for rate limiting, timeouts, and custom headers. The client is
-/// built on top of `reqwest` and can be used for both synchronous and
-/// asynchronous HTTP requests.
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
-)]
-pub struct HttpClient {
-    /// The rate limiter to control the request rate.
-    pub(crate) rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
-    /// The underlying HTTP client used to make requests.
-    pub(crate) client: InnerHttpClient,
+    pub body: Bytes,
 }
 
 /// Represents errors that can occur when using the `HttpClient`.
@@ -116,6 +100,90 @@ impl From<String> for HttpClientError {
     }
 }
 
+/// A high-performance HTTP client with rate limiting and timeout capabilities.
+///
+/// This struct is designed to handle HTTP requests efficiently, providing
+/// support for rate limiting, timeouts, and custom headers. The client is
+/// built on top of `reqwest` and can be used for both synchronous and
+/// asynchronous HTTP requests.
+#[derive(Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(module = "nautilus_trader.core.nautilus_pyo3.network")
+)]
+pub struct HttpClient {
+    /// The underlying HTTP client used to make requests.
+    pub(crate) client: InnerHttpClient,
+    /// The rate limiter to control the request rate.
+    pub(crate) rate_limiter: Arc<RateLimiter<String, MonotonicClock>>,
+}
+
+impl HttpClient {
+    /// Creates a new [`HttpClient`] instance.
+    #[must_use]
+    pub fn new(
+        headers: HashMap<String, String>,
+        header_keys: Vec<String>,
+        keyed_quotas: Vec<(String, Quota)>,
+        default_quota: Option<Quota>,
+    ) -> Self {
+        // Build default headers
+        let mut header_map = HeaderMap::new();
+        for (key, value) in headers {
+            let header_name = HeaderName::from_str(&key).expect("Invalid header name");
+            let header_value = HeaderValue::from_str(&value).expect("Invalid header value");
+            header_map.insert(header_name, header_value);
+        }
+
+        let client = reqwest::Client::builder()
+            .default_headers(header_map)
+            .build()
+            .expect("Failed to build reqwest client");
+
+        let client = InnerHttpClient {
+            client,
+            header_keys: Arc::new(header_keys),
+        };
+        let rate_limiter = Arc::new(RateLimiter::new_with_quota(default_quota, keyed_quotas));
+
+        Self {
+            client,
+            rate_limiter,
+        }
+    }
+
+    /// Send an HTTP request.
+    ///
+    /// `method`: The HTTP method to call.
+    /// `url`: The request is sent to this url.
+    /// `headers`: The header key value pairs in the request.
+    /// `body`: The bytes sent in the body of request.
+    /// `keys`: The keys used for rate limiting the request.
+    ///
+    /// # Example
+    ///
+    /// When a request is made the URL should be split into all relevant keys within it.
+    ///
+    /// For request /foo/bar, should pass keys ["foo/bar", "foo"] for rate limiting.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn request(
+        &self,
+        method: Method,
+        url: String,
+        headers: Option<HashMap<String, String>>,
+        body: Option<Vec<u8>>,
+        keys: Option<Vec<String>>,
+        timeout_secs: Option<u64>,
+    ) -> Result<HttpResponse, HttpClientError> {
+        let rate_limiter = self.rate_limiter.clone();
+
+        rate_limiter.await_keys_ready(keys).await;
+        self.client
+            .send_request(method, url, headers, body, timeout_secs)
+            .await
+    }
+}
+
 /// A high-performance `HttpClient` for HTTP requests.
 ///
 /// The client is backed by a hyper Client which keeps connections alive and
@@ -124,10 +192,10 @@ impl From<String> for HttpClientError {
 ///
 /// The client returns an [`HttpResponse`]. The client filters only the key value
 /// for the give `header_keys`.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct InnerHttpClient {
     pub(crate) client: reqwest::Client,
-    pub(crate) header_keys: Vec<String>,
+    pub(crate) header_keys: Arc<Vec<String>>,
 }
 
 impl InnerHttpClient {
@@ -142,10 +210,11 @@ impl InnerHttpClient {
         &self,
         method: Method,
         url: String,
-        headers: HashMap<String, String>,
+        headers: Option<HashMap<String, String>>,
         body: Option<Vec<u8>>,
         timeout_secs: Option<u64>,
     ) -> Result<HttpResponse, HttpClientError> {
+        let headers = headers.unwrap_or_default();
         let reqwest_url = Url::parse(url.as_str())
             .map_err(|e| HttpClientError::from(format!("URL parse error: {e}")))?;
 
@@ -277,13 +346,7 @@ mod tests {
 
         let client = InnerHttpClient::default();
         let response = client
-            .send_request(
-                reqwest::Method::GET,
-                format!("{url}/get"),
-                HashMap::new(),
-                None,
-                None,
-            )
+            .send_request(reqwest::Method::GET, format!("{url}/get"), None, None, None)
             .await
             .unwrap();
 
@@ -301,7 +364,7 @@ mod tests {
             .send_request(
                 reqwest::Method::POST,
                 format!("{url}/post"),
-                HashMap::new(),
+                None,
                 None,
                 None,
             )
@@ -335,7 +398,7 @@ mod tests {
             .send_request(
                 reqwest::Method::POST,
                 format!("{url}/post"),
-                HashMap::new(),
+                None,
                 Some(body_bytes),
                 None,
             )
@@ -355,7 +418,7 @@ mod tests {
             .send_request(
                 reqwest::Method::PATCH,
                 format!("{url}/patch"),
-                HashMap::new(),
+                None,
                 None,
                 None,
             )
@@ -375,7 +438,7 @@ mod tests {
             .send_request(
                 reqwest::Method::DELETE,
                 format!("{url}/delete"),
-                HashMap::new(),
+                None,
                 None,
                 None,
             )

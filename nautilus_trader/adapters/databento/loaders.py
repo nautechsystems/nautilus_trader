@@ -116,6 +116,7 @@ class DatabentoDataLoader:
         self,
         path: PathLike[str] | str,
         instrument_id: InstrumentId | None = None,
+        price_precision: int | None = None,
         as_legacy_cython: bool = True,
         include_trades: bool = False,
     ) -> list[Data]:
@@ -127,17 +128,21 @@ class DatabentoDataLoader:
         path : PathLike[str] | str
             The path for the DBN data file.
         instrument_id : InstrumentId, optional
-            The Nautilus instrument ID for the data. This is a parameter to optimize performance,
-            as all records will have their symbology overridden with the given Nautilus identifier.
-            This option should only be used if the instrument ID is definitely know (for instance
-            if all records in a file are guarantted to be for the same instrument).
-        as_legacy_cython : bool, True
+            The Nautilus instrument ID for the data. This parameter optimizes performance by
+            overriding the symbology of all records with the specified Nautilus identifier.
+            Use this only if the instrument ID is definitively known (e.g., all records in the file
+            are guaranteed to be for the same instrument).
+        price_precision : int, optional
+            The price precision, if different to the default of 2 for USD.
+            Use this option only if the default precision is problematic
+            The specified precision will apply to *all* records read by this call.
+        as_legacy_cython : bool, default True
             If data should be converted to 'legacy Cython' objects.
             You would typically only set this False if passing the objects
             directly to a data catalog for the data to then be written in Nautilus Parquet format.
             Note: the `imbalance` and `statistics` schemas are only implemented in Rust, and
             so cannot be loaded as legacy Cython objects (so set this to False).
-        include_trades : bool, False
+        include_trades : bool, default False
             If separate `TradeTick` elements will be included in the data for MBO and MBP-1 schemas
             when applicable (your code will have to handle these two types in the returned list).
 
@@ -179,6 +184,7 @@ class DatabentoDataLoader:
                     capsule = self._pyo3_loader.load_order_book_deltas_as_pycapsule(
                         filepath=str(path),
                         instrument_id=pyo3_instrument_id,
+                        price_precision=price_precision,
                         include_trades=include_trades,
                     )
                     data = capsule_to_list(capsule)
@@ -194,12 +200,14 @@ class DatabentoDataLoader:
                     return self._pyo3_loader.load_order_book_deltas(
                         filepath=str(path),
                         instrument_id=pyo3_instrument_id,
+                        price_precision=price_precision,
                     )
             case DatabentoSchema.MBP_1.value | DatabentoSchema.TBBO.value:
                 if as_legacy_cython:
                     capsule = self._pyo3_loader.load_quotes_as_pycapsule(
                         filepath=str(path),
                         instrument_id=pyo3_instrument_id,
+                        price_precision=price_precision,
                         include_trades=include_trades,
                     )
                     data = capsule_to_list(capsule)
@@ -215,12 +223,14 @@ class DatabentoDataLoader:
                     return self._pyo3_loader.load_quotes(
                         filepath=str(path),
                         instrument_id=pyo3_instrument_id,
+                        price_precision=price_precision,
                     )
             case DatabentoSchema.BBO_1S.value | DatabentoSchema.BBO_1M.value:
                 if as_legacy_cython:
                     capsule = self._pyo3_loader.load_bbo_quotes_as_pycapsule(
                         filepath=str(path),
                         instrument_id=pyo3_instrument_id,
+                        price_precision=price_precision,
                     )
                     data = capsule_to_list(capsule)
                     # Drop encapsulated `CVec` as data is now transferred
@@ -230,12 +240,14 @@ class DatabentoDataLoader:
                     return self._pyo3_loader.load_bbo_quotes(
                         filepath=str(path),
                         instrument_id=pyo3_instrument_id,
+                        price_precision=price_precision,
                     )
             case DatabentoSchema.MBP_10.value:
                 if as_legacy_cython:
                     capsule = self._pyo3_loader.load_order_book_depth10_as_pycapsule(
                         filepath=str(path),
                         instrument_id=pyo3_instrument_id,
+                        price_precision=price_precision,
                     )
                     data = capsule_to_list(capsule)
                     # Drop encapsulated `CVec` as data is now transferred
@@ -248,6 +260,7 @@ class DatabentoDataLoader:
                     capsule = self._pyo3_loader.load_trades_as_pycapsule(
                         filepath=str(path),
                         instrument_id=pyo3_instrument_id,
+                        price_precision=price_precision,
                     )
                     data = capsule_to_list(capsule)
                     # Drop encapsulated `CVec` as data is now transferred
@@ -266,15 +279,23 @@ class DatabentoDataLoader:
                     capsule = self._pyo3_loader.load_bars_as_pycapsule(
                         filepath=str(path),
                         instrument_id=pyo3_instrument_id,
+                        price_precision=price_precision,
                     )
                     data = capsule_to_list(capsule)
                     # Drop encapsulated `CVec` as data is now transferred
                     drop_cvec_pycapsule(capsule)
                     return data
                 else:
-                    return self._pyo3_loader.load_bars(str(path), pyo3_instrument_id)
+                    return self._pyo3_loader.load_bars(
+                        filepath=str(path),
+                        instrument_id=pyo3_instrument_id,
+                        price_precision=price_precision,
+                    )
             case DatabentoSchema.STATUS.value:
-                data = self._pyo3_loader.load_status(str(path), pyo3_instrument_id)  # type: ignore
+                data = self._pyo3_loader.load_status(  # type: ignore [assignment]
+                    filepath=str(path),
+                    instrument_id=pyo3_instrument_id,
+                )
                 if as_legacy_cython:
                     return InstrumentStatus.from_pyo3_list(data)
                 return data
@@ -283,12 +304,20 @@ class DatabentoDataLoader:
                     raise ValueError(
                         "Cannot load `DatabentoImbalance` as Cython objects, set `as_legacy_cython` to False",
                     )
-                return self._pyo3_loader.load_imbalance(str(path), pyo3_instrument_id)
+                return self._pyo3_loader.load_imbalance(
+                    filepath=str(path),
+                    instrument_id=pyo3_instrument_id,
+                    price_precision=price_precision,
+                )
             case DatabentoSchema.STATISTICS.value:
                 if as_legacy_cython:
                     raise ValueError(
                         "Cannot load `DatabentoStatistics` as Cython objects, set `as_legacy_cython` to False",
                     )
-                return self._pyo3_loader.load_statistics(str(path), pyo3_instrument_id)
+                return self._pyo3_loader.load_statistics(
+                    filepath=str(path),
+                    instrument_id=pyo3_instrument_id,
+                    price_precision=price_precision,
+                )
             case _:
                 raise RuntimeError(f"Loading schema {schema} not currently supported")

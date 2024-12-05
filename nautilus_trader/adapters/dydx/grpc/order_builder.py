@@ -226,25 +226,6 @@ class OrderBuilder:
             order_flags=order_flags,
             clob_pair_id=self._clob_pair_id,
         )
-    
-    def calculate_conditional_order_trigger_subticks(self, order_type: DYDXGRPCOrderType, trigger_price: float) -> int:
-        """
-        Calculate the conditional order trigger price in subticks.
-
-        This function calculates the conditional order trigger price in subticks based on the given order type and trigger price.
-        It only applies to stop limit and stop market orders.
-
-        Parameters:
-        - order_type (DYDXGRPCOrderType): The type of the order.
-        - trigger_price (float): The trigger price of the conditional order.
-
-        Returns:
-        - int: The trigger price in subticks. If the order type is not stop limit or stop market, it returns 0.
-        """
-        if order_type in [DYDXGRPCOrderType.STOP_LIMIT, DYDXGRPCOrderType.STOP_MARKET]:
-            return self.calculate_subticks(trigger_price)
-
-        return 0
 
     def create_order(
         self,
@@ -260,7 +241,7 @@ class OrderBuilder:
         good_til_block_time: int | None = None,
         execution: OrderExecution = OrderExecution.DEFAULT,
         conditional_order_trigger_subticks: int = 0,
-        trigger_price: float = 0
+        trigger_price: float | None = None,
     ) -> Order:
         """
         Create a new Order instance.
@@ -291,7 +272,9 @@ class OrderBuilder:
             not yet filled.
         execution : OrderExecution, default OrderExecution.DEFAULT
             OrderExecution enum: DEFAULT, IOC, FOK or POST_ONLY
-        conditional_order_trigger_subticks : int, default value is 0.
+        trigger_price : float, optional.
+            The price of the conditional limit order. Only applicable to STOP_LIMIT,
+            STOP_MARKET, TAKE_PROFIT_MARKET or TAKE_PROFIT_LIMIT orders.
 
         """
         order_time_in_force = OrderHelper.calculate_time_in_force(
@@ -302,6 +285,10 @@ class OrderBuilder:
         )
         client_metadata = OrderHelper.calculate_client_metadata(order_type)
         condition_type = OrderHelper.calculate_condition_type(order_type)
+        conditional_order_trigger_subticks = 0
+
+        if trigger_price is not None:
+            conditional_order_trigger_subticks = self.calculate_subticks(trigger_price)
 
         return Order(
             order_id=order_id,
@@ -314,5 +301,5 @@ class OrderBuilder:
             reduce_only=reduce_only,
             client_metadata=client_metadata,
             condition_type=condition_type,
-            conditional_order_trigger_subticks=self.calculate_conditional_order_trigger_subticks(order_type, trigger_price) if trigger_price > 0 else 0,
+            conditional_order_trigger_subticks= conditional_order_trigger_subticks,
         )

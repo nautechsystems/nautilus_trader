@@ -77,8 +77,9 @@ This includes the following:
 
 ## Symbology and normalization
 
-The Tardis integration seamlessly integrates with NautilusTrader's crypto exchange adapters through consistent symbol normalization.
-Each exchange's raw symbols are normalized to follow Nautilus symbology conventions as detailed below:
+The Tardis integration ensures seamless compatibility with NautilusTrader’s crypto exchange adapters
+by consistently normalizing symbols. Typically, NautilusTrader uses the native exchange naming conventions
+provided by Tardis. However, for certain exchanges, raw symbols are adjusted to adhere to the Nautilus symbology normalization, as outlined below:
 
 ### Common rules
 
@@ -91,6 +92,7 @@ Each exchange's raw symbols are normalized to follow Nautilus symbology conventi
 - **Binance**: Nautilus appends the suffix `-PERP` to all perpetual symbols.
 - **Bybit**: Nautilus uses specific product category suffixes, including `-SPOT`, `-LINEAR`, `-INVERSE`, `-OPTION`.
 - **dYdX**: Nautilus appends the suffix `-PERP` to all perpetual symbols.
+- **Gate.io**: Nautilus appends the suffix `-PERP` to all perpetual symbols.
 
 For detailed symbology documentation per exchange:
 
@@ -425,6 +427,8 @@ you must filter for the desired venues using an `InstrumentProviderConfig`:
 ```python
 from nautilus_trader.config import InstrumentProviderConfig
 
+# See supported venues https://nautilustrader.io/docs/nightly/integrations/tardis#venues
+venues = {"BINANCE", "BYBIT"}
 filters = {"venues": frozenset(venues)}
 instrument_provider_config = InstrumentProviderConfig(load_all=True, filters=filters)
 ```

@@ -13,21 +13,32 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 
+import pandas as pd
 
-def one(iterable):
-    it = iter(iterable)
+from nautilus_trader.core.datetime import format_iso8601
 
-    try:
-        first_value = next(it)
-    except StopIteration as e:
-        raise (ValueError("too few items in iterable (expected 1)")) from e
 
-    try:
-        second_value = next(it)
-    except StopIteration:
-        pass
+def format_utc_timerange(start: pd.Timestamp | None, end: pd.Timestamp | None) -> str:
+    """
+    Return a formatted time range string based on start and end timestamps (UTC).
+
+    Parameters
+    ----------
+    start : pd.Timestamp | None
+        The start timestamp (UTC).
+    end : pd.Timestamp | None
+        The end timestamp (UTC).
+
+    Returns
+    -------
+    str
+
+    """
+    if start and end:
+        return f" from {format_iso8601(start)} to {format_iso8601(end)}"
+    elif start:
+        return f" from {format_iso8601(start)}"
+    elif end:
+        return f" to {format_iso8601(end)}"
     else:
-        msg = f"Expected exactly one item in iterable, but got {first_value}, {second_value}, and perhaps more."
-        raise ValueError(msg)
-
-    return first_value
+        return ""

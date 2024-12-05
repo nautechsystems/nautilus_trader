@@ -13,8 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
-
 use nautilus_network::http::InnerHttpClient;
 use reqwest::Method;
 
@@ -30,7 +28,7 @@ async fn main() {
             reqs.push(client.send_request(
                 Method::GET,
                 "http://127.0.0.1:3000".to_string(),
-                HashMap::new(),
+                None,
                 None,
                 None,
             ));

@@ -452,7 +452,7 @@ class BybitEnumParser:
         # fmt: on
         self.bybit_to_nautilus_trigger_type = {
             BybitTriggerType.NONE: TriggerType.NO_TRIGGER,
-            BybitTriggerType.LAST_PRICE: TriggerType.LAST_TRADE,
+            BybitTriggerType.LAST_PRICE: TriggerType.LAST_PRICE,
             BybitTriggerType.MARK_PRICE: TriggerType.MARK_PRICE,
             BybitTriggerType.INDEX_PRICE: TriggerType.INDEX_PRICE,
         }

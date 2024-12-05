@@ -92,184 +92,208 @@ impl DatabentoDataLoader {
 
     // Cannot include trades
     #[pyo3(name = "load_order_book_deltas")]
-    #[pyo3(signature = (filepath, instrument_id=None))]
+    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_order_book_deltas(
         &self,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
     ) -> PyResult<Vec<OrderBookDelta>> {
-        self.load_order_book_deltas(&filepath, instrument_id)
+        self.load_order_book_deltas(&filepath, instrument_id, price_precision)
             .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_order_book_deltas_as_pycapsule")]
-    #[pyo3(signature = (filepath, instrument_id=None, include_trades=None))]
+    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None, include_trades=None))]
     fn py_load_order_book_deltas_as_pycapsule(
         &self,
         py: Python,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
         include_trades: Option<bool>,
     ) -> PyResult<PyObject> {
         let iter = self
-            .read_records::<dbn::MboMsg>(&filepath, instrument_id, include_trades.unwrap_or(false))
+            .read_records::<dbn::MboMsg>(
+                &filepath,
+                instrument_id,
+                price_precision,
+                include_trades.unwrap_or(false),
+            )
             .map_err(to_pyvalue_err)?;
 
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_order_book_depth10")]
-    #[pyo3(signature = (filepath, instrument_id=None))]
+    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_order_book_depth10(
         &self,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
     ) -> PyResult<Vec<OrderBookDepth10>> {
-        self.load_order_book_depth10(&filepath, instrument_id)
+        self.load_order_book_depth10(&filepath, instrument_id, price_precision)
             .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_order_book_depth10_as_pycapsule")]
-    #[pyo3(signature = (filepath, instrument_id=None))]
+    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_order_book_depth10_as_pycapsule(
         &self,
         py: Python,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
     ) -> PyResult<PyObject> {
         let iter = self
-            .read_records::<dbn::Mbp10Msg>(&filepath, instrument_id, false)
+            .read_records::<dbn::Mbp10Msg>(&filepath, instrument_id, price_precision, false)
             .map_err(to_pyvalue_err)?;
 
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_quotes")]
-    #[pyo3(signature = (filepath, instrument_id=None))]
+    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_quotes(
         &self,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
     ) -> PyResult<Vec<QuoteTick>> {
-        self.load_quotes(&filepath, instrument_id)
+        self.load_quotes(&filepath, instrument_id, price_precision)
             .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_quotes_as_pycapsule")]
-    #[pyo3(signature = (filepath, instrument_id=None, include_trades=None))]
+    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None, include_trades=None))]
     fn py_load_quotes_as_pycapsule(
         &self,
         py: Python,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
         include_trades: Option<bool>,
     ) -> PyResult<PyObject> {
         let iter = self
-            .read_records::<dbn::Mbp1Msg>(&filepath, instrument_id, include_trades.unwrap_or(false))
+            .read_records::<dbn::Mbp1Msg>(
+                &filepath,
+                instrument_id,
+                price_precision,
+                include_trades.unwrap_or(false),
+            )
             .map_err(to_pyvalue_err)?;
 
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_bbo_quotes")]
-    #[pyo3(signature = (filepath, instrument_id=None))]
+    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_bbo_quotes(
         &self,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
     ) -> PyResult<Vec<QuoteTick>> {
-        self.load_bbo_quotes(&filepath, instrument_id)
+        self.load_bbo_quotes(&filepath, instrument_id, price_precision)
             .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_bbo_quotes_as_pycapsule")]
-    #[pyo3(signature = (filepath, instrument_id=None))]
+    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_bbo_quotes_as_pycapsule(
         &self,
         py: Python,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
     ) -> PyResult<PyObject> {
         let iter = self
-            .read_records::<dbn::BboMsg>(&filepath, instrument_id, false)
+            .read_records::<dbn::BboMsg>(&filepath, instrument_id, price_precision, false)
             .map_err(to_pyvalue_err)?;
 
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_tbbo_trades")]
-    #[pyo3(signature = (filepath, instrument_id=None))]
+    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_tbbo_trades(
         &self,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
     ) -> PyResult<Vec<TradeTick>> {
-        self.load_tbbo_trades(&filepath, instrument_id)
+        self.load_tbbo_trades(&filepath, instrument_id, price_precision)
             .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_tbbo_trades_as_pycapsule")]
-    #[pyo3(signature = (filepath, instrument_id=None))]
+    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_tbbo_trades_as_pycapsule(
         &self,
         py: Python,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
     ) -> PyResult<PyObject> {
         let iter = self
-            .read_records::<dbn::TbboMsg>(&filepath, instrument_id, false)
+            .read_records::<dbn::TbboMsg>(&filepath, instrument_id, price_precision, false)
             .map_err(to_pyvalue_err)?;
 
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_trades")]
-    #[pyo3(signature = (filepath, instrument_id=None))]
+    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_trades(
         &self,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
     ) -> PyResult<Vec<TradeTick>> {
-        self.load_trades(&filepath, instrument_id)
+        self.load_trades(&filepath, instrument_id, price_precision)
             .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_trades_as_pycapsule")]
-    #[pyo3(signature = (filepath, instrument_id=None))]
+    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_trades_as_pycapsule(
         &self,
         py: Python,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
     ) -> PyResult<PyObject> {
         let iter = self
-            .read_records::<dbn::TradeMsg>(&filepath, instrument_id, false)
+            .read_records::<dbn::TradeMsg>(&filepath, instrument_id, price_precision, false)
             .map_err(to_pyvalue_err)?;
 
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_bars")]
-    #[pyo3(signature = (filepath, instrument_id=None))]
+    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_bars(
         &self,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
     ) -> PyResult<Vec<Bar>> {
-        self.load_bars(&filepath, instrument_id)
+        self.load_bars(&filepath, instrument_id, price_precision)
             .map_err(to_pyvalue_err)
     }
 
     #[pyo3(name = "load_bars_as_pycapsule")]
-    #[pyo3(signature = (filepath, instrument_id=None))]
+    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_bars_as_pycapsule(
         &self,
         py: Python,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
     ) -> PyResult<PyObject> {
         let iter = self
-            .read_records::<dbn::OhlcvMsg>(&filepath, instrument_id, false)
+            .read_records::<dbn::OhlcvMsg>(&filepath, instrument_id, price_precision, false)
             .map_err(to_pyvalue_err)?;
 
         exhaust_data_iter_to_pycapsule(py, iter).map_err(to_pyvalue_err)
@@ -298,14 +322,15 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_imbalance")]
-    #[pyo3(signature = (filepath, instrument_id=None))]
+    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_imbalance(
         &self,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
     ) -> PyResult<Vec<DatabentoImbalance>> {
         let iter = self
-            .read_imbalance_records::<dbn::ImbalanceMsg>(&filepath, instrument_id)
+            .read_imbalance_records::<dbn::ImbalanceMsg>(&filepath, instrument_id, price_precision)
             .map_err(to_pyvalue_err)?;
 
         let mut data = Vec::new();
@@ -320,14 +345,15 @@ impl DatabentoDataLoader {
     }
 
     #[pyo3(name = "load_statistics")]
-    #[pyo3(signature = (filepath, instrument_id=None))]
+    #[pyo3(signature = (filepath, instrument_id=None, price_precision=None))]
     fn py_load_statistics(
         &self,
         filepath: PathBuf,
         instrument_id: Option<InstrumentId>,
+        price_precision: Option<u8>,
     ) -> PyResult<Vec<DatabentoStatistics>> {
         let iter = self
-            .read_statistics_records::<dbn::StatMsg>(&filepath, instrument_id)
+            .read_statistics_records::<dbn::StatMsg>(&filepath, instrument_id, price_precision)
             .map_err(to_pyvalue_err)?;
 
         let mut data = Vec::new();

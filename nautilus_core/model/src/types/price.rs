@@ -207,15 +207,9 @@ impl FromStr for Price {
     }
 }
 
-impl From<&str> for Price {
-    fn from(value: &str) -> Self {
-        Self::from_str(value).expect(FAILED)
-    }
-}
-
-impl From<String> for Price {
-    fn from(value: String) -> Self {
-        Self::from(value.as_str())
+impl<T: AsRef<str>> From<T> for Price {
+    fn from(value: T) -> Self {
+        Self::from_str(value.as_ref()).expect(FAILED)
     }
 }
 

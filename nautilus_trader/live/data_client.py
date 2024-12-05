@@ -26,7 +26,6 @@ import traceback
 from asyncio import Task
 from collections.abc import Callable
 from collections.abc import Coroutine
-from typing import Any
 
 import pandas as pd
 
@@ -35,6 +34,7 @@ from nautilus_trader.common.component import LiveClock
 from nautilus_trader.common.component import MessageBus
 from nautilus_trader.common.config import NautilusConfig
 from nautilus_trader.common.enums import LogColor
+from nautilus_trader.common.functions import format_utc_timerange
 from nautilus_trader.common.providers import InstrumentProvider
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.core.uuid import UUID4
@@ -449,20 +449,24 @@ class LiveMarketDataClient(MarketDataClient):
             success_color=LogColor.BLUE,
         )
 
-    def subscribe_instruments(self) -> None:
+    def subscribe_instruments(self, metadata: dict | None = None) -> None:
         instrument_ids = list(self._instrument_provider.get_all().keys())
         [self._add_subscription_instrument(i) for i in instrument_ids]
         self.create_task(
-            self._subscribe_instruments(),
+            self._subscribe_instruments(metadata),
             log_msg=f"subscribe: instruments {self.venue}",
             success_msg=f"Subscribed {self.venue} instruments",
             success_color=LogColor.BLUE,
         )
 
-    def subscribe_instrument(self, instrument_id: InstrumentId) -> None:
+    def subscribe_instrument(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         self._add_subscription_instrument(instrument_id)
         self.create_task(
-            self._subscribe_instrument(instrument_id),
+            self._subscribe_instrument(instrument_id, metadata),
             log_msg=f"subscribe: instrument {instrument_id}",
             success_msg=f"Subscribed {instrument_id} instrument",
             success_color=LogColor.BLUE,
@@ -473,7 +477,7 @@ class LiveMarketDataClient(MarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int | None = None,
-        kwargs: dict[str, Any] | None = None,
+        metadata: dict | None = None,
     ) -> None:
         self._add_subscription_order_book_deltas(instrument_id)
         self.create_task(
@@ -481,7 +485,7 @@ class LiveMarketDataClient(MarketDataClient):
                 instrument_id=instrument_id,
                 book_type=book_type,
                 depth=depth,
-                kwargs=kwargs,
+                metadata=metadata,
             ),
             log_msg=f"subscribe: order_book_deltas {instrument_id}",
             success_msg=f"Subscribed {instrument_id} order book deltas depth={depth}",
@@ -493,7 +497,7 @@ class LiveMarketDataClient(MarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int | None = None,
-        kwargs: dict[str, Any] | None = None,
+        metadata: dict | None = None,
     ) -> None:
         self._add_subscription_order_book_snapshots(instrument_id)
         self.create_task(
@@ -501,32 +505,40 @@ class LiveMarketDataClient(MarketDataClient):
                 instrument_id=instrument_id,
                 book_type=book_type,
                 depth=depth,
-                kwargs=kwargs,
+                metadata=metadata,
             ),
             log_msg=f"subscribe: order_book_snapshots {instrument_id}",
             success_msg=f"Subscribed {instrument_id} order book snapshots depth={depth}",
             success_color=LogColor.BLUE,
         )
 
-    def subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    def subscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         self._add_subscription_quote_ticks(instrument_id)
         self.create_task(
-            self._subscribe_quote_ticks(instrument_id),
+            self._subscribe_quote_ticks(instrument_id, metadata),
             log_msg=f"subscribe: quote_ticks {instrument_id}",
             success_msg=f"Subscribed {instrument_id} quotes",
             success_color=LogColor.BLUE,
         )
 
-    def subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    def subscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         self._add_subscription_trade_ticks(instrument_id)
         self.create_task(
-            self._subscribe_trade_ticks(instrument_id),
+            self._subscribe_trade_ticks(instrument_id, metadata),
             log_msg=f"subscribe: trade_ticks {instrument_id}",
             success_msg=f"Subscribed {instrument_id} trades",
             success_color=LogColor.BLUE,
         )
 
-    def subscribe_bars(self, bar_type: BarType) -> None:
+    def subscribe_bars(self, bar_type: BarType, metadata: dict | None = None) -> None:
         PyCondition.is_true(
             bar_type.is_externally_aggregated(),
             "aggregation_source is not EXTERNAL",
@@ -534,25 +546,33 @@ class LiveMarketDataClient(MarketDataClient):
 
         self._add_subscription_bars(bar_type)
         self.create_task(
-            self._subscribe_bars(bar_type),
+            self._subscribe_bars(bar_type, metadata),
             log_msg=f"subscribe: bars {bar_type}",
             success_msg=f"Subscribed {bar_type} bars",
             success_color=LogColor.BLUE,
         )
 
-    def subscribe_instrument_status(self, instrument_id: InstrumentId) -> None:
+    def subscribe_instrument_status(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         self._add_subscription_instrument_status(instrument_id)
         self.create_task(
-            self._subscribe_instrument_status(instrument_id),
+            self._subscribe_instrument_status(instrument_id, metadata),
             log_msg=f"subscribe: instrument_status {instrument_id}",
             success_msg=f"Subscribed {instrument_id} instrument status ",
             success_color=LogColor.BLUE,
         )
 
-    def subscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
+    def subscribe_instrument_close(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         self._add_subscription_instrument_close(instrument_id)
         self.create_task(
-            self._subscribe_instrument_close(instrument_id),
+            self._subscribe_instrument_close(instrument_id, metadata),
             log_msg=f"subscribe: instrument_close {instrument_id}",
             success_msg=f"Subscribed {instrument_id} instrument close",
             success_color=LogColor.BLUE,
@@ -567,83 +587,111 @@ class LiveMarketDataClient(MarketDataClient):
             success_color=LogColor.BLUE,
         )
 
-    def unsubscribe_instruments(self) -> None:
+    def unsubscribe_instruments(self, metadata: dict | None = None) -> None:
         instrument_ids = list(self._instrument_provider.get_all().keys())
         [self._remove_subscription_instrument(i) for i in instrument_ids]
         self.create_task(
-            self._unsubscribe_instruments(),
+            self._unsubscribe_instruments(metadata),
             log_msg=f"unsubscribe: instruments {self.venue}",
             success_msg=f"Unsubscribed {self.venue} instruments",
             success_color=LogColor.BLUE,
         )
 
-    def unsubscribe_instrument(self, instrument_id: InstrumentId) -> None:
+    def unsubscribe_instrument(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         self._remove_subscription_instrument(instrument_id)
         self.create_task(
-            self._unsubscribe_instrument(instrument_id),
+            self._unsubscribe_instrument(instrument_id, metadata),
             log_msg=f"unsubscribe: instrument {instrument_id}",
             success_msg=f"Unsubscribed {instrument_id} instrument",
             success_color=LogColor.BLUE,
         )
 
-    def unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
+    def unsubscribe_order_book_deltas(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         self._remove_subscription_order_book_deltas(instrument_id)
         self.create_task(
-            self._unsubscribe_order_book_deltas(instrument_id),
+            self._unsubscribe_order_book_deltas(instrument_id, metadata),
             log_msg=f"unsubscribe: order_book_deltas {instrument_id}",
             success_msg=f"Unsubscribed {instrument_id} order book deltas",
             success_color=LogColor.BLUE,
         )
 
-    def unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
+    def unsubscribe_order_book_snapshots(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         self._remove_subscription_order_book_snapshots(instrument_id)
         self.create_task(
-            self._unsubscribe_order_book_snapshots(instrument_id),
+            self._unsubscribe_order_book_snapshots(instrument_id, metadata),
             log_msg=f"unsubscribe: order_book_snapshots {instrument_id}",
             success_msg=f"Unsubscribed {instrument_id} order book snapshots",
             success_color=LogColor.BLUE,
         )
 
-    def unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    def unsubscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         self._remove_subscription_quote_ticks(instrument_id)
         self.create_task(
-            self._unsubscribe_quote_ticks(instrument_id),
+            self._unsubscribe_quote_ticks(instrument_id, metadata),
             log_msg=f"unsubscribe: quote_ticks {instrument_id}",
             success_msg=f"Unsubscribed {instrument_id} quotes",
             success_color=LogColor.BLUE,
         )
 
-    def unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    def unsubscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         self._remove_subscription_trade_ticks(instrument_id)
         self.create_task(
-            self._unsubscribe_trade_ticks(instrument_id),
+            self._unsubscribe_trade_ticks(instrument_id, metadata),
             log_msg=f"unsubscribe: trade_ticks {instrument_id}",
             success_msg=f"Unsubscribed {instrument_id} trades",
             success_color=LogColor.BLUE,
         )
 
-    def unsubscribe_bars(self, bar_type: BarType) -> None:
+    def unsubscribe_bars(self, bar_type: BarType, metadata: dict | None = None) -> None:
         self._remove_subscription_bars(bar_type)
         self.create_task(
-            self._unsubscribe_bars(bar_type),
+            self._unsubscribe_bars(bar_type, metadata),
             log_msg=f"unsubscribe: bars {bar_type}",
             success_msg=f"Unsubscribed {bar_type} bars",
             success_color=LogColor.BLUE,
         )
 
-    def unsubscribe_instrument_status(self, instrument_id: InstrumentId) -> None:
+    def unsubscribe_instrument_status(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         self._remove_subscription_instrument_status(instrument_id)
         self.create_task(
-            self._unsubscribe_instrument_status(instrument_id),
+            self._unsubscribe_instrument_status(instrument_id, metadata),
             log_msg=f"unsubscribe: instrument_status {instrument_id}",
             success_msg=f"Unsubscribed {instrument_id} instrument status",
             success_color=LogColor.BLUE,
         )
 
-    def unsubscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
+    def unsubscribe_instrument_close(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         self._remove_subscription_instrument_close(instrument_id)
         self.create_task(
-            self._unsubscribe_instrument_close(instrument_id),
+            self._unsubscribe_instrument_close(instrument_id, metadata),
             log_msg=f"unsubscribe: instrument_close {instrument_id}",
             success_msg=f"Unsubscribed {instrument_id} instrument close",
             success_color=LogColor.BLUE,
@@ -664,15 +712,17 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
-        time_range = f" {start} to {end}" if (start or end) else ""
-        self._log.info(f"Request {instrument_id} instrument{time_range}", LogColor.BLUE)
+        time_range_str = format_utc_timerange(start, end)
+        self._log.info(f"Request {instrument_id} instrument{time_range_str}", LogColor.BLUE)
         self.create_task(
             self._request_instrument(
                 instrument_id=instrument_id,
                 correlation_id=correlation_id,
                 start=start,
                 end=end,
+                metadata=metadata,
             ),
             log_msg=f"request: instrument {instrument_id}",
         )
@@ -683,10 +733,11 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
-        time_range = f" {start} to {end}" if (start or end) else ""
+        time_range_str = format_utc_timerange(start, end)
         self._log.info(
-            f"Request {venue} instruments for{time_range}",
+            f"Request {venue} instruments for{time_range_str}",
             LogColor.BLUE,
         )
         self.create_task(
@@ -695,6 +746,7 @@ class LiveMarketDataClient(MarketDataClient):
                 correlation_id=correlation_id,
                 start=start,
                 end=end,
+                metadata=metadata,
             ),
             log_msg=f"request: instruments for {venue}",
         )
@@ -706,10 +758,11 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
-        time_range = f" {start} to {end}" if (start or end) else ""
+        time_range_str = format_utc_timerange(start, end)
         limit_str = f" limit={limit}" if limit else ""
-        self._log.info(f"Request {instrument_id} quotes{time_range}{limit_str}", LogColor.BLUE)
+        self._log.info(f"Request {instrument_id} quotes{time_range_str}{limit_str}", LogColor.BLUE)
         self.create_task(
             self._request_quote_ticks(
                 instrument_id=instrument_id,
@@ -717,6 +770,7 @@ class LiveMarketDataClient(MarketDataClient):
                 correlation_id=correlation_id,
                 start=start,
                 end=end,
+                metadata=metadata,
             ),
             log_msg=f"request: quotes {instrument_id}",
         )
@@ -728,10 +782,11 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
-        time_range = f" {start} to {end}" if (start or end) else ""
+        time_range_str = format_utc_timerange(start, end)
         limit_str = f" limit={limit}" if limit else ""
-        self._log.info(f"Request {instrument_id} trades{time_range}{limit_str}", LogColor.BLUE)
+        self._log.info(f"Request {instrument_id} trades{time_range_str}{limit_str}", LogColor.BLUE)
         self.create_task(
             self._request_trade_ticks(
                 instrument_id=instrument_id,
@@ -739,6 +794,7 @@ class LiveMarketDataClient(MarketDataClient):
                 correlation_id=correlation_id,
                 start=start,
                 end=end,
+                metadata=metadata,
             ),
             log_msg=f"request: trades {instrument_id}",
         )
@@ -750,10 +806,11 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
-        time_range = f" {start} to {end}" if (start or end) else ""
+        time_range_str = format_utc_timerange(start, end)
         limit_str = f" limit={limit}" if limit else ""
-        self._log.info(f"Request {bar_type} bars{time_range}{limit_str}", LogColor.BLUE)
+        self._log.info(f"Request {bar_type} bars{time_range_str}{limit_str}", LogColor.BLUE)
         self.create_task(
             self._request_bars(
                 bar_type=bar_type,
@@ -761,6 +818,7 @@ class LiveMarketDataClient(MarketDataClient):
                 correlation_id=correlation_id,
                 start=start,
                 end=end,
+                metadata=metadata,
             ),
             log_msg=f"request: bars {bar_type}",
         )
@@ -770,6 +828,7 @@ class LiveMarketDataClient(MarketDataClient):
         instrument_id: InstrumentId,
         limit: int,
         correlation_id: UUID4,
+        metadata: dict | None = None,
     ) -> None:
         limit_str = f" limit={limit}" if limit else ""
         self._log.info(f"Request {instrument_id} order_book_snapshot{limit_str}", LogColor.BLUE)
@@ -778,6 +837,7 @@ class LiveMarketDataClient(MarketDataClient):
                 instrument_id=instrument_id,
                 limit=limit,
                 correlation_id=correlation_id,
+                metadata=metadata,
             ),
             log_msg=f"request: order_book_snapshot {instrument_id}",
         )
@@ -800,12 +860,16 @@ class LiveMarketDataClient(MarketDataClient):
             "implement the `_subscribe` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe_instruments(self) -> None:
+    async def _subscribe_instruments(self, metadata: dict | None = None) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_instruments` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe_instrument(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_instrument(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_instrument` coroutine",  # pragma: no cover
         )
@@ -815,7 +879,7 @@ class LiveMarketDataClient(MarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int | None = None,
-        kwargs: dict[str, Any] | None = None,
+        metadata: dict | None = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_order_book_deltas` coroutine",  # pragma: no cover
@@ -826,33 +890,49 @@ class LiveMarketDataClient(MarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int | None = None,
-        kwargs: dict[str, Any] | None = None,
+        metadata: dict | None = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_order_book_snapshots` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_quote_ticks` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_trade_ticks` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe_bars(self, bar_type: BarType) -> None:
+    async def _subscribe_bars(self, bar_type: BarType, metadata: dict | None = None) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_bars` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe_instrument_status(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_instrument_status(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_instrument_status` coroutine",  # pragma: no cover
         )
 
-    async def _subscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
+    async def _subscribe_instrument_close(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_subscribe_instrument_close` coroutine",  # pragma: no cover
         )
@@ -862,47 +942,75 @@ class LiveMarketDataClient(MarketDataClient):
             "implement the `_unsubscribe` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_instruments(self) -> None:
+    async def _unsubscribe_instruments(self, params: dict | None = None) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_instruments` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_instrument(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_instrument(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_instrument` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_order_book_deltas(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_order_book_deltas(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_order_book_deltas` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_order_book_snapshots(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_order_book_snapshots(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_order_book_snapshots` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_quote_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_quote_ticks(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_quote_ticks` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_trade_ticks(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_trade_ticks(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_trade_ticks` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_bars(self, bar_type: BarType) -> None:
+    async def _unsubscribe_bars(self, bar_type: BarType, metadata: dict | None = None) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_bars` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_instrument_status(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_instrument_status(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_instrument_status` coroutine",  # pragma: no cover
         )
 
-    async def _unsubscribe_instrument_close(self, instrument_id: InstrumentId) -> None:
+    async def _unsubscribe_instrument_close(
+        self,
+        instrument_id: InstrumentId,
+        metadata: dict | None = None,
+    ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_unsubscribe_instrument_close` coroutine",  # pragma: no cover
         )
@@ -918,6 +1026,7 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_instrument` coroutine",  # pragma: no cover
@@ -929,6 +1038,7 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_instruments` coroutine",  # pragma: no cover
@@ -941,6 +1051,7 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_quote_ticks` coroutine",  # pragma: no cover
@@ -953,6 +1064,7 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_trade_ticks` coroutine",  # pragma: no cover
@@ -965,6 +1077,7 @@ class LiveMarketDataClient(MarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
+        metadata: dict | None = None,
     ) -> None:
         raise NotImplementedError(  # pragma: no cover
             "implement the `_request_bars` coroutine",  # pragma: no cover
@@ -975,6 +1088,7 @@ class LiveMarketDataClient(MarketDataClient):
         instrument_id: InstrumentId,
         limit: int,
         correlation_id: UUID4,
+        metadata: dict | None = None,
     ) -> None:
         raise NotImplementedError(
             "implement the `_request_order_book_snapshot` coroutine",  # pragma: no cover

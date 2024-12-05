@@ -353,7 +353,7 @@ class TestMsgSpecSerializer:
             Quantity(100_000, precision=0),
             price=Price(1.00000, precision=5),
             trigger_price=Price(1.00010, precision=5),
-            trigger_type=TriggerType.LAST_TRADE,
+            trigger_type=TriggerType.LAST_PRICE,
             time_in_force=TimeInForce.GTD,
             expire_time_ns=1_000_000_000 * 60,
             init_id=UUID4(),

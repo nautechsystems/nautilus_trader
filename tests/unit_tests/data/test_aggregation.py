@@ -50,6 +50,7 @@ from nautilus_trader.test_kit.stubs.data import TestDataStubs
 from nautilus_trader.test_kit.stubs.identifiers import TestIdStubs
 
 
+NANOSECONDS_IN_SECOND = 1_000_000_000
 AUDUSD_SIM = TestInstrumentProvider.default_fx_ccy("AUD/USD")
 BTCUSDT_BINANCE = TestInstrumentProvider.btcusdt_binance()
 ETHUSDT_BITMEX = TestInstrumentProvider.ethusd_bitmex()
@@ -93,8 +94,8 @@ class TestBarBuilder:
             low=Price.from_str("1.00000"),
             close=Price.from_str("1.00002"),
             volume=Quantity.from_str("1"),
-            ts_event=1_000_000_000,
-            ts_init=1_000_000_000,
+            ts_event=NANOSECONDS_IN_SECOND,
+            ts_init=NANOSECONDS_IN_SECOND,
         )
 
         # Act
@@ -108,8 +109,8 @@ class TestBarBuilder:
         assert bar.low == Price.from_str("1.00000")
         assert bar.close == Price.from_str("1.00002")
         assert bar.volume == Quantity.from_str("1")
-        assert bar.ts_init == 1_000_000_000
-        assert builder.ts_last == 1_000_000_000
+        assert bar.ts_init == NANOSECONDS_IN_SECOND
+        assert builder.ts_last == NANOSECONDS_IN_SECOND
 
     def test_set_partial_when_already_set_does_not_update(self):
         # Arrange
@@ -123,8 +124,8 @@ class TestBarBuilder:
             low=Price.from_str("1.00000"),
             close=Price.from_str("1.00002"),
             volume=Quantity.from_str("1"),
-            ts_event=1_000_000_000,
-            ts_init=1_000_000_000,
+            ts_event=NANOSECONDS_IN_SECOND,
+            ts_init=NANOSECONDS_IN_SECOND,
         )
 
         partial_bar2 = Bar(
@@ -134,7 +135,7 @@ class TestBarBuilder:
             low=Price.from_str("2.00000"),
             close=Price.from_str("2.00002"),
             volume=Quantity.from_str("2"),
-            ts_event=1_000_000_000,
+            ts_event=NANOSECONDS_IN_SECOND,
             ts_init=3_000_000_000,
         )
 
@@ -151,7 +152,7 @@ class TestBarBuilder:
         assert bar.close == Price.from_str("1.00002")
         assert bar.volume == Quantity.from_str("1")
         assert bar.ts_init == 4_000_000_000
-        assert builder.ts_last == 1_000_000_000
+        assert builder.ts_last == NANOSECONDS_IN_SECOND
 
     def test_single_update_results_in_expected_properties(self):
         # Arrange
@@ -178,8 +179,8 @@ class TestBarBuilder:
             low=Price.from_str("1.00000"),
             close=Price.from_str("1.00005"),
             volume=Quantity.from_str("1.5"),
-            ts_event=1_000_000_000,
-            ts_init=1_000_000_000,
+            ts_event=NANOSECONDS_IN_SECOND,
+            ts_init=NANOSECONDS_IN_SECOND,
         )
 
         # Act
@@ -187,7 +188,7 @@ class TestBarBuilder:
 
         # Assert
         assert builder.initialized
-        assert builder.ts_last == 1_000_000_000
+        assert builder.ts_last == NANOSECONDS_IN_SECOND
         assert builder.count == 1
 
         built_bar = builder.build_now()
@@ -304,7 +305,7 @@ class TestBarBuilder:
         builder.update(
             Price.from_str("1.00000"),
             Quantity.from_str("1.5"),
-            1_000_000_000,
+            NANOSECONDS_IN_SECOND,
         )
 
         # Act
@@ -316,8 +317,8 @@ class TestBarBuilder:
         assert bar.low == Price.from_str("1.00000")
         assert bar.close == Price.from_str("1.00000")
         assert bar.volume == Quantity.from_str("4.0")
-        assert bar.ts_init == 1_000_000_000
-        assert builder.ts_last == 1_000_000_000
+        assert bar.ts_init == NANOSECONDS_IN_SECOND
+        assert builder.ts_last == NANOSECONDS_IN_SECOND
         assert builder.count == 0
 
     def test_build_when_received_bar_updates_returns_expected_bar(self):
@@ -356,8 +357,8 @@ class TestBarBuilder:
             low=Price.from_str("1.00000"),
             close=Price.from_str("1.00000"),
             volume=Quantity.from_str("1.5"),
-            ts_event=1_000_000_000,
-            ts_init=1_000_000_000,
+            ts_event=NANOSECONDS_IN_SECOND,
+            ts_init=NANOSECONDS_IN_SECOND,
         )
         builder.update_bar(bar3, bar3.volume, bar3.ts_init)
 
@@ -370,8 +371,8 @@ class TestBarBuilder:
         assert bar.low == Price.from_str("1.00000")
         assert bar.close == Price.from_str("1.00000")
         assert bar.volume == Quantity.from_str("4.0")
-        assert bar.ts_init == 1_000_000_000
-        assert builder.ts_last == 1_000_000_000
+        assert bar.ts_init == NANOSECONDS_IN_SECOND
+        assert builder.ts_last == NANOSECONDS_IN_SECOND
         assert builder.count == 0
 
     def test_build_with_previous_close(self):
@@ -1803,8 +1804,8 @@ class TestTimeBarAggregator:
             ask_price=Price.from_str("1.00003"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
-            ts_event=1 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
-            ts_init=1 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
+            ts_event=1 * 60 * NANOSECONDS_IN_SECOND,
+            ts_init=1 * 60 * NANOSECONDS_IN_SECOND,
         )
 
         # Act
@@ -1827,7 +1828,7 @@ class TestTimeBarAggregator:
     def test_batch_update_sends_single_bar_to_handler(self):
         # Arrange
         clock = TestClock()
-        clock.set_time(3 * 60 * 1_000_000_000)
+        clock.set_time(3 * 60 * NANOSECONDS_IN_SECOND)
         handler = []
         instrument_id = TestIdStubs.audusd_id()
         bar_spec = BarSpecification(3, BarAggregation.MINUTE, PriceType.MID)
@@ -1845,8 +1846,8 @@ class TestTimeBarAggregator:
             ask_price=Price.from_str("1.00004"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
-            ts_event=1 * 60 * 1_000_000_000,
-            ts_init=1 * 60 * 1_000_000_000,
+            ts_event=1 * 60 * NANOSECONDS_IN_SECOND,
+            ts_init=1 * 60 * NANOSECONDS_IN_SECOND,
         )
 
         tick2 = QuoteTick(
@@ -1855,8 +1856,8 @@ class TestTimeBarAggregator:
             ask_price=Price.from_str("1.00005"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
-            ts_event=2 * 60 * 1_000_000_000,
-            ts_init=2 * 60 * 1_000_000_000,
+            ts_event=2 * 60 * NANOSECONDS_IN_SECOND,
+            ts_init=2 * 60 * NANOSECONDS_IN_SECOND,
         )
 
         tick3 = QuoteTick(
@@ -1865,8 +1866,8 @@ class TestTimeBarAggregator:
             ask_price=Price.from_str("1.00003"),
             bid_size=Quantity.from_int(1),
             ask_size=Quantity.from_int(1),
-            ts_event=3 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
-            ts_init=3 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
+            ts_event=3 * 60 * NANOSECONDS_IN_SECOND,
+            ts_init=3 * 60 * NANOSECONDS_IN_SECOND,
         )
 
         # Act
@@ -1916,8 +1917,8 @@ class TestTimeBarAggregator:
             low=Price.from_str("1.00004"),
             close=Price.from_str("1.00007"),
             volume=Quantity.from_int(1),
-            ts_event=1 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
-            ts_init=1 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
+            ts_event=1 * 60 * NANOSECONDS_IN_SECOND,
+            ts_init=1 * 60 * NANOSECONDS_IN_SECOND,
         )
 
         bar2 = Bar(
@@ -1927,8 +1928,8 @@ class TestTimeBarAggregator:
             low=Price.from_str("1.00003"),
             close=Price.from_str("1.00015"),
             volume=Quantity.from_int(1),
-            ts_event=2 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
-            ts_init=2 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
+            ts_event=2 * 60 * NANOSECONDS_IN_SECOND,
+            ts_init=2 * 60 * NANOSECONDS_IN_SECOND,
         )
 
         bar3 = Bar(
@@ -1938,8 +1939,8 @@ class TestTimeBarAggregator:
             low=Price.from_str("1.00007"),
             close=Price.from_str("1.00008"),
             volume=Quantity.from_int(1),
-            ts_event=3 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
-            ts_init=3 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
+            ts_event=3 * 60 * NANOSECONDS_IN_SECOND,
+            ts_init=3 * 60 * NANOSECONDS_IN_SECOND,
         )
 
         # Act
@@ -1958,14 +1959,14 @@ class TestTimeBarAggregator:
         assert bar.low == Price.from_str("1.00003")
         assert bar.close == Price.from_str("1.00008")
         assert bar.volume == Quantity.from_int(3)
-        assert bar.ts_init == 3 * 60 * 1_000_000_000
+        assert bar.ts_init == 3 * 60 * NANOSECONDS_IN_SECOND
 
     def test_update_timer_with_test_clock_sends_single_bar_to_handler_with_bars_and_time_origin(
         self,
     ):
         # Arrange
         clock = TestClock()
-        clock.set_time(30 * 60 * 1_000_000_000)
+        clock.set_time(30 * 60 * NANOSECONDS_IN_SECOND)
         handler = []
         instrument_id = TestIdStubs.audusd_id()
         bar_spec3 = BarSpecification(3, BarAggregation.MINUTE, PriceType.LAST)
@@ -1994,8 +1995,8 @@ class TestTimeBarAggregator:
             low=Price.from_str("1.00004"),
             close=Price.from_str("1.00007"),
             volume=Quantity.from_int(1),
-            ts_event=31 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
-            ts_init=1 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
+            ts_event=31 * 60 * NANOSECONDS_IN_SECOND,
+            ts_init=31 * 60 * NANOSECONDS_IN_SECOND,
         )
 
         bar2 = Bar(
@@ -2005,8 +2006,8 @@ class TestTimeBarAggregator:
             low=Price.from_str("1.00003"),
             close=Price.from_str("1.00015"),
             volume=Quantity.from_int(1),
-            ts_event=32 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
-            ts_init=2 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
+            ts_event=32 * 60 * NANOSECONDS_IN_SECOND,
+            ts_init=32 * 60 * NANOSECONDS_IN_SECOND,
         )
 
         bar3 = Bar(
@@ -2016,8 +2017,8 @@ class TestTimeBarAggregator:
             low=Price.from_str("1.00007"),
             close=Price.from_str("1.00008"),
             volume=Quantity.from_int(1),
-            ts_event=33 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
-            ts_init=33 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
+            ts_event=33 * 60 * NANOSECONDS_IN_SECOND,
+            ts_init=33 * 60 * NANOSECONDS_IN_SECOND,
         )
 
         # Act
@@ -2036,7 +2037,7 @@ class TestTimeBarAggregator:
         assert bar.low == Price.from_str("1.00003")
         assert bar.close == Price.from_str("1.00008")
         assert bar.volume == Quantity.from_int(3)
-        assert bar.ts_init == 33 * 60 * 1_000_000_000
+        assert bar.ts_init == 33 * 60 * NANOSECONDS_IN_SECOND
 
     def test_update_timer_with_test_clock_sends_single_monthly_bar_to_handler_with_bars(self):
         # Arrange
@@ -2069,8 +2070,8 @@ class TestTimeBarAggregator:
             low=Price.from_str("1.00004"),
             close=Price.from_str("1.00007"),
             volume=Quantity.from_int(1),
-            ts_event=pd.Timestamp("2024-3-24").value,  # 1 minute in nanoseconds
-            ts_init=pd.Timestamp("2024-3-24").value,  # 1 minute in nanoseconds
+            ts_event=pd.Timestamp("2024-3-24").value,  # time in nanoseconds
+            ts_init=pd.Timestamp("2024-3-24").value,
         )
 
         bar2 = Bar(
@@ -2080,8 +2081,8 @@ class TestTimeBarAggregator:
             low=Price.from_str("1.00003"),
             close=Price.from_str("1.00015"),
             volume=Quantity.from_int(1),
-            ts_event=pd.Timestamp("2024-3-25").value,  # 1 minute in nanoseconds
-            ts_init=pd.Timestamp("2024-3-25").value,  # 1 minute in nanoseconds
+            ts_event=pd.Timestamp("2024-3-25").value,
+            ts_init=pd.Timestamp("2024-3-25").value,
         )
 
         bar3 = Bar(
@@ -2091,8 +2092,8 @@ class TestTimeBarAggregator:
             low=Price.from_str("1.00007"),
             close=Price.from_str("1.00008"),
             volume=Quantity.from_int(1),
-            ts_event=pd.Timestamp("2024-3-26").value,  # 1 minute in nanoseconds
-            ts_init=pd.Timestamp("2024-3-26").value,  # 1 minute in nanoseconds
+            ts_event=pd.Timestamp("2024-3-26").value,
+            ts_init=pd.Timestamp("2024-3-26").value,
         )
 
         # Act
@@ -2144,8 +2145,8 @@ class TestTimeBarAggregator:
             low=Price.from_str("1.00004"),
             close=Price.from_str("1.00007"),
             volume=Quantity.from_int(1),
-            ts_event=pd.Timestamp("2024-3-20").value,  # 1 minute in nanoseconds
-            ts_init=pd.Timestamp("2024-3-20").value,  # 1 minute in nanoseconds
+            ts_event=pd.Timestamp("2024-3-20").value,  # time in nanoseconds
+            ts_init=pd.Timestamp("2024-3-20").value,
         )
 
         bar2 = Bar(
@@ -2155,8 +2156,8 @@ class TestTimeBarAggregator:
             low=Price.from_str("1.00003"),
             close=Price.from_str("1.00015"),
             volume=Quantity.from_int(1),
-            ts_event=pd.Timestamp("2024-3-21").value,  # 1 minute in nanoseconds
-            ts_init=pd.Timestamp("2024-3-21").value,  # 1 minute in nanoseconds
+            ts_event=pd.Timestamp("2024-3-21").value,
+            ts_init=pd.Timestamp("2024-3-21").value,
         )
 
         bar3 = Bar(
@@ -2166,8 +2167,8 @@ class TestTimeBarAggregator:
             low=Price.from_str("1.00007"),
             close=Price.from_str("1.00008"),
             volume=Quantity.from_int(1),
-            ts_event=pd.Timestamp("2024-3-22").value,  # 1 minute in nanoseconds
-            ts_init=pd.Timestamp("2024-3-22").value,  # 1 minute in nanoseconds
+            ts_event=pd.Timestamp("2024-3-22").value,
+            ts_init=pd.Timestamp("2024-3-22").value,
         )
 
         # Act
@@ -2191,7 +2192,7 @@ class TestTimeBarAggregator:
     def test_batch_update_sends_single_bar_to_handler_with_bars(self):
         # Arrange
         clock = TestClock()
-        clock.set_time(3 * 60 * 1_000_000_000)
+        clock.set_time(3 * 60 * NANOSECONDS_IN_SECOND)
         handler = []
         instrument_id = TestIdStubs.audusd_id()
         bar_spec3 = BarSpecification(3, BarAggregation.MINUTE, PriceType.LAST)
@@ -2219,8 +2220,8 @@ class TestTimeBarAggregator:
             low=Price.from_str("1.00004"),
             close=Price.from_str("1.00007"),
             volume=Quantity.from_int(1),
-            ts_event=1 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
-            ts_init=1 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
+            ts_event=1 * 60 * NANOSECONDS_IN_SECOND,
+            ts_init=1 * 60 * NANOSECONDS_IN_SECOND,
         )
 
         bar2 = Bar(
@@ -2230,8 +2231,8 @@ class TestTimeBarAggregator:
             low=Price.from_str("1.00003"),
             close=Price.from_str("1.00015"),
             volume=Quantity.from_int(1),
-            ts_event=2 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
-            ts_init=2 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
+            ts_event=2 * 60 * NANOSECONDS_IN_SECOND,
+            ts_init=2 * 60 * NANOSECONDS_IN_SECOND,
         )
 
         bar3 = Bar(
@@ -2241,8 +2242,8 @@ class TestTimeBarAggregator:
             low=Price.from_str("1.00007"),
             close=Price.from_str("1.00008"),
             volume=Quantity.from_int(1),
-            ts_event=3 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
-            ts_init=3 * 60 * 1_000_000_000,  # 1 minute in nanoseconds
+            ts_event=3 * 60 * NANOSECONDS_IN_SECOND,
+            ts_init=3 * 60 * NANOSECONDS_IN_SECOND,
         )
 
         # Act
@@ -2261,7 +2262,7 @@ class TestTimeBarAggregator:
         assert bar.low == Price.from_str("1.00003")
         assert bar.close == Price.from_str("1.00008")
         assert bar.volume == Quantity.from_int(3)
-        assert bar.ts_init == 3 * 60 * 1_000_000_000
+        assert bar.ts_init == 3 * 60 * NANOSECONDS_IN_SECOND
 
     @pytest.mark.parametrize(
         ("step", "aggregation"),
@@ -2305,7 +2306,7 @@ class TestTimeBarAggregator:
 
         # Assert
         assert clock.timestamp_ns() == 1610064046674000000
-        assert aggregator.interval_ns == 1_000_000_000
+        assert aggregator.interval_ns == NANOSECONDS_IN_SECOND
         assert aggregator.next_close_ns == 1610064047000000000
         assert handler[0].open == Price.from_str("39432.99")
         assert handler[0].high == Price.from_str("39435.66")

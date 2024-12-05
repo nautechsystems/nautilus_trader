@@ -77,7 +77,7 @@ jobs:
           version: ${{ env.POETRY_VERSION }}
 
       - name: Install build dependencies
-        run: python -m pip install --upgrade pip setuptools wheel pre-commit msgspec
+        run: python -m pip install --upgrade pip setuptools wheel pre-commit
 
       # ta-lib Python install currently broken
       # https://github.com/TA-Lib/ta-lib-python/issues/655

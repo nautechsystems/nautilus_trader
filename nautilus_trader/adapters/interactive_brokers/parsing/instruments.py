@@ -24,6 +24,7 @@ from ibapi.contract import ContractDetails
 # fmt: off
 from nautilus_trader.adapters.interactive_brokers.common import IBContract
 from nautilus_trader.adapters.interactive_brokers.common import IBContractDetails
+from nautilus_trader.adapters.interactive_brokers.config import SymbologyMethod
 from nautilus_trader.core.correctness import PyCondition
 from nautilus_trader.model.enums import AssetClass
 from nautilus_trader.model.enums import OptionKind
@@ -86,7 +87,7 @@ VENUES_CMDTY = ["IBCMDTY"]  # self named, in fact mapping to "SMART" when parsin
 RE_CASH = re.compile(r"^(?P<symbol>[A-Z]{3})\/(?P<currency>[A-Z]{3})$")
 RE_CFD_CASH = re.compile(r"^(?P<symbol>[A-Z]{3})\.(?P<currency>[A-Z]{3})$")
 RE_OPT = re.compile(
-    r"^(?P<symbol>^[A-Z]{1,6})(?P<expiry>\d{6})(?P<right>[CP])(?P<strike>\d{5})(?P<decimal>\d{3})$",
+    r"^(?P<symbol>^[A-Z. ]{1,6})(?P<expiry>\d{6})(?P<right>[CP])(?P<strike>\d{5})(?P<decimal>\d{3})$",
 )
 RE_FUT_UNDERLYING = re.compile(r"^(?P<symbol>\w{1,3})$")
 RE_FUT = re.compile(r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d{2})$")
@@ -101,7 +102,7 @@ RE_FOP = re.compile(
     r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d{2})(?P<right>[CP])(?P<strike>.{4,5})$",
 )
 RE_FOP_ORIGINAL = re.compile(
-    r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d) (?P<right>[CP])(?P<strike>.{4,5})$",
+    r"^(?P<symbol>\w{1,3})(?P<month>[FGHJKMNQUVXZ])(?P<year>\d)\s(?P<right>[CP])(?P<strike>\d{1,4}(?:\.\d)?)$",
 )
 RE_CRYPTO = re.compile(r"^(?P<symbol>[A-Z]*)\/(?P<currency>[A-Z]{3})$")
 
@@ -139,12 +140,14 @@ def contract_details_to_ib_contract_details(details: ContractDetails) -> IBContr
 
 def parse_instrument(
     contract_details: IBContractDetails,
-    strict_symbology: bool = False,
+    symbology_method: SymbologyMethod = SymbologyMethod.IB_SIMPLIFIED,
+    databento_venue: str | None = None,
 ) -> Instrument:
     security_type = contract_details.contract.secType
     instrument_id = ib_contract_to_instrument_id(
         contract=contract_details.contract,
-        strict_symbology=strict_symbology,
+        symbology_method=symbology_method,
+        databento_venue=databento_venue,
     )
     if security_type == "STK":
         return parse_equity_contract(details=contract_details, instrument_id=instrument_id)
@@ -466,17 +469,23 @@ def decade_digit(last_digit: str, contract: IBContract) -> int:
 
 def ib_contract_to_instrument_id(
     contract: IBContract,
-    strict_symbology: bool = False,
+    symbology_method: SymbologyMethod = SymbologyMethod.IB_SIMPLIFIED,
+    databento_venue: str | None = None,
 ) -> InstrumentId:
     PyCondition.type(contract, IBContract, "IBContract")
 
-    if strict_symbology:
-        return ib_contract_to_instrument_id_strict_symbology(contract)
-    else:
+    if symbology_method == SymbologyMethod.DATABENTO:
+        assert databento_venue is not None
+        return InstrumentId.from_str(f"{contract.localSymbol}.{databento_venue}")
+    elif symbology_method == SymbologyMethod.IB_SIMPLIFIED:
         return ib_contract_to_instrument_id_simplified_symbology(contract)
+    elif symbology_method == SymbologyMethod.IB_RAW:
+        return ib_contract_to_instrument_id_raw_symbology(contract)
+    else:
+        raise NotImplementedError(f"{symbology_method} not implemented")
 
 
-def ib_contract_to_instrument_id_strict_symbology(contract: IBContract) -> InstrumentId:
+def ib_contract_to_instrument_id_raw_symbology(contract: IBContract) -> InstrumentId:
     if contract.secType == "CFD":
         symbol = f"{contract.localSymbol}={contract.secType}"
         venue = "IBCFD"
@@ -539,17 +548,25 @@ def ib_contract_to_instrument_id_simplified_symbology(  # noqa: C901 (too comple
 
 def instrument_id_to_ib_contract(
     instrument_id: InstrumentId,
-    strict_symbology: bool = False,
+    symbology_method: SymbologyMethod = SymbologyMethod.IB_SIMPLIFIED,
+    exchange: str | None = None,
 ) -> IBContract:
     PyCondition.type(instrument_id, InstrumentId, "InstrumentId")
 
-    if strict_symbology:
-        return instrument_id_to_ib_contract_strict_symbology(instrument_id)
-    else:
+    if symbology_method == SymbologyMethod.DATABENTO:
+        return instrument_id_to_ib_contract_databento_symbology(
+            instrument_id,
+            exchange=exchange or "SMART",
+        )
+    elif symbology_method == SymbologyMethod.IB_SIMPLIFIED:
         return instrument_id_to_ib_contract_simplified_symbology(instrument_id)
+    elif symbology_method == SymbologyMethod.IB_RAW:
+        return instrument_id_to_ib_contract_raw_symbology(instrument_id)
+    else:
+        raise NotImplementedError(f"{symbology_method} not implemented")
 
 
-def instrument_id_to_ib_contract_strict_symbology(instrument_id: InstrumentId) -> IBContract:
+def instrument_id_to_ib_contract_raw_symbology(instrument_id: InstrumentId) -> IBContract:
     local_symbol, security_type = instrument_id.symbol.value.rsplit("=", 1)
     exchange = instrument_id.venue.value.replace("/", ".")
     if security_type == "STK":
@@ -667,3 +684,45 @@ def instrument_id_to_ib_contract_simplified_symbology(  # noqa: C901 (too comple
         primaryExchange=instrument_id.venue.value,
         localSymbol=f"{instrument_id.symbol.value}".replace("-", " "),
     )
+
+
+def instrument_id_to_ib_contract_databento_symbology(
+    instrument_id: InstrumentId,
+    exchange: str,
+) -> IBContract:
+    if instrument_id.venue.value == "GLBX":
+        assert exchange is not None
+        if RE_FUT.match(instrument_id.symbol.value) or RE_FUT_ORIGINAL.match(
+            instrument_id.symbol.value,
+        ):
+            return IBContract(
+                secType="FUT",
+                exchange=exchange,
+                localSymbol=instrument_id.symbol.value,
+            )
+        elif RE_FOP.match(instrument_id.symbol.value) or RE_FOP_ORIGINAL.match(
+            instrument_id.symbol.value,
+        ):
+            return IBContract(
+                secType="FOP",
+                exchange=exchange,
+                localSymbol=instrument_id.symbol.value,
+            )
+        else:
+            raise ValueError(f"Cannot parse ib_contract for {instrument_id}")
+    elif instrument_id.venue.value == "IFEU":
+        raise ValueError(f"Cannot parse ib_contract for {instrument_id}")
+    else:
+        if RE_OPT.match(instrument_id.symbol.value):
+            return IBContract(
+                secType="OPT",
+                exchange=exchange,
+                localSymbol=instrument_id.symbol.value,
+            )
+        else:
+            return IBContract(
+                secType="STK",
+                exchange=exchange,
+                localSymbol=instrument_id.symbol.value,
+                currency="USD",
+            )
