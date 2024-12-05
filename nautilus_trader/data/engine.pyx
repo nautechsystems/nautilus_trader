@@ -1904,7 +1904,7 @@ cdef class DataEngine(Component):
             if response.data_type.metadata.get("bars_market_data_type"):
                 response.data = self._handle_aggregated_bars(response.data, response.data_type.metadata)
             else:
-                self._handle_bars(response.data, response.data_type.metadata.get("Partial"))
+                self._handle_bars(response.data, response.data_type.metadata.get("partial"))
 
         self._msgbus.response(response)
 
