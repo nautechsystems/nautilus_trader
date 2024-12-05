@@ -1077,7 +1077,7 @@ cdef class MarketDataClient(DataClient):
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             venue=bar_type.instrument_id.venue,
-            data_type=DataType(Bar, metadata=(({"bar_type": bar_type, "Partial": partial} | (metadata if metadata else {})))),
+            data_type=DataType(Bar, metadata=(({"bar_type": bar_type, "partial": partial} | (metadata if metadata else {})))),
             data=bars,
             correlation_id=correlation_id,
             response_id=UUID4(),
