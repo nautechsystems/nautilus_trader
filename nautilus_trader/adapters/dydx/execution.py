@@ -1098,7 +1098,10 @@ class DYDXExecutionClient(LiveExecutionClient):
         if order.order_type == OrderType.LIMIT:
             price = order.price.as_double()
         elif order.order_type == OrderType.MARKET:
-            price = 0
+            if order.side == OrderSide.BUY:
+                price = 10000
+            else:
+                price = 0
         elif order.order_type == OrderType.STOP_LIMIT:
             price = order.price.as_double()
             trigger_price = order.trigger_price.as_double()
