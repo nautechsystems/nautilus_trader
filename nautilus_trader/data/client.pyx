@@ -372,6 +372,11 @@ cdef class MarketDataClient(DataClient):
         """
         Subscribe to all `Instrument` data.
 
+        Parameters
+        ----------
+        metadata : dict, optional
+            Additional metadata for the subscription.
+
         """
         self._log.error(
             f"Cannot subscribe to all `Instrument` data: not implemented. "
@@ -382,6 +387,11 @@ cdef class MarketDataClient(DataClient):
     cpdef void subscribe_instrument(self, InstrumentId instrument_id, dict metadata = None):
         """
         Subscribe to the `Instrument` with the given instrument ID.
+
+        Parameters
+        ----------
+        metadata : dict, optional
+            Additional metadata for the subscription.
 
         """
         self._log.error(
@@ -402,8 +412,8 @@ cdef class MarketDataClient(DataClient):
             The order book type.
         depth : int, optional, default None
             The maximum depth for the subscription.
-        kwargs : dict, optional
-            The keyword arguments for exchange specific parameters.
+        metadata : dict, optional
+            Additional metadata for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -424,8 +434,8 @@ cdef class MarketDataClient(DataClient):
             The order book level.
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
-        kwargs : dict, optional
-            The keyword arguments for exchange specific parameters.
+        metadata : dict, optional
+            Additional metadata for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -442,6 +452,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The tick instrument to subscribe to.
+        metadata : dict, optional
+            Additional metadata for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -458,6 +470,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The tick instrument to subscribe to.
+        metadata : dict, optional
+            Additional metadata for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -474,6 +488,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The tick instrument to subscribe to.
+        metadata : dict, optional
+            Additional metadata for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -490,6 +506,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The tick instrument to subscribe to.
+        metadata : dict, optional
+            Additional metadata for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -506,6 +524,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         bar_type : BarType
             The bar type to subscribe to.
+        metadata : dict, optional
+            Additional metadata for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -533,6 +553,11 @@ cdef class MarketDataClient(DataClient):
         """
         Unsubscribe from all `Instrument` data.
 
+        Parameters
+        ----------
+        metadata : dict, optional
+            Additional metadata for the subscription.
+
         """
         self._log.error(  # pragma: no cover
             f"Cannot unsubscribe from all `Instrument` data: not implemented. "  # pragma: no cover
@@ -548,6 +573,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The instrument to unsubscribe from.
+        metadata : dict, optional
+            Additional metadata for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -564,6 +591,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to unsubscribe from.
+        metadata : dict, optional
+            Additional metadata for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -580,6 +609,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to unsubscribe from.
+        metadata : dict, optional
+            Additional metadata for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -596,6 +627,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The tick instrument to unsubscribe from.
+        metadata : dict, optional
+            Additional metadata for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -612,6 +645,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The tick instrument to unsubscribe from.
+        metadata : dict, optional
+            Additional metadata for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -628,6 +663,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         bar_type : BarType
             The bar type to unsubscribe from.
+        metadata : dict, optional
+            Additional metadata for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -644,6 +681,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The instrument status updates to unsubscribe from.
+        metadata : dict, optional
+            Additional metadata for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -660,6 +699,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The tick instrument to unsubscribe from.
+        metadata : dict, optional
+            Additional metadata for the subscription.
 
         """
         self._log.error(  # pragma: no cover

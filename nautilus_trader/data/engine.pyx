@@ -666,50 +666,57 @@ cdef class DataEngine(Component):
             self._handle_subscribe_instrument(
                 client,
                 command.data_type.metadata.get("instrument_id"),
-                command.data_type.metadata,
+                command.params,
             )
         elif command.data_type.type == OrderBookDelta:
             self._handle_subscribe_order_book_deltas(
                 client,
                 command.data_type.metadata.get("instrument_id"),
-                command.data_type.metadata,
+                command.data_type.metadata.get("book_type"),
+                command.data_type.metadata.get("depth", 0),
+                command.params.get("managed", True),
+                command.params,
             )
         elif command.data_type.type == OrderBook:
             self._handle_subscribe_order_book(
                 client,
                 command.data_type.metadata.get("instrument_id"),
-                command.data_type.metadata,
+                command.data_type.metadata.get("book_type"),
+                command.data_type.metadata.get("depth", 0),
+                command.params.get("interval_ms", 1_000),  # TODO: Temporary default
+                command.params.get("managed", True),
+                command.params,
             )
         elif command.data_type.type == QuoteTick:
             self._handle_subscribe_quote_ticks(
                 client,
                 command.data_type.metadata.get("instrument_id"),
-                command.data_type.metadata,
+                command.params,
             )
         elif command.data_type.type == TradeTick:
             self._handle_subscribe_trade_ticks(
                 client,
                 command.data_type.metadata.get("instrument_id"),
-                command.data_type.metadata,
+                command.params,
             )
         elif command.data_type.type == Bar:
             self._handle_subscribe_bars(
                 client,
                 command.data_type.metadata.get("bar_type"),
-                command.data_type.metadata.get("await_partial"),
-                command.data_type.metadata,
+                command.params.get("await_partial"),
+                command.params,
             )
         elif command.data_type.type == InstrumentStatus:
             self._handle_subscribe_instrument_status(
                 client,
                 command.data_type.metadata.get("instrument_id"),
-                command.data_type.metadata,
+                command.params,
             )
         elif command.data_type.type == InstrumentClose:
             self._handle_subscribe_instrument_close(
                 client,
                 command.data_type.metadata.get("instrument_id"),
-                command.data_type.metadata,
+                command.params,
             )
         else:
             self._handle_subscribe_data(client, command.data_type)
@@ -719,37 +726,37 @@ cdef class DataEngine(Component):
             self._handle_unsubscribe_instrument(
                 client,
                 command.data_type.metadata.get("instrument_id"),
-                command.data_type.metadata,
+                command.params,
             )
         elif command.data_type.type == OrderBook:
             self._handle_unsubscribe_order_book(
                 client,
                 command.data_type.metadata.get("instrument_id"),
-                command.data_type.metadata,
+                command.params,
             )
         elif command.data_type.type == OrderBookDelta:
             self._handle_unsubscribe_order_book_deltas(
                 client,
                 command.data_type.metadata.get("instrument_id"),
-                command.data_type.metadata,
+                command.params,
             )
         elif command.data_type.type == QuoteTick:
             self._handle_unsubscribe_quote_ticks(
                 client,
                 command.data_type.metadata.get("instrument_id"),
-                command.data_type.metadata,
+                command.params,
             )
         elif command.data_type.type == TradeTick:
             self._handle_unsubscribe_trade_ticks(
                 client,
                 command.data_type.metadata.get("instrument_id"),
-                command.data_type.metadata,
+                command.params,
             )
         elif command.data_type.type == Bar:
             self._handle_unsubscribe_bars(
                 client,
                 command.data_type.metadata.get("bar_type"),
-                command.data_type.metadata,
+                command.params,
             )
         else:
             self._handle_unsubscribe_data(client, command.data_type)
@@ -758,7 +765,7 @@ cdef class DataEngine(Component):
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
-        dict metadata,
+        dict params,
     ):
         Condition.not_none(client, "client")
 
@@ -771,17 +778,20 @@ cdef class DataEngine(Component):
             return
 
         if instrument_id not in client.subscribed_instruments():
-            client.subscribe_instrument(instrument_id, metadata)
+            client.subscribe_instrument(instrument_id, params)
 
     cpdef void _handle_subscribe_order_book_deltas(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
-        dict metadata,
+        BookType book_type,
+        uint64_t depth,
+        bint managed,
+        dict params,
     ):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(metadata, "metadata")
+        Condition.not_none(params, "params")
 
         if instrument_id.is_synthetic():
             self._log.error("Cannot subscribe for synthetic instrument `OrderBookDelta` data")
@@ -790,27 +800,34 @@ cdef class DataEngine(Component):
         self._setup_order_book(
             client,
             instrument_id,
+            book_type=book_type,
+            depth=depth,
             only_deltas=True,
-            managed=metadata["managed"],
-            metadata=metadata,
+            managed=managed,
+            metadata=params,
         )
 
     cpdef void _handle_subscribe_order_book(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
-        dict metadata,
+        BookType book_type,
+        uint64_t depth,
+        uint64_t interval_ms,
+        bint managed,
+        dict params,
     ):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(metadata, "metadata")
+        Condition.positive_int(interval_ms, "interval_ms")
+        Condition.not_none(params, "params")
 
         if instrument_id.is_synthetic():
             self._log.error("Cannot subscribe for synthetic instrument `OrderBook` data")
             return
 
+
         cdef:
-            uint64_t interval_ms = metadata["interval_ms"]
             uint64_t interval_ns
             uint64_t timestamp_ns
             SnapshotInfo snap_info
@@ -851,24 +868,26 @@ cdef class DataEngine(Component):
         self._setup_order_book(
             client,
             instrument_id,
+            book_type=book_type,
+            depth=depth,
             only_deltas=False,
-            managed=metadata["managed"],
-            metadata=metadata,
+            managed=managed,
+            metadata=params,
         )
 
     cpdef void _setup_order_book(
         self,
         MarketDataClient client,
         InstrumentId instrument_id,
+        BookType book_type,
+        uint64_t depth,
         bint only_deltas,
         bint managed,
-        dict metadata,
+        dict params,
     ):
         Condition.not_none(client, "client")
         Condition.not_none(instrument_id, "instrument_id")
-        Condition.not_none(metadata, "metadata")
-
-        cdef BookType book_type = metadata["book_type"]
+        Condition.not_none(params, "params")
 
         cdef:
             list[Instrument] instruments
@@ -891,8 +910,8 @@ cdef class DataEngine(Component):
                 client.subscribe_order_book_deltas(
                     instrument_id=instrument_id,
                     book_type=book_type,
-                    depth=metadata["depth"],
-                    metadata=metadata,
+                    depth=depth,
+                    metadata=params,
                 )
         except NotImplementedError:
             if only_deltas:
@@ -900,9 +919,9 @@ cdef class DataEngine(Component):
             if instrument_id not in client.subscribed_order_book_snapshots():
                 client.subscribe_order_book_snapshots(
                     instrument_id=instrument_id,
-                    book_type=metadata["book_type"],
-                    depth=metadata["depth"],
-                    metadata=metadata,
+                    book_type=book_type,
+                    depth=depth,
+                    metadata=params,
                 )
 
         # Set up subscriptions
