@@ -70,22 +70,20 @@ cdef class DataCommand(Command):
         self.params = params or {}
 
     def __str__(self) -> str:
-        cdef str params_str = "" if not self.params else f", params={self.params}"
         return (
             f"{type(self).__name__}("
             f"client_id={self.client_id}, "
             f"venue={self.venue}, "
-            f"data_type={self.data_type}{params_str})"
+            f"data_type={self.data_type}{form_params_str(self.params)})"
         )
 
     def __repr__(self) -> str:
-        cdef str params_str = "" if not self.params else f", params={self.params}"
         return (
             f"{type(self).__name__}("
             f"client_id={self.client_id}, "
             f"venue={self.venue}, "
             f"data_type={self.data_type}, "
-            f"id={self.id}{params_str})"
+            f"id={self.id}{form_params_str(self.params)})"
         )
 
 
@@ -101,12 +99,12 @@ cdef class Subscribe(DataCommand):
         The venue for the command.
     data_type : type
         The data type for the subscription.
-    params : dict[str, object] | None
-        Additional parameters for the subscription.
     command_id : UUID4
         The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the subscription.
 
     Raises
     ------
@@ -146,12 +144,12 @@ cdef class Unsubscribe(DataCommand):
         The venue for the command.
     data_type : type
         The data type to unsubscribe from.
-    params : dict[str, object] | None
-        Additional parameters for the subscription.
     command_id : UUID4
         The command ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the subscription.
 
     Raises
     ------
@@ -191,14 +189,14 @@ cdef class DataRequest(Request):
         The venue for the request.
     data_type : type
         The data type for the request.
-    params : dict[str, object] | None
-        Additional parameters for the request.
     callback : Callable[[Any], None]
         The delegate to call with the data.
     request_id : UUID4
         The request ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the request.
 
     Raises
     ------
@@ -230,23 +228,21 @@ cdef class DataRequest(Request):
         self.params = params or {}
 
     def __str__(self) -> str:
-        cdef str params_str = "" if not self.params else f", params={self.params}"
         return (
             f"{type(self).__name__}("
             f"client_id={self.client_id}, "
             f"venue={self.venue}, "
-            f"data_type={self.data_type}{params_str})"
+            f"data_type={self.data_type}{form_params_str(self.params)})"
         )
 
     def __repr__(self) -> str:
-        cdef str params_str = "" if not self.params else f", params={self.params}"
         return (
             f"{type(self).__name__}("
             f"client_id={self.client_id}, "
             f"venue={self.venue}, "
             f"data_type={self.data_type}, "
             f"callback={self.callback}, "
-            f"id={self.id}{params_str})"
+            f"id={self.id}{form_params_str(self.params)})"
         )
 
 
@@ -270,6 +266,8 @@ cdef class DataResponse(Response):
         The response ID.
     ts_init : uint64_t
         UNIX timestamp (nanoseconds) when the object was initialized.
+    params : dict[str, object], optional
+        Additional parameters for the response.
 
     Raises
     ------
@@ -287,6 +285,7 @@ cdef class DataResponse(Response):
         UUID4 correlation_id not None,
         UUID4 response_id not None,
         uint64_t ts_init,
+        dict[str, object] params: dict | None = None,
     ):
         Condition.is_true(client_id or venue, "Both `client_id` and `venue` were None")
         super().__init__(
@@ -299,6 +298,7 @@ cdef class DataResponse(Response):
         self.venue = venue
         self.data_type = data_type
         self.data = data
+        self.params = params
 
     def __str__(self) -> str:
         return (
@@ -315,5 +315,5 @@ cdef class DataResponse(Response):
             f"venue={self.venue}, "
             f"data_type={self.data_type}, "
             f"correlation_id={self.correlation_id}, "
-            f"id={self.id})"
+            f"id={self.id}{form_params_str(self.params)})"
         )

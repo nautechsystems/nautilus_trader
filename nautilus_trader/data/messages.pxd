@@ -60,3 +60,9 @@ cdef class DataResponse(Response):
     """The response data type.\n\n:returns: `type`"""
     cdef readonly object data
     """The response data.\n\n:returns: `object`"""
+    cdef readonly dict[str, object] params
+    """Additional specific parameters for the response.\n\n:returns: `dict[str, object]` or ``None``"""
+
+
+cdef inline str form_params_str(dict[str, object] params):
+    return "" if not params else f", params={params}"
