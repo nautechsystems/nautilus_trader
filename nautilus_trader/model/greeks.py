@@ -183,11 +183,12 @@ class InterestRateCurveData(Data):
 
         return result
 
-    def from_dict(self, data):
+    @classmethod
+    def from_dict(cls, data):
         data.pop("type", None)
         data.pop("date", None)
 
         data["tenors"] = np.frombuffer(data["tenors"])
-        data["interst_rates"] = np.frombuffer(data["interest_rates"])
+        data["interest_rates"] = np.frombuffer(data["interest_rates"])
 
         return InterestRateCurveData(**data)
