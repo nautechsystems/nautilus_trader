@@ -25,7 +25,8 @@ cdef inline double linear_weighting(double y1, double y2, double x1_diff):
     return y1 + x1_diff * (y2 - y1)
 
 cdef inline int pos_search(double x, np.ndarray xs):
-    cdef int pos = max(min(int(np.searchsorted(xs, x, side='right'))) - 1, 0)
+    cdef int n_elem = xs.shape[0]
+    cdef int pos = max(min(int(np.searchsorted(xs, x, side='right')), n_elem - 1) - 1, 0)
     return pos
 
 cdef inline double quad_polynomial(double x, double x0, double x1, double x2, double y0, double y1, double y2):
