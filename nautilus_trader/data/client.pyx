@@ -174,15 +174,15 @@ cdef class DataClient(Component):
     def _handle_data_py(self, Data data):
         self._handle_data(data)
 
-    def _handle_data_response_py(self, DataType data_type, data, UUID4 correlation_id):
-        self._handle_data_response(data_type, data, correlation_id)
+    def _handle_data_response_py(self, DataType data_type, data, UUID4 correlation_id, dict[str, object] params):
+        self._handle_data_response(data_type, data, correlation_id, params)
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
     cpdef void _handle_data(self, Data data):
         self._msgbus.send(endpoint="DataEngine.process", msg=data)
 
-    cpdef void _handle_data_response(self, DataType data_type, data, UUID4 correlation_id):
+    cpdef void _handle_data_response(self, DataType data_type, data, UUID4 correlation_id, dict[str, object] params):
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             venue=self.venue,
@@ -191,6 +191,7 @@ cdef class DataClient(Component):
             correlation_id=correlation_id,
             response_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._msgbus.send(endpoint="DataEngine.response", msg=response)
@@ -368,14 +369,14 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `subscribe` must be implemented in the subclass")
 
-    cpdef void subscribe_instruments(self, dict metadata = None):
+    cpdef void subscribe_instruments(self, dict[str, object] params = None):
         """
         Subscribe to all `Instrument` data.
 
         Parameters
         ----------
-        metadata : dict, optional
-            Additional metadata for the subscription.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
 
         """
         self._log.error(
@@ -384,14 +385,14 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `subscribe_instruments` must be implemented in the subclass")
 
-    cpdef void subscribe_instrument(self, InstrumentId instrument_id, dict metadata = None):
+    cpdef void subscribe_instrument(self, InstrumentId instrument_id, dict[str, object] params = None):
         """
         Subscribe to the `Instrument` with the given instrument ID.
 
         Parameters
         ----------
-        metadata : dict, optional
-            Additional metadata for the subscription.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
 
         """
         self._log.error(
@@ -400,7 +401,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `subscribe_instrument` must be implemented in the subclass")
 
-    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookType book_type, int depth = 0, dict metadata = None):
+    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookType book_type, int depth = 0, dict[str, object] params = None):
         """
         Subscribe to `OrderBookDeltas` data for the given instrument ID.
 
@@ -412,8 +413,8 @@ cdef class MarketDataClient(DataClient):
             The order book type.
         depth : int, optional, default None
             The maximum depth for the subscription.
-        metadata : dict, optional
-            Additional metadata for the subscription.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -422,7 +423,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `subscribe_order_book_deltas` must be implemented in the subclass")
 
-    cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookType book_type, int depth = 0, dict metadata = None):
+    cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookType book_type, int depth = 0, dict[str, object] params = None):
         """
         Subscribe to `OrderBook` snapshots data for the given instrument ID.
 
@@ -434,8 +435,8 @@ cdef class MarketDataClient(DataClient):
             The order book level.
         depth : int, optional
             The maximum depth for the order book. A depth of 0 is maximum depth.
-        metadata : dict, optional
-            Additional metadata for the subscription.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -444,7 +445,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `subscribe_order_book_snapshots` must be implemented in the subclass")
 
-    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id, dict metadata = None):
+    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id, dict[str, object] params = None):
         """
         Subscribe to `QuoteTick` data for the given instrument ID.
 
@@ -452,8 +453,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The tick instrument to subscribe to.
-        metadata : dict, optional
-            Additional metadata for the subscription.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -462,7 +463,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `subscribe_quote_ticks` must be implemented in the subclass")
 
-    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id, dict metadata = None):
+    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id, dict[str, object] params = None):
         """
         Subscribe to `TradeTick` data for the given instrument ID.
 
@@ -470,8 +471,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The tick instrument to subscribe to.
-        metadata : dict, optional
-            Additional metadata for the subscription.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -480,7 +481,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `subscribe_trade_ticks` must be implemented in the subclass")
 
-    cpdef void subscribe_instrument_status(self, InstrumentId instrument_id, dict metadata = None):
+    cpdef void subscribe_instrument_status(self, InstrumentId instrument_id, dict[str, object] params = None):
         """
         Subscribe to `InstrumentStatus` data for the given instrument ID.
 
@@ -488,8 +489,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The tick instrument to subscribe to.
-        metadata : dict, optional
-            Additional metadata for the subscription.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -498,7 +499,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `subscribe_instrument_status` must be implemented in the subclass")
 
-    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, dict metadata = None):
+    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, dict[str, object] params = None):
         """
         Subscribe to `InstrumentClose` updates for the given instrument ID.
 
@@ -506,8 +507,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The tick instrument to subscribe to.
-        metadata : dict, optional
-            Additional metadata for the subscription.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -516,7 +517,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `subscribe_instrument_close` must be implemented in the subclass")
 
-    cpdef void subscribe_bars(self, BarType bar_type, dict metadata = None):
+    cpdef void subscribe_bars(self, BarType bar_type, dict[str, object] params = None):
         """
         Subscribe to `Bar` data for the given bar type.
 
@@ -524,8 +525,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         bar_type : BarType
             The bar type to subscribe to.
-        metadata : dict, optional
-            Additional metadata for the subscription.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -549,14 +550,14 @@ cdef class MarketDataClient(DataClient):
             f"You can implement by overriding the `unsubscribe` method for this client",
         )
 
-    cpdef void unsubscribe_instruments(self, dict metadata = None):
+    cpdef void unsubscribe_instruments(self, dict[str, object] params = None):
         """
         Unsubscribe from all `Instrument` data.
 
         Parameters
         ----------
-        metadata : dict, optional
-            Additional metadata for the subscription.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -565,7 +566,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `unsubscribe_instruments` must be implemented in the subclass")
 
-    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id, dict metadata = None):
+    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id, dict[str, object] params = None):
         """
         Unsubscribe from `Instrument` data for the given instrument ID.
 
@@ -573,8 +574,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The instrument to unsubscribe from.
-        metadata : dict, optional
-            Additional metadata for the subscription.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -583,7 +584,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `unsubscribe_instrument` must be implemented in the subclass")
 
-    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id, dict metadata = None):
+    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id, dict[str, object] params = None):
         """
         Unsubscribe from `OrderBookDeltas` data for the given instrument ID.
 
@@ -591,8 +592,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to unsubscribe from.
-        metadata : dict, optional
-            Additional metadata for the subscription.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -601,7 +602,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `unsubscribe_order_book_deltas` must be implemented in the subclass")
 
-    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id, dict metadata = None):
+    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id, dict[str, object] params = None):
         """
         Unsubscribe from `OrderBook` snapshots data for the given instrument ID.
 
@@ -609,8 +610,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The order book instrument to unsubscribe from.
-        metadata : dict, optional
-            Additional metadata for the subscription.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -619,7 +620,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `unsubscribe_order_book_snapshots` must be implemented in the subclass")
 
-    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id, dict metadata = None):
+    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id, dict[str, object] params = None):
         """
         Unsubscribe from `QuoteTick` data for the given instrument ID.
 
@@ -627,8 +628,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The tick instrument to unsubscribe from.
-        metadata : dict, optional
-            Additional metadata for the subscription.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -637,7 +638,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `unsubscribe_quote_ticks` must be implemented in the subclass")
 
-    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id, dict metadata = None):
+    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id, dict[str, object] params = None):
         """
         Unsubscribe from `TradeTick` data for the given instrument ID.
 
@@ -645,8 +646,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The tick instrument to unsubscribe from.
-        metadata : dict, optional
-            Additional metadata for the subscription.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -655,7 +656,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `unsubscribe_trade_ticks` must be implemented in the subclass")
 
-    cpdef void unsubscribe_bars(self, BarType bar_type, dict metadata = None):
+    cpdef void unsubscribe_bars(self, BarType bar_type, dict[str, object] params = None):
         """
         Unsubscribe from `Bar` data for the given bar type.
 
@@ -663,8 +664,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         bar_type : BarType
             The bar type to unsubscribe from.
-        metadata : dict, optional
-            Additional metadata for the subscription.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -673,7 +674,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `unsubscribe_bars` must be implemented in the subclass")
 
-    cpdef void unsubscribe_instrument_status(self, InstrumentId instrument_id, dict metadata = None):
+    cpdef void unsubscribe_instrument_status(self, InstrumentId instrument_id, dict[str, object] params = None):
         """
         Unsubscribe from `InstrumentStatus` data for the given instrument ID.
 
@@ -681,8 +682,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The instrument status updates to unsubscribe from.
-        metadata : dict, optional
-            Additional metadata for the subscription.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -691,7 +692,7 @@ cdef class MarketDataClient(DataClient):
         )
         raise NotImplementedError("method `unsubscribe_instrument_status` must be implemented in the subclass")
 
-    cpdef void unsubscribe_instrument_close(self, InstrumentId instrument_id, dict metadata = None):
+    cpdef void unsubscribe_instrument_close(self, InstrumentId instrument_id, dict[str, object] params = None):
         """
         Unsubscribe from `InstrumentClose` data for the given instrument ID.
 
@@ -699,8 +700,8 @@ cdef class MarketDataClient(DataClient):
         ----------
         instrument_id : InstrumentId
             The tick instrument to unsubscribe from.
-        metadata : dict, optional
-            Additional metadata for the subscription.
+        params : dict[str, Any], optional
+            Additional params for the subscription.
 
         """
         self._log.error(  # pragma: no cover
@@ -807,7 +808,7 @@ cdef class MarketDataClient(DataClient):
         UUID4 correlation_id,
         datetime start = None,
         datetime end = None,
-        dict metadata = None,
+        dict[str, object] params = None,
     ):
         """
         Request `Instrument` data for the given instrument ID.
@@ -823,8 +824,8 @@ cdef class MarketDataClient(DataClient):
         end : datetime, optional
             The end datetime (UTC) of request time range.
             The inclusiveness depends on individual data client implementation.
-        metadata : dict, optional
-            Additional metadata to be sent with the request.
+        params : dict[str, Any], optional
+            Additional params to be sent with the request.
 
         """
         self._log.error(  # pragma: no cover
@@ -837,7 +838,7 @@ cdef class MarketDataClient(DataClient):
         UUID4 correlation_id,
         datetime start = None,
         datetime end = None,
-        dict metadata = None,
+        dict[str, object] params = None,
     ):
         """
         Request all `Instrument` data for the given venue.
@@ -853,8 +854,8 @@ cdef class MarketDataClient(DataClient):
         end : datetime, optional
             The end datetime (UTC) of request time range.
             The inclusiveness depends on individual data client implementation.
-        metadata : dict, optional
-            Additional metadata to be sent with the request.
+        params : dict[str, Any], optional
+            Additional params to be sent with the request.
 
         """
         self._log.error(  # pragma: no cover
@@ -867,7 +868,7 @@ cdef class MarketDataClient(DataClient):
         InstrumentId instrument_id,
         int limit,
         UUID4 correlation_id,
-        dict metadata = None,
+        dict[str, object] params = None,
     ):
         """
         Request order book snapshot data.
@@ -894,7 +895,7 @@ cdef class MarketDataClient(DataClient):
         UUID4 correlation_id,
         datetime start = None,
         datetime end = None,
-        dict metadata = None,
+        dict[str, object] params = None,
     ):
         """
         Request historical `QuoteTick` data.
@@ -912,8 +913,8 @@ cdef class MarketDataClient(DataClient):
         end : datetime, optional
             The end datetime (UTC) of request time range.
             The inclusiveness depends on individual data client implementation.
-        metadata : dict, optional
-            Additional metadata to be sent with the request.
+        params : dict[str, Any], optional
+            Additional params to be sent with the request.
 
         """
         self._log.error(  # pragma: no cover
@@ -928,7 +929,7 @@ cdef class MarketDataClient(DataClient):
         UUID4 correlation_id,
         datetime start = None,
         datetime end = None,
-        dict metadata = None,
+        dict[str, object] params = None,
     ):
         """
         Request historical `TradeTick` data.
@@ -946,8 +947,8 @@ cdef class MarketDataClient(DataClient):
         end : datetime, optional
             The end datetime (UTC) of request time range.
             The inclusiveness depends on individual data client implementation.
-        metadata : dict, optional
-            Additional metadata to be sent with the request.
+        params : dict[str, Any], optional
+            Additional params to be sent with the request.
 
         """
         self._log.error(  # pragma: no cover
@@ -962,7 +963,7 @@ cdef class MarketDataClient(DataClient):
         UUID4 correlation_id,
         datetime start = None,
         datetime end = None,
-        dict metadata = None,
+        dict[str, object] params = None,
     ):
         """
         Request historical `Bar` data. To load historical data from a catalog, you can pass a list[DataCatalogConfig] to the TradingNodeConfig or the BacktestEngineConfig.
@@ -980,8 +981,8 @@ cdef class MarketDataClient(DataClient):
         end : datetime, optional
             The end datetime (UTC) of request time range.
             The inclusiveness depends on individual data client implementation.
-        metadata : dict, optional
-            Additional metadata to be sent with the request.
+        params : dict[str, Any], optional
+            Additional params to be sent with the request.
 
         """
         self._log.error(  # pragma: no cover
@@ -998,95 +999,100 @@ cdef class MarketDataClient(DataClient):
     def _handle_data_py(self, Data data):
         self._handle_data(data)
 
-    def _handle_instrument_py(self, Instrument instrument, UUID4 correlation_id, dict metadata):
-        self._handle_instrument(instrument, correlation_id, metadata)
+    def _handle_instrument_py(self, Instrument instrument, UUID4 correlation_id, dict[str, object] params = None):
+        self._handle_instrument(instrument, correlation_id, params)
 
-    def _handle_instruments_py(self, Venue venue, list instruments, UUID4 correlation_id, dict metadata):
-        self._handle_instruments(venue, instruments, correlation_id, metadata)
+    def _handle_instruments_py(self, Venue venue, list instruments, UUID4 correlation_id, dict[str, object] params = None):
+        self._handle_instruments(venue, instruments, correlation_id, params)
 
-    def _handle_quote_ticks_py(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, dict metadata):
-        self._handle_quote_ticks(instrument_id, ticks, correlation_id, metadata)
+    def _handle_quote_ticks_py(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, dict[str, object] params = None):
+        self._handle_quote_ticks(instrument_id, ticks, correlation_id, params)
 
-    def _handle_trade_ticks_py(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, dict metadata):
-        self._handle_trade_ticks(instrument_id, ticks, correlation_id, metadata)
+    def _handle_trade_ticks_py(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, dict[str, object] params = None):
+        self._handle_trade_ticks(instrument_id, ticks, correlation_id, params)
 
-    def _handle_bars_py(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id, dict metadata):
-        self._handle_bars(bar_type, bars, partial, correlation_id, metadata)
+    def _handle_bars_py(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id, dict[str, object] params = None):
+        self._handle_bars(bar_type, bars, partial, correlation_id, params)
 
-    def _handle_data_response_py(self, DataType data_type, data, UUID4 correlation_id):
-        self._handle_data_response(data_type, data, correlation_id)
+    def _handle_data_response_py(self, DataType data_type, data, UUID4 correlation_id, dict[str, object] params = None):
+        self._handle_data_response(data_type, data, correlation_id, params)
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
     cpdef void _handle_data(self, Data data):
         self._msgbus.send(endpoint="DataEngine.process", msg=data)
 
-    cpdef void _handle_instrument(self, Instrument instrument, UUID4 correlation_id, dict metadata):
+    cpdef void _handle_instrument(self, Instrument instrument, UUID4 correlation_id, dict[str, object] params):
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             venue=instrument.venue,
-            data_type=DataType(Instrument, metadata=({"instrument_id": instrument.id} | (metadata if metadata else {}))),
+            data_type=DataType(Instrument, metadata=({"instrument_id": instrument.id})),
             data=instrument,
             correlation_id=correlation_id,
             response_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
-    cpdef void _handle_instruments(self, Venue venue, list instruments, UUID4 correlation_id, dict metadata):
+    cpdef void _handle_instruments(self, Venue venue, list instruments, UUID4 correlation_id, dict[str, object] params):
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             venue=venue,
-            data_type=DataType(Instrument, metadata=({"venue": venue} | (metadata if metadata else {}))),
+            data_type=DataType(Instrument, metadata=({"venue": venue})),
             data=instruments,
             correlation_id=correlation_id,
             response_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
-    cpdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, dict metadata):
+    cpdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, dict[str, object] params):
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             venue=instrument_id.venue,
-            data_type=DataType(QuoteTick, metadata=({"instrument_id": instrument_id} | (metadata if metadata else {}))),
+            data_type=DataType(QuoteTick, metadata=({"instrument_id": instrument_id})),
             data=ticks,
             correlation_id=correlation_id,
             response_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
-    cpdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, dict metadata):
+    cpdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, dict[str, object] params):
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             venue=instrument_id.venue,
-            data_type=DataType(TradeTick, metadata=({"instrument_id": instrument_id} | (metadata if metadata else {}))),
+            data_type=DataType(TradeTick, metadata=({"instrument_id": instrument_id})),
             data=ticks,
             correlation_id=correlation_id,
             response_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
-    cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id, dict metadata):
+    cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id, dict[str, object] params):
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             venue=bar_type.instrument_id.venue,
-            data_type=DataType(Bar, metadata=(({"bar_type": bar_type, "partial": partial} | (metadata if metadata else {})))),
+            data_type=DataType(Bar, metadata=(({"bar_type": bar_type, "partial": partial}))),
             data=bars,
             correlation_id=correlation_id,
             response_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._msgbus.send(endpoint="DataEngine.response", msg=response)
 
-    cpdef void _handle_data_response(self, DataType data_type, data, UUID4 correlation_id):
+    cpdef void _handle_data_response(self, DataType data_type, data, UUID4 correlation_id, dict[str, object] params):
         cdef DataResponse response = DataResponse(
             client_id=self.id,
             venue=self.venue,
@@ -1095,6 +1101,7 @@ cdef class MarketDataClient(DataClient):
             correlation_id=correlation_id,
             response_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
 
         self._msgbus.send(endpoint="DataEngine.response", msg=response)

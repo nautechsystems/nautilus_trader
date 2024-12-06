@@ -3235,7 +3235,7 @@ cdef class Actor(Component):
         from nautilus_trader.risk.greeks import greeks_key
 
         # Option case, to avoid querying definition
-        if ' ' in instrument_id.symbol.value:
+        if " " in instrument_id.symbol.value:
             return GreeksData.from_bytes(self.cache.get(greeks_key(instrument_id)))
 
         # Future case

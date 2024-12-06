@@ -14,6 +14,7 @@
 # -------------------------------------------------------------------------------------------------
 
 import asyncio
+from typing import Any
 
 import msgspec
 from betfair_parser.spec.streaming import MCM
@@ -191,7 +192,7 @@ class BetfairDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         PyCondition.not_none(instrument_id, "instrument_id")
 
@@ -235,46 +236,46 @@ class BetfairDataClient(LiveMarketDataClient):
     async def _subscribe_instrument(
         self,
         instrument_id: InstrumentId,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         self._log.info("Skipping subscribe_instrument, Betfair subscribes as part of orderbook")
 
     async def _subscribe_quote_ticks(
         self,
         instrument_id: InstrumentId,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         self._log.info("Skipping subscribe_quote_ticks, Betfair subscribes as part of orderbook")
 
     async def _subscribe_trade_ticks(
         self,
         instrument_id: InstrumentId,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         self._log.info("Skipping subscribe_trade_ticks, Betfair subscribes as part of orderbook")
 
-    async def _subscribe_instruments(self, metadata: dict | None = None) -> None:
+    async def _subscribe_instruments(self, params: dict[str, Any] | None = None) -> None:
         for instrument in self._instrument_provider.list_all():
             self._handle_data(instrument)
 
     async def _subscribe_instrument_status(
         self,
         instrument_id: InstrumentId,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         pass  # Subscribed as part of orderbook
 
     async def _subscribe_instrument_close(
         self,
         instrument_id: InstrumentId,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         pass  # Subscribed as part of orderbook
 
     async def _unsubscribe_order_book_snapshots(
         self,
         instrument_id: InstrumentId,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         # TODO - this could be done by removing the market from self.__subscribed_market_ids and resending the
         #  subscription message - when we have a use case
@@ -284,7 +285,7 @@ class BetfairDataClient(LiveMarketDataClient):
     async def _unsubscribe_order_book_deltas(
         self,
         instrument_id: InstrumentId,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         # TODO - this could be done by removing the market from self.__subscribed_market_ids and resending the
         #  subscription message - when we have a use case
@@ -293,21 +294,21 @@ class BetfairDataClient(LiveMarketDataClient):
     async def _unsubscribe_instrument(
         self,
         instrument_id: InstrumentId,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         self._log.info("Skipping unsubscribe_instrument, not applicable for Betfair")
 
     async def _unsubscribe_quote_ticks(
         self,
         instrument_id: InstrumentId,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         self._log.info("Skipping unsubscribe_quote_ticks, not applicable for Betfair")
 
     async def _unsubscribe_trade_ticks(
         self,
         instrument_id: InstrumentId,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         self._log.info("Skipping unsubscribe_trade_ticks, not applicable for Betfair")
 

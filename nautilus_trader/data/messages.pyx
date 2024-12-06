@@ -298,7 +298,7 @@ cdef class DataResponse(Response):
         self.venue = venue
         self.data_type = data_type
         self.data = data
-        self.params = params
+        self.params = params or {}
 
     def __str__(self) -> str:
         return (
