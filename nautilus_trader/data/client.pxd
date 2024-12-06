@@ -56,7 +56,7 @@ cdef class DataClient(Component):
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
     cpdef void _handle_data(self, Data data)
-    cpdef void _handle_data_response(self, DataType data_type, data, UUID4 correlation_id)
+    cpdef void _handle_data_response(self, DataType data_type, data, UUID4 correlation_id, dict params)
 
 
 cdef class MarketDataClient(DataClient):
@@ -82,24 +82,24 @@ cdef class MarketDataClient(DataClient):
     cpdef list subscribed_instrument_status(self)
     cpdef list subscribed_instrument_close(self)
 
-    cpdef void subscribe_instruments(self, dict metadata=*)
-    cpdef void subscribe_instrument(self, InstrumentId instrument_id, dict metadata=*)
-    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookType book_type, int depth=*, dict metadata=*)
-    cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookType book_type, int depth=*, dict metadata=*)
-    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id, dict metadata=*)
-    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id, dict metadata=*)
-    cpdef void subscribe_bars(self, BarType bar_type, dict metadata=*)
-    cpdef void subscribe_instrument_status(self, InstrumentId instrument_id, dict metadata=*)
-    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, dict metadata=*)
-    cpdef void unsubscribe_instruments(self, dict metadata=*)
-    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id, dict metadata=*)
-    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id, dict metadata=*)
-    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id, dict metadata=*)
-    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id, dict metadata=*)
-    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id, dict metadata=*)
-    cpdef void unsubscribe_bars(self, BarType bar_type, dict metadata=*)
-    cpdef void unsubscribe_instrument_status(self, InstrumentId instrument_id, dict metadata=*)
-    cpdef void unsubscribe_instrument_close(self, InstrumentId instrument_id, dict metadata=*)
+    cpdef void subscribe_instruments(self, dict params=*)
+    cpdef void subscribe_instrument(self, InstrumentId instrument_id, dict[str, object] params=*)
+    cpdef void subscribe_order_book_deltas(self, InstrumentId instrument_id, BookType book_type, int depth=*, dict[str, object] params=*)
+    cpdef void subscribe_order_book_snapshots(self, InstrumentId instrument_id, BookType book_type, int depth=*, dict[str, object] params=*)
+    cpdef void subscribe_quote_ticks(self, InstrumentId instrument_id, dict[str, object] params=*)
+    cpdef void subscribe_trade_ticks(self, InstrumentId instrument_id, dict[str, object] params=*)
+    cpdef void subscribe_bars(self, BarType bar_type, dict[str, object] params=*)
+    cpdef void subscribe_instrument_status(self, InstrumentId instrument_id, dict[str, object] params=*)
+    cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, dict[str, object] params=*)
+    cpdef void unsubscribe_instruments(self, dict[str, object] params=*)
+    cpdef void unsubscribe_instrument(self, InstrumentId instrument_id, dict[str, object] params=*)
+    cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id, dict[str, object] params=*)
+    cpdef void unsubscribe_order_book_snapshots(self, InstrumentId instrument_id, dict[str, object] params=*)
+    cpdef void unsubscribe_quote_ticks(self, InstrumentId instrument_id, dict[str, object] params=*)
+    cpdef void unsubscribe_trade_ticks(self, InstrumentId instrument_id, dict[str, object] params=*)
+    cpdef void unsubscribe_bars(self, BarType bar_type, dict[str, object] params=*)
+    cpdef void unsubscribe_instrument_status(self, InstrumentId instrument_id, dict[str, object] params=*)
+    cpdef void unsubscribe_instrument_close(self, InstrumentId instrument_id, dict[str, object] params=*)
 
     cpdef void _add_subscription_instrument(self, InstrumentId instrument_id)
     cpdef void _add_subscription_order_book_deltas(self, InstrumentId instrument_id)
@@ -126,7 +126,7 @@ cdef class MarketDataClient(DataClient):
         UUID4 correlation_id,
         datetime start=*,
         datetime end=*,
-        dict metadata=*,
+        dict[str, object] params=*,
     )
     cpdef void request_instruments(
         self,
@@ -134,14 +134,14 @@ cdef class MarketDataClient(DataClient):
         UUID4 correlation_id,
         datetime start=*,
         datetime end=*,
-        dict metadata=*,
+        dict[str, object] params=*,
     )
     cpdef void request_order_book_snapshot(
         self,
         InstrumentId instrument_id,
         int limit,
         UUID4 correlation_id,
-        dict metadata=*,
+        dict[str, object] params=*,
     )
     cpdef void request_quote_ticks(
         self,
@@ -150,7 +150,7 @@ cdef class MarketDataClient(DataClient):
         UUID4 correlation_id,
         datetime start=*,
         datetime end=*,
-        dict metadata=*,
+        dict[str, object] params=*,
     )
     cpdef void request_trade_ticks(
         self,
@@ -159,7 +159,7 @@ cdef class MarketDataClient(DataClient):
         UUID4 correlation_id,
         datetime start=*,
         datetime end=*,
-        dict metadata=*,
+        dict[str, object] params=*,
     )
     cpdef void request_bars(
         self,
@@ -168,13 +168,13 @@ cdef class MarketDataClient(DataClient):
         UUID4 correlation_id,
         datetime start=*,
         datetime end=*,
-        dict metadata=*,
+        dict[str, object] params=*,
     )
 
 # -- DATA HANDLERS --------------------------------------------------------------------------------
 
-    cpdef void _handle_instrument(self, Instrument instrument, UUID4 correlation_id, dict metadata)
-    cpdef void _handle_instruments(self, Venue venue, list instruments, UUID4 correlation_id, dict metadata)
-    cpdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, dict metadata)
-    cpdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, dict metadata)
-    cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id, dict metadata)
+    cpdef void _handle_instrument(self, Instrument instrument, UUID4 correlation_id, dict[str, object] params)
+    cpdef void _handle_instruments(self, Venue venue, list instruments, UUID4 correlation_id, dict[str, object] params)
+    cpdef void _handle_quote_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, dict[str, object] params)
+    cpdef void _handle_trade_ticks(self, InstrumentId instrument_id, list ticks, UUID4 correlation_id, dict[str, object] params)
+    cpdef void _handle_bars(self, BarType bar_type, list bars, Bar partial, UUID4 correlation_id, dict[str, object] params)

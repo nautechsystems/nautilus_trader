@@ -18,7 +18,6 @@ from collections import defaultdict
 from collections.abc import Coroutine
 from typing import Any
 
-import msgspec
 import pandas as pd
 
 from nautilus_trader.adapters.databento.common import databento_schema_from_nautilus_bar_type
@@ -357,7 +356,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int | None = None,
-        metadata: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         if book_type != BookType.L3_MBO:
             raise NotImplementedError
@@ -367,7 +366,7 @@ class DatabentoDataClient(LiveMarketDataClient):
                 instrument_id=instrument_id,
                 book_type=book_type,
                 depth=depth,
-                metadata=metadata,
+                params=params,
             ),
             log_msg=f"subscribe: order_book_deltas {instrument_id}",
             actions=lambda: self._add_subscription_order_book_deltas(instrument_id),
@@ -413,14 +412,14 @@ class DatabentoDataClient(LiveMarketDataClient):
         except asyncio.CancelledError:
             self._log.warning("`_subscribe_imbalance` was canceled while still pending")
 
-    async def _subscribe_instruments(self, metadata: dict | None = None) -> None:
+    async def _subscribe_instruments(self, params: dict[str, Any] | None = None) -> None:
         # Replace method in child class, for exchange specific data types.
         raise NotImplementedError("Cannot subscribe to all instruments (not currently supported).")
 
     async def _subscribe_instrument(
         self,
         instrument_id: InstrumentId,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         try:
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
@@ -469,7 +468,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         try:
             if book_type != BookType.L3_MBO:
@@ -560,7 +559,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         instrument_id: InstrumentId,
         book_type: BookType,
         depth: int | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         try:
             await self._ensure_subscribed_for_instrument(instrument_id)
@@ -589,19 +588,12 @@ class DatabentoDataClient(LiveMarketDataClient):
     async def _subscribe_quote_ticks(
         self,
         instrument_id: InstrumentId,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         try:
             await self._ensure_subscribed_for_instrument(instrument_id)
-            schema = None
 
-            if metadata is not None:
-                params = metadata.get("params")
-
-                if params is not None:
-                    params_dict = msgspec.msgpack.decode(params)
-                    schema = params_dict.get("schema")
-
+            schema = params.get("schema") if params else None
             # allowed schema values: mbp-1, bbo-1s, bbo-1m
             if schema is None or schema not in [
                 DatabentoSchema.MBP_1.value,
@@ -627,7 +619,7 @@ class DatabentoDataClient(LiveMarketDataClient):
     async def _subscribe_trade_ticks(
         self,
         instrument_id: InstrumentId,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         try:
             if instrument_id in self._trade_tick_subscriptions:
@@ -645,7 +637,11 @@ class DatabentoDataClient(LiveMarketDataClient):
         except asyncio.CancelledError:
             self._log.warning("`_subscribe_trade_ticks` was canceled while still pending")
 
-    async def _subscribe_bars(self, bar_type: BarType, metadata: dict | None = None) -> None:
+    async def _subscribe_bars(
+        self,
+        bar_type: BarType,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         try:
             dataset: Dataset = self._loader.get_dataset_for_venue(bar_type.instrument_id.venue)
 
@@ -667,7 +663,7 @@ class DatabentoDataClient(LiveMarketDataClient):
     async def _subscribe_instrument_status(
         self,
         instrument_id: InstrumentId,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         try:
             dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
@@ -686,7 +682,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             f"Cannot unsubscribe from {data_type}, unsubscribing not supported by Databento.",
         )
 
-    async def _unsubscribe_instruments(self, params: dict | None = None) -> None:
+    async def _unsubscribe_instruments(self, params: dict[str, Any] | None = None) -> None:
         raise NotImplementedError(
             "Cannot unsubscribe from all instruments, unsubscribing not supported by Databento.",
         )
@@ -694,7 +690,7 @@ class DatabentoDataClient(LiveMarketDataClient):
     async def _unsubscribe_instrument(
         self,
         instrument_id: InstrumentId,
-        params: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         raise NotImplementedError(
             f"Cannot unsubscribe from {instrument_id} instrument, "
@@ -704,7 +700,7 @@ class DatabentoDataClient(LiveMarketDataClient):
     async def _unsubscribe_order_book_deltas(
         self,
         instrument_id: InstrumentId,
-        params: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         raise NotImplementedError(
             f"Cannot unsubscribe from {instrument_id} order book deltas, "
@@ -714,7 +710,7 @@ class DatabentoDataClient(LiveMarketDataClient):
     async def _unsubscribe_order_book_snapshots(
         self,
         instrument_id: InstrumentId,
-        params: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         raise NotImplementedError(
             f"Cannot unsubscribe from {instrument_id} order book snapshots, "
@@ -724,7 +720,7 @@ class DatabentoDataClient(LiveMarketDataClient):
     async def _unsubscribe_quote_ticks(
         self,
         instrument_id: InstrumentId,
-        params: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         raise NotImplementedError(
             f"Cannot unsubscribe from {instrument_id} quotes, "
@@ -734,14 +730,18 @@ class DatabentoDataClient(LiveMarketDataClient):
     async def _unsubscribe_trade_ticks(
         self,
         instrument_id: InstrumentId,
-        params: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         raise NotImplementedError(
             f"Cannot unsubscribe from {instrument_id} trades, "
             "unsubscribing not supported by Databento.",
         )
 
-    async def _unsubscribe_bars(self, bar_type: BarType, params: dict | None = None) -> None:
+    async def _unsubscribe_bars(
+        self,
+        bar_type: BarType,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         raise NotImplementedError(
             f"Cannot unsubscribe from {bar_type} bars, "
             "unsubscribing not supported by Databento.",
@@ -750,7 +750,7 @@ class DatabentoDataClient(LiveMarketDataClient):
     async def _unsubscribe_instrument_status(
         self,
         instrument_id: InstrumentId,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         raise NotImplementedError(
             f"Cannot unsubscribe from {instrument_id} instrument status, "
@@ -770,7 +770,11 @@ class DatabentoDataClient(LiveMarketDataClient):
                 f"Cannot request {data_type.type} (not implemented)",
             )
 
-    async def _request_instrument_status(self, data_type: DataType, correlation_id: UUID4) -> None:
+    async def _request_instrument_status(
+        self,
+        data_type: DataType,
+        correlation_id: UUID4,
+    ) -> None:
         instrument_id: InstrumentId = data_type.metadata["instrument_id"]
         start = data_type.metadata.get("start")
         end = data_type.metadata.get("end")
@@ -800,6 +804,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             data_type=data_type,
             data=status,
             correlation_id=correlation_id,
+            params=None,
         )
 
     async def _request_imbalance(self, data_type: DataType, correlation_id: UUID4) -> None:
@@ -830,6 +835,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             data_type=data_type,
             data=pyo3_imbalances,
             correlation_id=correlation_id,
+            params=None,
         )
 
     async def _request_statistics(self, data_type: DataType, correlation_id: UUID4) -> None:
@@ -860,6 +866,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             data_type=data_type,
             data=pyo3_statistics,
             correlation_id=correlation_id,
+            params=None,
         )
 
     async def _request_instrument(
@@ -868,7 +875,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
@@ -897,7 +904,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             )
             return
 
-        self._handle_instrument(instruments[0], correlation_id, metadata)
+        self._handle_instrument(instruments[0], correlation_id, params)
 
     async def _request_instruments(
         self,
@@ -905,7 +912,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(venue)
         _, available_end = await self._get_dataset_range(dataset)
@@ -928,7 +935,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         instruments = instruments_from_pyo3(pyo3_instruments)
 
-        self._handle_instruments(instruments, venue, correlation_id, metadata)
+        self._handle_instruments(instruments, venue, correlation_id, params)
 
     async def _request_quote_ticks(
         self,
@@ -937,7 +944,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
@@ -955,15 +962,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             LogColor.BLUE,
         )
 
-        schema = None
-
-        if metadata is not None:
-            params = metadata.get("params")
-
-            if params is not None:
-                params_dict = msgspec.msgpack.decode(params)
-                schema = params_dict.get("schema")
-
+        schema = params.get("schema") if params else None
         # allowed schema values: mbp-1, bbo-1s, bbo-1m
         if schema is None or schema not in [
             DatabentoSchema.MBP_1.value,
@@ -982,7 +981,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         quotes = QuoteTick.from_pyo3_list(pyo3_quotes)
 
-        self._handle_quote_ticks(instrument_id, quotes, correlation_id, metadata)
+        self._handle_quote_ticks(instrument_id, quotes, correlation_id, params)
 
     async def _request_trade_ticks(
         self,
@@ -991,7 +990,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
@@ -1018,7 +1017,7 @@ class DatabentoDataClient(LiveMarketDataClient):
 
         trades = TradeTick.from_pyo3_list(pyo3_trades)
 
-        self._handle_trade_ticks(instrument_id, trades, correlation_id, metadata)
+        self._handle_trade_ticks(instrument_id, trades, correlation_id, params)
 
     async def _request_bars(
         self,
@@ -1027,7 +1026,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         correlation_id: UUID4,
         start: pd.Timestamp | None = None,
         end: pd.Timestamp | None = None,
-        metadata: dict | None = None,
+        params: dict[str, Any] | None = None,
     ) -> None:
         dataset: Dataset = self._loader.get_dataset_for_venue(bar_type.instrument_id.venue)
         _, available_end = await self._get_dataset_range(dataset)
@@ -1063,7 +1062,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             bars=bars,
             partial=None,  # No partials
             correlation_id=correlation_id,
-            metadata=metadata,
+            params=params,
         )
 
     def _handle_msg_pyo3(
