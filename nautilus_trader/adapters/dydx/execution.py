@@ -1090,12 +1090,20 @@ class DYDXExecutionClient(LiveExecutionClient):
         if order.order_type == OrderType.LIMIT:
             price = order.price.as_double()
         elif order.order_type == OrderType.MARKET:
-            price = 0
+            price = (
+                dydx_order_tags.market_order_price.as_double()
+                if dydx_order_tags.market_order_price is not None
+                else 0
+            )
         elif order.order_type == OrderType.STOP_LIMIT:
             price = order.price.as_double()
             trigger_price = order.trigger_price.as_double()
         elif order.order_type == OrderType.STOP_MARKET:
-            price = 0
+            price = (
+                dydx_order_tags.market_order_price.as_double()
+                if dydx_order_tags.market_order_price is not None
+                else 0
+            )
             trigger_price = order.trigger_price.as_double()
         else:
             rejection_reason = (
