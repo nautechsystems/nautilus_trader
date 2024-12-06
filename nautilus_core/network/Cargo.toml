@@ -27,7 +27,7 @@ dashmap = "6.1.0"
 http = "1.2.0"
 nonzero_ext = "0.3.0"
 rustls = { version = "0.23.19", features = ["ring"] }
-tokio-rustls = "0.26.0"
+tokio-rustls = "0.26.1"
 
 [dev-dependencies]
 axum = { workspace = true }
