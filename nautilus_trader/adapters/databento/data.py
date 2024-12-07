@@ -593,7 +593,7 @@ class DatabentoDataClient(LiveMarketDataClient):
         try:
             await self._ensure_subscribed_for_instrument(instrument_id)
 
-            schema = params.get("schema") if params else None
+            schema: str | None = params.get("schema") if params else None
             # allowed schema values: mbp-1, bbo-1s, bbo-1m
             if schema is None or schema not in [
                 DatabentoSchema.MBP_1.value,
@@ -962,7 +962,7 @@ class DatabentoDataClient(LiveMarketDataClient):
             LogColor.BLUE,
         )
 
-        schema = params.get("schema") if params else None
+        schema: str | None = params.get("schema") if params else None
         # allowed schema values: mbp-1, bbo-1s, bbo-1m
         if schema is None or schema not in [
             DatabentoSchema.MBP_1.value,
