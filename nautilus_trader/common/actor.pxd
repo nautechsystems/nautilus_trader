@@ -135,8 +135,7 @@ cdef class Actor(Component):
 
 # -- SUBSCRIPTIONS --------------------------------------------------------------------------------
 
-    cpdef void subscribe_data(self, DataType data_type, ClientId client_id=*)
-    cpdef bytes encode_params(self, dict params)
+    cpdef void subscribe_data(self, DataType data_type, ClientId client_id=*, dict params=*)
     cpdef void subscribe_instruments(self, Venue venue, ClientId client_id=*, dict params=*)
     cpdef void subscribe_instrument(self, InstrumentId instrument_id, ClientId client_id=*, dict params=*)
     cpdef void subscribe_order_book_deltas(
@@ -164,7 +163,7 @@ cdef class Actor(Component):
     cpdef void subscribe_bars(self, BarType bar_type, ClientId client_id=*, bint await_partial=*, dict params=*)
     cpdef void subscribe_instrument_status(self, InstrumentId instrument_id, ClientId client_id=*, dict params=*)
     cpdef void subscribe_instrument_close(self, InstrumentId instrument_id, ClientId client_id=*, dict params=*)
-    cpdef void unsubscribe_data(self, DataType data_type, ClientId client_id=*)
+    cpdef void unsubscribe_data(self, DataType data_type, ClientId client_id=*, dict params=*)
     cpdef void unsubscribe_instruments(self, Venue venue, ClientId client_id=*, dict params=*)
     cpdef void unsubscribe_instrument(self, InstrumentId instrument_id, ClientId client_id=*, dict params=*)
     cpdef void unsubscribe_order_book_deltas(self, InstrumentId instrument_id, ClientId client_id=*, dict params=*)
@@ -184,6 +183,7 @@ cdef class Actor(Component):
         DataType data_type,
         ClientId client_id,
         callback=*,
+        dict params=*,
     )
     cpdef UUID4 request_instrument(
         self,
