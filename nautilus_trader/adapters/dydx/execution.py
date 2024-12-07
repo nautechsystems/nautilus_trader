@@ -1055,14 +1055,14 @@ class DYDXExecutionClient(LiveExecutionClient):
 
         if dydx_order_tags.is_short_term_order:
             good_til_block = self._block_height + dydx_order_tags.num_blocks_open
-            
+
         elif order.order_type in [OrderType.STOP_LIMIT,OrderType.STOP_MARKET]:
             good_til_block=None
             order_flags = OrderFlags.CONDITIONAL
             good_til_date_secs = (
             int(nanos_to_secs(order.expire_time_ns)) if order.expire_time_ns else None
             )
-            
+
         else:
             order_flags = OrderFlags.LONG_TERM
             good_til_date_secs = (
@@ -1364,6 +1364,12 @@ class DYDXExecutionClient(LiveExecutionClient):
 
         if dydx_order_tags.is_short_term_order is False:
             order_flags = OrderFlags.LONG_TERM
+            good_til_date_secs = (
+                int(nanos_to_secs(order.expire_time_ns)) if order.expire_time_ns else None
+            )
+
+        if order.order_type in [OrderType.STOP_LIMIT,OrderType.STOP_MARKET]:
+            order_flags = OrderFlags.CONDITIONAL
             good_til_date_secs = (
                 int(nanos_to_secs(order.expire_time_ns)) if order.expire_time_ns else None
             )
