@@ -1698,6 +1698,7 @@ cdef class DataEngine(Component):
             correlation_id=request.id,
             response_id=UUID4(),
             ts_init=self._clock.timestamp_ns(),
+            params=params,
         )
         self._handle_response(response)
 
