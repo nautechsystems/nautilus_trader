@@ -300,5 +300,5 @@ class OrderBuilder:
             reduce_only=reduce_only,
             client_metadata=client_metadata,
             condition_type=condition_type,
-            conditional_order_trigger_subticks= conditional_order_trigger_subticks,
+            conditional_order_trigger_subticks=conditional_order_trigger_subticks,
         )

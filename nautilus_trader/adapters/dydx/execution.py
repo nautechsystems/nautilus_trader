@@ -873,7 +873,11 @@ class DYDXExecutionClient(LiveExecutionClient):
             self._log.error(f"Cannot handle order event: order {report.client_order_id} not found")
             return
 
-        if order_msg.status in (DYDXOrderStatus.BEST_EFFORT_OPENED, DYDXOrderStatus.OPEN,DYDXOrderStatus.UNTRIGGERED):
+        if order_msg.status in (
+            DYDXOrderStatus.BEST_EFFORT_OPENED,
+            DYDXOrderStatus.OPEN,
+            DYDXOrderStatus.UNTRIGGERED,
+        ):
             self.generate_order_accepted(
                 strategy_id=strategy_id,
                 instrument_id=report.instrument_id,
@@ -1052,15 +1056,14 @@ class DYDXExecutionClient(LiveExecutionClient):
             )
             return
 
-
         if dydx_order_tags.is_short_term_order:
             good_til_block = self._block_height + dydx_order_tags.num_blocks_open
 
-        elif order.order_type in [OrderType.STOP_LIMIT,OrderType.STOP_MARKET]:
-            good_til_block=None
+        elif order.order_type in [OrderType.STOP_LIMIT, OrderType.STOP_MARKET]:
+            good_til_block = None
             order_flags = OrderFlags.CONDITIONAL
             good_til_date_secs = (
-            int(nanos_to_secs(order.expire_time_ns)) if order.expire_time_ns else None
+                int(nanos_to_secs(order.expire_time_ns)) if order.expire_time_ns else None
             )
 
         else:
@@ -1368,7 +1371,7 @@ class DYDXExecutionClient(LiveExecutionClient):
                 int(nanos_to_secs(order.expire_time_ns)) if order.expire_time_ns else None
             )
 
-        if order.order_type in [OrderType.STOP_LIMIT,OrderType.STOP_MARKET]:
+        if order.order_type in [OrderType.STOP_LIMIT, OrderType.STOP_MARKET]:
             order_flags = OrderFlags.CONDITIONAL
             good_til_date_secs = (
                 int(nanos_to_secs(order.expire_time_ns)) if order.expire_time_ns else None
