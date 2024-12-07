@@ -240,7 +240,6 @@ class OrderBuilder:
         good_til_block: int | None = None,
         good_til_block_time: int | None = None,
         execution: OrderExecution = OrderExecution.DEFAULT,
-        conditional_order_trigger_subticks: int = 0,
         trigger_price: float | None = None,
     ) -> Order:
         """
