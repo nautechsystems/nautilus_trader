@@ -21,6 +21,12 @@ jobs:
     env:
       BUILD_MODE: debug
       RUST_BACKTRACE: 1
+      # https://github.com/Mozilla-Actions/sccache-action
+      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_CACHE_MULTIARCH: 1
+      RUSTC_WRAPPER: "sccache"
+      CC: "sccache clang"
+      CXX: "sccache clang"
 
     services:
       redis:
@@ -59,6 +65,9 @@ jobs:
 
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.6
 
       - name: Set up Rust toolchain
         run: |
@@ -186,10 +195,22 @@ jobs:
     env:
       BUILD_MODE: debug
       RUST_BACKTRACE: 1
+      # https://github.com/Mozilla-Actions/sccache-action
+      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_CACHE_MULTIARCH: 1
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.6
+
+      - name: Set sccache-cache env vars (Windows)
+        run: |
+          echo RUSTC_WRAPPER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
+          echo CMAKE_C_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
+          echo CMAKE_CXX_COMPILER_LAUNCHER="${{ env.SCCACHE_PATH }}" >> $GITHUB_ENV
 
       - name: Free disk space (Windows)
         run: |
@@ -288,10 +309,19 @@ jobs:
     env:
       BUILD_MODE: debug
       RUST_BACKTRACE: 1
+      # https://github.com/Mozilla-Actions/sccache-action
+      SCCACHE_GHA_ENABLED: "true"
+      SCCACHE_CACHE_MULTIARCH: 1
+      RUSTC_WRAPPER: "sccache"
+      CC: "sccache clang"
+      CXX: "sccache clang"
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Run sccache-cache
+        uses: mozilla-actions/sccache-action@v0.0.6
 
       - name: Free disk space (macOS)
         run: |
